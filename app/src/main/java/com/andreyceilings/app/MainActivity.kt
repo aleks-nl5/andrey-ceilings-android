@@ -1,0 +1,417 @@
+package com.andreyceilings.app
+
+import android.os.Bundle
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import com.andreyceilings.app.data.db.CeilingsDatabase
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material3.*
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import com.andreyceilings.app.ui.theme.CeilingsTheme
+import com.andreyceilings.app.core.CeilingEstimate
+import com.andreyceilings.app.core.CeilingCalculator
+import com.andreyceilings.app.core.CalculatorOptions
+import com.andreyceilings.app.data.db.PriceItemEntity
+import com.andreyceilings.app.data.db.ProjectEntity
+import com.andreyceilings.app.data.db.EstimateEntity
+import kotlinx.coroutines.flow.flowOf
+
+private enum class AppTab(val title: String) {
+    DASHBOARD("Панель"), OBJECTS("Об’єкти"), MEASUREMENTS("Заміри"),
+    CALCULATOR("Калькулятор"), ESTIMATES("Кошториси"), PRICES("Прайс"), SETTINGS("Налаштування")
+}
+
+class MainActivity : ComponentActivity() {
+    private val databaseStatus = mutableStateOf("Перевірка зашифрованої бази…")
+    private val databaseState = mutableStateOf<CeilingsDatabase?>(null)
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        lifecycleScope.launch {
+            try {
+                val db = withContext(Dispatchers.IO) {
+                    CeilingsDatabase.get(applicationContext).also { db ->
+                        db.openHelper.writableDatabase
+                        com.andreyceilings.app.data.db.DemoPriceList.seedIfEmpty(db.priceItems())
+                    }
+                }
+                databaseState.value = db
+                databaseStatus.value = "Зашифрована база даних активна"
+            } catch (_: Exception) {
+                databaseStatus.value = "Помилка відкриття захищеної бази. Дані не завантажено."
+            }
+        }
+        setContent { CeilingsTheme { CeilingsApp(databaseStatus.value, databaseState.value) } }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?) {
+    var tab by remember { mutableStateOf(AppTab.DASHBOARD) }
+    var length by remember { mutableStateOf("5.4") }
+    var width by remember { mutableStateOf("3.8") }
+    var pricePerM2 by remember { mutableStateOf("290") }
+    var profilePrice by remember { mutableStateOf("130") }
+    var profileType by remember { mutableStateOf("Алюмінієвий гарпунний") }
+    var material by remember { mutableStateOf("ПВХ матовий") }
+    var lightLineMeters by remember { mutableStateOf("0") }
+    var shadowProfileMeters by remember { mutableStateOf("0") }
+    var floatingCeilingMeters by remember { mutableStateOf("0") }
+    var chandeliersCount by remember { mutableStateOf("0") }
+    var spotsCount by remember { mutableStateOf("0") }
+    var pipePassCount by remember { mutableStateOf("0") }
+    var curtainNicheMeters by remember { mutableStateOf("0") }
+    var extraCorners by remember { mutableStateOf("0") }
+    var hardWallMeters by remember { mutableStateOf("0") }
+    var complexity by remember { mutableStateOf("straight") }
+
+    val priceItemsFlow = remember(database) {
+        database?.priceItems()?.observeAll() ?: flowOf<List<PriceItemEntity>>(emptyList())
+    }
+    val priceItems by priceItemsFlow.collectAsState(initial = emptyList())
+    fun materialCode(label: String): String = when (label) {
+        "ПВХ матовий" -> "canvas.pvc_matte"
+        "ПВХ глянцевий" -> "canvas.pvc_glossy"
+        "ПВХ сатиновий" -> "canvas.pvc_satin"
+        "Тканинний Descor" -> "canvas.fabric"
+        "Негорючий KM2" -> "canvas.fireproof_km2"
+        "Акустичний" -> "canvas.acoustic"
+        else -> "canvas.pvc_matte"
+    }
+    fun profileCode(label: String): String = when (label) {
+        "Алюмінієвий гарпунний" -> "profile.standard_alu"
+        "ПВХ стіновий" -> "profile.pvc"
+        "Тіньовий EuroKRAAB" -> "profile.shadow_kraab"
+        "Парящий з LED" -> "profile.floating_led"
+        "Слот / трековий" -> "profile.slott_tracks"
+        else -> "profile.standard_alu"
+    }
+
+    // Keep calculator defaults synchronized with the current encrypted price list.
+    LaunchedEffect(priceItems, material, profileType) {
+        priceItems.firstOrNull { it.code == materialCode(material) }?.let { pricePerM2 = it.price.toPriceInput() }
+        priceItems.firstOrNull { it.code == profileCode(profileType) }?.let { profilePrice = it.price.toPriceInput() }
+    }
+
+    val calculatorOptions = CalculatorOptions(
+        lightLinesMeters = lightLineMeters.toSafeDouble(),
+        shadowProfileMeters = shadowProfileMeters.toSafeDouble(),
+        floatingCeilingMeters = floatingCeilingMeters.toSafeDouble(),
+        chandeliersCount = chandeliersCount.toSafeDouble(),
+        spotsGX53Count = spotsCount.toSafeDouble(),
+        pipePassCount = pipePassCount.toSafeDouble(),
+        curtainNicheMeters = curtainNicheMeters.toSafeDouble(),
+        extraCorners = extraCorners.toSafeDouble(),
+        hardWallMeters = hardWallMeters.toSafeDouble(),
+        complexity = complexity
+    )
+    val estimate = remember(length, width, pricePerM2, profilePrice, priceItems, calculatorOptions) {
+        CeilingCalculator.estimate(
+            length.toSafeDouble(), width.toSafeDouble(),
+            pricePerM2.toSafeDouble(), profilePrice.toSafeDouble(),
+            priceItems = priceItems, options = calculatorOptions,
+            materialType = materialCode(material).removePrefix("canvas."),
+            profileType = profileCode(profileType).removePrefix("profile.")
+        )
+    }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = {
+                    Column {
+                        Text("СтеляПро", fontWeight = FontWeight.Bold)
+                        Text("Майстер натяжних стель", style = MaterialTheme.typography.labelSmall)
+                    }
+                },
+                actions = { IconButton(onClick = { tab = AppTab.SETTINGS }) { Icon(Icons.Default.Settings, "Налаштування") } }
+            )
+        },
+        bottomBar = {
+            NavigationBar {
+                val items = listOf(
+                    AppTab.DASHBOARD to Icons.Default.Dashboard,
+                    AppTab.OBJECTS to Icons.Default.Business,
+                    AppTab.MEASUREMENTS to Icons.Default.Straighten,
+                    AppTab.CALCULATOR to Icons.Default.Calculate,
+                    AppTab.ESTIMATES to Icons.Default.ReceiptLong,
+                    AppTab.PRICES to Icons.Default.PriceChange,
+                    AppTab.SETTINGS to Icons.Default.Settings
+                )
+                items.forEach { (item, icon) ->
+                    NavigationBarItem(
+                        selected = tab == item,
+                        onClick = { tab = item },
+                        icon = { Icon(icon, contentDescription = item.title) },
+                        label = { Text(item.title, maxLines = 1) }
+                    )
+                }
+            }
+        }
+    ) { padding ->
+        Column(
+            modifier = Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            when (tab) {
+                AppTab.DASHBOARD -> DashboardScreen(
+                    onNewMeasurement = { tab = AppTab.MEASUREMENTS },
+                    onCalculator = { tab = AppTab.CALCULATOR }
+                )
+                AppTab.OBJECTS -> ObjectsScreen(database)
+                AppTab.MEASUREMENTS -> MeasurementsScreen(database)
+                AppTab.CALCULATOR -> CalculatorScreen(
+                    database = database,
+                    length = length, onLength = { length = it },
+                    width = width, onWidth = { width = it },
+                    price = pricePerM2, onPrice = { pricePerM2 = it },
+                    profilePrice = profilePrice, onProfilePrice = { profilePrice = it },
+                    material = material, onMaterial = { material = it },
+                    profileType = profileType, onProfileType = { profileType = it },
+                    estimate = estimate,
+                    priceItemsAvailable = priceItems.isNotEmpty(),
+                    lightLineMeters = lightLineMeters, onLightLineMeters = { lightLineMeters = it },
+                    shadowProfileMeters = shadowProfileMeters, onShadowProfileMeters = { shadowProfileMeters = it },
+                    floatingCeilingMeters = floatingCeilingMeters, onFloatingCeilingMeters = { floatingCeilingMeters = it },
+                    chandeliersCount = chandeliersCount, onChandeliersCount = { chandeliersCount = it },
+                    spotsCount = spotsCount, onSpotsCount = { spotsCount = it },
+                    pipePassCount = pipePassCount, onPipePassCount = { pipePassCount = it },
+                    curtainNicheMeters = curtainNicheMeters, onCurtainNicheMeters = { curtainNicheMeters = it },
+                    extraCorners = extraCorners, onExtraCorners = { extraCorners = it },
+                    hardWallMeters = hardWallMeters, onHardWallMeters = { hardWallMeters = it },
+                    complexity = complexity, onComplexity = { complexity = it }
+                )
+                AppTab.ESTIMATES -> EstimatesScreen(database)
+                AppTab.PRICES -> PriceListScreen(database)
+                AppTab.SETTINGS -> SettingsScreen(databaseStatus)
+            }
+        }
+    }
+}
+
+@Composable
+private fun SectionTitle(title: String, subtitle: String? = null) {
+    Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+        Text(title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+        if (subtitle != null) Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+@Composable
+private fun MetricCard(label: String, value: String, icon: androidx.compose.ui.graphics.vector.ImageVector, modifier: Modifier = Modifier) {
+    Card(shape = RoundedCornerShape(18.dp), modifier = modifier.widthIn(min = 130.dp)) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+            Text(label, style = MaterialTheme.typography.labelMedium)
+            Text(value, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+        }
+    }
+}
+
+@Composable
+private fun DashboardScreen(onNewMeasurement: () -> Unit, onCalculator: () -> Unit) {
+    SectionTitle("Панель майстра", "Ваші об’єкти та розрахунки в одному місці")
+    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        MetricCard("Об’єкти", "3", Icons.Default.Business, Modifier.weight(1f))
+        MetricCard("Заміри", "5", Icons.Default.Straighten, Modifier.weight(1f))
+    }
+    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        MetricCard("Площа", "86,4 м²", Icons.Default.SquareFoot, Modifier.weight(1f))
+        MetricCard("До монтажу", "2", Icons.Default.Event, Modifier.weight(1f))
+    }
+    Card {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Швидкі дії", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
+            Button(onClick = onNewMeasurement, modifier = Modifier.fillMaxWidth()) {
+                Icon(Icons.Default.Add, null); Spacer(Modifier.width(8.dp)); Text("Новий замір")
+            }
+            OutlinedButton(onClick = onCalculator, modifier = Modifier.fillMaxWidth()) {
+                Icon(Icons.Default.Calculate, null); Spacer(Modifier.width(8.dp)); Text("Розрахувати вартість")
+            }
+        }
+    }
+    Card {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text("Найближча подія", fontWeight = FontWeight.Bold)
+            Text("Монтаж натяжної стелі")
+            Text("Квартира · Київ · 22 жовтня", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+    Text("Демо-дані показані лише для макета. Зберігання та повна міграція даних — наступний етап.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun CalculatorScreen(
+    database: CeilingsDatabase?,
+    length: String, onLength: (String) -> Unit,
+    width: String, onWidth: (String) -> Unit,
+    price: String, onPrice: (String) -> Unit,
+    profilePrice: String, onProfilePrice: (String) -> Unit,
+    material: String, onMaterial: (String) -> Unit,
+    profileType: String, onProfileType: (String) -> Unit,
+    estimate: CeilingEstimate,
+    priceItemsAvailable: Boolean,
+    lightLineMeters: String, onLightLineMeters: (String) -> Unit,
+    shadowProfileMeters: String, onShadowProfileMeters: (String) -> Unit,
+    floatingCeilingMeters: String, onFloatingCeilingMeters: (String) -> Unit,
+    chandeliersCount: String, onChandeliersCount: (String) -> Unit,
+    spotsCount: String, onSpotsCount: (String) -> Unit,
+    pipePassCount: String, onPipePassCount: (String) -> Unit,
+    curtainNicheMeters: String, onCurtainNicheMeters: (String) -> Unit,
+    extraCorners: String, onExtraCorners: (String) -> Unit,
+    hardWallMeters: String, onHardWallMeters: (String) -> Unit,
+    complexity: String, onComplexity: (String) -> Unit
+) {
+    val projectsFlow = remember(database) { database?.projects()?.observeAll() ?: flowOf<List<ProjectEntity>>(emptyList()) }
+    val projects by projectsFlow.collectAsState(initial = emptyList())
+    val scope = rememberCoroutineScope()
+    var showSaveDialog by remember { mutableStateOf(false) }
+    var saveError by remember { mutableStateOf<String?>(null) }
+    SectionTitle("Калькулятор стелі", "Попередній кошторис за розмірами приміщення")
+    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        OutlinedTextField(length, onLength, label = { Text("Довжина, м") }, modifier = Modifier.weight(1f), singleLine = true)
+        OutlinedTextField(width, onWidth, label = { Text("Ширина, м") }, modifier = Modifier.weight(1f), singleLine = true)
+    }
+    OutlinedTextField(price, onPrice, label = { Text("Полотно, ₴/м²") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
+    OutlinedTextField(profilePrice, onProfilePrice, label = { Text("Профіль, ₴/м.п.") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
+    var materialExpanded by remember { mutableStateOf(false) }
+    ExposedDropdownMenuBox(expanded = materialExpanded, onExpandedChange = { materialExpanded = it }) {
+        OutlinedTextField(material, {}, readOnly = true, label = { Text("Матеріал") }, trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(materialExpanded) }, modifier = Modifier.menuAnchor().fillMaxWidth())
+        ExposedDropdownMenu(expanded = materialExpanded, onDismissRequest = { materialExpanded = false }) {
+            listOf("ПВХ матовий", "ПВХ глянцевий", "ПВХ сатиновий", "Тканинний Descor", "Негорючий KM2", "Акустичний").forEach {
+                DropdownMenuItem(text = { Text(it) }, onClick = { onMaterial(it); materialExpanded = false })
+            }
+        }
+    }
+    var profileExpanded by remember { mutableStateOf(false) }
+    ExposedDropdownMenuBox(expanded = profileExpanded, onExpandedChange = { profileExpanded = it }) {
+        OutlinedTextField(profileType, {}, readOnly = true, label = { Text("Система профілю") }, trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(profileExpanded) }, modifier = Modifier.menuAnchor().fillMaxWidth())
+        ExposedDropdownMenu(expanded = profileExpanded, onDismissRequest = { profileExpanded = false }) {
+            listOf("Алюмінієвий гарпунний", "ПВХ стіновий", "Тіньовий EuroKRAAB", "Парящий з LED", "Слот / трековий").forEach {
+                DropdownMenuItem(text = { Text(it) }, onClick = { onProfileType(it); profileExpanded = false })
+            }
+        }
+    }
+    Text("Додаткові роботи", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        OutlinedTextField(lightLineMeters, onLightLineMeters, label = { Text("Світлова лінія, м") }, modifier = Modifier.weight(1f), singleLine = true)
+        OutlinedTextField(curtainNicheMeters, onCurtainNicheMeters, label = { Text("Ніша штор, м") }, modifier = Modifier.weight(1f), singleLine = true)
+    }
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        OutlinedTextField(chandeliersCount, onChandeliersCount, label = { Text("Люстри, шт.") }, modifier = Modifier.weight(1f), singleLine = true)
+        OutlinedTextField(spotsCount, onSpotsCount, label = { Text("GX53, шт.") }, modifier = Modifier.weight(1f), singleLine = true)
+    }
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        OutlinedTextField(pipePassCount, onPipePassCount, label = { Text("Обхід труб, шт.") }, modifier = Modifier.weight(1f), singleLine = true)
+        OutlinedTextField(extraCorners, onExtraCorners, label = { Text("Дод. кути, шт.") }, modifier = Modifier.weight(1f), singleLine = true)
+    }
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        OutlinedTextField(shadowProfileMeters, onShadowProfileMeters, label = { Text("Тіньовий профіль, м") }, modifier = Modifier.weight(1f), singleLine = true)
+        OutlinedTextField(floatingCeilingMeters, onFloatingCeilingMeters, label = { Text("Парящий профіль, м") }, modifier = Modifier.weight(1f), singleLine = true)
+    }
+    OutlinedTextField(hardWallMeters, onHardWallMeters, label = { Text("Складна стіна, м") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
+    var complexityExpanded by remember { mutableStateOf(false) }
+    ExposedDropdownMenuBox(expanded = complexityExpanded, onExpandedChange = { complexityExpanded = it }) {
+        OutlinedTextField(
+            value = when (complexity) { "multilevel" -> "Багаторівнева"; "curved" -> "Криволінійна"; else -> "Пряма стеля" },
+            onValueChange = {}, readOnly = true, label = { Text("Складність") },
+            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(complexityExpanded) },
+            modifier = Modifier.menuAnchor().fillMaxWidth()
+        )
+        ExposedDropdownMenu(expanded = complexityExpanded, onDismissRequest = { complexityExpanded = false }) {
+            listOf("Пряма стеля" to "straight", "Багаторівнева" to "multilevel", "Криволінійна" to "curved").forEach { (label, value) ->
+                DropdownMenuItem(text = { Text(label) }, onClick = { onComplexity(value); complexityExpanded = false })
+            }
+        }
+    }
+    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) {
+        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Результат", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Text("Площа: ${formatNumber(estimate.area)} м²")
+            Text("Периметр: ${formatNumber(estimate.perimeter)} м")
+            HorizontalDivider()
+            Text("Полотно: ${money(estimate.canvasCost)}")
+            Text("Профіль: ${money(estimate.profileCost)}")
+            Text("Складність: ${money(estimate.complexityCost)}")
+            Text("Додаткові роботи: ${money(estimate.optionsCost)}")
+            Text("Разом: ${money(estimate.total)}", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+        }
+    }
+    Button(onClick = { showSaveDialog = true }, modifier = Modifier.fillMaxWidth(), enabled = database != null && projects.isNotEmpty() && estimate.area > 0.0) {
+        Icon(Icons.Default.Save, null); Spacer(Modifier.width(8.dp)); Text("Зберегти кошторис до об’єкта")
+    }
+    if (projects.isEmpty()) Text("Щоб зберегти кошторис, спочатку створіть об’єкт у вкладці «Об’єкти».", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    saveError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+    if (showSaveDialog && database != null && projects.isNotEmpty()) SaveEstimateDialog(
+        projects = projects,
+        defaultName = "Кімната ${formatNumber(length.toSafeDouble())} × ${formatNumber(width.toSafeDouble())} м",
+        onDismiss = { showSaveDialog = false },
+        onSave = { projectId, name ->
+            val details = org.json.JSONObject()
+                .put("lightLineMeters", calculatorOptionsForSave(lightLineMeters))
+                .put("shadowProfileMeters", calculatorOptionsForSave(shadowProfileMeters))
+                .put("floatingCeilingMeters", calculatorOptionsForSave(floatingCeilingMeters))
+                .put("chandeliersCount", calculatorOptionsForSave(chandeliersCount))
+                .put("spotsCount", calculatorOptionsForSave(spotsCount))
+                .put("pipePassCount", calculatorOptionsForSave(pipePassCount))
+                .put("curtainNicheMeters", calculatorOptionsForSave(curtainNicheMeters))
+                .put("extraCorners", calculatorOptionsForSave(extraCorners))
+                .put("hardWallMeters", calculatorOptionsForSave(hardWallMeters))
+            scope.launch {
+                runCatching {
+                    val estimateDraft = EstimateEntity(
+                        projectId = projectId, name = name.trim(), material = material, profileType = profileType, complexity = complexity,
+                        lengthMeters = length.toSafeDouble(), widthMeters = width.toSafeDouble(), areaSquareMeters = estimate.area, perimeterMeters = estimate.perimeter,
+                        canvasCost = estimate.canvasCost, profileCost = estimate.profileCost, complexityCost = estimate.complexityCost,
+                        optionsCost = estimate.optionsCost, totalCost = estimate.total, detailsJson = details.toString()
+                    )
+                    val lineItems = com.andreyceilings.app.core.EstimateLineItems.create(estimateDraft, details, priceItems)
+                    details.put("lineItems", com.andreyceilings.app.core.EstimateLineItems.toJson(lineItems))
+                    database.estimates().insert(estimateDraft.copy(detailsJson = details.toString()))
+                }.onFailure { saveError = it.message ?: "Не вдалося зберегти кошторис" }
+                showSaveDialog = false
+            }
+        }
+    )
+    Text(if (priceItemsAvailable) "Ціни матеріалу й профілю синхронізуються із зашифрованим прайс-листом. Зміни в прайсі впливають на нові розрахунки." else "Прайс-лист ще не завантажено; використовуються тимчасові значення.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    Text("Рушій розрахунку: ${estimate.engine}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+}
+
+@Composable
+private fun SettingsScreen(databaseStatus: String) {
+    SectionTitle("Налаштування", "Персоналізація та резервне копіювання")
+    Card {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            ListItem(leadingContent = { Icon(Icons.Default.Language, null) }, headlineContent = { Text("Мова") }, supportingContent = { Text("Українська") }, trailingContent = { Text("UA") })
+            ListItem(leadingContent = { Icon(Icons.Default.Palette, null) }, headlineContent = { Text("Тема") }, supportingContent = { Text("Системна / світла / темна") })
+            ListItem(leadingContent = { Icon(Icons.Default.PriceChange, null) }, headlineContent = { Text("Прайс-лист") }, supportingContent = { Text("Налаштування вартості матеріалів і робіт") })
+            ListItem(leadingContent = { Icon(Icons.Default.Lock, null) }, headlineContent = { Text("Захист бази даних") }, supportingContent = { Text(databaseStatus) })
+            ListItem(leadingContent = { Icon(Icons.Default.Backup, null) }, headlineContent = { Text("Резервна копія") }, supportingContent = { Text("Системні резервні копії вимкнено; зашифрований експорт буде додано окремо") })
+        }
+    }
+}
+
+private fun calculatorOptionsForSave(value: String): Double = value.toSafeDouble()
+
+private fun formatNumber(value: Double) = String.format("%.2f", value)
+private fun money(value: Double) = String.format("%,.0f ₴", value)
+
+private fun Double.toPriceInput(): String = if (this % 1.0 == 0.0) toLong().toString() else toString()
+
+private fun String.toSafeDouble(): Double = replace(',', '.').toDoubleOrNull()?.coerceAtLeast(0.0) ?: 0.0

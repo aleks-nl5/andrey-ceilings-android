@@ -1,0 +1,107 @@
+package com.andreyceilings.app.core
+
+import com.andreyceilings.app.data.db.EstimateEntity
+import com.andreyceilings.app.data.db.PriceItemEntity
+import org.json.JSONArray
+import org.json.JSONObject
+import kotlin.math.max
+import kotlin.math.round
+
+/** A snapshot of a single priced line, saved with the estimate so later price changes do not alter history. */
+data class EstimateLineItem(
+    val title: String,
+    val quantity: Double,
+    val unit: String,
+    val unitPrice: Double,
+    val total: Double
+)
+
+object EstimateLineItems {
+    fun create(
+        estimate: EstimateEntity,
+        optionsJson: JSONObject,
+        priceItems: List<PriceItemEntity>
+    ): List<EstimateLineItem> {
+        val priceMap = priceItems.associate { it.code to it.price.coerceAtLeast(0.0) }
+        fun price(code: String, fallback: Double) = priceMap[code] ?: fallback
+        fun quantity(key: String) = optionsJson.optDouble(key, 0.0).coerceAtLeast(0.0)
+        val rows = mutableListOf<EstimateLineItem>()
+        fun add(title: String, qty: Double, unit: String, unitPrice: Double, forcedTotal: Double? = null) {
+            if (qty <= 0.0) return
+            val amount = forcedTotal ?: round(qty * unitPrice)
+            rows += EstimateLineItem(title, qty, unit, unitPrice, amount)
+        }
+
+        val materialInfo = when (estimate.material) {
+            "pvc_glossy" -> Triple("ПВХ полотно глянцеве", "canvas.pvc_glossy", 310.0)
+            "pvc_satin" -> Triple("ПВХ полотно сатинове", "canvas.pvc_satin", 310.0)
+            "fabric" -> Triple("Тканинне полотно", "canvas.fabric", 890.0)
+            "fireproof_km2" -> Triple("Негорюче полотно KM2", "canvas.fireproof_km2", 480.0)
+            "acoustic" -> Triple("Акустичне полотно", "canvas.acoustic", 980.0)
+            else -> Triple("ПВХ полотно матове", "canvas.pvc_matte", 290.0)
+        }
+        val materialPrice = if (estimate.areaSquareMeters > 0) estimate.canvasCost / estimate.areaSquareMeters else price(materialInfo.second, materialInfo.third)
+        add(materialInfo.first, estimate.areaSquareMeters, "м²", materialPrice, estimate.canvasCost)
+
+        val profileInfo = when (estimate.profileType) {
+            "pvc" -> Triple("ПВХ профіль", "profile.pvc", 90.0)
+            "shadow_kraab" -> Triple("Тіньовий профіль KRAAB", "profile.shadow_kraab", 380.0)
+            "floating_led" -> Triple("Профіль для парящої стелі LED", "profile.floating_led", 420.0)
+            "slott_tracks" -> Triple("Слот / трекова система", "profile.slott_tracks", 550.0)
+            else -> Triple("Стандартний алюмінієвий профіль", "profile.standard_alu", 130.0)
+        }
+        val profileQty = estimate.perimeterMeters
+        val profilePrice = if (profileQty > 0) estimate.profileCost / profileQty else price(profileInfo.second, profileInfo.third)
+        add(profileInfo.first, profileQty, "м.п.", profilePrice, estimate.profileCost)
+
+        when (estimate.complexity) {
+            "multilevel" -> {
+                val qty = max(2.0, round(estimate.perimeterMeters * .35 * 10.0) / 10.0)
+                add("Багаторівнева конструкція", qty, "м.п.", price("work.multilevel", 650.0), estimate.complexityCost)
+            }
+            "curved" -> {
+                val qty = max(2.0, round(estimate.perimeterMeters * .25 * 10.0) / 10.0)
+                add("Криволінійна конструкція", qty, "м.п.", price("work.curved", 350.0), estimate.complexityCost)
+            }
+        }
+
+        val optionRows = listOf(
+            Triple("Світлова лінія", "lightLineMeters", "light.line") to ("м.п." to 850.0),
+            Triple("Додатковий тіньовий профіль", "shadowProfileMeters", "work.shadow_profile") to ("м.п." to 380.0),
+            Triple("Додатковий парящий профіль", "floatingCeilingMeters", "work.floating_ceiling") to ("м.п." to 420.0),
+            Triple("Монтаж люстри", "chandeliersCount", "light.chandelier") to ("шт." to 350.0),
+            Triple("Точковий світильник GX53", "spotsCount", "light.spot_gx53") to ("шт." to 220.0),
+            Triple("Обхід труби", "pipePassCount", "work.pipe_pass") to ("шт." to 180.0),
+            Triple("Ніша для штор", "curtainNicheMeters", "work.curtain_niche") to ("м.п." to 450.0),
+            Triple("Додатковий кут", "extraCorners", "work.extra_corner") to ("шт." to 90.0),
+            Triple("Складна стіна", "hardWallMeters", "work.hard_wall") to ("м.п." to 220.0)
+        )
+        optionRows.forEach { (spec, unitSpec) ->
+            val (title, key, code) = spec
+            val (unit, fallback) = unitSpec
+            val qty = quantity(key)
+            if (key == "shadowProfileMeters" && estimate.profileType == "shadow_kraab") return@forEach
+            if (key == "floatingCeilingMeters" && estimate.profileType == "floating_led") return@forEach
+            add(title, qty, unit, price(code, fallback))
+        }
+
+        // Preserve the exact stored total if line-level rounding differs by a few currency units.
+        val delta = round(estimate.totalCost - rows.sumOf { it.total })
+        if (delta != 0.0) rows += EstimateLineItem("Коригування округлення", 1.0, "посл.", delta, delta)
+        return rows
+    }
+
+    fun toJson(rows: List<EstimateLineItem>): JSONArray = JSONArray().also { array ->
+        rows.forEach { row -> array.put(JSONObject()
+            .put("title", row.title).put("quantity", row.quantity).put("unit", row.unit)
+            .put("unitPrice", row.unitPrice).put("total", row.total)) }
+    }
+
+    fun fromJson(detailsJson: String): List<EstimateLineItem> = runCatching {
+        val array = JSONObject(detailsJson).optJSONArray("lineItems") ?: return emptyList()
+        (0 until array.length()).mapNotNull { i ->
+            val item = array.optJSONObject(i) ?: return@mapNotNull null
+            EstimateLineItem(item.optString("title"), item.optDouble("quantity"), item.optString("unit"), item.optDouble("unitPrice"), item.optDouble("total"))
+        }
+    }.getOrDefault(emptyList())
+}
