@@ -10,6 +10,7 @@ import kotlinx.coroutines.flow.Flow
 @Dao
 interface ClientDao {
     @Query("SELECT * FROM clients ORDER BY name COLLATE NOCASE") fun observeAll(): Flow<List<ClientEntity>>
+    @Query("SELECT COUNT(*) FROM clients") suspend fun count(): Int
     @Query("SELECT * FROM clients WHERE id = :id LIMIT 1") suspend fun findById(id: Long): ClientEntity?
     @Query("SELECT * FROM clients WHERE name = :name COLLATE NOCASE LIMIT 1") suspend fun findByName(name: String): ClientEntity?
     @Insert suspend fun insert(client: ClientEntity): Long
@@ -20,6 +21,7 @@ interface ClientDao {
 @Dao
 interface ProjectDao {
     @Query("SELECT * FROM projects ORDER BY updatedAt DESC") fun observeAll(): Flow<List<ProjectEntity>>
+    @Query("SELECT COUNT(*) FROM projects") suspend fun count(): Int
     @Query("SELECT * FROM projects WHERE id = :id LIMIT 1") suspend fun findById(id: Long): ProjectEntity?
     @Insert suspend fun insert(project: ProjectEntity): Long
     @Update suspend fun update(project: ProjectEntity)
@@ -30,6 +32,7 @@ interface ProjectDao {
 @Dao
 interface RoomMeasurementDao {
     @Query("SELECT * FROM room_measurements ORDER BY createdAt DESC") fun observeAll(): Flow<List<RoomMeasurementEntity>>
+    @Query("SELECT COUNT(*) FROM room_measurements") suspend fun count(): Int
     @Query("SELECT * FROM room_measurements WHERE projectId = :projectId ORDER BY createdAt DESC") fun observeForProject(projectId: Long): Flow<List<RoomMeasurementEntity>>
     @Insert suspend fun insert(measurement: RoomMeasurementEntity): Long
     @Update suspend fun update(measurement: RoomMeasurementEntity)
@@ -48,6 +51,7 @@ interface PriceItemDao {
 @Dao
 interface EstimateDao {
     @Query("SELECT * FROM estimates ORDER BY createdAt DESC") fun observeAll(): Flow<List<EstimateEntity>>
+    @Query("SELECT COUNT(*) FROM estimates") suspend fun count(): Int
     @Query("SELECT * FROM estimates WHERE projectId = :projectId ORDER BY createdAt DESC") fun observeForProject(projectId: Long): Flow<List<EstimateEntity>>
     @Insert suspend fun insert(estimate: EstimateEntity): Long
     @Update suspend fun update(estimate: EstimateEntity)
