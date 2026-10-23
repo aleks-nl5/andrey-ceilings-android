@@ -13,7 +13,7 @@ data class CeilingEstimate(
     val complexityCost: Double,
     val optionsCost: Double,
     val total: Double,
-    val engine: String = "Go"
+    val engine: String
 )
 
 data class CalculatorOptions(
@@ -41,7 +41,11 @@ object CeilingCalculator {
         materialType: String,
         profileType: String
     ): CeilingEstimate {
+        // No Kotlin calculation fallback: if the Go binding fails, this method throws.
         val prices = JSONObject(Mobileapi.defaultPricesJSON())
+        check(prices.optString("error").isBlank()) {
+            prices.optString("error").ifBlank { "Go не повернув прайс-лист" }
+        }
         val canvasPrices = prices.getJSONObject("canvasPrices")
         val profilePrices = prices.getJSONObject("profilePrices")
         val dbPrices = priceItems.associate { it.code to it.price.coerceAtLeast(0.0) }
@@ -90,14 +94,21 @@ object CeilingCalculator {
         check(response.optString("error").isBlank()) { response.optString("error", "Go calculation failed") }
         val geometry = response.getJSONObject("geometry")
         val cost = response.getJSONObject("cost")
+        fun requiredFinite(obj: JSONObject, key: String): Double {
+            val value = obj.getDouble(key)
+            check(value.isFinite() && value >= 0.0) { "Go повернув некоректне значення: $key" }
+            return value
+        }
+        // The engine label is assigned only after a successful Go response is validated.
         return CeilingEstimate(
-            area = geometry.getDouble("area"),
-            perimeter = geometry.getDouble("perimeter"),
-            canvasCost = cost.getDouble("canvasCost"),
-            profileCost = cost.getDouble("profileCost"),
-            complexityCost = cost.getDouble("complexityCost"),
-            optionsCost = cost.getDouble("optionsCost"),
-            total = cost.getDouble("totalCost")
+            area = requiredFinite(geometry, "area"),
+            perimeter = requiredFinite(geometry, "perimeter"),
+            canvasCost = requiredFinite(cost, "canvasCost"),
+            profileCost = requiredFinite(cost, "profileCost"),
+            complexityCost = requiredFinite(cost, "complexityCost"),
+            optionsCost = requiredFinite(cost, "optionsCost"),
+            total = requiredFinite(cost, "totalCost"),
+            engine = "Go"
         )
     }
 }
