@@ -18,7 +18,8 @@ export PATH="$(go env GOPATH)/bin:$PATH"
 cd "$GO_CORE"
 
 # Add the mobile binding dependency to the module.
-go get golang.org/x/mobile/cmd/gomobile
+# go get golang.org/x/mobile/cmd/gomobile
+go get -tool golang.org/x/mobile/cmd/gobind
 go mod tidy
 
 gomobile init
