@@ -420,7 +420,9 @@ private fun CalculatorScreen(
 }
 
 @Composable
-private fun SettingsScreen(databaseStatus: String) {
+private fun SettingsScreen(databaseStatus: String, database: CeilingsDatabase?) {
+    var fileCheck by remember { mutableStateOf("Натисніть кнопку, щоб перевірити файл бази даних.") }
+    val scope = rememberCoroutineScope()
     SectionTitle("Налаштування", "Персоналізація та резервне копіювання")
     Card {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -428,6 +430,35 @@ private fun SettingsScreen(databaseStatus: String) {
             ListItem(leadingContent = { Icon(Icons.Default.Palette, null) }, headlineContent = { Text("Тема") }, supportingContent = { Text("Системна / світла / темна") })
             ListItem(leadingContent = { Icon(Icons.Default.PriceChange, null) }, headlineContent = { Text("Прайс-лист") }, supportingContent = { Text("Налаштування вартості матеріалів і робіт") })
             ListItem(leadingContent = { Icon(Icons.Default.Lock, null) }, headlineContent = { Text("Захист бази даних") }, supportingContent = { Text(databaseStatus) })
+            HorizontalDivider()
+            Text("Перевірка файлу БД", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            Text(fileCheck, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Button(
+                onClick = {
+                    scope.launch {
+                        fileCheck = withContext(Dispatchers.IO) {
+                            runCatching {
+                                val path = database?.openHelper?.writableDatabase?.path ?: error("База даних ще не готова.")
+                                val file = java.io.File(path)
+                                if (!file.exists()) error("Файл бази не знайдено: $path")
+                                val header = file.inputStream().use { input -> ByteArray(16).also { buffer ->
+                                    var offset = 0
+                                    while (offset < buffer.size) {
+                                        val count = input.read(buffer, offset, buffer.size - offset)
+                                        if (count <= 0) break
+                                        offset += count
+                                    }
+                                } }
+                                val plainSqlite = header.toString(Charsets.US_ASCII).startsWith("SQLite format 3")
+                                "Файл: $path\nРозмір: ${file.length()} байт\nЗаголовок SQLite відкритим текстом: " +
+                                    if (plainSqlite) "ТАК — це неочікувано для зашифрованої БД." else "не виявлено. Це узгоджується із SQLCipher, але саме по собі не доводить шифрування."
+                            }.getOrElse { "Перевірка не вдалася: ${it.message ?: "невідома помилка"}" }
+                        }
+                    }
+                },
+                modifier = Modifier.fillMaxWidth(),
+                enabled = database != null
+            ) { Text("Перевірити файл БД") }
             ListItem(leadingContent = { Icon(Icons.Default.Backup, null) }, headlineContent = { Text("Резервна копія") }, supportingContent = { Text("Системні резервні копії вимкнено; зашифрований експорт буде додано окремо") })
         }
     }
