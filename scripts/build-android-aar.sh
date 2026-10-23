@@ -24,10 +24,9 @@ go mod tidy
 
 gomobile init
 
-export ANDROID_API=23
-
 gomobile bind \
   -target=android \
+  -androidapi=23 \
   -javapkg=com.andreyceilings.core \
   -o "$ROOT/app/libs/ceilings-core.aar" \
   "$GO_CORE/mobileapi"
