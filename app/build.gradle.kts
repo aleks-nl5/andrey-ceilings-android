@@ -31,9 +31,8 @@ android {
 }
 
 dependencies {
-    // Optional generated Go binding. The project remains buildable before the AAR exists.
-    val goCoreAar = file("libs/ceilings-core.aar")
-    if (goCoreAar.exists()) implementation(files(goCoreAar))
+    // Required Go mobile library: all calculations run in Go; no Kotlin fallback exists.
+    implementation(files("libs/ceilings-core.aar"))
     implementation(platform("androidx.compose:compose-bom:2025.02.00"))
     implementation("androidx.activity:activity-compose:1.10.1")
     implementation("androidx.compose.ui:ui")
