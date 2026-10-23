@@ -1,137 +1,107 @@
 package com.andreyceilings.app.core
 
+import com.andreyceilings.app.data.db.EstimateEntity
 import com.andreyceilings.app.data.db.PriceItemEntity
+import org.json.JSONArray
 import org.json.JSONObject
+import kotlin.math.max
+import kotlin.math.round
 
-/** Inputs for the optional work lines in a room estimate. */
-data class CalculatorOptions(
-    val lightLinesMeters: Double = 0.0,
-    val shadowProfileMeters: Double = 0.0,
-    val floatingCeilingMeters: Double = 0.0,
-    val chandeliersCount: Double = 0.0,
-    val spotsGX53Count: Double = 0.0,
-    val pipePassCount: Double = 0.0,
-    val curtainNicheMeters: Double = 0.0,
-    val extraCorners: Double = 0.0,
-    val hardWallMeters: Double = 0.0,
-    val complexity: String = "straight"
+/** A snapshot of a single priced line, saved with the estimate so later price changes do not alter history. */
+data class EstimateLineItem(
+    val title: String,
+    val quantity: Double,
+    val unit: String,
+    val unitPrice: Double,
+    val total: Double
 )
 
-/** Estimate returned to the Compose UI. */
-data class CeilingEstimate(
-    val area: Double,
-    val perimeter: Double,
-    val canvasCost: Double,
-    val profileCost: Double,
-    val complexityCost: Double,
-    val optionsCost: Double,
-    val total: Double,
-    val engine: String = "Kotlin fallback"
-)
+object EstimateLineItems {
+    fun create(
+        estimate: EstimateEntity,
+        optionsJson: JSONObject,
+        priceItems: List<PriceItemEntity>
+    ): List<EstimateLineItem> {
+        val priceMap = priceItems.associate { it.code to it.price.coerceAtLeast(0.0) }
+        fun price(code: String, fallback: Double) = priceMap[code] ?: fallback
+        fun quantity(key: String) = optionsJson.optDouble(key, 0.0).coerceAtLeast(0.0)
+        val rows = mutableListOf<EstimateLineItem>()
+        fun add(title: String, qty: Double, unit: String, unitPrice: Double, forcedTotal: Double? = null) {
+            if (qty <= 0.0) return
+            val amount = forcedTotal ?: round(qty * unitPrice)
+            rows += EstimateLineItem(title, qty, unit, unitPrice, amount)
+        }
 
-/**
- * Native adapter for the Go calculator. It supplies prices from Room where available.
- * The Kotlin fallback keeps the UI usable until the gomobile AAR is installed; that
- * fallback intentionally calculates only the basic canvas/profile amount.
- */
-object CeilingCalculator {
-    fun estimate(
-        length: Double,
-        width: Double,
-        canvasPrice: Double,
-        profilePrice: Double,
-        priceItems: List<PriceItemEntity> = emptyList(),
-        options: CalculatorOptions = CalculatorOptions(),
-        materialType: String = "pvc_matte",
-        profileType: String = "standard_alu"
-    ): CeilingEstimate {
-        val safeLength = length.coerceAtLeast(0.0)
-        val safeWidth = width.coerceAtLeast(0.0)
-        val safeCanvasPrice = canvasPrice.coerceAtLeast(0.0)
-        val safeProfilePrice = profilePrice.coerceAtLeast(0.0)
-        val itemPrices = priceItems.associate { it.code to it.price.coerceAtLeast(0.0) }
+        val materialInfo = when (estimate.material) {
+            "pvc_glossy" -> Triple("ПВХ полотно глянцеве", "canvas.pvc_glossy", 310.0)
+            "pvc_satin" -> Triple("ПВХ полотно сатинове", "canvas.pvc_satin", 310.0)
+            "fabric" -> Triple("Тканинне полотно", "canvas.fabric", 890.0)
+            "fireproof_km2" -> Triple("Негорюче полотно KM2", "canvas.fireproof_km2", 480.0)
+            "acoustic" -> Triple("Акустичне полотно", "canvas.acoustic", 980.0)
+            else -> Triple("ПВХ полотно матове", "canvas.pvc_matte", 290.0)
+        }
+        val materialPrice = if (estimate.areaSquareMeters > 0) estimate.canvasCost / estimate.areaSquareMeters else price(materialInfo.second, materialInfo.third)
+        add(materialInfo.first, estimate.areaSquareMeters, "м²", materialPrice, estimate.canvasCost)
 
-        fun price(code: String, fallback: Double) = itemPrices[code] ?: fallback.coerceAtLeast(0.0)
-        val canvasPrices = JSONObject()
-            .put("pvc_matte", if (materialType == "pvc_matte") safeCanvasPrice else price("canvas.pvc_matte", 290.0))
-            .put("pvc_glossy", if (materialType == "pvc_glossy") safeCanvasPrice else price("canvas.pvc_glossy", 310.0))
-            .put("pvc_satin", if (materialType == "pvc_satin") safeCanvasPrice else price("canvas.pvc_satin", 310.0))
-            .put("fabric", if (materialType == "fabric") safeCanvasPrice else price("canvas.fabric", 890.0))
-            .put("fireproof_km2", if (materialType == "fireproof_km2") safeCanvasPrice else price("canvas.fireproof_km2", 480.0))
-            .put("acoustic", if (materialType == "acoustic") safeCanvasPrice else price("canvas.acoustic", 980.0))
-        val profilePrices = JSONObject()
-            .put("standard_alu", if (profileType == "standard_alu") safeProfilePrice else price("profile.standard_alu", 130.0))
-            .put("pvc", if (profileType == "pvc") safeProfilePrice else price("profile.pvc", 90.0))
-            .put("shadow_kraab", if (profileType == "shadow_kraab") safeProfilePrice else price("profile.shadow_kraab", 380.0))
-            .put("floating_led", if (profileType == "floating_led") safeProfilePrice else price("profile.floating_led", 420.0))
-            .put("slott_tracks", if (profileType == "slott_tracks") safeProfilePrice else price("profile.slott_tracks", 550.0))
+        val profileInfo = when (estimate.profileType) {
+            "pvc" -> Triple("ПВХ профіль", "profile.pvc", 90.0)
+            "shadow_kraab" -> Triple("Тіньовий профіль KRAAB", "profile.shadow_kraab", 380.0)
+            "floating_led" -> Triple("Профіль для парящої стелі LED", "profile.floating_led", 420.0)
+            "slott_tracks" -> Triple("Слот / трекова система", "profile.slott_tracks", 550.0)
+            else -> Triple("Стандартний алюмінієвий профіль", "profile.standard_alu", 130.0)
+        }
+        val profileQty = estimate.perimeterMeters
+        val profilePrice = if (profileQty > 0) estimate.profileCost / profileQty else price(profileInfo.second, profileInfo.third)
+        add(profileInfo.first, profileQty, "м.п.", profilePrice, estimate.profileCost)
 
-        val request = JSONObject()
-            .put("geometry", JSONObject()
-                .put("shape", "rectangle")
-                .put("length", safeLength)
-                .put("width", safeWidth))
-            .put("cost", JSONObject()
-                .put("materialType", materialType)
-                .put("profileType", profileType)
-                .put("complexity", options.complexity)
-                .put("options", JSONObject()
-                    .put("lightLinesMeters", options.lightLinesMeters.coerceAtLeast(0.0))
-                    .put("shadowProfileMeters", options.shadowProfileMeters.coerceAtLeast(0.0))
-                    .put("floatingCeilingMeters", options.floatingCeilingMeters.coerceAtLeast(0.0))
-                    .put("chandeliersCount", options.chandeliersCount.coerceAtLeast(0.0))
-                    .put("spotsGX53Count", options.spotsGX53Count.coerceAtLeast(0.0))
-                    .put("pipePassCount", options.pipePassCount.coerceAtLeast(0.0))
-                    .put("curtainNicheMeters", options.curtainNicheMeters.coerceAtLeast(0.0))
-                    .put("extraCorners", options.extraCorners.coerceAtLeast(0.0))
-                    .put("hardWallMeters", options.hardWallMeters.coerceAtLeast(0.0))))
-            .put("prices", JSONObject()
-                .put("canvasPrices", canvasPrices)
-                .put("profilePrices", profilePrices)
-                .put("multilevelPerMeterCost", price("work.multilevel", 650.0))
-                .put("curvedPerMeterCost", price("work.curved", 350.0))
-                .put("lightLinePerMeter", price("light.line", 850.0))
-                .put("shadowProfilePerMeter", price("work.shadow_profile", 380.0))
-                .put("floatingProfilePerMeter", price("work.floating_ceiling", 420.0))
-                .put("chandelierInstallation", price("light.chandelier", 350.0))
-                .put("spotInstallation", price("light.spot_gx53", 220.0))
-                .put("pipePass", price("work.pipe_pass", 180.0))
-                .put("curtainNichePerMeter", price("work.curtain_niche", 450.0))
-                .put("extraCornerCost", price("work.extra_corner", 90.0))
-                .put("hardWallPerMeter", price("work.hard_wall", 220.0)))
-
-        val goResult = runCatching { callGoCore(request.toString()) }.getOrNull()
-        if (goResult != null) {
-            val response = JSONObject(goResult)
-            if (!response.has("error") || response.isNull("error")) {
-                val geometry = response.getJSONObject("geometry")
-                val cost = response.getJSONObject("cost")
-                return CeilingEstimate(
-                    area = geometry.optDouble("area"),
-                    perimeter = geometry.optDouble("perimeter"),
-                    canvasCost = cost.optDouble("canvasCost"),
-                    profileCost = cost.optDouble("profileCost"),
-                    complexityCost = cost.optDouble("complexityCost"),
-                    optionsCost = cost.optDouble("optionsCost"),
-                    total = cost.optDouble("totalCost"),
-                    engine = "Go"
-                )
+        when (estimate.complexity) {
+            "multilevel" -> {
+                val qty = max(2.0, round(estimate.perimeterMeters * .35 * 10.0) / 10.0)
+                add("Багаторівнева конструкція", qty, "м.п.", price("work.multilevel", 650.0), estimate.complexityCost)
+            }
+            "curved" -> {
+                val qty = max(2.0, round(estimate.perimeterMeters * .25 * 10.0) / 10.0)
+                add("Криволінійна конструкція", qty, "м.п.", price("work.curved", 350.0), estimate.complexityCost)
             }
         }
 
-        val area = kotlin.math.round(safeLength * safeWidth * 100.0) / 100.0
-        val perimeter = kotlin.math.round(2 * (safeLength + safeWidth) * 100.0) / 100.0
-        val canvas = kotlin.math.round(area * safeCanvasPrice)
-        val profile = kotlin.math.round(perimeter * safeProfilePrice)
-        return CeilingEstimate(area, perimeter, canvas, profile, 0.0, 0.0, canvas + profile)
+        val optionRows = listOf(
+            Triple("Світлова лінія", "lightLineMeters", "light.line") to ("м.п." to 850.0),
+            Triple("Додатковий тіньовий профіль", "shadowProfileMeters", "work.shadow_profile") to ("м.п." to 380.0),
+            Triple("Додатковий парящий профіль", "floatingCeilingMeters", "work.floating_ceiling") to ("м.п." to 420.0),
+            Triple("Монтаж люстри", "chandeliersCount", "light.chandelier") to ("шт." to 350.0),
+            Triple("Точковий світильник GX53", "spotsCount", "light.spot_gx53") to ("шт." to 220.0),
+            Triple("Обхід труби", "pipePassCount", "work.pipe_pass") to ("шт." to 180.0),
+            Triple("Ніша для штор", "curtainNicheMeters", "work.curtain_niche") to ("м.п." to 450.0),
+            Triple("Додатковий кут", "extraCorners", "work.extra_corner") to ("шт." to 90.0),
+            Triple("Складна стіна", "hardWallMeters", "work.hard_wall") to ("м.п." to 220.0)
+        )
+        optionRows.forEach { (spec, unitSpec) ->
+            val (title, key, code) = spec
+            val (unit, fallback) = unitSpec
+            val qty = quantity(key)
+            if (key == "shadowProfileMeters" && estimate.profileType == "shadow_kraab") return@forEach
+            if (key == "floatingCeilingMeters" && estimate.profileType == "floating_led") return@forEach
+            add(title, qty, unit, price(code, fallback))
+        }
+
+        // Preserve the exact stored total if line-level rounding differs by a few currency units.
+        val delta = round(estimate.totalCost - rows.sumOf { it.total })
+        if (delta != 0.0) rows += EstimateLineItem("Коригування округлення", 1.0, "посл.", delta, delta)
+        return rows
     }
 
-    private fun callGoCore(json: String): String {
-        val bindingClass = Class.forName("com.andreyceilings.core.Mobileapi")
-        val method = bindingClass.methods.firstOrNull {
-            it.name.equals("calculateJSON", ignoreCase = true) &&
-                it.parameterTypes.contentEquals(arrayOf(String::class.java))
-        } ?: error("CalculateJSON method not found in gomobile binding")
-        return method.invoke(null, json) as String
+    fun toJson(rows: List<EstimateLineItem>): JSONArray = JSONArray().also { array ->
+        rows.forEach { row -> array.put(JSONObject()
+            .put("title", row.title).put("quantity", row.quantity).put("unit", row.unit)
+            .put("unitPrice", row.unitPrice).put("total", row.total)) }
     }
+
+    fun fromJson(detailsJson: String): List<EstimateLineItem> = runCatching {
+        val array = JSONObject(detailsJson).optJSONArray("lineItems") ?: return emptyList()
+        (0 until array.length()).mapNotNull { i ->
+            val item = array.optJSONObject(i) ?: return@mapNotNull null
+            EstimateLineItem(item.optString("title"), item.optDouble("quantity"), item.optString("unit"), item.optDouble("unitPrice"), item.optDouble("total"))
+        }
+    }.getOrDefault(emptyList())
 }
