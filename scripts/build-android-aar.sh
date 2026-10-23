@@ -1,19 +1,32 @@
+
 #!/usr/bin/env bash
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+GO_CORE="$ROOT/go-core"
 mkdir -p "$ROOT/app/libs"
 
 if ! command -v gomobile >/dev/null 2>&1; then
-  echo "gomobile was not found. Install it with:" >&2
-  echo "  go install golang.org/x/mobile/cmd/gomobile@latest" >&2
-  exit 1
+  echo "Installing gomobile..."
+  GOBIN="$(go env GOPATH)/bin"
+  export PATH="$GOBIN:$PATH"
+  go install golang.org/x/mobile/cmd/gomobile@latest
 fi
+
+export PATH="$(go env GOPATH)/bin:$PATH"
+
+cd "$GO_CORE"
+
+# Add the mobile binding dependency to the module.
+go get golang.org/x/mobile/cmd/gomobile
+go mod tidy
+
+gomobile init
 
 gomobile bind \
   -target=android \
   -javapkg=com.andreyceilings.core \
   -o "$ROOT/app/libs/ceilings-core.aar" \
-  "$ROOT/go-core/mobileapi"
+  "$GO_CORE/mobileapi"
 
 echo "Generated: app/libs/ceilings-core.aar"
