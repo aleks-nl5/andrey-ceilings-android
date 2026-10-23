@@ -1,7 +1,7 @@
 package com.andreyceilings.app.core
 
 import com.andreyceilings.app.data.db.PriceItemEntity
-import com.andreyceilings.core.Mobileapi
+import com.andreyceilings.core.mobileapi.Mobileapi
 import org.json.JSONObject
 
 /** Values returned by the Go calculation engine. */
