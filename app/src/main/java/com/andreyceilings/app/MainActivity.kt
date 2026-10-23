@@ -120,14 +120,21 @@ private fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?) {
         hardWallMeters = hardWallMeters.toSafeDouble(),
         complexity = complexity
     )
-    val estimate = remember(length, width, pricePerM2, profilePrice, priceItems, calculatorOptions) {
-        CeilingCalculator.estimate(
-            length.toSafeDouble(), width.toSafeDouble(),
-            pricePerM2.toSafeDouble(), profilePrice.toSafeDouble(),
-            priceItems = priceItems, options = calculatorOptions,
-            materialType = materialCode(material).removePrefix("canvas."),
-            profileType = profileCode(profileType).removePrefix("profile.")
-        )
+    // Go is the only calculation engine. Failure is surfaced to the user; no Kotlin fallback exists.
+    val calculation = remember(length, width, pricePerM2, profilePrice, priceItems, calculatorOptions, material, profileType) {
+        runCatching {
+            CeilingCalculator.estimate(
+                length.toSafeDouble(), width.toSafeDouble(),
+                pricePerM2.toSafeDouble(), profilePrice.toSafeDouble(),
+                priceItems = priceItems, options = calculatorOptions,
+                materialType = materialCode(material).removePrefix("canvas."),
+                profileType = profileCode(profileType).removePrefix("profile.")
+            )
+        }
+    }
+    val estimate = calculation.getOrNull()
+    val calculationError = calculation.exceptionOrNull()?.let { error ->
+        error.message?.takeIf { it.isNotBlank() } ?: "Невідома помилка Go-рушія"
     }
 
     Scaffold(
@@ -184,6 +191,7 @@ private fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?) {
                     material = material, onMaterial = { material = it },
                     profileType = profileType, onProfileType = { profileType = it },
                     estimate = estimate,
+                    calculationError = calculationError,
                     priceItems = priceItems,
                     priceItemsAvailable = priceItems.isNotEmpty(),
                     lightLineMeters = lightLineMeters, onLightLineMeters = { lightLineMeters = it },
@@ -266,7 +274,8 @@ private fun CalculatorScreen(
     profilePrice: String, onProfilePrice: (String) -> Unit,
     material: String, onMaterial: (String) -> Unit,
     profileType: String, onProfileType: (String) -> Unit,
-    estimate: CeilingEstimate,
+    estimate: CeilingEstimate?,
+    calculationError: String?,
     priceItems: List<PriceItemEntity>,
     priceItemsAvailable: Boolean,
     lightLineMeters: String, onLightLineMeters: (String) -> Unit,
@@ -342,25 +351,36 @@ private fun CalculatorScreen(
             }
         }
     }
-    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) {
-        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("Результат", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-            Text("Площа: ${formatNumber(estimate.area)} м²")
-            Text("Периметр: ${formatNumber(estimate.perimeter)} м")
-            HorizontalDivider()
-            Text("Полотно: ${money(estimate.canvasCost)}")
-            Text("Профіль: ${money(estimate.profileCost)}")
-            Text("Складність: ${money(estimate.complexityCost)}")
-            Text("Додаткові роботи: ${money(estimate.optionsCost)}")
-            Text("Разом: ${money(estimate.total)}", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+    if (estimate != null) {
+        Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) {
+            Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Результат · Go", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Text("Площа: ${formatNumber(estimate.area)} м²")
+                Text("Периметр: ${formatNumber(estimate.perimeter)} м")
+                HorizontalDivider()
+                Text("Полотно: ${money(estimate.canvasCost)}")
+                Text("Профіль: ${money(estimate.profileCost)}")
+                Text("Складність: ${money(estimate.complexityCost)}")
+                Text("Додаткові роботи: ${money(estimate.optionsCost)}")
+                Text("Разом: ${money(estimate.total)}", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+            }
+        }
+    } else {
+        Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text("Go-рушій: помилка", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Text("Розрахунок не виконано. Kotlin не підміняє Go.")
+                Text(calculationError ?: "Go не повернув результат.", style = MaterialTheme.typography.bodySmall)
+            }
         }
     }
-    Button(onClick = { showSaveDialog = true }, modifier = Modifier.fillMaxWidth(), enabled = database != null && projects.isNotEmpty() && estimate.area > 0.0) {
+    Button(onClick = { showSaveDialog = true }, modifier = Modifier.fillMaxWidth(), enabled = database != null && projects.isNotEmpty() && estimate != null && estimate.area > 0.0) {
         Icon(Icons.Default.Save, null); Spacer(Modifier.width(8.dp)); Text("Зберегти кошторис до об’єкта")
     }
     if (projects.isEmpty()) Text("Щоб зберегти кошторис, спочатку створіть об’єкт у вкладці «Об’єкти».", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     saveError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-    if (showSaveDialog && database != null && projects.isNotEmpty()) SaveEstimateDialog(
+    val estimateForSave = estimate
+    if (showSaveDialog && database != null && projects.isNotEmpty() && estimateForSave != null) SaveEstimateDialog(
         projects = projects,
         defaultName = "Кімната ${formatNumber(length.toSafeDouble())} × ${formatNumber(width.toSafeDouble())} м",
         onDismiss = { showSaveDialog = false },
@@ -379,9 +399,9 @@ private fun CalculatorScreen(
                 runCatching {
                     val estimateDraft = EstimateEntity(
                         projectId = projectId, name = name.trim(), material = material, profileType = profileType, complexity = complexity,
-                        lengthMeters = length.toSafeDouble(), widthMeters = width.toSafeDouble(), areaSquareMeters = estimate.area, perimeterMeters = estimate.perimeter,
-                        canvasCost = estimate.canvasCost, profileCost = estimate.profileCost, complexityCost = estimate.complexityCost,
-                        optionsCost = estimate.optionsCost, totalCost = estimate.total, detailsJson = details.toString()
+                        lengthMeters = length.toSafeDouble(), widthMeters = width.toSafeDouble(), areaSquareMeters = estimateForSave.area, perimeterMeters = estimateForSave.perimeter,
+                        canvasCost = estimateForSave.canvasCost, profileCost = estimateForSave.profileCost, complexityCost = estimateForSave.complexityCost,
+                        optionsCost = estimateForSave.optionsCost, totalCost = estimateForSave.total, detailsJson = details.toString()
                     )
                     val lineItems = com.andreyceilings.app.core.EstimateLineItems.create(estimateDraft, details, priceItems)
                     details.put("lineItems", com.andreyceilings.app.core.EstimateLineItems.toJson(lineItems))
@@ -392,7 +412,11 @@ private fun CalculatorScreen(
         }
     )
     Text(if (priceItemsAvailable) "Ціни матеріалу й профілю синхронізуються із зашифрованим прайс-листом. Зміни в прайсі впливають на нові розрахунки." else "Прайс-лист ще не завантажено; використовуються тимчасові значення.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-    Text("Рушій розрахунку: ${estimate.engine}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    Text(
+        if (estimate != null) "Рушій розрахунку: Go · працює" else "Рушій розрахунку: Go · помилка",
+        style = MaterialTheme.typography.labelSmall,
+        color = if (estimate != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
+    )
 }
 
 @Composable
