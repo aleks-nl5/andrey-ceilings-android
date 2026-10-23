@@ -24,6 +24,8 @@ go mod tidy
 
 gomobile init
 
+export ANDROID_API=23
+
 gomobile bind \
   -target=android \
   -javapkg=com.andreyceilings.core \
