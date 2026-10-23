@@ -207,7 +207,7 @@ private fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?) {
                 )
                 AppTab.ESTIMATES -> EstimatesScreen(database)
                 AppTab.PRICES -> PriceListScreen(database)
-                AppTab.SETTINGS -> SettingsScreen(databaseStatus)
+                AppTab.SETTINGS -> SettingsScreen(databaseStatus, database)
             }
         }
     }
