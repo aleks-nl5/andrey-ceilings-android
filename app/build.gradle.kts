@@ -24,6 +24,26 @@ android {
         }
     }
 
+    signingConfigs {
+        create("release") {
+            val signingFile = System.getenv("ANDROID_KEYSTORE_FILE")
+            if (!signingFile.isNullOrBlank()) {
+                storeFile = file(signingFile)
+                storePassword = System.getenv("ANDROID_KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("ANDROID_KEY_ALIAS")
+                keyPassword = System.getenv("ANDROID_KEY_PASSWORD")
+                storeType = "PKCS12"
+            }
+        }
+    }
+
+    buildTypes {
+        getByName("release") {
+            signingConfig = signingConfigs.getByName("release")
+            isMinifyEnabled = false
+        }
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_21
         targetCompatibility = JavaVersion.VERSION_21
