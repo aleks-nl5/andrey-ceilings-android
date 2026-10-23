@@ -472,8 +472,18 @@ private fun SettingsScreen(databaseStatus: String, database: CeilingsDatabase?) 
                                 val pageCount = sqlDb.query("PRAGMA page_count").use { cursor ->
                                     if (cursor.moveToFirst()) cursor.getLong(0) else -1L
                                 }
+                                val cipherVersion = runCatching {
+                                    sqlDb.query("PRAGMA cipher_version").use { cursor ->
+                                        if (cursor.moveToFirst()) cursor.getString(0)?.takeIf { it.isNotBlank() } else null
+                                    }
+                                }.getOrNull()
+                                val schemaCheck = runCatching {
+                                    sqlDb.query("SELECT count(*) FROM sqlite_master").use { cursor ->
+                                        if (cursor.moveToFirst()) cursor.getLong(0) else -1L
+                                    }
+                                }
                                 val dbLogicalBytes = if (pageSize > 0 && pageCount >= 0) pageSize * pageCount else -1L
-                                "Записи в БД:\nКлієнти: $clients\nОб’єкти: $projects\nЗаміри: $measurements\nКошториси: $estimates\nПозиції прайсу: $prices\n\nSQLite:\nРежим журналювання: $journalMode\nРозмір сторінки: $pageSize байт\nКількість сторінок: $pageCount\nЛогічний розмір БД: $dbLogicalBytes байт\n\nФайли:\n$fileInfo\n\nВідкритий заголовок SQLite: " +
+                                "Записи в БД:\nКлієнти: $clients\nОб’єкти: $projects\nЗаміри: $measurements\nКошториси: $estimates\nПозиції прайсу: $prices\n\nSQLite:\nРежим журналювання: $journalMode\nРозмір сторінки: $pageSize байт\nКількість сторінок: $pageCount\nЛогічний розмір БД: $dbLogicalBytes байт\n\nФайли:\n$fileInfo\n\nПеревірка SQLCipher:\nВерсія cipher: ${cipherVersion ?: "не повернута (це саме по собі не доводить відсутність SQLCipher)"}\nЧитання системної схеми: " + schemaCheck.fold({ "ПОМИЛКА — ${it.message ?: "невідома помилка"}" }, { count -> if (count >= 0) "успішно (${count} об’єктів)" else "не вдалося" }) + "\n\nВідкритий заголовок SQLite: " +
                                     if (plainSqlite) "ТАК — перевірте конфігурацію шифрування." else "не виявлено (узгоджується із SQLCipher, але не є самостійним доказом шифрування)."
                             }.getOrElse { "Перевірка не вдалася: ${it.message ?: "невідома помилка"}" }
                         }
