@@ -449,7 +449,7 @@ private fun SettingsScreen(databaseStatus: String, database: CeilingsDatabase?) 
                                 val estimates = db.estimates().count()
                                 val prices = db.priceItems().count()
                                 val files = listOf(file, java.io.File("$path-wal"), java.io.File("$path-shm"))
-                                val fileInfo = files.joinToString("\\n") { candidate ->
+                                val fileInfo = files.joinToString("\n") { candidate ->
                                     "${candidate.name}: " + if (candidate.exists()) "${candidate.length()} байт" else "відсутній"
                                 }
                                 val header = if (file.exists()) file.inputStream().use { input ->
@@ -463,7 +463,7 @@ private fun SettingsScreen(databaseStatus: String, database: CeilingsDatabase?) 
                                     }
                                 } else ByteArray(0)
                                 val plainSqlite = header.toString(Charsets.US_ASCII).startsWith("SQLite format 3")
-                                "Записи в БД:\\nКлієнти: $clients\\nОб’єкти: $projects\\nЗаміри: $measurements\\nКошториси: $estimates\\nПозиції прайсу: $prices\\n\\nФайли:\\n$fileInfo\\n\\nВідкритий заголовок SQLite: " +
+                                "Записи в БД:\nКлієнти: $clients\nОб’єкти: $projects\nЗаміри: $measurements\nКошториси: $estimates\nПозиції прайсу: $prices\n\nФайли:\n$fileInfo\n\nВідкритий заголовок SQLite: " +
                                     if (plainSqlite) "ТАК — перевірте конфігурацію шифрування." else "не виявлено (узгоджується із SQLCipher, але не є самостійним доказом шифрування)."
                             }.getOrElse { "Перевірка не вдалася: ${it.message ?: "невідома помилка"}" }
                         }
