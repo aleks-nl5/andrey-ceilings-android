@@ -56,6 +56,12 @@ abstract class CeilingsDatabase : RoomDatabase() {
             INSTANCE ?: build(context.applicationContext).also { INSTANCE = it }
         }
 
+        /** Close the current Room instance before replacing the encrypted database file. */
+        fun closeAndReset() = synchronized(this) {
+            INSTANCE?.close()
+            INSTANCE = null
+        }
+
         private fun build(context: Context): CeilingsDatabase {
             SQLiteDatabase.loadLibs(context)
             val passphrase = DatabaseKeyManager.getOrCreatePassphrase(context)

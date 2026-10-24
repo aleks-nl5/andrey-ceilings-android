@@ -59,13 +59,13 @@ class MainActivity : ComponentActivity() {
                 databaseStatus.value = "Помилка відкриття захищеної бази. Дані не завантажено."
             }
         }
-        setContent { CeilingsTheme { CeilingsApp(databaseStatus.value, databaseState.value) } }
+        setContent { CeilingsTheme { CeilingsApp(databaseStatus.value, databaseState.value) { refreshed -> databaseState.value = refreshed; databaseStatus.value = "Зашифрована база даних активна" } } }
     }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?) {
+private fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, onDatabaseReplaced: (CeilingsDatabase) -> Unit) {
     var tab by remember { mutableStateOf(AppTab.DASHBOARD) }
     var length by remember { mutableStateOf("5.4") }
     var width by remember { mutableStateOf("3.8") }
@@ -211,7 +211,7 @@ private fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?) {
                 )
                 AppTab.ESTIMATES -> EstimatesScreen(database)
                 AppTab.PRICES -> PriceListScreen(database)
-                AppTab.SETTINGS -> SettingsScreen(databaseStatus, database)
+                AppTab.SETTINGS -> SettingsScreen(databaseStatus, database, onDatabaseReplaced)
             }
         }
     }
@@ -424,12 +424,40 @@ private fun CalculatorScreen(
 }
 
 @Composable
-private fun SettingsScreen(databaseStatus: String, database: CeilingsDatabase?) {
+private fun SettingsScreen(databaseStatus: String, database: CeilingsDatabase?, onDatabaseReplaced: (CeilingsDatabase) -> Unit) {
     var fileCheck by remember { mutableStateOf("Натисніть кнопку, щоб перевірити записи та файли бази даних.") }
     var exportStatus by remember { mutableStateOf("Експорт створює копію зашифрованого файла БД без ключа.") }
     var pendingExportFile by remember { mutableStateOf<java.io.File?>(null) }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
+    var backupStatus by remember { mutableStateOf("Оберіть резервну копію для перевірки або відновлення.") }
+    var backupAction by remember { mutableStateOf("verify") }
+    var selectedBackup by remember { mutableStateOf<java.io.File?>(null) }
+    var showRestoreConfirmation by remember { mutableStateOf(false) }
+    val backupPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
+        if (uri == null) backupStatus = "Вибір резервної копії скасовано."
+        else scope.launch {
+            backupStatus = "Перевіряю резервну копію…"
+            val result = withContext(Dispatchers.IO) {
+                runCatching {
+                    val temp = java.io.File(context.cacheDir, "ceilings_backup_selected.tmp")
+                    context.contentResolver.openInputStream(uri)?.use { input -> temp.outputStream().use { output -> input.copyTo(output) } }
+                        ?: error("Не вдалося прочитати вибраний файл.")
+                    check(temp.isFile && temp.length() > 0L) { "Файл порожній." }
+                    verifyEncryptedBackup(context, temp)
+                    temp
+                }
+            }
+            result.onSuccess { file ->
+                selectedBackup?.delete()
+                selectedBackup = file
+                if (backupAction == "restore") {
+                    backupStatus = "Копію перевірено: SQLCipher відкрив файл, integrity_check = ok, схема читається з ключем."
+                    showRestoreConfirmation = true
+                } else backupStatus = "Перевірку пройдено: integrity_check = ok, схема доступна з ключем; звичайний SQLite без ключа не прочитав схему."
+            }.onFailure { backupStatus = "Перевірка не пройдена: ${it.message ?: "невідома помилка"}. Поточну БД не змінено." }
+        }
+    }
     val exportDocumentLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")) { destination: Uri? ->
         val source = pendingExportFile
         pendingExportFile = null
@@ -542,6 +570,60 @@ private fun SettingsScreen(databaseStatus: String, database: CeilingsDatabase?) 
                 enabled = database != null
             ) { Text("Перевірити WAL checkpoint") }
             HorizontalDivider()
+            Text("Перевірка та імпорт резервної копії", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            Text("Перевірка не змінює поточні дані. Імпорт замінить поточну базу лише після успішної перевірки та підтвердження.", style = MaterialTheme.typography.bodySmall)
+            Text(backupStatus, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            OutlinedButton(onClick = { backupAction = "verify"; backupPicker.launch(arrayOf("application/octet-stream", "application/x-sqlite3", "application/vnd.sqlite3", "*/*")) }, modifier = Modifier.fillMaxWidth(), enabled = database != null) { Text("Перевірити резервну копію") }
+            Button(onClick = { backupAction = "restore"; backupPicker.launch(arrayOf("application/octet-stream", "application/x-sqlite3", "application/vnd.sqlite3", "*/*")) }, modifier = Modifier.fillMaxWidth(), enabled = database != null) { Text("Імпортувати БД") }
+            if (showRestoreConfirmation) {
+                AlertDialog(
+                    onDismissRequest = { showRestoreConfirmation = false },
+                    title = { Text("Замінити поточну базу даних?") },
+                    text = { Text("Резервну копію перевірено. Поточні клієнти, об’єкти, заміри, кошториси та прайс буде замінено даними з копії. Продовжити?") },
+                    confirmButton = { TextButton(onClick = {
+                        showRestoreConfirmation = false
+                        val source = selectedBackup
+                        scope.launch {
+                            backupStatus = "Відновлюю базу даних…"
+                            val result = withContext(Dispatchers.IO) { runCatching {
+                                val input = source ?: error("Файл резервної копії не вибрано.")
+                                val live = context.getDatabasePath("andrey_ceilings_secure.db")
+                                val old = java.io.File(context.cacheDir, "ceilings_database_before_restore.tmp")
+                                val staged = java.io.File(context.cacheDir, "ceilings_database_restore.tmp")
+                                input.inputStream().use { src -> staged.outputStream().use { dst -> src.copyTo(dst) } }
+                                verifyEncryptedBackup(context, staged)
+                                val current = database ?: error("Поточна БД ще не готова.")
+                                current.openHelper.writableDatabase.query("PRAGMA wal_checkpoint(FULL)").use { cursor ->
+                                    check(cursor.moveToFirst() && cursor.getLong(0) == 0L) { "Не вдалося завершити WAL checkpoint поточної БД." }
+                                }
+                                CeilingsDatabase.closeAndReset()
+                                java.io.File("${live.absolutePath}-wal").delete()
+                                java.io.File("${live.absolutePath}-shm").delete()
+                                old.delete()
+                                if (live.exists()) live.copyTo(old, overwrite = true)
+                                try {
+                                    staged.copyTo(live, overwrite = true)
+                                    verifyEncryptedBackup(context, live)
+                                    val reopened = CeilingsDatabase.get(context.applicationContext)
+                                    reopened.openHelper.writableDatabase
+                                    old.delete()
+                                    reopened
+                                } catch (failure: Exception) {
+                                    CeilingsDatabase.closeAndReset()
+                                    if (old.exists()) old.copyTo(live, overwrite = true)
+                                    java.io.File("${live.absolutePath}-wal").delete()
+                                    java.io.File("${live.absolutePath}-shm").delete()
+                                    throw failure
+                                } finally { staged.delete(); input.delete() }
+                            } }
+                            result.onSuccess { restored -> onDatabaseReplaced(restored); selectedBackup = null; backupStatus = "Імпорт успішний. Відновлену зашифровану БД відкрито; перевірте записи в діагностиці." }
+                                .onFailure { backupStatus = "Імпорт не виконано: ${it.message ?: "невідома помилка"}. Попередню БД залишено або відновлено, якщо це було можливо." }
+                        }
+                    }) { Text("Замінити БД") } },
+                    dismissButton = { TextButton(onClick = { showRestoreConfirmation = false }) { Text("Скасувати") } }
+                )
+            }
+            HorizontalDivider()
             Text("Експорт тестової копії SQLCipher", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
             Text("Створює копію файла БД у вибрану папку. Ключ не експортується. Зберігайте файл приватно.", style = MaterialTheme.typography.bodySmall)
             Card(
@@ -649,6 +731,34 @@ private fun SettingsScreen(databaseStatus: String, database: CeilingsDatabase?) 
         }
     }
 }
+private fun verifyEncryptedBackup(context: android.content.Context, file: java.io.File) {
+    check(file.isFile && file.length() > 0L) { "Файл відсутній або порожній." }
+    val passphrase = com.andreyceilings.app.data.security.DatabaseKeyManager.getOrCreatePassphrase(context.applicationContext)
+    try {
+        net.sqlcipher.database.SQLiteDatabase.loadLibs(context)
+        val verifier = androidx.room.Room.databaseBuilder(context.applicationContext, CeilingsDatabase::class.java, file.absolutePath)
+            .openHelperFactory(net.sqlcipher.database.SupportFactory(passphrase.copyOf())).build()
+        try {
+            val db = verifier.openHelper.readableDatabase
+            val integrity = db.query("PRAGMA integrity_check").use { cursor ->
+                check(cursor.moveToFirst()) { "SQLCipher не повернув результат integrity_check." }; cursor.getString(0)
+            }
+            check(integrity.equals("ok", ignoreCase = true)) { "integrity_check: $integrity" }
+            val count = db.query("SELECT count(*) FROM sqlite_master").use { cursor ->
+                check(cursor.moveToFirst()) { "Не вдалося прочитати схему." }; cursor.getLong(0)
+            }
+            check(count > 0L) { "У файлі немає схеми БД." }
+        } finally { verifier.close() }
+    } finally { passphrase.fill(0) }
+    var plain: android.database.sqlite.SQLiteDatabase? = null
+    var unreadable = false
+    try {
+        plain = android.database.sqlite.SQLiteDatabase.openDatabase(file.absolutePath, null, android.database.sqlite.SQLiteDatabase.OPEN_READONLY)
+        plain.rawQuery("SELECT count(*) FROM sqlite_master", null).use { cursor -> unreadable = !cursor.moveToFirst() }
+    } catch (_: Exception) { unreadable = true } finally { plain?.close() }
+    check(unreadable) { "Звичайний SQLite прочитав схему без ключа." }
+}
+
 private fun calculatorOptionsForSave(value: String): Double = value.toSafeDouble()
 
 private fun formatNumber(value: Double) = String.format("%.2f", value)
