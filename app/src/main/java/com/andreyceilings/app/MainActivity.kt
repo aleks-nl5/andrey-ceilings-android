@@ -9,6 +9,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import com.andreyceilings.app.data.db.CeilingsDatabase
+import com.andreyceilings.app.data.backup.BackupPasswordStore
+import com.andreyceilings.app.data.backup.AutomaticBackupScheduler
+import com.andreyceilings.app.data.backup.AutomaticBackupSettings
+import com.andreyceilings.app.data.backup.BackupSchedule
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.*
@@ -42,6 +46,15 @@ private enum class AppTab(val title: String) {
 class MainActivity : ComponentActivity() {
     private val databaseStatus = mutableStateOf("Перевірка зашифрованої бази…")
     private val databaseState = mutableStateOf<CeilingsDatabase?>(null)
+
+    override fun onStop() {
+        if (AutomaticBackupSettings.backgroundEnabled(applicationContext) &&
+            AutomaticBackupSettings.anyEnabled(applicationContext) &&
+            BackupPasswordStore.folder(applicationContext) != null) {
+            AutomaticBackupScheduler.triggerOnBackground(applicationContext)
+        }
+        super.onStop()
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -423,6 +436,7 @@ private fun CalculatorScreen(
     )
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun SettingsScreen(databaseStatus: String, database: CeilingsDatabase?, onDatabaseReplaced: (CeilingsDatabase) -> Unit) {
     var fileCheck by remember { mutableStateOf("Натисніть кнопку, щоб перевірити записи та файли бази даних.") }
@@ -430,42 +444,73 @@ private fun SettingsScreen(databaseStatus: String, database: CeilingsDatabase?, 
     var pendingExportFile by remember { mutableStateOf<java.io.File?>(null) }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
+    var automaticPassword by remember { mutableStateOf("") }
+    var automaticStatus by remember { mutableStateOf("Автоматичні копії вимкнені, доки не вибрано папку й пароль.") }
+    var showDisableAllConfirmation by remember { mutableStateOf(false) }
+    var selectedFolderLabel by remember { mutableStateOf(BackupPasswordStore.folder(context)?.lastPathSegment ?: "Папку не вибрано") }
+    val folderPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri: Uri? ->
+        if (uri == null) {
+            automaticStatus = "Вибір папки скасовано."
+        } else {
+            runCatching {
+                context.contentResolver.takePersistableUriPermission(uri,
+                    android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION or android.content.Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+                BackupPasswordStore.setFolder(context, uri)
+                selectedFolderLabel = uri.lastPathSegment ?: uri.toString()
+                automaticStatus = "Папку збережено. Збережіть пароль і ввімкніть резервування."
+            }.onFailure { automaticStatus = "Не вдалося зберегти папку: " + (it.message ?: "невідома помилка") }
+        }
+    }
     var backupStatus by remember { mutableStateOf("Оберіть резервну копію для перевірки або відновлення.") }
     var backupAction by remember { mutableStateOf("verify") }
     var selectedBackup by remember { mutableStateOf<java.io.File?>(null) }
     var showRestoreConfirmation by remember { mutableStateOf(false) }
+    var portablePassword by remember { mutableStateOf("") }
+    var restorePassword by remember { mutableStateOf("") }
+    var showImportPasswordDialog by remember { mutableStateOf(false) }
+    var portableStatus by remember { mutableStateOf("Переносна копія захищається окремим паролем.") }
+    var pendingPortableBackup by remember { mutableStateOf<ByteArray?>(null) }
+    val portableExportLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/octet-stream")
+    ) { destination: Uri? ->
+        val bytes = pendingPortableBackup
+        pendingPortableBackup = null
+        if (destination == null || bytes == null) {
+            bytes?.fill(0)
+            portableStatus = "Збереження переносної копії скасовано."
+        } else scope.launch {
+            portableStatus = withContext(Dispatchers.IO) {
+                runCatching {
+                    context.contentResolver.openOutputStream(destination, "w")?.use { it.write(bytes) }
+                        ?: error("Не вдалося відкрити файл для запису.")
+                    "Переносну резервну копію збережено. Для відновлення потрібен цей пароль."
+                }.getOrElse { "Не вдалося зберегти копію: ${it.message ?: "невідома помилка"}" }
+                    .also { bytes.fill(0) }
+            }
+        }
+    }
+    var pendingRestoreContents by remember { mutableStateOf<com.andreyceilings.app.data.security.PortableBackupPayload.Contents?>(null) }
     val backupPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
         if (uri == null) backupStatus = "Вибір резервної копії скасовано."
         else scope.launch {
-            backupStatus = "Перевіряю резервну копію…"
-            val result = withContext(Dispatchers.IO) {
-                runCatching {
-                    // Give every picker result its own file. Reusing a fixed path can
-                    // invalidate selectedBackup when a second verification/import starts.
-                    val temp = java.io.File.createTempFile("ceilings_backup_selected_", ".tmp", context.cacheDir)
-                    try {
-                        context.contentResolver.openInputStream(uri)?.use { input -> temp.outputStream().use { output -> input.copyTo(output) } }
-                            ?: error("Не вдалося прочитати вибраний файл.")
-                        check(temp.isFile && temp.length() > 0L) { "Файл порожній." }
-                        verifyEncryptedBackup(context, temp)
-                        temp
-                    } catch (failure: Exception) {
-                        temp.delete()
-                        throw failure
-                    }
-                }
-            }
-            result.onSuccess { file ->
-                // Delete the previous selection only after the new copy is ready and verified.
-                selectedBackup?.takeIf { it.absolutePath != file.absolutePath }?.delete()
-                selectedBackup = file
-                if (backupAction == "restore") {
-                    backupStatus = "Копію перевірено: SQLCipher відкрив файл, integrity_check = ok, схема читається з ключем."
-                    showRestoreConfirmation = true
-                } else backupStatus = "Перевірку пройдено: integrity_check = ok, схема доступна з ключем; звичайний SQLite без ключа не прочитав схему."
-            }.onFailure {
-                backupStatus = "Перевірка не пройдена: ${it.message ?: "невідома помилка"}. Поточну БД не змінено."
-            }
+            backupStatus = "Перевіряю переносну копію .stpb…"
+            val result = withContext(Dispatchers.IO) { runCatching {
+                val envelope = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                    ?: error("Не вдалося прочитати вибраний файл.")
+                try {
+                    check(envelope.isNotEmpty()) { "Файл порожній." }
+                    val password = restorePassword.toCharArray()
+                    try { com.andreyceilings.app.data.security.PortableBackupManager.validate(context, envelope, password) }
+                    finally { password.fill(Char.MIN_VALUE) }
+                } finally { envelope.fill(0) }
+            } }
+            result.onSuccess { contents ->
+                pendingRestoreContents?.let { it.database.fill(0); it.passphrase.fill(0) }
+                pendingRestoreContents = contents
+                backupStatus = "Пароль правильний, цілісність бази перевірено."
+                if (backupAction == "restore") showRestoreConfirmation = true
+                else { contents.database.fill(0); contents.passphrase.fill(0); pendingRestoreContents = null }
+            }.onFailure { backupStatus = "Перевірка .stpb не пройдена: ${it.message ?: "невідома помилка"}. Поточну БД не змінено." }
         }
     }
     val exportDocumentLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")) { destination: Uri? ->
@@ -583,56 +628,336 @@ private fun SettingsScreen(databaseStatus: String, database: CeilingsDatabase?, 
             Text("Перевірка та імпорт резервної копії", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
             Text("Перевірка не змінює поточні дані. Імпорт замінить поточну базу лише після успішної перевірки та підтвердження.", style = MaterialTheme.typography.bodySmall)
             Text(backupStatus, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            OutlinedButton(onClick = { backupAction = "verify"; backupPicker.launch(arrayOf("application/octet-stream", "application/x-sqlite3", "application/vnd.sqlite3", "*/*")) }, modifier = Modifier.fillMaxWidth(), enabled = database != null) { Text("Перевірити резервну копію") }
-            Button(onClick = { backupAction = "restore"; backupPicker.launch(arrayOf("application/octet-stream", "application/x-sqlite3", "application/vnd.sqlite3", "*/*")) }, modifier = Modifier.fillMaxWidth(), enabled = database != null) { Text("Імпортувати БД") }
+            OutlinedButton(onClick = { backupAction = "verify"; restorePassword = ""; showImportPasswordDialog = true }, modifier = Modifier.fillMaxWidth(), enabled = database != null) { Text("Перевірити резервну копію") }
+            Button(onClick = { backupAction = "restore"; restorePassword = ""; showImportPasswordDialog = true }, modifier = Modifier.fillMaxWidth(), enabled = database != null) { Text("Імпортувати резервну копію") }
+            if (showImportPasswordDialog) {
+                AlertDialog(
+                    onDismissRequest = { showImportPasswordDialog = false; restorePassword = "" },
+                    title = { Text("Пароль резервної копії") },
+                    text = {
+                        Column {
+                            Text("Введіть пароль, який використовувався під час створення цієї копії. Для автоматичної копії це пароль автоматичного резервування, для переносної — пароль, заданий під час її створення.")
+                            Spacer(Modifier.height(12.dp))
+                            OutlinedTextField(
+                                value = restorePassword,
+                                onValueChange = { restorePassword = it },
+                                label = { Text("Пароль") },
+                                singleLine = true,
+                                visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation()
+                            )
+                        }
+                    },
+                    confirmButton = {
+                        TextButton(onClick = {
+                            showImportPasswordDialog = false
+                            backupPicker.launch(arrayOf("application/octet-stream", "application/x-sqlite3", "application/vnd.sqlite3", "*/*"))
+                        }, enabled = restorePassword.isNotEmpty()) { Text("Вибрати копію") }
+                    },
+                    dismissButton = { TextButton(onClick = { showImportPasswordDialog = false; restorePassword = "" }) { Text("Скасувати") } }
+                )
+            }
             if (showRestoreConfirmation) {
                 AlertDialog(
-                    onDismissRequest = { showRestoreConfirmation = false },
-                    title = { Text("Замінити поточну базу даних?") },
-                    text = { Text("Резервну копію перевірено. Поточні клієнти, об’єкти, заміри, кошториси та прайс буде замінено даними з копії. Продовжити?") },
+                    onDismissRequest = { showRestoreConfirmation = false; pendingRestoreContents?.let { it.database.fill(0); it.passphrase.fill(0) }; pendingRestoreContents = null },
+                    title = { Text("Відновити переносну копію?") },
+                    text = { Text("Дані поточної бази буде замінено вмістом .stpb. Продовжити?") },
                     confirmButton = { TextButton(onClick = {
                         showRestoreConfirmation = false
-                        val source = selectedBackup
+                        val payload = pendingRestoreContents
+                        pendingRestoreContents = null
                         scope.launch {
-                            backupStatus = "Відновлюю базу даних…"
+                            backupStatus = "Відновлюю переносну копію…"
                             val result = withContext(Dispatchers.IO) { runCatching {
-                                val input = source ?: error("Файл резервної копії не вибрано.")
-                                val live = context.getDatabasePath("andrey_ceilings_secure.db")
-                                val old = java.io.File(context.cacheDir, "ceilings_database_before_restore.tmp")
-                                val staged = java.io.File(context.cacheDir, "ceilings_database_restore.tmp")
-                                input.inputStream().use { src -> staged.outputStream().use { dst -> src.copyTo(dst) } }
-                                verifyEncryptedBackup(context, staged)
-                                val current = database ?: error("Поточна БД ще не готова.")
-                                current.openHelper.writableDatabase.query("PRAGMA wal_checkpoint(FULL)").use { cursor ->
-                                    check(cursor.moveToFirst() && cursor.getLong(0) == 0L) { "Не вдалося завершити WAL checkpoint поточної БД." }
-                                }
-                                CeilingsDatabase.closeAndReset()
-                                java.io.File("${live.absolutePath}-wal").delete()
-                                java.io.File("${live.absolutePath}-shm").delete()
-                                old.delete()
-                                if (live.exists()) live.copyTo(old, overwrite = true)
+                                val contents = payload ?: error("Спочатку перевірте файл .stpb.")
+                                val appContext = context.applicationContext
+                                val live = appContext.getDatabasePath("andrey_ceilings_secure.db")
+                                val oldDb = java.io.File.createTempFile("ceilings_before_restore_", ".db", context.cacheDir)
+                                val oldKey = com.andreyceilings.app.data.security.DatabaseKeyManager.getOrCreatePassphrase(context)
+                                val wal = java.io.File("${live.absolutePath}-wal")
+                                val shm = java.io.File("${live.absolutePath}-shm")
+                                var oldSaved = false
+                                var keyChanged = false
                                 try {
-                                    staged.copyTo(live, overwrite = true)
-                                    verifyEncryptedBackup(context, live)
-                                    val reopened = CeilingsDatabase.get(context.applicationContext)
-                                    reopened.openHelper.writableDatabase
-                                    old.delete()
+                                    database?.openHelper?.writableDatabase?.query("PRAGMA wal_checkpoint(FULL)")?.use { cursor ->
+                                        check(cursor.moveToFirst() && cursor.getLong(0) == 0L) { "Не вдалося завершити запис поточної БД." }
+                                    }
+                                    CeilingsDatabase.closeAndReset()
+                                    wal.delete(); shm.delete()
+                                    if (live.exists()) { live.copyTo(oldDb, overwrite = true); oldSaved = true }
+                                    live.writeBytes(contents.database)
+                                    com.andreyceilings.app.data.security.DatabaseKeyManager.replacePassphrase(context, contents.passphrase)
+                                    keyChanged = true
+                                    val reopened = CeilingsDatabase.get(appContext)
+                                    val sql = reopened.openHelper.writableDatabase
+                                    sql.query("PRAGMA integrity_check").use { cursor ->
+                                        check(cursor.moveToFirst() && cursor.getString(0).equals("ok", ignoreCase = true)) { "Перевірка цілісності після відновлення не пройдена." }
+                                    }
+                                    val importedCounts = sql.query("""
+                                        SELECT
+                                            (SELECT COUNT(*) FROM clients),
+                                            (SELECT COUNT(*) FROM projects),
+                                            (SELECT COUNT(*) FROM room_measurements),
+                                            (SELECT COUNT(*) FROM estimates),
+                                            (SELECT COUNT(*) FROM price_items)
+                                    """.trimIndent()).use { cursor ->
+                                        check(cursor.moveToFirst()) { "Не вдалося порахувати імпортовані записи." }
+                                        (0..4).map { cursor.getLong(it) }
+                                    }
                                     reopened
                                 } catch (failure: Exception) {
                                     CeilingsDatabase.closeAndReset()
-                                    if (old.exists()) old.copyTo(live, overwrite = true)
-                                    java.io.File("${live.absolutePath}-wal").delete()
-                                    java.io.File("${live.absolutePath}-shm").delete()
+                                    wal.delete(); shm.delete()
+                                    if (oldSaved && oldDb.exists()) oldDb.copyTo(live, overwrite = true)
+                                    if (keyChanged) com.andreyceilings.app.data.security.DatabaseKeyManager.replacePassphrase(context, oldKey)
                                     throw failure
-                                } finally { staged.delete(); input.delete() }
+                                } finally {
+                                    wal.delete(); shm.delete(); oldDb.delete(); oldKey.fill(0)
+                                    contents.database.fill(0); contents.passphrase.fill(0)
+                                }
                             } }
-                            result.onSuccess { restored -> onDatabaseReplaced(restored); selectedBackup = null; backupStatus = "Імпорт успішний. Відновлену зашифровану БД відкрито; перевірте записи в діагностиці." }
-                                .onFailure { backupStatus = "Імпорт не виконано: ${it.message ?: "невідома помилка"}. Попередню БД залишено або відновлено, якщо це було можливо." }
+                            result.onSuccess { restored ->
+                                onDatabaseReplaced(restored)
+                                val counts = withContext(Dispatchers.IO) {
+                                    val sql = restored.openHelper.writableDatabase
+                                    sql.query("""
+                                        SELECT
+                                            (SELECT COUNT(*) FROM clients),
+                                            (SELECT COUNT(*) FROM projects),
+                                            (SELECT COUNT(*) FROM room_measurements),
+                                            (SELECT COUNT(*) FROM estimates),
+                                            (SELECT COUNT(*) FROM price_items)
+                                    """.trimIndent()).use { cursor ->
+                                        check(cursor.moveToFirst()) { "Не вдалося прочитати кількість записів після імпорту." }
+                                        (0..4).map { cursor.getLong(it) }
+                                    }
+                                }
+                                backupStatus = "ІМПОРТ УСПІШНИЙ — базу відновлено й перевірено.\n" +
+                                    "Клієнти: ${counts[0]}\n" +
+                                    "Об’єкти: ${counts[1]}\n" +
+                                    "Виміри: ${counts[2]}\n" +
+                                    "Кошториси: ${counts[3]}\n" +
+                                    "Позиції прайсу: ${counts[4]}"
+                            }.onFailure { backupStatus = "Відновлення не виконано: ${it.message ?: "невідома помилка"}. Перевірте базу перед подальшою роботою." }
                         }
-                    }) { Text("Замінити БД") } },
-                    dismissButton = { TextButton(onClick = { showRestoreConfirmation = false }) { Text("Скасувати") } }
+                    }) { Text("Відновити") } },
+                    dismissButton = { TextButton(onClick = { showRestoreConfirmation = false; pendingRestoreContents?.let { it.database.fill(0); it.passphrase.fill(0) }; pendingRestoreContents = null }) { Text("Скасувати") } }
                 )
             }
+            HorizontalDivider()
+            Text("Автоматичні резервні копії", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            Text("Копії захищені паролем. Зберігаються п’ять останніх автоматичних файлів.", style = MaterialTheme.typography.bodySmall)
+            var periodicEnabled by remember { mutableStateOf(AutomaticBackupSettings.periodicEnabled(context)) }
+            var selectedSchedule by remember { mutableStateOf(AutomaticBackupSettings.schedule(context)) }
+            var backgroundEnabled by remember { mutableStateOf(AutomaticBackupSettings.backgroundEnabled(context)) }
+            var databaseChangeEnabled by remember { mutableStateOf(AutomaticBackupSettings.databaseChangeEnabled(context)) }
+            DisposableEffect(databaseChangeEnabled, database) {
+                val db = database
+                val observer = if (databaseChangeEnabled && db != null) {
+                    object : androidx.room.InvalidationTracker.Observer(
+                        "clients", "projects", "room_measurements", "price_items", "estimates"
+                    ) {
+                        override fun onInvalidated(tables: Set<String>) {
+                            if (AutomaticBackupSettings.anyEnabled(context) &&
+                                BackupPasswordStore.folder(context) != null) {
+                                AutomaticBackupScheduler.triggerOnDatabaseChange(context)
+                            }
+                        }
+                    }.also { db.invalidationTracker.addObserver(it) }
+                } else null
+                onDispose { if (observer != null && db != null) db.invalidationTracker.removeObserver(observer) }
+            }
+            ListItem(
+                headlineContent = { Text("Резервування за графіком") },
+                supportingContent = { Text("Створювати копію за вибраною періодичністю") },
+                trailingContent = { Switch(checked = periodicEnabled, onCheckedChange = { enabled ->
+                    if (enabled) {
+                        runCatching {
+                            check(BackupPasswordStore.folder(context) != null) { "Спочатку виберіть папку." }
+                            val saved = BackupPasswordStore.readPassword(context) ?: error("Спочатку збережіть пароль.")
+                            saved.fill(Char.MIN_VALUE)
+                            AutomaticBackupScheduler.enable(context, selectedSchedule)
+                            AutomaticBackupSettings.setPeriodicEnabled(context, true)
+                            periodicEnabled = true
+                        }.onFailure { automaticStatus = it.message ?: "Не вдалося ввімкнути графік." }
+                    } else {
+                        val anotherModeEnabled =
+                            AutomaticBackupSettings.backgroundEnabled(context) ||
+                            AutomaticBackupSettings.databaseChangeEnabled(context)
+                        if (!anotherModeEnabled) {
+                            // Keep the switch enabled until the user confirms the destructive action.
+                            showDisableAllConfirmation = true
+                        } else {
+                            AutomaticBackupScheduler.disablePeriodic(context)
+                            AutomaticBackupSettings.setPeriodicEnabled(context, false)
+                            periodicEnabled = false
+                        }
+                    }
+                }) }
+            )
+            var scheduleExpanded by remember { mutableStateOf(false) }
+            ExposedDropdownMenuBox(expanded = scheduleExpanded && periodicEnabled, onExpandedChange = { if (periodicEnabled) scheduleExpanded = it }) {
+                OutlinedTextField(
+                    value = selectedSchedule.label,
+                    onValueChange = {},
+                    readOnly = true,
+                    label = { Text("Періодичність") },
+                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = scheduleExpanded) },
+                    enabled = periodicEnabled,
+                    modifier = Modifier.menuAnchor().fillMaxWidth()
+                )
+                ExposedDropdownMenu(expanded = scheduleExpanded && periodicEnabled, onDismissRequest = { scheduleExpanded = false }) {
+                    BackupSchedule.values().forEach { option ->
+                        DropdownMenuItem(text = { Text(option.label) }, onClick = {
+                            selectedSchedule = option
+                            AutomaticBackupSettings.setSchedule(context, option)
+                            scheduleExpanded = false
+                            if (AutomaticBackupSettings.periodicEnabled(context)) AutomaticBackupScheduler.enable(context, option)
+                        })
+                    }
+                }
+            }
+            ListItem(
+                headlineContent = { Text("Резервування при згортанні") },
+                supportingContent = { Text("Створювати копію, коли застосунок переходить у фон") },
+                trailingContent = { Switch(checked = backgroundEnabled, onCheckedChange = { enabled ->
+                    if (enabled) {
+                        runCatching {
+                            check(BackupPasswordStore.folder(context) != null) { "Спочатку виберіть папку для копій." }
+                            val saved = BackupPasswordStore.readPassword(context) ?: error("Спочатку збережіть пароль автоматичних копій.")
+                            saved.fill(Char.MIN_VALUE)
+                            AutomaticBackupSettings.setBackgroundEnabled(context, true)
+                            backgroundEnabled = true
+                        }.onFailure { automaticStatus = it.message ?: "Не вдалося ввімкнути резервування." }
+                    } else {
+                        val anotherModeEnabled =
+                            AutomaticBackupSettings.periodicEnabled(context) ||
+                            AutomaticBackupSettings.databaseChangeEnabled(context)
+                        if (!anotherModeEnabled) {
+                            // Do not change the stored or displayed switch state before confirmation.
+                            showDisableAllConfirmation = true
+                        } else {
+                            AutomaticBackupSettings.setBackgroundEnabled(context, false)
+                            backgroundEnabled = false
+                        }
+                    }
+                }) }
+            )
+            ListItem(
+                headlineContent = { Text("Резервування після змін БД") },
+                supportingContent = { Text("Створювати копію після змін у таблицях бази даних") },
+                trailingContent = { Switch(checked = databaseChangeEnabled, onCheckedChange = { enabled ->
+                    if (enabled) {
+                        runCatching {
+                            check(BackupPasswordStore.folder(context) != null) { "Спочатку виберіть папку для копій." }
+                            val saved = BackupPasswordStore.readPassword(context) ?: error("Спочатку збережіть пароль автоматичних копій.")
+                            saved.fill(Char.MIN_VALUE)
+                            AutomaticBackupSettings.setDatabaseChangeEnabled(context, true)
+                            databaseChangeEnabled = true
+                        }.onFailure { automaticStatus = it.message ?: "Не вдалося ввімкнути резервування." }
+                    } else {
+                        val anotherModeEnabled =
+                            AutomaticBackupSettings.periodicEnabled(context) ||
+                            AutomaticBackupSettings.backgroundEnabled(context)
+                        if (!anotherModeEnabled) {
+                            // Do not change the stored or displayed switch state before confirmation.
+                            showDisableAllConfirmation = true
+                        } else {
+                            AutomaticBackupSettings.setDatabaseChangeEnabled(context, false)
+                            databaseChangeEnabled = false
+                        }
+                    }
+                }) }
+            )
+            Text("Папка: $selectedFolderLabel", style = MaterialTheme.typography.bodySmall)
+            OutlinedButton(onClick = { folderPicker.launch(null) }, modifier = Modifier.fillMaxWidth()) {
+                Text("Вибрати папку для копій")
+            }
+            OutlinedTextField(
+                value = automaticPassword,
+                onValueChange = { automaticPassword = it },
+                label = { Text("Пароль автоматичних копій (від 10 символів)") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation()
+            )
+            Button(
+                onClick = {
+                    runCatching {
+                        BackupPasswordStore.savePassword(context, automaticPassword.toCharArray())
+                        automaticStatus = "Пароль збережено в зашифрованому вигляді на цьому телефоні."
+                    }.onFailure { automaticStatus = "Не вдалося зберегти пароль: " + (it.message ?: "невідома помилка") }
+                },
+                modifier = Modifier.fillMaxWidth(),
+                enabled = automaticPassword.length >= 10
+            ) { Text("Зберегти пароль автоматичних копій") }
+            Text(automaticStatus, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (showDisableAllConfirmation) {
+                AlertDialog(
+                    onDismissRequest = { showDisableAllConfirmation = false },
+                    title = { Text("Вимкнути резервування?") },
+                    text = { Text("Після підтвердження буде вимкнено всі режими й видалено лише автоматичні файли .stpb у вибраній папці. Інші файли не змінюватимуться.") },
+                    confirmButton = {
+                        TextButton(onClick = {
+                            runCatching {
+                                AutomaticBackupScheduler.disableAll(context)
+                                AutomaticBackupSettings.setPeriodicEnabled(context, false)
+                                AutomaticBackupSettings.setBackgroundEnabled(context, false)
+                                AutomaticBackupSettings.setDatabaseChangeEnabled(context, false)
+                                BackupPasswordStore.folder(context)?.let { uri ->
+                                    androidx.documentfile.provider.DocumentFile.fromTreeUri(context, uri)
+                                        ?.listFiles()?.filter { it.name?.matches(Regex("СтеляПро_\\d{8}_\\d{6}\\.stpb")) == true }
+                                        ?.forEach { it.delete() }
+                                }
+                                periodicEnabled = false
+                                backgroundEnabled = false
+                                databaseChangeEnabled = false
+                                automaticStatus = "Автоматичне резервування вимкнено; автоматичні .stpb-копії видалено."
+                            }.onFailure { automaticStatus = "Не вдалося завершити вимкнення: " + (it.message ?: "невідома помилка") }
+                            showDisableAllConfirmation = false
+                        }) { Text("Вимкнути й видалити копії") }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { showDisableAllConfirmation = false }) { Text("Скасувати") }
+                    }
+                )
+            }
+            HorizontalDivider()
+            Text("Переносна резервна копія", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            Text("Файл можна перенести на інший телефон. Весь пакет, включно з ключем SQLCipher, шифрується заданим паролем. Збережіть пароль окремо.", style = MaterialTheme.typography.bodySmall)
+            OutlinedTextField(
+                value = portablePassword,
+                onValueChange = { portablePassword = it },
+                label = { Text("Пароль резервної копії (від 10 символів)") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true
+            )
+            Text(portableStatus, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Button(
+                onClick = {
+                    scope.launch {
+                        portableStatus = "Створюю та перевіряю переносну копію…"
+                        val result = withContext(Dispatchers.IO) {
+                            runCatching {
+                                val db = database ?: error("База даних ще не готова.")
+                                val password = portablePassword.toCharArray()
+                                try {
+                                    com.andreyceilings.app.data.security.PortableBackupManager.create(context, db, password)
+                                } finally { password.fill(Char.MIN_VALUE) }
+                            }
+                        }
+                        result.onSuccess { bytes ->
+                            pendingPortableBackup?.fill(0)
+                            pendingPortableBackup = bytes
+                            portableExportLauncher.launch("stelapro-portable-backup.stpb")
+                            portableStatus = "Копію сформовано. Оберіть місце збереження."
+                        }.onFailure {
+                            portableStatus = "Не вдалося створити копію: ${it.message ?: "невідома помилка"}"
+                        }
+                    }
+                },
+                modifier = Modifier.fillMaxWidth(),
+                enabled = database != null && portablePassword.length >= 10
+            ) { Text("Створити переносну копію") }
             HorizontalDivider()
             Text("Експорт тестової копії SQLCipher", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
             Text("Створює копію файла БД у вибрану папку. Ключ не експортується. Зберігайте файл приватно.", style = MaterialTheme.typography.bodySmall)
