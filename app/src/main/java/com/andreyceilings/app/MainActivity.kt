@@ -564,8 +564,52 @@ private fun SettingsScreen(databaseStatus: String, database: CeilingsDatabase?) 
                             val snapshot = java.io.File(context.cacheDir, "andrey_ceilings_secure_export.tmp")
                             source.inputStream().use { input -> snapshot.outputStream().use { output -> input.copyTo(output) } }
                             check(snapshot.length() > 0L) { "Створена копія порожня." }
+                            // Verify the snapshot with the app's SQLCipher connection before exporting.
+                            val passphrase = com.andreyceilings.app.data.security.DatabaseKeyManager
+                                .getOrCreatePassphrase(context.applicationContext)
+                            try {
+                                val checkDb = net.sqlcipher.database.SQLiteDatabase.openDatabase(
+                                    snapshot.absolutePath, passphrase, null,
+                                    net.sqlcipher.database.SQLiteDatabase.OPEN_READONLY
+                                )
+                                try {
+                                    val integrity = checkDb.rawQuery("PRAGMA integrity_check", null).use { cursor ->
+                                        check(cursor.moveToFirst()) { "SQLCipher не повернув результат перевірки." }
+                                        cursor.getString(0)
+                                    }
+                                    check(integrity.equals("ok", ignoreCase = true)) {
+                                        "Перевірка цілісності не пройдена: $integrity"
+                                    }
+                                    val schemaCount = checkDb.rawQuery("SELECT count(*) FROM sqlite_master", null).use { cursor ->
+                                        check(cursor.moveToFirst()) { "Не вдалося прочитати схему копії." }
+                                        cursor.getLong(0)
+                                    }
+                                    check(schemaCount > 0L) { "У копії немає об'єктів схеми." }
+                                } finally {
+                                    checkDb.close()
+                                }
+                            } finally {
+                                passphrase.fill(0)
+                            }
+                            val plainReadable = runCatching {
+                                val plainDb = android.database.sqlite.SQLiteDatabase.openDatabase(
+                                    snapshot.absolutePath, null,
+                                    android.database.sqlite.SQLiteDatabase.OPEN_READONLY
+                                )
+                                try {
+                                    plainDb.rawQuery("SELECT count(*) FROM sqlite_master", null).use { cursor ->
+                                        cursor.moveToFirst()
+                                        cursor.getLong(0)
+                                    }
+                                } finally {
+                                    plainDb.close()
+                                }
+                            }.isSuccess
+                            check(!plainReadable) {
+                                "Звичайний SQLite прочитав файл без ключа. Експорт зупинено."
+                            }
                             pendingExportFile = snapshot
-                            "Копію підготовлено. Виберіть папку та підтвердьте збереження."
+                            "Перевірено: SQLCipher відкрив копію, integrity_check = ok, звичайний SQLite без ключа не прочитав файл. Ключ не експортується. Виберіть папку для збереження."
                         }.getOrElse { "Не вдалося підготувати копію: " + (it.message ?: "невідома помилка") }
                     }
                     if (pendingExportFile != null) exportDocumentLauncher.launch("andrey_ceilings_secure_test.db")
