@@ -435,7 +435,7 @@ private fun SettingsScreen(databaseStatus: String, database: CeilingsDatabase?) 
         pendingExportFile = null
         if (destination == null || source == null) {
             source?.delete()
-            exportStatus = "Експорт скасовано."
+            exportStatus = if (source != null) "Перевірки пройшли успішно: SQLCipher відкрив копію, integrity_check = ok, звичайний SQLite без ключа не прочитав схему. Збереження файла скасовано — перевірки залишаються успішними." else "Збереження скасовано до завершення перевірок."
         } else {
             scope.launch {
                 exportStatus = withContext(Dispatchers.IO) {
@@ -544,7 +544,25 @@ private fun SettingsScreen(databaseStatus: String, database: CeilingsDatabase?) 
             HorizontalDivider()
             Text("Експорт тестової копії SQLCipher", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
             Text("Створює копію файла БД у вибрану папку. Ключ не експортується. Зберігайте файл приватно.", style = MaterialTheme.typography.bodySmall)
-            Text(exportStatus, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Card(
+                colors = CardDefaults.cardColors(
+                    containerColor = if (exportStatus.startsWith("Перевірки пройшли успішно") ||
+                        exportStatus.startsWith("Перевірено:") ||
+                        exportStatus.startsWith("Зашифровану копію збережено")) {
+                        MaterialTheme.colorScheme.primaryContainer
+                    } else {
+                        MaterialTheme.colorScheme.surfaceVariant
+                    }
+                ),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(
+                    exportStatus,
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.padding(12.dp),
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            }
             OutlinedButton(onClick = {
                 scope.launch {
                     exportStatus = withContext(Dispatchers.IO) {
