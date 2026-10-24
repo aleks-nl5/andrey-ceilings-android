@@ -603,12 +603,13 @@ private fun SettingsScreen(databaseStatus: String, database: CeilingsDatabase?) 
                             var plainDb: android.database.sqlite.SQLiteDatabase? = null
                             var plainReadFailed = false
                             try {
-                                plainDb = android.database.sqlite.SQLiteDatabase.openDatabase(
+                                val openedPlainDb = android.database.sqlite.SQLiteDatabase.openDatabase(
                                     snapshot.absolutePath,
                                     null,
                                     android.database.sqlite.SQLiteDatabase.OPEN_READONLY
                                 )
-                                plainDb.rawQuery("SELECT count(*) FROM sqlite_master", null).use { cursor ->
+                                plainDb = openedPlainDb
+                                openedPlainDb.rawQuery("SELECT count(*) FROM sqlite_master", null).use { cursor ->
                                     plainReadFailed = !cursor.moveToFirst()
                                 }
                             } catch (_: Exception) {
