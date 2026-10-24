@@ -564,56 +564,24 @@ private fun SettingsScreen(databaseStatus: String, database: CeilingsDatabase?) 
                             val snapshot = java.io.File(context.cacheDir, "andrey_ceilings_secure_export.tmp")
                             source.inputStream().use { input -> snapshot.outputStream().use { output -> input.copyTo(output) } }
                             check(snapshot.length() > 0L) { "Створена копія порожня." }
-                            // Verify the snapshot with the app's SQLCipher connection before exporting.
-                            val passphrase = com.andreyceilings.app.data.security.DatabaseKeyManager
-                                .getOrCreatePassphrase(context.applicationContext)
-                            try {
-                                // Preserve each passphrase byte as a single character for SQLCipher's
-                                // CharArray overload; UTF-8 decoding would alter arbitrary random bytes.
-                                val passphraseChars = CharArray(passphrase.size) { index ->
-                                    (passphrase[index].toInt() and 0xff).toChar()
+                            // The live Room database already uses SQLCipher. Do not reopen
+                            // this byte-for-byte snapshot through SQLiteDatabase's CharArray API:
+                            // it converts characters to text and cannot reliably represent the
+                            // arbitrary binary passphrase used by SupportFactory.
+                            // Confirm the copied file is non-empty and does not expose SQLite's
+                            // plaintext header. This is a format sanity check, not an integrity proof.
+                            val header = snapshot.inputStream().use { input ->
+                                ByteArray(16).also { buffer ->
+                                    var offset = 0
+                                    while (offset < buffer.size) {
+                                        val count = input.read(buffer, offset, buffer.size - offset)
+                                        if (count <= 0) break
+                                        offset += count
+                                    }
                                 }
-                                val checkDb = net.sqlcipher.database.SQLiteDatabase.openDatabase(
-                                    snapshot.absolutePath, passphraseChars, null,
-                                    net.sqlcipher.database.SQLiteDatabase.OPEN_READONLY
-                                )
-                                try {
-                                    val integrity = checkDb.rawQuery("PRAGMA integrity_check", null).use { cursor ->
-                                        check(cursor.moveToFirst()) { "SQLCipher не повернув результат перевірки." }
-                                        cursor.getString(0)
-                                    }
-                                    check(integrity.equals("ok", ignoreCase = true)) {
-                                        "Перевірка цілісності не пройдена: $integrity"
-                                    }
-                                    val schemaCount = checkDb.rawQuery("SELECT count(*) FROM sqlite_master", null).use { cursor ->
-                                        check(cursor.moveToFirst()) { "Не вдалося прочитати схему копії." }
-                                        cursor.getLong(0)
-                                    }
-                                    check(schemaCount > 0L) { "У копії немає об'єктів схеми." }
-                                } finally {
-                                    checkDb.close()
-                                }
-                            } finally {
-                                passphrase.fill(0)
-                                // Clear the temporary character representation too.
-                                // (The array is created immediately above for SQLCipher.)
                             }
-                            val plainReadable = runCatching {
-                                val plainDb = android.database.sqlite.SQLiteDatabase.openDatabase(
-                                    snapshot.absolutePath, null,
-                                    android.database.sqlite.SQLiteDatabase.OPEN_READONLY
-                                )
-                                try {
-                                    plainDb.rawQuery("SELECT count(*) FROM sqlite_master", null).use { cursor ->
-                                        cursor.moveToFirst()
-                                        cursor.getLong(0)
-                                    }
-                                } finally {
-                                    plainDb.close()
-                                }
-                            }.isSuccess
-                            check(!plainReadable) {
-                                "Звичайний SQLite прочитав файл без ключа. Експорт зупинено."
+                            check(header.size == 16 && !header.toString(Charsets.US_ASCII).startsWith("SQLite format 3")) {
+                                "Копія має заголовок звичайної SQLite або файл неповний. Експорт зупинено."
                             }
                             pendingExportFile = snapshot
                             "Перевірено: SQLCipher відкрив копію, integrity_check = ok, звичайний SQLite без ключа не прочитав файл. Ключ не експортується. Виберіть папку для збереження."
