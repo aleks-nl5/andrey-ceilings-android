@@ -747,6 +747,7 @@ private fun SettingsScreen(databaseStatus: String, database: CeilingsDatabase?, 
             Text("Автоматичні резервні копії", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
             Text("Копії захищені паролем. Зберігаються п’ять останніх автоматичних файлів.", style = MaterialTheme.typography.bodySmall)
             var periodicEnabled by remember { mutableStateOf(AutomaticBackupSettings.periodicEnabled(context)) }
+            var selectedSchedule by remember { mutableStateOf(AutomaticBackupSettings.schedule(context)) }
             var backgroundEnabled by remember { mutableStateOf(AutomaticBackupSettings.backgroundEnabled(context)) }
             var databaseChangeEnabled by remember { mutableStateOf(AutomaticBackupSettings.databaseChangeEnabled(context)) }
             DisposableEffect(databaseChangeEnabled, database) {
@@ -786,7 +787,6 @@ private fun SettingsScreen(databaseStatus: String, database: CeilingsDatabase?, 
                 }) }
             )
             var scheduleExpanded by remember { mutableStateOf(false) }
-            var selectedSchedule by remember { mutableStateOf(AutomaticBackupSettings.schedule(context)) }
             ExposedDropdownMenuBox(expanded = scheduleExpanded && periodicEnabled, onExpandedChange = { if (periodicEnabled) scheduleExpanded = it }) {
                 OutlinedTextField(
                     value = selectedSchedule.label,
