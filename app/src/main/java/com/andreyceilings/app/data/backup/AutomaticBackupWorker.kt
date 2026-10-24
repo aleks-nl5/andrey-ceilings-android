@@ -34,7 +34,7 @@ class AutomaticBackupWorker(
             val database = CeilingsDatabase.get(applicationContext)
             backup = PortableBackupManager.create(applicationContext, database, password)
             val stamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
-            val tempName = ".stelyapro_$stamp.partial"
+            val tempName = ".stpb.partial"
             partial = folder.createFile("application/octet-stream", tempName)
                 ?: return@withContext Result.retry()
             applicationContext.contentResolver.openOutputStream(partial.uri, "w").use { stream ->
@@ -42,13 +42,13 @@ class AutomaticBackupWorker(
                 stream.write(backup)
                 stream.flush()
             }
-            val finalName = "СтеляПро_$stamp.stelyabackup"
+            val finalName = "СтеляПро_$stamp.stpb"
             check(partial.renameTo(finalName)) { "Не вдалося завершити запис резервної копії." }
             partial = null
 
             // Keep the five newest backups created by this worker. Other files are untouched.
             folder.listFiles()
-                .filter { it.name?.matches(Regex("СтеляПро_\\d{8}_\\d{6}\\.stelyabackup")) == true }
+                .filter { it.name?.matches(Regex("СтеляПро_\\d{8}_\\d{6}\\.stpb")) == true }
                 .sortedByDescending { it.name }
                 .drop(5)
                 .forEach { it.delete() }
