@@ -445,6 +445,7 @@ private fun SettingsScreen(databaseStatus: String, database: CeilingsDatabase?, 
     val context = LocalContext.current
     var automaticPassword by remember { mutableStateOf("") }
     var automaticStatus by remember { mutableStateOf("Автоматичні копії вимкнені, доки не вибрано папку й пароль.") }
+    var showDisableAllConfirmation by remember { mutableStateOf(false) }
     var selectedFolderLabel by remember { mutableStateOf(BackupPasswordStore.folder(context)?.lastPathSegment ?: "Папку не вибрано") }
     val folderPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri: Uri? ->
         if (uri == null) {
@@ -809,16 +810,38 @@ private fun SettingsScreen(databaseStatus: String, database: CeilingsDatabase?, 
                 headlineContent = { Text("Резервування при згортанні") },
                 supportingContent = { Text("Створювати копію, коли застосунок переходить у фон") },
                 trailingContent = { Switch(checked = backgroundEnabled, onCheckedChange = { enabled ->
-                    backgroundEnabled = enabled
-                    AutomaticBackupSettings.setBackgroundEnabled(context, enabled)
+                    if (enabled) {
+                        runCatching {
+                            check(BackupPasswordStore.folder(context) != null) { "Спочатку виберіть папку для копій." }
+                            val saved = BackupPasswordStore.readPassword(context) ?: error("Спочатку збережіть пароль автоматичних копій.")
+                            saved.fill(Char.MIN_VALUE)
+                            AutomaticBackupSettings.setBackgroundEnabled(context, true)
+                            backgroundEnabled = true
+                        }.onFailure { automaticStatus = it.message ?: "Не вдалося ввімкнути резервування." }
+                    } else {
+                        AutomaticBackupSettings.setBackgroundEnabled(context, false)
+                        backgroundEnabled = false
+                        if (!AutomaticBackupSettings.anyEnabled(context)) showDisableAllConfirmation = true
+                    }
                 }) }
             )
             ListItem(
                 headlineContent = { Text("Резервування після змін БД") },
                 supportingContent = { Text("Створювати копію після змін у таблицях бази даних") },
                 trailingContent = { Switch(checked = databaseChangeEnabled, onCheckedChange = { enabled ->
-                    databaseChangeEnabled = enabled
-                    AutomaticBackupSettings.setDatabaseChangeEnabled(context, enabled)
+                    if (enabled) {
+                        runCatching {
+                            check(BackupPasswordStore.folder(context) != null) { "Спочатку виберіть папку для копій." }
+                            val saved = BackupPasswordStore.readPassword(context) ?: error("Спочатку збережіть пароль автоматичних копій.")
+                            saved.fill(Char.MIN_VALUE)
+                            AutomaticBackupSettings.setDatabaseChangeEnabled(context, true)
+                            databaseChangeEnabled = true
+                        }.onFailure { automaticStatus = it.message ?: "Не вдалося ввімкнути резервування." }
+                    } else {
+                        AutomaticBackupSettings.setDatabaseChangeEnabled(context, false)
+                        databaseChangeEnabled = false
+                        if (!AutomaticBackupSettings.anyEnabled(context)) showDisableAllConfirmation = true
+                    }
                 }) }
             )
             Text("Папка: $selectedFolderLabel", style = MaterialTheme.typography.bodySmall)
@@ -858,12 +881,39 @@ private fun SettingsScreen(databaseStatus: String, database: CeilingsDatabase?, 
                 modifier = Modifier.fillMaxWidth()
             ) { Text("Увімкнути щоденні копії") }
             OutlinedButton(
-                onClick = {
-                    AutomaticBackupScheduler.disableAll(context)
-                    automaticStatus = "Автоматичне резервування вимкнено."
-                },
+                onClick = { showDisableAllConfirmation = true },
                 modifier = Modifier.fillMaxWidth()
             ) { Text("Вимкнути автоматичні копії") }
+            if (showDisableAllConfirmation) {
+                AlertDialog(
+                    onDismissRequest = { showDisableAllConfirmation = false },
+                    title = { Text("Вимкнути резервування?") },
+                    text = { Text("Після підтвердження буде вимкнено всі режими й видалено лише автоматичні файли .stpb у вибраній папці. Інші файли не змінюватимуться.") },
+                    confirmButton = {
+                        TextButton(onClick = {
+                            runCatching {
+                                AutomaticBackupScheduler.disableAll(context)
+                                AutomaticBackupSettings.setPeriodicEnabled(context, false)
+                                AutomaticBackupSettings.setBackgroundEnabled(context, false)
+                                AutomaticBackupSettings.setDatabaseChangeEnabled(context, false)
+                                BackupPasswordStore.folder(context)?.let { uri ->
+                                    androidx.documentfile.provider.DocumentFile.fromTreeUri(context, uri)
+                                        ?.listFiles()?.filter { it.name?.matches(Regex("СтеляПро_\\d{8}_\\d{6}\\.stpb")) == true }
+                                        ?.forEach { it.delete() }
+                                }
+                                periodicEnabled = false
+                                backgroundEnabled = false
+                                databaseChangeEnabled = false
+                                automaticStatus = "Автоматичне резервування вимкнено; автоматичні .stpb-копії видалено."
+                            }.onFailure { automaticStatus = "Не вдалося завершити вимкнення: " + (it.message ?: "невідома помилка") }
+                            showDisableAllConfirmation = false
+                        }) { Text("Вимкнути й видалити копії") }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { showDisableAllConfirmation = false }) { Text("Скасувати") }
+                    }
+                )
+            }
             HorizontalDivider()
             Text("Переносна резервна копія", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
             Text("Файл можна перенести на інший телефон. Весь пакет, включно з ключем SQLCipher, шифрується заданим паролем. Збережіть пароль окремо.", style = MaterialTheme.typography.bodySmall)
