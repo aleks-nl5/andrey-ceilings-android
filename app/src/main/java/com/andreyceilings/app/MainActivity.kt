@@ -11,6 +11,8 @@ import kotlinx.coroutines.withContext
 import com.andreyceilings.app.data.db.CeilingsDatabase
 import com.andreyceilings.app.data.backup.BackupPasswordStore
 import com.andreyceilings.app.data.backup.AutomaticBackupScheduler
+import com.andreyceilings.app.data.backup.AutomaticBackupSettings
+import com.andreyceilings.app.data.backup.BackupSchedule
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.*
@@ -732,7 +734,68 @@ private fun SettingsScreen(databaseStatus: String, database: CeilingsDatabase?, 
             }
             HorizontalDivider()
             Text("Автоматичні резервні копії", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-            Text("Щодня створюється пароль-захищена переносна копія в обраній папці. Зберігаються п’ять останніх файлів.", style = MaterialTheme.typography.bodySmall)
+            Text("Копії захищені паролем. Зберігаються п’ять останніх автоматичних файлів.", style = MaterialTheme.typography.bodySmall)
+            var scheduleExpanded by remember { mutableStateOf(false) }
+            var selectedSchedule by remember { mutableStateOf(AutomaticBackupSettings.schedule(context)) }
+            ExposedDropdownMenuBox(expanded = scheduleExpanded, onExpandedChange = { scheduleExpanded = it }) {
+                OutlinedTextField(
+                    value = selectedSchedule.label,
+                    onValueChange = {},
+                    readOnly = true,
+                    label = { Text("Періодичність") },
+                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = scheduleExpanded) },
+                    modifier = Modifier.menuAnchor().fillMaxWidth()
+                )
+                ExposedDropdownMenu(expanded = scheduleExpanded, onDismissRequest = { scheduleExpanded = false }) {
+                    BackupSchedule.values().forEach { option ->
+                        DropdownMenuItem(text = { Text(option.label) }, onClick = {
+                            selectedSchedule = option
+                            AutomaticBackupSettings.setSchedule(context, option)
+                            scheduleExpanded = false
+                            if (AutomaticBackupSettings.periodicEnabled(context)) AutomaticBackupScheduler.enable(context, option)
+                        })
+                    }
+                }
+            }
+            var periodicEnabled by remember { mutableStateOf(AutomaticBackupSettings.periodicEnabled(context)) }
+            var backgroundEnabled by remember { mutableStateOf(AutomaticBackupSettings.backgroundEnabled(context)) }
+            var databaseChangeEnabled by remember { mutableStateOf(AutomaticBackupSettings.databaseChangeEnabled(context)) }
+            ListItem(
+                headlineContent = { Text("Резервування за графіком") },
+                supportingContent = { Text("Створювати копію за вибраною періодичністю") },
+                trailingContent = { Switch(checked = periodicEnabled, onCheckedChange = { enabled ->
+                    if (enabled) {
+                        runCatching {
+                            check(BackupPasswordStore.folder(context) != null) { "Спочатку виберіть папку." }
+                            val saved = BackupPasswordStore.readPassword(context) ?: error("Спочатку збережіть пароль.")
+                            saved.fill(Char.MIN_VALUE)
+                            AutomaticBackupScheduler.enable(context, selectedSchedule)
+                            AutomaticBackupSettings.setPeriodicEnabled(context, true)
+                            periodicEnabled = true
+                        }.onFailure { automaticStatus = it.message ?: "Не вдалося ввімкнути графік." }
+                    } else {
+                        AutomaticBackupScheduler.disablePeriodic(context)
+                        AutomaticBackupSettings.setPeriodicEnabled(context, false)
+                        periodicEnabled = false
+                    }
+                }) }
+            )
+            ListItem(
+                headlineContent = { Text("Резервування при згортанні") },
+                supportingContent = { Text("Створювати копію, коли застосунок переходить у фон") },
+                trailingContent = { Switch(checked = backgroundEnabled, onCheckedChange = { enabled ->
+                    backgroundEnabled = enabled
+                    AutomaticBackupSettings.setBackgroundEnabled(context, enabled)
+                }) }
+            )
+            ListItem(
+                headlineContent = { Text("Резервування після змін БД") },
+                supportingContent = { Text("Створювати копію після змін у таблицях бази даних") },
+                trailingContent = { Switch(checked = databaseChangeEnabled, onCheckedChange = { enabled ->
+                    databaseChangeEnabled = enabled
+                    AutomaticBackupSettings.setDatabaseChangeEnabled(context, enabled)
+                }) }
+            )
             Text("Папка: $selectedFolderLabel", style = MaterialTheme.typography.bodySmall)
             OutlinedButton(onClick = { folderPicker.launch(null) }, modifier = Modifier.fillMaxWidth()) {
                 Text("Вибрати папку для копій")
@@ -762,7 +825,7 @@ private fun SettingsScreen(databaseStatus: String, database: CeilingsDatabase?, 
                         check(BackupPasswordStore.folder(context) != null) { "Спочатку виберіть папку." }
                         val saved = BackupPasswordStore.readPassword(context) ?: error("Спочатку збережіть пароль.")
                         saved.fill(Char.MIN_VALUE)
-                        AutomaticBackupScheduler.enable(context)
+                        AutomaticBackupScheduler.enable(context, AutomaticBackupSettings.schedule(context))
                         automaticStatus = "Автоматичне резервування ввімкнено. Android виконає першу копію за графіком."
                     }.onFailure { automaticStatus = "Не вдалося ввімкнути резервування: " + (it.message ?: "невідома помилка") }
                 },
@@ -770,7 +833,7 @@ private fun SettingsScreen(databaseStatus: String, database: CeilingsDatabase?, 
             ) { Text("Увімкнути щоденні копії") }
             OutlinedButton(
                 onClick = {
-                    AutomaticBackupScheduler.disable(context)
+                    AutomaticBackupScheduler.disableAll(context)
                     automaticStatus = "Автоматичне резервування вимкнено."
                 },
                 modifier = Modifier.fillMaxWidth()
