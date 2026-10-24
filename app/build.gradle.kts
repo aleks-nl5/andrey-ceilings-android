@@ -13,8 +13,10 @@ android {
         applicationId = "com.andreyceilings.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 6
-        versionName = "0.6.1"
+        // Append the GitHub Actions run number to the visible test version.
+        val actionsRunNumber = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 0
+        versionCode = 600000 + actionsRunNumber
+        versionName = "0.6.1" + if (actionsRunNumber > 0) "-$actionsRunNumber" else ""
 
         javaCompileOptions {
           annotationProcessorOptions {
