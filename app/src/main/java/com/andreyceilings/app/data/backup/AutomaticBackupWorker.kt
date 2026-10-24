@@ -34,7 +34,7 @@ class AutomaticBackupWorker(
             val database = CeilingsDatabase.get(applicationContext)
             backup = PortableBackupManager.create(applicationContext, database, password)
             val stamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
-            val tempName = ".stpb.partial"
+            val tempName = ".stpb_$stamp.partial"
             partial = folder.createFile("application/octet-stream", tempName)
                 ?: return@withContext Result.retry()
             applicationContext.contentResolver.openOutputStream(partial.uri, "w").use { stream ->
