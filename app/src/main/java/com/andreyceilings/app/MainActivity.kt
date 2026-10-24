@@ -829,9 +829,16 @@ private fun SettingsScreen(databaseStatus: String, database: CeilingsDatabase?, 
                             backgroundEnabled = true
                         }.onFailure { automaticStatus = it.message ?: "Не вдалося ввімкнути резервування." }
                     } else {
-                        AutomaticBackupSettings.setBackgroundEnabled(context, false)
-                        backgroundEnabled = false
-                        if (!AutomaticBackupSettings.anyEnabled(context)) showDisableAllConfirmation = true
+                        val anotherModeEnabled =
+                            AutomaticBackupSettings.periodicEnabled(context) ||
+                            AutomaticBackupSettings.databaseChangeEnabled(context)
+                        if (!anotherModeEnabled) {
+                            // Do not change the stored or displayed switch state before confirmation.
+                            showDisableAllConfirmation = true
+                        } else {
+                            AutomaticBackupSettings.setBackgroundEnabled(context, false)
+                            backgroundEnabled = false
+                        }
                     }
                 }) }
             )
@@ -848,9 +855,16 @@ private fun SettingsScreen(databaseStatus: String, database: CeilingsDatabase?, 
                             databaseChangeEnabled = true
                         }.onFailure { automaticStatus = it.message ?: "Не вдалося ввімкнути резервування." }
                     } else {
-                        AutomaticBackupSettings.setDatabaseChangeEnabled(context, false)
-                        databaseChangeEnabled = false
-                        if (!AutomaticBackupSettings.anyEnabled(context)) showDisableAllConfirmation = true
+                        val anotherModeEnabled =
+                            AutomaticBackupSettings.periodicEnabled(context) ||
+                            AutomaticBackupSettings.backgroundEnabled(context)
+                        if (!anotherModeEnabled) {
+                            // Do not change the stored or displayed switch state before confirmation.
+                            showDisableAllConfirmation = true
+                        } else {
+                            AutomaticBackupSettings.setDatabaseChangeEnabled(context, false)
+                            databaseChangeEnabled = false
+                        }
                     }
                 }) }
             )
