@@ -9,6 +9,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import com.andreyceilings.app.data.db.CeilingsDatabase
+import com.andreyceilings.app.data.backup.BackupPasswordStore
+import com.andreyceilings.app.data.backup.AutomaticBackupScheduler
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.*
@@ -430,6 +432,22 @@ private fun SettingsScreen(databaseStatus: String, database: CeilingsDatabase?, 
     var pendingExportFile by remember { mutableStateOf<java.io.File?>(null) }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
+    var automaticPassword by remember { mutableStateOf("") }
+    var automaticStatus by remember { mutableStateOf("Автоматичні копії вимкнені, доки не вибрано папку й пароль.") }
+    var selectedFolderLabel by remember { mutableStateOf(BackupPasswordStore.folder(context)?.lastPathSegment ?: "Папку не вибрано") }
+    val folderPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri: Uri? ->
+        if (uri == null) {
+            automaticStatus = "Вибір папки скасовано."
+        } else {
+            runCatching {
+                context.contentResolver.takePersistableUriPermission(uri,
+                    android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION or android.content.Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+                BackupPasswordStore.setFolder(context, uri)
+                selectedFolderLabel = uri.lastPathSegment ?: uri.toString()
+                automaticStatus = "Папку збережено. Збережіть пароль і ввімкніть резервування."
+            }.onFailure { automaticStatus = "Не вдалося зберегти папку: " + (it.message ?: "невідома помилка") }
+        }
+    }
     var backupStatus by remember { mutableStateOf("Оберіть резервну копію для перевірки або відновлення.") }
     var backupAction by remember { mutableStateOf("verify") }
     var selectedBackup by remember { mutableStateOf<java.io.File?>(null) }
@@ -655,6 +673,51 @@ private fun SettingsScreen(databaseStatus: String, database: CeilingsDatabase?, 
                     dismissButton = { TextButton(onClick = { showRestoreConfirmation = false }) { Text("Скасувати") } }
                 )
             }
+            HorizontalDivider()
+            Text("Автоматичні резервні копії", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            Text("Щодня створюється пароль-захищена переносна копія в обраній папці. Зберігаються п’ять останніх файлів.", style = MaterialTheme.typography.bodySmall)
+            Text("Папка: $selectedFolderLabel", style = MaterialTheme.typography.bodySmall)
+            OutlinedButton(onClick = { folderPicker.launch(null) }, modifier = Modifier.fillMaxWidth()) {
+                Text("Вибрати папку для копій")
+            }
+            OutlinedTextField(
+                value = automaticPassword,
+                onValueChange = { automaticPassword = it },
+                label = { Text("Пароль автоматичних копій (від 10 символів)") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation()
+            )
+            Button(
+                onClick = {
+                    runCatching {
+                        BackupPasswordStore.savePassword(context, automaticPassword.toCharArray())
+                        automaticStatus = "Пароль збережено в зашифрованому вигляді на цьому телефоні."
+                    }.onFailure { automaticStatus = "Не вдалося зберегти пароль: " + (it.message ?: "невідома помилка") }
+                },
+                modifier = Modifier.fillMaxWidth(),
+                enabled = automaticPassword.length >= 10
+            ) { Text("Зберегти пароль автоматичних копій") }
+            Text(automaticStatus, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Button(
+                onClick = {
+                    runCatching {
+                        check(BackupPasswordStore.folder(context) != null) { "Спочатку виберіть папку." }
+                        val saved = BackupPasswordStore.readPassword(context) ?: error("Спочатку збережіть пароль.")
+                        saved.fill(Char.MIN_VALUE)
+                        AutomaticBackupScheduler.enable(context)
+                        automaticStatus = "Автоматичне резервування ввімкнено. Android виконає першу копію за графіком."
+                    }.onFailure { automaticStatus = "Не вдалося ввімкнути резервування: " + (it.message ?: "невідома помилка") }
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) { Text("Увімкнути щоденні копії") }
+            OutlinedButton(
+                onClick = {
+                    AutomaticBackupScheduler.disable(context)
+                    automaticStatus = "Автоматичне резервування вимкнено."
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) { Text("Вимкнути автоматичні копії") }
             HorizontalDivider()
             Text("Переносна резервна копія", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
             Text("Файл можна перенести на інший телефон. Весь пакет, включно з ключем SQLCipher, шифрується заданим паролем. Збережіть пароль окремо.", style = MaterialTheme.typography.bodySmall)
