@@ -440,22 +440,32 @@ private fun SettingsScreen(databaseStatus: String, database: CeilingsDatabase?, 
             backupStatus = "Перевіряю резервну копію…"
             val result = withContext(Dispatchers.IO) {
                 runCatching {
-                    val temp = java.io.File(context.cacheDir, "ceilings_backup_selected.tmp")
-                    context.contentResolver.openInputStream(uri)?.use { input -> temp.outputStream().use { output -> input.copyTo(output) } }
-                        ?: error("Не вдалося прочитати вибраний файл.")
-                    check(temp.isFile && temp.length() > 0L) { "Файл порожній." }
-                    verifyEncryptedBackup(context, temp)
-                    temp
+                    // Give every picker result its own file. Reusing a fixed path can
+                    // invalidate selectedBackup when a second verification/import starts.
+                    val temp = java.io.File.createTempFile("ceilings_backup_selected_", ".tmp", context.cacheDir)
+                    try {
+                        context.contentResolver.openInputStream(uri)?.use { input -> temp.outputStream().use { output -> input.copyTo(output) } }
+                            ?: error("Не вдалося прочитати вибраний файл.")
+                        check(temp.isFile && temp.length() > 0L) { "Файл порожній." }
+                        verifyEncryptedBackup(context, temp)
+                        temp
+                    } catch (failure: Exception) {
+                        temp.delete()
+                        throw failure
+                    }
                 }
             }
             result.onSuccess { file ->
-                selectedBackup?.delete()
+                // Delete the previous selection only after the new copy is ready and verified.
+                selectedBackup?.takeIf { it.absolutePath != file.absolutePath }?.delete()
                 selectedBackup = file
                 if (backupAction == "restore") {
                     backupStatus = "Копію перевірено: SQLCipher відкрив файл, integrity_check = ok, схема читається з ключем."
                     showRestoreConfirmation = true
                 } else backupStatus = "Перевірку пройдено: integrity_check = ok, схема доступна з ключем; звичайний SQLite без ключа не прочитав схему."
-            }.onFailure { backupStatus = "Перевірка не пройдена: ${it.message ?: "невідома помилка"}. Поточну БД не змінено." }
+            }.onFailure {
+                backupStatus = "Перевірка не пройдена: ${it.message ?: "невідома помилка"}. Поточну БД не змінено."
+            }
         }
     }
     val exportDocumentLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")) { destination: Uri? ->
