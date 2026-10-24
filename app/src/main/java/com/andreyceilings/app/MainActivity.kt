@@ -769,6 +769,22 @@ private fun SettingsScreen(databaseStatus: String, database: CeilingsDatabase?, 
             var periodicEnabled by remember { mutableStateOf(AutomaticBackupSettings.periodicEnabled(context)) }
             var backgroundEnabled by remember { mutableStateOf(AutomaticBackupSettings.backgroundEnabled(context)) }
             var databaseChangeEnabled by remember { mutableStateOf(AutomaticBackupSettings.databaseChangeEnabled(context)) }
+            DisposableEffect(databaseChangeEnabled, database) {
+                val db = database
+                val observer = if (databaseChangeEnabled && db != null) {
+                    object : androidx.room.InvalidationTracker.Observer(
+                        "clients", "projects", "room_measurements", "price_items", "estimates"
+                    ) {
+                        override fun onInvalidated(tables: Set<String>) {
+                            if (AutomaticBackupSettings.anyEnabled(context) &&
+                                BackupPasswordStore.folder(context) != null) {
+                                AutomaticBackupScheduler.triggerOnDatabaseChange(context)
+                            }
+                        }
+                    }.also { db.invalidationTracker.addObserver(it) }
+                } else null
+                onDispose { if (observer != null && db != null) db.invalidationTracker.removeObserver(observer) }
+            }
             ListItem(
                 headlineContent = { Text("Резервування за графіком") },
                 supportingContent = { Text("Створювати копію за вибраною періодичністю") },
