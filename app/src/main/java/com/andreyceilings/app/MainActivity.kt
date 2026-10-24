@@ -453,6 +453,8 @@ private fun SettingsScreen(databaseStatus: String, database: CeilingsDatabase?, 
     var selectedBackup by remember { mutableStateOf<java.io.File?>(null) }
     var showRestoreConfirmation by remember { mutableStateOf(false) }
     var portablePassword by remember { mutableStateOf("") }
+    var restorePassword by remember { mutableStateOf("") }
+    var showImportPasswordDialog by remember { mutableStateOf(false) }
     var portableStatus by remember { mutableStateOf("Переносна копія захищається окремим паролем.") }
     var pendingPortableBackup by remember { mutableStateOf<ByteArray?>(null) }
     val portableExportLauncher = rememberLauncherForActivityResult(
@@ -484,7 +486,7 @@ private fun SettingsScreen(databaseStatus: String, database: CeilingsDatabase?, 
                     ?: error("Не вдалося прочитати вибраний файл.")
                 try {
                     check(envelope.isNotEmpty()) { "Файл порожній." }
-                    val password = portablePassword.toCharArray()
+                    val password = restorePassword.toCharArray()
                     try { com.andreyceilings.app.data.security.PortableBackupManager.validate(context, envelope, password) }
                     finally { password.fill(Char.MIN_VALUE) }
                 } finally { envelope.fill(0) }
@@ -614,7 +616,34 @@ private fun SettingsScreen(databaseStatus: String, database: CeilingsDatabase?, 
             Text("Перевірка не змінює поточні дані. Імпорт замінить поточну базу лише після успішної перевірки та підтвердження.", style = MaterialTheme.typography.bodySmall)
             Text(backupStatus, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             OutlinedButton(onClick = { backupAction = "verify"; backupPicker.launch(arrayOf("application/octet-stream", "*/*")) }, modifier = Modifier.fillMaxWidth(), enabled = database != null) { Text("Перевірити резервну копію") }
-            Button(onClick = { backupAction = "restore"; backupPicker.launch(arrayOf("application/octet-stream", "application/x-sqlite3", "application/vnd.sqlite3", "*/*")) }, modifier = Modifier.fillMaxWidth(), enabled = database != null) { Text("Відновити переносну копію (.stpb)") }
+            Button(onClick = { restorePassword = ""; showImportPasswordDialog = true }, modifier = Modifier.fillMaxWidth(), enabled = database != null) { Text("Імпортувати резервну копію") }
+            if (showImportPasswordDialog) {
+                AlertDialog(
+                    onDismissRequest = { showImportPasswordDialog = false; restorePassword = "" },
+                    title = { Text("Пароль резервної копії") },
+                    text = {
+                        Column {
+                            Text("Введіть пароль, який використовувався під час створення цієї копії. Для автоматичної копії це пароль автоматичного резервування, для переносної — пароль, заданий під час її створення.")
+                            Spacer(Modifier.height(12.dp))
+                            OutlinedTextField(
+                                value = restorePassword,
+                                onValueChange = { restorePassword = it },
+                                label = { Text("Пароль") },
+                                singleLine = true,
+                                visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation()
+                            )
+                        }
+                    },
+                    confirmButton = {
+                        TextButton(onClick = {
+                            showImportPasswordDialog = false
+                            backupAction = "restore"
+                            backupPicker.launch(arrayOf("application/octet-stream", "application/x-sqlite3", "application/vnd.sqlite3", "*/*"))
+                        }, enabled = restorePassword.isNotEmpty()) { Text("Вибрати копію") }
+                    },
+                    dismissButton = { TextButton(onClick = { showImportPasswordDialog = false; restorePassword = "" }) { Text("Скасувати") } }
+                )
+            }
             if (showRestoreConfirmation) {
                 AlertDialog(
                     onDismissRequest = { showRestoreConfirmation = false; pendingRestoreContents?.let { it.database.fill(0); it.passphrase.fill(0) }; pendingRestoreContents = null },
