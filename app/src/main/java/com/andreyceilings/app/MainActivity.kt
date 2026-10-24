@@ -676,7 +676,7 @@ private fun SettingsScreen(databaseStatus: String, database: CeilingsDatabase?, 
                                 val password = portablePassword.toCharArray()
                                 try {
                                     com.andreyceilings.app.data.security.PortableBackupManager.create(context, db, password)
-                                } finally { password.fill('\\u0000') }
+                                } finally { password.fill(Char.MIN_VALUE) }
                             }
                         }
                         result.onSuccess { bytes ->
