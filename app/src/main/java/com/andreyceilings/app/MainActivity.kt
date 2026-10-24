@@ -11,6 +11,8 @@ import kotlinx.coroutines.withContext
 import com.andreyceilings.app.data.db.CeilingsDatabase
 import com.andreyceilings.app.data.backup.BackupPasswordStore
 import com.andreyceilings.app.data.backup.AutomaticBackupScheduler
+import com.andreyceilings.app.data.backup.AutomaticBackupSettings
+import com.andreyceilings.app.data.backup.BackupSchedule
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.*
@@ -44,6 +46,15 @@ private enum class AppTab(val title: String) {
 class MainActivity : ComponentActivity() {
     private val databaseStatus = mutableStateOf("Перевірка зашифрованої бази…")
     private val databaseState = mutableStateOf<CeilingsDatabase?>(null)
+
+    override fun onStop() {
+        if (AutomaticBackupSettings.backgroundEnabled(applicationContext) &&
+            AutomaticBackupSettings.anyEnabled(applicationContext) &&
+            BackupPasswordStore.folder(applicationContext) != null) {
+            AutomaticBackupScheduler.triggerOnBackground(applicationContext)
+        }
+        super.onStop()
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -434,6 +445,7 @@ private fun SettingsScreen(databaseStatus: String, database: CeilingsDatabase?, 
     val context = LocalContext.current
     var automaticPassword by remember { mutableStateOf("") }
     var automaticStatus by remember { mutableStateOf("Автоматичні копії вимкнені, доки не вибрано папку й пароль.") }
+    var showDisableAllConfirmation by remember { mutableStateOf(false) }
     var selectedFolderLabel by remember { mutableStateOf(BackupPasswordStore.folder(context)?.lastPathSegment ?: "Папку не вибрано") }
     val folderPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri: Uri? ->
         if (uri == null) {
@@ -732,7 +744,106 @@ private fun SettingsScreen(databaseStatus: String, database: CeilingsDatabase?, 
             }
             HorizontalDivider()
             Text("Автоматичні резервні копії", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-            Text("Щодня створюється пароль-захищена переносна копія в обраній папці. Зберігаються п’ять останніх файлів.", style = MaterialTheme.typography.bodySmall)
+            Text("Копії захищені паролем. Зберігаються п’ять останніх автоматичних файлів.", style = MaterialTheme.typography.bodySmall)
+            var scheduleExpanded by remember { mutableStateOf(false) }
+            var selectedSchedule by remember { mutableStateOf(AutomaticBackupSettings.schedule(context)) }
+            ExposedDropdownMenuBox(expanded = scheduleExpanded, onExpandedChange = { scheduleExpanded = it }) {
+                OutlinedTextField(
+                    value = selectedSchedule.label,
+                    onValueChange = {},
+                    readOnly = true,
+                    label = { Text("Періодичність") },
+                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = scheduleExpanded) },
+                    modifier = Modifier.menuAnchor().fillMaxWidth()
+                )
+                ExposedDropdownMenu(expanded = scheduleExpanded, onDismissRequest = { scheduleExpanded = false }) {
+                    BackupSchedule.values().forEach { option ->
+                        DropdownMenuItem(text = { Text(option.label) }, onClick = {
+                            selectedSchedule = option
+                            AutomaticBackupSettings.setSchedule(context, option)
+                            scheduleExpanded = false
+                            if (AutomaticBackupSettings.periodicEnabled(context)) AutomaticBackupScheduler.enable(context, option)
+                        })
+                    }
+                }
+            }
+            var periodicEnabled by remember { mutableStateOf(AutomaticBackupSettings.periodicEnabled(context)) }
+            var backgroundEnabled by remember { mutableStateOf(AutomaticBackupSettings.backgroundEnabled(context)) }
+            var databaseChangeEnabled by remember { mutableStateOf(AutomaticBackupSettings.databaseChangeEnabled(context)) }
+            DisposableEffect(databaseChangeEnabled, database) {
+                val db = database
+                val observer = if (databaseChangeEnabled && db != null) {
+                    object : androidx.room.InvalidationTracker.Observer(
+                        "clients", "projects", "room_measurements", "price_items", "estimates"
+                    ) {
+                        override fun onInvalidated(tables: Set<String>) {
+                            if (AutomaticBackupSettings.anyEnabled(context) &&
+                                BackupPasswordStore.folder(context) != null) {
+                                AutomaticBackupScheduler.triggerOnDatabaseChange(context)
+                            }
+                        }
+                    }.also { db.invalidationTracker.addObserver(it) }
+                } else null
+                onDispose { if (observer != null && db != null) db.invalidationTracker.removeObserver(observer) }
+            }
+            ListItem(
+                headlineContent = { Text("Резервування за графіком") },
+                supportingContent = { Text("Створювати копію за вибраною періодичністю") },
+                trailingContent = { Switch(checked = periodicEnabled, onCheckedChange = { enabled ->
+                    if (enabled) {
+                        runCatching {
+                            check(BackupPasswordStore.folder(context) != null) { "Спочатку виберіть папку." }
+                            val saved = BackupPasswordStore.readPassword(context) ?: error("Спочатку збережіть пароль.")
+                            saved.fill(Char.MIN_VALUE)
+                            AutomaticBackupScheduler.enable(context, selectedSchedule)
+                            AutomaticBackupSettings.setPeriodicEnabled(context, true)
+                            periodicEnabled = true
+                        }.onFailure { automaticStatus = it.message ?: "Не вдалося ввімкнути графік." }
+                    } else {
+                        AutomaticBackupScheduler.disablePeriodic(context)
+                        AutomaticBackupSettings.setPeriodicEnabled(context, false)
+                        periodicEnabled = false
+                    }
+                }) }
+            )
+            ListItem(
+                headlineContent = { Text("Резервування при згортанні") },
+                supportingContent = { Text("Створювати копію, коли застосунок переходить у фон") },
+                trailingContent = { Switch(checked = backgroundEnabled, onCheckedChange = { enabled ->
+                    if (enabled) {
+                        runCatching {
+                            check(BackupPasswordStore.folder(context) != null) { "Спочатку виберіть папку для копій." }
+                            val saved = BackupPasswordStore.readPassword(context) ?: error("Спочатку збережіть пароль автоматичних копій.")
+                            saved.fill(Char.MIN_VALUE)
+                            AutomaticBackupSettings.setBackgroundEnabled(context, true)
+                            backgroundEnabled = true
+                        }.onFailure { automaticStatus = it.message ?: "Не вдалося ввімкнути резервування." }
+                    } else {
+                        AutomaticBackupSettings.setBackgroundEnabled(context, false)
+                        backgroundEnabled = false
+                        if (!AutomaticBackupSettings.anyEnabled(context)) showDisableAllConfirmation = true
+                    }
+                }) }
+            )
+            ListItem(
+                headlineContent = { Text("Резервування після змін БД") },
+                supportingContent = { Text("Створювати копію після змін у таблицях бази даних") },
+                trailingContent = { Switch(checked = databaseChangeEnabled, onCheckedChange = { enabled ->
+                    if (enabled) {
+                        runCatching {
+                            check(BackupPasswordStore.folder(context) != null) { "Спочатку виберіть папку для копій." }
+                            val saved = BackupPasswordStore.readPassword(context) ?: error("Спочатку збережіть пароль автоматичних копій.")
+                            saved.fill(Char.MIN_VALUE)
+                            AutomaticBackupSettings.setDatabaseChangeEnabled(context, true)
+                            databaseChangeEnabled = true
+                        }.onFailure { automaticStatus = it.message ?: "Не вдалося ввімкнути резервування." }
+                    } else {
+                        AutomaticBackupSettings.setDatabaseChangeEnabled(context, false)
+                        databaseChangeEnabled = false
+                        if (!AutomaticBackupSettings.anyEnabled(context)) showDisableAllConfirmation = true
+                    }
+                }) }
+            )
             Text("Папка: $selectedFolderLabel", style = MaterialTheme.typography.bodySmall)
             OutlinedButton(onClick = { folderPicker.launch(null) }, modifier = Modifier.fillMaxWidth()) {
                 Text("Вибрати папку для копій")
@@ -762,19 +873,47 @@ private fun SettingsScreen(databaseStatus: String, database: CeilingsDatabase?, 
                         check(BackupPasswordStore.folder(context) != null) { "Спочатку виберіть папку." }
                         val saved = BackupPasswordStore.readPassword(context) ?: error("Спочатку збережіть пароль.")
                         saved.fill(Char.MIN_VALUE)
-                        AutomaticBackupScheduler.enable(context)
+                        AutomaticBackupSettings.setPeriodicEnabled(context, true)
+                        AutomaticBackupScheduler.enable(context, AutomaticBackupSettings.schedule(context))
                         automaticStatus = "Автоматичне резервування ввімкнено. Android виконає першу копію за графіком."
                     }.onFailure { automaticStatus = "Не вдалося ввімкнути резервування: " + (it.message ?: "невідома помилка") }
                 },
                 modifier = Modifier.fillMaxWidth()
             ) { Text("Увімкнути щоденні копії") }
             OutlinedButton(
-                onClick = {
-                    AutomaticBackupScheduler.disable(context)
-                    automaticStatus = "Автоматичне резервування вимкнено."
-                },
+                onClick = { showDisableAllConfirmation = true },
                 modifier = Modifier.fillMaxWidth()
             ) { Text("Вимкнути автоматичні копії") }
+            if (showDisableAllConfirmation) {
+                AlertDialog(
+                    onDismissRequest = { showDisableAllConfirmation = false },
+                    title = { Text("Вимкнути резервування?") },
+                    text = { Text("Після підтвердження буде вимкнено всі режими й видалено лише автоматичні файли .stpb у вибраній папці. Інші файли не змінюватимуться.") },
+                    confirmButton = {
+                        TextButton(onClick = {
+                            runCatching {
+                                AutomaticBackupScheduler.disableAll(context)
+                                AutomaticBackupSettings.setPeriodicEnabled(context, false)
+                                AutomaticBackupSettings.setBackgroundEnabled(context, false)
+                                AutomaticBackupSettings.setDatabaseChangeEnabled(context, false)
+                                BackupPasswordStore.folder(context)?.let { uri ->
+                                    androidx.documentfile.provider.DocumentFile.fromTreeUri(context, uri)
+                                        ?.listFiles()?.filter { it.name?.matches(Regex("СтеляПро_\\d{8}_\\d{6}\\.stpb")) == true }
+                                        ?.forEach { it.delete() }
+                                }
+                                periodicEnabled = false
+                                backgroundEnabled = false
+                                databaseChangeEnabled = false
+                                automaticStatus = "Автоматичне резервування вимкнено; автоматичні .stpb-копії видалено."
+                            }.onFailure { automaticStatus = "Не вдалося завершити вимкнення: " + (it.message ?: "невідома помилка") }
+                            showDisableAllConfirmation = false
+                        }) { Text("Вимкнути й видалити копії") }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { showDisableAllConfirmation = false }) { Text("Скасувати") }
+                    }
+                )
+            }
             HorizontalDivider()
             Text("Переносна резервна копія", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
             Text("Файл можна перенести на інший телефон. Весь пакет, включно з ключем SQLCipher, шифрується заданим паролем. Збережіть пароль окремо.", style = MaterialTheme.typography.bodySmall)
