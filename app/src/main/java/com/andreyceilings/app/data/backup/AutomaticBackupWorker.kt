@@ -23,6 +23,7 @@ class AutomaticBackupWorker(
         var backup: ByteArray? = null
         var partial: DocumentFile? = null
         try {
+            if (!AutomaticBackupSettings.anyEnabled(applicationContext)) return@withContext Result.success()
             val folderUri = BackupPasswordStore.folder(applicationContext)
                 ?: return@withContext Result.failure()
             password = BackupPasswordStore.readPassword(applicationContext)
