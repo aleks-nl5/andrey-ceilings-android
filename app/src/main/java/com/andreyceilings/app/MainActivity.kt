@@ -47,6 +47,15 @@ class MainActivity : ComponentActivity() {
     private val databaseStatus = mutableStateOf("Перевірка зашифрованої бази…")
     private val databaseState = mutableStateOf<CeilingsDatabase?>(null)
 
+    override fun onStop() {
+        if (AutomaticBackupSettings.backgroundEnabled(applicationContext) &&
+            AutomaticBackupSettings.anyEnabled(applicationContext) &&
+            BackupPasswordStore.folder(applicationContext) != null) {
+            AutomaticBackupScheduler.triggerOnBackground(applicationContext)
+        }
+        super.onStop()
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         lifecycleScope.launch {
