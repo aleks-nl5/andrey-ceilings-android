@@ -36,6 +36,20 @@ internal object DatabaseKeyManager {
         return passphrase
     }
 
+    /**
+     * Installs a passphrase imported from a password-protected portable backup.
+     * The imported passphrase is re-wrapped with this installation's Keystore key.
+     */
+    @Synchronized
+    fun replacePassphrase(context: Context, passphrase: ByteArray) {
+        require(passphrase.size == 32) { "Некоректний ключ бази даних." }
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val wrapped = wrap(passphrase)
+        check(prefs.edit().putString(PREF_WRAPPED_KEY, wrapped).commit()) {
+            "Не вдалося зберегти новий захищений ключ бази даних."
+        }
+    }
+
     private fun getOrCreateWrappingKey(): SecretKey {
         val keyStore = KeyStore.getInstance(ANDROID_KEYSTORE).apply { load(null) }
         (keyStore.getKey(WRAPPING_KEY_ALIAS, null) as? SecretKey)?.let { return it }
