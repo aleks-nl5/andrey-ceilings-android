@@ -679,6 +679,17 @@ private fun SettingsScreen(databaseStatus: String, database: CeilingsDatabase?, 
                                     sql.query("PRAGMA integrity_check").use { cursor ->
                                         check(cursor.moveToFirst() && cursor.getString(0).equals("ok", ignoreCase = true)) { "Перевірка цілісності після відновлення не пройдена." }
                                     }
+                                    val importedCounts = sql.query("""
+                                        SELECT
+                                            (SELECT COUNT(*) FROM clients),
+                                            (SELECT COUNT(*) FROM projects),
+                                            (SELECT COUNT(*) FROM room_measurements),
+                                            (SELECT COUNT(*) FROM estimates),
+                                            (SELECT COUNT(*) FROM price_items)
+                                    """.trimIndent()).use { cursor ->
+                                        check(cursor.moveToFirst()) { "Не вдалося порахувати імпортовані записи." }
+                                        (0..4).map { cursor.getLong(it) }
+                                    }
                                     reopened
                                 } catch (failure: Exception) {
                                     CeilingsDatabase.closeAndReset()
@@ -691,8 +702,27 @@ private fun SettingsScreen(databaseStatus: String, database: CeilingsDatabase?, 
                                     contents.database.fill(0); contents.passphrase.fill(0)
                                 }
                             } }
-                            result.onSuccess { restored -> onDatabaseReplaced(restored); backupStatus = "ІМПОРТ УСПІШНИЙ: резервну копію відновлено, поточну базу замінено та перевірено. Перевірте клієнтів, об’єкти та кошториси." }
-                                .onFailure { backupStatus = "Відновлення не виконано: ${it.message ?: "невідома помилка"}. Перевірте базу перед подальшою роботою." }
+                            result.onSuccess { restored ->
+                                onDatabaseReplaced(restored)
+                                val counts = withContext(Dispatchers.IO) {
+                                    val sql = restored.openHelper.writableDatabase
+                                    sql.query("""
+                                        SELECT
+                                            (SELECT COUNT(*) FROM clients),
+                                            (SELECT COUNT(*) FROM projects),
+                                            (SELECT COUNT(*) FROM room_measurements),
+                                            (SELECT COUNT(*) FROM estimates),
+                                            (SELECT COUNT(*) FROM price_items)
+                                    """.trimIndent()).use { cursor ->
+                                        check(cursor.moveToFirst()) { "Не вдалося прочитати кількість записів після імпорту." }
+                                        (0..4).map { cursor.getLong(it) }
+                                    }
+                                }
+                                backupStatus = "ІМПОРТ УСПІШНИЙ — базу відновлено й перевірено.\\n" +
+                                    "Клієнти: ${counts[0]}\\nОб’єкти: ${counts[1]}\\nВиміри: ${counts[2]}\\n" +
+                                    "Кошториси: ${counts[3]}\\nПозиції прайсу: ${counts[4]}\\n" +
+                                    "Повідомлення зникне, коли ви перейдете в інше меню."
+                            }.onFailure { backupStatus = "Відновлення не виконано: ${it.message ?: "невідома помилка"}. Перевірте базу перед подальшою роботою." }
                         }
                     }) { Text("Відновити") } },
                     dismissButton = { TextButton(onClick = { showRestoreConfirmation = false; pendingRestoreContents?.let { it.database.fill(0); it.passphrase.fill(0) }; pendingRestoreContents = null }) { Text("Скасувати") } }
