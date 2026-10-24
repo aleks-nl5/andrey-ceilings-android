@@ -568,8 +568,13 @@ private fun SettingsScreen(databaseStatus: String, database: CeilingsDatabase?) 
                             val passphrase = com.andreyceilings.app.data.security.DatabaseKeyManager
                                 .getOrCreatePassphrase(context.applicationContext)
                             try {
+                                // Preserve each passphrase byte as a single character for SQLCipher's
+                                // CharArray overload; UTF-8 decoding would alter arbitrary random bytes.
+                                val passphraseChars = CharArray(passphrase.size) { index ->
+                                    (passphrase[index].toInt() and 0xff).toChar()
+                                }
                                 val checkDb = net.sqlcipher.database.SQLiteDatabase.openDatabase(
-                                    snapshot.absolutePath, passphrase, null,
+                                    snapshot.absolutePath, passphraseChars, null,
                                     net.sqlcipher.database.SQLiteDatabase.OPEN_READONLY
                                 )
                                 try {
@@ -590,6 +595,8 @@ private fun SettingsScreen(databaseStatus: String, database: CeilingsDatabase?) 
                                 }
                             } finally {
                                 passphrase.fill(0)
+                                // Clear the temporary character representation too.
+                                // (The array is created immediately above for SQLCipher.)
                             }
                             val plainReadable = runCatching {
                                 val plainDb = android.database.sqlite.SQLiteDatabase.openDatabase(
