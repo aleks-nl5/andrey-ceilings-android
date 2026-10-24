@@ -616,7 +616,7 @@ private fun SettingsScreen(databaseStatus: String, database: CeilingsDatabase?, 
             Text("Перевірка не змінює поточні дані. Імпорт замінить поточну базу лише після успішної перевірки та підтвердження.", style = MaterialTheme.typography.bodySmall)
             Text(backupStatus, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             OutlinedButton(onClick = { backupAction = "verify"; restorePassword = ""; showImportPasswordDialog = true }, modifier = Modifier.fillMaxWidth(), enabled = database != null) { Text("Перевірити резервну копію") }
-            Button(onClick = { restorePassword = ""; showImportPasswordDialog = true }, modifier = Modifier.fillMaxWidth(), enabled = database != null) { Text("Імпортувати резервну копію") }
+            Button(onClick = { backupAction = "restore"; restorePassword = ""; showImportPasswordDialog = true }, modifier = Modifier.fillMaxWidth(), enabled = database != null) { Text("Імпортувати резервну копію") }
             if (showImportPasswordDialog) {
                 AlertDialog(
                     onDismissRequest = { showImportPasswordDialog = false; restorePassword = "" },
@@ -691,7 +691,7 @@ private fun SettingsScreen(databaseStatus: String, database: CeilingsDatabase?, 
                                     contents.database.fill(0); contents.passphrase.fill(0)
                                 }
                             } }
-                            result.onSuccess { restored -> onDatabaseReplaced(restored); backupStatus = "Переносну копію відновлено. Перевірте клієнтів, об’єкти та кошториси." }
+                            result.onSuccess { restored -> onDatabaseReplaced(restored); backupStatus = "ІМПОРТ УСПІШНИЙ: резервну копію відновлено, поточну базу замінено та перевірено. Перевірте клієнтів, об’єкти та кошториси." }
                                 .onFailure { backupStatus = "Відновлення не виконано: ${it.message ?: "невідома помилка"}. Перевірте базу перед подальшою роботою." }
                         }
                     }) { Text("Відновити") } },
