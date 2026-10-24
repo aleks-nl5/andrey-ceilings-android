@@ -13,7 +13,7 @@ android {
         applicationId = "com.andreyceilings.app"
         minSdk = 26
         targetSdk = 35
-        // Append the GitHub Actions run number to the visible test version.
+        // GitHub Actions run number is appended to the visible version for test builds.
         val actionsRunNumber = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 0
         versionCode = 600000 + actionsRunNumber
         versionName = "0.6.1" + if (actionsRunNumber > 0) "-$actionsRunNumber" else ""
