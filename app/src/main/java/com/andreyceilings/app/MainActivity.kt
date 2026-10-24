@@ -800,9 +800,17 @@ private fun SettingsScreen(databaseStatus: String, database: CeilingsDatabase?, 
                             periodicEnabled = true
                         }.onFailure { automaticStatus = it.message ?: "Не вдалося ввімкнути графік." }
                     } else {
-                        AutomaticBackupScheduler.disablePeriodic(context)
-                        AutomaticBackupSettings.setPeriodicEnabled(context, false)
-                        periodicEnabled = false
+                        val anotherModeEnabled =
+                            AutomaticBackupSettings.backgroundEnabled(context) ||
+                            AutomaticBackupSettings.databaseChangeEnabled(context)
+                        if (!anotherModeEnabled) {
+                            // Keep the switch enabled until the user confirms the destructive action.
+                            showDisableAllConfirmation = true
+                        } else {
+                            AutomaticBackupScheduler.disablePeriodic(context)
+                            AutomaticBackupSettings.setPeriodicEnabled(context, false)
+                            periodicEnabled = false
+                        }
                     }
                 }) }
             )
