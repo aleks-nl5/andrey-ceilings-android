@@ -718,7 +718,7 @@ private fun SettingsScreen(databaseStatus: String, database: CeilingsDatabase?, 
                                         (0..4).map { cursor.getLong(it) }
                                     }
                                 }
-                                backupStatus = "ІМПОРТ УСПІШНИЙ — базу відновлено й перевірено.\\n" +
+                                backupStatus = "ІМПОРТ УСПІШНИЙ — базу відновлено й перевірено.\n" +
                                     "Клієнти: ${counts[0]}\\n" +
                                     "Об’єкти: ${counts[1]}\\n" +
                                     "Виміри: ${counts[2]}\\n" +
