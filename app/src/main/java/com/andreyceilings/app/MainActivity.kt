@@ -719,9 +719,11 @@ private fun SettingsScreen(databaseStatus: String, database: CeilingsDatabase?, 
                                     }
                                 }
                                 backupStatus = "ІМПОРТ УСПІШНИЙ — базу відновлено й перевірено.\\n" +
-                                    "Клієнти: ${counts[0]}\\nОб’єкти: ${counts[1]}\\nВиміри: ${counts[2]}\\n" +
-                                    "Кошториси: ${counts[3]}\\nПозиції прайсу: ${counts[4]}\\n" +
-                                    "Повідомлення зникне, коли ви перейдете в інше меню."
+                                    "Клієнти: ${counts[0]}\\n" +
+                                    "Об’єкти: ${counts[1]}\\n" +
+                                    "Виміри: ${counts[2]}\\n" +
+                                    "Кошториси: ${counts[3]}\\n" +
+                                    "Позиції прайсу: ${counts[4]}"
                             }.onFailure { backupStatus = "Відновлення не виконано: ${it.message ?: "невідома помилка"}. Перевірте базу перед подальшою роботою." }
                         }
                     }) { Text("Відновити") } },
