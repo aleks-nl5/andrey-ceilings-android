@@ -1,6 +1,9 @@
 package com.andreyceilings.app
 
 import android.os.Bundle
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -17,6 +20,7 @@ import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.runtime.*
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -422,7 +426,28 @@ private fun CalculatorScreen(
 @Composable
 private fun SettingsScreen(databaseStatus: String, database: CeilingsDatabase?) {
     var fileCheck by remember { mutableStateOf("Натисніть кнопку, щоб перевірити записи та файли бази даних.") }
+    var exportStatus by remember { mutableStateOf("Експорт створює копію зашифрованого файла БД без ключа.") }
+    var pendingExportFile by remember { mutableStateOf<java.io.File?>(null) }
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+    val exportDocumentLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")) { destination: Uri? ->
+        val source = pendingExportFile
+        pendingExportFile = null
+        if (destination == null || source == null) {
+            source?.delete()
+            exportStatus = "Експорт скасовано."
+        } else {
+            scope.launch {
+                exportStatus = withContext(Dispatchers.IO) {
+                    runCatching {
+                        context.contentResolver.openOutputStream(destination, "w")?.use { output -> source.inputStream().use { it.copyTo(output) } } ?: error("Не вдалося відкрити файл призначення.")
+                        "Зашифровану копію збережено. Ключ до файла не додавався. Перевірте її звичайним SQLite-переглядачем без введення ключа."
+                    }.getOrElse { "Експорт не вдався: " + (it.message ?: "невідома помилка") }
+                }
+                source.delete()
+            }
+        }
+    }
     SectionTitle("Налаштування", "Персоналізація та резервне копіювання")
     Card {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -516,7 +541,37 @@ private fun SettingsScreen(databaseStatus: String, database: CeilingsDatabase?) 
                 modifier = Modifier.fillMaxWidth(),
                 enabled = database != null
             ) { Text("Перевірити WAL checkpoint") }
-            ListItem(leadingContent = { Icon(Icons.Default.Backup, null) }, headlineContent = { Text("Резервна копія") }, supportingContent = { Text("Системні резервні копії вимкнено; зашифрований експорт буде додано окремо") })
+            HorizontalDivider()
+            Text("Експорт тестової копії SQLCipher", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            Text("Створює копію файла БД у вибрану папку. Ключ не експортується. Зберігайте файл приватно.", style = MaterialTheme.typography.bodySmall)
+            Text(exportStatus, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            OutlinedButton(onClick = {
+                scope.launch {
+                    exportStatus = withContext(Dispatchers.IO) {
+                        runCatching {
+                            val db = database ?: error("База даних ще не готова.")
+                            val sqlDb = db.openHelper.writableDatabase
+                            val sourcePath = sqlDb.path ?: error("Шлях до файла БД недоступний.")
+                            val source = java.io.File(sourcePath)
+                            check(source.isFile) { "Файл БД не знайдено." }
+                            sqlDb.query("PRAGMA wal_checkpoint(FULL)").use { cursor ->
+                                check(cursor.moveToFirst()) { "SQLite не повернула результат WAL checkpoint." }
+                                val busy = cursor.getLong(0)
+                                val frames = cursor.getLong(1)
+                                val copied = cursor.getLong(2)
+                                check(busy == 0L && (frames < 0L || copied >= frames)) { "WAL checkpoint не завершився повністю. Повторіть, коли БД не використовується." }
+                            }
+                            val snapshot = java.io.File(context.cacheDir, "andrey_ceilings_secure_export.tmp")
+                            source.inputStream().use { input -> snapshot.outputStream().use { output -> input.copyTo(output) } }
+                            check(snapshot.length() > 0L) { "Створена копія порожня." }
+                            pendingExportFile = snapshot
+                            "Копію підготовлено. Виберіть папку та підтвердьте збереження."
+                        }.getOrElse { "Не вдалося підготувати копію: " + (it.message ?: "невідома помилка") }
+                    }
+                    if (pendingExportFile != null) exportDocumentLauncher.launch("andrey_ceilings_secure_test.db")
+                }
+            }, modifier = Modifier.fillMaxWidth(), enabled = database != null) { Text("Експортувати тестову копію БД") }
+            ListItem(leadingContent = { Icon(Icons.Default.Backup, null) }, headlineContent = { Text("Резервна копія") }, supportingContent = { Text("Експортована копія зашифрована; ключ не додається до файла") })
         }
     }
 }
