@@ -615,7 +615,7 @@ private fun SettingsScreen(databaseStatus: String, database: CeilingsDatabase?, 
             Text("Перевірка та імпорт резервної копії", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
             Text("Перевірка не змінює поточні дані. Імпорт замінить поточну базу лише після успішної перевірки та підтвердження.", style = MaterialTheme.typography.bodySmall)
             Text(backupStatus, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            OutlinedButton(onClick = { backupAction = "verify"; backupPicker.launch(arrayOf("application/octet-stream", "*/*")) }, modifier = Modifier.fillMaxWidth(), enabled = database != null) { Text("Перевірити резервну копію") }
+            OutlinedButton(onClick = { backupAction = "verify"; restorePassword = ""; showImportPasswordDialog = true }, modifier = Modifier.fillMaxWidth(), enabled = database != null) { Text("Перевірити резервну копію") }
             Button(onClick = { restorePassword = ""; showImportPasswordDialog = true }, modifier = Modifier.fillMaxWidth(), enabled = database != null) { Text("Імпортувати резервну копію") }
             if (showImportPasswordDialog) {
                 AlertDialog(
@@ -637,7 +637,6 @@ private fun SettingsScreen(databaseStatus: String, database: CeilingsDatabase?, 
                     confirmButton = {
                         TextButton(onClick = {
                             showImportPasswordDialog = false
-                            backupAction = "restore"
                             backupPicker.launch(arrayOf("application/octet-stream", "application/x-sqlite3", "application/vnd.sqlite3", "*/*"))
                         }, enabled = restorePassword.isNotEmpty()) { Text("Вибрати копію") }
                     },
