@@ -850,6 +850,7 @@ private fun SettingsScreen(databaseStatus: String, database: CeilingsDatabase?, 
                         check(BackupPasswordStore.folder(context) != null) { "Спочатку виберіть папку." }
                         val saved = BackupPasswordStore.readPassword(context) ?: error("Спочатку збережіть пароль.")
                         saved.fill(Char.MIN_VALUE)
+                        AutomaticBackupSettings.setPeriodicEnabled(context, true)
                         AutomaticBackupScheduler.enable(context, AutomaticBackupSettings.schedule(context))
                         automaticStatus = "Автоматичне резервування ввімкнено. Android виконає першу копію за графіком."
                     }.onFailure { automaticStatus = "Не вдалося ввімкнути резервування: " + (it.message ?: "невідома помилка") }
