@@ -434,6 +434,28 @@ private fun SettingsScreen(databaseStatus: String, database: CeilingsDatabase?, 
     var backupAction by remember { mutableStateOf("verify") }
     var selectedBackup by remember { mutableStateOf<java.io.File?>(null) }
     var showRestoreConfirmation by remember { mutableStateOf(false) }
+    var portablePassword by remember { mutableStateOf("") }
+    var portableStatus by remember { mutableStateOf("Переносна копія захищається окремим паролем.") }
+    var pendingPortableBackup by remember { mutableStateOf<ByteArray?>(null) }
+    val portableExportLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/octet-stream")
+    ) { destination: Uri? ->
+        val bytes = pendingPortableBackup
+        pendingPortableBackup = null
+        if (destination == null || bytes == null) {
+            bytes?.fill(0)
+            portableStatus = "Збереження переносної копії скасовано."
+        } else scope.launch {
+            portableStatus = withContext(Dispatchers.IO) {
+                runCatching {
+                    context.contentResolver.openOutputStream(destination, "w")?.use { it.write(bytes) }
+                        ?: error("Не вдалося відкрити файл для запису.")
+                    "Переносну резервну копію збережено. Для відновлення потрібен цей пароль."
+                }.getOrElse { "Не вдалося зберегти копію: ${it.message ?: "невідома помилка"}" }
+                    .also { bytes.fill(0) }
+            }
+        }
+    }
     val backupPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
         if (uri == null) backupStatus = "Вибір резервної копії скасовано."
         else scope.launch {
@@ -633,6 +655,43 @@ private fun SettingsScreen(databaseStatus: String, database: CeilingsDatabase?, 
                     dismissButton = { TextButton(onClick = { showRestoreConfirmation = false }) { Text("Скасувати") } }
                 )
             }
+            HorizontalDivider()
+            Text("Переносна резервна копія", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            Text("Файл можна перенести на інший телефон. Весь пакет, включно з ключем SQLCipher, шифрується заданим паролем. Збережіть пароль окремо.", style = MaterialTheme.typography.bodySmall)
+            OutlinedTextField(
+                value = portablePassword,
+                onValueChange = { portablePassword = it },
+                label = { Text("Пароль резервної копії (від 10 символів)") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true
+            )
+            Text(portableStatus, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Button(
+                onClick = {
+                    scope.launch {
+                        portableStatus = "Створюю та перевіряю переносну копію…"
+                        val result = withContext(Dispatchers.IO) {
+                            runCatching {
+                                val db = database ?: error("База даних ще не готова.")
+                                val password = portablePassword.toCharArray()
+                                try {
+                                    com.andreyceilings.app.data.security.PortableBackupManager.create(context, db, password)
+                                } finally { password.fill('\\u0000') }
+                            }
+                        }
+                        result.onSuccess { bytes ->
+                            pendingPortableBackup?.fill(0)
+                            pendingPortableBackup = bytes
+                            portableExportLauncher.launch("stelapro-portable-backup.stpb")
+                            portableStatus = "Копію сформовано. Оберіть місце збереження."
+                        }.onFailure {
+                            portableStatus = "Не вдалося створити копію: ${it.message ?: "невідома помилка"}"
+                        }
+                    }
+                },
+                modifier = Modifier.fillMaxWidth(),
+                enabled = database != null && portablePassword.length >= 10
+            ) { Text("Створити переносну копію") }
             HorizontalDivider()
             Text("Експорт тестової копії SQLCipher", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
             Text("Створює копію файла БД у вибрану папку. Ключ не експортується. Зберігайте файл приватно.", style = MaterialTheme.typography.bodySmall)
