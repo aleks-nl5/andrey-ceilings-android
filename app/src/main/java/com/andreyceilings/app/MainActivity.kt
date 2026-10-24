@@ -59,13 +59,13 @@ class MainActivity : ComponentActivity() {
                 databaseStatus.value = "Помилка відкриття захищеної бази. Дані не завантажено."
             }
         }
-        setContent { CeilingsTheme { CeilingsApp(databaseStatus.value, databaseState.value) } }
+        setContent { CeilingsTheme { CeilingsApp(databaseStatus.value, databaseState.value) { refreshed -> databaseState.value = refreshed; databaseStatus.value = "Зашифрована база даних активна" } } }
     }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?) {
+private fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, onDatabaseReplaced: (CeilingsDatabase) -> Unit) {
     var tab by remember { mutableStateOf(AppTab.DASHBOARD) }
     var length by remember { mutableStateOf("5.4") }
     var width by remember { mutableStateOf("3.8") }
@@ -211,7 +211,7 @@ private fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?) {
                 )
                 AppTab.ESTIMATES -> EstimatesScreen(database)
                 AppTab.PRICES -> PriceListScreen(database)
-                AppTab.SETTINGS -> SettingsScreen(databaseStatus, database)
+                AppTab.SETTINGS -> SettingsScreen(databaseStatus, database, onDatabaseReplaced)
             }
         }
     }
@@ -424,7 +424,7 @@ private fun CalculatorScreen(
 }
 
 @Composable
-private fun SettingsScreen(databaseStatus: String, database: CeilingsDatabase?) {
+private fun SettingsScreen(databaseStatus: String, database: CeilingsDatabase?, onDatabaseReplaced: (CeilingsDatabase) -> Unit) {
     var fileCheck by remember { mutableStateOf("Натисніть кнопку, щоб перевірити записи та файли бази даних.") }
     var exportStatus by remember { mutableStateOf("Експорт створює копію зашифрованого файла БД без ключа.") }
     var pendingExportFile by remember { mutableStateOf<java.io.File?>(null) }
