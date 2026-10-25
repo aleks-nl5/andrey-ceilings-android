@@ -1,7 +1,7 @@
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.plugin.compose")
-    id("com.android.legacy-kapt")
+    id("com.google.devtools.ksp")
 }
 
 android {
@@ -17,12 +17,6 @@ android {
         versionCode = 600000 + actionsRunNumber
         versionName = "0.6.1" + if (actionsRunNumber > 0) "-$actionsRunNumber" else ""
 
-        javaCompileOptions {
-          annotationProcessorOptions {
-            arguments["room.schemaLocation"] =
-            "$projectDir/schemas"
-          }
-        }
     }
 
     signingConfigs {
@@ -69,7 +63,7 @@ dependencies {
     implementation("androidx.navigation:navigation-compose:2.8.8")
     implementation("androidx.room:room-runtime:2.8.5")
     implementation("androidx.room:room-ktx:2.8.5")
-    kapt("androidx.room:room-compiler:2.8.5")
+    ksp("androidx.room:room-compiler:2.8.5")
     implementation("net.zetetic:android-database-sqlcipher:4.5.4")
     implementation("androidx.sqlite:sqlite:2.7.1")
     implementation("androidx.datastore:datastore-preferences:1.1.2")
@@ -79,6 +73,6 @@ dependencies {
     debugImplementation("androidx.compose.ui:ui-tooling")
 }
 
-kapt {
-    correctErrorTypes = true
+ksp {
+    arg("room.schemaLocation", "$projectDir/schemas")
 }
