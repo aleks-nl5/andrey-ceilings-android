@@ -2,6 +2,7 @@ package com.andreyceilings.app.ui.screens
 
 import com.andreyceilings.app.*
 import com.andreyceilings.app.data.PerformanceDiagnosticsSettings
+import com.andreyceilings.app.data.PerformanceDiagnosticsLog
 
 import android.os.Bundle
 import android.net.Uri
@@ -149,6 +150,30 @@ internal fun SettingsScreen(databaseStatus: String, database: CeilingsDatabase?,
             }
         }
     }
+    var performanceLogStatus by remember { mutableStateOf("Журнал ще не експортовано.") }
+    val performanceLogExportLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("text/plain")
+    ) { destination: Uri? ->
+        if (destination == null) {
+            performanceLogStatus = "Експорт журналу скасовано."
+        } else {
+            scope.launch {
+                performanceLogStatus = withContext(Dispatchers.IO) {
+                    runCatching {
+                        val bytes = PerformanceDiagnosticsLog.readForExport(context)
+                        try {
+                            check(bytes.isNotEmpty()) { "Журнал порожній. Увімкніть діагностику та повторіть дії в застосунку." }
+                            context.contentResolver.openOutputStream(destination, "w")?.use { it.write(bytes) }
+                                ?: error("Не вдалося відкрити файл для запису.")
+                            "Журнал збережено у вибране вами місце."
+                        } finally {
+                            bytes.fill(0)
+                        }
+                    }.getOrElse { "Не вдалося зберегти журнал: ${it.message ?: "невідома помилка"}" }
+                }
+            }
+        }
+    }
     SectionTitle("Налаштування", "Персоналізація та резервне копіювання")
     Card {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -167,9 +192,9 @@ internal fun SettingsScreen(databaseStatus: String, database: CeilingsDatabase?,
                     supportingContent = {
                         Text(
                             if (performanceDiagnosticsEnabled) {
-                                "Увімкнено: час запуску БД та переходів між екранами записується в Logcat."
+                                "Увімкнено: технічні вимірювання збираються локально. Файл зберігається лише за вашою командою."
                             } else {
-                                "Вимкнено. Увімкніть для збору вимірювань у Logcat."
+                                "Вимкнено. Журнал не поповнюється; наявні записи можна зберегти або очистити."
                             }
                         )
                     },
@@ -183,6 +208,21 @@ internal fun SettingsScreen(databaseStatus: String, database: CeilingsDatabase?,
                         )
                     }
                 )
+                Text(performanceLogStatus, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                OutlinedButton(
+                    onClick = { performanceLogExportLauncher.launch("ceilings-perf.txt") },
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text("Зберегти журнал у файл…") }
+                OutlinedButton(
+                    onClick = {
+                        performanceLogStatus = if (PerformanceDiagnosticsLog.clear(context)) {
+                            "Локальний журнал очищено."
+                        } else {
+                            "Не вдалося очистити локальний журнал."
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text("Очистити журнал") }
             }
             ListItem(leadingContent = { Icon(Icons.Default.PriceChange, null) }, headlineContent = { Text("Прайс-лист") }, supportingContent = { Text("Налаштування вартості матеріалів і робіт") })
             ListItem(leadingContent = { Icon(Icons.Default.Lock, null) }, headlineContent = { Text("Захист бази даних") }, supportingContent = { Text(databaseStatus) })
