@@ -4,7 +4,10 @@ import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
 import android.os.Bundle
+import android.os.Handler
+import android.os.HandlerThread
 import android.os.SystemClock
+import android.view.FrameMetrics
 import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
@@ -15,6 +18,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import com.andreyceilings.app.data.PerformanceDiagnosticsLog
+import com.andreyceilings.app.data.PerformanceDiagnosticsSettings
 import com.andreyceilings.app.data.db.CeilingsDatabase
 import com.andreyceilings.app.data.backup.BackupPasswordStore
 import com.andreyceilings.app.data.backup.AutomaticBackupScheduler
@@ -48,6 +52,7 @@ import com.andreyceilings.app.data.db.ProjectEntity
 import com.andreyceilings.app.data.db.EstimateEntity
 import com.andreyceilings.app.ui.screens.*
 import kotlinx.coroutines.flow.flowOf
+import java.util.concurrent.atomic.AtomicLong
 
 private tailrec fun Context.findActivity(): Activity? = when (this) {
     is Activity -> this
@@ -82,6 +87,49 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
             context,
             "screen_first_frame tab=${tab.name} elapsed_ms=${SystemClock.elapsedRealtime() - requestedAt}"
         )
+    }
+
+    // Collect Android frame timings only while the calculator is visible and diagnostics are enabled.
+    val activity = remember(context) { context.findActivity() }
+    DisposableEffect(tab, activity) {
+        if (tab != AppTab.CALCULATOR || activity == null || !BuildConfig.DEBUG ||
+            !PerformanceDiagnosticsSettings.isEnabled(context.applicationContext)
+        ) {
+            onDispose { }
+        } else {
+            val frameThread = HandlerThread("calculator-frame-metrics").apply { start() }
+            val frameCount = AtomicLong(0L)
+            val slowFrameCount = AtomicLong(0L)
+            val totalFrameDurationNs = AtomicLong(0L)
+            val maxFrameDurationNs = AtomicLong(0L)
+            val droppedFrames = AtomicLong(0L)
+            val listener = android.view.Window.OnFrameMetricsAvailableListener { _, metrics, dropped ->
+                val duration = metrics.getMetric(FrameMetrics.TOTAL_DURATION)
+                if (duration > 0L) {
+                    frameCount.incrementAndGet()
+                    totalFrameDurationNs.addAndGet(duration)
+                    maxFrameDurationNs.updateAndGet { previous -> maxOf(previous, duration) }
+                    if (duration >= 16_666_667L) slowFrameCount.incrementAndGet()
+                    if (dropped > 0) droppedFrames.addAndGet(dropped.toLong())
+                }
+            }
+            activity.window.addOnFrameMetricsAvailableListener(listener, Handler(frameThread.looper))
+            onDispose {
+                activity.window.removeOnFrameMetricsAvailableListener(listener)
+                frameThread.quitSafely()
+                val frames = frameCount.get()
+                if (frames > 0L) {
+                    PerformanceDiagnosticsLog.record(
+                        context,
+                        "calculator_frame_summary frames=$frames " +
+                            "slow_frames_ge_16_67ms=\${slowFrameCount.get()} " +
+                            "avg_frame_us=\${totalFrameDurationNs.get() / frames / 1_000L} " +
+                            "max_frame_us=\${maxFrameDurationNs.get() / 1_000L} " +
+                            "dropped_frames_reported=\${droppedFrames.get()}"
+                    )
+                }
+            }
+        }
     }
 
     BackHandler {
