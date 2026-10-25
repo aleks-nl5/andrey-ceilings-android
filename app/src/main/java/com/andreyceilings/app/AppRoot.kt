@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.ContextWrapper
 import android.os.Bundle
 import android.os.SystemClock
+import android.util.Log
 import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
@@ -31,6 +32,8 @@ import androidx.compose.material3.*
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.runtime.*
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -61,12 +64,31 @@ internal enum class AppTab(val title: String) {
 @Composable
 internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, onDatabaseReplaced: (CeilingsDatabase) -> Unit) {
     var tab by remember { mutableStateOf(AppTab.DASHBOARD) }
+    var tabChangedAt by remember { mutableLongStateOf(SystemClock.elapsedRealtime()) }
     var lastBackPressTime by remember { mutableStateOf(0L) }
     val context = LocalContext.current
 
+    fun navigateTo(target: AppTab) {
+        if (tab != target) {
+            tabChangedAt = SystemClock.elapsedRealtime()
+            tab = target
+        }
+    }
+
+    LaunchedEffect(tab) {
+        val requestedAt = tabChangedAt
+        withFrameNanos { }
+        if (BuildConfig.DEBUG) {
+            Log.d(
+                "CeilingsPerf",
+                "screen_first_frame tab=${tab.name} elapsed_ms=${SystemClock.elapsedRealtime() - requestedAt}"
+            )
+        }
+    }
+
     BackHandler {
         if (tab != AppTab.DASHBOARD) {
-            tab = AppTab.DASHBOARD
+            navigateTo(AppTab.DASHBOARD)
             lastBackPressTime = 0L
         } else {
             val now = SystemClock.elapsedRealtime()
@@ -161,7 +183,7 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
                         Text("Майстер натяжних стель", style = MaterialTheme.typography.labelSmall)
                     }
                 },
-                actions = { IconButton(onClick = { tab = AppTab.SETTINGS }) { Icon(Icons.Default.Settings, "Налаштування") } }
+                actions = { IconButton(onClick = { navigateTo(AppTab.SETTINGS) }) { Icon(Icons.Default.Settings, "Налаштування") } }
             )
         },
         bottomBar = {
@@ -178,7 +200,7 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
                 items.forEach { (item, icon) ->
                     NavigationBarItem(
                         selected = tab == item,
-                        onClick = { tab = item },
+                        onClick = { navigateTo(item) },
                         icon = { Icon(icon, contentDescription = item.title) },
                         label = { Text(item.title, maxLines = 1) }
                     )
@@ -193,8 +215,8 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
             ) {
                 when (tab) {
                 AppTab.DASHBOARD -> DashboardScreen(
-                    onNewMeasurement = { tab = AppTab.MEASUREMENTS },
-                    onCalculator = { tab = AppTab.CALCULATOR }
+                    onNewMeasurement = { navigateTo(AppTab.MEASUREMENTS) },
+                    onCalculator = { navigateTo(AppTab.CALCULATOR) }
                 )
                 AppTab.OBJECTS -> ObjectsScreen(database)
                 AppTab.MEASUREMENTS -> MeasurementsScreen(database)
