@@ -48,6 +48,19 @@ internal fun SettingsScreen(databaseStatus: String, database: CeilingsDatabase?,
     var pendingExportFile by remember { mutableStateOf<java.io.File?>(null) }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
+    val appVersionLabel = remember(context) {
+        runCatching {
+            val packageInfo = context.packageManager.getPackageInfo(context.packageName, 0)
+            val versionName = packageInfo.versionName ?: "невідома"
+            val versionCode = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+                packageInfo.longVersionCode
+            } else {
+                @Suppress("DEPRECATION")
+                packageInfo.versionCode.toLong()
+            }
+            "$versionName (збірка $versionCode)"
+        }.getOrDefault("Не вдалося визначити")
+    }
     var automaticPassword by remember { mutableStateOf("") }
     var automaticStatus by remember { mutableStateOf("Автоматичні копії вимкнені, доки не вибрано папку й пароль.") }
     var showDisableAllConfirmation by remember { mutableStateOf(false) }
@@ -138,12 +151,14 @@ internal fun SettingsScreen(databaseStatus: String, database: CeilingsDatabase?,
     SectionTitle("Налаштування", "Персоналізація та резервне копіювання")
     Card {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            ListItem(leadingContent = { Icon(Icons.Default.Info, null) }, headlineContent = { Text("Версія застосунку") }, supportingContent = { Text(appVersionLabel) })
+            HorizontalDivider()
             ListItem(leadingContent = { Icon(Icons.Default.Language, null) }, headlineContent = { Text("Мова") }, supportingContent = { Text("Українська") }, trailingContent = { Text("UA") })
             ListItem(leadingContent = { Icon(Icons.Default.Palette, null) }, headlineContent = { Text("Тема") }, supportingContent = { Text("Системна / світла / темна") })
             ListItem(leadingContent = { Icon(Icons.Default.PriceChange, null) }, headlineContent = { Text("Прайс-лист") }, supportingContent = { Text("Налаштування вартості матеріалів і робіт") })
             ListItem(leadingContent = { Icon(Icons.Default.Lock, null) }, headlineContent = { Text("Захист бази даних") }, supportingContent = { Text(databaseStatus) })
             HorizontalDivider()
-            Text("Діагностика БД · версія 0.6.1", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            Text("Діагностика бази даних", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
             Text("Підраховуються фактичні записи в таблицях і розміри основного та допоміжних файлів. Перевірка не змінює дані.", style = MaterialTheme.typography.bodySmall)
             Text(fileCheck, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Button(
