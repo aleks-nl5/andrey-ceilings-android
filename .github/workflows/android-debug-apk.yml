@@ -3,7 +3,7 @@ name: Build Android APK
 on:
   workflow_dispatch:
   push:
-    branches: [ main, master, feat/automatic-and-portable-backups ]
+    branches: [ main, master, feat/automatic-and-portable-backups, fix/gradle-8-14-6 ]
 
 permissions:
   contents: read
