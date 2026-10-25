@@ -25,6 +25,10 @@ import androidx.compose.ui.unit.dp
 import com.andreyceilings.app.data.db.*
 import com.andreyceilings.app.core.EstimateLineItems
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.onEach
+import android.os.SystemClock
+import androidx.compose.runtime.withFrameNanos
+import com.andreyceilings.app.data.PerformanceDiagnosticsLog
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -75,23 +79,53 @@ internal fun SaveEstimateDialog(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun EstimatesScreen(database: CeilingsDatabase?) {
-    val estimatesFlow = remember(database) { database?.estimates()?.observeAll() ?: flowOf<List<EstimateEntity>>(emptyList()) }
-    val projectsFlow = remember(database) { database?.projects()?.observeAll() ?: flowOf<List<ProjectEntity>>(emptyList()) }
+    val context = LocalContext.current
+    val screenOpenedAt = remember(database) { SystemClock.elapsedRealtime() }
+    val estimatesFlow = remember(database, context) {
+        val requestedAt = SystemClock.elapsedRealtime()
+        val source = database?.estimates()?.observeAll() ?: flowOf<List<EstimateEntity>>(emptyList())
+        source.onEach { rows ->
+            PerformanceDiagnosticsLog.record(
+                context,
+                "estimates_data_emitted count=${rows.size} elapsed_ms=${SystemClock.elapsedRealtime() - requestedAt}"
+            )
+        }
+    }
+    val projectsFlow = remember(database, context) {
+        val requestedAt = SystemClock.elapsedRealtime()
+        val source = database?.projects()?.observeAll() ?: flowOf<List<ProjectEntity>>(emptyList())
+        source.onEach { rows ->
+            PerformanceDiagnosticsLog.record(
+                context,
+                "estimates_projects_emitted count=${rows.size} elapsed_ms=${SystemClock.elapsedRealtime() - requestedAt}"
+            )
+        }
+    }
     val estimates by estimatesFlow.collectAsState(initial = emptyList())
     val projects by projectsFlow.collectAsState(initial = emptyList())
+    LaunchedEffect(estimates.size, projects.size, database) {
+        if (database != null && (estimates.isNotEmpty() || projects.isNotEmpty())) {
+            withFrameNanos { }
+            PerformanceDiagnosticsLog.record(
+                context,
+                "estimates_list_frame estimates_count=${estimates.size} projects_count=${projects.size} elapsed_ms=${SystemClock.elapsedRealtime() - screenOpenedAt}"
+            )
+        }
+    }
     val scope = rememberCoroutineScope()
-    val context = LocalContext.current
     var error by remember { mutableStateOf<String?>(null) }
     var status by remember { mutableStateOf<String?>(null) }
     var editingEstimate by remember { mutableStateOf<EstimateEntity?>(null) }
     var pendingPdfEstimate by remember { mutableStateOf<EstimateEntity?>(null) }
     var renameText by remember { mutableStateOf("") }
-    val projectTotals = estimates.groupBy { it.projectId }.mapValues { (_, rows) -> rows.sumOf { it.totalCost } }
+    val estimatesByProject = remember(estimates) { estimates.groupBy { it.projectId } }
+    val projectsById = remember(projects) { projects.associateBy { it.id } }
+    val projectTotals = remember(estimatesByProject) { estimatesByProject.mapValues { (_, rows) -> rows.sumOf { it.totalCost } } }
     val pdfLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/pdf")) { uri ->
         val selected = pendingPdfEstimate
         pendingPdfEstimate = null
         if (uri != null && selected != null) {
-            val projectTitle = projects.firstOrNull { it.id == selected.projectId }?.title ?: "Об’єкт #${selected.projectId}"
+            val projectTitle = projectsById[selected.projectId]?.title ?: "Об’єкт #${selected.projectId}"
             scope.launch {
                 runCatching { withContext(Dispatchers.IO) { writeEstimatePdf(context, uri, selected, projectTitle) } }
                     .onSuccess { status = "PDF-кошторис збережено." }
@@ -99,28 +133,38 @@ internal fun EstimatesScreen(database: CeilingsDatabase?) {
             }
         }
     }
-    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text("Кошториси", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-        Text("Збережені розрахунки та суми по кожному об’єкту", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+        contentPadding = PaddingValues(bottom = 16.dp)
+    ) {
+        item {
+            Text("Кошториси", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+            Text("Збережені розрахунки та суми по кожному об’єкту", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
         if (database == null) {
-            LinearProgressIndicator(Modifier.fillMaxWidth())
-            Text("Захищена база ще відкривається або недоступна.")
+            item {
+                LinearProgressIndicator(Modifier.fillMaxWidth())
+                Text("Захищена база ще відкривається або недоступна.")
+            }
         } else if (estimates.isEmpty()) {
-            EmptyDataCard("Кошторисів поки немає. Відкрийте калькулятор, зробіть розрахунок і натисніть «Зберегти кошторис до об’єкта».")
+            item { EmptyDataCard("Кошторисів поки немає. Відкрийте калькулятор, зробіть розрахунок і натисніть «Зберегти кошторис до об’єкта».") }
         } else {
             projects.forEach { project ->
-                val projectEstimates = estimates.filter { it.projectId == project.id }
+                val projectEstimates = estimatesByProject[project.id].orEmpty()
                 if (projectEstimates.isNotEmpty()) {
-                    Card {
-                        Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Text(project.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                            Text("Разом за збереженими кошторисами: ${money(projectTotals[project.id] ?: 0.0)}", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
+                    item(key = "project-total-${project.id}") {
+                        Card {
+                            Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Text(project.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                                Text("Разом за збереженими кошторисами: ${money(projectTotals[project.id] ?: 0.0)}", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
+                            }
                         }
                     }
                 }
             }
-            estimates.forEach { estimate ->
-                val project = projects.firstOrNull { it.id == estimate.projectId }
+            items(estimates, key = { "estimate-${it.id}" }) { estimate ->
+                val project = projectsById[estimate.projectId]
                 Card {
                     Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -149,7 +193,7 @@ internal fun EstimatesScreen(database: CeilingsDatabase?) {
                         }
                         Text("${estimate.lengthMeters.format2()} × ${estimate.widthMeters.format2()} м · ${estimate.areaSquareMeters.format2()} м² · ${estimate.material} · ${estimate.profileType}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         Text("Полотно ${money(estimate.canvasCost)} · профіль ${money(estimate.profileCost)} · роботи ${money(estimate.complexityCost + estimate.optionsCost)}")
-                        val itemizedRows = EstimateLineItems.fromJson(estimate.detailsJson)
+                        val itemizedRows = remember(estimate.detailsJson) { EstimateLineItems.fromJson(estimate.detailsJson) }
                         if (itemizedRows.isNotEmpty()) {
                             HorizontalDivider()
                             Text("Розбивка за позиціями", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
@@ -162,8 +206,8 @@ internal fun EstimatesScreen(database: CeilingsDatabase?) {
                 }
             }
         }
-        status?.let { Text(it, color = MaterialTheme.colorScheme.primary) }
-        error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+        item { status?.let { Text(it, color = MaterialTheme.colorScheme.primary) } }
+        item { error?.let { Text(it, color = MaterialTheme.colorScheme.error) } }
     }
     editingEstimate?.let { selected ->
         AlertDialog(

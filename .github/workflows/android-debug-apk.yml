@@ -64,7 +64,7 @@ jobs:
         run: |
           if [ -z "$KEYSTORE_BASE64" ]; then
             echo "SIGNING_CONFIGURED=false" >> "$GITHUB_ENV"
-            echo "No release signing secret configured; building debug APK."
+            echo "No release signing secret configured; release APK will not be built."
           else
             if [ -z "$KEYSTORE_PASSWORD" ] || [ -z "$KEY_ALIAS" ] || [ -z "$KEY_PASSWORD" ]; then
               echo "Keystore secret is set, but one or more signing secrets are missing." >&2
@@ -78,23 +78,26 @@ jobs:
             echo "SIGNING_CONFIGURED=true" >> "$GITHUB_ENV"
           fi
 
-      - name: Build APK
-        id: build
-        run: |
-          if [ "$SIGNING_CONFIGURED" = "true" ]; then
-            gradle --no-daemon assembleRelease --stacktrace
-            echo "apk_path=app/build/outputs/apk/release/app-release.apk" >> "$GITHUB_OUTPUT"
-            echo "artifact_name=andrey-ceilings-release-apk" >> "$GITHUB_OUTPUT"
-          else
-            gradle --no-daemon assembleDebug --stacktrace
-            echo "apk_path=app/build/outputs/apk/debug/app-debug.apk" >> "$GITHUB_OUTPUT"
-            echo "artifact_name=andrey-ceilings-debug-apk" >> "$GITHUB_OUTPUT"
-          fi
+      - name: Build debug APK
+        run: gradle --no-daemon assembleDebug --stacktrace
 
-      - name: Upload APK
+      - name: Upload debug APK
         uses: actions/upload-artifact@v7
         with:
-          name: ${{ steps.build.outputs.artifact_name }}
-          path: ${{ steps.build.outputs.apk_path }}
+          name: andrey-ceilings-debug-apk
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Build release APK
+        if: env.SIGNING_CONFIGURED == 'true'
+        run: gradle --no-daemon assembleRelease --stacktrace
+
+      - name: Upload release APK
+        if: env.SIGNING_CONFIGURED == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: andrey-ceilings-release-apk
+          path: app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
           retention-days: 14

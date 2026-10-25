@@ -39,162 +39,94 @@ import com.andreyceilings.app.*
 
 @Composable
 internal fun ObjectsScreen(database: CeilingsDatabase?) {
-    val clientsFlow = remember(database) { database?.clients()?.observeAll() ?: flowOf<List<ClientEntity>>(emptyList()) }
-    val projectsFlow = remember(database) { database?.projects()?.observeAll() ?: flowOf<List<ProjectEntity>>(emptyList()) }
-    val clients by clientsFlow.collectAsState(initial = emptyList())
-    val projects by projectsFlow.collectAsState(initial = emptyList())
-    val scope = rememberCoroutineScope()
-    var showClientDialog by remember { mutableStateOf(false) }
-    var showProjectDialog by remember { mutableStateOf(false) }
-    var dbError by remember { mutableStateOf<String?>(null) }
-
-    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text("Об’єкти та клієнти", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-        Text("Дані зберігаються локально в зашифрованій базі", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        if (database == null) {
-            LinearProgressIndicator(Modifier.fillMaxWidth())
-            Text("Захищена база ще відкривається або недоступна.")
-        } else {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                OutlinedButton(onClick = { showClientDialog = true }, modifier = Modifier.weight(1f)) {
-                    Icon(Icons.Default.Add, null); Spacer(Modifier.width(6.dp)); Text("Клієнт")
-                }
-                Button(onClick = { showProjectDialog = true }, modifier = Modifier.weight(1f)) {
-                    Icon(Icons.Default.Add, null); Spacer(Modifier.width(6.dp)); Text("Об’єкт")
-                }
-            }
-            Text("Об’єкти (${projects.size})", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-            if (projects.isEmpty()) EmptyDataCard("Поки немає об’єктів. Додайте перший об’єкт.")
-            projects.forEach { project ->
-                val clientName = clients.firstOrNull { it.id == project.clientId }?.name ?: "Клієнт не вказаний"
-                Card {
-                    Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.Business, null, tint = MaterialTheme.colorScheme.primary)
-                            Spacer(Modifier.width(8.dp))
-                            Column(Modifier.weight(1f)) {
-                                Text(project.title, fontWeight = FontWeight.SemiBold)
-                                if (project.address.isNotBlank()) Text(project.address, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                            IconButton(onClick = { scope.launch { runCatching { database.projects().deleteById(project.id) }.onFailure { dbError = it.message ?: "Не вдалося видалити об’єкт" } } }) {
-                                Icon(Icons.Default.Delete, contentDescription = "Видалити об’єкт")
-                            }
-                        }
-                        Text(clientName, style = MaterialTheme.typography.bodyMedium)
-                        val statuses = listOf("measurement", "calculation", "approved", "in_progress", "completed", "paid", "cancelled")
-                        val labels = mapOf("measurement" to "Замір", "calculation" to "Розрахунок", "approved" to "Погоджено", "in_progress" to "В монтажі", "completed" to "Завершено", "paid" to "Оплачено", "cancelled" to "Скасовано")
-                        AssistChip(onClick = {
-                            val next = statuses[(statuses.indexOf(project.status).coerceAtLeast(0) + 1) % statuses.size]
-                            scope.launch { runCatching { database.projects().updateStatus(project.id, next) }.onFailure { dbError = it.message ?: "Не вдалося змінити статус" } }
-                        }, label = { Text((labels[project.status] ?: project.status) + " · змінити") })
-                    }
-                }
-            }
-            HorizontalDivider()
-            Text("Клієнти (${clients.size})", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-            if (clients.isEmpty()) EmptyDataCard("Список клієнтів порожній.")
-            clients.forEach { client ->
-                Card {
-                    Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                            Text(client.name, fontWeight = FontWeight.SemiBold)
-                            if (client.phone.isNotBlank()) Text(client.phone, style = MaterialTheme.typography.bodyMedium)
-                            if (client.email.isNotBlank()) Text(client.email, style = MaterialTheme.typography.bodySmall)
-                        }
-                        IconButton(onClick = { scope.launch { runCatching { database.clients().deleteById(client.id) }.onFailure { dbError = it.message ?: "Не вдалося видалити клієнта" } } }) {
-                            Icon(Icons.Default.Delete, contentDescription = "Видалити клієнта")
-                        }
-                    }
-                }
-            }
-        }
-        dbError?.let { message -> Text(message, color = MaterialTheme.colorScheme.error) }
+ val clientsFlow = remember(database) { database?.clients()?.observeAll() ?: flowOf<List<ClientEntity>>(emptyList()) }
+ val projectsFlow = remember(database) { database?.projects()?.observeAll() ?: flowOf<List<ProjectEntity>>(emptyList()) }
+ val clients by clientsFlow.collectAsState(initial = emptyList())
+ val projects by projectsFlow.collectAsState(initial = emptyList())
+ val clientsById = remember(clients) { clients.associateBy { it.id } }
+ val projectsById = remember(projects) { projects.associateBy { it.id } }
+ val projectStatuses = remember { listOf("measurement", "calculation", "approved", "in_progress", "completed", "paid", "cancelled") }
+ val projectStatusLabels = remember {
+  mapOf("measurement" to "Замір", "calculation" to "Розрахунок", "approved" to "Погоджено", "in_progress" to "В монтажі", "completed" to "Завершено", "paid" to "Оплачено", "cancelled" to "Скасовано")
+ }
+ val scope = rememberCoroutineScope()
+ var showClientDialog by remember { mutableStateOf(false) }
+ var showProjectDialog by remember { mutableStateOf(false) }
+ var dbError by remember { mutableStateOf<String?>(null) }
+ LazyColumn(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(12.dp), contentPadding = PaddingValues(bottom = 16.dp)) {
+  item {
+   Text("Об’єкти та клієнти", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+   Text("Дані зберігаються локально в зашифрованій базі", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+  }
+  if (database == null) item { LinearProgressIndicator(Modifier.fillMaxWidth()); Text("Захищена база ще відкривається або недоступна.") }
+  else {
+   item {
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+     OutlinedButton(onClick = { showClientDialog = true }, modifier = Modifier.weight(1f)) { Icon(Icons.Default.Add, null); Spacer(Modifier.width(6.dp)); Text("Клієнт") }
+     Button(onClick = { showProjectDialog = true }, modifier = Modifier.weight(1f)) { Icon(Icons.Default.Add, null); Spacer(Modifier.width(6.dp)); Text("Об’єкт") }
     }
-
-    if (showClientDialog && database != null) AddClientDialog(
-        onDismiss = { showClientDialog = false },
-        onSave = { name, phone, email ->
-            scope.launch {
-                runCatching { database.clients().insert(ClientEntity(name = name.trim(), phone = phone.trim(), email = email.trim())) }
-                    .onFailure { dbError = it.message ?: "Не вдалося зберегти клієнта" }
-                showClientDialog = false
-            }
-        }
-    )
-    if (showProjectDialog && database != null) AddProjectDialog(
-        onDismiss = { showProjectDialog = false },
-        onSave = { title, address, clientName ->
-            scope.launch {
-                runCatching {
-                    val cleanedClient = clientName.trim()
-                    val clientId = if (cleanedClient.isBlank()) null else {
-                        database.clients().findByName(cleanedClient)?.id
-                            ?: database.clients().insert(ClientEntity(name = cleanedClient))
-                    }
-                    database.projects().insert(ProjectEntity(clientId = clientId, title = title.trim(), address = address.trim()))
-                }.onFailure { dbError = it.message ?: "Не вдалося зберегти об’єкт" }
-                showProjectDialog = false
-            }
-        }
-    )
+    Text("Об’єкти (${projects.size})", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+    if (projects.isEmpty()) EmptyDataCard("Поки немає об’єктів. Додайте перший об’єкт.")
+   }
+   items(projects, key = { "project-${it.id}" }) { project ->
+    val clientName = project.clientId?.let { clientsById[it]?.name } ?: "Клієнт не вказаний"
+    Card { Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+     Row(verticalAlignment = Alignment.CenterVertically) {
+      Icon(Icons.Default.Business, null, tint = MaterialTheme.colorScheme.primary); Spacer(Modifier.width(8.dp))
+      Column(Modifier.weight(1f)) { Text(project.title, fontWeight = FontWeight.SemiBold); if (project.address.isNotBlank()) Text(project.address, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+      IconButton(onClick = { scope.launch { runCatching { database.projects().deleteById(project.id) }.onFailure { dbError = it.message ?: "Не вдалося видалити об’єкт" } } }) { Icon(Icons.Default.Delete, contentDescription = "Видалити об’єкт") }
+     }
+     Text(clientName, style = MaterialTheme.typography.bodyMedium)
+     AssistChip(onClick = { val next = projectStatuses[(projectStatuses.indexOf(project.status).coerceAtLeast(0) + 1) % projectStatuses.size]; scope.launch { runCatching { database.projects().updateStatus(project.id, next) }.onFailure { dbError = it.message ?: "Не вдалося змінити статус" } } }, label = { Text((projectStatusLabels[project.status] ?: project.status) + " · змінити") })
+    } }
+   }
+   item { HorizontalDivider(); Text("Клієнти (${clients.size})", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold); if (clients.isEmpty()) EmptyDataCard("Список клієнтів порожній.") }
+   items(clients, key = { "client-${it.id}" }) { client ->
+    Card { Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) { Text(client.name, fontWeight = FontWeight.SemiBold); if (client.phone.isNotBlank()) Text(client.phone, style = MaterialTheme.typography.bodyMedium); if (client.email.isNotBlank()) Text(client.email, style = MaterialTheme.typography.bodySmall) }
+     IconButton(onClick = { scope.launch { runCatching { database.clients().deleteById(client.id) }.onFailure { dbError = it.message ?: "Не вдалося видалити клієнта" } } }) { Icon(Icons.Default.Delete, contentDescription = "Видалити клієнта") }
+    } }
+   }
+  }
+  item { dbError?.let { Text(it, color = MaterialTheme.colorScheme.error) } }
+ }
+ if (showClientDialog && database != null) AddClientDialog(onDismiss = { showClientDialog = false }, onSave = { name, phone, email ->
+  scope.launch { runCatching { database.clients().insert(ClientEntity(name = name.trim(), phone = phone.trim(), email = email.trim())) }.onFailure { dbError = it.message ?: "Не вдалося зберегти клієнта" }; showClientDialog = false }
+ })
+ if (showProjectDialog && database != null) AddProjectDialog(onDismiss = { showProjectDialog = false }, onSave = { title, address, clientName ->
+  scope.launch { runCatching { val cleanedClient = clientName.trim(); val clientId = if (cleanedClient.isBlank()) null else database.clients().findByName(cleanedClient)?.id ?: database.clients().insert(ClientEntity(name = cleanedClient)); database.projects().insert(ProjectEntity(clientId = clientId, title = title.trim(), address = address.trim())) }.onFailure { dbError = it.message ?: "Не вдалося зберегти об’єкт" }; showProjectDialog = false }
+ })
 }
 
 @Composable
 internal fun MeasurementsScreen(database: CeilingsDatabase?) {
-    val measurementsFlow = remember(database) { database?.measurements()?.observeAll() ?: flowOf<List<RoomMeasurementEntity>>(emptyList()) }
-    val projectsFlow = remember(database) { database?.projects()?.observeAll() ?: flowOf<List<ProjectEntity>>(emptyList()) }
-    val measurements by measurementsFlow.collectAsState(initial = emptyList())
-    val projects by projectsFlow.collectAsState(initial = emptyList())
-    val scope = rememberCoroutineScope()
-    var showDialog by remember { mutableStateOf(false) }
-    var error by remember { mutableStateOf<String?>(null) }
-
-    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text("Заміри", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-        Text("Заміри зберігаються в зашифрованій локальній БД", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        if (database == null) {
-            LinearProgressIndicator(Modifier.fillMaxWidth())
-            Text("Захищена база ще відкривається або недоступна.")
-        } else {
-            Button(onClick = { showDialog = true }, modifier = Modifier.fillMaxWidth(), enabled = projects.isNotEmpty()) {
-                Icon(Icons.Default.Add, null); Spacer(Modifier.width(8.dp)); Text("Створити замір")
-            }
-            if (projects.isEmpty()) EmptyDataCard("Спочатку створіть об’єкт у вкладці «Об’єкти».")
-            if (measurements.isEmpty() && projects.isNotEmpty()) EmptyDataCard("Заміри ще не додані.")
-            measurements.forEach { measurement ->
-                val project = projects.firstOrNull { it.id == measurement.projectId }
-                Card {
-                    Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.Straighten, null, tint = MaterialTheme.colorScheme.primary)
-                        Spacer(Modifier.width(10.dp))
-                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                            Text(measurement.name, fontWeight = FontWeight.SemiBold)
-                            Text(project?.title ?: "Об’єкт #${measurement.projectId}", style = MaterialTheme.typography.bodySmall)
-                            Text("${measurement.lengthMeters.format2()} × ${measurement.widthMeters.format2()} м · ${measurement.areaSquareMeters.format2()} м² · периметр ${measurement.perimeterMeters.format2()} м", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                        IconButton(onClick = { scope.launch { runCatching { database.measurements().deleteById(measurement.id) }.onFailure { error = it.message ?: "Не вдалося видалити замір" } } }) {
-                            Icon(Icons.Default.Delete, contentDescription = "Видалити замір")
-                        }
-                    }
-                }
-            }
-        }
-        error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-    }
-    if (showDialog && database != null && projects.isNotEmpty()) AddMeasurementDialog(
-        projects = projects,
-        onDismiss = { showDialog = false },
-        onSave = { projectId, name, length, width ->
-            scope.launch {
-                val area = length * width
-                val perimeter = 2.0 * (length + width)
-                runCatching {
-                    database.measurements().insert(RoomMeasurementEntity(projectId = projectId, name = name.trim(), lengthMeters = length, widthMeters = width, areaSquareMeters = area, perimeterMeters = perimeter))
-                }.onFailure { error = it.message ?: "Не вдалося зберегти замір" }
-                showDialog = false
-            }
-        }
-    )
+ val measurementsFlow = remember(database) { database?.measurements()?.observeAll() ?: flowOf<List<RoomMeasurementEntity>>(emptyList()) }
+ val projectsFlow = remember(database) { database?.projects()?.observeAll() ?: flowOf<List<ProjectEntity>>(emptyList()) }
+ val measurements by measurementsFlow.collectAsState(initial = emptyList())
+ val projects by projectsFlow.collectAsState(initial = emptyList())
+ val projectsById = remember(projects) { projects.associateBy { it.id } }
+ val scope = rememberCoroutineScope()
+ var showDialog by remember { mutableStateOf(false) }
+ var error by remember { mutableStateOf<String?>(null) }
+ LazyColumn(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(12.dp), contentPadding = PaddingValues(bottom = 16.dp)) {
+  item { Text("Заміри", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold); Text("Заміри зберігаються в зашифрованій локальній БД", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+  if (database == null) item { LinearProgressIndicator(Modifier.fillMaxWidth()); Text("Захищена база ще відкривається або недоступна.") }
+  else {
+   item { Button(onClick = { showDialog = true }, modifier = Modifier.fillMaxWidth(), enabled = projects.isNotEmpty()) { Icon(Icons.Default.Add, null); Spacer(Modifier.width(8.dp)); Text("Створити замір") }; if (projects.isEmpty()) EmptyDataCard("Спочатку створіть об’єкт у вкладці «Об’єкти»."); if (measurements.isEmpty() && projects.isNotEmpty()) EmptyDataCard("Заміри ще не додані.") }
+   items(measurements, key = { it.id }) { measurement ->
+    val project = projectsById[measurement.projectId]
+    Card { Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+     Icon(Icons.Default.Straighten, null, tint = MaterialTheme.colorScheme.primary); Spacer(Modifier.width(10.dp))
+     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) { Text(measurement.name, fontWeight = FontWeight.SemiBold); Text(project?.title ?: "Об’єкт #${measurement.projectId}", style = MaterialTheme.typography.bodySmall); Text("${measurement.lengthMeters.format2()} × ${measurement.widthMeters.format2()} м · ${measurement.areaSquareMeters.format2()} м² · периметр ${measurement.perimeterMeters.format2()} м", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+     IconButton(onClick = { scope.launch { runCatching { database.measurements().deleteById(measurement.id) }.onFailure { error = it.message ?: "Не вдалося видалити замір" } } }) { Icon(Icons.Default.Delete, contentDescription = "Видалити замір") }
+    } }
+   }
+  }
+  item { error?.let { Text(it, color = MaterialTheme.colorScheme.error) } }
+ }
+ if (showDialog && database != null && projects.isNotEmpty()) AddMeasurementDialog(projects = projects, onDismiss = { showDialog = false }, onSave = { projectId, name, length, width ->
+  scope.launch { val area = length * width; val perimeter = 2.0 * (length + width); runCatching { database.measurements().insert(RoomMeasurementEntity(projectId = projectId, name = name.trim(), lengthMeters = length, widthMeters = width, areaSquareMeters = area, perimeterMeters = perimeter)) }.onFailure { error = it.message ?: "Не вдалося зберегти замір" }; showDialog = false }
+ })
 }
 
 @Composable
