@@ -1,4 +1,6 @@
-package com.andreyceilings.app
+package com.andreyceilings.app.ui.screens
+
+import com.andreyceilings.app.*
 
 import android.os.Bundle
 import android.net.Uri
