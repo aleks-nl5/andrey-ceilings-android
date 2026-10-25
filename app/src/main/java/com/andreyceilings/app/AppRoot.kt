@@ -217,11 +217,11 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
                 ) {
                     { timings ->
                         val timingFields = timings.joinToString(separator = " ") { (phase, elapsedUs) ->
-                            "\${phase}_us=\${elapsedUs}"
+                            "${phase}_us=${elapsedUs}"
                         }
                         PerformanceDiagnosticsLog.record(
                             context,
-                            "calculator_estimate price_items_count=\${priceItems.size} $timingFields"
+                            "calculator_estimate price_items_count=${priceItems.size} $timingFields"
                         )
                     }
                 } else null
