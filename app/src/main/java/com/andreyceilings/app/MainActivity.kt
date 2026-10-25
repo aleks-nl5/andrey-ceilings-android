@@ -1,6 +1,8 @@
 package com.andreyceilings.app
 
 import android.os.Bundle
+import android.os.SystemClock
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.lifecycle.lifecycleScope
@@ -30,13 +32,25 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        val activityStartedAt = SystemClock.elapsedRealtime()
         lifecycleScope.launch {
             try {
                 val db = withContext(Dispatchers.IO) {
-                    CeilingsDatabase.get(applicationContext).also { database ->
-                        database.openHelper.writableDatabase
-                        com.andreyceilings.app.data.db.DemoPriceList.seedIfEmpty(database.priceItems())
+                    val databaseOpenStartedAt = SystemClock.elapsedRealtime()
+                    val database = CeilingsDatabase.get(applicationContext)
+                    database.openHelper.writableDatabase
+                    val databaseOpenedAt = SystemClock.elapsedRealtime()
+                    com.andreyceilings.app.data.db.DemoPriceList.seedIfEmpty(database.priceItems())
+                    val initializationFinishedAt = SystemClock.elapsedRealtime()
+                    if (BuildConfig.DEBUG) {
+                        Log.d(
+                            "CeilingsPerf",
+                            "database_open_ms=${databaseOpenedAt - databaseOpenStartedAt} " +
+                                "demo_seed_ms=${initializationFinishedAt - databaseOpenedAt} " +
+                                "activity_to_database_ready_ms=${initializationFinishedAt - activityStartedAt}"
+                        )
                     }
+                    database
                 }
                 databaseState.value = db
                 databaseStatus.value = "Зашифрована база даних активна"
