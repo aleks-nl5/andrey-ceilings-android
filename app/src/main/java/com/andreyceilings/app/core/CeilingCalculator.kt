@@ -108,7 +108,7 @@ object CeilingCalculator {
                     .put("curtainNicheMeters", options.curtainNicheMeters)
                     .put("extraCorners", options.extraCorners)
                     .put("hardWallMeters", options.hardWallMeters)))
-            .put("prices", prices)
+            .put("prices", prices) }
 
         val requestJson = measure("request_serialize") { request.toString() }
         val responseJson = measure("go_calculate") { Mobileapi.calculateJSON(requestJson) }
