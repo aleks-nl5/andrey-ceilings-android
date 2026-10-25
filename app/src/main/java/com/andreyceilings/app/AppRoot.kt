@@ -70,7 +70,7 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
             lastBackPressTime = 0L
         } else {
             val now = SystemClock.elapsedRealtime()
-            if (now - lastBackPressTime <= 2_000L) {
+            if (lastBackPressTime != 0L && now - lastBackPressTime <= 2_000L) {
                 context.findActivity()?.finish()
             } else {
                 lastBackPressTime = now
