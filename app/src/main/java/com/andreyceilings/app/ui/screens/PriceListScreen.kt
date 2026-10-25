@@ -39,69 +39,49 @@ import com.andreyceilings.app.*
 
 @Composable
 internal fun PriceListScreen(database: CeilingsDatabase?) {
-    val itemsFlow = remember(database) { database?.priceItems()?.observeAll() ?: flowOf<List<PriceItemEntity>>(emptyList()) }
-    val priceItems by itemsFlow.collectAsState(initial = emptyList())
-    val scope = rememberCoroutineScope()
-    var editingItem by remember { mutableStateOf<PriceItemEntity?>(null) }
-    var showEditor by remember { mutableStateOf(false) }
-    var error by remember { mutableStateOf<String?>(null) }
+ val itemsFlow = remember(database) { database?.priceItems()?.observeAll() ?: flowOf<List<PriceItemEntity>>(emptyList()) }
+ val priceItems by itemsFlow.collectAsState(initial = emptyList())
+ val scope = rememberCoroutineScope()
+ var editingItem by remember { mutableStateOf<PriceItemEntity?>(null) }
+ var showEditor by remember { mutableStateOf(false) }
+ var error by remember { mutableStateOf<String?>(null) }
+ val categories = remember(priceItems) { priceItems.groupBy { it.category }.toSortedMap() }
 
-    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text("Прайс-лист", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-        Text("Демонстраційні ціни в гривнях. Перед використанням перевірте й змініть їх під свої умови.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        if (database == null) {
-            LinearProgressIndicator(Modifier.fillMaxWidth())
-            Text("Захищена база ще відкривається або недоступна.")
-        } else {
-            Button(onClick = { editingItem = null; showEditor = true }, modifier = Modifier.fillMaxWidth()) {
-                Icon(Icons.Default.Add, null); Spacer(Modifier.width(8.dp)); Text("Додати позицію")
-            }
-            if (priceItems.isEmpty()) EmptyDataCard("Прайс-лист порожній.")
-            priceItems.groupBy { it.category }.forEach { (category, entries) ->
-                Text(category, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                entries.forEach { item ->
-                    Card {
-                        Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                                Text(item.title, fontWeight = FontWeight.Medium)
-                                Text("${formatPrice(item.price)} ₴ / ${item.unit}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
-                            }
-                            IconButton(onClick = { editingItem = item; showEditor = true }) {
-                                Icon(Icons.Default.Edit, contentDescription = "Редагувати ціну")
-                            }
-                            IconButton(onClick = {
-                                scope.launch {
-                                    runCatching { database.priceItems().deleteById(item.id) }
-                                        .onFailure { error = it.message ?: "Не вдалося видалити позицію" }
-                                }
-                            }) { Icon(Icons.Default.Delete, contentDescription = "Видалити позицію") }
-                        }
-                    }
-                }
-            }
-        }
-        error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+ LazyColumn(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(12.dp), contentPadding = PaddingValues(bottom = 16.dp)) {
+  item {
+   Text("Прайс-лист", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+   Text("Демонстраційні ціни в гривнях. Перед використанням перевірте й змініть їх під свої умови.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+  }
+  if (database == null) {
+   item { LinearProgressIndicator(Modifier.fillMaxWidth()); Text("Захищена база ще відкривається або недоступна.") }
+  } else {
+   item { Button(onClick = { editingItem = null; showEditor = true }, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Default.Add, null); Spacer(Modifier.width(8.dp)); Text("Додати позицію") } }
+   if (priceItems.isEmpty()) item { EmptyDataCard("Прайс-лист порожній.") }
+   categories.forEach { (category, entries) ->
+    item(key = "category-$category") { Text(category, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold) }
+    items(entries, key = { "price-${it.id}" }) { item ->
+     Card { Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+      Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+       Text(item.title, fontWeight = FontWeight.Medium)
+       Text("${formatPrice(item.price)} ₴ / ${item.unit}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
+      }
+      IconButton(onClick = { editingItem = item; showEditor = true }) { Icon(Icons.Default.Edit, contentDescription = "Редагувати ціну") }
+      IconButton(onClick = { scope.launch { runCatching { database.priceItems().deleteById(item.id) }.onFailure { error = it.message ?: "Не вдалося видалити позицію" } } }) { Icon(Icons.Default.Delete, contentDescription = "Видалити позицію") }
+     } }
     }
-
-    if (showEditor && database != null) PriceItemEditorDialog(
-        initial = editingItem,
-        onDismiss = { showEditor = false },
-        onSave = { title, category, unit, price ->
-            scope.launch {
-                runCatching {
-                    val current = editingItem
-                    database.priceItems().upsert(
-                        PriceItemEntity(
-                            id = current?.id ?: 0,
-                            code = current?.code ?: "custom.${System.currentTimeMillis()}",
-                            title = title.trim(), category = category.trim(), unit = unit.trim(), price = price
-                        )
-                    )
-                }.onFailure { error = it.message ?: "Не вдалося зберегти позицію" }
-                showEditor = false
-            }
-        }
-    )
+   }
+  }
+  item { error?.let { Text(it, color = MaterialTheme.colorScheme.error) } }
+ }
+ if (showEditor && database != null) PriceItemEditorDialog(initial = editingItem, onDismiss = { showEditor = false }, onSave = { title, category, unit, price ->
+  scope.launch {
+   runCatching {
+    val current = editingItem
+    database.priceItems().upsert(PriceItemEntity(id = current?.id ?: 0, code = current?.code ?: "custom.${System.currentTimeMillis()}", title = title.trim(), category = category.trim(), unit = unit.trim(), price = price))
+   }.onFailure { error = it.message ?: "Не вдалося зберегти позицію" }
+   showEditor = false
+  }
+ })
 }
 
 @Composable
