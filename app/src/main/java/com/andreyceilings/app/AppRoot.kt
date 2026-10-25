@@ -5,7 +5,6 @@ import android.content.Context
 import android.content.ContextWrapper
 import android.os.Bundle
 import android.os.SystemClock
-import android.util.Log
 import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
@@ -15,7 +14,7 @@ import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import com.andreyceilings.app.data.PerformanceDiagnosticsSettings
+import com.andreyceilings.app.data.PerformanceDiagnosticsLog
 import com.andreyceilings.app.data.db.CeilingsDatabase
 import com.andreyceilings.app.data.backup.BackupPasswordStore
 import com.andreyceilings.app.data.backup.AutomaticBackupScheduler
@@ -79,12 +78,10 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
     LaunchedEffect(tab) {
         val requestedAt = tabChangedAt
         withFrameNanos { }
-        if (BuildConfig.DEBUG && PerformanceDiagnosticsSettings.isEnabled(context)) {
-            Log.d(
-                "CeilingsPerf",
-                "screen_first_frame tab=${tab.name} elapsed_ms=${SystemClock.elapsedRealtime() - requestedAt}"
-            )
-        }
+        PerformanceDiagnosticsLog.record(
+            context,
+            "screen_first_frame tab=${tab.name} elapsed_ms=${SystemClock.elapsedRealtime() - requestedAt}"
+        )
     }
 
     BackHandler {
