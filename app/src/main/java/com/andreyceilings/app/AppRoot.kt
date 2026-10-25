@@ -117,6 +117,7 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
         ) {
             onDispose { }
         } else {
+            lastScrollAtNs.set(0L)
             val frameThread = HandlerThread("screen-frame-metrics").apply { start() }
             val frameCount = AtomicLong(0L)
             val slowFrameCount = AtomicLong(0L)
