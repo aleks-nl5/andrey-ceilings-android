@@ -118,12 +118,14 @@ internal fun EstimatesScreen(database: CeilingsDatabase?) {
     var editingEstimate by remember { mutableStateOf<EstimateEntity?>(null) }
     var pendingPdfEstimate by remember { mutableStateOf<EstimateEntity?>(null) }
     var renameText by remember { mutableStateOf("") }
-    val projectTotals = estimates.groupBy { it.projectId }.mapValues { (_, rows) -> rows.sumOf { it.totalCost } }
+    val estimatesByProject = remember(estimates) { estimates.groupBy { it.projectId } }
+    val projectsById = remember(projects) { projects.associateBy { it.id } }
+    val projectTotals = remember(estimatesByProject) { estimatesByProject.mapValues { (_, rows) -> rows.sumOf { it.totalCost } } }
     val pdfLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/pdf")) { uri ->
         val selected = pendingPdfEstimate
         pendingPdfEstimate = null
         if (uri != null && selected != null) {
-            val projectTitle = projects.firstOrNull { it.id == selected.projectId }?.title ?: "Об’єкт #${selected.projectId}"
+            val projectTitle = projectsById[selected.projectId]?.title ?: "Об’єкт #${selected.projectId}"
             scope.launch {
                 runCatching { withContext(Dispatchers.IO) { writeEstimatePdf(context, uri, selected, projectTitle) } }
                     .onSuccess { status = "PDF-кошторис збережено." }
@@ -131,28 +133,38 @@ internal fun EstimatesScreen(database: CeilingsDatabase?) {
             }
         }
     }
-    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text("Кошториси", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-        Text("Збережені розрахунки та суми по кожному об’єкту", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+        contentPadding = PaddingValues(bottom = 16.dp)
+    ) {
+        item {
+            Text("Кошториси", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+            Text("Збережені розрахунки та суми по кожному об’єкту", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
         if (database == null) {
-            LinearProgressIndicator(Modifier.fillMaxWidth())
-            Text("Захищена база ще відкривається або недоступна.")
+            item {
+                LinearProgressIndicator(Modifier.fillMaxWidth())
+                Text("Захищена база ще відкривається або недоступна.")
+            }
         } else if (estimates.isEmpty()) {
-            EmptyDataCard("Кошторисів поки немає. Відкрийте калькулятор, зробіть розрахунок і натисніть «Зберегти кошторис до об’єкта».")
+            item { EmptyDataCard("Кошторисів поки немає. Відкрийте калькулятор, зробіть розрахунок і натисніть «Зберегти кошторис до об’єкта».") }
         } else {
             projects.forEach { project ->
-                val projectEstimates = estimates.filter { it.projectId == project.id }
+                val projectEstimates = estimatesByProject[project.id].orEmpty()
                 if (projectEstimates.isNotEmpty()) {
-                    Card {
-                        Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Text(project.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                            Text("Разом за збереженими кошторисами: ${money(projectTotals[project.id] ?: 0.0)}", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
+                    item(key = "project-total-${project.id}") {
+                        Card {
+                            Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Text(project.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                                Text("Разом за збереженими кошторисами: ${money(projectTotals[project.id] ?: 0.0)}", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
+                            }
                         }
                     }
                 }
             }
-            estimates.forEach { estimate ->
-                val project = projects.firstOrNull { it.id == estimate.projectId }
+            items(estimates, key = { "estimate-${it.id}" }) { estimate ->
+                val project = projectsById[estimate.projectId]
                 Card {
                     Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -194,8 +206,8 @@ internal fun EstimatesScreen(database: CeilingsDatabase?) {
                 }
             }
         }
-        status?.let { Text(it, color = MaterialTheme.colorScheme.primary) }
-        error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+        item { status?.let { Text(it, color = MaterialTheme.colorScheme.primary) } }
+        item { error?.let { Text(it, color = MaterialTheme.colorScheme.error) } }
     }
     editingEstimate?.let { selected ->
         AlertDialog(
