@@ -25,6 +25,10 @@ import androidx.compose.ui.unit.dp
 import com.andreyceilings.app.data.db.*
 import com.andreyceilings.app.core.EstimateLineItems
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.onEach
+import android.os.SystemClock
+import androidx.compose.runtime.withFrameNanos
+import com.andreyceilings.app.data.PerformanceDiagnosticsLog
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -75,12 +79,40 @@ internal fun SaveEstimateDialog(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun EstimatesScreen(database: CeilingsDatabase?) {
-    val estimatesFlow = remember(database) { database?.estimates()?.observeAll() ?: flowOf<List<EstimateEntity>>(emptyList()) }
-    val projectsFlow = remember(database) { database?.projects()?.observeAll() ?: flowOf<List<ProjectEntity>>(emptyList()) }
+    val context = LocalContext.current
+    val screenOpenedAt = remember(database) { SystemClock.elapsedRealtime() }
+    val estimatesFlow = remember(database, context) {
+        val requestedAt = SystemClock.elapsedRealtime()
+        val source = database?.estimates()?.observeAll() ?: flowOf<List<EstimateEntity>>(emptyList())
+        source.onEach { rows ->
+            PerformanceDiagnosticsLog.record(
+                context,
+                "estimates_data_emitted count=${rows.size} elapsed_ms=${SystemClock.elapsedRealtime() - requestedAt}"
+            )
+        }
+    }
+    val projectsFlow = remember(database, context) {
+        val requestedAt = SystemClock.elapsedRealtime()
+        val source = database?.projects()?.observeAll() ?: flowOf<List<ProjectEntity>>(emptyList())
+        source.onEach { rows ->
+            PerformanceDiagnosticsLog.record(
+                context,
+                "estimates_projects_emitted count=${rows.size} elapsed_ms=${SystemClock.elapsedRealtime() - requestedAt}"
+            )
+        }
+    }
     val estimates by estimatesFlow.collectAsState(initial = emptyList())
     val projects by projectsFlow.collectAsState(initial = emptyList())
+    LaunchedEffect(estimates.size, projects.size, database) {
+        if (database != null && (estimates.isNotEmpty() || projects.isNotEmpty())) {
+            withFrameNanos { }
+            PerformanceDiagnosticsLog.record(
+                context,
+                "estimates_list_frame estimates_count=${estimates.size} projects_count=${projects.size} elapsed_ms=${SystemClock.elapsedRealtime() - screenOpenedAt}"
+            )
+        }
+    }
     val scope = rememberCoroutineScope()
-    val context = LocalContext.current
     var error by remember { mutableStateOf<String?>(null) }
     var status by remember { mutableStateOf<String?>(null) }
     var editingEstimate by remember { mutableStateOf<EstimateEntity?>(null) }
