@@ -38,6 +38,10 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.withFrameNanos
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -89,6 +93,22 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
         )
     }
 
+    // Track nested scroll activity separately so frame timings can be split from screen-opening work.
+    val calculatorLastScrollAtNs = remember { AtomicLong(0L) }
+    val calculatorScrollConnection = remember {
+        object : NestedScrollConnection {
+            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+                calculatorLastScrollAtNs.set(SystemClock.elapsedRealtimeNanos())
+                return Offset.Zero
+            }
+
+            override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset {
+                calculatorLastScrollAtNs.set(SystemClock.elapsedRealtimeNanos())
+                return Offset.Zero
+            }
+        }
+    }
+
     // Collect Android frame timings only while the calculator is visible and diagnostics are enabled.
     val activity = remember(context) { context.findActivity() }
     DisposableEffect(tab, activity) {
@@ -103,6 +123,10 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
             val totalFrameDurationNs = AtomicLong(0L)
             val maxFrameDurationNs = AtomicLong(0L)
             val droppedFrames = AtomicLong(0L)
+            val scrollFrameCount = AtomicLong(0L)
+            val scrollSlowFrameCount = AtomicLong(0L)
+            val scrollTotalFrameDurationNs = AtomicLong(0L)
+            val scrollMaxFrameDurationNs = AtomicLong(0L)
             val listener = android.view.Window.OnFrameMetricsAvailableListener { _, metrics, dropped ->
                 val duration = metrics.getMetric(FrameMetrics.TOTAL_DURATION)
                 if (duration > 0L) {
@@ -111,12 +135,31 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
                     maxFrameDurationNs.updateAndGet { previous -> maxOf(previous, duration) }
                     if (duration >= 16_666_667L) slowFrameCount.incrementAndGet()
                     if (dropped > 0) droppedFrames.addAndGet(dropped.toLong())
+
+                    // Include frames during active scroll and the short settling/fling tail.
+                    val sinceScrollNs = SystemClock.elapsedRealtimeNanos() - calculatorLastScrollAtNs.get()
+                    if (sinceScrollNs in 0L..500_000_000L) {
+                        scrollFrameCount.incrementAndGet()
+                        scrollTotalFrameDurationNs.addAndGet(duration)
+                        scrollMaxFrameDurationNs.updateAndGet { previous -> maxOf(previous, duration) }
+                        if (duration >= 16_666_667L) scrollSlowFrameCount.incrementAndGet()
+                    }
                 }
             }
             activity.window.addOnFrameMetricsAvailableListener(listener, Handler(frameThread.looper))
             onDispose {
                 activity.window.removeOnFrameMetricsAvailableListener(listener)
                 frameThread.quitSafely()
+                val scrollFrames = scrollFrameCount.get()
+                if (scrollFrames > 0L) {
+                    PerformanceDiagnosticsLog.record(
+                        context,
+                        "calculator_scroll_frame_summary frames=$scrollFrames " +
+                            "slow_frames_ge_16_67ms=\${scrollSlowFrameCount.get()} " +
+                            "avg_frame_us=\${scrollTotalFrameDurationNs.get() / scrollFrames / 1_000L} " +
+                            "max_frame_us=\${scrollMaxFrameDurationNs.get() / 1_000L}"
+                    )
+                }
                 val frames = frameCount.get()
                 if (frames > 0L) {
                     PerformanceDiagnosticsLog.record(
@@ -280,7 +323,9 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
                 }
             } else {
                 Column(
-                    modifier = Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(16.dp),
+                    modifier = Modifier.fillMaxSize().padding(padding)
+                        .then(if (tab == AppTab.CALCULATOR) Modifier.nestedScroll(calculatorScrollConnection) else Modifier)
+                        .verticalScroll(rememberScrollState()).padding(16.dp),
                     verticalArrangement = Arrangement.spacedBy(14.dp)
                 ) {
                     when (tab) {
