@@ -45,7 +45,12 @@ internal fun PriceListScreen(database: CeilingsDatabase?) {
  var editingItem by remember { mutableStateOf<PriceItemEntity?>(null) }
  var showEditor by remember { mutableStateOf(false) }
  var error by remember { mutableStateOf<String?>(null) }
- val categories = remember(priceItems) { priceItems.groupBy { it.category }.toSortedMap() }
+ // Group and format rows only when the observed price list changes, not on every recomposition.
+ val categories = remember(priceItems) {
+  priceItems.groupBy { it.category }.toSortedMap().mapValues { (_, entries) ->
+   entries.map { item -> item to "${formatPrice(item.price)} ₴ / ${item.unit}" }
+  }
+ }
 
  LazyColumn(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(12.dp), contentPadding = PaddingValues(bottom = 16.dp)) {
   item {
@@ -59,11 +64,12 @@ internal fun PriceListScreen(database: CeilingsDatabase?) {
    if (priceItems.isEmpty()) item { EmptyDataCard("Прайс-лист порожній.") }
    categories.forEach { (category, entries) ->
     item(key = "category-$category") { Text(category, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold) }
-    items(entries, key = { "price-${it.id}" }) { item ->
+    items(entries, key = { "price-${it.first.id}" }) { row ->
+     val item = row.first
      Card { Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
       Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
        Text(item.title, fontWeight = FontWeight.Medium)
-       Text("${formatPrice(item.price)} ₴ / ${item.unit}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
+       Text(row.second, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
       }
       IconButton(onClick = { editingItem = item; showEditor = true }) { Icon(Icons.Default.Edit, contentDescription = "Редагувати ціну") }
       IconButton(onClick = { scope.launch { runCatching { database.priceItems().deleteById(item.id) }.onFailure { error = it.message ?: "Не вдалося видалити позицію" } } }) { Icon(Icons.Default.Delete, contentDescription = "Видалити позицію") }
