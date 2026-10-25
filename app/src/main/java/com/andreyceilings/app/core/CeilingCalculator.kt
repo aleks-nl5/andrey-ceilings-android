@@ -1,5 +1,6 @@
 package com.andreyceilings.app.core
 
+import android.os.SystemClock
 import com.andreyceilings.app.data.db.PriceItemEntity
 import com.andreyceilings.core.mobileapi.Mobileapi
 import org.json.JSONObject
@@ -39,37 +40,56 @@ object CeilingCalculator {
         priceItems: List<PriceItemEntity>,
         options: CalculatorOptions,
         materialType: String,
-        profileType: String
+        profileType: String,
+        onTimings: ((List<Pair<String, Long>>) -> Unit)? = null
     ): CeilingEstimate {
+        val totalStartedAt = SystemClock.elapsedRealtimeNanos()
+        val phaseTimings = mutableListOf<Pair<String, Long>>()
+        fun <T> measure(phase: String, block: () -> T): T {
+            val startedAt = SystemClock.elapsedRealtimeNanos()
+            return try {
+                block()
+            } finally {
+                phaseTimings += phase to ((SystemClock.elapsedRealtimeNanos() - startedAt) / 1_000L)
+            }
+        }
+        try {
         // No Kotlin calculation fallback: if the Go binding fails, this method throws.
-        val prices = JSONObject(Mobileapi.defaultPricesJSON())
-        check(prices.optString("error").isBlank()) {
-            prices.optString("error").ifBlank { "Go не повернув прайс-лист" }
+        val prices = measure("default_prices_and_parse") {
+            JSONObject(Mobileapi.defaultPricesJSON()).also { parsed ->
+                check(parsed.optString("error").isBlank()) {
+                    parsed.optString("error").ifBlank { "Go не повернув прайс-лист" }
+                }
+            }
         }
         val canvasPrices = prices.getJSONObject("canvasPrices")
         val profilePrices = prices.getJSONObject("profilePrices")
-        val dbPrices = priceItems.associate { it.code to it.price.coerceAtLeast(0.0) }
+        val dbPrices = measure("database_price_mapping") {
+            priceItems.associate { it.code to it.price.coerceAtLeast(0.0) }
+        }
 
-        val canvasCodes = listOf("pvc_matte", "pvc_glossy", "pvc_satin", "fabric", "fireproof_km2", "acoustic")
-        canvasCodes.forEach { code -> dbPrices["canvas.$code"]?.let { canvasPrices.put(code, it) } }
-        val profileCodes = listOf("standard_alu", "pvc", "shadow_kraab", "floating_led", "slott_tracks")
-        profileCodes.forEach { code -> dbPrices["profile.$code"]?.let { profilePrices.put(code, it) } }
-        // Current input values remain authoritative while the user edits the calculator.
-        canvasPrices.put(materialType, pricePerM2.coerceAtLeast(0.0))
-        profilePrices.put(profileType, profilePrice.coerceAtLeast(0.0))
-        dbPrices["work.multilevel"]?.let { prices.put("multilevelPerMeterCost", it) }
-        dbPrices["work.curved"]?.let { prices.put("curvedPerMeterCost", it) }
-        dbPrices["light.line"]?.let { prices.put("lightLinePerMeter", it) }
-        dbPrices["work.shadow_profile"]?.let { prices.put("shadowProfilePerMeter", it) }
-        dbPrices["work.floating_ceiling"]?.let { prices.put("floatingProfilePerMeter", it) }
-        dbPrices["light.chandelier"]?.let { prices.put("chandelierInstallation", it) }
-        dbPrices["light.spot_gx53"]?.let { prices.put("spotInstallation", it) }
-        dbPrices["work.pipe_pass"]?.let { prices.put("pipePass", it) }
-        dbPrices["work.curtain_niche"]?.let { prices.put("curtainNichePerMeter", it) }
-        dbPrices["work.extra_corner"]?.let { prices.put("extraCornerCost", it) }
-        dbPrices["work.hard_wall"]?.let { prices.put("hardWallPerMeter", it) }
+        measure("price_merge") {
+            val canvasCodes = listOf("pvc_matte", "pvc_glossy", "pvc_satin", "fabric", "fireproof_km2", "acoustic")
+            canvasCodes.forEach { code -> dbPrices["canvas.$code"]?.let { canvasPrices.put(code, it) } }
+            val profileCodes = listOf("standard_alu", "pvc", "shadow_kraab", "floating_led", "slott_tracks")
+            profileCodes.forEach { code -> dbPrices["profile.$code"]?.let { profilePrices.put(code, it) } }
+            // Current input values remain authoritative while the user edits the calculator.
+            canvasPrices.put(materialType, pricePerM2.coerceAtLeast(0.0))
+            profilePrices.put(profileType, profilePrice.coerceAtLeast(0.0))
+            dbPrices["work.multilevel"]?.let { prices.put("multilevelPerMeterCost", it) }
+            dbPrices["work.curved"]?.let { prices.put("curvedPerMeterCost", it) }
+            dbPrices["light.line"]?.let { prices.put("lightLinePerMeter", it) }
+            dbPrices["work.shadow_profile"]?.let { prices.put("shadowProfilePerMeter", it) }
+            dbPrices["work.floating_ceiling"]?.let { prices.put("floatingProfilePerMeter", it) }
+            dbPrices["light.chandelier"]?.let { prices.put("chandelierInstallation", it) }
+            dbPrices["light.spot_gx53"]?.let { prices.put("spotInstallation", it) }
+            dbPrices["work.pipe_pass"]?.let { prices.put("pipePass", it) }
+            dbPrices["work.curtain_niche"]?.let { prices.put("curtainNichePerMeter", it) }
+            dbPrices["work.extra_corner"]?.let { prices.put("extraCornerCost", it) }
+            dbPrices["work.hard_wall"]?.let { prices.put("hardWallPerMeter", it) }
+        }
 
-        val request = JSONObject()
+        val request = measure("request_build") { JSONObject()
             .put("geometry", JSONObject()
                 .put("shape", "rectangle")
                 .put("length", length.coerceAtLeast(0.0))
@@ -90,7 +110,9 @@ object CeilingCalculator {
                     .put("hardWallMeters", options.hardWallMeters)))
             .put("prices", prices)
 
-        val response = JSONObject(Mobileapi.calculateJSON(request.toString()))
+        val requestJson = measure("request_serialize") { request.toString() }
+        val responseJson = measure("go_calculate") { Mobileapi.calculateJSON(requestJson) }
+        val response = measure("response_parse") { JSONObject(responseJson) }
         check(response.optString("error").isBlank()) { response.optString("error", "Go calculation failed") }
         val geometry = response.getJSONObject("geometry")
         val cost = response.getJSONObject("cost")
@@ -110,5 +132,9 @@ object CeilingCalculator {
             total = requiredFinite(cost, "totalCost"),
             engine = "Go"
         )
+        } finally {
+            phaseTimings += "total" to ((SystemClock.elapsedRealtimeNanos() - totalStartedAt) / 1_000L)
+            onTimings?.invoke(phaseTimings.toList())
+        }
     }
 }
