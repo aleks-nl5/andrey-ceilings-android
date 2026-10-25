@@ -1,7 +1,13 @@
 package com.andreyceilings.app
 
+import android.app.Activity
+import android.content.Context
+import android.content.ContextWrapper
 import android.os.Bundle
+import android.os.SystemClock
 import android.net.Uri
+import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.lifecycle.lifecycleScope
@@ -24,6 +30,7 @@ import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.runtime.*
+import androidx.compose.runtime.key
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -39,6 +46,12 @@ import com.andreyceilings.app.data.db.EstimateEntity
 import com.andreyceilings.app.ui.screens.*
 import kotlinx.coroutines.flow.flowOf
 
+private tailrec fun Context.findActivity(): Activity? = when (this) {
+    is Activity -> this
+    is ContextWrapper -> baseContext.findActivity()
+    else -> null
+}
+
 internal enum class AppTab(val title: String) {
     DASHBOARD("Панель"), OBJECTS("Об’єкти"), MEASUREMENTS("Заміри"),
     CALCULATOR("Калькулятор"), ESTIMATES("Кошториси"), PRICES("Прайс"), SETTINGS("Налаштування")
@@ -48,6 +61,23 @@ internal enum class AppTab(val title: String) {
 @Composable
 internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, onDatabaseReplaced: (CeilingsDatabase) -> Unit) {
     var tab by remember { mutableStateOf(AppTab.DASHBOARD) }
+    var lastBackPressTime by remember { mutableStateOf(0L) }
+    val context = LocalContext.current
+
+    BackHandler {
+        if (tab != AppTab.DASHBOARD) {
+            tab = AppTab.DASHBOARD
+            lastBackPressTime = 0L
+        } else {
+            val now = SystemClock.elapsedRealtime()
+            if (lastBackPressTime != 0L && now - lastBackPressTime <= 2_000L) {
+                context.findActivity()?.finish()
+            } else {
+                lastBackPressTime = now
+                Toast.makeText(context, "Натисніть «Назад» ще раз, щоб вийти", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
     var length by remember { mutableStateOf("5.4") }
     var width by remember { mutableStateOf("3.8") }
     var pricePerM2 by remember { mutableStateOf("290") }
@@ -156,11 +186,12 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
             }
         }
     ) { padding ->
-        Column(
-            modifier = Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
-        ) {
-            when (tab) {
+        key(tab) {
+            Column(
+                modifier = Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                when (tab) {
                 AppTab.DASHBOARD -> DashboardScreen(
                     onNewMeasurement = { tab = AppTab.MEASUREMENTS },
                     onCalculator = { tab = AppTab.CALCULATOR }
@@ -192,7 +223,8 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
                 )
                 AppTab.ESTIMATES -> EstimatesScreen(database)
                 AppTab.PRICES -> PriceListScreen(database)
-                AppTab.SETTINGS -> SettingsScreen(databaseStatus, database, onDatabaseReplaced)
+                    AppTab.SETTINGS -> SettingsScreen(databaseStatus, database, onDatabaseReplaced)
+                }
             }
         }
     }
