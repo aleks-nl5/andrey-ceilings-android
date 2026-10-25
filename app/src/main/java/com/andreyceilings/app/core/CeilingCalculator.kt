@@ -43,9 +43,10 @@ object CeilingCalculator {
         profileType: String,
         onTimings: ((List<Pair<String, Long>>) -> Unit)? = null
     ): CeilingEstimate {
-        val totalStartedAt = SystemClock.elapsedRealtimeNanos()
+        val totalStartedAt = if (onTimings != null) SystemClock.elapsedRealtimeNanos() else 0L
         val phaseTimings = mutableListOf<Pair<String, Long>>()
         fun <T> measure(phase: String, block: () -> T): T {
+            if (onTimings == null) return block()
             val startedAt = SystemClock.elapsedRealtimeNanos()
             return try {
                 block()
@@ -133,8 +134,10 @@ object CeilingCalculator {
             engine = "Go"
         )
         } finally {
-            phaseTimings += "total" to ((SystemClock.elapsedRealtimeNanos() - totalStartedAt) / 1_000L)
-            onTimings?.invoke(phaseTimings.toList())
+            if (onTimings != null) {
+                phaseTimings += "total" to ((SystemClock.elapsedRealtimeNanos() - totalStartedAt) / 1_000L)
+                onTimings.invoke(phaseTimings.toList())
+            }
         }
     }
 }
