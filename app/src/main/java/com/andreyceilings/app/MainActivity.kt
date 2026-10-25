@@ -2,12 +2,11 @@ package com.andreyceilings.app
 
 import android.os.Bundle
 import android.os.SystemClock
-import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.lifecycle.lifecycleScope
 import androidx.compose.runtime.mutableStateOf
-import com.andreyceilings.app.data.PerformanceDiagnosticsSettings
+import com.andreyceilings.app.data.PerformanceDiagnosticsLog
 import com.andreyceilings.app.data.db.CeilingsDatabase
 import com.andreyceilings.app.data.backup.BackupPasswordStore
 import com.andreyceilings.app.data.backup.AutomaticBackupScheduler
@@ -43,14 +42,12 @@ class MainActivity : ComponentActivity() {
                     val databaseOpenedAt = SystemClock.elapsedRealtime()
                     com.andreyceilings.app.data.db.DemoPriceList.seedIfEmpty(database.priceItems())
                     val initializationFinishedAt = SystemClock.elapsedRealtime()
-                    if (BuildConfig.DEBUG && PerformanceDiagnosticsSettings.isEnabled(applicationContext)) {
-                        Log.d(
-                            "CeilingsPerf",
-                            "database_open_ms=${databaseOpenedAt - databaseOpenStartedAt} " +
-                                "demo_seed_ms=${initializationFinishedAt - databaseOpenedAt} " +
-                                "activity_to_database_ready_ms=${initializationFinishedAt - activityStartedAt}"
-                        )
-                    }
+                    PerformanceDiagnosticsLog.record(
+                        applicationContext,
+                        "database_open_ms=${databaseOpenedAt - databaseOpenStartedAt} " +
+                            "demo_seed_ms=${initializationFinishedAt - databaseOpenedAt} " +
+                            "activity_to_database_ready_ms=${initializationFinishedAt - activityStartedAt}"
+                    )
                     database
                 }
                 databaseState.value = db
