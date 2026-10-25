@@ -93,26 +93,26 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
         )
     }
 
-    // Track nested scroll activity separately so frame timings can be split from screen-opening work.
-    val calculatorLastScrollAtNs = remember { AtomicLong(0L) }
-    val calculatorScrollConnection = remember {
+    // Track nested scroll activity separately from screen-opening work on every tab.
+    val lastScrollAtNs = remember { AtomicLong(0L) }
+    val screenScrollConnection = remember {
         object : NestedScrollConnection {
             override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
-                calculatorLastScrollAtNs.set(SystemClock.elapsedRealtimeNanos())
+                lastScrollAtNs.set(SystemClock.elapsedRealtimeNanos())
                 return Offset.Zero
             }
 
             override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset {
-                calculatorLastScrollAtNs.set(SystemClock.elapsedRealtimeNanos())
+                lastScrollAtNs.set(SystemClock.elapsedRealtimeNanos())
                 return Offset.Zero
             }
         }
     }
 
-    // Collect Android frame timings only while the calculator is visible and diagnostics are enabled.
+    // Collect Android frame timings for the visible tab when diagnostics are enabled.
     val activity = remember(context) { context.findActivity() }
     DisposableEffect(tab, activity) {
-        if (tab != AppTab.CALCULATOR || activity == null || !BuildConfig.DEBUG ||
+        if (activity == null || !BuildConfig.DEBUG ||
             !PerformanceDiagnosticsSettings.isEnabled(context.applicationContext)
         ) {
             onDispose { }
@@ -137,7 +137,7 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
                     if (dropped > 0) droppedFrames.addAndGet(dropped.toLong())
 
                     // Include frames during active scroll and the short settling/fling tail.
-                    val sinceScrollNs = SystemClock.elapsedRealtimeNanos() - calculatorLastScrollAtNs.get()
+                    val sinceScrollNs = SystemClock.elapsedRealtimeNanos() - lastScrollAtNs.get()
                     if (sinceScrollNs in 0L..500_000_000L) {
                         scrollFrameCount.incrementAndGet()
                         scrollTotalFrameDurationNs.addAndGet(duration)
@@ -154,7 +154,7 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
                 if (scrollFrames > 0L) {
                     PerformanceDiagnosticsLog.record(
                         context,
-                        "calculator_scroll_frame_summary frames=$scrollFrames " +
+                        "scroll_frame_summary tab=${tab.name} frames=$scrollFrames " +
                             "slow_frames_ge_16_67ms=${scrollSlowFrameCount.get()} " +
                             "avg_frame_us=${scrollTotalFrameDurationNs.get() / scrollFrames / 1_000L} " +
                             "max_frame_us=${scrollMaxFrameDurationNs.get() / 1_000L}"
@@ -164,7 +164,7 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
                 if (frames > 0L) {
                     PerformanceDiagnosticsLog.record(
                         context,
-                        "calculator_frame_summary frames=$frames " +
+                        "screen_frame_summary tab=${tab.name} frames=$frames " +
                             "slow_frames_ge_16_67ms=${slowFrameCount.get()} " +
                             "avg_frame_us=${totalFrameDurationNs.get() / frames / 1_000L} " +
                             "max_frame_us=${maxFrameDurationNs.get() / 1_000L} " +
@@ -312,7 +312,10 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
     ) { padding ->
         key(tab) {
             if (tab == AppTab.OBJECTS || tab == AppTab.MEASUREMENTS || tab == AppTab.ESTIMATES || tab == AppTab.PRICES) {
-                Box(Modifier.fillMaxSize().padding(padding).padding(16.dp)) {
+                Box(
+                    Modifier.fillMaxSize().padding(padding)
+                        .nestedScroll(screenScrollConnection).padding(16.dp)
+                ) {
                     when (tab) {
                         AppTab.OBJECTS -> ObjectsScreen(database)
                         AppTab.MEASUREMENTS -> MeasurementsScreen(database)
@@ -324,7 +327,7 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
             } else {
                 Column(
                     modifier = Modifier.fillMaxSize().padding(padding)
-                        .then(if (tab == AppTab.CALCULATOR) Modifier.nestedScroll(calculatorScrollConnection) else Modifier)
+                        .nestedScroll(screenScrollConnection)
                         .verticalScroll(rememberScrollState()).padding(16.dp),
                     verticalArrangement = Arrangement.spacedBy(14.dp)
                 ) {
