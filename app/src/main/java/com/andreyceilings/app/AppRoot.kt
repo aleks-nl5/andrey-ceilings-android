@@ -155,9 +155,9 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
                     PerformanceDiagnosticsLog.record(
                         context,
                         "calculator_scroll_frame_summary frames=$scrollFrames " +
-                            "slow_frames_ge_16_67ms=\${scrollSlowFrameCount.get()} " +
-                            "avg_frame_us=\${scrollTotalFrameDurationNs.get() / scrollFrames / 1_000L} " +
-                            "max_frame_us=\${scrollMaxFrameDurationNs.get() / 1_000L}"
+                            "slow_frames_ge_16_67ms=${scrollSlowFrameCount.get()} " +
+                            "avg_frame_us=${scrollTotalFrameDurationNs.get() / scrollFrames / 1_000L} " +
+                            "max_frame_us=${scrollMaxFrameDurationNs.get() / 1_000L}"
                     )
                 }
                 val frames = frameCount.get()
