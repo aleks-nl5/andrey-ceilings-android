@@ -1,6 +1,7 @@
 package com.andreyceilings.app.ui.screens
 
 import com.andreyceilings.app.*
+import com.andreyceilings.app.data.PerformanceDiagnosticsSettings
 
 import android.os.Bundle
 import android.net.Uri
@@ -155,6 +156,34 @@ internal fun SettingsScreen(databaseStatus: String, database: CeilingsDatabase?,
             HorizontalDivider()
             ListItem(leadingContent = { Icon(Icons.Default.Language, null) }, headlineContent = { Text("Мова") }, supportingContent = { Text("Українська") }, trailingContent = { Text("UA") })
             ListItem(leadingContent = { Icon(Icons.Default.Palette, null) }, headlineContent = { Text("Тема") }, supportingContent = { Text("Системна / світла / темна") })
+            if (BuildConfig.DEBUG) {
+                var performanceDiagnosticsEnabled by remember {
+                    mutableStateOf(PerformanceDiagnosticsSettings.isEnabled(context))
+                }
+                HorizontalDivider()
+                ListItem(
+                    leadingContent = { Icon(Icons.Default.Speed, null) },
+                    headlineContent = { Text("Журнал продуктивності") },
+                    supportingContent = {
+                        Text(
+                            if (performanceDiagnosticsEnabled) {
+                                "Увімкнено: час запуску БД та переходів між екранами записується в Logcat."
+                            } else {
+                                "Вимкнено. Увімкніть для збору вимірювань у Logcat."
+                            }
+                        )
+                    },
+                    trailingContent = {
+                        Switch(
+                            checked = performanceDiagnosticsEnabled,
+                            onCheckedChange = { enabled ->
+                                PerformanceDiagnosticsSettings.setEnabled(context, enabled)
+                                performanceDiagnosticsEnabled = enabled
+                            }
+                        )
+                    }
+                )
+            }
             ListItem(leadingContent = { Icon(Icons.Default.PriceChange, null) }, headlineContent = { Text("Прайс-лист") }, supportingContent = { Text("Налаштування вартості матеріалів і робіт") })
             ListItem(leadingContent = { Icon(Icons.Default.Lock, null) }, headlineContent = { Text("Захист бази даних") }, supportingContent = { Text(databaseStatus) })
             HorizontalDivider()
