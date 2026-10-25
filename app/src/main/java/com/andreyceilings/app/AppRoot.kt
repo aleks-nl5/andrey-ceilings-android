@@ -122,10 +122,10 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
                     PerformanceDiagnosticsLog.record(
                         context,
                         "calculator_frame_summary frames=$frames " +
-                            "slow_frames_ge_16_67ms=\${slowFrameCount.get()} " +
-                            "avg_frame_us=\${totalFrameDurationNs.get() / frames / 1_000L} " +
-                            "max_frame_us=\${maxFrameDurationNs.get() / 1_000L} " +
-                            "dropped_frames_reported=\${droppedFrames.get()}"
+                            "slow_frames_ge_16_67ms=${slowFrameCount.get()} " +
+                            "avg_frame_us=${totalFrameDurationNs.get() / frames / 1_000L} " +
+                            "max_frame_us=${maxFrameDurationNs.get() / 1_000L} " +
+                            "dropped_frames_reported=${droppedFrames.get()}"
                     )
                 }
             }
@@ -212,15 +212,19 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
                 priceItems = priceItems, options = calculatorOptions,
                 materialType = materialCode(material).removePrefix("canvas."),
                 profileType = profileCode(profileType).removePrefix("profile."),
-                onTimings = { timings ->
-                    val timingFields = timings.joinToString(separator = " ") { (phase, elapsedUs) ->
-                        "${phase}_us=$elapsedUs"
+                onTimings = if (BuildConfig.DEBUG &&
+                    PerformanceDiagnosticsSettings.isEnabled(context.applicationContext)
+                ) {
+                    { timings ->
+                        val timingFields = timings.joinToString(separator = " ") { (phase, elapsedUs) ->
+                            "\${phase}_us=\${elapsedUs}"
+                        }
+                        PerformanceDiagnosticsLog.record(
+                            context,
+                            "calculator_estimate price_items_count=\${priceItems.size} $timingFields"
+                        )
                     }
-                    PerformanceDiagnosticsLog.record(
-                        context,
-                        "calculator_estimate price_items_count=${priceItems.size} $timingFields"
-                    )
-                }
+                } else null
             )
         }
     }
