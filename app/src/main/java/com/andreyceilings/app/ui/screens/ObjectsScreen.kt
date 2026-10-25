@@ -43,6 +43,12 @@ internal fun ObjectsScreen(database: CeilingsDatabase?) {
  val projectsFlow = remember(database) { database?.projects()?.observeAll() ?: flowOf<List<ProjectEntity>>(emptyList()) }
  val clients by clientsFlow.collectAsState(initial = emptyList())
  val projects by projectsFlow.collectAsState(initial = emptyList())
+ val clientsById = remember(clients) { clients.associateBy { it.id } }
+ val projectsById = remember(projects) { projects.associateBy { it.id } }
+ val projectStatuses = remember { listOf("measurement", "calculation", "approved", "in_progress", "completed", "paid", "cancelled") }
+ val projectStatusLabels = remember {
+  mapOf("measurement" to "Замір", "calculation" to "Розрахунок", "approved" to "Погоджено", "in_progress" to "В монтажі", "completed" to "Завершено", "paid" to "Оплачено", "cancelled" to "Скасовано")
+ }
  val scope = rememberCoroutineScope()
  var showClientDialog by remember { mutableStateOf(false) }
  var showProjectDialog by remember { mutableStateOf(false) }
@@ -63,7 +69,7 @@ internal fun ObjectsScreen(database: CeilingsDatabase?) {
     if (projects.isEmpty()) EmptyDataCard("Поки немає об’єктів. Додайте перший об’єкт.")
    }
    items(projects, key = { "project-${it.id}" }) { project ->
-    val clientName = clients.firstOrNull { it.id == project.clientId }?.name ?: "Клієнт не вказаний"
+    val clientName = project.clientId?.let { clientsById[it]?.name } ?: "Клієнт не вказаний"
     Card { Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
      Row(verticalAlignment = Alignment.CenterVertically) {
       Icon(Icons.Default.Business, null, tint = MaterialTheme.colorScheme.primary); Spacer(Modifier.width(8.dp))
@@ -71,9 +77,7 @@ internal fun ObjectsScreen(database: CeilingsDatabase?) {
       IconButton(onClick = { scope.launch { runCatching { database.projects().deleteById(project.id) }.onFailure { dbError = it.message ?: "Не вдалося видалити об’єкт" } } }) { Icon(Icons.Default.Delete, contentDescription = "Видалити об’єкт") }
      }
      Text(clientName, style = MaterialTheme.typography.bodyMedium)
-     val statuses = listOf("measurement", "calculation", "approved", "in_progress", "completed", "paid", "cancelled")
-     val labels = mapOf("measurement" to "Замір", "calculation" to "Розрахунок", "approved" to "Погоджено", "in_progress" to "В монтажі", "completed" to "Завершено", "paid" to "Оплачено", "cancelled" to "Скасовано")
-     AssistChip(onClick = { val next = statuses[(statuses.indexOf(project.status).coerceAtLeast(0) + 1) % statuses.size]; scope.launch { runCatching { database.projects().updateStatus(project.id, next) }.onFailure { dbError = it.message ?: "Не вдалося змінити статус" } } }, label = { Text((labels[project.status] ?: project.status) + " · змінити") })
+     AssistChip(onClick = { val next = projectStatuses[(projectStatuses.indexOf(project.status).coerceAtLeast(0) + 1) % projectStatuses.size]; scope.launch { runCatching { database.projects().updateStatus(project.id, next) }.onFailure { dbError = it.message ?: "Не вдалося змінити статус" } } }, label = { Text((projectStatusLabels[project.status] ?: project.status) + " · змінити") })
     } }
    }
    item { HorizontalDivider(); Text("Клієнти (${clients.size})", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold); if (clients.isEmpty()) EmptyDataCard("Список клієнтів порожній.") }
@@ -100,6 +104,7 @@ internal fun MeasurementsScreen(database: CeilingsDatabase?) {
  val projectsFlow = remember(database) { database?.projects()?.observeAll() ?: flowOf<List<ProjectEntity>>(emptyList()) }
  val measurements by measurementsFlow.collectAsState(initial = emptyList())
  val projects by projectsFlow.collectAsState(initial = emptyList())
+ val projectsById = remember(projects) { projects.associateBy { it.id } }
  val scope = rememberCoroutineScope()
  var showDialog by remember { mutableStateOf(false) }
  var error by remember { mutableStateOf<String?>(null) }
@@ -109,7 +114,7 @@ internal fun MeasurementsScreen(database: CeilingsDatabase?) {
   else {
    item { Button(onClick = { showDialog = true }, modifier = Modifier.fillMaxWidth(), enabled = projects.isNotEmpty()) { Icon(Icons.Default.Add, null); Spacer(Modifier.width(8.dp)); Text("Створити замір") }; if (projects.isEmpty()) EmptyDataCard("Спочатку створіть об’єкт у вкладці «Об’єкти»."); if (measurements.isEmpty() && projects.isNotEmpty()) EmptyDataCard("Заміри ще не додані.") }
    items(measurements, key = { it.id }) { measurement ->
-    val project = projects.firstOrNull { it.id == measurement.projectId }
+    val project = projectsById[measurement.projectId]
     Card { Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
      Icon(Icons.Default.Straighten, null, tint = MaterialTheme.colorScheme.primary); Spacer(Modifier.width(10.dp))
      Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) { Text(measurement.name, fontWeight = FontWeight.SemiBold); Text(project?.title ?: "Об’єкт #${measurement.projectId}", style = MaterialTheme.typography.bodySmall); Text("${measurement.lengthMeters.format2()} × ${measurement.widthMeters.format2()} м · ${measurement.areaSquareMeters.format2()} м² · периметр ${measurement.perimeterMeters.format2()} м", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
