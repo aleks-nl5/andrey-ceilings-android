@@ -163,7 +163,16 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
                 pricePerM2.toSafeDouble(), profilePrice.toSafeDouble(),
                 priceItems = priceItems, options = calculatorOptions,
                 materialType = materialCode(material).removePrefix("canvas."),
-                profileType = profileCode(profileType).removePrefix("profile.")
+                profileType = profileCode(profileType).removePrefix("profile."),
+                onTimings = { timings ->
+                    val timingFields = timings.joinToString(separator = " ") { (phase, elapsedUs) ->
+                        "${phase}_us=$elapsedUs"
+                    }
+                    PerformanceDiagnosticsLog.record(
+                        context,
+                        "calculator_estimate price_items_count=${priceItems.size} $timingFields"
+                    )
+                }
             )
         }
     }
