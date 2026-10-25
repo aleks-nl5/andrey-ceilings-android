@@ -207,43 +207,52 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
         }
     ) { padding ->
         key(tab) {
-            Column(
-                modifier = Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(14.dp)
-            ) {
-                when (tab) {
-                AppTab.DASHBOARD -> DashboardScreen(
-                    onNewMeasurement = { navigateTo(AppTab.MEASUREMENTS) },
-                    onCalculator = { navigateTo(AppTab.CALCULATOR) }
-                )
-                AppTab.OBJECTS -> ObjectsScreen(database)
-                AppTab.MEASUREMENTS -> MeasurementsScreen(database)
-                AppTab.CALCULATOR -> CalculatorScreen(
-                    database = database,
-                    length = length, onLength = { length = it },
-                    width = width, onWidth = { width = it },
-                    price = pricePerM2, onPrice = { pricePerM2 = it },
-                    profilePrice = profilePrice, onProfilePrice = { profilePrice = it },
-                    material = material, onMaterial = { material = it },
-                    profileType = profileType, onProfileType = { profileType = it },
-                    estimate = estimate,
-                    calculationError = calculationError,
-                    priceItems = priceItems,
-                    priceItemsAvailable = priceItems.isNotEmpty(),
-                    lightLineMeters = lightLineMeters, onLightLineMeters = { lightLineMeters = it },
-                    shadowProfileMeters = shadowProfileMeters, onShadowProfileMeters = { shadowProfileMeters = it },
-                    floatingCeilingMeters = floatingCeilingMeters, onFloatingCeilingMeters = { floatingCeilingMeters = it },
-                    chandeliersCount = chandeliersCount, onChandeliersCount = { chandeliersCount = it },
-                    spotsCount = spotsCount, onSpotsCount = { spotsCount = it },
-                    pipePassCount = pipePassCount, onPipePassCount = { pipePassCount = it },
-                    curtainNicheMeters = curtainNicheMeters, onCurtainNicheMeters = { curtainNicheMeters = it },
-                    extraCorners = extraCorners, onExtraCorners = { extraCorners = it },
-                    hardWallMeters = hardWallMeters, onHardWallMeters = { hardWallMeters = it },
-                    complexity = complexity, onComplexity = { complexity = it }
-                )
-                AppTab.ESTIMATES -> EstimatesScreen(database)
-                AppTab.PRICES -> PriceListScreen(database)
-                    AppTab.SETTINGS -> SettingsScreen(databaseStatus, database, onDatabaseReplaced)
+            if (tab == AppTab.OBJECTS || tab == AppTab.MEASUREMENTS || tab == AppTab.ESTIMATES || tab == AppTab.PRICES) {
+                Box(Modifier.fillMaxSize().padding(padding).padding(16.dp)) {
+                    when (tab) {
+                        AppTab.OBJECTS -> ObjectsScreen(database)
+                        AppTab.MEASUREMENTS -> MeasurementsScreen(database)
+                        AppTab.ESTIMATES -> EstimatesScreen(database)
+                        AppTab.PRICES -> PriceListScreen(database)
+                        else -> Unit
+                    }
+                }
+            } else {
+                Column(
+                    modifier = Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
+                    when (tab) {
+                        AppTab.DASHBOARD -> DashboardScreen(
+                            onNewMeasurement = { navigateTo(AppTab.MEASUREMENTS) },
+                            onCalculator = { navigateTo(AppTab.CALCULATOR) }
+                        )
+                        AppTab.CALCULATOR -> CalculatorScreen(
+                            database = database,
+                            length = length, onLength = { length = it },
+                            width = width, onWidth = { width = it },
+                            price = pricePerM2, onPrice = { pricePerM2 = it },
+                            profilePrice = profilePrice, onProfilePrice = { profilePrice = it },
+                            material = material, onMaterial = { material = it },
+                            profileType = profileType, onProfileType = { profileType = it },
+                            estimate = estimate,
+                            calculationError = calculationError,
+                            priceItems = priceItems,
+                            priceItemsAvailable = priceItems.isNotEmpty(),
+                            lightLineMeters = lightLineMeters, onLightLineMeters = { lightLineMeters = it },
+                            shadowProfileMeters = shadowProfileMeters, onShadowProfileMeters = { shadowProfileMeters = it },
+                            floatingCeilingMeters = floatingCeilingMeters, onFloatingCeilingMeters = { floatingCeilingMeters = it },
+                            chandeliersCount = chandeliersCount, onChandeliersCount = { chandeliersCount = it },
+                            spotsCount = spotsCount, onSpotsCount = { spotsCount = it },
+                            pipePassCount = pipePassCount, onPipePassCount = { pipePassCount = it },
+                            curtainNicheMeters = curtainNicheMeters, onCurtainNicheMeters = { curtainNicheMeters = it },
+                            extraCorners = extraCorners, onExtraCorners = { extraCorners = it },
+                            hardWallMeters = hardWallMeters, onHardWallMeters = { hardWallMeters = it },
+                            complexity = complexity, onComplexity = { complexity = it }
+                        )
+                        AppTab.SETTINGS -> SettingsScreen(databaseStatus, database, onDatabaseReplaced)
+                        else -> Unit
+                    }
                 }
             }
         }
