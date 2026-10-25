@@ -15,6 +15,7 @@ import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import com.andreyceilings.app.data.PerformanceDiagnosticsSettings
 import com.andreyceilings.app.data.db.CeilingsDatabase
 import com.andreyceilings.app.data.backup.BackupPasswordStore
 import com.andreyceilings.app.data.backup.AutomaticBackupScheduler
@@ -78,7 +79,7 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
     LaunchedEffect(tab) {
         val requestedAt = tabChangedAt
         withFrameNanos { }
-        if (BuildConfig.DEBUG) {
+        if (BuildConfig.DEBUG && PerformanceDiagnosticsSettings.isEnabled(context)) {
             Log.d(
                 "CeilingsPerf",
                 "screen_first_frame tab=${tab.name} elapsed_ms=${SystemClock.elapsedRealtime() - requestedAt}"
