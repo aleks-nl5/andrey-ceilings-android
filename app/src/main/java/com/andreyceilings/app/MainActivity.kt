@@ -7,6 +7,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.lifecycle.lifecycleScope
 import androidx.compose.runtime.mutableStateOf
+import com.andreyceilings.app.data.PerformanceDiagnosticsSettings
 import com.andreyceilings.app.data.db.CeilingsDatabase
 import com.andreyceilings.app.data.backup.BackupPasswordStore
 import com.andreyceilings.app.data.backup.AutomaticBackupScheduler
@@ -42,7 +43,7 @@ class MainActivity : ComponentActivity() {
                     val databaseOpenedAt = SystemClock.elapsedRealtime()
                     com.andreyceilings.app.data.db.DemoPriceList.seedIfEmpty(database.priceItems())
                     val initializationFinishedAt = SystemClock.elapsedRealtime()
-                    if (BuildConfig.DEBUG) {
+                    if (BuildConfig.DEBUG && PerformanceDiagnosticsSettings.isEnabled(applicationContext)) {
                         Log.d(
                             "CeilingsPerf",
                             "database_open_ms=${databaseOpenedAt - databaseOpenStartedAt} " +
