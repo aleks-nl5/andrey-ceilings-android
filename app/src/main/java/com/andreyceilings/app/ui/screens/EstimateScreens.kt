@@ -193,7 +193,7 @@ internal fun EstimatesScreen(database: CeilingsDatabase?) {
                         }
                         Text("${estimate.lengthMeters.format2()} × ${estimate.widthMeters.format2()} м · ${estimate.areaSquareMeters.format2()} м² · ${estimate.material} · ${estimate.profileType}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         Text("Полотно ${money(estimate.canvasCost)} · профіль ${money(estimate.profileCost)} · роботи ${money(estimate.complexityCost + estimate.optionsCost)}")
-                        val itemizedRows = EstimateLineItems.fromJson(estimate.detailsJson)
+                        val itemizedRows = remember(estimate.detailsJson) { EstimateLineItems.fromJson(estimate.detailsJson) }
                         if (itemizedRows.isNotEmpty()) {
                             HorizontalDivider()
                             Text("Розбивка за позиціями", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
