@@ -17,10 +17,33 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontVariation
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 
-private val InterFontFamily = FontFamily(Font(com.andreyceilings.app.R.font.inter_regular))
+private val InterFontFamily = FontFamily(
+    Font(
+        com.andreyceilings.app.R.font.inter_variable,
+        weight = FontWeight.Normal,
+        variationSettings = FontVariation.Settings(FontVariation.weight(400))
+    ),
+    Font(
+        com.andreyceilings.app.R.font.inter_variable,
+        weight = FontWeight.Medium,
+        variationSettings = FontVariation.Settings(FontVariation.weight(500))
+    ),
+    Font(
+        com.andreyceilings.app.R.font.inter_variable,
+        weight = FontWeight.SemiBold,
+        variationSettings = FontVariation.Settings(FontVariation.weight(600))
+    ),
+    Font(
+        com.andreyceilings.app.R.font.inter_variable,
+        weight = FontWeight.Bold,
+        variationSettings = FontVariation.Settings(FontVariation.weight(700))
+    )
+)
 
 private val BaseTypography = Typography()
 private val AppTypography = BaseTypography.copy(
