@@ -156,8 +156,6 @@ internal fun DashboardScreen(
             }
         }
 
-        CurrencyRatesCard()
-
         Text(
             "ШВИДКІ ІНСТРУМЕНТИ МАЙСТРА",
             style = MaterialTheme.typography.titleSmall,
@@ -195,5 +193,7 @@ internal fun DashboardScreen(
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
+
+        CurrencyRatesCard()
     }
 }
