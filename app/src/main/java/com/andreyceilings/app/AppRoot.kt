@@ -48,6 +48,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.andreyceilings.app.ui.theme.CeilingsTheme
+import com.andreyceilings.app.ui.theme.ThemeMode
+import com.andreyceilings.app.ui.theme.ThemeModeSelector
 import com.andreyceilings.app.core.CeilingEstimate
 import com.andreyceilings.app.core.CeilingCalculator
 import com.andreyceilings.app.core.CalculatorOptions
@@ -71,7 +73,7 @@ internal enum class AppTab(val title: String) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, onDatabaseReplaced: (CeilingsDatabase) -> Unit) {
+internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, onDatabaseReplaced: (CeilingsDatabase) -> Unit, themeMode: ThemeMode, onThemeModeChange: (ThemeMode) -> Unit) {
     var tab by remember { mutableStateOf(AppTab.DASHBOARD) }
     var tabChangedAt by remember { mutableLongStateOf(SystemClock.elapsedRealtime()) }
     var lastBackPressTime by remember { mutableStateOf(0L) }
@@ -286,7 +288,10 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
                         Text("Майстер натяжних стель", style = MaterialTheme.typography.labelSmall)
                     }
                 },
-                actions = { IconButton(onClick = { navigateTo(AppTab.SETTINGS) }) { Icon(Icons.Default.Settings, "Налаштування") } }
+                actions = {
+                    ThemeModeSelector(mode = themeMode, onModeChange = onThemeModeChange, compact = true)
+                    IconButton(onClick = { navigateTo(AppTab.SETTINGS) }) { Icon(Icons.Default.Settings, "Налаштування") }
+                }
             )
         },
         bottomBar = {
@@ -360,7 +365,7 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
                             hardWallMeters = hardWallMeters, onHardWallMeters = { hardWallMeters = it },
                             complexity = complexity, onComplexity = { complexity = it }
                         )
-                        AppTab.SETTINGS -> SettingsScreen(databaseStatus, database, onDatabaseReplaced)
+                        AppTab.SETTINGS -> SettingsScreen(databaseStatus, database, onDatabaseReplaced, themeMode, onThemeModeChange)
                         else -> Unit
                     }
                 }
