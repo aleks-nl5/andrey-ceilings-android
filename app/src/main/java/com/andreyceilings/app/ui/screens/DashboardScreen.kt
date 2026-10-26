@@ -156,6 +156,8 @@ internal fun DashboardScreen(
             }
         }
 
+        CurrencyRatesCard()
+
         Text(
             "ШВИДКІ ІНСТРУМЕНТИ МАЙСТРА",
             style = MaterialTheme.typography.titleSmall,
