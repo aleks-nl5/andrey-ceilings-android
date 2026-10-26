@@ -142,18 +142,27 @@ internal fun CurrencyRatesCard() {
                             Text(row.title, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold)
                             Text("Встановлено: " + formatCurrencyDate(row.date), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 9.sp)
                         }
-                        Text(row.buy.currencyText(row.title == "EUR/USD"), Modifier.weight(1f), textAlign = TextAlign.End, style = MaterialTheme.typography.bodyMedium, fontSize = 13.sp)
-                        Text(row.sell.currencyText(row.title == "EUR/USD"), Modifier.weight(1f), textAlign = TextAlign.End, style = MaterialTheme.typography.bodyMedium, fontSize = 13.sp)
+                        Text(row.buy.currencyText(row.title == "EUR/USD", row.title != "EUR/USD"), Modifier.weight(1f), textAlign = TextAlign.End, style = MaterialTheme.typography.bodyMedium, fontSize = 13.sp)
+                        Text(row.sell.currencyText(row.title == "EUR/USD", row.title != "EUR/USD"), Modifier.weight(1f), textAlign = TextAlign.End, style = MaterialTheme.typography.bodyMedium, fontSize = 13.sp)
                     }
                 }
             }
 
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-            Text(
-                "Дані отримано: " + (cache?.fetchedAt?.let(::formatCurrencyDate) ?: "—"),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                val latestRateDate = cache?.rows?.maxOfOrNull { it.date }
+                Text(
+                    "Встановлено: " + (latestRateDate?.let(::formatShortRateDate) ?: "—"),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    "Оновлено: " + (cache?.fetchedAt?.let(::formatFetchedAt) ?: "—"),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.End
+                )
+            }
             message?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary) }
         }
     }
@@ -231,8 +240,18 @@ private fun encodeCurrencyCache(cache: CurrencyCache) = JSONObject().apply {
     })
 }.toString()
 
-private fun Double.currencyText(crossRate: Boolean = false) =
-    String.format(Locale("uk", "UA"), if (crossRate) "%.1f" else "%.2f", this)
+private fun Double.currencyText(crossRate: Boolean = false, hryvnia: Boolean = false): String {
+    val formatted = String.format(Locale.US, if (crossRate) "%.3f" else "%.2f", this).replace('.', ',')
+    return when {
+        crossRate -> "$formatted $"
+        hryvnia -> "$formatted грн"
+        else -> formatted
+    }
+}
 
-private fun formatCurrencyDate(seconds: Long): String =
-    if (seconds <= 0) "—" else SimpleDateFormat("dd.MM.yyyy, HH:mm", Locale("uk", "UA")).format(Date(seconds * 1000))
+private fun formatShortRateDate(seconds: Long): String =
+    if (seconds <= 0) "—" else SimpleDateFormat("dd.MM, HH:mm", Locale("uk", "UA")).format(Date(seconds * 1000))
+
+// fetchedAt is stored in milliseconds; the API rate date is in seconds.
+private fun formatFetchedAt(milliseconds: Long): String =
+    if (milliseconds <= 0) "—" else SimpleDateFormat("dd.MM, HH:mm", Locale("uk", "UA")).format(Date(milliseconds))
