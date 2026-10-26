@@ -340,7 +340,9 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
                     when (tab) {
                         AppTab.DASHBOARD -> DashboardScreen(
                             onNewMeasurement = { navigateTo(AppTab.MEASUREMENTS) },
-                            onCalculator = { navigateTo(AppTab.CALCULATOR) }
+                            onCalculator = { navigateTo(AppTab.CALCULATOR) },
+                            onObjects = { navigateTo(AppTab.OBJECTS) },
+                            onSettings = { navigateTo(AppTab.SETTINGS) }
                         )
                         AppTab.CALCULATOR -> CalculatorScreen(
                             database = database,
