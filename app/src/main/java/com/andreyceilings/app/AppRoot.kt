@@ -35,6 +35,9 @@ import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.runtime.*
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.core.view.WindowCompat
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.withFrameNanos
@@ -78,6 +81,20 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
     var tabChangedAt by remember { mutableLongStateOf(SystemClock.elapsedRealtime()) }
     var lastBackPressTime by remember { mutableStateOf(0L) }
     val context = LocalContext.current
+    val systemDarkTheme = isSystemInDarkTheme()
+    val useDarkTheme = when (themeMode) {
+        ThemeMode.LIGHT -> false
+        ThemeMode.DARK -> true
+        ThemeMode.SYSTEM -> systemDarkTheme
+    }
+
+    SideEffect {
+        context.findActivity()?.window?.let { window ->
+            window.statusBarColor = MaterialTheme.colorScheme.background.toArgb()
+            WindowCompat.getInsetsController(window, window.decorView)
+                .isAppearanceLightStatusBars = !useDarkTheme
+        }
+    }
 
     fun navigateTo(target: AppTab) {
         if (tab != target) {
