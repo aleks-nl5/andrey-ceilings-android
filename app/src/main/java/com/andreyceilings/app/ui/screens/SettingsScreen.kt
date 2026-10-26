@@ -34,6 +34,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.andreyceilings.app.ui.theme.CeilingsTheme
+import com.andreyceilings.app.ui.theme.ThemeMode
+import com.andreyceilings.app.ui.theme.ThemeModeSelector
 import com.andreyceilings.app.core.CeilingEstimate
 import com.andreyceilings.app.core.CeilingCalculator
 import com.andreyceilings.app.core.CalculatorOptions
@@ -44,7 +46,7 @@ import kotlinx.coroutines.flow.flowOf
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-internal fun SettingsScreen(databaseStatus: String, database: CeilingsDatabase?, onDatabaseReplaced: (CeilingsDatabase) -> Unit) {
+internal fun SettingsScreen(databaseStatus: String, database: CeilingsDatabase?, onDatabaseReplaced: (CeilingsDatabase) -> Unit, themeMode: ThemeMode, onThemeModeChange: (ThemeMode) -> Unit) {
     var fileCheck by remember { mutableStateOf("Натисніть кнопку, щоб перевірити записи та файли бази даних.") }
     var exportStatus by remember { mutableStateOf("Експорт створює копію зашифрованого файла БД без ключа.") }
     var pendingExportFile by remember { mutableStateOf<java.io.File?>(null) }
@@ -180,7 +182,13 @@ internal fun SettingsScreen(databaseStatus: String, database: CeilingsDatabase?,
             ListItem(leadingContent = { Icon(Icons.Default.Info, null) }, headlineContent = { Text("Версія застосунку") }, supportingContent = { Text(appVersionLabel) })
             HorizontalDivider()
             ListItem(leadingContent = { Icon(Icons.Default.Language, null) }, headlineContent = { Text("Мова") }, supportingContent = { Text("Українська") }, trailingContent = { Text("UA") })
-            ListItem(leadingContent = { Icon(Icons.Default.Palette, null) }, headlineContent = { Text("Тема") }, supportingContent = { Text("Системна / світла / темна") })
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("Тема оформлення", style = MaterialTheme.typography.titleSmall)
+                    Text("Оберіть кольори застосунку", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                ThemeModeSelector(mode = themeMode, onModeChange = onThemeModeChange)
+            }
             if (BuildConfig.DEBUG) {
                 var performanceDiagnosticsEnabled by remember {
                     mutableStateOf(PerformanceDiagnosticsSettings.isEnabled(context))
