@@ -101,7 +101,7 @@ internal fun CurrencyRatesCard() {
                                     cache = fresh
                                     prefs.edit().putString(CURRENCY_CACHE_KEY, encodeCurrencyCache(fresh)).apply()
                                     message = if (changed) {
-                                        "Курси змінено банком: " + formatCurrencyDate(fresh.rows.maxOf { it.date })
+                                        "Курси змінено банком: " + formatShortRateDate(fresh.rows.maxOf { it.date })
                                     } else {
                                         "Банк не змінив час встановлення курсів."
                                     }
@@ -140,7 +140,7 @@ internal fun CurrencyRatesCard() {
                         Spacer(Modifier.width(7.dp))
                         Column(Modifier.weight(1.35f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
                             Text(row.title, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold)
-                            Text("Встановлено: " + formatCurrencyDate(row.date), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 9.sp)
+                            Text("Встановлено: " + formatShortRateDate(row.date), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 9.sp)
                         }
                         Text(row.buy.currencyText(row.title == "EUR/USD", row.title != "EUR/USD"), Modifier.weight(1f), textAlign = TextAlign.End, style = MaterialTheme.typography.bodyMedium, fontSize = 13.sp)
                         Text(row.sell.currencyText(row.title == "EUR/USD", row.title != "EUR/USD"), Modifier.weight(1f), textAlign = TextAlign.End, style = MaterialTheme.typography.bodyMedium, fontSize = 13.sp)
