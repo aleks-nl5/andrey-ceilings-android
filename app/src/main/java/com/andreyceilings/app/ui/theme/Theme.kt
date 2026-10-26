@@ -1,6 +1,9 @@
 package com.andreyceilings.app.ui.theme
 
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
@@ -9,6 +12,7 @@ import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.SettingsBrightness
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -75,7 +79,7 @@ fun CeilingsTheme(
     MaterialTheme(colorScheme = if (useDark) DarkScheme else LightScheme, content = content)
 }
 
-/** Shared theme picker used in the app bar and Settings to keep both controls synchronized. */
+/** Shared theme picker: a one-tap cycling icon in the app bar and three choices in Settings. */
 @Composable
 fun ThemeModeSelector(
     mode: ThemeMode,
@@ -83,45 +87,60 @@ fun ThemeModeSelector(
     compact: Boolean = false,
     modifier: Modifier = Modifier
 ) {
-    var expanded by remember { mutableStateOf(false) }
     val icon = when (mode) {
         ThemeMode.LIGHT -> Icons.Default.LightMode
         ThemeMode.DARK -> Icons.Default.DarkMode
         ThemeMode.SYSTEM -> Icons.Default.SettingsBrightness
     }
-    BoxForThemeSelector(modifier = modifier) {
-        if (compact) {
-            IconButton(onClick = { expanded = true }) {
-                Icon(icon, contentDescription = "Тема: ${mode.label}")
-            }
-        } else {
-            OutlinedButton(onClick = { expanded = true }) {
-                Icon(icon, contentDescription = null)
-                Spacer(Modifier.width(8.dp))
-                Text(mode.label)
-                Spacer(Modifier.width(4.dp))
-                Icon(Icons.Default.SettingsBrightness, contentDescription = null)
-            }
+
+    if (compact) {
+        IconButton(
+            onClick = {
+                val nextMode = when (mode) {
+                    ThemeMode.LIGHT -> ThemeMode.DARK
+                    ThemeMode.DARK -> ThemeMode.SYSTEM
+                    ThemeMode.SYSTEM -> ThemeMode.LIGHT
+                }
+                onModeChange(nextMode)
+            },
+            modifier = modifier
+        ) {
+            Icon(icon, contentDescription = "Тема: ${mode.label}. Натисніть, щоб змінити")
         }
-        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+    } else {
+        Row(
+            modifier = modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
             ThemeMode.values().forEach { option ->
-                DropdownMenuItem(
-                    text = { Text(option.label) },
-                    leadingIcon = {
-                        Icon(
-                            when (option) {
-                                ThemeMode.LIGHT -> Icons.Default.LightMode
-                                ThemeMode.DARK -> Icons.Default.DarkMode
-                                ThemeMode.SYSTEM -> Icons.Default.SettingsBrightness
-                            },
-                            contentDescription = null
-                        )
-                    },
-                    onClick = {
-                        onModeChange(option)
-                        expanded = false
+                val optionIcon = when (option) {
+                    ThemeMode.LIGHT -> Icons.Default.LightMode
+                    ThemeMode.DARK -> Icons.Default.DarkMode
+                    ThemeMode.SYSTEM -> Icons.Default.SettingsBrightness
+                }
+                val selected = mode == option
+                if (selected) {
+                    Button(
+                        onClick = { onModeChange(option) },
+                        modifier = Modifier.weight(1f),
+                        contentPadding = PaddingValues(horizontal = 4.dp, vertical = 10.dp)
+                    ) {
+                        Icon(optionIcon, contentDescription = null)
+                        Spacer(Modifier.width(4.dp))
+                        Text(option.label, maxLines = 1)
                     }
-                )
+                } else {
+                    OutlinedButton(
+                        onClick = { onModeChange(option) },
+                        modifier = Modifier.weight(1f),
+                        contentPadding = PaddingValues(horizontal = 4.dp, vertical = 10.dp)
+                    ) {
+                        Icon(optionIcon, contentDescription = null)
+                        Spacer(Modifier.width(4.dp))
+                        Text(option.label, maxLines = 1)
+                    }
+                }
             }
         }
     }
