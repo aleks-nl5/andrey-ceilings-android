@@ -182,12 +182,16 @@ internal fun SettingsScreen(databaseStatus: String, database: CeilingsDatabase?,
             ListItem(leadingContent = { Icon(Icons.Default.Info, null) }, headlineContent = { Text("Версія застосунку") }, supportingContent = { Text(appVersionLabel) })
             HorizontalDivider()
             ListItem(leadingContent = { Icon(Icons.Default.Language, null) }, headlineContent = { Text("Мова") }, supportingContent = { Text("Українська") }, trailingContent = { Text("UA") })
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                Column(modifier = Modifier.weight(1f)) {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Column {
                     Text("Тема оформлення", style = MaterialTheme.typography.titleSmall)
                     Text("Оберіть кольори застосунку", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                ThemeModeSelector(mode = themeMode, onModeChange = onThemeModeChange)
+                ThemeModeSelector(
+                    mode = themeMode,
+                    onModeChange = onThemeModeChange,
+                    modifier = Modifier.fillMaxWidth()
+                )
             }
             if (BuildConfig.DEBUG) {
                 var performanceDiagnosticsEnabled by remember {
