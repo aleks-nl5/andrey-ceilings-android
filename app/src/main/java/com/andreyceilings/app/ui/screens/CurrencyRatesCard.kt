@@ -12,6 +12,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -80,13 +81,13 @@ internal fun CurrencyRatesCard() {
         ) {
             Row(
                 Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
+                verticalAlignment = Alignment.CenterVertically
             ) {
                 Text("КУРС ВАЛЮТ", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                Spacer(Modifier.width(12.dp))
+                Text("monobank", color = monoPink, fontWeight = FontWeight.ExtraBold, fontSize = 15.sp)
+                Spacer(Modifier.weight(1f))
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("monobank", color = monoPink, fontWeight = FontWeight.ExtraBold, fontSize = 15.sp)
-                    Spacer(Modifier.width(8.dp))
                     FilledTonalButton(
                         enabled = !loading && !locked,
                         onClick = {
@@ -134,7 +135,12 @@ internal fun CurrencyRatesCard() {
                         Modifier.fillMaxWidth().padding(vertical = 1.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Box(Modifier.size(29.dp).background(row.color, CircleShape), contentAlignment = Alignment.Center) {
+                        val badgeBackground = row.color.copy(alpha = 0.16f)
+                            .compositeOver(MaterialTheme.colorScheme.surfaceContainerHigh)
+                        Box(
+                            Modifier.size(29.dp).background(badgeBackground, CircleShape),
+                            contentAlignment = Alignment.Center
+                        ) {
                             Text(row.symbol, color = Color.White, fontWeight = FontWeight.Bold, fontSize = if (row.symbol.length > 1) 9.sp else 16.sp)
                         }
                         Spacer(Modifier.width(7.dp))
