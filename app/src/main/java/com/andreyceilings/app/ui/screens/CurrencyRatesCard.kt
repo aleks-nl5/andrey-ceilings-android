@@ -141,8 +141,8 @@ internal fun CurrencyRatesCard() {
                         Column(Modifier.weight(1.35f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
                             Text(row.title, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold)
                         }
-                        Text(row.buy.currencyText(row.title == "EUR/USD", row.title != "EUR/USD"), Modifier.weight(1f), textAlign = TextAlign.End, style = MaterialTheme.typography.bodyMedium, fontSize = 13.sp)
-                        Text(row.sell.currencyText(row.title == "EUR/USD", row.title != "EUR/USD"), Modifier.weight(1f), textAlign = TextAlign.End, style = MaterialTheme.typography.bodyMedium, fontSize = 13.sp)
+                        Text(row.buy.currencyText(row.title == "EUR/USD", row.title != "EUR/USD"), Modifier.weight(1f), textAlign = TextAlign.End, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        Text(row.sell.currencyText(row.title == "EUR/USD", row.title != "EUR/USD"), Modifier.weight(1f), textAlign = TextAlign.End, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold, fontSize = 13.sp)
                     }
                 }
             }
@@ -243,7 +243,7 @@ private fun Double.currencyText(crossRate: Boolean = false, hryvnia: Boolean = f
     val formatted = String.format(Locale.US, if (crossRate) "%.3f" else "%.2f", this).replace('.', ',')
     return when {
         crossRate -> "$formatted $"
-        hryvnia -> "$formatted грн"
+        hryvnia -> "$formatted ₴"
         else -> formatted
     }
 }
