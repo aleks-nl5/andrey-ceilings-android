@@ -88,9 +88,10 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
         ThemeMode.SYSTEM -> systemDarkTheme
     }
 
+    val statusBarColor = MaterialTheme.colorScheme.background.toArgb()
     SideEffect {
         context.findActivity()?.window?.let { window ->
-            window.statusBarColor = MaterialTheme.colorScheme.background.toArgb()
+            window.statusBarColor = statusBarColor
             WindowCompat.getInsetsController(window, window.decorView)
                 .isAppearanceLightStatusBars = !useDarkTheme
         }
