@@ -302,8 +302,7 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
                     AppTab.MEASUREMENTS to Icons.Default.Straighten,
                     AppTab.CALCULATOR to Icons.Default.Calculate,
                     AppTab.ESTIMATES to Icons.Default.ReceiptLong,
-                    AppTab.PRICES to Icons.Default.PriceChange,
-                    AppTab.SETTINGS to Icons.Default.Settings
+                    AppTab.PRICES to Icons.Default.PriceChange
                 )
                 items.forEach { (item, icon) ->
                     NavigationBarItem(
