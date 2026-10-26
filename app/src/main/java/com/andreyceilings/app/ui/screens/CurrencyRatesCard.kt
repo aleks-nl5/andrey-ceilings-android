@@ -140,7 +140,6 @@ internal fun CurrencyRatesCard() {
                         Spacer(Modifier.width(7.dp))
                         Column(Modifier.weight(1.35f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
                             Text(row.title, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold)
-                            Text("Встановлено: " + formatShortRateDate(row.date), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 9.sp)
                         }
                         Text(row.buy.currencyText(row.title == "EUR/USD", row.title != "EUR/USD"), Modifier.weight(1f), textAlign = TextAlign.End, style = MaterialTheme.typography.bodyMedium, fontSize = 13.sp)
                         Text(row.sell.currencyText(row.title == "EUR/USD", row.title != "EUR/USD"), Modifier.weight(1f), textAlign = TextAlign.End, style = MaterialTheme.typography.bodyMedium, fontSize = 13.sp)
