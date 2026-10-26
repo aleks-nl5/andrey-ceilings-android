@@ -15,8 +15,14 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.Font
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+
+private val InterFontFamily = FontFamily(Font(com.andreyceilings.app.R.font.inter))
+
+private val AppTypography = Typography(defaultFontFamily = InterFontFamily)
 
 enum class ThemeMode(val label: String) {
     LIGHT("Світла"),
@@ -77,7 +83,11 @@ fun CeilingsTheme(
         ThemeMode.DARK -> true
         ThemeMode.SYSTEM -> systemDark
     }
-    MaterialTheme(colorScheme = if (useDark) DarkScheme else LightScheme, content = content)
+    MaterialTheme(
+        colorScheme = if (useDark) DarkScheme else LightScheme,
+        typography = AppTypography,
+        content = content
+    )
 }
 
 /** Shared theme picker: a one-tap cycling icon in the app bar and three choices in Settings. */
