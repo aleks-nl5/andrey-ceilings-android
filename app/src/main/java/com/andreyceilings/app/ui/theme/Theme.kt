@@ -22,7 +22,24 @@ import androidx.compose.ui.unit.dp
 
 private val InterFontFamily = FontFamily(Font(com.andreyceilings.app.R.font.inter))
 
-private val AppTypography = Typography(defaultFontFamily = InterFontFamily)
+private val BaseTypography = Typography()
+private val AppTypography = BaseTypography.copy(
+    displayLarge = BaseTypography.displayLarge.copy(fontFamily = InterFontFamily),
+    displayMedium = BaseTypography.displayMedium.copy(fontFamily = InterFontFamily),
+    displaySmall = BaseTypography.displaySmall.copy(fontFamily = InterFontFamily),
+    headlineLarge = BaseTypography.headlineLarge.copy(fontFamily = InterFontFamily),
+    headlineMedium = BaseTypography.headlineMedium.copy(fontFamily = InterFontFamily),
+    headlineSmall = BaseTypography.headlineSmall.copy(fontFamily = InterFontFamily),
+    titleLarge = BaseTypography.titleLarge.copy(fontFamily = InterFontFamily),
+    titleMedium = BaseTypography.titleMedium.copy(fontFamily = InterFontFamily),
+    titleSmall = BaseTypography.titleSmall.copy(fontFamily = InterFontFamily),
+    bodyLarge = BaseTypography.bodyLarge.copy(fontFamily = InterFontFamily),
+    bodyMedium = BaseTypography.bodyMedium.copy(fontFamily = InterFontFamily),
+    bodySmall = BaseTypography.bodySmall.copy(fontFamily = InterFontFamily),
+    labelLarge = BaseTypography.labelLarge.copy(fontFamily = InterFontFamily),
+    labelMedium = BaseTypography.labelMedium.copy(fontFamily = InterFontFamily),
+    labelSmall = BaseTypography.labelSmall.copy(fontFamily = InterFontFamily)
+)
 
 enum class ThemeMode(val label: String) {
     LIGHT("Світла"),
