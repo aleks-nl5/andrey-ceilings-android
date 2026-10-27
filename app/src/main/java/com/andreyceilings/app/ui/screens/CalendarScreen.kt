@@ -69,7 +69,11 @@ internal fun CalendarScreen(database: CeilingsDatabase?) {
 
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         Text("Календар", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-        Card {
+        Card(
+            shape = MaterialTheme.shapes.large,
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+        ) {
             Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     IconButton(onClick = { displayedMonth = displayedMonth.minusMonths(1) }) {
@@ -127,7 +131,10 @@ internal fun CalendarScreen(database: CeilingsDatabase?) {
 
         Text("Наступні роботи", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
         if (upcomingRecords.isEmpty()) {
-            Card {
+            Card(
+                shape = MaterialTheme.shapes.medium,
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+            ) {
                 Text(
                     "Поки немає майбутніх робіт із датою. Зараз календар показує дати створення об’єктів і кошторисів. Планування робіт за датою потрібно додати до даних заміру/об’єкта.",
                     Modifier.padding(14.dp), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -139,7 +146,11 @@ internal fun CalendarScreen(database: CeilingsDatabase?) {
 
 @Composable
 private fun CalendarRecordCard(record: CalendarRecord) {
-    Card {
+    Card(
+        shape = MaterialTheme.shapes.medium,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+    ) {
         Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Text(record.date.dayOfMonth.toString(), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
