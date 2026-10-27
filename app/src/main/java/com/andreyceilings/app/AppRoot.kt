@@ -303,6 +303,13 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
         topBar = {
             TopAppBar(
                 scrollBehavior = topAppBarScrollBehavior,
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.background,
+                    scrolledContainerColor = MaterialTheme.colorScheme.background,
+                    titleContentColor = MaterialTheme.colorScheme.onBackground,
+                    navigationIconContentColor = MaterialTheme.colorScheme.onBackground,
+                    actionIconContentColor = MaterialTheme.colorScheme.onBackground
+                ),
                 title = {
                     Column {
                         Text("СтеляПро", fontWeight = FontWeight.Bold)
