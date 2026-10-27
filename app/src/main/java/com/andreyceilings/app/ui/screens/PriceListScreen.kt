@@ -126,4 +126,4 @@ private fun PriceItemEditorDialog(
     )
 }
 
-private fun formatPrice(value: Double): String = String.format(Locale("uk", "UA"), "%.2f", value).trimEnd('0').trimEnd(',').trimEnd('.')
+private fun formatPrice(value: Double): String = String.format(Locale.forLanguageTag("uk-UA"), "%.2f", value).trimEnd('0').trimEnd(',').trimEnd('.')
