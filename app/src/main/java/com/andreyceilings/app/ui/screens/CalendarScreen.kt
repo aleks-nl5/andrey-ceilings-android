@@ -3,6 +3,8 @@ package com.andreyceilings.app.ui.screens
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ChevronLeft
@@ -63,9 +65,9 @@ internal fun CalendarScreen(database: CeilingsDatabase?) {
     val firstDayOffset = displayedMonth.atDay(1).dayOfWeek.value - 1
     val dayCells: List<LocalDate?> = List(firstDayOffset) { null } + (1..displayedMonth.lengthOfMonth()).map { displayedMonth.atDay(it) }
     val selectedRecords = recordsByDate[selectedDate].orEmpty()
-    val upcomingRecords = records.filter { !it.date.isBefore(today) }.sortedBy { it.date }
+    val upcomingRecords = emptyList<CalendarRecord>() // Scheduled work dates are not stored in the current data model yet.
 
-    Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         Text("Календар", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
         Card {
             Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
