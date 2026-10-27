@@ -184,7 +184,7 @@ private fun AddMeasurementDialog(projects: List<ProjectEntity>, onDismiss: () ->
     AppAlertDialog(onDismissRequest = onDismiss, title = { Text("Новий замір") }, text = {
         Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = it }) {
-                OutlinedTextField(value = projects.firstOrNull { it.id == selectedProjectId }?.title ?: "Оберіть об’єкт", onValueChange = {}, readOnly = true, label = { Text("Об’єкт") }, trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) }, modifier = Modifier.menuAnchor().fillMaxWidth())
+                OutlinedTextField(value = projects.firstOrNull { it.id == selectedProjectId }?.title ?: "Оберіть об’єкт", onValueChange = {}, readOnly = true, label = { Text("Об’єкт") }, trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) }, modifier = Modifier.menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable, enabled = true).fillMaxWidth())
                 AppExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
                     projects.forEach { project -> DropdownMenuItem(text = { Text(project.title) }, onClick = { selectedProjectId = project.id; expanded = false }) }
                 }
