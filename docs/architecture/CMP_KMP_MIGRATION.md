@@ -66,7 +66,7 @@ References:
 
 ### Phase 1 — Minimal multiplatform build foundation
 - [x] Add the initial `:shared` Kotlin Multiplatform module with common Compose dependencies and a minimal shared component; the existing Android UI is untouched. Build verification is pending.
-- [x] Add a minimal JVM Compose Desktop host; compilation verification is pending in CI.
+- [x] Add a minimal JVM Compose Desktop host that consumes `SharedFoundationStatus()` from `:shared`; compilation verification is pending after fixing the initial missing Material 3 dependency in the desktop source.
 - [ ] Add iOS framework targets and a runnable iOS host/Xcode project; verify on macOS/Xcode CI.
 - [ ] Add/extend CI jobs for shared tests, Android APK, desktop compilation, and iOS framework. Android/shared tests pass; desktop compile has just been added; iOS CI remains pending.
 - [ ] Confirm the existing Android APK still builds and launches with the original UI.
@@ -127,6 +127,6 @@ However, the PR's Android workflow had been cancelled during APK build and its i
 - Created `architecture/cmp-kmp-migration-v2` from current `main`.
 - Baseline Android workflow run `40584526142` completed successfully before build-system changes.
 - Added the first `:shared` KMP module with Android, JVM, iOS device/simulator targets, common Compose dependencies, a small shared composable, and an initial common test. Workflow run `40586217184` passed all jobs, including Go tests, shared KMP assemble/JVM compile/common tests, Android unit tests, debug APK, and release APK.
-- Added a minimal `:desktopApp` Compose Desktop host and a CI compile step; verification is pending in the next run.
+- Added a minimal `:desktopApp` Compose Desktop host and a CI compile step. The first desktop CI attempt failed because the host imported Material 3 directly without a desktop dependency; changed the host to consume `SharedFoundationStatus()` from `:shared` (commit `d712309d`). The corrected CI run is pending.
 - Updated the Gradle/AGP versions to the documented Kotlin 2.4.21 compatibility range (AGP 9.3.1 / Gradle 9.7.0). The next CI run must validate the new combination; KSP compatibility and iOS/desktop builds are not yet confirmed.
 - The existing Android UI has not been replaced or connected to the new shared component.
