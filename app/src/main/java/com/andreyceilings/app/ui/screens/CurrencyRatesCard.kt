@@ -93,8 +93,9 @@ internal fun CurrencyRatesCard() {
                 val monoBadgeForeground = if (isDarkTheme) Color.Black else Color.White
                 Box(
                     modifier = Modifier
+                        .height(30.dp)
                         .background(monoBadgeBackground, CircleShape)
-                        .padding(horizontal = 10.dp, vertical = 4.dp),
+                        .padding(horizontal = 10.dp),
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
@@ -110,7 +111,7 @@ internal fun CurrencyRatesCard() {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Surface(
                         modifier = Modifier
-                            .height(24.dp)
+                            .height(30.dp)
                             .clip(CircleShape)
                             .clickable(enabled = refreshEnabled) {
                                 loading = true
