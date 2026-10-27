@@ -1,6 +1,7 @@
 package com.andreyceilings.app.ui.screens
 
 import androidx.compose.foundation.background
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -92,19 +93,22 @@ internal fun CalendarScreen(database: CeilingsDatabase?) {
                 dayCells.chunked(7).forEach { week ->
                     Row(Modifier.fillMaxWidth()) {
                         week.forEach { date ->
-                            Box(Modifier.weight(1f).aspectRatio(1f).padding(2.dp), contentAlignment = Alignment.Center) {
+                            Box(Modifier.weight(1f).height(40.dp).padding(1.dp), contentAlignment = Alignment.Center) {
                                 if (date != null) {
                                     val isSelected = date == selectedDate
                                     val isToday = date == today
                                     val hasRecords = recordsByDate[date].orEmpty().isNotEmpty()
                                     Box(
-                                        Modifier.fillMaxSize().background(
-                                            when {
-                                                isSelected -> MaterialTheme.colorScheme.primary
-                                                isToday -> MaterialTheme.colorScheme.secondaryContainer
-                                                else -> MaterialTheme.colorScheme.surface
-                                            }, CircleShape
-                                        ).clickable { selectedDate = date; displayedMonth = YearMonth.from(date) },
+                                        Modifier.size(36.dp)
+                                            .clip(CircleShape)
+                                            .background(
+                                                when {
+                                                    isSelected -> MaterialTheme.colorScheme.primary
+                                                    isToday -> MaterialTheme.colorScheme.secondaryContainer
+                                                    else -> MaterialTheme.colorScheme.surface
+                                                }
+                                            )
+                                            .clickable { selectedDate = date; displayedMonth = YearMonth.from(date) },
                                         contentAlignment = Alignment.Center
                                     ) {
                                         Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(1.dp)) {
