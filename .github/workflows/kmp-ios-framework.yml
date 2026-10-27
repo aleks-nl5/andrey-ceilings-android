@@ -3,6 +3,8 @@ name: Validate KMP iOS framework
 on:
   pull_request:
     branches: [ main ]
+  push:
+    branches: [ architecture/cmp-kmp-migration ]
   workflow_dispatch:
 
 permissions:
