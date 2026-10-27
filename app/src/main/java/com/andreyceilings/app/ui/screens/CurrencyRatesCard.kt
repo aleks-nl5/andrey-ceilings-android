@@ -95,7 +95,7 @@ internal fun CurrencyRatesCard() {
                 val monoBadgeForeground = if (isDarkTheme) Color.Black else Color.White
                 Box(
                     modifier = Modifier
-                        .height(25.dp)
+                        .height(19.dp)
                         .clip(CircleShape)
                         .background(monoBadgeBackground, CircleShape)
                         .clickable {
@@ -110,7 +110,7 @@ internal fun CurrencyRatesCard() {
                         "monobank",
                         color = monoBadgeForeground,
                         fontWeight = FontWeight.ExtraBold,
-                        fontSize = 13.sp
+                        fontSize = 10.sp
                     )
                 }
                 Spacer(Modifier.weight(1f))
