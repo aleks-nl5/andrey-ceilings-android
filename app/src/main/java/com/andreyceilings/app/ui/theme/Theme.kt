@@ -237,7 +237,11 @@ fun AppAlertDialog(
         text = text,
         confirmButton = confirmButton,
         dismissButton = dismissButton,
-        shape = MaterialTheme.shapes.extraLarge
+        shape = MaterialTheme.shapes.extraLarge,
+        containerColor = MaterialTheme.colorScheme.surface,
+        titleContentColor = MaterialTheme.colorScheme.onSurface,
+        textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+        tonalElevation = 6.dp
     )
 }
 
