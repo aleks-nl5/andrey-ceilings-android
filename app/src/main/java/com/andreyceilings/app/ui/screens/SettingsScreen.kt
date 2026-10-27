@@ -517,7 +517,7 @@ internal fun SettingsScreen(databaseStatus: String, database: CeilingsDatabase?,
                     label = { Text("Періодичність") },
                     trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = scheduleExpanded) },
                     enabled = periodicEnabled,
-                    modifier = Modifier.menuAnchor().fillMaxWidth()
+                    modifier = Modifier.menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable, enabled = periodicEnabled).fillMaxWidth()
                 )
                 AppExposedDropdownMenu(expanded = scheduleExpanded && periodicEnabled, onDismissRequest = { scheduleExpanded = false }) {
                     BackupSchedule.values().forEach { option ->
