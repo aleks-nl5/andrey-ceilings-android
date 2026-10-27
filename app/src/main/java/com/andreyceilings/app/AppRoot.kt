@@ -317,68 +317,20 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
         error.message?.takeIf { it.isNotBlank() } ?: "Невідома помилка Go-рушія"
     }
 
-    Scaffold(
-        containerColor = MaterialTheme.colorScheme.background,
-        modifier = Modifier.nestedScroll(topAppBarScrollBehavior.nestedScrollConnection),
-        topBar = {
-            TopAppBar(
-                scrollBehavior = topAppBarScrollBehavior,
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = appBarColor,
-                    scrolledContainerColor = appBarColor,
-                    titleContentColor = MaterialTheme.colorScheme.onBackground,
-                    navigationIconContentColor = MaterialTheme.colorScheme.onBackground,
-                    actionIconContentColor = MaterialTheme.colorScheme.onBackground
-                ),
-                title = {
-                    Column {
-                        Text("СтеляПро", fontWeight = FontWeight.Bold)
-                        Text("Майстер натяжних стель", style = MaterialTheme.typography.labelSmall)
-                    }
-                },
-                actions = {
-                    ThemeModeSelector(mode = themeMode, onModeChange = onThemeModeChange, compact = true)
-                    IconButton(onClick = { navigateTo(AppTab.SETTINGS) }) { Icon(Icons.Default.Settings, "Налаштування") }
-                }
-            )
-        },
-        bottomBar = {
-            NavigationBar(
-                containerColor = navigationBarColor,
-                contentColor = MaterialTheme.colorScheme.onSurface,
-                tonalElevation = 0.dp
-            ) {
-                val navigationItemColors = NavigationBarItemDefaults.colors(
-                    selectedIconColor = MaterialTheme.colorScheme.primary,
-                    selectedTextColor = MaterialTheme.colorScheme.primary,
-                    indicatorColor = MaterialTheme.colorScheme.primaryContainer,
-                    unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                    unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                val items = listOf(
-                    AppTab.DASHBOARD to Icons.Default.Dashboard,
-                    AppTab.OBJECTS to Icons.Default.Business,
-                    AppTab.MEASUREMENTS to Icons.Default.Straighten,
-                    AppTab.CALCULATOR to Icons.Default.Calculate,
-                    AppTab.CALENDAR to Icons.Default.CalendarMonth
-                )
-                items.forEach { (item, icon) ->
-                    NavigationBarItem(
-                        selected = tab == item,
-                        onClick = { navigateTo(item) },
-                        icon = { Icon(icon, contentDescription = item.title) },
-                        label = { Text(item.title, maxLines = 1) },
-                        colors = navigationItemColors
-                    )
-                }
-            }
-        }
-    ) { padding ->
-        key(tab) {
+    val topContentPadding = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 64.dp + 16.dp
+    val bottomContentPadding = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 80.dp + 16.dp
+
+    // Overlay the app bars on a full-screen content layer. The screen can scroll
+    // underneath the transparent bars, while its initial content respects their insets.
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+            .nestedScroll(topAppBarScrollBehavior.nestedScrollConnection)
+    ) {
             if (tab == AppTab.OBJECTS || tab == AppTab.MEASUREMENTS || tab == AppTab.ESTIMATES || tab == AppTab.PRICES || tab == AppTab.CALENDAR) {
                 Box(
-                    Modifier.fillMaxSize().padding(padding)
-                        .nestedScroll(screenScrollConnection).padding(horizontal = 16.dp)
+                    Modifier.fillMaxSize().nestedScroll(screenScrollConnection).padding(horizontal = 16.dp)
                 ) {
                     when (tab) {
                         AppTab.OBJECTS -> ObjectsScreen(database)
@@ -391,9 +343,15 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
                 }
             } else {
                 Column(
-                    modifier = Modifier.fillMaxSize().padding(padding)
+                    modifier = Modifier.fillMaxSize()
                         .nestedScroll(screenScrollConnection)
-                        .verticalScroll(rememberScrollState()).padding(16.dp),
+                        .verticalScroll(rememberScrollState())
+                        .padding(
+                            start = 16.dp,
+                            end = 16.dp,
+                            top = topContentPadding,
+                            bottom = bottomContentPadding
+                        ),
                     verticalArrangement = Arrangement.spacedBy(14.dp)
                 ) {
                     when (tab) {
@@ -432,5 +390,60 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
                 }
             }
         }
+
+        TopAppBar(
+            modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth(),
+            windowInsets = WindowInsets.statusBars,
+            scrollBehavior = topAppBarScrollBehavior,
+            colors = TopAppBarDefaults.topAppBarColors(
+                containerColor = appBarColor,
+                scrolledContainerColor = appBarColor,
+                titleContentColor = MaterialTheme.colorScheme.onBackground,
+                navigationIconContentColor = MaterialTheme.colorScheme.onBackground,
+                actionIconContentColor = MaterialTheme.colorScheme.onBackground
+            ),
+            title = {
+                Column {
+                    Text("СтеляПро", fontWeight = FontWeight.Bold)
+                    Text("Майстер натяжних стель", style = MaterialTheme.typography.labelSmall)
+                }
+            },
+            actions = {
+                ThemeModeSelector(mode = themeMode, onModeChange = onThemeModeChange, compact = true)
+                IconButton(onClick = { navigateTo(AppTab.SETTINGS) }) { Icon(Icons.Default.Settings, "Налаштування") }
+            }
+        )
+        NavigationBar(
+            modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth().navigationBarsPadding(),
+            windowInsets = WindowInsets(0, 0, 0, 0),
+            containerColor = navigationBarColor,
+            contentColor = MaterialTheme.colorScheme.onSurface,
+            tonalElevation = 0.dp
+        ) {
+            val navigationItemColors = NavigationBarItemDefaults.colors(
+                selectedIconColor = MaterialTheme.colorScheme.primary,
+                selectedTextColor = MaterialTheme.colorScheme.primary,
+                indicatorColor = MaterialTheme.colorScheme.primaryContainer,
+                unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            val items = listOf(
+                AppTab.DASHBOARD to Icons.Default.Dashboard,
+                AppTab.OBJECTS to Icons.Default.Business,
+                AppTab.MEASUREMENTS to Icons.Default.Straighten,
+                AppTab.CALCULATOR to Icons.Default.Calculate,
+                AppTab.CALENDAR to Icons.Default.CalendarMonth
+            )
+            items.forEach { (item, icon) ->
+                NavigationBarItem(
+                    selected = tab == item,
+                    onClick = { navigateTo(item) },
+                    icon = { Icon(icon, contentDescription = item.title) },
+                    label = { Text(item.title, maxLines = 1) },
+                    colors = navigationItemColors
+                )
+            }
+        }
     }
+}
 }
