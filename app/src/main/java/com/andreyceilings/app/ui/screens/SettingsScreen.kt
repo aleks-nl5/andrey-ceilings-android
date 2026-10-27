@@ -20,6 +20,7 @@ import com.andreyceilings.app.data.backup.BackupSchedule
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -46,7 +47,7 @@ import kotlinx.coroutines.flow.flowOf
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-internal fun SettingsScreen(databaseStatus: String, database: CeilingsDatabase?, onDatabaseReplaced: (CeilingsDatabase) -> Unit, themeMode: ThemeMode, onThemeModeChange: (ThemeMode) -> Unit) {
+internal fun SettingsScreen(databaseStatus: String, database: CeilingsDatabase?, onDatabaseReplaced: (CeilingsDatabase) -> Unit, themeMode: ThemeMode, onThemeModeChange: (ThemeMode) -> Unit, onOpenPriceList: () -> Unit) {
     var fileCheck by remember { mutableStateOf("Натисніть кнопку, щоб перевірити записи та файли бази даних.") }
     var exportStatus by remember { mutableStateOf("Експорт створює копію зашифрованого файла БД без ключа.") }
     var pendingExportFile by remember { mutableStateOf<java.io.File?>(null) }
@@ -236,7 +237,13 @@ internal fun SettingsScreen(databaseStatus: String, database: CeilingsDatabase?,
                     modifier = Modifier.fillMaxWidth()
                 ) { Text("Очистити журнал") }
             }
-            ListItem(leadingContent = { Icon(Icons.Default.PriceChange, null) }, headlineContent = { Text("Прайс-лист") }, supportingContent = { Text("Налаштування вартості матеріалів і робіт") })
+            ListItem(
+                modifier = Modifier.clickable(onClick = onOpenPriceList),
+                leadingContent = { Icon(Icons.Default.PriceChange, null) },
+                headlineContent = { Text("Прайс-лист") },
+                supportingContent = { Text("Налаштування вартості матеріалів і робіт") },
+                trailingContent = { Icon(Icons.Default.ChevronRight, contentDescription = "Відкрити прайс-лист") }
+            )
             ListItem(leadingContent = { Icon(Icons.Default.Lock, null) }, headlineContent = { Text("Захист бази даних") }, supportingContent = { Text(databaseStatus) })
             HorizontalDivider()
             Text("Діагностика бази даних", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
