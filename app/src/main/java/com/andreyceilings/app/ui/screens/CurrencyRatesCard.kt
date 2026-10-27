@@ -91,17 +91,20 @@ internal fun CurrencyRatesCard() {
                 val isDarkTheme = MaterialTheme.colorScheme.background.luminance() < 0.5f
                 val monoBadgeBackground = if (isDarkTheme) Color.White else Color.Black
                 val monoBadgeForeground = if (isDarkTheme) Color.Black else Color.White
-                Text(
-                    "monobank",
+                Box(
                     modifier = Modifier
                         .width(90.dp)
                         .height(24.dp)
-                        .background(monoBadgeBackground, CircleShape)
-                        .wrapContentHeight(Alignment.CenterVertically),
-                    color = monoBadgeForeground,
-                    fontWeight = FontWeight.ExtraBold,
-                    fontSize = 13.sp
-                )
+                        .background(monoBadgeBackground, CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        "monobank",
+                        color = monoBadgeForeground,
+                        fontWeight = FontWeight.ExtraBold,
+                        fontSize = 13.sp
+                    )
+                }
                 Spacer(Modifier.weight(1f))
                 val refreshEnabled = !loading && !locked
                 val refreshLabel = if (loading) "…" else if (locked) "${(remaining + 59_999) / 60_000} хв" else "Оновити"
