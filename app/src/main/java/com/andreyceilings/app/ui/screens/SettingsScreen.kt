@@ -1,5 +1,7 @@
 package com.andreyceilings.app.ui.screens
 
+import com.andreyceilings.app.ui.theme.AppAlertDialog
+import com.andreyceilings.app.ui.theme.AppExposedDropdownMenu
 import com.andreyceilings.app.*
 import com.andreyceilings.app.data.PerformanceDiagnosticsSettings
 import com.andreyceilings.app.data.PerformanceDiagnosticsLog
@@ -342,7 +344,7 @@ internal fun SettingsScreen(databaseStatus: String, database: CeilingsDatabase?,
             OutlinedButton(onClick = { backupAction = "verify"; restorePassword = ""; showImportPasswordDialog = true }, modifier = Modifier.fillMaxWidth(), enabled = database != null) { Text("Перевірити резервну копію") }
             Button(onClick = { backupAction = "restore"; restorePassword = ""; showImportPasswordDialog = true }, modifier = Modifier.fillMaxWidth(), enabled = database != null) { Text("Імпортувати резервну копію") }
             if (showImportPasswordDialog) {
-                AlertDialog(
+                AppAlertDialog(
                     onDismissRequest = { showImportPasswordDialog = false; restorePassword = "" },
                     title = { Text("Пароль резервної копії") },
                     text = {
@@ -368,7 +370,7 @@ internal fun SettingsScreen(databaseStatus: String, database: CeilingsDatabase?,
                 )
             }
             if (showRestoreConfirmation) {
-                AlertDialog(
+                AppAlertDialog(
                     onDismissRequest = { showRestoreConfirmation = false; pendingRestoreContents?.let { it.database.fill(0); it.passphrase.fill(0) }; pendingRestoreContents = null },
                     title = { Text("Відновити переносну копію?") },
                     text = { Text("Дані поточної бази буде замінено вмістом .stpb. Продовжити?") },
@@ -516,7 +518,7 @@ internal fun SettingsScreen(databaseStatus: String, database: CeilingsDatabase?,
                     enabled = periodicEnabled,
                     modifier = Modifier.menuAnchor().fillMaxWidth()
                 )
-                ExposedDropdownMenu(expanded = scheduleExpanded && periodicEnabled, onDismissRequest = { scheduleExpanded = false }) {
+                AppExposedDropdownMenu(expanded = scheduleExpanded && periodicEnabled, onDismissRequest = { scheduleExpanded = false }) {
                     BackupSchedule.values().forEach { option ->
                         DropdownMenuItem(text = { Text(option.label) }, onClick = {
                             selectedSchedule = option
@@ -603,7 +605,7 @@ internal fun SettingsScreen(databaseStatus: String, database: CeilingsDatabase?,
             ) { Text("Зберегти пароль автоматичних копій") }
             Text(automaticStatus, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             if (showDisableAllConfirmation) {
-                AlertDialog(
+                AppAlertDialog(
                     onDismissRequest = { showDisableAllConfirmation = false },
                     title = { Text("Вимкнути резервування?") },
                     text = { Text("Після підтвердження буде вимкнено всі режими й видалено лише автоматичні файли .stpb у вибраній папці. Інші файли не змінюватимуться.") },
