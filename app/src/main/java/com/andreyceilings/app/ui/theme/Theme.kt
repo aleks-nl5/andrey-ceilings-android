@@ -2,7 +2,6 @@ package com.andreyceilings.app.ui.theme
 
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -231,27 +230,20 @@ fun AppAlertDialog(
     confirmButton: @Composable () -> Unit,
     dismissButton: (@Composable () -> Unit)? = null
 ) {
-    val colors = AlertDialogDefaults.colors(
-        containerColor = MaterialTheme.colorScheme.surface,
-        titleContentColor = MaterialTheme.colorScheme.onSurface,
-        textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-        iconContentColor = MaterialTheme.colorScheme.primary
-    )
     AlertDialog(
         onDismissRequest = onDismissRequest,
         title = title,
         text = text,
         confirmButton = confirmButton,
         dismissButton = dismissButton,
-        shape = MaterialTheme.shapes.extraLarge,
-        colors = colors
+        shape = MaterialTheme.shapes.extraLarge
     )
 }
 
 /** Shared themed popup surface for every exposed dropdown in the app. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AppExposedDropdownMenu(
+fun ExposedDropdownMenuBoxScope.AppExposedDropdownMenu(
     expanded: Boolean,
     onDismissRequest: () -> Unit,
     content: @Composable ColumnScope.() -> Unit
