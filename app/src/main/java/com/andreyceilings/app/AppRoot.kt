@@ -378,7 +378,7 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
             if (tab == AppTab.OBJECTS || tab == AppTab.MEASUREMENTS || tab == AppTab.ESTIMATES || tab == AppTab.PRICES || tab == AppTab.CALENDAR) {
                 Box(
                     Modifier.fillMaxSize().padding(padding)
-                        .nestedScroll(screenScrollConnection).padding(16.dp)
+                        .nestedScroll(screenScrollConnection).padding(horizontal = 16.dp)
                 ) {
                     when (tab) {
                         AppTab.OBJECTS -> ObjectsScreen(database)
