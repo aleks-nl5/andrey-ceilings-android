@@ -13,6 +13,14 @@ class GeometryCalculatorTest {
     }
 
     @Test
+    fun geometryRoundsAreaAndPerimeterToTwoDecimalPlaces() {
+        assertEquals(
+            RoomGeometry(area = 1.24, perimeter = 4.47, cornersCount = 4),
+            GeometryCalculator.calculate(GeometryInput(length = 1.236, width = 1.0)),
+        )
+    }
+
+    @Test
     fun missingRectangleDimensionsUseFourByThreeDefaults() {
         assertEquals(
             RoomGeometry(area = 12.0, perimeter = 14.0, cornersCount = 4),
