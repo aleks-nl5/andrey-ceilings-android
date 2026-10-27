@@ -1,5 +1,7 @@
 package com.andreyceilings.app.ui.screens
 
+import com.andreyceilings.app.ui.theme.AppAlertDialog
+import com.andreyceilings.app.ui.theme.AppExposedDropdownMenu
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -105,7 +107,7 @@ private fun PriceItemEditorDialog(
     var unit by remember(initial) { mutableStateOf(initial?.unit ?: "шт.") }
     var price by remember(initial) { mutableStateOf(initial?.price?.let { formatPrice(it) } ?: "0") }
     val parsedPrice = price.replace(',', '.').toDoubleOrNull()
-    AlertDialog(
+    AppAlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(if (initial == null) "Нова позиція прайсу" else "Редагувати позицію") },
         text = {
