@@ -33,6 +33,8 @@ jobs:
         uses: gradle/actions/setup-gradle@v6
         with:
           gradle-version: '9.8.2'
+          # Let trusted branches in this repository save caches; keep fork PRs read-only.
+          cache-read-only: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
 
       # Configure Go after other toolchain actions so its PATH entry is the active one.
       - name: Set up Go
