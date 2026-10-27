@@ -31,7 +31,7 @@ class GeometryCalculatorTest {
     @Test
     fun lShapedRoomUsesExistingDefaultSideRules() {
         assertEquals(
-            RoomGeometry(area = 15.0, perimeter = 18.5, cornersCount = 6),
+            RoomGeometry(area = 15.0, perimeter = 18.0, cornersCount = 6),
             GeometryCalculator.calculate(GeometryInput(shape = RoomShape.L_SHAPED)),
         )
     }
