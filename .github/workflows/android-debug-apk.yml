@@ -53,6 +53,8 @@ jobs:
         run: GOTOOLCHAIN=auto gomobile init
 
       - name: Build required Go Android library
+        env:
+          GOTOOLCHAIN: auto
         run: bash scripts/build-android-aar.sh
 
       - name: Prepare persistent signing
