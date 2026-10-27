@@ -6,12 +6,12 @@ plugins {
 
 android {
     namespace = "com.andreyceilings.app"
-    compileSdk = 36
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "com.andreyceilings.app"
         minSdk = 30
-        targetSdk = 36
+        targetSdk = 37
         // GitHub Actions run number is appended to the visible version for test builds.
         val actionsRunNumber = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 0
         versionCode = 600000 + actionsRunNumber
