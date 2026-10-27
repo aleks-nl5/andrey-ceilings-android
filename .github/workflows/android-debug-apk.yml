@@ -49,7 +49,7 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v6
         with:
-          gradle-version: '9.8.2'
+          gradle-version: '9.7.0'
           # Let trusted branches in this repository save caches; keep fork PRs read-only.
           cache-read-only: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
 
