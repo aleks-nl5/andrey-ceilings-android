@@ -58,14 +58,14 @@ References:
 ## Migration phases
 
 ### Phase 0 — Baseline and inventory
-- [ ] Confirm the new branch starts at the current `main` and keep PR #21 separate.
-- [ ] Run the existing Android CI/build unchanged and capture a baseline result.
+- [x] Confirm the new branch starts at the current `main` and keep PR #21 separate.
+- [x] Run the existing Android CI/build unchanged and capture a baseline result (workflow run 40584526142 succeeded before build-system changes).
 - [ ] Inventory current screens, theme, fonts, navigation, data models, Room/SQLCipher encryption, Go/AAR calls, PDF, backup/restore, and existing tests.
 - [ ] Record the current Android smoke-test checklist and known bugs.
 - [ ] Verify official compatibility guidance and select the KMP/CMP toolchain before changing Gradle files.
 
 ### Phase 1 — Minimal multiplatform build foundation
-- [ ] Add `:shared` with a minimal common Compose entry point without replacing the current Android UI.
+- [x] Add the initial `:shared` Kotlin Multiplatform module with common Compose dependencies and a minimal shared component; the existing Android UI is untouched. Build verification is pending.
 - [ ] Add a JVM desktop host and verify its build.
 - [ ] Add iOS framework targets and a runnable iOS host/Xcode project; verify on macOS/Xcode CI.
 - [ ] Add CI jobs for shared tests, Android APK, desktop compilation, and iOS framework.
@@ -125,5 +125,7 @@ However, the PR's Android workflow had been cancelled during APK build and its i
 ## Progress log — 2026-10-27
 
 - Created `architecture/cmp-kmp-migration-v2` from current `main`.
-- Documentation is being re-established on this branch before introducing build-system changes.
-- No CMP/KMP migration code is yet considered validated on this branch.
+- Baseline Android workflow run `40584526142` completed successfully before build-system changes.
+- Added the first `:shared` KMP module with Android, JVM, iOS device/simulator targets, common Compose dependencies, a small shared composable, and an initial common test.
+- Updated the Gradle/AGP versions to the documented Kotlin 2.4.21 compatibility range (AGP 9.3.1 / Gradle 9.7.0). The next CI run must validate the new combination; KSP compatibility and iOS/desktop builds are not yet confirmed.
+- The existing Android UI has not been replaced or connected to the new shared component.
