@@ -89,13 +89,9 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
 
     val topAppBarScrollBehavior = TopAppBarDefaults.enterAlwaysScrollBehavior()
     val isScrolling = remember { mutableStateOf(false) }
-    val statusBarBaseColor = MaterialTheme.colorScheme.background
-    // Use a visibly distinct translucent surface so edge-to-edge is apparent
-    // against the Scaffold background, not just technically enabled.
-    val appBarColor = MaterialTheme.colorScheme.surfaceVariant.copy(
-        alpha = if (isScrolling.value) 0.68f else 0.78f
-    )
-    val navigationBarColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.82f)
+    // Keep app chrome transparent so the window background is visible behind the system bars.
+    val appBarColor = androidx.compose.ui.graphics.Color.Transparent
+    val navigationBarColor = androidx.compose.ui.graphics.Color.Transparent
     SideEffect {
         context.findActivity()?.window?.let { window ->
             // Edge-to-edge is enabled in MainActivity. Keep system icons readable
