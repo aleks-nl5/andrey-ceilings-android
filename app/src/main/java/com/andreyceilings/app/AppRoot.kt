@@ -381,7 +381,7 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
                 ) {
                     when (tab) {
                         AppTab.OBJECTS -> ObjectsScreen(database)
-                        AppTab.MEASUREMENTS -> MeasurementsScreen(database)
+                        AppTab.MEASUREMENTS -> MeasurementsScreen(database, onOpenEstimates = { navigateTo(AppTab.ESTIMATES) })
                         AppTab.ESTIMATES -> EstimatesScreen(database)
                         AppTab.PRICES -> PriceListScreen(database)
                         AppTab.CALENDAR -> CalendarScreen(database)
