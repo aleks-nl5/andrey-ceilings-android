@@ -189,7 +189,7 @@
 
 - [x] Створено `architecture/cmp-kmp-migration-v2` від актуального `main`; стара гілка PR #21 не зливається і не переноситься цілком.
 - [x] Додано оновлений план `docs/architecture/CMP_KMP_MIGRATION.md` з архітектурними рішеннями, фазами, вимогами до збереження UI/даних, тестами та критеріями злиття.
-- [ ] Зафіксувати успішний базовий Android CI/build без CMP/KMP змін.
-- [ ] Перевірити офіційну сумісність актуальних Kotlin/Compose/AGP/Gradle/KSP версій перед змінами build-файлів.
-- [ ] Додати shared, desktop та iOS foundations без заміни поточного Android UI; завершити CI для відповідних платформ.
+- [x] Зафіксувати успішний базовий Android CI/build без CMP/KMP змін (run `40584526142`, success).
+- [x] Перевірити офіційну сумісність Kotlin/Compose/AGP/Gradle; початковий toolchain підібрано під Kotlin 2.4.21 / Compose Multiplatform 1.12.2 / AGP 9.3.1 / Gradle 9.7.0. Сумісність KSP і фактичний build ще мають бути підтверджені CI.
+- [ ] Додати shared, desktop та iOS foundations без заміни поточного Android UI; завершити CI для відповідних платформ. Початковий `:shared` KMP/CMP модуль додано, його CI-перевірка очікується.
 - [ ] Переносити domain-логіку й екрани невеликими частинами з регресійними тестами.
