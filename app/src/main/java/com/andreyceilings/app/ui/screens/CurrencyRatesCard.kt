@@ -108,6 +108,7 @@ internal fun CurrencyRatesCard() {
                 ) {
                     Text(
                         "monobank",
+                        modifier = Modifier.offset(y = (-1).dp),
                         color = monoBadgeForeground,
                         fontWeight = FontWeight.ExtraBold,
                         fontSize = 10.sp
