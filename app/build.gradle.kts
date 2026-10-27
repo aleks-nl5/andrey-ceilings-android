@@ -6,7 +6,7 @@ plugins {
 
 android {
     namespace = "com.andreyceilings.app"
-    compileSdk = 36
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "com.andreyceilings.app"
