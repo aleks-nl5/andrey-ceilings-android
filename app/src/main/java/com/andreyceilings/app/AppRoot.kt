@@ -88,6 +88,7 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
         ThemeMode.SYSTEM -> systemDarkTheme
     }
 
+    val topAppBarScrollBehavior = TopAppBarDefaults.enterAlwaysScrollBehavior()
     val statusBarColor = MaterialTheme.colorScheme.background.toArgb()
     SideEffect {
         context.findActivity()?.window?.let { window ->
@@ -298,8 +299,10 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
     }
 
     Scaffold(
+        modifier = Modifier.nestedScroll(topAppBarScrollBehavior.nestedScrollConnection),
         topBar = {
             TopAppBar(
+                scrollBehavior = topAppBarScrollBehavior,
                 title = {
                     Column {
                         Text("СтеляПро", fontWeight = FontWeight.Bold)
@@ -313,7 +316,18 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
             )
         },
         bottomBar = {
-            NavigationBar {
+            NavigationBar(
+                containerColor = MaterialTheme.colorScheme.surface,
+                contentColor = MaterialTheme.colorScheme.onSurface,
+                tonalElevation = 0.dp
+            ) {
+                val navigationItemColors = NavigationBarItemDefaults.colors(
+                    selectedIconColor = MaterialTheme.colorScheme.primary,
+                    selectedTextColor = MaterialTheme.colorScheme.primary,
+                    indicatorColor = MaterialTheme.colorScheme.primaryContainer,
+                    unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                    unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
+                )
                 val items = listOf(
                     AppTab.DASHBOARD to Icons.Default.Dashboard,
                     AppTab.OBJECTS to Icons.Default.Business,
@@ -327,7 +341,8 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
                         selected = tab == item,
                         onClick = { navigateTo(item) },
                         icon = { Icon(icon, contentDescription = item.title) },
-                        label = { Text(item.title, maxLines = 1) }
+                        label = { Text(item.title, maxLines = 1) },
+                        colors = navigationItemColors
                     )
                 }
             }
