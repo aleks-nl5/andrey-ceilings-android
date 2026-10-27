@@ -2,7 +2,9 @@ package com.andreyceilings.app.ui.screens
 
 import android.content.Context
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -98,36 +100,45 @@ internal fun CurrencyRatesCard() {
                     fontSize = 13.sp
                 )
                 Spacer(Modifier.weight(1f))
+                val refreshEnabled = !loading && !locked
+                val refreshLabel = if (loading) "…" else if (locked) "${(remaining + 59_999) / 60_000} хв" else "Оновити"
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    FilledTonalButton(
-                        enabled = !loading && !locked,
-                        onClick = {
-                            loading = true
-                            scope.launch {
-                                val old = cache
-                                val fresh = fetchCurrencyRates(old)
-                                if (fresh != null) {
-                                    val changed = old != null && fresh.rows.any { row ->
-                                        old.rows.any { it.title == row.title && row.date > it.date }
-                                    }
-                                    cache = fresh
-                                    prefs.edit().putString(CURRENCY_CACHE_KEY, encodeCurrencyCache(fresh)).apply()
-                                    message = if (changed) {
-                                        "Курси змінено банком: " + formatShortRateDate(fresh.rows.maxOf { it.date })
+                    Surface(
+                        modifier = Modifier
+                            .clip(CircleShape)
+                            .clickable(enabled = refreshEnabled) {
+                                loading = true
+                                scope.launch {
+                                    val old = cache
+                                    val fresh = fetchCurrencyRates(old)
+                                    if (fresh != null) {
+                                        val changed = old != null && fresh.rows.any { row ->
+                                            old.rows.any { it.title == row.title && row.date > it.date }
+                                        }
+                                        cache = fresh
+                                        prefs.edit().putString(CURRENCY_CACHE_KEY, encodeCurrencyCache(fresh)).apply()
+                                        message = if (changed) {
+                                            "Курси змінено банком: " + formatShortRateDate(fresh.rows.maxOf { it.date })
+                                        } else {
+                                            "Банк не змінив час встановлення курсів."
+                                        }
                                     } else {
-                                        "Банк не змінив час встановлення курсів."
+                                        message = "Не вдалося отримати курси. Показано збережені дані."
                                     }
-                                } else {
-                                    message = "Не вдалося отримати курси. Показано збережені дані."
+                                    loading = false
                                 }
-                                loading = false
                             }
-                        },
-                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                            .padding(horizontal = 10.dp, vertical = 4.dp),
+                        shape = CircleShape,
+                        color = if (MaterialTheme.colorScheme.background.luminance() < 0.5f)
+                            Color.White.copy(alpha = if (refreshEnabled) 0.14f else 0.07f)
+                        else Color.Black.copy(alpha = if (refreshEnabled) 0.08f else 0.04f),
+                        contentColor = MaterialTheme.colorScheme.onSurface
                     ) {
-                        Icon(Icons.Default.Refresh, contentDescription = "Оновити курси", modifier = Modifier.size(15.dp))
-                        Spacer(Modifier.width(3.dp))
-                        Text(if (loading) "…" else if (locked) "${(remaining + 59_999) / 60_000} хв" else "Оновити", fontSize = 12.sp)
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Icon(Icons.Default.Refresh, contentDescription = "Оновити курси", modifier = Modifier.size(15.dp))
+                            Text(refreshLabel, fontSize = 13.sp, fontWeight = FontWeight.ExtraBold)
+                        }
                     }
                 }
             }
