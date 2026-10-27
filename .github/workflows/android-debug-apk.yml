@@ -52,9 +52,12 @@ jobs:
         working-directory: go-core
         run: go test ./...
 
+      # Pin gomobile to the exact x/mobile revision validated by this toolchain refresh.
       - name: Install gomobile
+        env:
+          X_MOBILE_VERSION: v0.0.0-20261011034528-197770444867
         run: |
-          GOTOOLCHAIN=auto go install golang.org/x/mobile/cmd/gomobile@latest
+          GOTOOLCHAIN=auto go install "golang.org/x/mobile/cmd/gomobile@${X_MOBILE_VERSION}"
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
 
       - name: Initialize gomobile
@@ -63,6 +66,7 @@ jobs:
       - name: Build required Go Android library
         env:
           GOTOOLCHAIN: auto
+          X_MOBILE_VERSION: v0.0.0-20261011034528-197770444867
         run: bash scripts/build-android-aar.sh
 
       - name: Prepare persistent signing
