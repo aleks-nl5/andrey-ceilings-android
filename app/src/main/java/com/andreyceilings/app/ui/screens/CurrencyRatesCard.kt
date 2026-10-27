@@ -13,6 +13,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.compositeOver
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -83,9 +84,19 @@ internal fun CurrencyRatesCard() {
                 Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text("КУРС ВАЛЮТ", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                    Text("КУРС ВАЛЮТ", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
                 Spacer(Modifier.width(12.dp))
-                Text("monobank", color = monoPink, fontWeight = FontWeight.ExtraBold, fontSize = 15.sp)
+                val isDarkTheme = MaterialTheme.colorScheme.background.luminance() < 0.5f
+                val monoBadgeBackground = if (isDarkTheme) Color.White else Color.Black
+                val monoBadgeForeground = if (isDarkTheme) Color.Black else Color.White
+                Text(
+                    "monobank",
+                    modifier = Modifier.background(monoBadgeBackground, CircleShape)
+                        .padding(horizontal = 10.dp, vertical = 4.dp),
+                    color = monoBadgeForeground,
+                    fontWeight = FontWeight.ExtraBold,
+                    fontSize = 13.sp
+                )
                 Spacer(Modifier.weight(1f))
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     FilledTonalButton(
@@ -135,13 +146,25 @@ internal fun CurrencyRatesCard() {
                         Modifier.fillMaxWidth().padding(vertical = 1.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        val badgeBackground = row.color.copy(alpha = 0.16f)
+                        val isDarkTheme = MaterialTheme.colorScheme.background.luminance() < 0.5f
+                        // Increase the tint opacity by 15% while preserving the existing currency hues.
+                        val badgeBackground = row.color.copy(alpha = 0.184f)
                             .compositeOver(MaterialTheme.colorScheme.surfaceContainerHigh)
+                        val symbolColor = when (row.title) {
+                            "USD" -> if (isDarkTheme) Color(0xFF75D9A1) else Color(0xFF0D693A)
+                            "EUR" -> if (isDarkTheme) Color(0xFF8CC4FF) else Color(0xFF155FA8)
+                            else -> if (isDarkTheme) Color(0xFFB8B0FF) else Color(0xFF3D36A8)
+                        }
                         Box(
                             Modifier.size(29.dp).background(badgeBackground, CircleShape),
                             contentAlignment = Alignment.Center
                         ) {
-                            Text(row.symbol, color = Color.White, fontWeight = FontWeight.Bold, fontSize = if (row.symbol.length > 1) 9.sp else 16.sp)
+                            Text(
+                                row.symbol,
+                                color = symbolColor,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = if (row.symbol.length > 1) 9.sp else 16.sp
+                            )
                         }
                         Spacer(Modifier.width(7.dp))
                         Column(Modifier.weight(1.35f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
