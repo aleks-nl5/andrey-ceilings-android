@@ -10,7 +10,7 @@ android {
 
     defaultConfig {
         applicationId = "com.andreyceilings.app"
-        minSdk = 26
+        minSdk = 30
         targetSdk = 36
         // GitHub Actions run number is appended to the visible version for test builds.
         val actionsRunNumber = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 0
