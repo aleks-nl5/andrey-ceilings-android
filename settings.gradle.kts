@@ -6,4 +6,4 @@ dependencyResolutionManagement {
     repositories { google(); mavenCentral() }
 }
 rootProject.name = "AndreyCeilings"
-include(":app", ":shared")
+include(":app", ":shared", ":desktopApp")
