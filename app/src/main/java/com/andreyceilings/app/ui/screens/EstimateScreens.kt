@@ -1,5 +1,7 @@
 package com.andreyceilings.app.ui.screens
 
+import com.andreyceilings.app.ui.theme.AppAlertDialog
+import com.andreyceilings.app.ui.theme.AppExposedDropdownMenu
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -52,7 +54,7 @@ internal fun SaveEstimateDialog(
     var selectedProjectId by remember(projects) { mutableLongStateOf(projects.first().id) }
     var name by remember(defaultName) { mutableStateOf(defaultName) }
     var expanded by remember { mutableStateOf(false) }
-    AlertDialog(
+    AppAlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Зберегти кошторис") },
         text = {
@@ -64,7 +66,7 @@ internal fun SaveEstimateDialog(
                         trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
                         modifier = Modifier.menuAnchor().fillMaxWidth()
                     )
-                    ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                    AppExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
                         projects.forEach { project -> DropdownMenuItem(text = { Text(project.title) }, onClick = { selectedProjectId = project.id; expanded = false }) }
                     }
                 }
@@ -210,7 +212,7 @@ internal fun EstimatesScreen(database: CeilingsDatabase?) {
         item { error?.let { Text(it, color = MaterialTheme.colorScheme.error) } }
     }
     editingEstimate?.let { selected ->
-        AlertDialog(
+        AppAlertDialog(
             onDismissRequest = { editingEstimate = null },
             title = { Text("Редагувати кошторис") },
             text = { OutlinedTextField(value = renameText, onValueChange = { renameText = it }, label = { Text("Назва") }, singleLine = true) },
