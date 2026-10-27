@@ -37,7 +37,6 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.runtime.*
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.core.view.WindowCompat
-import androidx.compose.ui.graphics.toArgb
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.withFrameNanos
@@ -98,12 +97,12 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
     }
     SideEffect {
         context.findActivity()?.window?.let { window ->
-            // Android 15+ enforces edge-to-edge and ignores statusBarColor.
-            // Keep the system bar transparent so the app bar's animated color is visible behind it.
-            WindowCompat.setDecorFitsSystemWindows(window, true)
-            window.statusBarColor = statusBarBaseColor.toArgb()
-            WindowCompat.getInsetsController(window, window.decorView)
-                .isAppearanceLightStatusBars = !useDarkTheme
+            // Edge-to-edge is enabled in MainActivity. Keep system icons readable
+            // when the app's selected light/dark theme changes.
+            WindowCompat.getInsetsController(window, window.decorView).apply {
+                isAppearanceLightStatusBars = !useDarkTheme
+                isAppearanceLightNavigationBars = !useDarkTheme
+            }
         }
     }
 
