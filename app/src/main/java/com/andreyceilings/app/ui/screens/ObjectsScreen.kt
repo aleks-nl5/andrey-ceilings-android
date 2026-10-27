@@ -99,7 +99,7 @@ internal fun ObjectsScreen(database: CeilingsDatabase?) {
 }
 
 @Composable
-internal fun MeasurementsScreen(database: CeilingsDatabase?) {
+internal fun MeasurementsScreen(database: CeilingsDatabase?, onOpenEstimates: () -> Unit) {
  val measurementsFlow = remember(database) { database?.measurements()?.observeAll() ?: flowOf<List<RoomMeasurementEntity>>(emptyList()) }
  val projectsFlow = remember(database) { database?.projects()?.observeAll() ?: flowOf<List<ProjectEntity>>(emptyList()) }
  val measurements by measurementsFlow.collectAsState(initial = emptyList())
@@ -109,7 +109,7 @@ internal fun MeasurementsScreen(database: CeilingsDatabase?) {
  var showDialog by remember { mutableStateOf(false) }
  var error by remember { mutableStateOf<String?>(null) }
  LazyColumn(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(12.dp), contentPadding = PaddingValues(bottom = 16.dp)) {
-  item { Text("Заміри", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold); Text("Заміри зберігаються в зашифрованій локальній БД", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+  item {\n   Text("Заміри", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)\n   Text("Заміри зберігаються в зашифрованій локальній БД", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)\n   OutlinedButton(onClick = onOpenEstimates, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Default.PictureAsPdf, null); Spacer(Modifier.width(8.dp)); Text("Кошториси") }\n  }
   if (database == null) item { LinearProgressIndicator(Modifier.fillMaxWidth()); Text("Захищена база ще відкривається або недоступна.") }
   else {
    item { Button(onClick = { showDialog = true }, modifier = Modifier.fillMaxWidth(), enabled = projects.isNotEmpty()) { Icon(Icons.Default.Add, null); Spacer(Modifier.width(8.dp)); Text("Створити замір") }; if (projects.isEmpty()) EmptyDataCard("Спочатку створіть об’єкт у вкладці «Об’єкти»."); if (measurements.isEmpty() && projects.isNotEmpty()) EmptyDataCard("Заміри ще не додані.") }
