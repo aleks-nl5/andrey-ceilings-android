@@ -1,5 +1,7 @@
 package com.andreyceilings.app.ui.screens
 
+import com.andreyceilings.app.ui.theme.AppAlertDialog
+import com.andreyceilings.app.ui.theme.AppExposedDropdownMenu
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -145,7 +147,7 @@ private fun AddClientDialog(onDismiss: () -> Unit, onSave: (String, String, Stri
     var name by remember { mutableStateOf("") }
     var phone by remember { mutableStateOf("") }
     var email by remember { mutableStateOf("") }
-    AlertDialog(onDismissRequest = onDismiss, title = { Text("Новий клієнт") }, text = {
+    AppAlertDialog(onDismissRequest = onDismiss, title = { Text("Новий клієнт") }, text = {
         Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedTextField(name, { name = it }, label = { Text("Ім’я клієнта *") }, singleLine = true)
             OutlinedTextField(phone, { phone = it }, label = { Text("Телефон") }, singleLine = true)
@@ -159,7 +161,7 @@ private fun AddProjectDialog(onDismiss: () -> Unit, onSave: (String, String, Str
     var title by remember { mutableStateOf("") }
     var address by remember { mutableStateOf("") }
     var clientName by remember { mutableStateOf("") }
-    AlertDialog(onDismissRequest = onDismiss, title = { Text("Новий об’єкт") }, text = {
+    AppAlertDialog(onDismissRequest = onDismiss, title = { Text("Новий об’єкт") }, text = {
         Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedTextField(title, { title = it }, label = { Text("Назва об’єкта *") }, singleLine = true)
             OutlinedTextField(address, { address = it }, label = { Text("Адреса") })
@@ -178,11 +180,11 @@ private fun AddMeasurementDialog(projects: List<ProjectEntity>, onDismiss: () ->
     var expanded by remember { mutableStateOf(false) }
     val parsedLength = length.replace(',', '.').toDoubleOrNull()
     val parsedWidth = width.replace(',', '.').toDoubleOrNull()
-    AlertDialog(onDismissRequest = onDismiss, title = { Text("Новий замір") }, text = {
+    AppAlertDialog(onDismissRequest = onDismiss, title = { Text("Новий замір") }, text = {
         Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = it }) {
                 OutlinedTextField(value = projects.firstOrNull { it.id == selectedProjectId }?.title ?: "Оберіть об’єкт", onValueChange = {}, readOnly = true, label = { Text("Об’єкт") }, trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) }, modifier = Modifier.menuAnchor().fillMaxWidth())
-                ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                AppExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
                     projects.forEach { project -> DropdownMenuItem(text = { Text(project.title) }, onClick = { selectedProjectId = project.id; expanded = false }) }
                 }
             }
