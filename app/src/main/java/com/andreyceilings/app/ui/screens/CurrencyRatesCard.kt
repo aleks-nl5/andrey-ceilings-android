@@ -93,9 +93,8 @@ internal fun CurrencyRatesCard() {
                 val monoBadgeForeground = if (isDarkTheme) Color.Black else Color.White
                 Box(
                     modifier = Modifier
-                        .width(90.dp)
-                        .height(24.dp)
-                        .background(monoBadgeBackground, CircleShape),
+                        .background(monoBadgeBackground, CircleShape)
+                        .padding(horizontal = 10.dp, vertical = 4.dp),
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
@@ -111,7 +110,6 @@ internal fun CurrencyRatesCard() {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Surface(
                         modifier = Modifier
-                            .width(90.dp)
                             .height(24.dp)
                             .clip(CircleShape)
                             .clickable(enabled = refreshEnabled) {
@@ -143,9 +141,9 @@ internal fun CurrencyRatesCard() {
                         contentColor = MaterialTheme.colorScheme.onSurface
                     ) {
                         Row(
-                            modifier = Modifier.fillMaxSize(),
+                            modifier = Modifier.padding(horizontal = 10.dp),
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.Center
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
                             Icon(Icons.Default.Refresh, contentDescription = "Оновити курси", modifier = Modifier.size(15.dp))
                             Text(refreshLabel, fontSize = 13.sp, fontWeight = FontWeight.ExtraBold)
