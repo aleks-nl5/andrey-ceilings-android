@@ -216,3 +216,51 @@ private fun BoxForThemeSelector(
 ) {
     androidx.compose.foundation.layout.Box(modifier = modifier, content = content)
 }
+
+
+/**
+ * Shared dialog styling. Explicit colors are important because dialogs render in a
+ * separate window and must follow the app's selected light/dark palette.
+ */
+@Composable
+fun AppAlertDialog(
+    onDismissRequest: () -> Unit,
+    title: @Composable () -> Unit,
+    text: @Composable () -> Unit,
+    confirmButton: @Composable () -> Unit,
+    dismissButton: (@Composable () -> Unit)? = null
+) {
+    val colors = AlertDialogDefaults.colors(
+        containerColor = MaterialTheme.colorScheme.surface,
+        titleContentColor = MaterialTheme.colorScheme.onSurface,
+        textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+        iconContentColor = MaterialTheme.colorScheme.primary
+    )
+    AlertDialog(
+        onDismissRequest = onDismissRequest,
+        title = title,
+        text = text,
+        confirmButton = confirmButton,
+        dismissButton = dismissButton,
+        shape = MaterialTheme.shapes.extraLarge,
+        colors = colors
+    )
+}
+
+/** Shared themed popup surface for every exposed dropdown in the app. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun AppExposedDropdownMenu(
+    expanded: Boolean,
+    onDismissRequest: () -> Unit,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    ExposedDropdownMenu(
+        expanded = expanded,
+        onDismissRequest = onDismissRequest,
+        shape = MaterialTheme.shapes.medium,
+        containerColor = MaterialTheme.colorScheme.surface,
+        tonalElevation = 3.dp,
+        content = content
+    )
+}
