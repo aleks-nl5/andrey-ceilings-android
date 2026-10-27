@@ -72,7 +72,10 @@ jobs:
         run: bash scripts/build-android-aar.sh
 
       - name: Audit resolved release runtime dependencies
-        run: gradle --no-daemon dependencies --configuration releaseRuntimeClasspath --console=plain
+        run: gradle --no-daemon :app:dependencies --configuration releaseRuntimeClasspath --console=plain
+
+      - name: Run JVM unit tests
+        run: gradle --no-daemon :app:testDebugUnitTest --stacktrace --warning-mode all
 
       - name: Prepare persistent signing
         env:
