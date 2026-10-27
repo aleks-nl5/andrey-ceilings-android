@@ -56,7 +56,7 @@ internal fun ObjectsScreen(database: CeilingsDatabase?) {
  var showClientDialog by remember { mutableStateOf(false) }
  var showProjectDialog by remember { mutableStateOf(false) }
  var dbError by remember { mutableStateOf<String?>(null) }
- LazyColumn(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+ LazyColumn(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(12.dp), contentPadding = PaddingValues(vertical = 16.dp)) {
   item {
    Text("Об’єкти та клієнти", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
    Text("Дані зберігаються локально в зашифрованій базі", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -111,7 +111,7 @@ internal fun MeasurementsScreen(database: CeilingsDatabase?, onOpenEstimates: ()
  val scope = rememberCoroutineScope()
  var showDialog by remember { mutableStateOf(false) }
  var error by remember { mutableStateOf<String?>(null) }
- LazyColumn(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+ LazyColumn(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(12.dp), contentPadding = PaddingValues(vertical = 16.dp)) {
   item {
    Text("Заміри", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
    Text("Заміри зберігаються в зашифрованій локальній БД", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
