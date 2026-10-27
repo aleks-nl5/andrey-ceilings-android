@@ -45,9 +45,9 @@ Module names may change if the current app can be preserved with less disruption
 
 ## Toolchain policy
 
-The current `main` has its own modern toolchain (including AGP 9.4.0, Kotlin Compose plugin 2.4.21, KSP 2.3.12, and Gradle 9.8.2 in CI). PR #21 used a different older CMP/KMP toolchain. Do not copy its versions blindly or assume every individually recent version is compatible.
+The current `main` uses AGP 9.4.0, Kotlin Compose plugin 2.4.21, KSP 2.3.12, and Gradle 9.8.2 in CI. PR #21 used an older CMP/KMP toolchain. Neither set should be copied blindly.
 
-Before adding KMP plugins, check the current official Kotlin/Compose Multiplatform compatibility tables and select a stable, explicitly compatible version set. Keep the existing Android build working while making the smallest necessary toolchain changes. Record the selected versions and evidence from successful CI in this document.
+Compatibility audit (2026-10-27): the official Kotlin Multiplatform compatibility table lists Kotlin 2.4.20–2.4.21 with Gradle up to 9.7.0 and AGP up to 9.3.1; the current `main` toolchain exceeds those listed maxima. The official Compose compatibility page says current stable Compose Multiplatform 1.12.2 is compatible with the latest Kotlin release (currently 2.4.21). Therefore, before adding KMP plugins, select a stable, explicitly compatible set around Kotlin 2.4.21 + Compose Multiplatform 1.12.2 and align AGP/Gradle to the officially supported range, then validate KSP 2.3.12 against that selection. This may require a deliberate toolchain adjustment, but do not downgrade blindly: keep the existing Android build working and use completed CI as evidence. References: https://kotlinlang.org/docs/multiplatform/multiplatform-compatibility-guide.html and https://kotlinlang.org/docs/multiplatform/compose-compatibility-and-versioning.html.
 
 References:
 - https://kotlinlang.org/docs/multiplatform/multiplatform-compatibility-guide.html
