@@ -100,8 +100,8 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
         context.findActivity()?.window?.let { window ->
             // Android 15+ enforces edge-to-edge and ignores statusBarColor.
             // Keep the system bar transparent so the app bar's animated color is visible behind it.
-            WindowCompat.setDecorFitsSystemWindows(window, false)
-            window.statusBarColor = android.graphics.Color.TRANSPARENT
+            WindowCompat.setDecorFitsSystemWindows(window, true)
+            window.statusBarColor = statusBarBaseColor.toArgb()
             WindowCompat.getInsetsController(window, window.decorView)
                 .isAppearanceLightStatusBars = !useDarkTheme
         }
@@ -343,7 +343,6 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
         },
         bottomBar = {
             NavigationBar(
-                modifier = Modifier.height(64.dp),
                 containerColor = MaterialTheme.colorScheme.surface,
                 contentColor = MaterialTheme.colorScheme.onSurface,
                 tonalElevation = 0.dp
