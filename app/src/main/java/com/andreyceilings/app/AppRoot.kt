@@ -71,7 +71,7 @@ private tailrec fun Context.findActivity(): Activity? = when (this) {
 
 internal enum class AppTab(val title: String) {
     DASHBOARD("Панель"), OBJECTS("Об’єкти"), MEASUREMENTS("Заміри"),
-    CALCULATOR("Калькулятор"), ESTIMATES("Кошториси"), PRICES("Прайс"), SETTINGS("Налаштування")
+    CALCULATOR("Калькулятор"), ESTIMATES("Кошториси"), PRICES("Прайс"), SETTINGS("Налаштування"), CALENDAR("Календар")
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -359,8 +359,7 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
                     AppTab.OBJECTS to Icons.Default.Business,
                     AppTab.MEASUREMENTS to Icons.Default.Straighten,
                     AppTab.CALCULATOR to Icons.Default.Calculate,
-                    AppTab.ESTIMATES to Icons.Default.ReceiptLong,
-                    AppTab.PRICES to Icons.Default.PriceChange
+                    AppTab.CALENDAR to Icons.Default.CalendarMonth
                 )
                 items.forEach { (item, icon) ->
                     NavigationBarItem(
@@ -375,7 +374,7 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
         }
     ) { padding ->
         key(tab) {
-            if (tab == AppTab.OBJECTS || tab == AppTab.MEASUREMENTS || tab == AppTab.ESTIMATES || tab == AppTab.PRICES) {
+            if (tab == AppTab.OBJECTS || tab == AppTab.MEASUREMENTS || tab == AppTab.ESTIMATES || tab == AppTab.PRICES || tab == AppTab.CALENDAR) {
                 Box(
                     Modifier.fillMaxSize().padding(padding)
                         .nestedScroll(screenScrollConnection).padding(16.dp)
@@ -385,6 +384,7 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
                         AppTab.MEASUREMENTS -> MeasurementsScreen(database)
                         AppTab.ESTIMATES -> EstimatesScreen(database)
                         AppTab.PRICES -> PriceListScreen(database)
+                        AppTab.CALENDAR -> CalendarScreen(database)
                         else -> Unit
                     }
                 }
@@ -425,7 +425,7 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
                             hardWallMeters = hardWallMeters, onHardWallMeters = { hardWallMeters = it },
                             complexity = complexity, onComplexity = { complexity = it }
                         )
-                        AppTab.SETTINGS -> SettingsScreen(databaseStatus, database, onDatabaseReplaced, themeMode, onThemeModeChange)
+                        AppTab.SETTINGS -> SettingsScreen(databaseStatus, database, onDatabaseReplaced, themeMode, onThemeModeChange, onOpenPriceList = { navigateTo(AppTab.PRICES) })
                         else -> Unit
                     }
                 }
