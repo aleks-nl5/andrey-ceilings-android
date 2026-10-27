@@ -22,6 +22,7 @@ import androidx.compose.ui.text.font.FontVariation
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.shape.RoundedCornerShape
 
 @OptIn(ExperimentalTextApi::class)
 private val InterFontFamily = FontFamily(
@@ -45,6 +46,14 @@ private val InterFontFamily = FontFamily(
         weight = FontWeight.Bold,
         variationSettings = FontVariation.Settings(FontVariation.weight(700))
     )
+)
+
+private val AppShapes = Shapes(
+    extraSmall = RoundedCornerShape(8.dp),
+    small = RoundedCornerShape(12.dp),
+    medium = RoundedCornerShape(16.dp),
+    large = RoundedCornerShape(20.dp),
+    extraLarge = RoundedCornerShape(28.dp)
 )
 
 private val BaseTypography = Typography()
@@ -128,6 +137,7 @@ fun CeilingsTheme(
     MaterialTheme(
         colorScheme = if (useDark) DarkScheme else LightScheme,
         typography = AppTypography,
+        shapes = AppShapes,
         content = content
     )
 }
