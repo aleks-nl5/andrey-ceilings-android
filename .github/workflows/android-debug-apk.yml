@@ -50,7 +50,7 @@ jobs:
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
 
       - name: Initialize gomobile
-        run: gomobile init
+        run: GOTOOLCHAIN=auto gomobile init
 
       - name: Build required Go Android library
         run: bash scripts/build-android-aar.sh
