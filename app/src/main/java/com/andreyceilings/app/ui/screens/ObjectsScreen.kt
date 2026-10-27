@@ -73,7 +73,7 @@ internal fun ObjectsScreen(database: CeilingsDatabase?) {
    }
    items(projects, key = { "project-${it.id}" }) { project ->
     val clientName = project.clientId?.let { clientsById[it]?.name } ?: "Клієнт не вказаний"
-    Card { Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) { Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
      Row(verticalAlignment = Alignment.CenterVertically) {
       Icon(Icons.Default.Business, null, tint = MaterialTheme.colorScheme.primary); Spacer(Modifier.width(8.dp))
       Column(Modifier.weight(1f)) { Text(project.title, fontWeight = FontWeight.SemiBold); if (project.address.isNotBlank()) Text(project.address, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
@@ -85,7 +85,7 @@ internal fun ObjectsScreen(database: CeilingsDatabase?) {
    }
    item { HorizontalDivider(); Text("Клієнти (${clients.size})", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold); if (clients.isEmpty()) EmptyDataCard("Список клієнтів порожній.") }
    items(clients, key = { "client-${it.id}" }) { client ->
-    Card { Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) { Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
      Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) { Text(client.name, fontWeight = FontWeight.SemiBold); if (client.phone.isNotBlank()) Text(client.phone, style = MaterialTheme.typography.bodyMedium); if (client.email.isNotBlank()) Text(client.email, style = MaterialTheme.typography.bodySmall) }
      IconButton(onClick = { scope.launch { runCatching { database.clients().deleteById(client.id) }.onFailure { dbError = it.message ?: "Не вдалося видалити клієнта" } } }) { Icon(Icons.Default.Delete, contentDescription = "Видалити клієнта") }
     } }
@@ -122,7 +122,7 @@ internal fun MeasurementsScreen(database: CeilingsDatabase?, onOpenEstimates: ()
    item { Button(onClick = { showDialog = true }, modifier = Modifier.fillMaxWidth(), enabled = projects.isNotEmpty()) { Icon(Icons.Default.Add, null); Spacer(Modifier.width(8.dp)); Text("Створити замір") }; if (projects.isEmpty()) EmptyDataCard("Спочатку створіть об’єкт у вкладці «Об’єкти»."); if (measurements.isEmpty() && projects.isNotEmpty()) EmptyDataCard("Заміри ще не додані.") }
    items(measurements, key = { it.id }) { measurement ->
     val project = projectsById[measurement.projectId]
-    Card { Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) { Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
      Icon(Icons.Default.Straighten, null, tint = MaterialTheme.colorScheme.primary); Spacer(Modifier.width(10.dp))
      Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) { Text(measurement.name, fontWeight = FontWeight.SemiBold); Text(project?.title ?: "Об’єкт #${measurement.projectId}", style = MaterialTheme.typography.bodySmall); Text("${measurement.lengthMeters.format2()} × ${measurement.widthMeters.format2()} м · ${measurement.areaSquareMeters.format2()} м² · периметр ${measurement.perimeterMeters.format2()} м", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
      IconButton(onClick = { scope.launch { runCatching { database.measurements().deleteById(measurement.id) }.onFailure { error = it.message ?: "Не вдалося видалити замір" } } }) { Icon(Icons.Default.Delete, contentDescription = "Видалити замір") }
