@@ -88,6 +88,9 @@ jobs:
           X_MOBILE_VERSION: v0.0.0-20261011034528-197770444867
         run: bash scripts/build-android-aar.sh
 
+      - name: Build and test shared KMP foundation
+        run: gradle --no-daemon :shared:assemble :shared:compileKotlinJvm :shared:jvmTest --stacktrace --warning-mode all
+
       - name: Audit resolved release runtime dependencies
         run: gradle --no-daemon :app:dependencies --configuration releaseRuntimeClasspath --console=plain
 
