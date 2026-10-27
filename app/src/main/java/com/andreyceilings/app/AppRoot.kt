@@ -90,10 +90,12 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
     val topAppBarScrollBehavior = TopAppBarDefaults.enterAlwaysScrollBehavior()
     val isScrolling = remember { mutableStateOf(false) }
     val statusBarBaseColor = MaterialTheme.colorScheme.background
-    // Keep the system status area visually connected to the app bar while
-    // letting a little of the screen surface show through.
-    val appBarColor = statusBarBaseColor.copy(alpha = if (isScrolling.value) 0.72f else 0.90f)
-    val navigationBarColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.90f)
+    // Use a visibly distinct translucent surface so edge-to-edge is apparent
+    // against the Scaffold background, not just technically enabled.
+    val appBarColor = MaterialTheme.colorScheme.surfaceVariant.copy(
+        alpha = if (isScrolling.value) 0.68f else 0.78f
+    )
+    val navigationBarColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.82f)
     SideEffect {
         context.findActivity()?.window?.let { window ->
             // Edge-to-edge is enabled in MainActivity. Keep system icons readable
