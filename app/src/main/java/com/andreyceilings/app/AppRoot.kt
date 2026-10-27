@@ -28,6 +28,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.background
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -329,9 +330,13 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
     val topContentPadding = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 64.dp + 16.dp
     val bottomContentPadding = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 80.dp + 16.dp
 
-    // 70% transparent system panels: a subtle 30% theme-surface tint is drawn
-    // behind Android's transparent status/navigation bars.
+    // 70% transparent at the screen edges, fading smoothly to fully transparent
+    // over the app content. Android's own system bars remain truly transparent.
     val systemPanelTint = MaterialTheme.colorScheme.surface.copy(alpha = 0.30f)
+    val transparentSystemPanel = systemPanelTint.copy(alpha = 0f)
+    val systemPanelGradientHeight = 36.dp
+    val statusBarInset = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+    val navigationBarInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
 
     // Overlay the app bars on a full-screen content layer. The screen can scroll
     // underneath the transparent bars, while its initial content respects their insets.
@@ -409,16 +414,24 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
             modifier = Modifier
                 .align(Alignment.TopCenter)
                 .fillMaxWidth()
-                .windowInsetsTopHeight(WindowInsets.statusBars)
-                .background(systemPanelTint)
+                .height(statusBarInset + systemPanelGradientHeight)
+                .background(
+                    Brush.verticalGradient(
+                        colors = listOf(systemPanelTint, transparentSystemPanel)
+                    )
+                )
         )
 
         Box(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth()
-                .windowInsetsBottomHeight(WindowInsets.navigationBars)
-                .background(systemPanelTint)
+                .height(navigationBarInset + systemPanelGradientHeight)
+                .background(
+                    Brush.verticalGradient(
+                        colors = listOf(transparentSystemPanel, systemPanelTint)
+                    )
+                )
         )
 
         TopAppBar(
@@ -449,6 +462,7 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
                 .fillMaxWidth()
                 .padding(horizontal = 12.dp)
                 .navigationBarsPadding()
+                .height(68.dp)
                 .clip(RoundedCornerShape(32.dp))
                 .background(MaterialTheme.colorScheme.surface),
             windowInsets = WindowInsets(0, 0, 0, 0),
