@@ -93,8 +93,11 @@ internal fun CurrencyRatesCard() {
                 val monoBadgeForeground = if (isDarkTheme) Color.Black else Color.White
                 Text(
                     "monobank",
-                    modifier = Modifier.background(monoBadgeBackground, CircleShape)
-                        .padding(horizontal = 10.dp, vertical = 4.dp),
+                    modifier = Modifier
+                        .width(90.dp)
+                        .height(24.dp)
+                        .background(monoBadgeBackground, CircleShape)
+                        .wrapContentHeight(Alignment.CenterVertically),
                     color = monoBadgeForeground,
                     fontWeight = FontWeight.ExtraBold,
                     fontSize = 13.sp
@@ -105,6 +108,8 @@ internal fun CurrencyRatesCard() {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Surface(
                         modifier = Modifier
+                            .width(90.dp)
+                            .height(24.dp)
                             .clip(CircleShape)
                             .clickable(enabled = refreshEnabled) {
                                 loading = true
@@ -127,15 +132,18 @@ internal fun CurrencyRatesCard() {
                                     }
                                     loading = false
                                 }
-                            }
-                            .padding(horizontal = 10.dp, vertical = 4.dp),
+                            },
                         shape = CircleShape,
                         color = if (MaterialTheme.colorScheme.background.luminance() < 0.5f)
                             Color.White.copy(alpha = if (refreshEnabled) 0.14f else 0.07f)
                         else Color.Black.copy(alpha = if (refreshEnabled) 0.08f else 0.04f),
                         contentColor = MaterialTheme.colorScheme.onSurface
                     ) {
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxSize(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.Center
+                        ) {
                             Icon(Icons.Default.Refresh, contentDescription = "Оновити курси", modifier = Modifier.size(15.dp))
                             Text(refreshLabel, fontSize = 13.sp, fontWeight = FontWeight.ExtraBold)
                         }
