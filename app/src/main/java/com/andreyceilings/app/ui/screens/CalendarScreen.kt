@@ -68,7 +68,7 @@ internal fun CalendarScreen(database: CeilingsDatabase?) {
     val selectedRecords = recordsByDate[selectedDate].orEmpty()
     val upcomingRecords = emptyList<CalendarRecord>() // Scheduled work dates are not stored in the current data model yet.
 
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(vertical = 16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         Text("Календар", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
         Card(
             shape = MaterialTheme.shapes.large,
