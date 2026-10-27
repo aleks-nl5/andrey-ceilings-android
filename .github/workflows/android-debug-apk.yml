@@ -18,7 +18,7 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Set up JDK 21
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: '21'
@@ -71,6 +71,9 @@ jobs:
           X_MOBILE_VERSION: v0.0.0-20261011034528-197770444867
         run: bash scripts/build-android-aar.sh
 
+      - name: Audit resolved release runtime dependencies
+        run: gradle --no-daemon dependencies --configuration releaseRuntimeClasspath --console=plain
+
       - name: Prepare persistent signing
         env:
           KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
@@ -95,7 +98,7 @@ jobs:
           fi
 
       - name: Build debug APK
-        run: gradle --no-daemon assembleDebug --stacktrace
+        run: gradle --no-daemon assembleDebug --stacktrace --warning-mode all
 
       - name: Upload debug APK
         uses: actions/upload-artifact@v7
@@ -107,7 +110,7 @@ jobs:
 
       - name: Build release APK
         if: env.SIGNING_CONFIGURED == 'true'
-        run: gradle --no-daemon assembleRelease --stacktrace
+        run: gradle --no-daemon assembleRelease --stacktrace --warning-mode all
 
       - name: Upload release APK
         if: env.SIGNING_CONFIGURED == 'true'
