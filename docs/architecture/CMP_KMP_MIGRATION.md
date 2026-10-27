@@ -55,7 +55,7 @@ References:
 
 ### Phase 2 — Shared domain and calculations
 - [x] Add the first pure common-Kotlin geometry calculator slice mirroring existing Go rules for rectangle, square, L-shaped, and custom rooms.
-- [x] Add common tests for default dimensions, geometry shapes, Heron-formula diagonal area, corner counts, and rounding-related behavior.
+- [x] Add common tests for default dimensions, geometry shapes, Heron-formula diagonal area, corner counts, and two-decimal rounding.
 - [ ] Run common tests in CI and compare a representative input/output matrix directly against Go before expanding the port.
 - [ ] Port remaining Go calculation rules into pure common Kotlin, with explicit decimal/rounding rules.
 - [ ] Port regression tests and verify equivalent outputs for existing sample estimates.
@@ -82,7 +82,7 @@ References:
 ## Progress log — 2026-10-27
 
 - Added `shared/.../domain/GeometryCalculator.kt` as the first shared domain slice, based on `go-core/core/calculator.go`.
-- Added six common tests in `shared/src/commonTest/.../GeometryCalculatorTest.kt`.
+- Added seven common tests in `shared/src/commonTest/.../GeometryCalculatorTest.kt`.
 - The tests have been committed to the migration branch, but have **not yet been confirmed by a completed CI run**. The earlier Android workflow was cancelled during APK build; the earlier iOS workflow was cancelled during framework compilation. Do not interpret the completed Go/shared-desktop step as a complete Android/iOS build.
 - Next: get a fresh CI run, fix any compilation/test failures, then expand to price/cost calculations and explicit Go/KMP parity fixtures.
 
