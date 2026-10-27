@@ -109,7 +109,11 @@ internal fun MeasurementsScreen(database: CeilingsDatabase?, onOpenEstimates: ()
  var showDialog by remember { mutableStateOf(false) }
  var error by remember { mutableStateOf<String?>(null) }
  LazyColumn(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(12.dp), contentPadding = PaddingValues(bottom = 16.dp)) {
-  item {\n   Text("Заміри", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)\n   Text("Заміри зберігаються в зашифрованій локальній БД", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)\n   OutlinedButton(onClick = onOpenEstimates, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Default.PictureAsPdf, null); Spacer(Modifier.width(8.dp)); Text("Кошториси") }\n  }
+  item {
+   Text("Заміри", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+   Text("Заміри зберігаються в зашифрованій локальній БД", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+   OutlinedButton(onClick = onOpenEstimates, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Default.PictureAsPdf, null); Spacer(Modifier.width(8.dp)); Text("Кошториси") }
+  }
   if (database == null) item { LinearProgressIndicator(Modifier.fillMaxWidth()); Text("Захищена база ще відкривається або недоступна.") }
   else {
    item { Button(onClick = { showDialog = true }, modifier = Modifier.fillMaxWidth(), enabled = projects.isNotEmpty()) { Icon(Icons.Default.Add, null); Spacer(Modifier.width(8.dp)); Text("Створити замір") }; if (projects.isEmpty()) EmptyDataCard("Спочатку створіть об’єкт у вкладці «Об’єкти»."); if (measurements.isEmpty() && projects.isNotEmpty()) EmptyDataCard("Заміри ще не додані.") }
