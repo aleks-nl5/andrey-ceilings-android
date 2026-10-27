@@ -178,11 +178,15 @@ internal fun SettingsScreen(databaseStatus: String, database: CeilingsDatabase?,
         }
     }
     SectionTitle("Налаштування", "Персоналізація та резервне копіювання")
-    Card {
+    Card(
+        shape = MaterialTheme.shapes.large,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+    ) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            ListItem(leadingContent = { Icon(Icons.Default.Info, null) }, headlineContent = { Text("Версія застосунку") }, supportingContent = { Text(appVersionLabel) })
+            ListItem(colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surface), leadingContent = { Icon(Icons.Default.Info, null, tint = MaterialTheme.colorScheme.primary) }, headlineContent = { Text("Версія застосунку") }, supportingContent = { Text(appVersionLabel) })
             HorizontalDivider()
-            ListItem(leadingContent = { Icon(Icons.Default.Language, null) }, headlineContent = { Text("Мова") }, supportingContent = { Text("Українська") }, trailingContent = { Text("UA") })
+            ListItem(colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surface), leadingContent = { Icon(Icons.Default.Language, null, tint = MaterialTheme.colorScheme.primary) }, headlineContent = { Text("Мова") }, supportingContent = { Text("Українська") }, trailingContent = { Text("UA", color = MaterialTheme.colorScheme.primary) })
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Column {
                     Text("Тема оформлення", style = MaterialTheme.typography.titleSmall)
