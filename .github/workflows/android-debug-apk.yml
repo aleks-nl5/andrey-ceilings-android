@@ -91,6 +91,9 @@ jobs:
       - name: Build and test shared KMP foundation
         run: gradle --no-daemon :shared:assemble :shared:compileKotlinJvm :shared:jvmTest --stacktrace --warning-mode all
 
+      - name: Compile Compose Desktop host
+        run: gradle --no-daemon :desktopApp:compileKotlin --stacktrace --warning-mode all
+
       - name: Audit resolved release runtime dependencies
         run: gradle --no-daemon :app:dependencies --configuration releaseRuntimeClasspath --console=plain
 
