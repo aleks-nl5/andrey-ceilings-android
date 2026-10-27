@@ -157,7 +157,7 @@ internal fun EstimatesScreen(database: CeilingsDatabase?) {
                 val projectEstimates = estimatesByProject[project.id].orEmpty()
                 if (projectEstimates.isNotEmpty()) {
                     item(key = "project-total-${project.id}") {
-                        Card {
+                        Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
                             Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                 Text(project.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                                 Text("Разом за збереженими кошторисами: ${money(projectTotals[project.id] ?: 0.0)}", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
@@ -168,7 +168,7 @@ internal fun EstimatesScreen(database: CeilingsDatabase?) {
             }
             items(estimates, key = { "estimate-${it.id}" }) { estimate ->
                 val project = projectsById[estimate.projectId]
-                Card {
+                Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
                     Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
