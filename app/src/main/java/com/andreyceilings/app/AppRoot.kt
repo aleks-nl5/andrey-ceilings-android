@@ -27,9 +27,14 @@ import com.andreyceilings.app.data.backup.BackupSchedule
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.background
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.sp
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -37,7 +42,6 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.runtime.*
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.core.view.WindowCompat
-import androidx.compose.ui.graphics.toArgb
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.withFrameNanos
@@ -90,20 +94,26 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
 
     val topAppBarScrollBehavior = TopAppBarDefaults.enterAlwaysScrollBehavior()
     val isScrolling = remember { mutableStateOf(false) }
-    val statusBarBaseColor = MaterialTheme.colorScheme.background
-    val appBarColor = if (isScrolling.value) {
-        statusBarBaseColor.copy(alpha = 0.55f)
-    } else {
-        statusBarBaseColor
-    }
+    // Keep app chrome transparent so the window background is visible behind the system bars.
+    val appBarColor = androidx.compose.ui.graphics.Color.Transparent
+    val navigationBarColor = androidx.compose.ui.graphics.Color.Transparent
     SideEffect {
         context.findActivity()?.window?.let { window ->
-            // Android 15+ enforces edge-to-edge and ignores statusBarColor.
-            // Keep the system bar transparent so the app bar's animated color is visible behind it.
-            WindowCompat.setDecorFitsSystemWindows(window, true)
-            window.statusBarColor = statusBarBaseColor.toArgb()
-            WindowCompat.getInsetsController(window, window.decorView)
-                .isAppearanceLightStatusBars = !useDarkTheme
+            // Keep content edge-to-edge explicitly; transparent system bars must not
+            // cause the window to fit the app content between the bars.
+            WindowCompat.setDecorFitsSystemWindows(window, false)
+            window.statusBarColor = android.graphics.Color.TRANSPARENT
+            window.navigationBarColor = android.graphics.Color.TRANSPARENT
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+                window.isStatusBarContrastEnforced = false
+                window.isNavigationBarContrastEnforced = false
+                window.navigationBarDividerColor = android.graphics.Color.TRANSPARENT
+            }
+            // Keep system icons readable when the app's selected light/dark theme changes.
+            WindowCompat.getInsetsController(window, window.decorView).apply {
+                isAppearanceLightStatusBars = !useDarkTheme
+                isAppearanceLightNavigationBars = !useDarkTheme
+            }
         }
     }
 
@@ -317,67 +327,29 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
         error.message?.takeIf { it.isNotBlank() } ?: "Невідома помилка Go-рушія"
     }
 
-    Scaffold(
-        modifier = Modifier.nestedScroll(topAppBarScrollBehavior.nestedScrollConnection),
-        topBar = {
-            TopAppBar(
-                scrollBehavior = topAppBarScrollBehavior,
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = appBarColor,
-                    scrolledContainerColor = appBarColor,
-                    titleContentColor = MaterialTheme.colorScheme.onBackground,
-                    navigationIconContentColor = MaterialTheme.colorScheme.onBackground,
-                    actionIconContentColor = MaterialTheme.colorScheme.onBackground
-                ),
-                title = {
-                    Column {
-                        Text("СтеляПро", fontWeight = FontWeight.Bold)
-                        Text("Майстер натяжних стель", style = MaterialTheme.typography.labelSmall)
-                    }
-                },
-                actions = {
-                    ThemeModeSelector(mode = themeMode, onModeChange = onThemeModeChange, compact = true)
-                    IconButton(onClick = { navigateTo(AppTab.SETTINGS) }) { Icon(Icons.Default.Settings, "Налаштування") }
-                }
-            )
-        },
-        bottomBar = {
-            NavigationBar(
-                containerColor = MaterialTheme.colorScheme.surface,
-                contentColor = MaterialTheme.colorScheme.onSurface,
-                tonalElevation = 0.dp
-            ) {
-                val navigationItemColors = NavigationBarItemDefaults.colors(
-                    selectedIconColor = MaterialTheme.colorScheme.primary,
-                    selectedTextColor = MaterialTheme.colorScheme.primary,
-                    indicatorColor = MaterialTheme.colorScheme.primaryContainer,
-                    unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                    unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                val items = listOf(
-                    AppTab.DASHBOARD to Icons.Default.Dashboard,
-                    AppTab.OBJECTS to Icons.Default.Business,
-                    AppTab.MEASUREMENTS to Icons.Default.Straighten,
-                    AppTab.CALCULATOR to Icons.Default.Calculate,
-                    AppTab.CALENDAR to Icons.Default.CalendarMonth
-                )
-                items.forEach { (item, icon) ->
-                    NavigationBarItem(
-                        selected = tab == item,
-                        onClick = { navigateTo(item) },
-                        icon = { Icon(icon, contentDescription = item.title) },
-                        label = { Text(item.title, maxLines = 1) },
-                        colors = navigationItemColors
-                    )
-                }
-            }
-        }
-    ) { padding ->
+    val topContentPadding = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 64.dp + 16.dp
+    val bottomContentPadding = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 80.dp + 16.dp
+
+    // 50% transparent at the screen edges, fading smoothly to fully transparent
+    // over the app content. Android's own system bars remain truly transparent.
+    val systemPanelTint = MaterialTheme.colorScheme.surface.copy(alpha = 0.50f)
+    val transparentSystemPanel = systemPanelTint.copy(alpha = 0f)
+    val systemPanelGradientHeight = 36.dp
+    val statusBarInset = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+    val navigationBarInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+
+    // Overlay the app bars on a full-screen content layer. The screen can scroll
+    // underneath the transparent bars, while its initial content respects their insets.
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+            .nestedScroll(topAppBarScrollBehavior.nestedScrollConnection)
+    ) {
         key(tab) {
             if (tab == AppTab.OBJECTS || tab == AppTab.MEASUREMENTS || tab == AppTab.ESTIMATES || tab == AppTab.PRICES || tab == AppTab.CALENDAR) {
                 Box(
-                    Modifier.fillMaxSize().padding(padding)
-                        .nestedScroll(screenScrollConnection).padding(16.dp)
+                    Modifier.fillMaxSize().nestedScroll(screenScrollConnection).padding(horizontal = 16.dp)
                 ) {
                     when (tab) {
                         AppTab.OBJECTS -> ObjectsScreen(database)
@@ -390,9 +362,15 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
                 }
             } else {
                 Column(
-                    modifier = Modifier.fillMaxSize().padding(padding)
+                    modifier = Modifier.fillMaxSize()
                         .nestedScroll(screenScrollConnection)
-                        .verticalScroll(rememberScrollState()).padding(16.dp),
+                        .verticalScroll(rememberScrollState())
+                        .padding(
+                            start = 16.dp,
+                            end = 16.dp,
+                            top = topContentPadding,
+                            bottom = bottomContentPadding
+                        ),
                     verticalArrangement = Arrangement.spacedBy(14.dp)
                 ) {
                     when (tab) {
@@ -429,6 +407,99 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
                         else -> Unit
                     }
                 }
+            }
+        }
+
+        Box(
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .fillMaxWidth()
+                .height(statusBarInset + systemPanelGradientHeight)
+                .background(
+                    Brush.verticalGradient(
+                        colors = listOf(systemPanelTint, transparentSystemPanel)
+                    )
+                )
+        )
+
+        Box(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .height(navigationBarInset + systemPanelGradientHeight)
+                .background(
+                    Brush.verticalGradient(
+                        colors = listOf(transparentSystemPanel, systemPanelTint)
+                    )
+                )
+        )
+
+        TopAppBar(
+            modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth(),
+            windowInsets = WindowInsets.statusBars,
+            scrollBehavior = topAppBarScrollBehavior,
+            colors = TopAppBarDefaults.topAppBarColors(
+                containerColor = appBarColor,
+                scrolledContainerColor = appBarColor,
+                titleContentColor = MaterialTheme.colorScheme.onBackground,
+                navigationIconContentColor = MaterialTheme.colorScheme.onBackground,
+                actionIconContentColor = MaterialTheme.colorScheme.onBackground
+            ),
+            title = {
+                Column {
+                    Text("СтеляПро", fontWeight = FontWeight.Bold)
+                    Text("Майстер натяжних стель", style = MaterialTheme.typography.labelSmall)
+                }
+            },
+            actions = {
+                ThemeModeSelector(mode = themeMode, onModeChange = onThemeModeChange, compact = true)
+                IconButton(onClick = { navigateTo(AppTab.SETTINGS) }) { Icon(Icons.Default.Settings, "Налаштування") }
+            }
+        )
+        NavigationBar(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp)
+                .navigationBarsPadding()
+                .height(68.dp)
+                .clip(RoundedCornerShape(32.dp))
+                .background(MaterialTheme.colorScheme.surface),
+            windowInsets = WindowInsets(0, 0, 0, 0),
+            containerColor = navigationBarColor,
+            contentColor = MaterialTheme.colorScheme.onSurface,
+            tonalElevation = 0.dp
+        ) {
+            val navigationItemColors = NavigationBarItemDefaults.colors(
+                selectedIconColor = MaterialTheme.colorScheme.primary,
+                selectedTextColor = MaterialTheme.colorScheme.primary,
+                indicatorColor = MaterialTheme.colorScheme.primaryContainer,
+                unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            val items = listOf(
+                AppTab.DASHBOARD to Icons.Default.Dashboard,
+                AppTab.OBJECTS to Icons.Default.Business,
+                AppTab.MEASUREMENTS to Icons.Default.Straighten,
+                AppTab.CALCULATOR to Icons.Default.Calculate,
+                AppTab.CALENDAR to Icons.Default.CalendarMonth
+            )
+            items.forEach { (item, icon) ->
+                NavigationBarItem(
+                    selected = tab == item,
+                    onClick = { navigateTo(item) },
+                    icon = { Icon(icon, contentDescription = item.title) },
+                    label = {
+                        Text(
+                            item.title,
+                            maxLines = 1,
+                            style = MaterialTheme.typography.labelSmall.copy(letterSpacing = (-0.25).sp),
+                            modifier = Modifier.offset(y = (-2).dp),
+                            textAlign = TextAlign.Center
+                        )
+                    },
+                    colors = navigationItemColors
+                )
             }
         }
     }

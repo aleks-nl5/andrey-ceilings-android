@@ -15,16 +15,10 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout source
-        uses: actions/checkout@v5
-
-      - name: Set up Go
-        uses: actions/setup-go@v6
-        with:
-          go-version: '1.26.x'
-          cache-dependency-path: go-core/go.mod
+        uses: actions/checkout@v7
 
       - name: Set up JDK 21
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: '21'
@@ -33,20 +27,56 @@ jobs:
         uses: android-actions/setup-android@v4
 
       - name: Install Android SDK platform
-        run: sdkmanager 'platforms;android-35' 'build-tools;36.0.0'
+        run: sdkmanager 'platforms;android-36' 'build-tools;36.0.0'
+
+      # Diagnostic only: do not change compileSdk/targetSdk/minSdk here.
+      - name: Probe stable Android SDK API 37
+        shell: bash
+        run: |
+          set -euo pipefail
+          sdkmanager --list --channel=0 | tee "$RUNNER_TEMP/android-sdk-stable-packages.txt"
+          platform_package="$(awk -F'|' '/platforms;android-37(\.0)?[[:space:]]*\|/ { gsub(/^[[:space:]]+|[[:space:]]+$/, "", $1); print $1; exit }' "$RUNNER_TEMP/android-sdk-stable-packages.txt")"
+          if [ -z "$platform_package" ]; then
+            echo "::error::Android SDK API 37 platform is not listed in the stable SDK channel (channel 0). Stopping before dependency/build steps."
+            exit 1
+          fi
+          echo "Stable SDK package found: $platform_package"
+          sdkmanager --channel=0 "$platform_package"
+          platform_suffix="${platform_package#platforms;}"
+          test -d "$ANDROID_HOME/platforms/$platform_suffix"
+          echo "Confirmed installed stable platform at $ANDROID_HOME/platforms/$platform_suffix"
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v6
         with:
           gradle-version: '9.8.2'
+          # Let trusted branches in this repository save caches; keep fork PRs read-only.
+          cache-read-only: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
+
+      # Configure Go after other toolchain actions so its PATH entry is the active one.
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version: '1.27.3'
+          cache-dependency-path: go-core/go.mod
+
+      - name: Verify Go toolchain
+        run: |
+          echo "Resolved Go executable: $(command -v go)"
+          type -a go
+          go version
+          test "$(go env GOVERSION)" = "go1.27.3"
 
       - name: Test Go core
         working-directory: go-core
         run: go test ./...
 
+      # Pin gomobile to the exact x/mobile revision validated by this toolchain refresh.
       - name: Install gomobile
+        env:
+          X_MOBILE_VERSION: v0.0.0-20261011034528-197770444867
         run: |
-          GOTOOLCHAIN=auto go install golang.org/x/mobile/cmd/gomobile@latest
+          GOTOOLCHAIN=auto go install "golang.org/x/mobile/cmd/gomobile@${X_MOBILE_VERSION}"
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
 
       - name: Initialize gomobile
@@ -55,7 +85,14 @@ jobs:
       - name: Build required Go Android library
         env:
           GOTOOLCHAIN: auto
+          X_MOBILE_VERSION: v0.0.0-20261011034528-197770444867
         run: bash scripts/build-android-aar.sh
+
+      - name: Audit resolved release runtime dependencies
+        run: gradle --no-daemon :app:dependencies --configuration releaseRuntimeClasspath --console=plain
+
+      - name: Run JVM unit tests
+        run: gradle --no-daemon :app:testDebugUnitTest --stacktrace --warning-mode all
 
       - name: Prepare persistent signing
         env:
@@ -81,7 +118,7 @@ jobs:
           fi
 
       - name: Build debug APK
-        run: gradle --no-daemon assembleDebug --stacktrace
+        run: gradle --no-daemon assembleDebug --stacktrace --warning-mode all
 
       - name: Upload debug APK
         uses: actions/upload-artifact@v7
@@ -93,7 +130,7 @@ jobs:
 
       - name: Build release APK
         if: env.SIGNING_CONFIGURED == 'true'
-        run: gradle --no-daemon assembleRelease --stacktrace
+        run: gradle --no-daemon assembleRelease --stacktrace --warning-mode all
 
       - name: Upload release APK
         if: env.SIGNING_CONFIGURED == 'true'

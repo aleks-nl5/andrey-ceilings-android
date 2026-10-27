@@ -2,8 +2,7 @@ package com.andreyceilings.app.data.security
 
 import android.content.Context
 import com.andreyceilings.app.data.db.CeilingsDatabase
-import net.sqlcipher.database.SQLiteDatabase
-import net.sqlcipher.database.SupportFactory
+import net.zetetic.database.sqlcipher.SupportOpenHelperFactory
 import androidx.room.Room
 import java.io.File
 
@@ -57,9 +56,9 @@ internal object PortableBackupManager {
     }
 
     private fun validateDatabase(context: Context, file: File, passphrase: ByteArray) {
-        SQLiteDatabase.loadLibs(context)
+        System.loadLibrary("sqlcipher")
         val verifier = Room.databaseBuilder(context, CeilingsDatabase::class.java, file.absolutePath)
-            .openHelperFactory(SupportFactory(passphrase.copyOf()))
+            .openHelperFactory(SupportOpenHelperFactory(passphrase.copyOf()))
             .build()
         try {
             val db = verifier.openHelper.readableDatabase

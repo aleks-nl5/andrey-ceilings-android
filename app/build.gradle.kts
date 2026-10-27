@@ -6,17 +6,16 @@ plugins {
 
 android {
     namespace = "com.andreyceilings.app"
-    compileSdk = 35
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "com.andreyceilings.app"
-        minSdk = 26
-        targetSdk = 35
+        minSdk = 30
+        targetSdk = 37
         // GitHub Actions run number is appended to the visible version for test builds.
         val actionsRunNumber = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 0
         versionCode = 600000 + actionsRunNumber
         versionName = "0.6.2" + if (actionsRunNumber > 0) "-$actionsRunNumber" else ""
-
     }
 
     signingConfigs {
@@ -55,25 +54,27 @@ android {
 dependencies {
     // Required Go mobile library: all calculations run in Go; no Kotlin fallback exists.
     implementation(files("libs/ceilings-core.aar"))
-    implementation(platform("androidx.compose:compose-bom:2025.02.00"))
-    implementation("androidx.activity:activity-compose:1.10.1")
+    implementation(platform("androidx.compose:compose-bom:2026.06.01"))
+    implementation("androidx.activity:activity-compose:1.13.0")
+    implementation("androidx.core:core-ktx:1.19.1") // WindowCompat.enableEdgeToEdge
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material:material-icons-extended")
-    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
-    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
-    implementation("androidx.navigation:navigation-compose:2.8.8")
+    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.11.0")
+    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.11.0")
+    implementation("androidx.navigation:navigation-compose:2.9.8")
     implementation("androidx.room:room-runtime:2.8.5")
     implementation("androidx.room:room-ktx:2.8.5")
     ksp("androidx.room:room-compiler:2.8.5")
-    implementation("net.zetetic:android-database-sqlcipher:4.5.4")
+    implementation("net.zetetic:sqlcipher-android:4.19.1")
     implementation("androidx.sqlite:sqlite:2.7.1")
-    implementation("androidx.datastore:datastore-preferences:1.1.2")
+    implementation("androidx.datastore:datastore-preferences:1.3.0")
     // SAF folder access and periodic background work for automatic backups.
-    implementation("androidx.documentfile:documentfile:1.0.1")
-    implementation("androidx.work:work-runtime-ktx:2.10.1")
+    implementation("androidx.documentfile:documentfile:1.1.0")
+    implementation("androidx.work:work-runtime-ktx:2.12.0")
     debugImplementation("androidx.compose.ui:ui-tooling")
+    testImplementation("junit:junit:4.13.2")
 }
 
 ksp {

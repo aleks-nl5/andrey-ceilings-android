@@ -517,7 +517,7 @@ internal fun SettingsScreen(databaseStatus: String, database: CeilingsDatabase?,
                     label = { Text("Періодичність") },
                     trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = scheduleExpanded) },
                     enabled = periodicEnabled,
-                    modifier = Modifier.menuAnchor().fillMaxWidth()
+                    modifier = Modifier.menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable, enabled = periodicEnabled).fillMaxWidth()
                 )
                 AppExposedDropdownMenu(expanded = scheduleExpanded && periodicEnabled, onDismissRequest = { scheduleExpanded = false }) {
                     BackupSchedule.values().forEach { option ->
@@ -718,13 +718,13 @@ internal fun SettingsScreen(databaseStatus: String, database: CeilingsDatabase?,
                             val passphrase = com.andreyceilings.app.data.security.DatabaseKeyManager
                                 .getOrCreatePassphrase(context.applicationContext)
                             try {
-                                net.sqlcipher.database.SQLiteDatabase.loadLibs(context)
+                                System.loadLibrary("sqlcipher")
                                 val verifier = androidx.room.Room.databaseBuilder(
                                     context.applicationContext,
                                     CeilingsDatabase::class.java,
                                     snapshot.absolutePath
                                 ).openHelperFactory(
-                                    net.sqlcipher.database.SupportFactory(passphrase.copyOf())
+                                    net.zetetic.database.sqlcipher.SupportOpenHelperFactory(passphrase.copyOf())
                                 ).build()
                                 try {
                                     val verifiedDb = verifier.openHelper.readableDatabase
@@ -784,9 +784,9 @@ private fun verifyEncryptedBackup(context: android.content.Context, file: java.i
     check(file.isFile && file.length() > 0L) { "Файл відсутній або порожній." }
     val passphrase = com.andreyceilings.app.data.security.DatabaseKeyManager.getOrCreatePassphrase(context.applicationContext)
     try {
-        net.sqlcipher.database.SQLiteDatabase.loadLibs(context)
+        System.loadLibrary("sqlcipher")
         val verifier = androidx.room.Room.databaseBuilder(context.applicationContext, CeilingsDatabase::class.java, file.absolutePath)
-            .openHelperFactory(net.sqlcipher.database.SupportFactory(passphrase.copyOf())).build()
+            .openHelperFactory(net.zetetic.database.sqlcipher.SupportOpenHelperFactory(passphrase.copyOf())).build()
         try {
             val db = verifier.openHelper.readableDatabase
             val integrity = db.query("PRAGMA integrity_check").use { cursor ->

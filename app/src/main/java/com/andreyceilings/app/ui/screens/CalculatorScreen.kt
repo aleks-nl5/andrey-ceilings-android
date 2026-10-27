@@ -82,7 +82,7 @@ internal fun CalculatorScreen(
     OutlinedTextField(profilePrice, onProfilePrice, label = { Text("Профіль, ₴/м.п.") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
     var materialExpanded by remember { mutableStateOf(false) }
     ExposedDropdownMenuBox(expanded = materialExpanded, onExpandedChange = { materialExpanded = it }) {
-        OutlinedTextField(material, {}, readOnly = true, label = { Text("Матеріал") }, trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(materialExpanded) }, modifier = Modifier.menuAnchor().fillMaxWidth())
+        OutlinedTextField(material, {}, readOnly = true, label = { Text("Матеріал") }, trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(materialExpanded) }, modifier = Modifier.menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable, enabled = true).fillMaxWidth())
         AppExposedDropdownMenu(expanded = materialExpanded, onDismissRequest = { materialExpanded = false }) {
             listOf("ПВХ матовий", "ПВХ глянцевий", "ПВХ сатиновий", "Тканинний Descor", "Негорючий KM2", "Акустичний").forEach {
                 DropdownMenuItem(text = { Text(it) }, onClick = { onMaterial(it); materialExpanded = false })
@@ -91,7 +91,7 @@ internal fun CalculatorScreen(
     }
     var profileExpanded by remember { mutableStateOf(false) }
     ExposedDropdownMenuBox(expanded = profileExpanded, onExpandedChange = { profileExpanded = it }) {
-        OutlinedTextField(profileType, {}, readOnly = true, label = { Text("Система профілю") }, trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(profileExpanded) }, modifier = Modifier.menuAnchor().fillMaxWidth())
+        OutlinedTextField(profileType, {}, readOnly = true, label = { Text("Система профілю") }, trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(profileExpanded) }, modifier = Modifier.menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable, enabled = true).fillMaxWidth())
         AppExposedDropdownMenu(expanded = profileExpanded, onDismissRequest = { profileExpanded = false }) {
             listOf("Алюмінієвий гарпунний", "ПВХ стіновий", "Тіньовий EuroKRAAB", "Парящий з LED", "Слот / трековий").forEach {
                 DropdownMenuItem(text = { Text(it) }, onClick = { onProfileType(it); profileExpanded = false })
@@ -122,7 +122,7 @@ internal fun CalculatorScreen(
             value = when (complexity) { "multilevel" -> "Багаторівнева"; "curved" -> "Криволінійна"; else -> "Пряма стеля" },
             onValueChange = {}, readOnly = true, label = { Text("Складність") },
             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(complexityExpanded) },
-            modifier = Modifier.menuAnchor().fillMaxWidth()
+            modifier = Modifier.menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable, enabled = true).fillMaxWidth()
         )
         AppExposedDropdownMenu(expanded = complexityExpanded, onDismissRequest = { complexityExpanded = false }) {
             listOf("Пряма стеля" to "straight", "Багаторівнева" to "multilevel", "Криволінійна" to "curved").forEach { (label, value) ->

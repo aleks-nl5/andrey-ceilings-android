@@ -6,8 +6,8 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
-import net.sqlcipher.database.SQLiteDatabase
-import net.sqlcipher.database.SupportFactory
+import net.zetetic.database.sqlcipher.SQLiteDatabase
+import net.zetetic.database.sqlcipher.SupportOpenHelperFactory
 import com.andreyceilings.app.data.security.DatabaseKeyManager
 
 @Database(
@@ -63,9 +63,9 @@ abstract class CeilingsDatabase : RoomDatabase() {
         }
 
         private fun build(context: Context): CeilingsDatabase {
-            SQLiteDatabase.loadLibs(context)
+            System.loadLibrary("sqlcipher")
             val passphrase = DatabaseKeyManager.getOrCreatePassphrase(context)
-            val factory = SupportFactory(passphrase)
+            val factory = SupportOpenHelperFactory(passphrase)
             return Room.databaseBuilder(context, CeilingsDatabase::class.java, "andrey_ceilings_secure.db")
                 .openHelperFactory(factory)
                 .addMigrations(MIGRATION_1_2)

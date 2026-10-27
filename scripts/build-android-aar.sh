@@ -1,30 +1,29 @@
-
 #!/usr/bin/env bash
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 GO_CORE="$ROOT/go-core"
+X_MOBILE_VERSION="${X_MOBILE_VERSION:-v0.0.0-20261011034528-197770444867}"
 mkdir -p "$ROOT/app/libs"
 
 if ! command -v gomobile >/dev/null 2>&1; then
-  echo "Installing gomobile..."
+  echo "Installing gomobile ${X_MOBILE_VERSION}..."
   GOBIN="$(go env GOPATH)/bin"
   export PATH="$GOBIN:$PATH"
-  go install golang.org/x/mobile/cmd/gomobile@latest
+  GOTOOLCHAIN=auto go install "golang.org/x/mobile/cmd/gomobile@${X_MOBILE_VERSION}"
 fi
 
 export PATH="$(go env GOPATH)/bin:$PATH"
 
 cd "$GO_CORE"
 
-# Add the mobile binding dependency to the module.
-# go get golang.org/x/mobile/cmd/gomobile
-go get -tool golang.org/x/mobile/cmd/gobind
-go mod tidy
+# Keep the gomobile/gobind module revision fixed for reproducible Android builds.
+GOTOOLCHAIN=auto go get -tool "golang.org/x/mobile/cmd/gobind@${X_MOBILE_VERSION}"
+GOTOOLCHAIN=auto go mod tidy
 
-gomobile init
+GOTOOLCHAIN=auto gomobile init
 
-gomobile bind \
+GOTOOLCHAIN=auto gomobile bind \
   -target=android \
   -androidapi=23 \
   -javapkg=com.andreyceilings.core \

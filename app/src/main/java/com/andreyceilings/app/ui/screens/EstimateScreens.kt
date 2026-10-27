@@ -65,7 +65,7 @@ internal fun SaveEstimateDialog(
                         value = projects.firstOrNull { it.id == selectedProjectId }?.title ?: "Оберіть об’єкт",
                         onValueChange = {}, readOnly = true, label = { Text("Об’єкт") },
                         trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
-                        modifier = Modifier.menuAnchor().fillMaxWidth()
+                        modifier = Modifier.menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable, enabled = true).fillMaxWidth()
                     )
                     AppExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
                         projects.forEach { project -> DropdownMenuItem(text = { Text(project.title) }, onClick = { selectedProjectId = project.id; expanded = false }) }
@@ -138,8 +138,11 @@ internal fun EstimatesScreen(database: CeilingsDatabase?) {
     }
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(
+  top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 64.dp + 16.dp,
+  bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 80.dp + 16.dp
+ ),
         verticalArrangement = Arrangement.spacedBy(12.dp),
-        contentPadding = PaddingValues(bottom = 16.dp)
     ) {
         item {
             Text("Кошториси", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)

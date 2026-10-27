@@ -309,8 +309,8 @@ private fun Double.currencyText(crossRate: Boolean = false, hryvnia: Boolean = f
 }
 
 private fun formatShortRateDate(seconds: Long): String =
-    if (seconds <= 0) "—" else SimpleDateFormat("dd.MM, HH:mm", Locale("uk", "UA")).format(Date(seconds * 1000))
+    if (seconds <= 0) "—" else SimpleDateFormat("dd.MM, HH:mm", Locale.forLanguageTag("uk-UA")).format(Date(seconds * 1000))
 
 // fetchedAt is stored in milliseconds; the API rate date is in seconds.
 private fun formatFetchedAt(milliseconds: Long): String =
-    if (milliseconds <= 0) "—" else SimpleDateFormat("dd.MM, HH:mm", Locale("uk", "UA")).format(Date(milliseconds))
+    if (milliseconds <= 0) "—" else SimpleDateFormat("dd.MM, HH:mm", Locale.forLanguageTag("uk-UA")).format(Date(milliseconds))

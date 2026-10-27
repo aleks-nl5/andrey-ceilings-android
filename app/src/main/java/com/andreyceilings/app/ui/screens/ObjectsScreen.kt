@@ -56,7 +56,10 @@ internal fun ObjectsScreen(database: CeilingsDatabase?) {
  var showClientDialog by remember { mutableStateOf(false) }
  var showProjectDialog by remember { mutableStateOf(false) }
  var dbError by remember { mutableStateOf<String?>(null) }
- LazyColumn(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(12.dp), contentPadding = PaddingValues(bottom = 16.dp)) {
+ LazyColumn(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(12.dp), contentPadding = PaddingValues(
+  top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 64.dp + 16.dp,
+  bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 80.dp + 16.dp
+ )) {
   item {
    Text("Об’єкти та клієнти", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
    Text("Дані зберігаються локально в зашифрованій базі", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -111,7 +114,10 @@ internal fun MeasurementsScreen(database: CeilingsDatabase?, onOpenEstimates: ()
  val scope = rememberCoroutineScope()
  var showDialog by remember { mutableStateOf(false) }
  var error by remember { mutableStateOf<String?>(null) }
- LazyColumn(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(12.dp), contentPadding = PaddingValues(bottom = 16.dp)) {
+ LazyColumn(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(12.dp), contentPadding = PaddingValues(
+  top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 64.dp + 16.dp,
+  bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 80.dp + 16.dp
+ )) {
   item {
    Text("Заміри", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
    Text("Заміри зберігаються в зашифрованій локальній БД", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -184,7 +190,7 @@ private fun AddMeasurementDialog(projects: List<ProjectEntity>, onDismiss: () ->
     AppAlertDialog(onDismissRequest = onDismiss, title = { Text("Новий замір") }, text = {
         Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = it }) {
-                OutlinedTextField(value = projects.firstOrNull { it.id == selectedProjectId }?.title ?: "Оберіть об’єкт", onValueChange = {}, readOnly = true, label = { Text("Об’єкт") }, trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) }, modifier = Modifier.menuAnchor().fillMaxWidth())
+                OutlinedTextField(value = projects.firstOrNull { it.id == selectedProjectId }?.title ?: "Оберіть об’єкт", onValueChange = {}, readOnly = true, label = { Text("Об’єкт") }, trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) }, modifier = Modifier.menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable, enabled = true).fillMaxWidth())
                 AppExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
                     projects.forEach { project -> DropdownMenuItem(text = { Text(project.title) }, onClick = { selectedProjectId = project.id; expanded = false }) }
                 }
