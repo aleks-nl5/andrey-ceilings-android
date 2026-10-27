@@ -91,14 +91,17 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
     val topAppBarScrollBehavior = TopAppBarDefaults.enterAlwaysScrollBehavior()
     val isScrolling = remember { mutableStateOf(false) }
     val statusBarBaseColor = MaterialTheme.colorScheme.background
-    val statusBarColor = (if (isScrolling.value) {
+    val appBarColor = if (isScrolling.value) {
         statusBarBaseColor.copy(alpha = 0.55f)
     } else {
         statusBarBaseColor
-    }).toArgb()
+    }
     SideEffect {
         context.findActivity()?.window?.let { window ->
-            window.statusBarColor = statusBarColor
+            // Android 15+ enforces edge-to-edge and ignores statusBarColor.
+            // Keep the system bar transparent so the app bar's animated color is visible behind it.
+            WindowCompat.setDecorFitsSystemWindows(window, false)
+            window.statusBarColor = android.graphics.Color.TRANSPARENT
             WindowCompat.getInsetsController(window, window.decorView)
                 .isAppearanceLightStatusBars = !useDarkTheme
         }
@@ -320,8 +323,8 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
             TopAppBar(
                 scrollBehavior = topAppBarScrollBehavior,
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.background,
-                    scrolledContainerColor = MaterialTheme.colorScheme.background,
+                    containerColor = appBarColor,
+                    scrolledContainerColor = appBarColor,
                     titleContentColor = MaterialTheme.colorScheme.onBackground,
                     navigationIconContentColor = MaterialTheme.colorScheme.onBackground,
                     actionIconContentColor = MaterialTheme.colorScheme.onBackground
