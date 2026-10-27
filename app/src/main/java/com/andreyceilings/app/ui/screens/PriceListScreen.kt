@@ -54,7 +54,7 @@ internal fun PriceListScreen(database: CeilingsDatabase?) {
 
  LazyColumn(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(12.dp), contentPadding = PaddingValues(bottom = 16.dp)) {
   item {
-   Text("Прайс-лист", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+   Text("Прайс-лист", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onBackground)
    Text("Демонстраційні ціни в гривнях. Перед використанням перевірте й змініть їх під свої умови.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
   }
   if (database == null) {
@@ -66,7 +66,11 @@ internal fun PriceListScreen(database: CeilingsDatabase?) {
     item(key = "category-$category") { Text(category, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold) }
     items(entries, key = { "price-${it.first.id}" }) { row ->
      val item = row.first
-     Card { Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+     Card(
+      shape = MaterialTheme.shapes.medium,
+      colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+      elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+     ) { Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
       Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
        Text(item.title, fontWeight = FontWeight.Medium)
        Text(row.second, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
