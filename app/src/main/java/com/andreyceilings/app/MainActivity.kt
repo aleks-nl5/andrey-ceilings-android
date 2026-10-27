@@ -12,6 +12,7 @@ import com.andreyceilings.app.data.backup.BackupPasswordStore
 import com.andreyceilings.app.data.backup.AutomaticBackupScheduler
 import com.andreyceilings.app.data.backup.AutomaticBackupSettings
 import com.andreyceilings.app.ui.theme.CeilingsTheme
+import com.andreyceilings.app.ui.theme.ThemeMode
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -19,6 +20,13 @@ import kotlinx.coroutines.withContext
 class MainActivity : ComponentActivity() {
     private val databaseStatus = mutableStateOf("Перевірка зашифрованої бази…")
     private val databaseState = mutableStateOf<CeilingsDatabase?>(null)
+    private val themeMode = mutableStateOf(ThemeMode.SYSTEM)
+
+    private fun saveThemeMode(mode: ThemeMode) {
+        themeMode.value = mode
+        getSharedPreferences("app_preferences", MODE_PRIVATE).edit()
+            .putString("theme_mode", mode.name).apply()
+    }
 
     override fun onStop() {
         if (AutomaticBackupSettings.backgroundEnabled(applicationContext) &&
@@ -32,6 +40,10 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        themeMode.value = runCatching {
+            ThemeMode.valueOf(getSharedPreferences("app_preferences", MODE_PRIVATE)
+                .getString("theme_mode", ThemeMode.SYSTEM.name) ?: ThemeMode.SYSTEM.name)
+        }.getOrDefault(ThemeMode.SYSTEM)
         val activityStartedAt = SystemClock.elapsedRealtime()
         lifecycleScope.launch {
             try {
@@ -57,8 +69,10 @@ class MainActivity : ComponentActivity() {
             }
         }
         setContent {
-            CeilingsTheme {
+            CeilingsTheme(mode = themeMode.value) {
                 CeilingsApp(
+                    themeMode = themeMode.value,
+                    onThemeModeChange = ::saveThemeMode,
                     databaseStatus = databaseStatus.value,
                     database = databaseState.value,
                     onDatabaseReplaced = { refreshed ->

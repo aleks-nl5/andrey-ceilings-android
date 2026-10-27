@@ -1,5 +1,7 @@
 package com.andreyceilings.app.ui.screens
 
+import com.andreyceilings.app.ui.theme.AppAlertDialog
+import com.andreyceilings.app.ui.theme.AppExposedDropdownMenu
 import com.andreyceilings.app.*
 import com.andreyceilings.app.data.PerformanceDiagnosticsSettings
 import com.andreyceilings.app.data.PerformanceDiagnosticsLog
@@ -20,6 +22,8 @@ import com.andreyceilings.app.data.backup.BackupSchedule
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -34,6 +38,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.andreyceilings.app.ui.theme.CeilingsTheme
+import com.andreyceilings.app.ui.theme.ThemeMode
+import com.andreyceilings.app.ui.theme.ThemeModeSelector
 import com.andreyceilings.app.core.CeilingEstimate
 import com.andreyceilings.app.core.CeilingCalculator
 import com.andreyceilings.app.core.CalculatorOptions
@@ -44,7 +50,7 @@ import kotlinx.coroutines.flow.flowOf
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-internal fun SettingsScreen(databaseStatus: String, database: CeilingsDatabase?, onDatabaseReplaced: (CeilingsDatabase) -> Unit) {
+internal fun SettingsScreen(databaseStatus: String, database: CeilingsDatabase?, onDatabaseReplaced: (CeilingsDatabase) -> Unit, themeMode: ThemeMode, onThemeModeChange: (ThemeMode) -> Unit, onOpenPriceList: () -> Unit) {
     var fileCheck by remember { mutableStateOf("Натисніть кнопку, щоб перевірити записи та файли бази даних.") }
     var exportStatus by remember { mutableStateOf("Експорт створює копію зашифрованого файла БД без ключа.") }
     var pendingExportFile by remember { mutableStateOf<java.io.File?>(null) }
@@ -175,12 +181,26 @@ internal fun SettingsScreen(databaseStatus: String, database: CeilingsDatabase?,
         }
     }
     SectionTitle("Налаштування", "Персоналізація та резервне копіювання")
-    Card {
+    Card(
+        shape = MaterialTheme.shapes.large,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+    ) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            ListItem(leadingContent = { Icon(Icons.Default.Info, null) }, headlineContent = { Text("Версія застосунку") }, supportingContent = { Text(appVersionLabel) })
+            ListItem(colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surface), leadingContent = { Icon(Icons.Default.Info, null, tint = MaterialTheme.colorScheme.primary) }, headlineContent = { Text("Версія застосунку") }, supportingContent = { Text(appVersionLabel) })
             HorizontalDivider()
-            ListItem(leadingContent = { Icon(Icons.Default.Language, null) }, headlineContent = { Text("Мова") }, supportingContent = { Text("Українська") }, trailingContent = { Text("UA") })
-            ListItem(leadingContent = { Icon(Icons.Default.Palette, null) }, headlineContent = { Text("Тема") }, supportingContent = { Text("Системна / світла / темна") })
+            ListItem(colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surface), leadingContent = { Icon(Icons.Default.Language, null, tint = MaterialTheme.colorScheme.primary) }, headlineContent = { Text("Мова") }, supportingContent = { Text("Українська") }, trailingContent = { Text("UA", color = MaterialTheme.colorScheme.primary) })
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Column {
+                    Text("Тема оформлення", style = MaterialTheme.typography.titleSmall)
+                    Text("Оберіть кольори застосунку", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                ThemeModeSelector(
+                    mode = themeMode,
+                    onModeChange = onThemeModeChange,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
             if (BuildConfig.DEBUG) {
                 var performanceDiagnosticsEnabled by remember {
                     mutableStateOf(PerformanceDiagnosticsSettings.isEnabled(context))
@@ -224,7 +244,13 @@ internal fun SettingsScreen(databaseStatus: String, database: CeilingsDatabase?,
                     modifier = Modifier.fillMaxWidth()
                 ) { Text("Очистити журнал") }
             }
-            ListItem(leadingContent = { Icon(Icons.Default.PriceChange, null) }, headlineContent = { Text("Прайс-лист") }, supportingContent = { Text("Налаштування вартості матеріалів і робіт") })
+            ListItem(
+                modifier = Modifier.clickable(onClick = onOpenPriceList),
+                leadingContent = { Icon(Icons.Default.PriceChange, null) },
+                headlineContent = { Text("Прайс-лист") },
+                supportingContent = { Text("Налаштування вартості матеріалів і робіт") },
+                trailingContent = { Icon(Icons.Default.ChevronRight, contentDescription = "Відкрити прайс-лист") }
+            )
             ListItem(leadingContent = { Icon(Icons.Default.Lock, null) }, headlineContent = { Text("Захист бази даних") }, supportingContent = { Text(databaseStatus) })
             HorizontalDivider()
             Text("Діагностика бази даних", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
@@ -319,7 +345,7 @@ internal fun SettingsScreen(databaseStatus: String, database: CeilingsDatabase?,
             OutlinedButton(onClick = { backupAction = "verify"; restorePassword = ""; showImportPasswordDialog = true }, modifier = Modifier.fillMaxWidth(), enabled = database != null) { Text("Перевірити резервну копію") }
             Button(onClick = { backupAction = "restore"; restorePassword = ""; showImportPasswordDialog = true }, modifier = Modifier.fillMaxWidth(), enabled = database != null) { Text("Імпортувати резервну копію") }
             if (showImportPasswordDialog) {
-                AlertDialog(
+                AppAlertDialog(
                     onDismissRequest = { showImportPasswordDialog = false; restorePassword = "" },
                     title = { Text("Пароль резервної копії") },
                     text = {
@@ -345,7 +371,7 @@ internal fun SettingsScreen(databaseStatus: String, database: CeilingsDatabase?,
                 )
             }
             if (showRestoreConfirmation) {
-                AlertDialog(
+                AppAlertDialog(
                     onDismissRequest = { showRestoreConfirmation = false; pendingRestoreContents?.let { it.database.fill(0); it.passphrase.fill(0) }; pendingRestoreContents = null },
                     title = { Text("Відновити переносну копію?") },
                     text = { Text("Дані поточної бази буде замінено вмістом .stpb. Продовжити?") },
@@ -493,7 +519,7 @@ internal fun SettingsScreen(databaseStatus: String, database: CeilingsDatabase?,
                     enabled = periodicEnabled,
                     modifier = Modifier.menuAnchor().fillMaxWidth()
                 )
-                ExposedDropdownMenu(expanded = scheduleExpanded && periodicEnabled, onDismissRequest = { scheduleExpanded = false }) {
+                AppExposedDropdownMenu(expanded = scheduleExpanded && periodicEnabled, onDismissRequest = { scheduleExpanded = false }) {
                     BackupSchedule.values().forEach { option ->
                         DropdownMenuItem(text = { Text(option.label) }, onClick = {
                             selectedSchedule = option
@@ -580,7 +606,7 @@ internal fun SettingsScreen(databaseStatus: String, database: CeilingsDatabase?,
             ) { Text("Зберегти пароль автоматичних копій") }
             Text(automaticStatus, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             if (showDisableAllConfirmation) {
-                AlertDialog(
+                AppAlertDialog(
                     onDismissRequest = { showDisableAllConfirmation = false },
                     title = { Text("Вимкнути резервування?") },
                     text = { Text("Після підтвердження буде вимкнено всі режими й видалено лише автоматичні файли .stpb у вибраній папці. Інші файли не змінюватимуться.") },

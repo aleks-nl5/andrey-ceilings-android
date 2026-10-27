@@ -1,6 +1,9 @@
 package com.andreyceilings.app.ui.screens
 
+import com.andreyceilings.app.ui.theme.AppAlertDialog
+import com.andreyceilings.app.ui.theme.AppExposedDropdownMenu
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -52,7 +55,7 @@ internal fun SaveEstimateDialog(
     var selectedProjectId by remember(projects) { mutableLongStateOf(projects.first().id) }
     var name by remember(defaultName) { mutableStateOf(defaultName) }
     var expanded by remember { mutableStateOf(false) }
-    AlertDialog(
+    AppAlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Зберегти кошторис") },
         text = {
@@ -64,7 +67,7 @@ internal fun SaveEstimateDialog(
                         trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
                         modifier = Modifier.menuAnchor().fillMaxWidth()
                     )
-                    ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                    AppExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
                         projects.forEach { project -> DropdownMenuItem(text = { Text(project.title) }, onClick = { selectedProjectId = project.id; expanded = false }) }
                     }
                 }
@@ -154,7 +157,7 @@ internal fun EstimatesScreen(database: CeilingsDatabase?) {
                 val projectEstimates = estimatesByProject[project.id].orEmpty()
                 if (projectEstimates.isNotEmpty()) {
                     item(key = "project-total-${project.id}") {
-                        Card {
+                        Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
                             Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                 Text(project.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                                 Text("Разом за збереженими кошторисами: ${money(projectTotals[project.id] ?: 0.0)}", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
@@ -165,7 +168,7 @@ internal fun EstimatesScreen(database: CeilingsDatabase?) {
             }
             items(estimates, key = { "estimate-${it.id}" }) { estimate ->
                 val project = projectsById[estimate.projectId]
-                Card {
+                Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
                     Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
@@ -210,7 +213,7 @@ internal fun EstimatesScreen(database: CeilingsDatabase?) {
         item { error?.let { Text(it, color = MaterialTheme.colorScheme.error) } }
     }
     editingEstimate?.let { selected ->
-        AlertDialog(
+        AppAlertDialog(
             onDismissRequest = { editingEstimate = null },
             title = { Text("Редагувати кошторис") },
             text = { OutlinedTextField(value = renameText, onValueChange = { renameText = it }, label = { Text("Назва") }, singleLine = true) },

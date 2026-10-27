@@ -35,6 +35,9 @@ import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.runtime.*
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.core.view.WindowCompat
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.withFrameNanos
@@ -48,6 +51,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.andreyceilings.app.ui.theme.CeilingsTheme
+import com.andreyceilings.app.ui.theme.ThemeMode
+import com.andreyceilings.app.ui.theme.ThemeModeSelector
 import com.andreyceilings.app.core.CeilingEstimate
 import com.andreyceilings.app.core.CeilingCalculator
 import com.andreyceilings.app.core.CalculatorOptions
@@ -66,16 +71,41 @@ private tailrec fun Context.findActivity(): Activity? = when (this) {
 
 internal enum class AppTab(val title: String) {
     DASHBOARD("Панель"), OBJECTS("Об’єкти"), MEASUREMENTS("Заміри"),
-    CALCULATOR("Калькулятор"), ESTIMATES("Кошториси"), PRICES("Прайс"), SETTINGS("Налаштування")
+    CALCULATOR("Калькулятор"), ESTIMATES("Кошториси"), PRICES("Прайс"), SETTINGS("Налаштування"), CALENDAR("Календар")
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, onDatabaseReplaced: (CeilingsDatabase) -> Unit) {
+internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, onDatabaseReplaced: (CeilingsDatabase) -> Unit, themeMode: ThemeMode, onThemeModeChange: (ThemeMode) -> Unit) {
     var tab by remember { mutableStateOf(AppTab.DASHBOARD) }
     var tabChangedAt by remember { mutableLongStateOf(SystemClock.elapsedRealtime()) }
     var lastBackPressTime by remember { mutableStateOf(0L) }
     val context = LocalContext.current
+    val systemDarkTheme = isSystemInDarkTheme()
+    val useDarkTheme = when (themeMode) {
+        ThemeMode.LIGHT -> false
+        ThemeMode.DARK -> true
+        ThemeMode.SYSTEM -> systemDarkTheme
+    }
+
+    val topAppBarScrollBehavior = TopAppBarDefaults.enterAlwaysScrollBehavior()
+    val isScrolling = remember { mutableStateOf(false) }
+    val statusBarBaseColor = MaterialTheme.colorScheme.background
+    val appBarColor = if (isScrolling.value) {
+        statusBarBaseColor.copy(alpha = 0.55f)
+    } else {
+        statusBarBaseColor
+    }
+    SideEffect {
+        context.findActivity()?.window?.let { window ->
+            // Android 15+ enforces edge-to-edge and ignores statusBarColor.
+            // Keep the system bar transparent so the app bar's animated color is visible behind it.
+            WindowCompat.setDecorFitsSystemWindows(window, true)
+            window.statusBarColor = statusBarBaseColor.toArgb()
+            WindowCompat.getInsetsController(window, window.decorView)
+                .isAppearanceLightStatusBars = !useDarkTheme
+        }
+    }
 
     fun navigateTo(target: AppTab) {
         if (tab != target) {
@@ -99,13 +129,23 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
         object : NestedScrollConnection {
             override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
                 lastScrollAtNs.set(SystemClock.elapsedRealtimeNanos())
+                isScrolling.value = true
                 return Offset.Zero
             }
 
             override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset {
                 lastScrollAtNs.set(SystemClock.elapsedRealtimeNanos())
+                isScrolling.value = true
                 return Offset.Zero
             }
+        }
+    }
+    LaunchedEffect(Unit) {
+        while (true) {
+            val lastScroll = lastScrollAtNs.get()
+            isScrolling.value = lastScroll > 0L &&
+                SystemClock.elapsedRealtimeNanos() - lastScroll < 180_000_000L
+            kotlinx.coroutines.delay(50L)
         }
     }
 
@@ -278,50 +318,73 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
     }
 
     Scaffold(
+        modifier = Modifier.nestedScroll(topAppBarScrollBehavior.nestedScrollConnection),
         topBar = {
             TopAppBar(
+                scrollBehavior = topAppBarScrollBehavior,
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = appBarColor,
+                    scrolledContainerColor = appBarColor,
+                    titleContentColor = MaterialTheme.colorScheme.onBackground,
+                    navigationIconContentColor = MaterialTheme.colorScheme.onBackground,
+                    actionIconContentColor = MaterialTheme.colorScheme.onBackground
+                ),
                 title = {
                     Column {
                         Text("СтеляПро", fontWeight = FontWeight.Bold)
                         Text("Майстер натяжних стель", style = MaterialTheme.typography.labelSmall)
                     }
                 },
-                actions = { IconButton(onClick = { navigateTo(AppTab.SETTINGS) }) { Icon(Icons.Default.Settings, "Налаштування") } }
+                actions = {
+                    ThemeModeSelector(mode = themeMode, onModeChange = onThemeModeChange, compact = true)
+                    IconButton(onClick = { navigateTo(AppTab.SETTINGS) }) { Icon(Icons.Default.Settings, "Налаштування") }
+                }
             )
         },
         bottomBar = {
-            NavigationBar {
+            NavigationBar(
+                containerColor = MaterialTheme.colorScheme.surface,
+                contentColor = MaterialTheme.colorScheme.onSurface,
+                tonalElevation = 0.dp
+            ) {
+                val navigationItemColors = NavigationBarItemDefaults.colors(
+                    selectedIconColor = MaterialTheme.colorScheme.primary,
+                    selectedTextColor = MaterialTheme.colorScheme.primary,
+                    indicatorColor = MaterialTheme.colorScheme.primaryContainer,
+                    unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                    unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
+                )
                 val items = listOf(
                     AppTab.DASHBOARD to Icons.Default.Dashboard,
                     AppTab.OBJECTS to Icons.Default.Business,
                     AppTab.MEASUREMENTS to Icons.Default.Straighten,
                     AppTab.CALCULATOR to Icons.Default.Calculate,
-                    AppTab.ESTIMATES to Icons.Default.ReceiptLong,
-                    AppTab.PRICES to Icons.Default.PriceChange,
-                    AppTab.SETTINGS to Icons.Default.Settings
+                    AppTab.CALENDAR to Icons.Default.CalendarMonth
                 )
                 items.forEach { (item, icon) ->
                     NavigationBarItem(
                         selected = tab == item,
                         onClick = { navigateTo(item) },
                         icon = { Icon(icon, contentDescription = item.title) },
-                        label = { Text(item.title, maxLines = 1) }
+                        label = { Text(item.title, maxLines = 1) },
+                        colors = navigationItemColors
                     )
                 }
             }
         }
     ) { padding ->
         key(tab) {
-            if (tab == AppTab.OBJECTS || tab == AppTab.MEASUREMENTS || tab == AppTab.ESTIMATES || tab == AppTab.PRICES) {
+            if (tab == AppTab.OBJECTS || tab == AppTab.MEASUREMENTS || tab == AppTab.ESTIMATES || tab == AppTab.PRICES || tab == AppTab.CALENDAR) {
                 Box(
                     Modifier.fillMaxSize().padding(padding)
                         .nestedScroll(screenScrollConnection).padding(16.dp)
                 ) {
                     when (tab) {
                         AppTab.OBJECTS -> ObjectsScreen(database)
-                        AppTab.MEASUREMENTS -> MeasurementsScreen(database)
+                        AppTab.MEASUREMENTS -> MeasurementsScreen(database, onOpenEstimates = { navigateTo(AppTab.ESTIMATES) })
                         AppTab.ESTIMATES -> EstimatesScreen(database)
                         AppTab.PRICES -> PriceListScreen(database)
+                        AppTab.CALENDAR -> CalendarScreen(database)
                         else -> Unit
                     }
                 }
@@ -335,7 +398,9 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
                     when (tab) {
                         AppTab.DASHBOARD -> DashboardScreen(
                             onNewMeasurement = { navigateTo(AppTab.MEASUREMENTS) },
-                            onCalculator = { navigateTo(AppTab.CALCULATOR) }
+                            onCalculator = { navigateTo(AppTab.CALCULATOR) },
+                            onObjects = { navigateTo(AppTab.OBJECTS) },
+                            onSettings = { navigateTo(AppTab.SETTINGS) }
                         )
                         AppTab.CALCULATOR -> CalculatorScreen(
                             database = database,
@@ -360,7 +425,7 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
                             hardWallMeters = hardWallMeters, onHardWallMeters = { hardWallMeters = it },
                             complexity = complexity, onComplexity = { complexity = it }
                         )
-                        AppTab.SETTINGS -> SettingsScreen(databaseStatus, database, onDatabaseReplaced)
+                        AppTab.SETTINGS -> SettingsScreen(databaseStatus, database, onDatabaseReplaced, themeMode, onThemeModeChange, onOpenPriceList = { navigateTo(AppTab.PRICES) })
                         else -> Unit
                     }
                 }

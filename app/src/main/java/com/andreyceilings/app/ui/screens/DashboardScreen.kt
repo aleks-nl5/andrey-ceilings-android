@@ -2,91 +2,198 @@ package com.andreyceilings.app.ui.screens
 
 import com.andreyceilings.app.*
 
-import android.os.Bundle
-import android.net.Uri
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
-import androidx.lifecycle.lifecycleScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import com.andreyceilings.app.data.db.CeilingsDatabase
-import com.andreyceilings.app.data.backup.BackupPasswordStore
-import com.andreyceilings.app.data.backup.AutomaticBackupScheduler
-import com.andreyceilings.app.data.backup.AutomaticBackupSettings
-import com.andreyceilings.app.data.backup.BackupSchedule
-import androidx.activity.ComponentActivity
-import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Business
+import androidx.compose.material.icons.filled.Calculate
+import androidx.compose.material.icons.filled.Event
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.SquareFoot
+import androidx.compose.material.icons.filled.Straighten
 import androidx.compose.material3.*
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.runtime.*
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.andreyceilings.app.ui.theme.CeilingsTheme
-import com.andreyceilings.app.core.CeilingEstimate
-import com.andreyceilings.app.core.CeilingCalculator
-import com.andreyceilings.app.core.CalculatorOptions
-import com.andreyceilings.app.data.db.PriceItemEntity
-import com.andreyceilings.app.data.db.ProjectEntity
-import com.andreyceilings.app.data.db.EstimateEntity
-import kotlinx.coroutines.flow.flowOf
 
 @Composable
 internal fun SectionTitle(title: String, subtitle: String? = null) {
-    Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text(title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-        if (subtitle != null) Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-    }
-}
-
-@Composable
-internal fun MetricCard(label: String, value: String, icon: androidx.compose.ui.graphics.vector.ImageVector, modifier: Modifier = Modifier) {
-    Card(shape = RoundedCornerShape(18.dp), modifier = modifier.widthIn(min = 130.dp)) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-            Text(label, style = MaterialTheme.typography.labelMedium)
-            Text(value, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+        if (subtitle != null) {
+            Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
 
 @Composable
-internal fun DashboardScreen(onNewMeasurement: () -> Unit, onCalculator: () -> Unit) {
-    SectionTitle("Панель майстра", "Ваші об’єкти та розрахунки в одному місці")
-    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        MetricCard("Об’єкти", "3", Icons.Default.Business, Modifier.weight(1f))
-        MetricCard("Заміри", "5", Icons.Default.Straighten, Modifier.weight(1f))
-    }
-    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        MetricCard("Площа", "86,4 м²", Icons.Default.SquareFoot, Modifier.weight(1f))
-        MetricCard("До монтажу", "2", Icons.Default.Event, Modifier.weight(1f))
-    }
-    Card {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("Швидкі дії", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
-            Button(onClick = onNewMeasurement, modifier = Modifier.fillMaxWidth()) {
-                Icon(Icons.Default.Add, null); Spacer(Modifier.width(8.dp)); Text("Новий замір")
+private fun DashboardActionTile(
+    title: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    badge: String? = null
+) {
+    Card(
+        onClick = onClick,
+        modifier = modifier.heightIn(min = 132.dp),
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+    ) {
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(14.dp),
+            verticalArrangement = Arrangement.SpaceBetween
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.Top
+            ) {
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = MaterialTheme.colorScheme.primaryContainer
+                ) {
+                    Icon(
+                        icon,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(10.dp).size(24.dp)
+                    )
+                }
+                if (badge != null) {
+                    Text(
+                        badge,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(top = 4.dp)
+                    )
+                }
             }
-            OutlinedButton(onClick = onCalculator, modifier = Modifier.fillMaxWidth()) {
-                Icon(Icons.Default.Calculate, null); Spacer(Modifier.width(8.dp)); Text("Розрахувати вартість")
-            }
+            Spacer(Modifier.height(18.dp))
+            Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
         }
     }
-    Card {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text("Найближча подія", fontWeight = FontWeight.Bold)
-            Text("Монтаж натяжної стелі")
-            Text("Квартира · Київ · 22 жовтня", color = MaterialTheme.colorScheme.onSurfaceVariant)
+}
+
+@Composable
+private fun CompactMetric(
+    label: String,
+    value: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    modifier: Modifier = Modifier
+) {
+    Card(
+        modifier = modifier,
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+    ) {
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 10.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(3.dp)
+        ) {
+            Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(19.dp))
+            Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+            Text(value, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, maxLines = 1)
         }
     }
-    Text("Демо-дані показані лише для макета. Зберігання та повна міграція даних — наступний етап.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+}
+
+@Composable
+internal fun DashboardScreen(
+    onNewMeasurement: () -> Unit,
+    onCalculator: () -> Unit,
+    onObjects: () -> Unit,
+    onSettings: () -> Unit
+) {
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        // Keep the most urgent item at the top, before tools and summary statistics.
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(22.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
+        ) {
+            Column(
+                modifier = Modifier.fillMaxWidth().padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Icon(Icons.Default.Event, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                    Text(
+                        "НАЙБЛИЖЧА ПОДІЯ",
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
+                }
+                Text(
+                    "Монтаж натяжної стелі",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                )
+                Text(
+                    "Квартира · Київ · 22 жовтня",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.82f)
+                )
+                OutlinedButton(
+                    onClick = onObjects,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.onPrimaryContainer)
+                ) {
+                    Text("Перейти до об’єктів")
+                }
+            }
+        }
+
+        Text(
+            "ШВИДКІ ІНСТРУМЕНТИ МАЙСТРА",
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                DashboardActionTile(
+                    "Швидкий замір", Icons.Default.Straighten, onNewMeasurement,
+                    modifier = Modifier.weight(1f), badge = "+ новий"
+                )
+                DashboardActionTile("Калькулятор", Icons.Default.Calculate, onCalculator, Modifier.weight(1f))
+            }
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                DashboardActionTile("Об’єкти та клієнти", Icons.Default.Business, onObjects, Modifier.weight(1f))
+                DashboardActionTile("Налаштування", Icons.Default.Settings, onSettings, Modifier.weight(1f))
+            }
+        }
+
+        Text(
+            "КОРОТКО ПРО РОБОТУ",
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            CompactMetric("Об’єкти", "3", Icons.Default.Business, Modifier.weight(1f))
+            CompactMetric("Заміри", "5", Icons.Default.Straighten, Modifier.weight(1f))
+            CompactMetric("Площа", "86,4 м²", Icons.Default.SquareFoot, Modifier.weight(1f))
+        }
+
+        Text(
+            "Показані демонстраційні дані. Підключення реальної статистики буде окремим етапом.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+
+        CurrencyRatesCard()
+    }
 }

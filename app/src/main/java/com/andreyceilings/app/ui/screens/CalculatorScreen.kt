@@ -1,5 +1,7 @@
 package com.andreyceilings.app.ui.screens
 
+import com.andreyceilings.app.ui.theme.AppAlertDialog
+import com.andreyceilings.app.ui.theme.AppExposedDropdownMenu
 import com.andreyceilings.app.*
 
 import android.os.Bundle
@@ -18,6 +20,7 @@ import com.andreyceilings.app.data.backup.BackupSchedule
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -80,7 +83,7 @@ internal fun CalculatorScreen(
     var materialExpanded by remember { mutableStateOf(false) }
     ExposedDropdownMenuBox(expanded = materialExpanded, onExpandedChange = { materialExpanded = it }) {
         OutlinedTextField(material, {}, readOnly = true, label = { Text("Матеріал") }, trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(materialExpanded) }, modifier = Modifier.menuAnchor().fillMaxWidth())
-        ExposedDropdownMenu(expanded = materialExpanded, onDismissRequest = { materialExpanded = false }) {
+        AppExposedDropdownMenu(expanded = materialExpanded, onDismissRequest = { materialExpanded = false }) {
             listOf("ПВХ матовий", "ПВХ глянцевий", "ПВХ сатиновий", "Тканинний Descor", "Негорючий KM2", "Акустичний").forEach {
                 DropdownMenuItem(text = { Text(it) }, onClick = { onMaterial(it); materialExpanded = false })
             }
@@ -89,7 +92,7 @@ internal fun CalculatorScreen(
     var profileExpanded by remember { mutableStateOf(false) }
     ExposedDropdownMenuBox(expanded = profileExpanded, onExpandedChange = { profileExpanded = it }) {
         OutlinedTextField(profileType, {}, readOnly = true, label = { Text("Система профілю") }, trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(profileExpanded) }, modifier = Modifier.menuAnchor().fillMaxWidth())
-        ExposedDropdownMenu(expanded = profileExpanded, onDismissRequest = { profileExpanded = false }) {
+        AppExposedDropdownMenu(expanded = profileExpanded, onDismissRequest = { profileExpanded = false }) {
             listOf("Алюмінієвий гарпунний", "ПВХ стіновий", "Тіньовий EuroKRAAB", "Парящий з LED", "Слот / трековий").forEach {
                 DropdownMenuItem(text = { Text(it) }, onClick = { onProfileType(it); profileExpanded = false })
             }
@@ -121,7 +124,7 @@ internal fun CalculatorScreen(
             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(complexityExpanded) },
             modifier = Modifier.menuAnchor().fillMaxWidth()
         )
-        ExposedDropdownMenu(expanded = complexityExpanded, onDismissRequest = { complexityExpanded = false }) {
+        AppExposedDropdownMenu(expanded = complexityExpanded, onDismissRequest = { complexityExpanded = false }) {
             listOf("Пряма стеля" to "straight", "Багаторівнева" to "multilevel", "Криволінійна" to "curved").forEach { (label, value) ->
                 DropdownMenuItem(text = { Text(label) }, onClick = { onComplexity(value); complexityExpanded = false })
             }
