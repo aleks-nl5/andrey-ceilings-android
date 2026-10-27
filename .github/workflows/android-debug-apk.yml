@@ -35,7 +35,7 @@ jobs:
         run: |
           set -euo pipefail
           sdkmanager --list --channel=0 | tee "$RUNNER_TEMP/android-sdk-stable-packages.txt"
-          platform_package="$(awk -F'|' '/platforms;android-37(\.0)?[[:space:]]*\\|/ { gsub(/^[[:space:]]+|[[:space:]]+$/, "", $1); print $1; exit }' "$RUNNER_TEMP/android-sdk-stable-packages.txt")"
+          platform_package="$(awk -F'|' '/platforms;android-37(\.0)?[[:space:]]*\|/ { gsub(/^[[:space:]]+|[[:space:]]+$/, "", $1); print $1; exit }' "$RUNNER_TEMP/android-sdk-stable-packages.txt")"
           if [ -z "$platform_package" ]; then
             echo "::error::Android SDK API 37 platform is not listed in the stable SDK channel (channel 0). Stopping before dependency/build steps."
             exit 1
