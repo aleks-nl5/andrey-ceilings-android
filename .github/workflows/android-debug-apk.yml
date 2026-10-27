@@ -29,6 +29,23 @@ jobs:
       - name: Install Android SDK platform
         run: sdkmanager 'platforms;android-36' 'build-tools;36.0.0'
 
+      # Diagnostic only: do not change compileSdk/targetSdk/minSdk here.
+      - name: Probe stable Android SDK API 37
+        shell: bash
+        run: |
+          set -euo pipefail
+          sdkmanager --list --channel=0 | tee "$RUNNER_TEMP/android-sdk-stable-packages.txt"
+          platform_package="$(awk -F'|' '/platforms;android-37(\.0)?[[:space:]]*\\|/ { gsub(/^[[:space:]]+|[[:space:]]+$/, "", $1); print $1; exit }' "$RUNNER_TEMP/android-sdk-stable-packages.txt")"
+          if [ -z "$platform_package" ]; then
+            echo "::error::Android SDK API 37 platform is not listed in the stable SDK channel (channel 0). Stopping before dependency/build steps."
+            exit 1
+          fi
+          echo "Stable SDK package found: $platform_package"
+          sdkmanager --channel=0 "$platform_package"
+          platform_suffix="${platform_package#platforms;}"
+          test -d "$ANDROID_HOME/platforms/$platform_suffix"
+          echo "Confirmed installed stable platform at $ANDROID_HOME/platforms/$platform_suffix"
+
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v6
         with:
