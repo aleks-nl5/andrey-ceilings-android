@@ -48,13 +48,16 @@ References:
 - [ ] Capture a working Android APK and the existing functional smoke-test checklist.
 
 ### Phase 1 — Build skeleton
-- [ ] Add a minimal shared Compose UI and Windows/JVM desktop entry point.
-- [ ] Add an iOS app/framework entry point; document that iOS compilation requires macOS + Xcode.
-- [ ] Keep the existing Android app runnable while the new structure is validated.
-- [ ] CI builds/tests the Android app and desktop target; run iOS framework build on a macOS runner when configured.
+- [x] Add a minimal shared Compose UI and Windows/JVM desktop entry point.
+- [x] Add an iOS framework entry point; document that iOS compilation requires macOS + Xcode. A runnable iOS host/Xcode project is still pending.
+- [x] Add CI workflow steps for Android/shared desktop and an iOS framework build on macOS.
+- [ ] Verify all CI workflows on the latest PR head; the initial workflow attempts were cancelled before Android APK and iOS framework builds completed.
 
 ### Phase 2 — Shared domain and calculations
-- [ ] Port Go calculation rules into pure common Kotlin, with explicit decimal/rounding rules.
+- [x] Add the first pure common-Kotlin geometry calculator slice mirroring existing Go rules for rectangle, square, L-shaped, and custom rooms.
+- [x] Add common tests for default dimensions, geometry shapes, Heron-formula diagonal area, corner counts, and rounding-related behavior.
+- [ ] Run common tests in CI and compare a representative input/output matrix directly against Go before expanding the port.
+- [ ] Port remaining Go calculation rules into pure common Kotlin, with explicit decimal/rounding rules.
 - [ ] Port regression tests and verify equivalent outputs for existing sample estimates.
 - [ ] Include additional works in all UI/PDF totals; test edge cases and invalid dimensions.
 - [ ] Remove Go/AAR only after parity tests pass and no runtime feature depends on it.
@@ -76,9 +79,16 @@ References:
 - [ ] If yes, separately design accounts, server API, conflict resolution, encryption in transit/at rest, and offline synchronization.
 - [ ] If no, keep independent local databases and provide deliberate export/backup/restore.
 
+## Progress log — 2026-10-27
+
+- Added `shared/.../domain/GeometryCalculator.kt` as the first shared domain slice, based on `go-core/core/calculator.go`.
+- Added six common tests in `shared/src/commonTest/.../GeometryCalculatorTest.kt`.
+- The tests have been committed to the migration branch, but have **not yet been confirmed by a completed CI run**. The earlier Android workflow was cancelled during APK build; the earlier iOS workflow was cancelled during framework compilation. Do not interpret the completed Go/shared-desktop step as a complete Android/iOS build.
+- Next: get a fresh CI run, fix any compilation/test failures, then expand to price/cost calculations and explicit Go/KMP parity fixtures.
+
 ## Merge criteria
 
-- No merge while CI is red or migration tests are missing.
+- No merge while CI is red, cancelled, or migration tests are missing.
 - Existing Android smoke tests pass and user data is preserved.
 - Calculation parity and additional-work totals are verified.
 - Android, Windows, and iOS builds have evidence appropriate to each platform.
