@@ -329,6 +329,7 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
             .background(MaterialTheme.colorScheme.background)
             .nestedScroll(topAppBarScrollBehavior.nestedScrollConnection)
     ) {
+        key(tab) {
             if (tab == AppTab.OBJECTS || tab == AppTab.MEASUREMENTS || tab == AppTab.ESTIMATES || tab == AppTab.PRICES || tab == AppTab.CALENDAR) {
                 Box(
                     Modifier.fillMaxSize().nestedScroll(screenScrollConnection).padding(horizontal = 16.dp)
