@@ -89,7 +89,13 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
     }
 
     val topAppBarScrollBehavior = TopAppBarDefaults.enterAlwaysScrollBehavior()
-    val statusBarColor = MaterialTheme.colorScheme.background.toArgb()
+    val isScrolling = remember { mutableStateOf(false) }
+    val statusBarBaseColor = MaterialTheme.colorScheme.background
+    val statusBarColor = (if (isScrolling.value) {
+        statusBarBaseColor.copy(alpha = 0.55f)
+    } else {
+        statusBarBaseColor
+    }).toArgb()
     SideEffect {
         context.findActivity()?.window?.let { window ->
             window.statusBarColor = statusBarColor
@@ -120,13 +126,23 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
         object : NestedScrollConnection {
             override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
                 lastScrollAtNs.set(SystemClock.elapsedRealtimeNanos())
+                isScrolling.value = true
                 return Offset.Zero
             }
 
             override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset {
                 lastScrollAtNs.set(SystemClock.elapsedRealtimeNanos())
+                isScrolling.value = true
                 return Offset.Zero
             }
+        }
+    }
+    LaunchedEffect(Unit) {
+        while (true) {
+            val lastScroll = lastScrollAtNs.get()
+            isScrolling.value = lastScroll > 0L &&
+                SystemClock.elapsedRealtimeNanos() - lastScroll < 180_000_000L
+            kotlinx.coroutines.delay(50L)
         }
     }
 
@@ -324,6 +340,7 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
         },
         bottomBar = {
             NavigationBar(
+                modifier = Modifier.height(64.dp),
                 containerColor = MaterialTheme.colorScheme.surface,
                 contentColor = MaterialTheme.colorScheme.onSurface,
                 tonalElevation = 0.dp
