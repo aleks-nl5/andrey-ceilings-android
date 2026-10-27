@@ -330,9 +330,9 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
     val topContentPadding = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 64.dp + 16.dp
     val bottomContentPadding = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 80.dp + 16.dp
 
-    // 70% transparent at the screen edges, fading smoothly to fully transparent
+    // 50% transparent at the screen edges, fading smoothly to fully transparent
     // over the app content. Android's own system bars remain truly transparent.
-    val systemPanelTint = MaterialTheme.colorScheme.surface.copy(alpha = 0.30f)
+    val systemPanelTint = MaterialTheme.colorScheme.surface.copy(alpha = 0.50f)
     val transparentSystemPanel = systemPanelTint.copy(alpha = 0f)
     val systemPanelGradientHeight = 36.dp
     val statusBarInset = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
@@ -460,7 +460,7 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth()
-                .padding(horizontal = 12.dp)
+                .padding(horizontal = 16.dp)
                 .navigationBarsPadding()
                 .height(68.dp)
                 .clip(RoundedCornerShape(32.dp))
@@ -494,6 +494,7 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
                             item.title,
                             maxLines = 1,
                             style = MaterialTheme.typography.labelSmall.copy(letterSpacing = (-0.25).sp),
+                            modifier = Modifier.offset(y = (-2).dp),
                             textAlign = TextAlign.Center
                         )
                     },
