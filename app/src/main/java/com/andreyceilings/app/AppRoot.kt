@@ -31,6 +31,9 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.sp
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -326,6 +329,10 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
     val topContentPadding = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 64.dp + 16.dp
     val bottomContentPadding = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 80.dp + 16.dp
 
+    // 70% transparent system panels: a subtle 30% theme-surface tint is drawn
+    // behind Android's transparent status/navigation bars.
+    val systemPanelTint = MaterialTheme.colorScheme.surface.copy(alpha = 0.30f)
+
     // Overlay the app bars on a full-screen content layer. The screen can scroll
     // underneath the transparent bars, while its initial content respects their insets.
     Box(
@@ -398,6 +405,22 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
             }
         }
 
+        Box(
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .fillMaxWidth()
+                .windowInsetsTopHeight(WindowInsets.statusBars)
+                .background(systemPanelTint)
+        )
+
+        Box(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .windowInsetsBottomHeight(WindowInsets.navigationBars)
+                .background(systemPanelTint)
+        )
+
         TopAppBar(
             modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth(),
             windowInsets = WindowInsets.statusBars,
@@ -421,7 +444,13 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
             }
         )
         NavigationBar(
-            modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth().navigationBarsPadding(),
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp)
+                .navigationBarsPadding()
+                .clip(RoundedCornerShape(32.dp))
+                .background(MaterialTheme.colorScheme.surface),
             windowInsets = WindowInsets(0, 0, 0, 0),
             containerColor = navigationBarColor,
             contentColor = MaterialTheme.colorScheme.onSurface,
@@ -446,7 +475,14 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
                     selected = tab == item,
                     onClick = { navigateTo(item) },
                     icon = { Icon(icon, contentDescription = item.title) },
-                    label = { Text(item.title, maxLines = 1) },
+                    label = {
+                        Text(
+                            item.title,
+                            maxLines = 1,
+                            style = MaterialTheme.typography.labelSmall.copy(letterSpacing = (-0.25).sp),
+                            textAlign = TextAlign.Center
+                        )
+                    },
                     colors = navigationItemColors
                 )
             }
