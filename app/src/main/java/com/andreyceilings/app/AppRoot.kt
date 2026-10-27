@@ -94,6 +94,8 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
     val navigationBarColor = androidx.compose.ui.graphics.Color.Transparent
     SideEffect {
         context.findActivity()?.window?.let { window ->
+            window.statusBarColor = android.graphics.Color.TRANSPARENT
+            window.navigationBarColor = android.graphics.Color.TRANSPARENT
             // Edge-to-edge is enabled in MainActivity. Keep system icons readable
             // when the app's selected light/dark theme changes.
             WindowCompat.getInsetsController(window, window.decorView).apply {
