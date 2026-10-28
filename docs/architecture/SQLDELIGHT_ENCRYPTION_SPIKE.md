@@ -162,3 +162,22 @@ A fresh review of the upstream README and Maven Central metadata found a publish
 - This is specifically designed to test the candidate driver with the project's current Kotlin/SQLDelight versions without changing the app or `:shared` dependency graph.
 - **Status: awaiting CI result.** The test code and workflow step are committed, but compatibility is not confirmed until a clean Windows x64 runner completes the new step successfully. If it fails, keep the candidate isolated and use the logs to identify API/toolchain/native-packaging incompatibility.
 - License note remains open: published Maven metadata identifies MIT, while upstream README and bundled SQLCipher materials describe different license terms. Verify exact artifact and native payload notices before any production adoption.
+
+
+### Development data-loss policy and CI strategy — 2026-10-28
+
+**Project-owner decision:** The current Andrey Ceilings application database contains no important data. Loss, deletion, recreation, or destructive migration of the **current development/test database** is acceptable during the CMP/KMP, Room → SQLDelight, and SQLCipher experiments. Do not treat preserving current data as a blocker for prototyping. This permission does not mean that future user data may be discarded silently in production: validate migration/backup behavior before a stable release, and never present destructive behavior as a guaranteed safe production upgrade.
+
+**Verified CI baseline (commit `d4b21c545cad326d5474891f5bc3f338c6e7e45e`):**
+- [Build Android APK #341](https://github.com/aleks-nl5/andrey-ceilings-android/actions/runs/40767093430): success; shared KMP build/tests, encrypted SQLDelight Android emulator verification, Debug and Release APK builds/uploads.
+- [Verify CMP KMP platforms #129](https://github.com/aleks-nl5/andrey-ceilings-android/actions/runs/40767093402): success; iOS Simulator SQLCipher tests and Windows direct SQLCipherMultiplatform + SQLDelight 2.4.1 JDBC proof.
+- The enhanced iOS simulator tests now include encrypted database header and unchanged bytes after a wrong-key attempt. Physical iPhone validation is **deferred** because the project owner currently has no access to an iOS development environment; simulator CI remains mandatory for relevant changes.
+- These are isolated feasibility proofs, not evidence of full production database migration or cross-platform encrypted-file compatibility.
+
+**Proposed CI optimization (not implemented by this documentation commit):**
+- On ordinary commits, run a fast compile/unit-test gate focused on changed modules; avoid running Go/gomobile packaging, full APK release/signing, emulator instrumentation, and all platform proofs unconditionally.
+- Keep full Android APK build, Windows checks, and iOS Simulator checks as PR pre-merge/manual gates, with path-based triggers for database/driver/platform changes. Keep SQLCipher/SQLDelight encryption tests on relevant changes and before merging changes that affect database architecture.
+- Provide `workflow_dispatch` for full verification on demand; use concurrency cancellation to avoid stacking obsolete runs from successive commits. Never remove the only CI coverage for a platform without a replacement gate.
+- Review actual workflow durations and dependencies before changing YAML. A fast gate must not be mistaken for full cross-platform validation.
+
+**Temporary POCs:** retain `tools/sqlcipher-windows-poc/` and `tools/sqlcipher-sqldelight-jdbc-poc/` until feasibility conclusions are recorded and equivalent relevant coverage is retained. Remove the disposable projects and their CI steps later in a separate, explicit cleanup commit.
