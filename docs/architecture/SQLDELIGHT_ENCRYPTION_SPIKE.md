@@ -98,3 +98,16 @@ Keep the current Android prototype isolated. For Windows, first resolve the SQLD
 - SQLDelight JVM SQLite driver: https://sqldelight.github.io/sqldelight/jvm_sqlite/
 - Zetetic SQLCipher documentation (including Java/JDBC and Apple integrations): https://www.zetetic.net/sqlcipher/documentation/
 - Community KMP SQLCipher driver (research lead only; review its format warning and license before any adoption): https://github.com/yet300/SQLCipher
+
+
+### Additional Windows/JVM candidate — SQLCipherMultiplatform (reviewed 2026-10-28)
+
+- Repository: https://github.com/s0d3s/SQLCipherMultiplatform
+- The README describes a KMP Android/JVM API, a JNI-backed JDBC driver, and native runtime payloads including Windows x64. It also includes a SQLDelight sample, so it is a promising isolated proof-of-concept candidate for the existing Desktop/JVM target.
+- The README explicitly says **iOS is not implemented**. This candidate can only address Windows/JVM; it does not solve the iOS database driver.
+- **Compatibility is not established:** the repository's current build declares Kotlin Multiplatform 2.3.20 and SQLDelight plugin 2.0.2, while this project currently uses Kotlin 2.4.21 and SQLDelight 2.4.1. Do not add it to `:shared` or alter the app dependency graph until an isolated sample proves the API and toolchain can coexist without downgrading the project's versions.
+- **License needs clarification before redistribution:** the repository README says Apache-2.0, while its published Maven metadata surfaced during research lists MIT for the artifact. It bundles upstream SQLCipher under Zetetic's BSD-style Community Edition terms. Verify the exact artifact POM, LICENSE/NOTICE files, transitive notices and redistribution obligations before deciding; do not infer the effective license from the README badge alone.
+- The library advertises a `jdbc:sqlcipher:` driver and SQLDelight integration, but these claims still require runtime proof in our Windows CI: cipher-specific probe, encrypted-at-rest check, CRUD, close/reopen persistence, wrong-key rejection without plaintext fallback, and native DLL packaging from a clean runner.
+- References: https://github.com/s0d3s/SQLCipherMultiplatform ; https://central.sonatype.com/artifact/io.github.s0d3s/sqlcipher-multiplatform ; https://www.zetetic.net/sqlcipher/license/ .
+
+**Decision:** keep this as the leading open-source Windows/JVM proof-of-concept candidate, not an approved production dependency. Next, evaluate it in a disposable sample isolated from `:shared` and the production dependency graph. Compare it with the official Zetetic JDBC route (Enterprise/commercial) before selecting an implementation.
