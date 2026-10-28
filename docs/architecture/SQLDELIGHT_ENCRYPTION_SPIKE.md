@@ -111,3 +111,16 @@ Keep the current Android prototype isolated. For Windows, first resolve the SQLD
 - References: https://github.com/s0d3s/SQLCipherMultiplatform ; https://central.sonatype.com/artifact/io.github.s0d3s/sqlcipher-multiplatform ; https://www.zetetic.net/sqlcipher/license/ .
 
 **Decision:** keep this as the leading open-source Windows/JVM proof-of-concept candidate, not an approved production dependency. Next, evaluate it in a disposable sample isolated from `:shared` and the production dependency graph. Compare it with the official Zetetic JDBC route (Enterprise/commercial) before selecting an implementation.
+
+### Windows/JVM follow-up — published SQLCipherMultiplatform 0.2.13 (2026-10-28)
+
+A fresh review of the upstream README and Maven Central metadata found a published `io.github.s0d3s:sqlcipher-multiplatform:0.2.13` artifact. The README documents a `SqlCipherDatabaseFactory` API, a custom `jdbc:sqlcipher:` driver, and native payloads for Windows x64. This makes it a more concrete candidate for an isolated Windows proof than the earlier repository-only review.
+
+- Upstream README: https://github.com/s0d3s/SQLCipherMultiplatform
+- Published artifact and POM metadata: https://central.sonatype.com/artifact/io.github.s0d3s/sqlcipher-multiplatform
+- The published POM identifies Kotlin stdlib 2.3.20 and reports MIT metadata, while the upstream README describes the project as Apache-2.0 and its bundled SQLCipher sources as BSD-style. Resolve the exact license/NOTICE obligations for the specific published artifact and bundled native payloads before redistribution.
+- The upstream README lists Java 17 and Kotlin 2.3.x as its toolchain baseline. This project currently uses Kotlin 2.4.21 and SQLDelight 2.4.1, so compatibility with our build is **not established**. Do not add this artifact to `:shared` yet.
+- The upstream README explicitly says iOS is not implemented; this candidate can only be evaluated for Windows/JVM and does not replace the separate iOS proof.
+- The upstream project documents sample checks for CRUD, encrypted-at-rest content, and wrong-key rejection. Our proof must independently run on a clean Windows x64 GitHub Actions runner and additionally verify close/reopen persistence, fail-closed wrong-key behavior, and that a wrong key cannot create or overwrite a plaintext database.
+
+**Next action:** create/run a disposable Windows/JVM proof that tests the published artifact independently of the app dependency graph, then separately test whether the JDBC driver can back SQLDelight 2.4.1 without changing the shared module's Kotlin/SQLDelight versions. Until both checks pass, keep the candidate research-only.
