@@ -3,6 +3,7 @@ plugins {
     id("com.android.kotlin.multiplatform.library")
     id("org.jetbrains.compose")
     id("org.jetbrains.kotlin.plugin.compose")
+    id("app.cash.sqldelight")
 }
 
 kotlin {
@@ -29,10 +30,29 @@ kotlin {
             implementation(compose.foundation)
             implementation(compose.material3)
             implementation(compose.ui)
+            implementation("app.cash.sqldelight:runtime:2.4.0")
+        }
+
+        androidMain.dependencies {
+            implementation("app.cash.sqldelight:android-driver:2.4.0")
+            // Reuse the app's established SQLCipher implementation for the Android spike.
+            implementation("net.zetetic:sqlcipher-android:4.19.1")
+        }
+
+        jvmTest.dependencies {
+            implementation("app.cash.sqldelight:sqlite-driver:2.4.0")
         }
 
         commonTest.dependencies {
             implementation(kotlin("test"))
+        }
+    }
+}
+
+sqldelight {
+    databases {
+        create("PrototypeDatabase") {
+            packageName.set("com.andreyceilings.shared.db")
         }
     }
 }
