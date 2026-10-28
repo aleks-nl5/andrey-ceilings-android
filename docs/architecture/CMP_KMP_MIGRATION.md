@@ -153,4 +153,14 @@ However, the PR's Android workflow had been cancelled during APK build and its i
 - **Test data:** the current database contains test data only and may be recreated during the Room → SQLDelight transition. Do not build a production-data migration path just to preserve these records. Any reset must be explicit and limited to this migration/testing stage.
 - **Calculation direction:** Kotlin Multiplatform is the intended final source for domain and estimate calculations. Go/AAR is transitional and must not be removed until parity fixtures, regression tests, and runtime call-site migration are complete.
 - **Future sync:** do not build network synchronization now. Keep local/offline-first behavior and avoid architecture choices that make future change tracking, stable cross-device IDs, deletions, or conflict resolution unnecessarily difficult. No server/provider is selected.
-- **Next technical gate:** compare SQLDelight's supported Kotlin/plugin/runtime versions with the current toolchain; prototype database creation and CRUD with encryption on each target; only then replace Room incrementally.
+- **Next technical gate:** complete the SQLDelight CRUD prototype and CI. The Android prototype factory wraps the existing SQLCipher SupportOpenHelperFactory and requires the app-managed 32-byte passphrase; it intentionally has no plaintext fallback. JVM CRUD tests use an in-memory SQLite driver and prove generated query behavior only, not encryption. iOS and Windows/JVM encrypted-driver support remain unproven; do not migrate Room or expose these targets to persistent unencrypted storage until that gate is closed.
+
+
+## Progress log — SQLDelight feasibility prototype (2026-10-28)
+
+- Added SQLDelight Gradle plugin **2.4.0** and the common runtime to `:shared`, matching the current official SQLDelight release/docs.
+- Added a deliberately small `prototype_client` schema with generated list/read/insert/update/delete queries.
+- Added a JVM in-memory CRUD test for generated SQLDelight APIs. This test is not an encryption test.
+- Added an Android-only encrypted driver factory using the existing SQLCipher Android library and a passphrase supplied by the app's existing key manager. The factory has no plaintext fallback and does not duplicate key management.
+- CI for this new prototype is running. A green compile/test run is required before calling the prototype validated.
+- **Open security gate:** no encrypted driver has been implemented or validated yet for iOS or Windows desktop/JVM. SQLDelight remains a candidate, not an approved production replacement. Do not connect production repositories or replace Room yet.
