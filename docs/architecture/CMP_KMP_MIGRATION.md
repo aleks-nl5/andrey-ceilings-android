@@ -173,3 +173,30 @@ However, the PR's Android workflow had been cancelled during APK build and its i
 - Added AndroidX instrumentation dependencies and an emulator CI step to run `:app:connectedDebugAndroidTest`. This is a new security test gate; it is **not yet confirmed successful** until the current workflow completes.
 - The test uses an isolated prototype database name and random per-test key. It does not alter the existing Room database or its key.
 - Remaining gates: inspect the emulator test result; confirm whether SQLCipher has suitable encrypted SQLDelight driver paths for iOS and Windows/JVM; do not replace Room or migrate app repositories until those checks and app key-management integration are complete.
+
+## Architecture note — future offline-first synchronization (2026-10-28)
+
+**Decision:** prepare the architecture for synchronization, but do not implement server/network synchronization in this migration PR. No backend/provider has been selected.
+
+- Synchronize domain changes through a future versioned API; do not copy encrypted SQLite database files between devices as the synchronization protocol.
+- Keep local-first behavior: core workflows must continue offline, with changes queued for later delivery.
+- Review the schema before making changes. Synchronizable entities should use stable globally unique IDs (for example UUIDs) rather than relying on device-local auto-increment IDs; preserve stable relationships between clients, projects/objects, measurements, and estimates.
+- Plan UTC creation/update timestamps and version/concurrency metadata. Client timestamps alone must not decide conflicts.
+- For eventual reliable delivery, use a transactional Outbox: persist the domain change and its pending-sync operation in the same local transaction. Give each operation a stable ID and make server processing idempotent so retries do not duplicate records.
+- Represent deletions with tombstones until they have been propagated and safely reconciled; otherwise an offline device could resurrect deleted records.
+- Define conflict rules by entity/field. Financial estimate changes must not be silently overwritten; detect conflicts and support an explicit resolution path where needed.
+- Keep a future SyncEngine and API adapter behind repository/domain boundaries. UI and calculation logic must not depend on a specific backend vendor.
+- Version the sync API and local schema migrations so Android, iOS, and Desktop releases can coexist during staged updates.
+- Treat local database encryption, transport security, server-side storage protection, authorization, key management, and backup/recovery as separate but coordinated controls. Never send local encryption keys as ordinary sync fields.
+- Do not assume encrypted SQLite files are portable across platforms or cipher implementations. If cross-platform backup is required, test it explicitly or provide a separate logical export/import format.
+- Do not add server code, network dependencies, Outbox tables, or a SyncEngine to production just for speculative future-proofing. First complete the local database/platform encryption gates and review the actual schema; add only the minimum required foundations in separate, tested PRs.
+
+### Future implementation gates
+
+1. Agree on synchronized entities, globally stable IDs, relationships, deletion semantics, and conflict policy.
+2. Define authentication/authorization and a versioned API contract.
+3. Prototype one entity end-to-end, including offline edits, retries, idempotency, restart recovery, and conflict tests.
+4. Expand to related entities only after integrity and access-control tests pass.
+5. Verify backup/restore and key-loss/device-loss recovery before production rollout.
+
+This is an architectural plan only. It does not mean synchronization, a server, or conflict resolution is implemented.
