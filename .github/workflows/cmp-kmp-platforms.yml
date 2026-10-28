@@ -40,6 +40,9 @@ jobs:
       - name: Compile iOS simulator framework
         run: gradle --no-daemon :shared:linkDebugFrameworkIosSimulatorArm64 --stacktrace --warning-mode all
 
+      - name: Run isolated SQLCipher tests on iOS Simulator
+        run: gradle --no-daemon :shared:iosSimulatorArm64Test --stacktrace --warning-mode all
+
       - name: Compile Compose Desktop host
         run: gradle --no-daemon :desktopApp:compileKotlin --stacktrace --warning-mode all
 
