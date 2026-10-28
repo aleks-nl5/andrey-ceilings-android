@@ -50,10 +50,17 @@ kotlin {
         iosTest.dependencies {
             implementation(kotlin("test"))
         }
+
+        iosMain.dependencies {
+            // Isolated iOS SQLCipher proof; not used by production repositories.
+            implementation("io.github.yet300:sqlcipher-driver:0.1.0")
+        }
     }
 }
 
 sqldelight {
+    // Disable SQLDelight's system SQLite linker for Apple targets; SQLCipher supplies sqlite3_*.
+    linkSqlite.set(false)
     databases {
         create("PrototypeDatabase") {
             packageName.set("com.andreyceilings.shared.db")
