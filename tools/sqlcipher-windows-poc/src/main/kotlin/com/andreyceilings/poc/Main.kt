@@ -17,14 +17,15 @@ fun main() {
     try {
         SqlCipherDatabaseFactory.initialize()
 
-        SqlCipherDatabaseFactory.open(databasePath.toString(), key).use { database ->
+        val database = SqlCipherDatabaseFactory.open(databasePath.toString(), key)
+        try {
             database.execute(
                 "CREATE TABLE poc_records (id INTEGER PRIMARY KEY, value TEXT NOT NULL)"
             )
             database.execute("INSERT INTO poc_records(value) VALUES ('encrypted-persistence-check')")
 
             val cipherVersion = database.querySingleColumn("PRAGMA cipher_version")
-            check(cipherVersion.isNotEmpty() && cipherVersion.first().isNotBlank()) {
+            check(cipherVersion.firstOrNull()?.isNotBlank() == true) {
                 "SQLCipher probe failed: PRAGMA cipher_version returned no version."
             }
 
@@ -34,6 +35,8 @@ fun main() {
             check(rows == listOf("encrypted-persistence-check")) {
                 "Could not read back the inserted test row."
             }
+        } finally {
+            database.close()
         }
 
         check(Files.exists(databasePath)) { "Database file was not created." }
@@ -43,19 +46,25 @@ fun main() {
         }
         val encryptedDigest = sha256(encryptedBytes)
 
-        SqlCipherDatabaseFactory.open(databasePath.toString(), key).use { database ->
-            val rows = database.querySingleColumn(
+        val reopenedDatabase = SqlCipherDatabaseFactory.open(databasePath.toString(), key)
+        try {
+            val rows = reopenedDatabase.querySingleColumn(
                 "SELECT value FROM poc_records WHERE id = 1"
             )
             check(rows == listOf("encrypted-persistence-check")) {
                 "The row did not persist after closing and reopening the database."
             }
+        } finally {
+            reopenedDatabase.close()
         }
 
         var wrongKeyRejected = false
         try {
-            SqlCipherDatabaseFactory.open(databasePath.toString(), wrongKey).use { database ->
-                database.querySingleColumn("SELECT count(*) FROM sqlite_master")
+            val wrongKeyDatabase = SqlCipherDatabaseFactory.open(databasePath.toString(), wrongKey)
+            try {
+                wrongKeyDatabase.querySingleColumn("SELECT count(*) FROM sqlite_master")
+            } finally {
+                wrongKeyDatabase.close()
             }
         } catch (_: Exception) {
             wrongKeyRejected = true
