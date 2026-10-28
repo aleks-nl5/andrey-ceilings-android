@@ -78,3 +78,6 @@ jobs:
 
       - name: Run isolated SQLCipher Windows/JVM proof
         run: gradle --no-daemon -p tools/sqlcipher-windows-poc verifySqlCipher --stacktrace --warning-mode all
+
+      - name: Verify SQLDelight 2.4.1 SQLCipher JDBC integration
+        run: gradle --no-daemon -p tools/sqlcipher-sqldelight-jdbc-poc verifySqlCipherSqlDelight --stacktrace --warning-mode all
