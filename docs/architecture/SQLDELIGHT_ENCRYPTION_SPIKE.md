@@ -131,5 +131,15 @@ A fresh review of the upstream README and Maven Central metadata found a publish
 - The standalone proof pins SQLCipherMultiplatform `0.2.13` and Kotlin Gradle plugin `2.3.20`, matching the dependency's published Kotlin baseline rather than changing the app's Kotlin `2.4.21` toolchain.
 - The proof checks a SQLCipher-specific `PRAGMA cipher_version`, CRUD, absence of the plaintext SQLite file header, persistence after close/reopen, rejection of a wrong key, and unchanged database bytes after the wrong-key attempt. It uses a throwaway database and a generated test-only key.
 - The Windows CI workflow now runs `gradle --no-daemon -p tools/sqlcipher-windows-poc verifySqlCipher` on a clean Windows runner.
-- **Status: awaiting CI execution.** The repository change itself is not proof that the library works on Windows. If this test passes, the next gate is a separate SQLDelight `2.4.1` JDBC-driver compatibility proof; this isolated test uses the library's documented API and does not yet establish SQLDelight integration.
+- **Status: passed on Windows x64 CI (2026-10-28).** The isolated `verifySqlCipher` step passed on the clean Windows runner, confirming the published library's direct API can initialize, report `PRAGMA cipher_version`, perform CRUD, keep data encrypted at rest, persist across close/reopen, reject a wrong key, and leave the database bytes unchanged after the wrong-key attempt. This is evidence for the isolated direct-API POC only; it does not establish SQLDelight JDBC-driver integration or production readiness.
 - Do not treat this as an approved production dependency until CI passes, SQLDelight compatibility is verified, and the artifact/native payload licensing discrepancy is resolved.
+
+
+### Windows/JVM proof result — 2026-10-28
+
+- CI run for CMP/KMP platforms: **success**; Windows Desktop and SQLCipher POC passed.
+- Android APK CI run: **success**; Android build, tests, emulator SQLCipher instrumentation, and Debug/Release APK steps passed.
+- The POC is still isolated under `tools/sqlcipher-windows-poc`; it is not included in the root Gradle settings and does not replace Room or alter production database code.
+- Verified on Windows/JVM: cipher version probe, encrypted-file header check, CRUD, close/reopen persistence, wrong-key rejection, and unchanged file digest after the wrong-key attempt.
+- **Still open:** test the JDBC driver through SQLDelight **2.4.1** without changing the app's Kotlin **2.4.21** / SQLDelight **2.4.1** toolchain; resolve artifact/native payload licensing; and run an independent iOS simulator encryption proof.
+- This result does not establish cross-platform encrypted-file portability. Keep the production dependency graph unchanged and do not replace Room until all acceptance gates pass.
