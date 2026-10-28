@@ -13,6 +13,8 @@ import kotlin.test.assertTrue
 class SqlCipherWindowsDriverTest {
     @Test
     fun encryptedDatabasePersistsAndRejectsWrongKeyWithoutModification() {
+        // Windows native DLL is intentionally packaged only for the Windows JVM target.
+        if (!System.getProperty("os.name").startsWith("Windows", ignoreCase = true)) return
         val dir = Files.createTempDirectory("andrey-windows-cipher-").toFile()
         val db = File(dir, "proof.db")
         val key = ByteArray(32) { 11 }
