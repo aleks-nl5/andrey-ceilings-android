@@ -38,6 +38,29 @@ The official Zetetic documentation lists a SQLCipher-enabled JDBC driver for Jav
 - Research candidate: `io.github.yet300:sqlcipher-driver:0.1.0`, an Apache-2.0 SQLDelight KMP driver that bundles SQLCipher for Apple targets. Its README explicitly says Android and iOS file formats intentionally diverge, so it must **not** be treated as a portable cross-platform database-file format. It is an early-stage third-party dependency and needs independent review and an iOS simulator encryption test before adoption. Reference: https://github.com/yet300/SQLCipher.
 - The current successful iOS CI job only links the shared framework. It does not prove SQLCipher is linked or that an encrypted database can be opened on iOS.
 
+## License review — 2026-10-28
+
+### iOS candidate: `io.github.yet300:sqlcipher-driver:0.1.0`
+
+- The driver repository declares **Apache-2.0** for its own code.
+- The bundled SQLCipher code is under Zetetic's **BSD-style Community Edition license**. Before distribution, preserve the required copyright/license text and third-party notices, including relevant SQLite/crypto-provider notices, in a user-accessible place such as **Settings → About → Open Source Licenses**. Review the exact published artifact's `NOTICE` and transitive dependencies before release.
+- The official SQLCipher Community Edition terms permit use in open- and closed-source software subject to the license/notice conditions; this review did not identify a requirement to buy a commercial SQLCipher license solely for this Community Edition use. This is a preliminary engineering license review, not legal advice.
+- The driver is an early-stage third-party project. Its README says Android and iOS database file formats intentionally diverge; do not assume encrypted database-file portability.
+- Apple link configuration needs special care: prevent linking plain system SQLite alongside the bundled SQLCipher exporter (the driver's README calls out SQLDelight's `linkSqlite.set(false)`) and verify the final linked binary and runtime cipher probe.
+
+### Windows candidate: `toxicity-io/sqlite-mc`
+
+- The project declares **Apache-2.0** for its own driver/plugin. It uses SQLite3MultipleCiphers, not Zetetic's SQLCipher implementation, so “SQLCipher-compatible” does not mean byte-for-byte or behaviorally identical in every setting.
+- Its published plugin version encodes the SQLDelight and SQLite3MultipleCiphers versions. The candidate version documented in the README is tied to SQLDelight 2.1.x-era tooling, while this project currently uses SQLDelight 2.4.1. Do not apply its plugin or remove the existing SQLDelight plugin until a compatible release/toolchain is verified.
+- The official Zetetic SQLCipher JDBC route is listed as an Enterprise feature; treat it as a commercial fallback that requires a vendor quote/license review.
+
+References:
+- Driver and bundled notices: https://github.com/yet300/SQLCipher
+- Official SQLCipher license terms: https://www.zetetic.net/sqlcipher/license/
+- Official SQLCipher Community Edition overview: https://www.zetetic.net/sqlcipher/community/
+- Windows candidate and versioning: https://github.com/toxicity-io/sqlite-mc
+- Commercial JDBC option: https://www.zetetic.net/sqlcipher/jdbc/
+
 ### Current recommendation
 
 Keep the current Android prototype isolated. First run a minimal, test-only proof for the most promising open-source Windows option and an iOS simulator proof, each with its own throwaway database and random test key. The test must assert a cipher-specific probe (where supported), encrypted file contents, persistence after close/reopen, and rejection of a wrong key. Do not connect either driver to app repositories or replace Room based on dependency documentation alone.
