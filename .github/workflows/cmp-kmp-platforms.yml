@@ -77,3 +77,6 @@ jobs:
 
       - name: Run shared JVM tests on Windows
         run: gradle --no-daemon :shared:jvmTest --stacktrace --warning-mode all
+
+      - name: Run isolated SQLCipher Windows/JVM proof
+        run: gradle --no-daemon -p tools/sqlcipher-windows-poc verifySqlCipher --stacktrace --warning-mode all
