@@ -1,0 +1,28 @@
+CREATE TABLE prototype_client (
+  id INTEGER NOT NULL PRIMARY KEY,
+  name TEXT NOT NULL,
+  created_at_epoch_millis INTEGER NOT NULL
+);
+
+selectAllClients:
+SELECT id, name, created_at_epoch_millis
+FROM prototype_client
+ORDER BY id;
+
+selectClientById:
+SELECT id, name, created_at_epoch_millis
+FROM prototype_client
+WHERE id = ?;
+
+insertClient:
+INSERT INTO prototype_client(id, name, created_at_epoch_millis)
+VALUES (?, ?, ?);
+
+updateClient:
+UPDATE prototype_client
+SET name = ?, created_at_epoch_millis = ?
+WHERE id = ?;
+
+deleteClient:
+DELETE FROM prototype_client
+WHERE id = ?;
