@@ -16,6 +16,7 @@ fun main() {
     dbFile.parentFile.mkdirs()
     dbFile.delete()
     val key = ByteArray(32).also { java.security.SecureRandom().nextBytes(it) }
+    var cipherVersion: String? = null
 
     try {
         val props = Properties().apply {
@@ -23,7 +24,7 @@ fun main() {
         }
 
         JdbcSqliteDriver("jdbc:sqlcipher:${dbFile.absolutePath}", props).use { driver ->
-            val cipherVersion = driver.executeQuery(
+            cipherVersion = driver.executeQuery(
                 null,
                 "PRAGMA cipher_version;",
                 { cursor -> QueryResult.Value(if (cursor.next().value) cursor.getString(0) else null) },
