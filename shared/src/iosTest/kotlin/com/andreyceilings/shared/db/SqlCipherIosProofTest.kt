@@ -13,6 +13,7 @@ import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.reinterpret
 import kotlinx.cinterop.get
 import platform.Foundation.NSData
+import platform.Foundation.dataWithContentsOfFile
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFails
