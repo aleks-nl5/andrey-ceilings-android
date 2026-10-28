@@ -15,7 +15,7 @@
 | Target | Candidate path | Current status | Required proof |
 |---|---|---|---|
 | Android | SQLDelight Android driver + Zetetic SQLCipher Android | **Prototype test passes in CI** | Physical-device test; integrate the real app key manager; test backup/restore and failure/recovery behavior |
-| iOS | SQLDelight Native driver linked with SQLCipher | **Not integrated or tested** | Build/link a native test; assert SQLCipher is actually loaded; encrypted-file, reopen, wrong-key and persistence tests on simulator and device |
+| iOS | Isolated SQLDelight Native driver proof using `io.github.yet300:sqlcipher-driver:0.1.0` | **Simulator proof passes in CI; partial** | Add encrypted-file-at-rest/header verification and prove wrong-key failure leaves the existing database unchanged; then test on a physical device and review exact dependency licenses/notices |
 | Windows desktop (JVM) | SQLDelight JDBC driver backed by an encrypted SQLite/SQLCipher implementation | **No verified implementation selected** | Confirm licensing, Windows x64 packaging, key API, native library loading, encryption probe, reopen and wrong-key tests |
 | Cross-platform backup/restore | Depends on cipher version, key derivation, database format and key management | **Not established** | Explicitly test restore between supported platforms, or document that encrypted database backups are platform-specific and provide a safe logical export/import format |
 
@@ -36,7 +36,7 @@ The official Zetetic documentation lists a SQLCipher-enabled JDBC driver for Jav
 ### iOS
 
 - Research candidate: `io.github.yet300:sqlcipher-driver:0.1.0`, an Apache-2.0 SQLDelight KMP driver that bundles SQLCipher for Apple targets. Its README explicitly says Android and iOS file formats intentionally diverge, so it must **not** be treated as a portable cross-platform database-file format. It is an early-stage third-party dependency and needs independent review and an iOS simulator encryption test before adoption. Reference: https://github.com/yet300/SQLCipher.
-- The current successful iOS CI job only links the shared framework. It does not prove SQLCipher is linked or that an encrypted database can be opened on iOS.
+- The iOS CI workflow runs `:shared:iosSimulatorArm64Test`, including `SqlCipherIosProofTest`. The test checks a non-empty `PRAGMA cipher_version`, data persistence across close/reopen, and wrong-key failure. The successful CI run is evidence that this isolated simulator proof passed; it does **not** yet verify the database file's encrypted-at-rest header or that a wrong-key attempt leaves file bytes unchanged.
 
 ## License review — 2026-10-28
 
@@ -86,7 +86,7 @@ Keep the current Android prototype isolated. For Windows, first resolve the SQLD
 ## Recommended next sequence
 
 1. Resolve the Windows/JVM encryption implementation and licensing question.
-2. Build the smallest encrypted CRUD proof for iOS and Windows, using isolated test databases and test-only keys.
+2. Extend the existing iOS simulator proof with encrypted-file-at-rest and unchanged-file-after-wrong-key assertions; complete the Windows SQLDelight 2.4.1 JDBC integration proof. Keep both on isolated test databases and test-only keys.
 3. Add CI jobs and negative-key/encrypted-file checks for each target.
 4. Decide whether encrypted database files must be portable between Android, iOS and Windows. If yes, prove compatible SQLCipher settings and file format end-to-end; otherwise define a platform-independent backup/export format.
 5. Only after all gates pass, design the shared schema and repository adapters for clients, projects/measurements, price items, estimates and estimate lines.
@@ -143,3 +143,12 @@ A fresh review of the upstream README and Maven Central metadata found a publish
 - Verified on Windows/JVM: cipher version probe, encrypted-file header check, CRUD, close/reopen persistence, wrong-key rejection, and unchanged file digest after the wrong-key attempt.
 - **Still open:** test the JDBC driver through SQLDelight **2.4.1** without changing the app's Kotlin **2.4.21** / SQLDelight **2.4.1** toolchain; resolve artifact/native payload licensing; and run an independent iOS simulator encryption proof.
 - This result does not establish cross-platform encrypted-file portability. Keep the production dependency graph unchanged and do not replace Room until all acceptance gates pass.
+
+
+### iOS simulator proof result — 2026-10-28
+
+- The shared module contains `SqlCipherIosProofTest`, executed by the CMP/KMP workflow's `:shared:iosSimulatorArm64Test` step.
+- The test checks that `PRAGMA cipher_version` returns a non-empty value, that a row survives close/reopen with the same test key, and that a wrong key fails.
+- The latest successful CMP/KMP workflow included this iOS simulator test step.
+- **Remaining iOS gaps:** no encrypted-file header/content assertion and no file-digest check proving a wrong-key attempt leaves the database unchanged; no physical-device validation. The proof uses synthetic keys and disposable database names only.
+- Therefore iOS is no longer “untested,” but its proof remains partial and is not production approval.
