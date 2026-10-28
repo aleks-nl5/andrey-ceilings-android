@@ -12,6 +12,7 @@ android {
         applicationId = "com.andreyceilings.app"
         minSdk = 30
         targetSdk = 37
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         // GitHub Actions run number is appended to the visible version for test builds.
         val actionsRunNumber = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 0
         versionCode = 600000 + actionsRunNumber
@@ -75,6 +76,10 @@ dependencies {
     implementation("androidx.work:work-runtime-ktx:2.12.0")
     debugImplementation("androidx.compose.ui:ui-tooling")
     testImplementation("junit:junit:4.13.2")
+    androidTestImplementation(project(":shared"))
+    androidTestImplementation("androidx.test:runner:1.6.2")
+    androidTestImplementation("androidx.test:rules:1.6.1")
+    androidTestImplementation("androidx.test.ext:junit:1.2.1")
 }
 
 ksp {
