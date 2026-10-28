@@ -218,7 +218,7 @@
 - [x] Зафіксовано, що поточна БД містить тільки тестові дані; їх можна не переносити в нову схему. Скидання даних має бути явним і обмеженим етапом тестової міграції.
 - [x] Зафіксовано ціль відмовитися від Go/AAR після перенесення розрахунків у Kotlin Multiplatform і підтвердження відповідності результатів тестами.
 - [x] Зафіксовано майбутню синхронізацію як окремий етап: зараз без сервера та мережевої синхронізації, але з offline-first і без прив’язки до конкретного провайдера.
-- [ ] Наступний крок: технічний прототип SQLDelight + зашифроване SQLite сховище та CRUD-перевірки для Android, iOS і Windows.
+- [ ] Наступний крок: ізольовані encryption-spike тести для iOS і Windows/JVM на основі кандидатів, описаних у `docs/architecture/SQLDELIGHT_ENCRYPTION_SPIKE.md`; перевірити cipher probe, зашифрований файл, close/reopen і неправильний ключ. Не підключати до production-репозиторіїв.
 
 
 ### SQLDelight — перший технічний прототип (2026-10-28)
@@ -240,7 +240,7 @@
 - [x] Android APK workflow успішний на HEAD `f61685d0`: JVM-тести, Android emulator test, debug APK та release APK.
 - [x] CMP/KMP workflow успішний на HEAD `f61685d0`: iOS simulator framework, Compose Desktop compile та shared JVM tests.
 - [x] Додано `docs/architecture/SQLDELIGHT_ENCRYPTION_SPIKE.md` із платформною матрицею, критеріями приймання та варіантами для дослідження.
-- [x] Додано окремий Windows CI job для `:desktopApp:compileKotlin` і `:shared:jvmTest`; результат нового запуску очікується.
+- [x] Додано окремий Windows CI job для `:desktopApp:compileKotlin` і `:shared:jvmTest`; workflow run `40682625544` завершився успішно. Це підтверджує компіляцію desktop host і JVM-тести на Windows, але ще не перевіряє зашифрований Windows-драйвер.
 - [ ] Підтвердити шифрування на фізичному Android-пристрої та інтегрувати виробничий менеджер ключів у драйвер.
 - [ ] Вибрати, перевірити та задокументувати encrypted driver для iOS і Windows/JVM, включно з ліцензією, упаковкою й негативним тестом неправильного ключа.
 - [ ] Вирішити вимоги до перенесення encrypted DB backup між платформами; не припускати сумісність форматів без тесту.
@@ -248,3 +248,11 @@
 - [ ] Go/AAR залишається чинним джерелом розрахунків до окремої KMP parity/regression міграції.
 
 Останні перевірки підтверджують Android-емулятор і наявний CMP/KMP scaffold, але **не** означають, що база вже готова до production на всіх платформах. PR #22 залишається відкритим Draft; `main` не змінюється.
+
+
+### Результат дослідження драйверів шифрування (2026-10-28)
+
+- [x] Підтверджено, що Windows Desktop CI успішний на коміті `cf87f5cd` (workflow run `40682625544`); це ще не encryption proof.
+- [x] Задокументовано офіційний SQLCipher JDBC для Windows як Enterprise-only варіант і `toxicity-io/sqlite-mc` як open-source кандидат, який потребує окремої перевірки.
+- [x] Задокументовано ранній SQLDelight KMP SQLCipher драйвер для iOS; його README прямо зазначає, що Android та iOS формати БД не є переносними один до одного.
+- [ ] Наступна технічна робота: побудувати ізольовані iOS simulator та Windows/JVM encrypted CRUD proofs; зберегти Room і чинну Android SQLCipher фабрику без змін, доки перевірки не пройдуть.
