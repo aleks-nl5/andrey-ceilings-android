@@ -24,20 +24,21 @@ The full UI redesign is not yet complete. CMP migration and remaining visual red
 ## Non-negotiable product constraints
 
 - Android remains the primary platform during migration.
-- Preserve existing user data; never reset or replace the database as a migration shortcut.
-- The database must remain encrypted, including correct key handling and safe upgrade/restore behavior.
+- The current app is still in the test phase and its database contains test data only; the owner accepts that this data may be discarded during the planned Room → SQLDelight transition. Do not spend effort migrating these test records. Clearly document any intentional reset and do not silently reset data in a later production release.
+- The target database must be encrypted on Android, iOS, and Windows, including correct key handling and safe backup/restore behavior. SQLDelight does not itself encrypt the SQLite database; select and verify a compatible encryption strategy before treating SQLDelight as approved for production.
 - Photos, drawings, and PDFs do not need separate file encryption.
 - Preserve offline-first local use, price-list demo seeding, clients, objects, measurements, estimates, duplicate/delete flows, PDF generation, and backup/restore.
-- Cross-device synchronization, accounts, and server infrastructure are out of scope for this migration phase.
-- Keep the Go/AAR calculation core until the shared Kotlin implementation passes parity and regression tests. Do not maintain two active calculation sources of truth after the eventual cutover.
+- Do not implement cross-device synchronization, accounts, or server infrastructure in this phase. Design the local data layer offline-first and synchronization-ready (stable record IDs, explicit repositories, timestamps/change metadata where useful, and deletion/conflict handling that can be added later) without coupling it to a specific server or cloud provider.
+- Planned direction: remove Go/AAR and move calculation/domain logic to Kotlin Multiplatform. Keep Go/AAR only as a temporary reference during the transition; remove it after representative parity fixtures and regression tests pass and all runtime consumers are migrated. Do not maintain two active calculation sources of truth after cutover.
 - Track and fix the known additional-works totals defect: additional works must be reflected consistently in the UI, saved estimate, and PDF.
 - A successful compile alone is not proof of functional parity. Require CI and appropriate device/platform smoke tests.
 
 ## Target architecture (evolve only after compatibility checks)
 
 - `:app`: retain the existing Android application and platform-specific integrations while migrating incrementally.
-- `:shared`: common Kotlin domain models, validation, use cases, calculation logic, and shared Compose UI.
-- `:desktopApp`: JVM desktop host for Windows, using shared UI.
+- `:shared`: common Kotlin domain models, validation, use cases, calculation logic, SQLDelight schema/queries/repositories, and shared Compose UI.
+- SQLDelight is the selected database migration candidate to replace Room, conditional on proving encrypted SQLite compatibility and correct operation on Android, iOS, and Windows. Keep SQLDelight-facing APIs in common code and isolate platform-specific driver/encryption setup behind platform source sets/adapters.
+- `:desktopApp`: JVM desktop host for Windows, using shared UI and a verified local database driver.
 - `iosApp`: a runnable Xcode/SwiftUI host for the shared Compose UI, plus iOS-specific integration.
 - Platform-specific adapters for encrypted storage, document/file pickers, PDF generation, backup/restore, and OS APIs.
 
@@ -74,7 +75,11 @@ References:
 
 ### Phase 2 — Shared domain and calculations
 - [ ] Inspect `go-core/core/calculator.go` and current app call sites before porting any rule.
-- [x] Add the first pure common-domain slice: client, project, and room-measurement models plus input validation; keep Room entities and Go geometry/calculation unchanged. Common tests added; latest CI result pending.
+- [x] Add the first pure common-domain slice: client, project, and room-measurement models plus input validation. Common tests and Android/platform CI pass; this is still an isolated domain slice.
+- [ ] Add SQLDelight to `:shared` as the planned replacement for Room after verifying current plugin/runtime/driver compatibility with Kotlin 2.4.21 and the target platforms.
+- [ ] Define common SQL schema and queries for clients, projects, measurements, price items, estimates, and estimate lines; treat current test data as disposable for this schema transition.
+- [ ] Prove database encryption on Android, iOS, and Windows before marking the shared database layer complete; do not assume SQLDelight provides encryption by itself.
+- [ ] Add common repository interfaces and platform drivers/adapters; connect one low-risk CRUD flow and test persistence before migrating all entities/screens.
 - [ ] Create representative Go/Kotlin input-output fixtures and compare exact business outputs.
 - [ ] Port geometry, price/cost, complexity, options, additional works, and estimate totals to common Kotlin in small slices.
 - [ ] Define rounding, money precision, units, invalid-input behavior, and defaults explicitly.
@@ -92,16 +97,19 @@ References:
 - [ ] Keep Android behavior stable before broadening to iOS/Desktop.
 
 ### Phase 4 — Data safety and end-to-end validation
-- [ ] Verify opening and upgrading the existing encrypted database without data loss.
-- [ ] Verify encryption and key storage rather than relying on configuration names alone.
+- [ ] Since the current database contains disposable test data, validate a clean SQLDelight database creation instead of migrating Room test records; retain backup/restore behavior as a product feature.
+- [ ] Verify encryption and key storage on Android, iOS, and Windows rather than relying on configuration names alone.
 - [ ] Verify backup/restore: valid password, invalid password, corrupt file, and data integrity.
 - [ ] Test create/edit/delete/duplicate flows and persistence after restart.
 - [ ] Compare estimate totals and PDFs against the current Android reference.
 - [ ] Test Android on a physical device, Windows desktop, and iOS simulator/device where supported.
 
-### Phase 5 — Decide on future synchronization separately
-- [ ] Keep independent local data stores and deliberate export/backup/restore for now.
-- [ ] Consider synchronization only as a separate future design decision.
+### Phase 5 — Keep the architecture ready for future synchronization
+- [x] Decide that synchronization is a future feature, not part of the current migration.
+- [ ] Keep the app offline-first: all core operations work from the local SQLDelight database without network access.
+- [ ] Use stable cross-device record identifiers and repository boundaries; add creation/update metadata and deletion markers when the data model needs them.
+- [ ] Avoid coupling repositories/domain models to a specific cloud provider or server protocol.
+- [ ] When synchronization becomes a priority, separately design change transport, authentication, conflict resolution, deletion propagation, retries, and encryption in transit.
 
 ## Status inherited from PR #21 (historical, not verified on this branch)
 
@@ -137,3 +145,12 @@ However, the PR's Android workflow had been cancelled during APK build and its i
 - Updated the Gradle/AGP versions to the documented Kotlin 2.4.21 compatibility range (AGP 9.3.1 / Gradle 9.7.0). CI runs `40595076763` and `40595098996` passed with this combination, including KSP-dependent Android build, shared JVM tests, desktop compilation, and APK artifacts. iOS framework linking remains to be confirmed by the new macOS workflow.
 - Added `.github/workflows/cmp-kmp-platforms.yml` on commit `6c61b0e` to compile the iOS simulator framework and desktop host on macOS and run shared JVM tests. Its first run is pending.
 - The existing Android UI has not been replaced or connected to the new shared component.
+
+
+## Architecture decision update — SQLDelight, Go retirement, and future sync (2026-10-28)
+
+- **Database direction:** SQLDelight is the preferred replacement candidate for Room because it can share schema, SQL queries, and typed APIs across KMP targets. This is a conditional decision: first prove a viable encrypted SQLite configuration for Android, iOS, and Windows, and verify driver/native compatibility. SQLDelight alone is not encryption.
+- **Test data:** the current database contains test data only and may be recreated during the Room → SQLDelight transition. Do not build a production-data migration path just to preserve these records. Any reset must be explicit and limited to this migration/testing stage.
+- **Calculation direction:** Kotlin Multiplatform is the intended final source for domain and estimate calculations. Go/AAR is transitional and must not be removed until parity fixtures, regression tests, and runtime call-site migration are complete.
+- **Future sync:** do not build network synchronization now. Keep local/offline-first behavior and avoid architecture choices that make future change tracking, stable cross-device IDs, deletions, or conflict resolution unnecessarily difficult. No server/provider is selected.
+- **Next technical gate:** compare SQLDelight's supported Kotlin/plugin/runtime versions with the current toolchain; prototype database creation and CRUD with encryption on each target; only then replace Room incrementally.
