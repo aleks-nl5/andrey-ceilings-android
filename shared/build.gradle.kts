@@ -30,17 +30,17 @@ kotlin {
             implementation(compose.foundation)
             implementation(compose.material3)
             implementation(compose.ui)
-            implementation("app.cash.sqldelight:runtime:2.4.0")
+            implementation("app.cash.sqldelight:runtime:2.4.1")
         }
 
         androidMain.dependencies {
-            implementation("app.cash.sqldelight:android-driver:2.4.0")
+            implementation("app.cash.sqldelight:android-driver:2.4.1")
             // Reuse the app's established SQLCipher implementation for the Android spike.
             implementation("net.zetetic:sqlcipher-android:4.19.1")
         }
 
         jvmTest.dependencies {
-            implementation("app.cash.sqldelight:sqlite-driver:2.4.0")
+            implementation("app.cash.sqldelight:sqlite-driver:2.4.1")
         }
 
         commonTest.dependencies {
