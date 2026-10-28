@@ -164,3 +164,12 @@ However, the PR's Android workflow had been cancelled during APK build and its i
 - Added an Android-only encrypted driver factory using the existing SQLCipher Android library and a passphrase supplied by the app's existing key manager. The factory has no plaintext fallback and does not duplicate key management.
 - CI for this new prototype is running. A green compile/test run is required before calling the prototype validated.
 - **Open security gate:** no encrypted driver has been implemented or validated yet for iOS or Windows desktop/JVM. SQLDelight remains a candidate, not an approved production replacement. Do not connect production repositories or replace Room yet.
+
+
+## Progress log — SQLDelight 2.4.1 and Android encryption test (2026-10-28)
+
+- Updated the SQLDelight Gradle plugin, runtime, Android driver, and JVM SQLite driver from 2.4.0 to **2.4.1**. CI passed for the version bump at commit `5bd9e704`.
+- Added Android instrumentation coverage for the SQLCipher-backed SQLDelight prototype: write a row, close and reopen the encrypted database, verify the row persists, check that the file does not have the plaintext SQLite header, and verify a wrong passphrase cannot read the database.
+- Added AndroidX instrumentation dependencies and an emulator CI step to run `:app:connectedDebugAndroidTest`. This is a new security test gate; it is **not yet confirmed successful** until the current workflow completes.
+- The test uses an isolated prototype database name and random per-test key. It does not alter the existing Room database or its key.
+- Remaining gates: inspect the emulator test result; confirm whether SQLCipher has suitable encrypted SQLDelight driver paths for iOS and Windows/JVM; do not replace Room or migrate app repositories until those checks and app key-management integration are complete.
