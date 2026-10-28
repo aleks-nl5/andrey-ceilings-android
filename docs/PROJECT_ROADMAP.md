@@ -230,3 +230,21 @@
 - [x] Додано запуск `:app:connectedDebugAndroidTest` на Android emulator у CI.
 - [ ] Перевірити результат нового emulator CI; тестовий код додано, але його успіх ще не підтверджений.
 - [ ] Підтвердити зашифровані драйвери для iOS та Windows/JVM. До проходження цього бар'єра Room лишається робочою БД застосунку.
+
+### CMP/KMP — актуальний статус після перевірки SQLCipher (2026-10-28)
+
+Цей запис уточнює старі чеклісти вище, які могли залишитися зі статусом «CI очікується» до завершення останніх прогонів.
+
+- [x] SQLDelight оновлено до 2.4.1; ізольований `prototype_client` має типобезпечні CRUD-запити.
+- [x] Android SQLCipher instrumentation test пройшов у CI на емуляторі: файл не має plaintext SQLite header, дані читаються після close/reopen, неправильний ключ відхиляється.
+- [x] Android APK workflow успішний на HEAD `f61685d0`: JVM-тести, Android emulator test, debug APK та release APK.
+- [x] CMP/KMP workflow успішний на HEAD `f61685d0`: iOS simulator framework, Compose Desktop compile та shared JVM tests.
+- [x] Додано `docs/architecture/SQLDELIGHT_ENCRYPTION_SPIKE.md` із платформною матрицею, критеріями приймання та варіантами для дослідження.
+- [x] Додано окремий Windows CI job для `:desktopApp:compileKotlin` і `:shared:jvmTest`; результат нового запуску очікується.
+- [ ] Підтвердити шифрування на фізичному Android-пристрої та інтегрувати виробничий менеджер ключів у драйвер.
+- [ ] Вибрати, перевірити та задокументувати encrypted driver для iOS і Windows/JVM, включно з ліцензією, упаковкою й негативним тестом неправильного ключа.
+- [ ] Вирішити вимоги до перенесення encrypted DB backup між платформами; не припускати сумісність форматів без тесту.
+- [ ] Не підключати SQLDelight до робочих репозиторіїв і не замінювати Room до проходження всіх платформних encryption gates.
+- [ ] Go/AAR залишається чинним джерелом розрахунків до окремої KMP parity/regression міграції.
+
+Останні перевірки підтверджують Android-емулятор і наявний CMP/KMP scaffold, але **не** означають, що база вже готова до production на всіх платформах. PR #22 залишається відкритим Draft; `main` не змінюється.
