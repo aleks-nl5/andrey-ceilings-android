@@ -25,6 +25,23 @@ A community SQLCipher KMP driver was found that describes Android and Apple targ
 
 The official Zetetic documentation lists a SQLCipher-enabled JDBC driver for Java under its commercial/enterprise offerings. Evaluate licensing and packaging before considering it for Windows. Do not assume that the standard SQLDelight SQLite JDBC driver is encrypted.
 
+## Research update — 2026-10-28
+
+### Windows/JVM
+
+- Zetetic's official SQLCipher JDBC driver supports Windows x86/x64 and interoperable SQLCipher databases, but the vendor lists it as an **Enterprise Edition** feature. This is a valid commercial option, not a free/open-source assumption. Before selecting it, obtain licensing/pricing details and verify the intended distribution model. Reference: https://www.zetetic.net/sqlcipher/jdbc/
+- Open-source candidate: `toxicity-io/sqlite-mc`, an SQLDelight driver built on SQLite3MultipleCiphers, published under Apache-2.0 and documenting Windows x86/x64 binaries. It supports a SQLCipher-compatible encryption mode and describes SQLCipher-v4 migration configuration. This may avoid an Enterprise-only JDBC dependency, but is a different SQLite/cipher implementation and is **not approved yet**. It must be tested for actual encryption, wrong-key fail-closed behavior, native packaging, license notices, and compatibility with the project's SQLDelight/Kotlin/Gradle versions. References: https://github.com/toxicity-io/sqlite-mc and https://github.com/sqlcipher/sqlcipher.
+- The existing Windows workflow proves that the current desktop host and JVM tests compile/run on Windows; it does not yet load any encrypted database driver.
+
+### iOS
+
+- Research candidate: `io.github.yet300:sqlcipher-driver:0.1.0`, an Apache-2.0 SQLDelight KMP driver that bundles SQLCipher for Apple targets. Its README explicitly says Android and iOS file formats intentionally diverge, so it must **not** be treated as a portable cross-platform database-file format. It is an early-stage third-party dependency and needs independent review and an iOS simulator encryption test before adoption. Reference: https://github.com/yet300/SQLCipher.
+- The current successful iOS CI job only links the shared framework. It does not prove SQLCipher is linked or that an encrypted database can be opened on iOS.
+
+### Current recommendation
+
+Keep the current Android prototype isolated. First run a minimal, test-only proof for the most promising open-source Windows option and an iOS simulator proof, each with its own throwaway database and random test key. The test must assert a cipher-specific probe (where supported), encrypted file contents, persistence after close/reopen, and rejection of a wrong key. Do not connect either driver to app repositories or replace Room based on dependency documentation alone.
+
 ## Acceptance gates before replacing Room
 
 1. **Key management:** use the existing application key-management flow (or a reviewed platform-specific equivalent); never hard-code, log, commit, or silently regenerate a production key. No plaintext fallback.
