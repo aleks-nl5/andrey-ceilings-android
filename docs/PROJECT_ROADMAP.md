@@ -268,3 +268,14 @@
 - [ ] Перед релізом провести повну перевірку ліцензій усіх транзитивних залежностей і додати потрібні повідомлення в застосунок.
 
 Ліцензійна перевірка є попередньою інженерною оцінкою, а не юридичною консультацією. До проходження платформних encryption gates Room і поточна Android SQLCipher фабрика залишаються без змін.
+
+### Windows/JVM encryption follow-up (2026-10-28)
+
+- [x] Перевірено обмеження офіційного SQLCipher Community Edition: Zetetic не надає публічної підтримки або офіційних інструкцій для складання Community Edition під Windows; такий шлях означає власну відповідальність за native build/JNI/JDBC і його підтримку.
+- [x] Повторно перевірено `toxicity-io/sqlite-mc`: останній опублікований реліз `2.1.0-2.2.3-0` пов'язаний із SQLDelight 2.1.0; поточний проєкт використовує SQLDelight 2.4.1. Репозиторій показує snapshot `2.1.0-2.2.3-1-SNAPSHOT`, але сумісного опублікованого релізу для 2.4.1 не знайдено.
+- [x] Зафіксовано, що рецепт `sqlite-mc` передбачає застосування власного Gradle-плагіна замість поточного SQLDelight-плагіна; тому це не безпечна зміна лише однієї залежності.
+- [ ] Не додавати `sqlite-mc` до app/shared і не знижувати SQLDelight глобально лише заради проби.
+- [ ] Наступний крок: ізольовано перевірити сумісність драйвера/плагіна з поточним toolchain або оцінити окремий Windows/JVM proof із власною збіркою SQLCipher Community Edition. Після цього — автоматизувати cipher probe, перевірку зашифрованого файлу, close/reopen та неправильного ключа.
+- [ ] Паралельно провести iOS simulator proof; чинну Android фабрику SQLCipher, Room і production-репозиторії не змінювати до проходження всіх platform encryption gates.
+
+Підстава: [офіційне обговорення Zetetic щодо Windows Community Edition](https://discuss.zetetic.net/t/sqlcipher-build-on-windows/4576/2), [релізи sqlite-mc](https://github.com/toxicity-io/sqlite-mc/releases), [версія toolchain sqlite-mc](https://github.com/toxicity-io/sqlite-mc/blob/master/gradle.properties). Це інженерна оцінка, не юридична консультація.
