@@ -74,6 +74,7 @@ References:
 
 ### Phase 2 — Shared domain and calculations
 - [ ] Inspect `go-core/core/calculator.go` and current app call sites before porting any rule.
+- [x] Add the first pure common-domain slice: client, project, and room-measurement models plus input validation; keep Room entities and Go geometry/calculation unchanged. Common tests added; latest CI result pending.
 - [ ] Create representative Go/Kotlin input-output fixtures and compare exact business outputs.
 - [ ] Port geometry, price/cost, complexity, options, additional works, and estimate totals to common Kotlin in small slices.
 - [ ] Define rounding, money precision, units, invalid-input behavior, and defaults explicitly.
@@ -121,6 +122,11 @@ However, the PR's Android workflow had been cancelled during APK build and its i
 - CI succeeds for applicable Android, shared, desktop, and iOS targets.
 - Required real-device/platform smoke tests are completed.
 - The owner explicitly approves merging; keep the migration PR Draft until then.
+
+## Progress log — 2026-10-28
+
+- Latest confirmed CI runs `40651441664` (Android APK) and `40651441699` / `40651436609` (iOS simulator framework, Compose Desktop compilation, shared JVM tests) succeeded at commit `8a9d2817`.
+- Added `shared/.../domain/DomainModels.kt` with platform-independent `Client`, `Project`, and `RoomMeasurement` data classes and validation helpers. Added common tests for valid/invalid input. These are parallel domain types only: no Room schema, existing records, Android screens, or Go calculation code was changed. CI for this new slice is pending.
 
 ## Progress log — 2026-10-27
 
