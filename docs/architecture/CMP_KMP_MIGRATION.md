@@ -65,11 +65,11 @@ References:
 - [ ] Verify official compatibility guidance and select the KMP/CMP toolchain before changing Gradle files.
 
 ### Phase 1 — Minimal multiplatform build foundation
-- [x] Add the initial `:shared` Kotlin Multiplatform module with common Compose dependencies and a minimal shared component; the existing Android UI is untouched. Build verification is pending.
-- [x] Add a minimal JVM Compose Desktop host that consumes `SharedFoundationStatus()` from `:shared`; compilation verification is pending after fixing the initial missing Material 3 dependency in the desktop source.
-- [ ] Add iOS framework targets and a runnable iOS host/Xcode project; verify on macOS/Xcode CI.
-- [ ] Add/extend CI jobs for shared tests, Android APK, desktop compilation, and iOS framework. Android/shared tests pass; desktop compile has just been added; iOS CI remains pending.
-- [ ] Confirm the existing Android APK still builds and launches with the original UI.
+- [x] Add the initial `:shared` Kotlin Multiplatform module with common Compose dependencies and a minimal shared component; the existing Android UI is untouched. CI passed on run `40595098996`.
+- [x] Add a minimal JVM Compose Desktop host that consumes `SharedFoundationStatus()` from `:shared`; desktop compilation passed on runs `40595076763` and `40595098996` after fixing the missing Material 3 dependency.
+- [ ] Add iOS framework targets and a runnable iOS host/Xcode project; the iOS framework target is configured in `:shared`, and a new macOS workflow now verifies framework linking. A runnable Xcode/SwiftUI host is still pending.
+- [x] Add/extend CI jobs for shared tests, Android APK, desktop compilation, and iOS framework. Android, shared, and desktop checks passed on run `40595098996`; the new macOS iOS-framework workflow is pending its first result.
+- [x] Confirm the existing Android APK still builds in CI with the original UI unchanged (run `40595098996`); manual launch check for this migration branch remains pending.
 - [ ] Do not mark this phase complete until CI has completed successfully; cancelled jobs do not count.
 
 ### Phase 2 — Shared domain and calculations
@@ -127,6 +127,7 @@ However, the PR's Android workflow had been cancelled during APK build and its i
 - Created `architecture/cmp-kmp-migration-v2` from current `main`.
 - Baseline Android workflow run `40584526142` completed successfully before build-system changes.
 - Added the first `:shared` KMP module with Android, JVM, iOS device/simulator targets, common Compose dependencies, a small shared composable, and an initial common test. Workflow run `40586217184` passed all jobs, including Go tests, shared KMP assemble/JVM compile/common tests, Android unit tests, debug APK, and release APK.
-- Added a minimal `:desktopApp` Compose Desktop host and a CI compile step. The first desktop CI attempt failed because the host imported Material 3 directly without a desktop dependency; changed the host to consume `SharedFoundationStatus()` from `:shared` (commit `d712309d`). The corrected CI run is pending.
-- Updated the Gradle/AGP versions to the documented Kotlin 2.4.21 compatibility range (AGP 9.3.1 / Gradle 9.7.0). The next CI run must validate the new combination; KSP compatibility and iOS/desktop builds are not yet confirmed.
+- Added a minimal `:desktopApp` Compose Desktop host and a CI compile step. The first desktop CI attempt failed because the host imported Material 3 directly without a desktop dependency; changed the host to consume `SharedFoundationStatus()` from `:shared` (commit `d712309d`). Corrected CI runs `40595076763` and `40595098996` succeeded, including desktop compilation.
+- Updated the Gradle/AGP versions to the documented Kotlin 2.4.21 compatibility range (AGP 9.3.1 / Gradle 9.7.0). CI runs `40595076763` and `40595098996` passed with this combination, including KSP-dependent Android build, shared JVM tests, desktop compilation, and APK artifacts. iOS framework linking remains to be confirmed by the new macOS workflow.
+- Added `.github/workflows/cmp-kmp-platforms.yml` on commit `6c61b0e` to compile the iOS simulator framework and desktop host on macOS and run shared JVM tests. Its first run is pending.
 - The existing Android UI has not been replaced or connected to the new shared component.
