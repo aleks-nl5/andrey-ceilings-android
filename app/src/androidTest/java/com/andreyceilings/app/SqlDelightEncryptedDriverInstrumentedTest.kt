@@ -3,14 +3,12 @@ package com.andreyceilings.app
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import app.cash.sqldelight.driver.android.AndroidSqliteDriver
 import com.andreyceilings.shared.db.PrototypeDatabase
 import com.andreyceilings.shared.db.createEncryptedPrototypeDriver
 import java.io.File
 import kotlin.random.Random
 import org.junit.After
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Before
 import org.junit.Test
