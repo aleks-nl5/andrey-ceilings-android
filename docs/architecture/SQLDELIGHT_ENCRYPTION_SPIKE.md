@@ -124,3 +124,12 @@ A fresh review of the upstream README and Maven Central metadata found a publish
 - The upstream project documents sample checks for CRUD, encrypted-at-rest content, and wrong-key rejection. Our proof must independently run on a clean Windows x64 GitHub Actions runner and additionally verify close/reopen persistence, fail-closed wrong-key behavior, and that a wrong key cannot create or overwrite a plaintext database.
 
 **Next action:** create/run a disposable Windows/JVM proof that tests the published artifact independently of the app dependency graph, then separately test whether the JDBC driver can back SQLDelight 2.4.1 without changing the shared module's Kotlin/SQLDelight versions. Until both checks pass, keep the candidate research-only.
+
+### Windows/JVM proof of concept added — 2026-10-28
+
+- Added a disposable Gradle project at `tools/sqlcipher-windows-poc`. It is deliberately not included in the root Gradle settings and does not alter `:shared`, `:desktopApp`, Android, Room, Go/AAR, or production repositories.
+- The standalone proof pins SQLCipherMultiplatform `0.2.13` and Kotlin Gradle plugin `2.3.20`, matching the dependency's published Kotlin baseline rather than changing the app's Kotlin `2.4.21` toolchain.
+- The proof checks a SQLCipher-specific `PRAGMA cipher_version`, CRUD, absence of the plaintext SQLite file header, persistence after close/reopen, rejection of a wrong key, and unchanged database bytes after the wrong-key attempt. It uses a throwaway database and a generated test-only key.
+- The Windows CI workflow now runs `gradle --no-daemon -p tools/sqlcipher-windows-poc verifySqlCipher` on a clean Windows runner.
+- **Status: awaiting CI execution.** The repository change itself is not proof that the library works on Windows. If this test passes, the next gate is a separate SQLDelight `2.4.1` JDBC-driver compatibility proof; this isolated test uses the library's documented API and does not yet establish SQLDelight integration.
+- Do not treat this as an approved production dependency until CI passes, SQLDelight compatibility is verified, and the artifact/native payload licensing discrepancy is resolved.
