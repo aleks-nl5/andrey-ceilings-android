@@ -63,7 +63,7 @@ sqldelight {
         create("PrototypeDatabase") {
             packageName.set("com.andreyceilings.shared.db")
             // The candidate driver bundles SQLCipher; do not link plain system SQLite too.
-            linkSqlite.set(false)
+            linkSqlite = false
         }
     }
 }
