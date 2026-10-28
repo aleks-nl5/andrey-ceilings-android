@@ -39,6 +39,12 @@ kotlin {
             implementation("net.zetetic:sqlcipher-android:4.19.1")
         }
 
+        jvmMain.dependencies {
+            implementation("app.cash.sqldelight:sqlite-driver:2.4.1")
+            implementation("io.github.s0d3s:sqlcipher-multiplatform-jdbc-core:0.2.13")
+            runtimeOnly("io.github.s0d3s:sqlcipher-multiplatform-jdbc-windows-x64:0.2.13")
+        }
+
         jvmTest.dependencies {
             implementation("app.cash.sqldelight:sqlite-driver:2.4.1")
         }
