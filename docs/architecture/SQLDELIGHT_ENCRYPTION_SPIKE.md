@@ -152,3 +152,13 @@ A fresh review of the upstream README and Maven Central metadata found a publish
 - The latest successful CMP/KMP workflow included this iOS simulator test step.
 - **Remaining iOS gaps:** no encrypted-file header/content assertion and no file-digest check proving a wrong-key attempt leaves the database unchanged; no physical-device validation. The proof uses synthetic keys and disposable database names only.
 - Therefore iOS is no longer “untested,” but its proof remains partial and is not production approval.
+
+
+### SQLDelight 2.4.1 + Windows SQLCipher JDBC integration POC — added 2026-10-28
+
+- Added a second standalone Gradle project at `tools/sqlcipher-sqldelight-jdbc-poc`. It is intentionally not included in root Gradle settings and uses Kotlin Gradle plugin **2.4.21**, SQLDelight JDBC driver/runtime **2.4.1**, and SQLCipherMultiplatform JDBC core + Windows x64 native artifact **0.2.13**.
+- Added a Windows CI step `verifySqlCipherSqlDelight` to exercise the SQLDelight `JdbcSqliteDriver` with the candidate `jdbc:sqlcipher:` driver.
+- The disposable test checks `PRAGMA cipher_version`, table create/insert/read, the non-plaintext SQLite header, close/reopen persistence, wrong-key rejection, and unchanged database SHA-256 after the wrong-key attempt.
+- This is specifically designed to test the candidate driver with the project's current Kotlin/SQLDelight versions without changing the app or `:shared` dependency graph.
+- **Status: awaiting CI result.** The test code and workflow step are committed, but compatibility is not confirmed until a clean Windows x64 runner completes the new step successfully. If it fails, keep the candidate isolated and use the logs to identify API/toolchain/native-packaging incompatibility.
+- License note remains open: published Maven metadata identifies MIT, while upstream README and bundled SQLCipher materials describe different license terms. Verify exact artifact and native payload notices before any production adoption.
