@@ -3,10 +3,6 @@ plugins {
     application
 }
 
-repositories {
-    mavenCentral()
-}
-
 dependencies {
     implementation("io.github.s0d3s:sqlcipher-multiplatform:0.2.13")
 }
