@@ -76,7 +76,7 @@ class SqlCipherIosProofTest {
     }
 
     @Test
-    fun wrongKeyFailsClosed() = runBlocking {
+    fun wrongKeyFailsClosed(): Unit = runBlocking {
         val name = freshName()
         try {
             factory.create(TestSchema, config(name, 21)).close()
@@ -86,6 +86,7 @@ class SqlCipherIosProofTest {
         } finally {
             factory.deleteDatabase(name)
         }
+        Unit
     }
 
     private inline fun SqlDriver.use(block: (SqlDriver) -> Unit) {
