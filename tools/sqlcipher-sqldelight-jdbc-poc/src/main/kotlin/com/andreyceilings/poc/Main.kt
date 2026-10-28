@@ -21,6 +21,7 @@ fun main() {
     try {
         val props = Properties().apply {
             put(SqlCipherJdbcProperties.KEY_BYTES, key.copyOf())
+            put(SqlCipherJdbcProperties.SCRUB_KEY_MATERIAL_AFTER_CONNECT, false)
         }
 
         JdbcSqliteDriver("jdbc:sqlcipher:${dbFile.absolutePath}", props).use { driver ->
@@ -57,6 +58,7 @@ fun main() {
         try {
             val wrongProps = Properties().apply {
                 put(SqlCipherJdbcProperties.KEY_BYTES, wrongKey)
+                put(SqlCipherJdbcProperties.SCRUB_KEY_MATERIAL_AFTER_CONNECT, false)
             }
             JdbcSqliteDriver("jdbc:sqlcipher:${dbFile.absolutePath}", wrongProps).use { driver ->
                 driver.executeQuery(
@@ -76,7 +78,10 @@ fun main() {
 
         JdbcSqliteDriver(
             "jdbc:sqlcipher:${dbFile.absolutePath}",
-            Properties().apply { put(SqlCipherJdbcProperties.KEY_BYTES, key.copyOf()) },
+            Properties().apply {
+                put(SqlCipherJdbcProperties.KEY_BYTES, key.copyOf())
+                put(SqlCipherJdbcProperties.SCRUB_KEY_MATERIAL_AFTER_CONNECT, false)
+            },
         ).use { driver ->
             val stored = driver.executeQuery(
                 null,
