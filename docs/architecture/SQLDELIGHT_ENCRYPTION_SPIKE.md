@@ -48,6 +48,14 @@ The official Zetetic documentation lists a SQLCipher-enabled JDBC driver for Jav
 - The driver is an early-stage third-party project. Its README says Android and iOS database file formats intentionally diverge; do not assume encrypted database-file portability.
 - Apple link configuration needs special care: prevent linking plain system SQLite alongside the bundled SQLCipher exporter (the driver's README calls out SQLDelight's `linkSqlite.set(false)`) and verify the final linked binary and runtime cipher probe.
 
+### Follow-up verification — Windows Community Edition build and version compatibility
+
+- Zetetic's own support forum confirms that it does **not** provide Windows Community Edition build instructions or public support for Windows compilation; vendor-supported Windows packages are the commercial offerings. A Community Edition build remains technically possible, but would be our own maintained build and release responsibility. Do not treat the existence of an upstream SQLCipher source tree or a third-party Windows build as vendor-supported packaging. Reference: https://discuss.zetetic.net/t/sqlcipher-build-on-windows/4576/2
+- The public `toxicity-io/sqlite-mc` release list currently tops out at `2.1.0-2.2.3-0` (2025-08-19), pairing SQLDelight 2.1.0 with SQLite3MultipleCiphers 2.2.3. The repository's current development version is `2.1.0-2.2.3-1-SNAPSHOT`; it still targets SQLDelight 2.1.0, not this project's SQLDelight 2.4.1. No published compatible release was found in this check. References: https://github.com/toxicity-io/sqlite-mc/releases and https://github.com/toxicity-io/sqlite-mc/blob/master/gradle.properties
+- Its README's recommended integration applies the `sqlite-mc` Gradle plugin and says to remove the existing SQLDelight plugin/driver dependencies. Applying that recipe directly would therefore change the current shared module's SQLDelight toolchain; it is not a safe drop-in dependency-only change.
+- **Decision for this iteration:** do not add `sqlite-mc` to the app or shared module yet, and do not downgrade SQLDelight globally just to test it. The next technical step is a disposable proof-of-concept isolated from the app: either (a) verify a separately versioned driver/API that can coexist with SQLDelight 2.4.1, or (b) use a dedicated Windows/JVM test module/branch to evaluate the plugin's required version changes and native packaging. Keep the production dependency graph unchanged until that proof passes.
+- Official SQLCipher Community Edition on Windows remains an alternative only if we are willing to own and maintain the Windows native build/JNI/JDBC integration. The official JDBC driver is the supported turnkey route, but is Enterprise/commercial.
+
 ### Windows candidate: `toxicity-io/sqlite-mc`
 
 - The project declares **Apache-2.0** for its own driver/plugin. It uses SQLite3MultipleCiphers, not Zetetic's SQLCipher implementation, so “SQLCipher-compatible” does not mean byte-for-byte or behaviorally identical in every setting.
@@ -63,7 +71,7 @@ References:
 
 ### Current recommendation
 
-Keep the current Android prototype isolated. First run a minimal, test-only proof for the most promising open-source Windows option and an iOS simulator proof, each with its own throwaway database and random test key. The test must assert a cipher-specific probe (where supported), encrypted file contents, persistence after close/reopen, and rejection of a wrong key. Do not connect either driver to app repositories or replace Room based on dependency documentation alone.
+Keep the current Android prototype isolated. For Windows, first resolve the SQLDelight 2.4.1 compatibility blocker for sqlite-mc or explicitly evaluate the cost of maintaining a custom SQLCipher Community Edition native build. In parallel, run an iOS simulator proof. Use throwaway databases and random test keys. The test must assert a cipher-specific probe (where supported), encrypted file contents, persistence after close/reopen, and rejection of a wrong key. Do not connect either driver to app repositories or replace Room based on dependency documentation alone.
 
 ## Acceptance gates before replacing Room
 
