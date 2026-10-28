@@ -47,11 +47,6 @@ kotlin {
             implementation(kotlin("test"))
         }
 
-        iosMain.dependencies {
-            // Isolated iOS encryption proof; not used by production repositories.
-            implementation("io.github.yet300:sqlcipher-driver:0.1.0")
-        }
-
         iosTest.dependencies {
             implementation(kotlin("test"))
         }
@@ -62,8 +57,6 @@ sqldelight {
     databases {
         create("PrototypeDatabase") {
             packageName.set("com.andreyceilings.shared.db")
-            // The candidate driver bundles SQLCipher; do not link plain system SQLite too.
-            linkSqlite = false
         }
     }
 }
