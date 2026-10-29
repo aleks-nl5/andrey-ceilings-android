@@ -35,6 +35,7 @@ func CalculateJSON(input string) string {
 	geometry := core.CalculateRoomGeometry(req.Geometry)
 	req.Cost.Area = geometry.Area
 	req.Cost.Perimeter = geometry.Perimeter
+	req.Cost.PrecisionStepMeters = req.Geometry.PrecisionStepMeters
 	return marshal(estimateResponse{
 		Geometry: geometry,
 		Cost:     core.CalculateCeilingCost(req.Cost, prices),
