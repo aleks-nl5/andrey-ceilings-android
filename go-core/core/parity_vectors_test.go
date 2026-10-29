@@ -1,6 +1,9 @@
 package core
 
-import "testing"
+import (
+    "math"
+    "testing"
+)
 
 // These reference vectors are kept in lockstep with KmpCeilingCalculatorParityTest.
 // Go remains the production engine until the platform and UI parity gates pass.
@@ -83,4 +86,28 @@ func TestKmpMigrationCostReferenceVectors(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestSelectedMeasurementPrecision(t *testing.T) {
+    input := GeometryInput{Shape: Rectangle, Length: 1.005, Width: 1.005}
+    centimetre := input
+    centimetre.PrecisionStepMeters = .01
+    gotCm := CalculateRoomGeometry(centimetre)
+    if math.Abs(gotCm.Area-1.0201)>1e-8 || math.Abs(gotCm.Perimeter-4.04)>1e-8 {
+        t.Fatalf("1 cm precision: %+v",gotCm)
+    }
+
+    millimetres := input
+    millimetres.PrecisionStepMeters = .005
+    gotMm := CalculateRoomGeometry(millimetres)
+    if math.Abs(gotMm.Area-1.010025)>1e-8 || math.Abs(gotMm.Perimeter-4.02)>1e-8 {
+        t.Fatalf("5 mm precision: %+v",gotMm)
+    }
+
+    coarse := input
+    coarse.PrecisionStepMeters = .1
+    gotCoarse := CalculateRoomGeometry(coarse)
+    if math.Abs(gotCoarse.Area-1.0)>1e-8 || math.Abs(gotCoarse.Perimeter-4.0)>1e-8 {
+        t.Fatalf("10 cm precision: %+v",gotCoarse)
+    }
 }
