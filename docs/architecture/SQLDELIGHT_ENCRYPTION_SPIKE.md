@@ -1,5 +1,36 @@
 # SQLDelight encryption feasibility spike
 
+
+## Windows SQLCipher JDBC hardening — 2026-10-29 (CI validation pending)
+
+**Scope:** PR #22, `architecture/cmp-kmp-migration-v2`. The encrypted SQLDelight implementation is still experimental. Android production Room, Go/AAR and `main` are untouched.
+
+### Root cause established from SQLDelight 2.4.1 source
+
+`JdbcSqliteDriver` selects a `ThreadedConnectionManager` for file URLs and creates a physical JDBC connection as needed. Outside transactions it closes that connection after each statement. For `jdbc:sqlcipher:` it also uses the SQLite-specific URL parsing path, which was designed for `jdbc:sqlite:` URLs. Enabling `PRAGMA foreign_keys = ON` through `SqlDriver.execute` once at factory startup therefore configures a short-lived physical connection; the next statement gets another connection with `foreign_keys=0`. Repeating the PRAGMA in test setup did not fix this. This explains the cascade assertion failure and later factory-level `IllegalStateException` failures.
+
+Reference (exact version): https://github.com/sqldelight/sqldelight/blob/2.4.1/drivers/sqlite-driver/src/main/kotlin/app/cash/sqldelight/driver/jdbc/sqlite/JdbcSqliteDriver.kt
+
+### Current Windows adaptation for CI verification
+
+- `SqlCipherWindowsDriverFactory` now returns an explicit `JdbcDriver` implementation for `jdbc:sqlcipher:` rather than reusing the `jdbc:sqlite:`-specific connection manager.
+- Each physical JDBC connection is opened with its own SQLCipher key properties and configured with `PRAGMA foreign_keys = ON` **before** SQLDelight receives it. That same connection verifies the pragma, `PRAGMA cipher_version`, and reads `sqlite_master` to detect wrong keys/corruption.
+- Outside transactions, connections close after their statement. Within a synchronous SQLDelight transaction, `JdbcDriver` pins the physical connection to the transaction thread and uses explicit SQLite `BEGIN TRANSACTION` / `COMMIT` / `ROLLBACK`. No connection pooling has been introduced yet.
+- SQLDelight query-listener registration/notification is preserved. The driver owns a copy of the supplied key, clears the transient connection copy after initialization, and clears the owned copy on `close()` or failed opening. The provider currently requires `SCRUB_KEY_MATERIAL_AFTER_CONNECT=false`; its behavior and all native key copies need security review before production.
+- Encrypted CRUD integration tests now check foreign-key enforcement **without enabling it themselves**. Additional Windows tests cover per-connection PRAGMA state, rollback, commit, close/reopen, and existing encrypted-file and wrong-key guarantees.
+- These changes are intended for the next Windows CI run; do not mark them verified until the Windows job actually passes.
+
+### Future work and risks
+
+1. **Performance:** Opening and key-deriving a new SQLCipher JDBC connection for every statement is expensive. Once correctness is proven, benchmark real workloads and evaluate a properly initialized connection pool. Every physical connection must enforce foreign keys; do not regress to setting PRAGMAs on an arbitrary one-time connection.
+2. **Thread confinement:** JDBC transactions are thread-local. Do not suspend or change threads inside a synchronous SQLDelight transaction. If introducing `generateAsync` or coroutines, enforce a single dedicated transaction thread/dispatcher and verify rollback/commit across suspension points. Related upstream report: https://github.com/sqldelight/sqldelight/issues/6303.
+3. **Concurrency:** Add parallel-reader/single-writer, busy-timeout, locking, file-handle leak, lifecycle and process-restart tests. Do not enable WAL or pooling merely as an optimization without testing encrypted sidecar files and backups.
+4. **Schema integrity:** Today only `estimates.projectId` declares a foreign key with `ON DELETE CASCADE`. `projects.clientId` and `room_measurements.projectId` are not declared foreign keys. Decide desired delete/restrict/null behavior and add SQLDelight migrations before production. Do not silently change the Room-mirroring schema.
+5. **Release and security:** Implement real Windows key storage/rotation, explicit corruption-vs-wrong-key errors, atomic backups and migration/version tests; audit third-party JDBC/native DLL licenses and Windows x64 installer packaging (including DLL availability and code signing).
+6. **Cross-platform compatibility:** Android/iOS/Windows SQLCipher drivers must prove actual file-format and cipher-parameter compatibility before claiming portable encrypted backups. A logical export/import format may be safer.
+
+---
+
 **Status (2026-10-28):** Android emulator encryption test passes in CI. SQLDelight is still a candidate, not yet approved as the production database. Do not connect this prototype to production repositories or replace Room until the platform gates below are satisfied.
 
 ## Current verified state
