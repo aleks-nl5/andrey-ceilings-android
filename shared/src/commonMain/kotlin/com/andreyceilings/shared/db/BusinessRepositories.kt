@@ -1,5 +1,9 @@
 package com.andreyceilings.shared.db
 
+import app.cash.sqldelight.coroutines.asFlow
+import app.cash.sqldelight.coroutines.mapToList
+import kotlinx.coroutines.Dispatchers
+
 /**
  * Shared business-data access, independent of platform SQLCipher drivers.
  * Timestamps are supplied by callers to keep common code deterministic.
@@ -9,6 +13,7 @@ class ClientRepository(private val database: PrototypeDatabase) {
 
     fun all() = queries.selectClients().executeAsList()
     fun observeQuery() = queries.selectClients()
+    fun observeAll() = queries.selectClients().asFlow().mapToList(Dispatchers.Default)
     fun count() = queries.countClients().executeAsOne()
     fun findByName(name: String) = queries.findClientByName(name).executeAsOneOrNull()
     fun createReturningId(name: String, phone: String = "", email: String = "", notes: String = "", createdAt: Long): Long =
@@ -28,6 +33,7 @@ class ProjectRepository(private val database: PrototypeDatabase) {
 
     fun all() = queries.selectProjects().executeAsList()
     fun observeQuery() = queries.selectProjects()
+    fun observeAll() = queries.selectProjects().asFlow().mapToList(Dispatchers.Default)
     fun count() = queries.countProjects().executeAsOne()
     fun updateStatus(id: Long, status: String, updatedAt: Long) =
         queries.updateProjectStatus(status, updatedAt, id)
@@ -57,8 +63,10 @@ class MeasurementRepository(private val database: PrototypeDatabase) {
 
     fun forProject(projectId: Long) = queries.selectMeasurementsForProject(projectId).executeAsList()
     fun forProjectQuery(projectId: Long) = queries.selectMeasurementsForProject(projectId)
+    fun observeForProject(projectId: Long) = queries.selectMeasurementsForProject(projectId).asFlow().mapToList(Dispatchers.Default)
     fun all() = queries.selectAllMeasurements().executeAsList()
     fun observeQuery() = queries.selectAllMeasurements()
+    fun observeAll() = queries.selectAllMeasurements().asFlow().mapToList(Dispatchers.Default)
     fun count() = queries.countMeasurements().executeAsOne()
     fun createReturningId(
         projectId: Long, name: String, shape: String = "rectangle",
@@ -88,6 +96,7 @@ class PriceRepository(private val database: PrototypeDatabase) {
 
     fun all() = queries.selectPriceItems().executeAsList()
     fun observeQuery() = queries.selectPriceItems()
+    fun observeAll() = queries.selectPriceItems().asFlow().mapToList(Dispatchers.Default)
     fun count() = queries.countPriceItems().executeAsOne()
     fun upsertReturningId(
         id: Long = 0, code: String, title: String, category: String,
@@ -106,8 +115,10 @@ class EstimateRepository(private val database: PrototypeDatabase) {
 
     fun forProject(projectId: Long) = queries.selectEstimatesForProject(projectId).executeAsList()
     fun forProjectQuery(projectId: Long) = queries.selectEstimatesForProject(projectId)
+    fun observeForProject(projectId: Long) = queries.selectEstimatesForProject(projectId).asFlow().mapToList(Dispatchers.Default)
     fun all() = queries.selectAllEstimates().executeAsList()
     fun observeQuery() = queries.selectAllEstimates()
+    fun observeAll() = queries.selectAllEstimates().asFlow().mapToList(Dispatchers.Default)
     fun count() = queries.countEstimates().executeAsOne()
     fun createReturningId(
         projectId: Long, name: String, material: String, profileType: String, complexity: String,
