@@ -1,5 +1,36 @@
 # Room → SQLDelight cutover gates (PR #22)
 
+
+### 2026-10-29: Real-device first-launch JNI failure and regression coverage
+
+An upgrade installed over an existing encrypted Room-v2 database crashed during
+`CeilingsDatabase.get() → LegacyRoomDatabaseImporter.readSnapshot() →
+SupportOpenHelperFactory.readableDatabase` with
+`java.lang.UnsatisfiedLinkError: no implementation for SQLiteConnection.nativeOpen`.
+The legacy importer opened Zetetic's `SupportOpenHelperFactory` **before**
+`createEncryptedPrototypeDriver()` (which loaded `libsqlcipher`). The old
+Room bootstrap had called `System.loadLibrary("sqlcipher")` but this initialization
+was missing in the new SQLDelight-first startup path.
+
+**Fix:** explicitly load `System.loadLibrary("sqlcipher")` in the legacy
+importer *before* constructing/opening the SQLCipher helper. The legacy file
+and Android Keystore passphrase are not deleted or replaced if initialization
+fails. This is a startup-order bug, not evidence of lost records.
+
+**Why original CI missed it:** the legacy migration instrumentation test set up
+its old file with `System.loadLibrary("sqlcipher")` earlier in the same Android
+test process, masking the missing initialization. A new **debug-only,
+non-exported ContentProvider in a dedicated Android process** tests the
+migration's first native call with no prior SQLCipher JNI load; the test still
+checks the imported IDs and preservation of the original encrypted file.
+The provider accepts only disposable test database filenames and is not
+included in Release APKs.
+
+**Verification gate:** wait for Android emulator run (including this new cold
+process test) and Windows/iOS checks on the final commit. Then install the
+new Android APK over the old version on the physical device *without clearing
+app data*; ensure all five lists and the backup flow remain usable.
+
 ## Current implementation — 2026-10-29
 
 **Android runtime cutover implemented in PR #22, under CI verification.** The older implementation checklists below are retained for historical context and follow-up requirements. The live Android application now uses `:shared` SQLDelight via UI-compatible Kotlin data adapters; Room runtime and its KSP compiler were removed from `app/build.gradle.kts`. The Windows/JVM and iOS simulator tests use the **same common SQLDelight schema**, with platform SQLCipher drivers. No online cross-device synchronization is provided.
