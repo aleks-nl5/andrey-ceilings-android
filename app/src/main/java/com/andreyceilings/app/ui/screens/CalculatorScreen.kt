@@ -166,7 +166,7 @@ internal fun CalculatorScreen(
     if (estimate != null) {
         Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) {
             Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("Результат · Go", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Text("Результат · Kotlin KMP", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                 Text("Площа: ${formatMeasuredArea(estimate.area, measurementPrecision)} м²")
                 Text("Периметр: ${formatMeasuredLength(estimate.perimeter, measurementPrecision)} м")
                 HorizontalDivider()
@@ -180,9 +180,9 @@ internal fun CalculatorScreen(
     } else {
         Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text("Go-рушій: помилка", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                Text("Розрахунок не виконано. Kotlin не підміняє Go.")
-                Text(calculationError ?: "Go не повернув результат.", style = MaterialTheme.typography.bodySmall)
+                Text("KMP-рушій: помилка", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Text("Розрахунок не виконано. Перевірте введені дані.")
+                Text(calculationError ?: "KMP не повернув результат.", style = MaterialTheme.typography.bodySmall)
             }
         }
     }
@@ -228,7 +228,7 @@ internal fun CalculatorScreen(
     )
     Text(if (priceItemsAvailable) "Ціни матеріалу й профілю синхронізуються із зашифрованим прайс-листом. Зміни в прайсі впливають на нові розрахунки." else "Прайс-лист ще не завантажено; використовуються тимчасові значення.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     Text(
-        if (estimate != null) "Рушій розрахунку: Go · працює" else "Рушій розрахунку: Go · помилка",
+        if (estimate != null) "Рушій розрахунку: Kotlin KMP · працює" else "Рушій розрахунку: Kotlin KMP · помилка",
         style = MaterialTheme.typography.labelSmall,
         color = if (estimate != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
     )
