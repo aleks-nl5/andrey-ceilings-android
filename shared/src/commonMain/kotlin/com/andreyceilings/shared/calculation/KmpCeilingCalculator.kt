@@ -183,10 +183,10 @@ object KmpCeilingCalculator {
         val prices = if (priceList.canvasPrices.isEmpty()) defaultPriceList() else priceList
         val step = input.precisionStepMeters
         require(step == null || MeasurementPrecision.fromStep(step) != null) { "Unsupported measurement precision" }
-        fun linear(value: Double): Double = measuredValue(nonnegative(value), step)
+        fun measured(value: Double): Double = measuredValue(value, step)
+        fun linear(value: Double): Double = measured(nonnegative(value))
         fun complexityLength(value: Double): Double =
             if (step == null) goRound(value * 10.0) / 10.0 else measured(value)
-        fun measured(value: Double): Double = measuredValue(value, step)
         val area = nonnegative(input.area)
         val perimeter = nonnegative(input.perimeter)
         val material = if (input.materialType in prices.canvasPrices) input.materialType else "pvc_matte"
