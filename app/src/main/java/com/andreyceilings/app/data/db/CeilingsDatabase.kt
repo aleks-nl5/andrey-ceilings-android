@@ -112,13 +112,19 @@ internal class CeilingsDatabase private constructor(
 
         @Volatile private var INSTANCE: CeilingsDatabase? = null
 
-        fun get(context: Context): CeilingsDatabase = synchronized(this) {
-            INSTANCE ?: build(context.applicationContext).also { INSTANCE = it }
+        fun get(context: Context): CeilingsDatabase = ProductionDatabaseGate.read {
+            synchronized(this) {
+                INSTANCE ?: build(context.applicationContext).also { INSTANCE = it }
+            }
         }
 
-        /** Serialize a restore with all singleton opens and resets. */
+        /**
+         * Quiesce the production driver before replacing DB/WAL/SHM files.
+         * Acquire the gate BEFORE the singleton monitor in every path, so
+         * readers cannot deadlock an import while opening the database.
+         */
         internal fun <T> withExclusiveRestoreLock(action: () -> T): T =
-            synchronized(this) { action() }
+            ProductionDatabaseGate.restore { synchronized(this) { action() } }
 
         /**
          * Only for instrumentation tests. Does not open the user's live database.
@@ -133,9 +139,11 @@ internal class CeilingsDatabase private constructor(
             return CeilingsDatabase(driver, context.getDatabasePath(filename).absolutePath)
         }
 
-        fun closeAndReset() = synchronized(this) {
-            INSTANCE?.close()
-            INSTANCE = null
+        fun closeAndReset() = ProductionDatabaseGate.restore {
+            synchronized(this) {
+                INSTANCE?.close()
+                INSTANCE = null
+            }
         }
 
         private fun build(context: Context): CeilingsDatabase {
@@ -148,7 +156,9 @@ internal class CeilingsDatabase private constructor(
             try {
                 // No migration of disposable test data in PR #22.
                 // A new filename creates a clean encrypted database, leaving earlier files intact.
-                val driver = createEncryptedPrototypeDriver(context, key, DATABASE_NAME)
+                val driver = ProductionDatabaseGate.wrap(
+                    createEncryptedPrototypeDriver(context, key, DATABASE_NAME)
+                )
                 return try {
                     val result = CeilingsDatabase(driver, live.absolutePath)
                     // Force an encrypted-schema read before returning to the UI.
