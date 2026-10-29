@@ -203,4 +203,49 @@ class SqlCipherRestoreManagerTest {
             }
         }
     }
+    @Test fun wrongPortablePasswordRejectsWithoutChangingDatabaseOrKey() {
+        val context: Context = ApplicationProvider.getApplicationContext()
+        val current = CeilingsDatabase.get(context)
+        val keyBefore = DatabaseKeyManager.getOrCreatePassphrase(context)
+        val projectsBefore = ProjectRepository(current.database).all().map { it.title }.sorted()
+        val validPassword = "portable backup password 2026".toCharArray()
+        val wrongPassword = "different backup password 2026".toCharArray()
+        try {
+            val backup = PortableBackupManager.create(context, current, validPassword)
+            try {
+                val rejected = runCatching {
+                    PortableBackupManager.validate(context, backup, wrongPassword)
+                }
+                assertTrue("Wrong portable password accepted", rejected.isFailure)
+
+                val stillOpen = CeilingsDatabase.get(context)
+                assertTrue("Live DB corrupted by wrong password", stillOpen.checkIntegrity())
+                assertEquals(projectsBefore,
+                    ProjectRepository(stillOpen.database).all().map { it.title }.sorted())
+                val keyAfter = DatabaseKeyManager.getOrCreatePassphrase(context)
+                try {
+                    assertArrayEquals("Live SQLCipher key changed", keyBefore, keyAfter)
+                } finally {
+                    keyAfter.fill(0)
+                }
+
+                // The rejected password must not poison the valid archive.
+                val verified = PortableBackupManager.validate(context, backup, validPassword)
+                try {
+                    assertArrayEquals(keyBefore, verified.passphrase)
+                    assertTrue(verified.database.isNotEmpty())
+                } finally {
+                    verified.database.fill(0)
+                    verified.passphrase.fill(0)
+                }
+            } finally {
+                backup.fill(0)
+            }
+        } finally {
+            keyBefore.fill(0)
+            validPassword.fill(Char.MIN_VALUE)
+            wrongPassword.fill(Char.MIN_VALUE)
+        }
+    }
+
 }
