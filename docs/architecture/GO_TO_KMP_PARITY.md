@@ -33,6 +33,16 @@
 - [ ] Перевірити всі сценарії на реальному телефоні: 10 см, 1 см, 5 мм, 1 мм, заміри, новий кошторис, повторне відкриття, PDF, збереження даних.
 - [ ] Повне паралельне порівняння Go/KMP з реальними прайсами; **Go/AAR не видаляти** до підтвердження.
 
+
+## Результати CI та додаткові тести (29.10.2026)
+
+- [x] На коді PR #23 із точністю, канонічними ID, Go/KMP parity і початковими Android tests пройшли: [Android APK + Go + unit + instrumentation 40891419341](https://github.com/aleks-nl5/andrey-ceilings-android/actions/runs/40891419341), [Windows/iOS Simulator 40891419346](https://github.com/aleks-nl5/andrey-ceilings-android/actions/runs/40891419346), HEAD `33792473` (до наступних доповнень документації/тесту).
+- [x] Власник повідомив: APK працює на фізичному Android. **Це підтвердження запуску, а не повної перевірки кожного кроку точності/розрахунку/PDF.**
+- [x] Додано `EstimateSnapshotPersistenceInstrumentedTest`: справжній Android SQLCipher/SQLDelight, збереження деталізації, редагування ціни й назви, видалення ціни, дублювання кошторису, повторне відкриття БД; перевіряє, що вже збережені коди, рядки та загальна сума не змінюються. **Цей новий тест ще вимагає успішного CI на своєму коміті.**
+- [ ] Перевірити останній HEAD із новим persistence-тестом на Android instrumentation і KMP/Windows/iOS; окремо smoke перевірку на реальному Android, усі кроки 10 см / 1 см / 5 мм / 1 мм, розрахунок, дублювання, PDF.
+
+**Окремі майбутні задачі (не в PR #23):** [#24 — нові версії/ручний перерахунок](https://github.com/aleks-nl5/andrey-ceilings-android/issues/24), [#25 — глобально розрізнювані номери](https://github.com/aleks-nl5/andrey-ceilings-android/issues/25), [#26 — безпечний SQLCipher WAL](https://github.com/aleks-nl5/andrey-ceilings-android/issues/26). Android режим БД зараз `DELETE`, власник підтвердив через `PRAGMA journal_mode`; **не змінюємо його в PR #23**.
+
 ## Наступні етапи
 
 Після завершення PR #23 — узгодити runtime cutover, перенести робочі екрани в CMP (першим прайс), далі Windows/iOS host і platform adapters. Мережеву синхронізацію не реалізуємо зараз.
