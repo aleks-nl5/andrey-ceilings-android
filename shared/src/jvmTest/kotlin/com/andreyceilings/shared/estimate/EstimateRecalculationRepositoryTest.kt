@@ -59,4 +59,71 @@ class EstimateRecalculationRepositoryTest {
             assertEquals(1, history.revisions(created.seriesUuid).size)
         }
     }
+
+    @Test fun previewTokenRejectsStalePriceAndSourceStateWithoutWritingAnything() {
+        JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).use { driver ->
+            PrototypeDatabase.Schema.create(driver)
+            driver.execute(null, "PRAGMA foreign_keys = ON", 0)
+            val db = PrototypeDatabase(driver)
+            val project = ProjectRepository(db).createReturningId(
+                clientId = null, title = "Token project", createdAt = 100L
+            )
+            val prices = PriceRepository(db)
+            val item = prices.upsertReturningId(
+                code = "canvas.test", title = "Original", category = "canvas",
+                unit = "m2", price = 50.0, updatedAt = 100L
+            )
+            val history = ImmutableEstimateRepository(db)
+            val draft = ImmutableEstimateDraft(
+                sourceMeasurementJson = """{"area":2}""",
+                detailsJson = """{"measurementPrecisionMeters":0.01}""",
+                measurementPrecisionMeters = 0.01,
+                calculationRuleVersion = "kmp-v1",
+                totalCost = 100.0,
+                lines = listOf(ImmutableEstimateLine(
+                    stableCode = "canvas.test", title = "Original",
+                    unit = "m2", quantity = 2.0, unitPrice = 50.0, lineTotal = 100.0
+                ))
+            )
+            val series = history.createSeries(
+                projectId = project, year = 2026, createdAt = 200L, firstRevision = draft
+            )
+            val recalculation = EstimateRecalculationRepository(db)
+            val preview = recalculation.previewLatest(series.seriesUuid)
+            assertTrue(preview.canConfirm)
+            assertTrue(preview.priceListStateToken.isNotBlank())
+            assertTrue(recalculation.isPreviewCurrent(series.seriesUuid, preview))
+
+            // Same updatedAt but different values must still invalidate it.
+            prices.upsertReturningId(
+                id = item, code = "canvas.test", title = "Renamed",
+                category = "canvas", unit = "m2", price = 51.0, updatedAt = 100L
+            )
+            assertFalse(recalculation.isPreviewCurrent(series.seriesUuid, preview))
+            val renamed = recalculation.previewLatest(series.seriesUuid)
+            assertTrue(recalculation.isPreviewCurrent(series.seriesUuid, renamed))
+
+            // An unrelated new price entry also invalidates the catalog token.
+            val unrelated = prices.upsertReturningId(
+                code = "lights.test", title = "Light", category = "lights",
+                unit = "pcs", price = 25.0, updatedAt = 100L
+            )
+            assertFalse(recalculation.isPreviewCurrent(series.seriesUuid, renamed))
+            val withExtra = recalculation.previewLatest(series.seriesUuid)
+            prices.delete(unrelated)
+            assertFalse(recalculation.isPreviewCurrent(series.seriesUuid, withExtra))
+
+            // Source revision is checked separately from price-list state.
+            val current = recalculation.previewLatest(series.seriesUuid)
+            assertTrue(recalculation.isPreviewCurrent(series.seriesUuid, current))
+            history.appendRevision(
+                seriesUuid = series.seriesUuid,
+                expectedLatestRevisionUuid = series.initialRevisionUuid,
+                createdAt = 300L,
+                snapshot = draft
+            )
+            assertFalse(recalculation.isPreviewCurrent(series.seriesUuid, current))
+            assertEquals(2, history.revisions(series.seriesUuid).size)
+        }
+    }
 }

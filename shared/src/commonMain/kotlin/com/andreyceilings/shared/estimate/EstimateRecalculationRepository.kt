@@ -28,16 +28,7 @@ class EstimateRecalculationRepository(private val database: PrototypeDatabase) {
                 priceItemUuid = line.priceItemUuid
             )
         }
-        val currentPrices = prices.all().map { row ->
-            CurrentEstimatePrice(
-                stableCode = row.code,
-                priceItemUuid = row.uuid,
-                title = row.title,
-                unit = row.unit,
-                unitPrice = row.price,
-                updatedAt = row.updatedAt
-            )
-        }
+        val currentPrices = currentPrices()
         return EstimateRecalculation.preview(
             baseRevisionUuid = latest.revisionUuid,
             baseVersionNumber = latest.versionNumber,
@@ -45,5 +36,32 @@ class EstimateRecalculationRepository(private val database: PrototypeDatabase) {
             frozenLines = frozenLines,
             prices = currentPrices
         )
+
+    /**
+     * Read-only freshness probe for the UI. This is NOT a save precondition:
+     * an eventual acceptPreview() must perform the same checks and immutable
+     * INSERT in one SQLDelight transaction to close the TOCTOU window.
+     */
+    fun isPreviewCurrent(seriesUuid: String, preview: EstimateRecalculationPreview): Boolean {
+        val root = history.series(seriesUuid) ?: return false
+        if (root.deletedAt != null) return false
+        val latest = history.revisions(seriesUuid).lastOrNull() ?: return false
+        if (latest.revisionUuid != preview.baseRevisionUuid ||
+            latest.versionNumber != preview.baseVersionNumber) return false
+        val priceRows = currentPrices()
+        return EstimateRecalculation.priceListStateToken(priceRows) == preview.priceListStateToken
+    }
+
+    private fun currentPrices(): List<CurrentEstimatePrice> = prices.all().map { row ->
+        CurrentEstimatePrice(
+            stableCode = row.code,
+            priceItemUuid = row.uuid,
+            title = row.title,
+            unit = row.unit,
+            unitPrice = row.price,
+            updatedAt = row.updatedAt,
+            category = row.category
+        )
+    }
     }
 }

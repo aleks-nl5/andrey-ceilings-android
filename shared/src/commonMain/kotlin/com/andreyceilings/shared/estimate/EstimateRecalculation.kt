@@ -17,7 +17,8 @@ data class CurrentEstimatePrice(
     val title: String,
     val unit: String,
     val unitPrice: Double,
-    val updatedAt: Long
+    val updatedAt: Long,
+    val category: String = ""
 )
 
 enum class RecalculationProblem {
@@ -43,7 +44,13 @@ data class EstimateRecalculationPreview(
     val originalTotal: Double,
     val proposedTotal: Double?,
     val lines: List<EstimateLineDifference>,
-    val problems: Set<RecalculationProblem>
+    val problems: Set<RecalculationProblem>,
+    /**
+     * Exact, order-independent snapshot of the current price catalog at
+     * preview time; internal only, never displayed as a document number.
+     * The eventual transactional confirmation must re-read and compare it.
+     */
+    val priceListStateToken: String = ""
 ) {
     val canConfirm: Boolean get() = problems.isEmpty() && proposedTotal != null
     val delta: Double? get() = proposedTotal?.minus(originalTotal)
@@ -55,6 +62,34 @@ data class EstimateRecalculationPreview(
  * and Android review/confirmation; callers must not save the preview as-is.
  */
 object EstimateRecalculation {
+    /**
+     * Collision-free canonical catalog state for optimistic preview checks.
+     * Neither the greatest updatedAt nor a non-cryptographic hash is safe:
+     * two rows can change at the same millisecond, or a row can be deleted.
+     * Length prefixes avoid ambiguous separators and sorting ignores
+     * SQL row order. Includes inactive-looking rows via caller's list;
+     * PriceRepository.all() filters tombstoned entries by design.
+     */
+    fun priceListStateToken(prices: List<CurrentEstimatePrice>): String {
+        fun encoded(value: String): String = "${value.length}:$value"
+        val rows = prices.map { price ->
+            buildString {
+                append(encoded(price.priceItemUuid))
+                append(encoded(price.stableCode))
+                append(encoded(price.title))
+                append(encoded(price.unit))
+                append(encoded(price.category))
+                append(encoded(price.unitPrice.toBits().toString()))
+                append(encoded(price.updatedAt.toString()))
+            }
+        }.sorted()
+        return buildString {
+            append(rows.size)
+            append('|')
+            rows.forEach { row -> append(encoded(row)) }
+        }
+    }
+
     fun preview(
         baseRevisionUuid: String,
         baseVersionNumber: Long,
@@ -118,7 +153,8 @@ object EstimateRecalculation {
         }
         val total = if (allProblems.isEmpty()) differences.sumOf { checkNotNull(it.after).lineTotal } else null
         return EstimateRecalculationPreview(
-            baseRevisionUuid, baseVersionNumber, originalTotal, total, differences, allProblems
+            baseRevisionUuid, baseVersionNumber, originalTotal, total, differences,
+            allProblems, priceListStateToken(prices)
         )
     }
 

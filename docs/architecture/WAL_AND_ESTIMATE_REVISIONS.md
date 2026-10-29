@@ -26,7 +26,8 @@ This does **not** mean enabling WAL before ensuring a consistent encrypted snaps
 - [x] Cross-platform `commonTest` coverage for change/no-change/renaming/UUID mismatch/invalid data.
 - [x] Read source revision and current price rows from the canonical KMP SQLDelight repository, preserving stable identifiers; JVM regression test confirms v1 is untouched.
 - [x] Add Android read-only preview dialog from the estimate card; cancellation/closing makes no changes.
-- [ ] Build and verify a source and price-list revision token for safe confirmation.
+- [x] Add an exact, order-independent, length-prefixed **price catalog state token** to every read-only preview (all active price UUIDs/codes/titles/units/categories/values/timestamps). Read-only `isPreviewCurrent()` checks both latest immutable source revision UUID/version and the complete price token. Unlike max(updatedAt), this detects same-timestamp updates and deletes. Add JVM regressions. **CI pending.**
+- [ ] Require both tokens again **inside the same SQLDelight transaction** as future v2/v3 INSERT; the read-only freshness method alone is not safe authorization to write.
 - [ ] Recalculate geometry/options from original measurement snapshot using the agreed KMP calculator, rounding policy and measurement precision.
 - [ ] Preserve consistent `detailsJson`, line rows, quantities and totals in candidate snapshots.
 
