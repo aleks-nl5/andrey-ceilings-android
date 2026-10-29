@@ -273,6 +273,9 @@ internal fun SettingsScreen(databaseStatus: String, database: CeilingsDatabase?,
                     modifier = Modifier.fillMaxWidth()
                 ) { Text("Очистити журнал") }
             }
+            HorizontalDivider()
+            EstimateNumberSettingsSection(database)
+            HorizontalDivider()
             ListItem(
                 modifier = Modifier.clickable(onClick = onOpenPriceList),
                 leadingContent = { Icon(Icons.Default.PriceChange, null) },
