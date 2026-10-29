@@ -218,3 +218,26 @@ upsertPriceItemReturningId:
 INSERT OR REPLACE INTO price_items(id, code, title, category, unit, price, updatedAt)
 VALUES (NULLIF(?, 0), ?, ?, ?, ?, ?, ?)
 RETURNING id;
+
+-- Offline Room-v2 logical data transfer into a fresh SQLDelight database.
+-- Preserve all identifiers so project/client/estimate references remain valid.
+-- These are intentionally separate from regular autoincrement CRUD methods.
+importClientWithId:
+INSERT INTO clients(id, name, phone, email, notes, createdAt)
+VALUES (?, ?, ?, ?, ?, ?);
+
+importProjectWithId:
+INSERT INTO projects(id, clientId, title, address, status, notes, createdAt, updatedAt)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+
+importMeasurementWithId:
+INSERT INTO room_measurements(id, projectId, name, shape, lengthMeters, widthMeters, areaSquareMeters, perimeterMeters, drawingJson, notes, createdAt)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+importPriceItemWithId:
+INSERT INTO price_items(id, code, title, category, unit, price, updatedAt)
+VALUES (?, ?, ?, ?, ?, ?, ?);
+
+importEstimateWithId:
+INSERT INTO estimates(id, projectId, name, material, profileType, complexity, lengthMeters, widthMeters, areaSquareMeters, perimeterMeters, canvasCost, profileCost, complexityCost, optionsCost, totalCost, detailsJson, createdAt)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
