@@ -31,6 +31,7 @@ kotlin {
             implementation(compose.material3)
             implementation(compose.ui)
             implementation("app.cash.sqldelight:runtime:2.4.1")
+            implementation("app.cash.sqldelight:coroutines-extensions:2.4.1")
         }
 
         androidMain.dependencies {
