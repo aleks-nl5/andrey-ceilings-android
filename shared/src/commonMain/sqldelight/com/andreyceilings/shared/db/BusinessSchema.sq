@@ -130,7 +130,7 @@ selectProjectsByClient:
 SELECT * FROM projects WHERE clientId = ? AND deletedAt IS NULL ORDER BY updatedAt DESC;
 
 updateProject:
-UPDATE projects SET clientId = ?, title = ?, address = ?, status = ?, notes = ?, updatedAt = ? WHERE id = ? AND deletedAt IS NULL;
+UPDATE projects SET clientId = ?, title = ?, address = ?, status = ?, notes = ?, updatedAt = max(?, updatedAt + 1) WHERE id = ? AND deletedAt IS NULL;
 
 deleteProject:
 UPDATE projects
@@ -164,7 +164,7 @@ selectPriceItemById:
 SELECT * FROM price_items WHERE id = ? AND deletedAt IS NULL;
 
 updatePriceItem:
-UPDATE price_items SET code = ?, title = ?, category = ?, unit = ?, price = ?, updatedAt = ? WHERE id = ? AND deletedAt IS NULL;
+UPDATE price_items SET code = ?, title = ?, category = ?, unit = ?, price = ?, updatedAt = max(?, updatedAt + 1) WHERE id = ? AND deletedAt IS NULL;
 
 deletePriceItem:
 UPDATE price_items
@@ -201,7 +201,7 @@ countProjects:
 SELECT COUNT(*) FROM projects WHERE deletedAt IS NULL;
 
 updateProjectStatus:
-UPDATE projects SET status = ?, updatedAt = ? WHERE id = ? AND deletedAt IS NULL;
+UPDATE projects SET status = ?, updatedAt = max(?, updatedAt + 1) WHERE id = ? AND deletedAt IS NULL;
 
 countMeasurements:
 SELECT COUNT(*) FROM room_measurements WHERE deletedAt IS NULL;

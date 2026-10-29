@@ -66,6 +66,11 @@ class SyncMetadataTest {
             assertTrue(estimates.find(estimate)!!.updatedAt > 140L)
             assertEquals(151L, prices.find(price)!!.updatedAt)
             assertEquals(160L, projects.find(project)!!.updatedAt)
+            // Caller-provided timestamps must never move modification time backwards.
+            projects.updateStatus(project, "measurement", 1)
+            prices.upsertReturningId(price, "FILM", "Clock-skew edit", "Materials", "m2", 32.0, 1)
+            assertEquals(161L, projects.find(project)!!.updatedAt)
+            assertEquals(152L, prices.find(price)!!.updatedAt)
         }
     }
 
