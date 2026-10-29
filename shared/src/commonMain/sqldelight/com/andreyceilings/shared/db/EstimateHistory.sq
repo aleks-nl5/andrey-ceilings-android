@@ -111,3 +111,8 @@ SELECT * FROM estimate_revisions WHERE seriesUuid = ? ORDER BY versionNumber DES
 
 selectEstimateRevisionLines:
 SELECT * FROM estimate_revision_lines WHERE revisionUuid = ? ORDER BY sortIndex;
+
+-- Preserve number reservations even when the owning project is soft-deleted.
+softDeleteEstimateSeriesForProject:
+UPDATE estimate_series SET deletedAt = max(createdAt + 1, CAST(strftime('%s','now') AS INTEGER) * 1000)
+WHERE projectId = ? AND deletedAt IS NULL;
