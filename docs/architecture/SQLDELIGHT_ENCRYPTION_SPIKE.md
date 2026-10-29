@@ -1,5 +1,9 @@
 # SQLDelight encryption feasibility spike
 
+> **Update (2026-10-29):** This document contains historical research decisions. Android runtime code now uses encrypted SQLDelight with the shared `PrototypeDatabase` schema, and Room runtime/KSP have been removed on PR #22. The Windows SQLCipher JDBC tests and iOS simulator encryption tests share the schema but their hosts remain prototype-stage. See [ROOM_TO_SQLDELIGHT_CUTOVER.md](ROOM_TO_SQLDELIGHT_CUTOVER.md) for live implementation and remaining acceptance gates. Statements below saying “Room still powers production” describe earlier checkpoints and should not be treated as current code status.
+
+
+
 
 ## Windows SQLCipher JDBC hardening — 2026-10-29 (CI validation pending)
 

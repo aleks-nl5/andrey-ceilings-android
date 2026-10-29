@@ -1,5 +1,24 @@
 # Room → SQLDelight cutover gates (PR #22)
 
+## Current implementation — 2026-10-29
+
+**Android runtime cutover implemented in PR #22, under CI verification.** The older implementation checklists below are retained for historical context and follow-up requirements. The live Android application now uses `:shared` SQLDelight via UI-compatible Kotlin data adapters; Room runtime and its KSP compiler were removed from `app/build.gradle.kts`. The Windows/JVM and iOS simulator tests use the **same common SQLDelight schema**, with platform SQLCipher drivers. No online cross-device synchronization is provided.
+
+- SQLDelight encrypted live filename: `andrey_ceilings_sqldelight.db` (separate from legacy `andrey_ceilings_secure.db`).
+- On first launch with only an existing Room-v2 file, `LegacyRoomDatabaseImporter` reads the old encrypted database through Zetetic's AndroidX SQLite support helper **without Room runtime**, atomically imports all five tables and their IDs into a separate encrypted SQLDelight file, verifies table counts/integrity, then publishes the new file. The original is retained for recovery.
+- A migration failure stops database startup; there is no fallback to empty plaintext or silent deletion. If a legacy schema isn't v2, migration reports an error pending an explicit versioned adapter.
+- UI methods and `Flow` observers now resolve to shared SQLDelight repositories. `BusinessChangeTracker` replaces Room InvalidationTracker for automatic change-triggered backups.
+- `PortableBackupManager` snapshots/verifies SQLDelight files and converts encrypted legacy-v2 `.stpb` payloads before restore; the old `.stpb` password-protected envelope remains supported.
+- Existing SQLCipher passphrase remains under Android Keystore. Desktop key management, iOS real-device tests, and cross-platform encrypted-file interchange are independent requirements.
+- Unit tests and Android instrumented checks cover schema, wrong key, encrypted headers, JDBC lifecycles, ID-preserving import and rollback. Additional backup/invalidation integration coverage was added and needs a final green CI.
+- Still required before declaring production rollout complete: physical Android APK smoke test; explicit manual restore/Worker and WAL failure testing; crash-safe migration verification on a non-test database; native dependency/license checks.
+
+**Do not confuse shared repository logic with device-to-device synchronization.** SQLDelight supplies a unified local SQL API; exchanging changes between Android, Windows and iOS requires a separately designed sync layer.
+
+---
+
+
+
 **Status, 2026-10-29:** in progress; Android production still uses Room. This document is an implementation checklist, **not** evidence that Room is removed. The active PR branch is `architecture/cmp-kmp-migration-v2`; do not modify `main` or merge without approval.
 
 ## Confirmed CI issues and corrections
