@@ -37,7 +37,8 @@ This does **not** mean enabling WAL before ensuring a consistent encrypted snaps
 - [x] Emulator SQLCipher proved `VACUUM INTO` creates an encrypted, valid snapshot (including WAL). New shared backup helper rejects plaintext and verifies SQLCipher integrity. Full concurrency/restore stress tests still required.
 - [x] Replace direct `.db` copy in portable/automatic `.stpb` and manual SQLCipher export with one verified `VACUUM INTO` snapshot helper. [ ] Add contention, disk-full and failure-injection tests.
 - [x] Stage/verify imported SQLCipher image, retain a verified encrypted rollback snapshot and a Keystore-wrapped original-key marker; recover interrupted import before any production DB open. Offline WAL/SHM cleanup only after closing driver; never after reopening. **Runtime, crash and contention instrumentation tests are still required before WAL rollout**.
-- [ ] Verify wrong password, disk-full, interruption, active reader/writer and checkpoint cases; retain database on failure.
+- [x] Android instrumentation regression for valid restore, incorrect/corrupt imported image (original untouched), and simulated interrupted replacement on cold reopen (rollback from encrypted snapshot and wrapped prior key). **CI must confirm.**
+- [ ] Verify wrong .stpb password, disk-full, active readers/writers and checkpoint contention, plus forced process termination; retain database on failure.
 - [ ] Only **after** these pass: enable verified WAL mode in the sole production driver opening path, with explicit return value check and no plaintext fallback.
 - [ ] Verify checkpoint, `SQLITE_BUSY`, listeners/Flow, Android CRUD and backup across reopen. Do **not** change Windows/iOS journal mode without platform tests.
 
