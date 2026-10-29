@@ -155,7 +155,7 @@ class SqlCipherRestoreManagerTest {
             val incomingImage = context.getDatabasePath(sourceName).readBytes()
             try {
                 SqlCipherRestoreManager.RestoreCheckpoint.entries.forEach { checkpoint ->
-                    val injected = IOException("Simulated failure at $checkpoint")
+                    val injected = IOException("Simulated ENOSPC / I-O failure at $checkpoint")
                     val failed = runCatching {
                         SqlCipherRestoreManager.restore(
                             context,
@@ -171,6 +171,14 @@ class SqlCipherRestoreManagerTest {
                     assertEquals("Rows lost after $checkpoint", originalTitles,
                         ProjectRepository(live.database).all().map { it.title }.sorted())
                     assertTrue("Rollback file leaked after $checkpoint", !rollback.exists())
+                    // Interrupted writes must not leave half-written encrypted
+                    // staging files that accumulate on low-storage devices.
+                    val stagingFiles = rollback.parentFile.listFiles()
+                        ?.filter { it.name.startsWith("restore_incoming_") ||
+                            it.name.startsWith("restore_prepared_") }
+                        .orEmpty()
+                    assertTrue("Partial restore files leaked after $checkpoint: $stagingFiles",
+                        stagingFiles.isEmpty())
                     val activeKey = DatabaseKeyManager.getOrCreatePassphrase(context)
                     try {
                         assertArrayEquals("SQLCipher key changed after $checkpoint",

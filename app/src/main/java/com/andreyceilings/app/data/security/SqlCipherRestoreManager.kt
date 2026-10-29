@@ -57,6 +57,9 @@ internal object SqlCipherRestoreManager {
 
     /** Fault points are opt-in and supplied only by instrumentation tests. */
     internal enum class RestoreCheckpoint {
+        // Deterministic mid-stream I/O failures before any live DB mutation.
+        DURING_INCOMING_FILE_WRITE,
+        DURING_ROLLBACK_DRAFT_COPY,
         AFTER_MARKER,
         AFTER_OLD_FILES_REMOVED,
         AFTER_IMPORTED_FILE_INSTALLED,
@@ -96,7 +99,13 @@ internal object SqlCipherRestoreManager {
             val stage = File.createTempFile("restore_incoming_", ".db", parent)
             incoming = stage
             FileOutputStream(stage).use { out ->
-                out.write(contents.database)
+                // Test hook fires after some bytes are written, before the
+                // full encrypted incoming image is durable. An IOException
+                // here simulates ENOSPC; the partial stage is removed below.
+                val firstChunk = minOf(contents.database.size, 8 * 1024)
+                out.write(contents.database, 0, firstChunk)
+                onCheckpoint?.invoke(RestoreCheckpoint.DURING_INCOMING_FILE_WRITE)
+                out.write(contents.database, firstChunk, contents.database.size - firstChunk)
                 out.fd.sync()
             }
             PortableBackupManager.verifyEncryptedSnapshot(context, stage, contents.passphrase)
@@ -107,7 +116,9 @@ internal object SqlCipherRestoreManager {
             check(!rollback.exists()) { "Залишився невиконаний резервний відкат." }
             val draft = File.createTempFile("restore_prepared_", ".db", parent)
             rollbackDraft = draft
-            copyAndSync(snapshot, draft)
+            copyAndSync(snapshot, draft) {
+                onCheckpoint?.invoke(RestoreCheckpoint.DURING_ROLLBACK_DRAFT_COPY)
+            }
             check(draft.renameTo(rollback)) { "Не вдалося зберегти резерв для відкату." }
             rollbackDraft = null
 
@@ -151,9 +162,22 @@ internal object SqlCipherRestoreManager {
         }
     }
 
-    private fun copyAndSync(source: File, destination: File) {
+    private fun copyAndSync(
+        source: File,
+        destination: File,
+        afterFirstChunk: (() -> Unit)? = null
+    ) {
         source.inputStream().use { input ->
             FileOutputStream(destination).use { output ->
+                if (afterFirstChunk != null) {
+                    // Only the testable restore-draft path uses this hook.
+                    // A partial rollback draft is never published as the
+                    // durable recovery file, nor does it change the live DB.
+                    val chunk = ByteArray(DEFAULT_BUFFER_SIZE)
+                    val count = input.read(chunk)
+                    if (count > 0) output.write(chunk, 0, count)
+                    afterFirstChunk()
+                }
                 input.copyTo(output)
                 output.fd.sync()
             }
