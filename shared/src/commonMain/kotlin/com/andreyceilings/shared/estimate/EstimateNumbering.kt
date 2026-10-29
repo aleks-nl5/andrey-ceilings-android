@@ -23,7 +23,7 @@ data class EstimateNumberContext(
 object EstimateNumbering {
     private val placeholders = setOf("prefix", "year", "sequence", "uuid")
     private val uuidV4 = Regex("^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
-    private val uuidPart = Regex("[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
+    private val uuidPart = Regex("[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}")
     private val templateToken = Regex("\\{([a-z]+)\\}")
     private val safePrefix = Regex("^[A-Za-zА-Яа-яІіЇїЄєҐґ0-9_-]{1,20}$")
     private val safeTemplate = Regex("^[A-Za-zА-Яа-яІіЇїЄєҐґ0-9._{}/-]+$")
