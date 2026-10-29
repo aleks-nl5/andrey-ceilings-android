@@ -694,23 +694,11 @@ internal fun SettingsScreen(databaseStatus: String, database: CeilingsDatabase?,
                     exportStatus = withContext(Dispatchers.IO) {
                         runCatching {
                             val db = database ?: error("База даних ще не готова.")
-                            val sourcePath = db.path
-                            val source = java.io.File(sourcePath)
-                            check(source.isFile) { "Файл БД не знайдено." }
-                            check(db.checkpoint(CeilingsDatabase.WalMode.FULL).complete) {
-                                "WAL checkpoint не завершився повністю. Повторіть, коли БД не використовується."
-                            }
-                            val snapshot = java.io.File(context.cacheDir, "andrey_ceilings_secure_export.tmp")
-                            source.inputStream().use { input -> snapshot.outputStream().use { output -> input.copyTo(output) } }
-                            check(snapshot.length() > 0L) { "Створена копія порожня." }
-                            // Verify snapshot using the SQLDelight/SQLCipher driver, not Room.
-                            val passphrase = com.andreyceilings.app.data.security.DatabaseKeyManager.getOrCreatePassphrase(context.applicationContext)
+                            // Use the same verified, point-in-time encrypted snapshot
+                            // as automatic/portable backup, even when WAL is active.
+                            val snapshot = com.andreyceilings.app.data.security.PortableBackupManager
+                                .createVerifiedSnapshot(context.applicationContext, db)
                             try {
-                                com.andreyceilings.app.data.security.PortableBackupManager.verifyEncryptedSnapshot(context.applicationContext, snapshot, passphrase)
-                            } finally {
-                                passphrase.fill(0)
-                            }
-
                             // A plain Android SQLite connection must not be able to read the
                             // encrypted snapshot without the SQLCipher key.
                             var plainDb: android.database.sqlite.SQLiteDatabase? = null
@@ -735,6 +723,10 @@ internal fun SettingsScreen(databaseStatus: String, database: CeilingsDatabase?,
                             }
                             pendingExportFile = snapshot
                             "Перевірено: SQLCipher відкрив копію, integrity_check = ok, схема доступна з ключем, звичайний SQLite без ключа не прочитав схему. Ключ не експортується. Виберіть папку для збереження."
+                            } catch (failure: Throwable) {
+                                snapshot.delete()
+                                throw failure
+                            }
                         }.getOrElse { "Не вдалося підготувати копію: " + (it.message ?: "невідома помилка") }
                     }
                     if (pendingExportFile != null) exportDocumentLauncher.launch("andrey_ceilings_sqldelight_test.db")

@@ -3,11 +3,9 @@ package com.andreyceilings.app
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import app.cash.sqldelight.db.QueryResult
+import com.andreyceilings.app.data.db.CeilingsDatabase
 import com.andreyceilings.app.data.security.PortableBackupManager
 import com.andreyceilings.shared.db.ProjectRepository
-import com.andreyceilings.shared.db.PrototypeDatabase
-import com.andreyceilings.shared.db.createEncryptedPrototypeDriver
 import java.io.File
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -29,40 +27,25 @@ class SqlCipherWalSnapshotExperimentTest {
         context.deleteDatabase(name)
         snapshot.delete()
         try {
-            createEncryptedPrototypeDriver(context, key, name).use { driver ->
-                val mode = driver.executeQuery(null, "PRAGMA journal_mode=WAL", { cursor ->
-                    QueryResult.Value(if (cursor.next().value) cursor.getString(0) else null)
-                }, 0).value
-                assertEquals("wal", mode?.lowercase())
-                ProjectRepository(PrototypeDatabase(driver)).createReturningId(
+            CeilingsDatabase.openIsolatedForTesting(context, name, key).use { db ->
+                assertEquals("wal", db.queryText("PRAGMA journal_mode=WAL")?.lowercase())
+                ProjectRepository(db.database).createReturningId(
                     clientId = null, title = "WAL snapshot", createdAt = 1000L
                 )
                 assertFalse(snapshot.exists())
-                val safePath = snapshot.absolutePath.replace("'", "''")
-                driver.execute(null, "VACUUM INTO '$safePath'", 0)
+                db.writeConsistentEncryptedSnapshot(snapshot)
                 assertTrue(snapshot.isFile && snapshot.length() > 16L)
-                // A plaintext VACUUM output is not an acceptable SQLCipher backup.
-                val header = snapshot.inputStream().use { stream ->
-                    ByteArray(16).also { stream.read(it) }
-                }
-                assertFalse(header.toString(Charsets.US_ASCII).startsWith("SQLite format 3"))
+                // The real backup verification rejects plaintext or corrupt images.
                 PortableBackupManager.verifyEncryptedSnapshot(context, snapshot, key)
             }
-            createEncryptedPrototypeDriver(context, key, name).use { driver ->
-                // The current SupportOpenHelperFactory/AndroidSqliteDriver reopen
-                // can reset WAL to DELETE (confirmed by emulator CI). Future
-                // production WAL support must explicitly enforce and verify WAL
-                // on every open, not just on the first connection.
-                val modeOnReopen = driver.executeQuery(null, "PRAGMA journal_mode", { cursor ->
-                    QueryResult.Value(if (cursor.next().value) cursor.getString(0) else null)
-                }, 0).value?.lowercase()
+            CeilingsDatabase.openIsolatedForTesting(context, name, key).use { db ->
+                // The current Android driver may reset WAL to DELETE on reopen.
+                // Production WAL support must explicitly enforce it at open.
+                val modeOnReopen = db.queryText("PRAGMA journal_mode")?.lowercase()
                 assertTrue("Unexpected SQLite journal mode: $modeOnReopen",
                     modeOnReopen == "delete" || modeOnReopen == "wal")
-                val enabledMode = driver.executeQuery(null, "PRAGMA journal_mode=WAL", { cursor ->
-                    QueryResult.Value(if (cursor.next().value) cursor.getString(0) else null)
-                }, 0).value
-                assertEquals("wal", enabledMode?.lowercase())
-                assertEquals(1, ProjectRepository(PrototypeDatabase(driver)).all().size)
+                assertEquals("wal", db.queryText("PRAGMA journal_mode=WAL")?.lowercase())
+                assertEquals(1, ProjectRepository(db.database).all().size)
             }
         } finally {
             snapshot.delete()

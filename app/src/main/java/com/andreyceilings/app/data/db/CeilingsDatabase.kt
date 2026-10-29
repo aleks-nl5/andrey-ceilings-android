@@ -48,6 +48,36 @@ internal class CeilingsDatabase private constructor(
 
     internal fun execute(sql: String) { driver.execute(null, sql, 0) }
 
+    /**
+     * Consistent SQLCipher snapshot across concurrent commits, including WAL pages.
+     * Never copy the live .db file or delete its -wal/-shm files to make a backup.
+     * Caller must verify the resulting SQLCipher file and remove it when finished.
+     */
+    internal fun writeConsistentEncryptedSnapshot(destination: File) {
+        val source = File(path)
+        check(source.isFile && source.length() > 16L) {
+            "Зашифрована БД відсутня або порожня."
+        }
+        check(source.canonicalFile != destination.canonicalFile) {
+            "Не можна перезаписати робочу БД резервною копією."
+        }
+        check(destination.parentFile?.isDirectory == true && !destination.exists()) {
+            "Для знімка потрібен новий файл у наявній папці."
+        }
+        try {
+            // VACUUM INTO uses SQLCipher's live connection and creates a coherent
+            // database image. Never run it inside a write transaction.
+            val escaped = destination.absolutePath.replace("'", "''")
+            execute("VACUUM INTO '$escaped'")
+            check(destination.isFile && destination.length() > 16L) {
+                "Не вдалося створити консистентний знімок БД."
+            }
+        } catch (failure: Throwable) {
+            destination.delete()
+            throw failure
+        }
+    }
+
     fun queryLong(sql: String): Long? = driver.executeQuery(null, sql, { cursor ->
         QueryResult.Value(if (cursor.next().value) cursor.getLong(0) else null)
     }, 0).value

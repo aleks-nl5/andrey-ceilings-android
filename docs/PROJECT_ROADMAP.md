@@ -5,7 +5,8 @@
 - [x] Узгоджено спільний PR для задач [#24](https://github.com/aleks-nl5/andrey-ceilings-android/issues/24) (історія v2/v3, ручний перерахунок) і [#26](https://github.com/aleks-nl5/andrey-ceilings-android/issues/26) (SQLCipher WAL).
 - [x] Додано чистий KMP preview «було/стало/різниця» з перевіркою UUID/code, назви, одиниць, відсутніх позицій, небезпечних fallback/legacy; preview **не пише БД**.
 - [x] Додано ізольований Android proof-test WAL + encrypted `VACUUM INTO`, без зміни робочого журналювання.
-- [ ] Безпечний консистентний backup, атомарне відновлення без видалення активних WAL/SHM; після тестів — увімкнення `PRAGMA journal_mode=WAL` на Android з перевіркою результату.
+- [x] Консистентний SQLCipher backup через перевірений `VACUUM INTO` для portable/automatic і ручного експорту; без plaintext fallback.
+- [ ] Атомарне відновлення без видалення активних WAL/SHM, конкуренція й збої; лише після цих тестів — увімкнення Android WAL з перевіркою результату.
 - [x] Read-only preview із актуального SQLDelight-прайсу й останньої ревізії, кнопка «Перерахувати — перегляд» на екрані Android; жодних змін у v1.
 - [ ] Повний перерахунок геометрії, optimistic price token, явне підтвердження, транзакційне v2/v3, історія та PDF конкретної версії.
 - [ ] Android/Windows/iOS CI, фізичний Android, усі варіанти backup/restore, підтвердження власником і тільки після цього merge.

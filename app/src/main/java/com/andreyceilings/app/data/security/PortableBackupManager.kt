@@ -13,16 +13,10 @@ import java.io.File
  */
 internal object PortableBackupManager {
     fun create(context: Context, database: CeilingsDatabase, password: CharArray): ByteArray {
-        check(database.checkpoint(CeilingsDatabase.WalMode.FULL).complete) {
-            "База даних зайнята. Не вдалося завершити WAL checkpoint."
-        }
-        val source = File(database.path)
-        check(source.isFile && source.length() > 16L) { "Зашифрована БД відсутня або порожня." }
-        val snapshot = File.createTempFile("sqldelight_backup_", ".db", context.cacheDir)
         val key = DatabaseKeyManager.getOrCreatePassphrase(context)
+        var snapshot: File? = null
         try {
-            source.copyTo(snapshot, overwrite = true)
-            verifyEncryptedSnapshot(context, snapshot, key)
+            snapshot = createVerifiedSnapshot(context, database, key)
             val payload = PortableBackupPayload.encode(snapshot.readBytes(), key)
             try {
                 return PortableBackupEnvelope.seal(payload, password)
@@ -30,8 +24,34 @@ internal object PortableBackupManager {
                 payload.fill(0)
             }
         } finally {
+            snapshot?.delete()
             key.fill(0)
+        }
+    }
+
+    /** Manual encrypted export uses the same consistent image as portable backups. */
+    fun createVerifiedSnapshot(context: Context, database: CeilingsDatabase): File {
+        val key = DatabaseKeyManager.getOrCreatePassphrase(context)
+        try {
+            return createVerifiedSnapshot(context, database, key)
+        } finally {
+            key.fill(0)
+        }
+    }
+
+    private fun createVerifiedSnapshot(
+        context: Context, database: CeilingsDatabase, key: ByteArray
+    ): File {
+        val snapshot = File.createTempFile("sqldelight_backup_", ".db", context.cacheDir)
+        try {
+            // SQLite VACUUM INTO requires a destination that does not yet exist.
+            check(snapshot.delete()) { "Не вдалося підготувати тимчасовий файл знімка." }
+            database.writeConsistentEncryptedSnapshot(snapshot)
+            verifyEncryptedSnapshot(context, snapshot, key)
+            return snapshot
+        } catch (failure: Throwable) {
             snapshot.delete()
+            throw failure
         }
     }
 
@@ -84,6 +104,11 @@ internal object PortableBackupManager {
      */
     fun verifyEncryptedSnapshot(context: Context, source: File, key: ByteArray) {
         check(source.isFile && source.length() > 16L) { "Резервна копія відсутня або порожня." }
+        val header = ByteArray(16)
+        java.io.DataInputStream(source.inputStream()).use { it.readFully(header) }
+        check(!String(header, Charsets.US_ASCII).startsWith("SQLite format 3")) {
+            "Резервна копія не зашифрована SQLCipher."
+        }
         val testName = "sqlcipher_verify_${System.nanoTime()}.db"
         val staged = context.getDatabasePath(testName)
         try {

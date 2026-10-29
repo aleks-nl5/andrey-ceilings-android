@@ -34,8 +34,8 @@ This does **not** mean enabling WAL before ensuring a consistent encrypted snaps
 
 - [x] Isolated Android SQLCipher probe for `PRAGMA journal_mode=WAL`, reopen, and `VACUUM INTO` snapshot **with encryption and schema validation**; does not modify live journal mode.
 - [x] CI finding (Android run `40937006127`): after reopening through the current `SupportOpenHelperFactory`/SQLDelight driver, `journal_mode` returned `delete` even though the prior connection used WAL. The test now re-enables and verifies WAL explicitly on every reopened connection; **future production driver must enforce this at its own open boundary**. Initial encrypted `VACUUM INTO` verification passed before the failing reopen assertion.
-- [ ] Establish whether SQLCipher `VACUUM INTO` truly yields a working encrypted consistent snapshot on installed library/Android versions. If not, use an explicitly verified supported SQLCipher backup mechanism. Never ship a plaintext backup.
-- [ ] Replace direct live `.db` copy in **all** portable/automatic/manual export paths with the verified snapshot operation, including contention/failure cases.
+- [x] Emulator SQLCipher proved `VACUUM INTO` creates an encrypted, valid snapshot (including WAL). New shared backup helper rejects plaintext and verifies SQLCipher integrity. Full concurrency/restore stress tests still required.
+- [x] Replace direct `.db` copy in portable/automatic `.stpb` and manual SQLCipher export with one verified `VACUUM INTO` snapshot helper. [ ] Add contention, disk-full and failure-injection tests.
 - [ ] Restore through staging: close all DB handles; validate file and key; preserve last known-good state; ensure atomic replacement or rollback; never remove WAL/SHM from a live or reopened connection.
 - [ ] Verify wrong password, disk-full, interruption, active reader/writer and checkpoint cases; retain database on failure.
 - [ ] Only **after** these pass: enable verified WAL mode in the sole production driver opening path, with explicit return value check and no plaintext fallback.
