@@ -23,9 +23,13 @@ class SqlCipherWalSnapshotExperimentTest {
         val context: Context = ApplicationProvider.getApplicationContext()
         val name = "sqldelight_test_wal_snapshot.db"
         val snapshot = File(context.cacheDir, "sqldelight_wal_snapshot_test.db")
+        val laterSnapshot = File(context.cacheDir, "sqldelight_wal_snapshot_later_test.db")
+        val verificationName = "sqldelight_test_wal_copy.db"
         val key = ByteArray(32) { 0x35.toByte() }
         context.deleteDatabase(name)
+        context.deleteDatabase(verificationName)
         snapshot.delete()
+        laterSnapshot.delete()
         try {
             CeilingsDatabase.openIsolatedForTesting(context, name, key).use { db ->
                 assertEquals("wal", db.queryText("PRAGMA journal_mode=WAL")?.lowercase())
@@ -37,6 +41,24 @@ class SqlCipherWalSnapshotExperimentTest {
                 assertTrue(snapshot.isFile && snapshot.length() > 16L)
                 // The real backup verification rejects plaintext or corrupt images.
                 PortableBackupManager.verifyEncryptedSnapshot(context, snapshot, key)
+                // A second committed transaction is not allowed to mutate the
+                // earlier snapshot. It must appear in a later WAL snapshot.
+                ProjectRepository(db.database).createReturningId(
+                    clientId = null, title = "Second WAL commit", createdAt = 2000L
+                )
+                db.writeConsistentEncryptedSnapshot(laterSnapshot)
+                PortableBackupManager.verifyEncryptedSnapshot(context, laterSnapshot, key)
+
+                fun verifyProjectCount(image: File, expected: Int) {
+                    context.deleteDatabase(verificationName)
+                    image.copyTo(context.getDatabasePath(verificationName))
+                    CeilingsDatabase.openIsolatedForTesting(context, verificationName, key).use { read ->
+                        assertTrue(read.checkIntegrity())
+                        assertEquals(expected, ProjectRepository(read.database).all().size)
+                    }
+                }
+                verifyProjectCount(snapshot, 1)
+                verifyProjectCount(laterSnapshot, 2)
             }
             CeilingsDatabase.openIsolatedForTesting(context, name, key).use { db ->
                 // The current Android driver may reset WAL to DELETE on reopen.
@@ -45,10 +67,12 @@ class SqlCipherWalSnapshotExperimentTest {
                 assertTrue("Unexpected SQLite journal mode: $modeOnReopen",
                     modeOnReopen == "delete" || modeOnReopen == "wal")
                 assertEquals("wal", db.queryText("PRAGMA journal_mode=WAL")?.lowercase())
-                assertEquals(1, ProjectRepository(db.database).all().size)
+                assertEquals(2, ProjectRepository(db.database).all().size)
             }
         } finally {
             snapshot.delete()
+            laterSnapshot.delete()
+            context.deleteDatabase(verificationName)
             context.deleteDatabase(name)
             key.fill(0)
         }

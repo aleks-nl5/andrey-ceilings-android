@@ -46,6 +46,14 @@ class SqlCipherRestoreManagerTest {
                 )
             }
             val importedImage = source.readBytes()
+            // Force WAL on the live instrumentation DB and commit a change
+            // before replacement. A restore must never leave stale WAL frames
+            // attached to the newly imported encrypted image.
+            val before = CeilingsDatabase.get(context)
+            assertEquals("wal", before.queryText("PRAGMA journal_mode=WAL")?.lowercase())
+            ProjectRepository(before.database).createReturningId(
+                clientId = null, title = "Committed old WAL row", createdAt = 12340L
+            )
             val installed = SqlCipherRestoreManager.restore(
                 context, PortableBackupPayload.Contents(importedImage, importedKey)
             )
@@ -68,8 +76,12 @@ class SqlCipherRestoreManagerTest {
             assertNotNull("Corrupt imported SQLCipher database was accepted", rejected.exceptionOrNull())
             assertEquals(1, ProjectRepository(CeilingsDatabase.get(context).database).all().size)
 
-            // Simulate process death midway through an import: recovery marker,
-            // encrypted rollback snapshot, but an unusable live image.
+            // Simulate process death midway through an import after a WAL
+            // transaction; the rollback snapshot must include its latest row.
+            assertEquals("wal", installed.queryText("PRAGMA journal_mode=WAL")?.lowercase())
+            ProjectRepository(installed.database).createReturningId(
+                clientId = null, title = "Committed WAL recovery row", createdAt = 12346L
+            )
             val currentSnapshot = PortableBackupManager.createVerifiedSnapshot(
                 context, CeilingsDatabase.get(context)
             )
@@ -82,7 +94,9 @@ class SqlCipherRestoreManagerTest {
                 live.writeBytes(byteArrayOf(0x11, 0x22, 0x33))
                 val recovered = CeilingsDatabase.get(context)
                 assertTrue(recovered.checkIntegrity())
-                assertEquals(1, ProjectRepository(recovered.database).all().size)
+                val recoveredProjects = ProjectRepository(recovered.database).all()
+                assertEquals(2, recoveredProjects.size)
+                assertTrue(recoveredProjects.any { it.title == "Committed WAL recovery row" })
                 val afterRecoveryKey = DatabaseKeyManager.getOrCreatePassphrase(context)
                 try {
                     assertArrayEquals(importedKey, afterRecoveryKey)
