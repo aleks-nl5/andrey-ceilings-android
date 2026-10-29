@@ -136,7 +136,7 @@ class SqlCipherIosProofTest {
     }
 
     private fun assertEncryptedHeader(bytes: ByteArray) {
-        val header = "SQLite format 3\\u0000".encodeToByteArray()
+        val header = byteArrayOf(83, 81, 76, 105, 116, 101, 32, 102, 111, 114, 109, 97, 116, 32, 51, 0)
         assertTrue(bytes.size > header.size, "Database file is too small")
         assertTrue(!bytes.copyOfRange(0, header.size).contentEquals(header),
             "Database has a plaintext SQLite header")
