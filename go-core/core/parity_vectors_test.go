@@ -89,7 +89,7 @@ func TestKmpMigrationCostReferenceVectors(t *testing.T) {
 }
 
 func TestSelectedMeasurementPrecision(t *testing.T) {
-    input := GeometryInput{Shape: Rectangle, Length: 1.005, Width: 1.005}
+    input := GeometryInput{Shape: Rectangle, Length: 1.006, Width: 1.006}
     centimetre := input
     centimetre.PrecisionStepMeters = .01
     gotCm := CalculateRoomGeometry(centimetre)
