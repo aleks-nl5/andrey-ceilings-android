@@ -24,7 +24,9 @@ This does **not** mean enabling WAL before ensuring a consistent encrypted snaps
 - [x] Pure KMP price comparison, with no DB mutation, based only on immutable snapshot quantities and exact stable code/UUID.
 - [x] Missing, ambiguous, invalid, unit-changed and historical adjustment lines block confirmation (no price fallback).
 - [x] Cross-platform `commonTest` coverage for change/no-change/renaming/UUID mismatch/invalid data.
-- [ ] Read source revision and current price rows from a single canonical KMP service; build a source and price-list revision token, preserving stable identifiers.
+- [x] Read source revision and current price rows from the canonical KMP SQLDelight repository, preserving stable identifiers; JVM regression test confirms v1 is untouched.
+- [x] Add Android read-only preview dialog from the estimate card; cancellation/closing makes no changes.
+- [ ] Build and verify a source and price-list revision token for safe confirmation.
 - [ ] Recalculate geometry/options from original measurement snapshot using the agreed KMP calculator, rounding policy and measurement precision.
 - [ ] Preserve consistent `detailsJson`, line rows, quantities and totals in candidate snapshots.
 
