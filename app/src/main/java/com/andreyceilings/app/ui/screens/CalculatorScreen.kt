@@ -194,7 +194,7 @@ internal fun CalculatorScreen(
     val estimateForSave = estimate
     if (showSaveDialog && database != null && projects.isNotEmpty() && estimateForSave != null) SaveEstimateDialog(
         projects = projects,
-        defaultName = "Кімната ${formatMeasuredLength(measurementPrecision.length(length.toSafeDouble()), measurementPrecision)} × ${formatMeasuredLength(measurementPrecision.length(width.toSafeDouble()), measurementPrecision)} м",
+        defaultName = "Кімната ${formatMeasuredLength(measurementPrecision.roomDimension(length.toSafeDouble(), 4.0), measurementPrecision)} × ${formatMeasuredLength(measurementPrecision.roomDimension(width.toSafeDouble(), 3.0), measurementPrecision)} м",
         onDismiss = { showSaveDialog = false },
         onSave = { projectId, name ->
             val details = org.json.JSONObject()
@@ -212,8 +212,8 @@ internal fun CalculatorScreen(
                 runCatching {
                     val estimateDraft = EstimateEntity(
                         projectId = projectId, name = name.trim(), material = material, profileType = profileType, complexity = complexity,
-                        lengthMeters = measurementPrecision.length(length.toSafeDouble().takeIf { it > 0.0 } ?: 4.0),
-                        widthMeters = measurementPrecision.length(width.toSafeDouble().takeIf { it > 0.0 } ?: 3.0),
+                        lengthMeters = measurementPrecision.roomDimension(length.toSafeDouble(), 4.0),
+                        widthMeters = measurementPrecision.roomDimension(width.toSafeDouble(), 3.0),
                         areaSquareMeters = estimateForSave.area, perimeterMeters = estimateForSave.perimeter,
                         canvasCost = estimateForSave.canvasCost, profileCost = estimateForSave.profileCost, complexityCost = estimateForSave.complexityCost,
                         optionsCost = estimateForSave.optionsCost, totalCost = estimateForSave.total, detailsJson = details.toString()
