@@ -261,7 +261,7 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
     var shadowProfileMeters by remember { mutableStateOf("0") }
     var floatingCeilingMeters by remember { mutableStateOf("0") }
     var chandeliersCount by remember { mutableStateOf("0") }
-    var spotsCount by remember { mutableStateOf("0") }
+    var spotCount by remember { mutableStateOf("0") }
     var pipePassCount by remember { mutableStateOf("0") }
     var curtainNicheMeters by remember { mutableStateOf("0") }
     var extraCorners by remember { mutableStateOf("0") }
@@ -279,11 +279,11 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
     }
 
     val calculatorOptions = CalculatorOptions(
-        lightLinesMeters = lightLineMeters.toSafeDouble(),
+        lightLineMeters = lightLineMeters.toSafeDouble(),
         shadowProfileMeters = shadowProfileMeters.toSafeDouble(),
         floatingCeilingMeters = floatingCeilingMeters.toSafeDouble(),
         chandeliersCount = chandeliersCount.toSafeDouble(),
-        spotsGX53Count = spotsCount.toSafeDouble(),
+        spotCount = spotCount.toSafeDouble(),
         pipePassCount = pipePassCount.toSafeDouble(),
         curtainNicheMeters = curtainNicheMeters.toSafeDouble(),
         extraCorners = extraCorners.toSafeDouble(),
@@ -395,7 +395,7 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
                             shadowProfileMeters = shadowProfileMeters, onShadowProfileMeters = { shadowProfileMeters = it },
                             floatingCeilingMeters = floatingCeilingMeters, onFloatingCeilingMeters = { floatingCeilingMeters = it },
                             chandeliersCount = chandeliersCount, onChandeliersCount = { chandeliersCount = it },
-                            spotsCount = spotsCount, onSpotsCount = { spotsCount = it },
+                            spotCount = spotCount, onSpotCount = { spotCount = it },
                             pipePassCount = pipePassCount, onPipePassCount = { pipePassCount = it },
                             curtainNicheMeters = curtainNicheMeters, onCurtainNicheMeters = { curtainNicheMeters = it },
                             extraCorners = extraCorners, onExtraCorners = { extraCorners = it },
