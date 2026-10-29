@@ -41,7 +41,7 @@ class EstimateNumberingTest {
 
     @Test
     fun missingTruncatedAndRepeatedUuidAreRejected() {
-        assertFalse(EstimateNumbering.validate(EstimateNumberPolicy(template = "{prefix}-{year}-{sequence}")).isEmpty())
+        assertTrue(EstimateNumbering.validate(EstimateNumberPolicy(template = "{prefix}-{year}-{sequence}")).isEmpty())
         assertFalse(EstimateNumbering.validate(EstimateNumberPolicy(template = "{uuid}-{uuid}")).isEmpty())
         assertFalse(EstimateNumbering.validate(EstimateNumberPolicy(template = "{uuidShort}")).isEmpty())
         assertFailsWith<IllegalArgumentException> {
@@ -51,7 +51,7 @@ class EstimateNumberingTest {
 
     @Test
     fun maliciousUnsupportedUnknownAndUnclosedTokensAreRejected() {
-        for (template in listOf("{uuid}/{year}", "{uuid}-{magic}", "{uuid}-{year", "{uuid}-\u0024{year}", "{uuid}-{prefix}-{prefix}")) {
+        for (template in listOf("{{uuid}}", "{uuid}-{magic}", "{uuid}-{year", "{uuid}-\u0024{year}", "{uuid}-{prefix}-{prefix}")) {
             assertTrue(EstimateNumbering.validate(EstimateNumberPolicy(template = template)).isNotEmpty(), template)
         }
         assertTrue(EstimateNumbering.validate(EstimateNumberPolicy(prefix = "../../oops")).isNotEmpty())
@@ -86,8 +86,49 @@ class EstimateNumberingTest {
     }
 
     @Test
+    fun printableFormatHidesFullUuidAndKeepsPrivateIdentity() {
+        val cases = listOf(
+            EstimateNumberPolicy("{prefix}-{year}-{sequence}", "КШ", 4) to "КШ-2026-0125",
+            EstimateNumberPolicy("{year}/{sequence}", "AC", 4) to "2026/0125",
+            EstimateNumberPolicy("{prefix}/{year}/{sequence}", "КШ", 5) to "КШ/2026/00125",
+            EstimateNumberPolicy("{prefix}-{sequence}", "AC", 5) to "AC-00125",
+            EstimateNumberPolicy("{year}.{sequence}", "AC", 4) to "2026.0125"
+        )
+        for ((policy, expected) in cases) {
+            assertTrue(EstimateNumbering.validate(policy).isEmpty(), policy.toString())
+            val internal = EstimateNumbering.render(policy, EstimateNumberContext(uuid, 2026, 125))
+            assertTrue(internal.contains(uuid), internal)
+            assertEquals(expected, EstimateNumbering.printable(internal, 125, policy.prefix, policy.sequenceWidth))
+            assertFalse(EstimateNumbering.printable(internal).contains(uuid), internal)
+        }
+    }
+
+    @Test
+    fun legacyUuidTemplatesArePrintableWithoutLeakingPrivateIdentity() {
+        for ((template, expected) in listOf(
+            "{prefix}-{year}-{sequence}-{uuid}" to "AC-2026-00125",
+            "{prefix}-{uuid}-{sequence}" to "AC-00125",
+            "{uuid}/{year}/{sequence}" to "2026/00125",
+            "{uuid}" to "AC-00125"
+        )) {
+            val policy = EstimateNumberPolicy(template)
+            val internal = EstimateNumbering.render(policy, EstimateNumberContext(uuid, 2026, 125))
+            val printed = EstimateNumbering.printable(internal, 125, policy.prefix, policy.sequenceWidth)
+            assertEquals(expected, printed)
+            assertFalse(printed.contains(uuid))
+        }
+    }
+
+    @Test
+    fun rejectsSequenceFreePublicFormatsButPermitsLegacyUuidOnly() {
+        assertTrue(EstimateNumbering.validate(EstimateNumberPolicy("{year}")).isNotEmpty())
+        assertTrue(EstimateNumbering.validate(EstimateNumberPolicy("{uuid}")).isEmpty())
+        assertTrue(EstimateNumbering.validate(EstimateNumberPolicy("{year}/{sequence}")).isEmpty())
+    }
+
+    @Test
     fun previewIsDeterministicAndDoesNotAllocateNumbers() {
         assertEquals(EstimateNumbering.preview(EstimateNumberPolicy()), EstimateNumbering.preview(EstimateNumberPolicy()))
-        assertTrue(EstimateNumbering.preview(EstimateNumberPolicy()).endsWith("12345678-1234-4abc-8def-0123456789ab"))
+        assertEquals("AC-2026-00001", EstimateNumbering.preview(EstimateNumberPolicy()))
     }
 }
