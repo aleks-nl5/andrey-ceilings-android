@@ -1,7 +1,7 @@
 package com.andreyceilings.app.data.db
 
 /** Illustrative starter prices, inserted only into an empty price list. */
-object DemoPriceList {
+internal object DemoPriceList {
     val items = listOf(
         PriceItemEntity(code = "canvas.pvc_matte", title = "ПВХ полотно матове", category = "Полотна", unit = "м²", price = 290.0),
         PriceItemEntity(code = "canvas.pvc_glossy", title = "ПВХ полотно глянцеве", category = "Полотна", unit = "м²", price = 310.0),
