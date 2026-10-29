@@ -74,16 +74,16 @@ CREATE INDEX index_estimates_projectId ON estimates(projectId);
 CREATE INDEX index_estimates_createdAt ON estimates(createdAt);
 
 selectClients:
-SELECT * FROM clients ORDER BY name;
+SELECT * FROM clients ORDER BY name COLLATE NOCASE;
 
 selectProjects:
 SELECT * FROM projects ORDER BY updatedAt DESC;
 
 selectMeasurementsForProject:
-SELECT * FROM room_measurements WHERE projectId = ? ORDER BY id;
+SELECT * FROM room_measurements WHERE projectId = ? ORDER BY createdAt DESC;
 
 selectPriceItems:
-SELECT * FROM price_items ORDER BY category, code;
+SELECT * FROM price_items ORDER BY category, title;
 
 selectEstimatesForProject:
 SELECT * FROM estimates WHERE projectId = ? ORDER BY createdAt DESC;
@@ -160,3 +160,61 @@ UPDATE estimates SET name = ?, material = ?, profileType = ?, complexity = ?, le
 
 deleteEstimate:
 DELETE FROM estimates WHERE id = ?;
+
+-- Room DAO parity needed before the Android production cutover.
+-- Keep the existing query names stable for cross-platform repository consumers.
+countClients:
+SELECT COUNT(*) FROM clients;
+
+findClientByName:
+SELECT * FROM clients WHERE name = ? COLLATE NOCASE LIMIT 1;
+
+countProjects:
+SELECT COUNT(*) FROM projects;
+
+updateProjectStatus:
+UPDATE projects SET status = ?, updatedAt = ? WHERE id = ?;
+
+countMeasurements:
+SELECT COUNT(*) FROM room_measurements;
+
+selectAllMeasurements:
+SELECT * FROM room_measurements ORDER BY createdAt DESC;
+
+countPriceItems:
+SELECT COUNT(*) FROM price_items;
+
+countEstimates:
+SELECT COUNT(*) FROM estimates;
+
+selectAllEstimates:
+SELECT * FROM estimates ORDER BY createdAt DESC;
+
+-- RETURNING keeps the generated ID on the same SQLite connection as the insert.
+-- A separate last_insert_rowid() query would be incorrect with short-lived JDBC connections.
+insertClientReturningId:
+INSERT INTO clients(name, phone, email, notes, createdAt)
+VALUES (?, ?, ?, ?, ?)
+RETURNING id;
+
+insertProjectReturningId:
+INSERT INTO projects(clientId, title, address, status, notes, createdAt, updatedAt)
+VALUES (?, ?, ?, ?, ?, ?, ?)
+RETURNING id;
+
+insertMeasurementReturningId:
+INSERT INTO room_measurements(projectId, name, shape, lengthMeters, widthMeters, areaSquareMeters, perimeterMeters, drawingJson, notes, createdAt)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+RETURNING id;
+
+insertEstimateReturningId:
+INSERT INTO estimates(projectId, name, material, profileType, complexity, lengthMeters, widthMeters, areaSquareMeters, perimeterMeters, canvasCost, profileCost, complexityCost, optionsCost, totalCost, detailsJson, createdAt)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+RETURNING id;
+
+-- Room uses OnConflictStrategy.REPLACE for PriceItemDao.upsert.
+-- NULLIF(id, 0) retains Room's autoincrement behavior for new items.
+upsertPriceItemReturningId:
+INSERT OR REPLACE INTO price_items(id, code, title, category, unit, price, updatedAt)
+VALUES (NULLIF(?, 0), ?, ?, ?, ?, ?, ?)
+RETURNING id;
