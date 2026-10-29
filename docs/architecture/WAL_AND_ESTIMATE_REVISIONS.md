@@ -33,6 +33,7 @@ This does **not** mean enabling WAL before ensuring a consistent encrypted snaps
 ### 2. Android encrypted WAL / backup correctness — blocked on passing proof
 
 - [x] Isolated Android SQLCipher probe for `PRAGMA journal_mode=WAL`, reopen, and `VACUUM INTO` snapshot **with encryption and schema validation**; does not modify live journal mode.
+- [x] CI finding (Android run `40937006127`): after reopening through the current `SupportOpenHelperFactory`/SQLDelight driver, `journal_mode` returned `delete` even though the prior connection used WAL. The test now re-enables and verifies WAL explicitly on every reopened connection; **future production driver must enforce this at its own open boundary**. Initial encrypted `VACUUM INTO` verification passed before the failing reopen assertion.
 - [ ] Establish whether SQLCipher `VACUUM INTO` truly yields a working encrypted consistent snapshot on installed library/Android versions. If not, use an explicitly verified supported SQLCipher backup mechanism. Never ship a plaintext backup.
 - [ ] Replace direct live `.db` copy in **all** portable/automatic/manual export paths with the verified snapshot operation, including contention/failure cases.
 - [ ] Restore through staging: close all DB handles; validate file and key; preserve last known-good state; ensure atomic replacement or rollback; never remove WAL/SHM from a live or reopened connection.
