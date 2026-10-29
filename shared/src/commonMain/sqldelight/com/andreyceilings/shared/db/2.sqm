@@ -1,0 +1,29 @@
+-- Link legacy Android estimate list records with immutable numbered series.
+-- Existing test data stays unnumbered and readable; no reset/backfill is attempted.
+ALTER TABLE estimates ADD COLUMN seriesUuid TEXT REFERENCES estimate_series(seriesUuid);
+CREATE UNIQUE INDEX index_estimates_seriesUuid ON estimates(seriesUuid) WHERE seriesUuid IS NOT NULL;
+
+-- Old revision_lines schema allowed only nonnegative prices. The existing
+-- calculator deliberately emits signed system.rounding correction rows.
+-- Rebuild ONLY the new history lines table (no references from other tables)
+-- preserving all existing snapshots while allowing negative correction rows.
+CREATE TABLE estimate_revision_lines_v3 (
+    revisionUuid TEXT NOT NULL REFERENCES estimate_revisions(revisionUuid) ON DELETE RESTRICT,
+    sortIndex INTEGER NOT NULL CHECK (sortIndex >= 0),
+    stableCode TEXT NOT NULL,
+    priceItemUuid TEXT,
+    titleSnapshot TEXT NOT NULL,
+    unitSnapshot TEXT NOT NULL,
+    quantitySnapshot REAL NOT NULL CHECK (quantitySnapshot >= 0),
+    unitPriceSnapshot REAL NOT NULL CHECK (unitPriceSnapshot >= 0 OR stableCode = 'system.rounding'),
+    lineTotalSnapshot REAL NOT NULL CHECK (lineTotalSnapshot >= 0 OR stableCode = 'system.rounding'),
+    PRIMARY KEY (revisionUuid, sortIndex)
+);
+INSERT INTO estimate_revision_lines_v3(
+    revisionUuid, sortIndex, stableCode, priceItemUuid, titleSnapshot,
+    unitSnapshot, quantitySnapshot, unitPriceSnapshot, lineTotalSnapshot)
+SELECT revisionUuid, sortIndex, stableCode, priceItemUuid, titleSnapshot,
+       unitSnapshot, quantitySnapshot, unitPriceSnapshot, lineTotalSnapshot
+FROM estimate_revision_lines;
+DROP TABLE estimate_revision_lines;
+ALTER TABLE estimate_revision_lines_v3 RENAME TO estimate_revision_lines;
