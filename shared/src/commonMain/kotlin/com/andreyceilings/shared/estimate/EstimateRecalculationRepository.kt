@@ -36,6 +36,7 @@ class EstimateRecalculationRepository(private val database: PrototypeDatabase) {
             frozenLines = frozenLines,
             prices = currentPrices
         )
+    }
 
     /**
      * Read-only freshness probe for the UI. This is NOT a save precondition:
@@ -62,6 +63,5 @@ class EstimateRecalculationRepository(private val database: PrototypeDatabase) {
             updatedAt = row.updatedAt,
             category = row.category
         )
-    }
     }
 }
