@@ -213,7 +213,7 @@ internal fun EstimatesScreen(database: CeilingsDatabase?) {
                             }
                         }
                         val estimatePrecision = remember(estimate.detailsJson) { precisionForEstimate(estimate.detailsJson) }
-                        Text("${formatMeasuredLength(estimate.lengthMeters, estimatePrecision)} × ${formatMeasuredLength(estimate.widthMeters, estimatePrecision)} м · ${formatMeasuredArea(estimate.areaSquareMeters, estimatePrecision)} м² · ${estimate.material} · ${estimate.profileType}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("${formatMeasuredLength(estimate.lengthMeters, estimatePrecision)} × ${formatMeasuredLength(estimate.widthMeters, estimatePrecision)} м · ${formatMeasuredArea(estimate.areaSquareMeters, estimatePrecision)} м² · ${materialDisplayName(estimate.material)} · ${profileDisplayName(estimate.profileType)}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         Text("Полотно ${money(estimate.canvasCost)} · профіль ${money(estimate.profileCost)} · роботи ${money(estimate.complexityCost + estimate.optionsCost)}")
                         val itemizedRows = remember(estimate.detailsJson) { EstimateLineItems.fromJson(estimate.detailsJson) }
                         if (itemizedRows.isNotEmpty()) {
@@ -268,8 +268,8 @@ private fun writeEstimatePdf(context: Context, uri: Uri, estimate: EstimateEntit
     lines += PdfLine("ПАРАМЕТРИ ПРИМІЩЕННЯ", 1)
     lines += PdfLine("Розмір: ${formatMeasuredLength(estimate.lengthMeters, estimatePrecision)} × ${formatMeasuredLength(estimate.widthMeters, estimatePrecision)} м")
     lines += PdfLine("Площа: ${formatMeasuredArea(estimate.areaSquareMeters, estimatePrecision)} м²    Периметр: ${formatMeasuredLength(estimate.perimeterMeters, estimatePrecision)} м")
-    lines += PdfLine("Матеріал: ${estimate.material}")
-    lines += PdfLine("Профіль: ${estimate.profileType}")
+    lines += PdfLine("Матеріал: ${materialDisplayName(estimate.material)}")
+    lines += PdfLine("Профіль: ${profileDisplayName(estimate.profileType)}")
     lines += PdfLine("Складність: ${when (estimate.complexity) { "multilevel" -> "Багаторівнева"; "curved" -> "Криволінійна"; else -> "Пряма" }}")
     lines += PdfLine("")
     lines += PdfLine("ДЕТАЛЬНИЙ РОЗРАХУНОК", 1)
