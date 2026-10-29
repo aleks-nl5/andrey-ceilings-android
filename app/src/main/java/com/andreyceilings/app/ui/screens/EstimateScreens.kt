@@ -29,6 +29,8 @@ import com.andreyceilings.app.data.db.*
 import com.andreyceilings.app.core.EstimateLineItems
 import com.andreyceilings.app.core.EstimateLineItem
 import com.andreyceilings.shared.calculation.MeasurementPrecision
+import com.andreyceilings.shared.estimate.EstimateRecalculationPreview
+import com.andreyceilings.shared.estimate.EstimateRecalculationRepository
 import org.json.JSONObject
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.onEach
@@ -135,6 +137,9 @@ internal fun EstimatesScreen(database: CeilingsDatabase?) {
     var status by remember { mutableStateOf<String?>(null) }
     var editingEstimate by remember { mutableStateOf<EstimateEntity?>(null) }
     var pendingPdfEstimate by remember { mutableStateOf<EstimateEntity?>(null) }
+    var activePreview by remember { mutableStateOf<EstimateRecalculationPreview?>(null) }
+    var activePreviewNumber by remember { mutableStateOf<String?>(null) }
+    var previewLoading by remember { mutableStateOf(false) }
     var renameText by remember { mutableStateOf("") }
     val estimatesByProject = remember(estimates) { estimates.groupBy { it.projectId } }
     val projectsById = remember(projects) { projects.associateBy { it.id } }
@@ -230,6 +235,37 @@ internal fun EstimatesScreen(database: CeilingsDatabase?) {
                                 }
                             }
                         }
+                        if (estimate.printableNumber != null) {
+                            OutlinedButton(
+                                enabled = !previewLoading,
+                                onClick = {
+                                    scope.launch {
+                                        previewLoading = true
+                                        runCatching {
+                                            withContext(Dispatchers.IO) {
+                                                val activeDatabase = checkNotNull(database)
+                                                val stored = com.andreyceilings.shared.db.EstimateRepository(
+                                                    activeDatabase.database
+                                                ).find(estimate.id)
+                                                val seriesUuid = checkNotNull(stored?.seriesUuid) {
+                                                    "Для цього кошторису немає історії ревізій."
+                                                }
+                                                EstimateRecalculationRepository(
+                                                    activeDatabase.database
+                                                ).previewLatest(seriesUuid)
+                                            }
+                                        }.onSuccess { result ->
+                                            activePreviewNumber = estimate.printableNumber
+                                            activePreview = result
+                                        }.onFailure { failure ->
+                                            error = "Попередній перегляд недоступний: " +
+                                                (failure.message ?: "невідома помилка")
+                                        }
+                                        previewLoading = false
+                                    }
+                                }
+                            ) { Text(if (previewLoading) "Перевіряю прайс…" else "Перерахувати — перегляд") }
+                        }
                         val estimatePrecision = remember(estimate.detailsJson) { precisionForEstimate(estimate.detailsJson) }
                         Text("${formatMeasuredLength(estimate.lengthMeters, estimatePrecision)} × ${formatMeasuredLength(estimate.widthMeters, estimatePrecision)} м · ${formatMeasuredArea(estimate.areaSquareMeters, estimatePrecision)} м² · ${materialDisplayName(estimate.material)} · ${profileDisplayName(estimate.profileType)}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         Text("Полотно ${money(estimate.canvasCost)} · профіль ${money(estimate.profileCost)} · роботи ${money(estimate.complexityCost + estimate.optionsCost)}")
@@ -248,6 +284,13 @@ internal fun EstimatesScreen(database: CeilingsDatabase?) {
         }
         item { status?.let { Text(it, color = MaterialTheme.colorScheme.primary) } }
         item { error?.let { Text(it, color = MaterialTheme.colorScheme.error) } }
+    }
+    activePreview?.let { result ->
+        EstimatePreviewDialog(
+            preview = result,
+            printableNumber = activePreviewNumber,
+            onDismiss = { activePreview = null; activePreviewNumber = null }
+        )
     }
     editingEstimate?.let { selected ->
         AppAlertDialog(
