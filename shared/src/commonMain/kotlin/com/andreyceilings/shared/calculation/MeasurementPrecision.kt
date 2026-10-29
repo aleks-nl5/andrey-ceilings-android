@@ -15,6 +15,10 @@ enum class MeasurementPrecision(
     ONE_MILLIMETER(0.001, "1 мм", 3, 6);
 
     fun length(value: Double): Double = floor(value / stepMeters + 0.5) * stepMeters
+    /** Same minimum 0.1m and empty-value defaults as rectangle geometry. */
+    fun roomDimension(value: Double, fallback: Double): Double =
+        length(kotlin.math.max(0.1, if (value <= 0.0) fallback else value))
+
     fun area(value: Double): Double {
         val stepArea = stepMeters * stepMeters
         return floor(value / stepArea + 0.5) * stepArea
