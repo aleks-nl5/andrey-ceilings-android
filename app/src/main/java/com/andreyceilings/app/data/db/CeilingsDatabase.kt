@@ -103,7 +103,7 @@ internal class CeilingsDatabase private constructor(
                 return try {
                     val result = CeilingsDatabase(driver, live.absolutePath)
                     // Force an encrypted-schema read before returning to the UI.
-                    check(result.queryLong("SELECT count(*) FROM sqlite_master") ?: 0L > 0L)
+                    check((result.queryLong("SELECT count(*) FROM sqlite_master") ?: 0L) > 0L)
                     result
                 } catch (failure: Throwable) {
                     driver.close()
