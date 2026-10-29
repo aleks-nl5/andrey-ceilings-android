@@ -141,7 +141,7 @@ internal fun MeasurementsScreen(database: CeilingsDatabase?, precision: Measurem
   item { error?.let { Text(it, color = MaterialTheme.colorScheme.error) } }
  }
  if (showDialog && database != null && projects.isNotEmpty()) AddMeasurementDialog(projects = projects, precision = precision, onDismiss = { showDialog = false }, onSave = { projectId, name, length, width ->
-  scope.launch { val geometry = KmpCeilingCalculator.geometry(GeometryInput(length = length, width = width, precisionStepMeters = precision.stepMeters)); runCatching { database.measurements().insert(RoomMeasurementEntity(projectId = projectId, name = name.trim(), lengthMeters = precision.length(length), widthMeters = precision.length(width), areaSquareMeters = geometry.area, perimeterMeters = geometry.perimeter)) }.onFailure { error = it.message ?: "Не вдалося зберегти замір" }; showDialog = false }
+  scope.launch { val geometry = KmpCeilingCalculator.geometry(GeometryInput(length = length, width = width, precisionStepMeters = precision.stepMeters)); runCatching { database.measurements().insert(RoomMeasurementEntity(projectId = projectId, name = name.trim(), lengthMeters = precision.roomDimension(length, 4.0), widthMeters = precision.roomDimension(width, 3.0), areaSquareMeters = geometry.area, perimeterMeters = geometry.perimeter)) }.onFailure { error = it.message ?: "Не вдалося зберегти замір" }; showDialog = false }
  })
 }
 
