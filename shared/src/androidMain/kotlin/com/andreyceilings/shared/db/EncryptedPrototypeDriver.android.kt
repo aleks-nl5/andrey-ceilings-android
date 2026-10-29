@@ -16,7 +16,8 @@ import net.zetetic.database.sqlcipher.SupportOpenHelperFactory
 fun createEncryptedPrototypeDriver(
     context: Context,
     passphrase: ByteArray,
-    databaseName: String = "andrey_ceilings_sqldelight_prototype.db"
+    databaseName: String = "andrey_ceilings_sqldelight_prototype.db",
+    enableWalForTesting: Boolean = false
 ): SqlDriver {
     require(passphrase.size == 32) { "Expected a 256-bit database passphrase" }
     require(databaseName.isNotBlank() && '/' !in databaseName && '\\' !in databaseName) {
@@ -25,7 +26,10 @@ fun createEncryptedPrototypeDriver(
     System.loadLibrary("sqlcipher")
     val driver = AndroidSqliteDriver(
         schema = PrototypeDatabase.Schema,
-        factory = SupportOpenHelperFactory(passphrase.copyOf()),
+        // Keep the production default (DELETE) unchanged. Only disposable
+        // instrumentation databases opt into SQLCipher's open-helper WAL
+        // connection management; PRAGMA alone does not enable its pool.
+        factory = SupportOpenHelperFactory(passphrase.copyOf(), null, enableWalForTesting),
         context = context.applicationContext,
         name = databaseName
     )

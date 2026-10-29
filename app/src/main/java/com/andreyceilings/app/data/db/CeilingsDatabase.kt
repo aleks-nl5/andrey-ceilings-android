@@ -125,10 +125,11 @@ internal class CeilingsDatabase private constructor(
          * The caller must delete the isolated file after the session is closed.
          */
         internal fun openIsolatedForTesting(
-            context: Context, filename: String, key: ByteArray
+            context: Context, filename: String, key: ByteArray,
+            enableWalForTesting: Boolean = false
         ): CeilingsDatabase {
             require(filename.startsWith("sqldelight_test_") && filename.endsWith(".db"))
-            val driver = createEncryptedPrototypeDriver(context, key, filename)
+            val driver = createEncryptedPrototypeDriver(context, key, filename, enableWalForTesting)
             return CeilingsDatabase(driver, context.getDatabasePath(filename).absolutePath)
         }
 

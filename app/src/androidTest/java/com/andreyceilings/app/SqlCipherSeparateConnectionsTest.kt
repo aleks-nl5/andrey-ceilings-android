@@ -9,6 +9,9 @@ import com.andreyceilings.app.data.db.CeilingsDatabase
 import com.andreyceilings.app.data.security.PortableBackupManager
 import com.andreyceilings.shared.db.ProjectRepository
 import java.io.File
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicReference
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -17,7 +20,9 @@ import org.junit.runner.RunWith
 /**
  * Exercises two independent encrypted Android SQLDelight drivers on a
  * disposable WAL database. This catches a different class of issues than
- * sharing one driver across writer and snapshot threads.
+ * sharing one driver across writer and snapshot threads. The first test
+ * also exercises contention between two SQLDelight transactions (both
+ * reserve the writer slot), rather than treating them as read-only cursors.
  *
  * Production remains in DELETE mode until all WAL safety gates pass.
  */
@@ -31,7 +36,9 @@ class SqlCipherSeparateConnectionsTest {
         context.deleteDatabase(name)
         snapshot.delete()
         try {
-            CeilingsDatabase.openIsolatedForTesting(context, name, key).use { writer ->
+            CeilingsDatabase.openIsolatedForTesting(
+                context, name, key, enableWalForTesting = true
+            ).use { writer ->
                 assertEquals("wal", writer.queryText("PRAGMA journal_mode=WAL")?.lowercase())
                 val repository = ProjectRepository(writer.database)
                 repository.createReturningId(
@@ -39,18 +46,19 @@ class SqlCipherSeparateConnectionsTest {
                     createdAt = 111L
                 )
 
-                CeilingsDatabase.openIsolatedForTesting(context, name, key).use { reader ->
-                    // SQLCipher Android may switch an opened connection back to
-                    // DELETE; deliberately re-enforce WAL on every connection.
-                    assertEquals("wal", reader.queryText("PRAGMA journal_mode=WAL")?.lowercase())
+                CeilingsDatabase.openIsolatedForTesting(
+                    context, name, key, enableWalForTesting = true
+                ).use { reader ->
+                    // Both open helpers explicitly enabled WAL before opening:
+                    // the journal_mode PRAGMA by itself is not sufficient.
+                    assertEquals("wal", reader.queryText("PRAGMA journal_mode")?.lowercase())
                     assertEquals("wal", writer.queryText("PRAGMA journal_mode")?.lowercase())
 
-                    // The current pair of separate SupportOpenHelperFactory
-                    // connections may report WAL yet still reject a writer
-                    // while a second connection has an active read transaction.
-                    // Emulator run 40952735193 confirmed SQLITE_BUSY after the
-                    // default lock-retry window. Fail closed and retry only
-                    // after releasing the reader; this is a rollout blocker.
+                    // SQLDelight Android transaction() uses
+                    // beginTransactionNonExclusive() = BEGIN IMMEDIATE.
+                    // Although the body reads only, it reserves the only
+                    // write slot. SQLITE_BUSY here is EXPECTED contention,
+                    // not evidence that concurrent WAL readers are broken.
                     // busy_timeout is a query PRAGMA: AndroidSqliteDriver
                     // execute() routes to executeUpdateDelete and rejects
                     // statements returning rows.
@@ -66,15 +74,15 @@ class SqlCipherSeparateConnectionsTest {
                         }
                         if (overlap.isSuccess) {
                             committedDuringReader = true
-                            // A working WAL implementation keeps the original
-                            // read snapshot even after a concurrent commit.
+                            // If a driver revision allows this overlap, the
+                            // transaction must still keep its original view.
                             assertEquals(1L, reader.queryLong("SELECT count(*) FROM projects"))
                         } else {
                             val failure = overlap.exceptionOrNull()!!
                             assertTrue("Unexpected failure during concurrent write: $failure",
                                 failure is SQLiteDatabaseLockedException)
-                            Log.w("SqlCipherWAL", "Independent drivers returned SQLITE_BUSY; " +
-                                "production dual-driver WAL cannot be enabled", failure)
+                            Log.i("SqlCipherWAL", "Expected IMMEDIATE transaction " +
+                                "writer contention; retry after the transaction", failure)
                         }
                         // PASSIVE may report incomplete work while a reader
                         // holds a transaction; it must not silently lose rows.
@@ -106,12 +114,99 @@ class SqlCipherSeparateConnectionsTest {
                     assertTrue(writer.checkIntegrity())
                 }
             }
-            CeilingsDatabase.openIsolatedForTesting(context, name, key).use { reopened ->
+            CeilingsDatabase.openIsolatedForTesting(
+                context, name, key, enableWalForTesting = true
+            ).use { reopened ->
                 assertEquals(2, ProjectRepository(reopened.database).all().size)
                 assertTrue(reopened.checkIntegrity())
             }
         } finally {
             snapshot.delete()
+            context.deleteDatabase(name)
+            key.fill(0)
+        }
+    }
+
+    @Test fun independentWalReaderAndWriterOverlapWithoutHoldingWriteTransactions() {
+        val context: Context = ApplicationProvider.getApplicationContext()
+        val name = "sqldelight_test_wal_two_connections.db"
+        val key = ByteArray(32) { 0x73.toByte() }
+        val commits = 25
+        val started = CountDownLatch(1)
+        val completed = CountDownLatch(1)
+        val writeFailure = AtomicReference<Throwable?>(null)
+        context.deleteDatabase(name)
+        try {
+            CeilingsDatabase.openIsolatedForTesting(
+                context, name, key, enableWalForTesting = true
+            ).use { writer ->
+                CeilingsDatabase.openIsolatedForTesting(
+                    context, name, key, enableWalForTesting = true
+                ).use { reader ->
+                    // Verify that SupportOpenHelperFactory enabled WAL on
+                    // actual open, before any explicit PRAGMA mode setter.
+                    assertEquals("wal", reader.queryText("PRAGMA journal_mode")?.lowercase())
+                    assertEquals("wal", writer.queryText("PRAGMA journal_mode")?.lowercase())
+                    val writerThread = Thread({
+                        try {
+                            val projects = ProjectRepository(writer.database)
+                            repeat(commits) { i ->
+                                projects.createReturningId(
+                                    clientId = null, title = "Independent row $i",
+                                    createdAt = 100L + i
+                                )
+                                if (i == 0) started.countDown()
+                                Thread.sleep(12)
+                            }
+                        } catch (error: Throwable) {
+                            writeFailure.set(error)
+                        } finally {
+                            started.countDown()
+                            completed.countDown()
+                        }
+                    }, "sqlcipher-independent-wal-writer")
+                    writerThread.start()
+                    try {
+                        assertTrue("Writer never committed its first row",
+                            started.await(15, TimeUnit.SECONDS))
+                        var prior = 0L
+                        var readDuringWriter = 0
+                        repeat(30) {
+                            if (completed.count > 0L) readDuringWriter++
+                            val count = reader.queryLong("SELECT count(*) FROM projects")
+                                ?: error("Reader returned no count")
+                            assertTrue("Reader saw uncommitted or duplicate rows: $count",
+                                count in prior..commits.toLong())
+                            prior = count
+                            Thread.sleep(8)
+                        }
+                        assertTrue("No overlapping reads occurred", readDuringWriter > 0)
+                        assertTrue("Independent writer stalled",
+                            completed.await(20, TimeUnit.SECONDS))
+                        writeFailure.get()?.let { throw AssertionError(
+                            "Independent WAL writer failed", it
+                        ) }
+                        assertEquals(commits.toLong(),
+                            reader.queryLong("SELECT count(*) FROM projects"))
+                        assertEquals(commits, ProjectRepository(writer.database).all().size)
+                        assertTrue(writer.checkpoint(CeilingsDatabase.WalMode.FULL).complete)
+                        assertTrue(reader.checkIntegrity())
+                    } finally {
+                        writerThread.join(20000)
+                        check(!writerThread.isAlive) {
+                            "Concurrent writer remained active while closing SQLCipher drivers"
+                        }
+                    }
+                }
+            }
+            CeilingsDatabase.openIsolatedForTesting(
+                context, name, key, enableWalForTesting = true
+            ).use { reopened ->
+                assertEquals("wal", reopened.queryText("PRAGMA journal_mode")?.lowercase())
+                assertEquals(commits, ProjectRepository(reopened.database).all().size)
+                assertTrue(reopened.checkIntegrity())
+            }
+        } finally {
             context.deleteDatabase(name)
             key.fill(0)
         }
