@@ -191,6 +191,11 @@ internal fun EstimatesScreen(database: CeilingsDatabase?) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                                 Text(estimate.name, fontWeight = FontWeight.SemiBold)
+                                estimate.documentNumber?.let { number ->
+                                    Text("№ $number · v1",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.primary)
+                                }
                                 Text(project?.title ?: "Об’єкт #${estimate.projectId}", style = MaterialTheme.typography.bodySmall)
                             }
                             IconButton(onClick = { renameText = estimate.name; editingEstimate = estimate }) {
@@ -206,7 +211,10 @@ internal fun EstimatesScreen(database: CeilingsDatabase?) {
                             IconButton(onClick = {
                                 pendingPdfEstimate = estimate
                                 val safeName = estimate.name.replace(Regex("[^A-Za-zА-Яа-яІіЇїЄє0-9_-]"), "_").take(40).ifBlank { "koshtorys" }
-                                pdfLauncher.launch("$safeName.pdf")
+                                val numberPart = estimate.documentNumber?.replace(Regex("[^A-Za-z0-9_-]"), "_")
+                                val filename = listOfNotNull(safeName, numberPart, if (numberPart != null) "v1" else null)
+                                    .joinToString("_") + ".pdf"
+                                pdfLauncher.launch(filename)
                             }) { Icon(Icons.Default.PictureAsPdf, contentDescription = "Експортувати PDF") }
                             IconButton(onClick = { scope.launch { runCatching { database.estimates().deleteById(estimate.id) }.onFailure { error = it.message ?: "Не вдалося видалити кошторис" } } }) {
                                 Icon(Icons.Default.Delete, contentDescription = "Видалити кошторис")
@@ -261,9 +269,13 @@ private fun writeEstimatePdf(context: Context, uri: Uri, estimate: EstimateEntit
     data class PdfLine(val text: String, val kind: Int = 0)
     val lines = mutableListOf<PdfLine>()
     lines += PdfLine("КОШТОРИС НАТЯЖНОЇ СТЕЛІ", 2)
+    if (estimate.documentNumber != null) {
+        lines += PdfLine("№ документа: ${estimate.documentNumber}")
+        lines += PdfLine("Версія: v1")
+    }
     lines += PdfLine("Об’єкт: $projectTitle")
     lines += PdfLine("Кошторис: ${estimate.name}")
-    lines += PdfLine("Дата: ${java.text.SimpleDateFormat("dd.MM.yyyy", Locale.getDefault()).format(java.util.Date())}")
+    lines += PdfLine("Дата створення: ${java.text.SimpleDateFormat("dd.MM.yyyy", Locale.getDefault()).format(java.util.Date(estimate.createdAt))}")
     lines += PdfLine("")
     lines += PdfLine("ПАРАМЕТРИ ПРИМІЩЕННЯ", 1)
     lines += PdfLine("Розмір: ${formatMeasuredLength(estimate.lengthMeters, estimatePrecision)} × ${formatMeasuredLength(estimate.widthMeters, estimatePrecision)} м")
