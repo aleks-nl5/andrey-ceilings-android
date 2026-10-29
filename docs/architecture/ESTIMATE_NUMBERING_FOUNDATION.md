@@ -1,3 +1,20 @@
+## Update — SQLDelight persistence foundation (stage 2, PR #27)
+
+**Implemented, CI verification pending:** added additive schema migration `1.sqm` and `EstimateHistory.sq`. New structures do not modify the existing `estimates` UI table. Existing Android screens, pricing calculations, PDF export and backup code still use the original table/format.
+
+- `estimate_number_settings`: template/prefix/width + serialized next local sequence.
+- `estimate_series`: immutable `seriesUuid` (PK), `documentNumber` (UNIQUE), project/optional measurement relationship, frozen policy fields and soft-delete tombstone.
+- `estimate_revisions`: revision UUID, series, parent UUID, version, snapshot of input/details/precision/rule version/currency/rounding/total, `UNIQUE(seriesUuid, versionNumber)`.
+- `estimate_revision_lines`: immutable frozen line titles/codes/UUID, unit, quantity, unit price and line totals.
+- `ImmutableEstimateRepository.createSeries` allocates the sequence, retries only UUID/number collisions, inserts series/revision/lines in **one** SQLDelight transaction and rolls back on failure. `appendRevision` requires the latest known revision UUID, rejecting stale confirmations. `softDeleteSeries` retains the number reservation. Project soft-deletion tombstones new series too.
+- Added JVM tests for v1/v2 integrity, unchanged number following settings changes, collision retry, rollback, deleted series and additive migration; Android instrumentation checks real SQLCipher persistence and encryption across a reopen.
+
+**Limitations / remaining gates:** Not yet used by Android estimate creation or duplication. Existing estimate records are not backfilled. No immutable revision history UI, no preview/diff, no PDF-by-revision, and no default DB-side prevention of direct ad hoc UPDATE outside the repository contract. Concurrency/backup and current-user test remain required before production adoption. Current database file is retained: additive migration updates schema version rather than resetting existing data.
+
+**Next:** inspect latest Android/Windows/iOS CI; only after it passes plan Android integration of series creation and PDF, including how old `estimates.detailsJson` maps into typed frozen line snapshots. Avoid dual-writing partial documents or silently changing PDF history.
+
+---
+
 # Estimate numbering — KMP domain contract (stage 1)
 
 Status: **implemented as a pure shared domain contract**, not yet connected to SQLDelight/Android UI. Started after merged PR #23. Related work: [#25](https://github.com/aleks-nl5/andrey-ceilings-android/issues/25) (document numbers), [#24](https://github.com/aleks-nl5/andrey-ceilings-android/issues/24) (immutable revisions).
