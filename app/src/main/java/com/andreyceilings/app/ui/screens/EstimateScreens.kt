@@ -205,8 +205,8 @@ internal fun EstimatesScreen(database: CeilingsDatabase?) {
                             }) { Icon(Icons.Default.ContentCopy, contentDescription = "Дублювати кошторис") }
                             IconButton(onClick = {
                                 pendingPdfEstimate = estimate
-                                val safeName = estimate.name.replace(Regex("[^A-Za-zА-Яа-яІіЇїЄє0-9_-]"), "_").take(40).ifBlank { "koshtorys" }
-                                val numberPart = estimate.printableNumber?.replace(Regex("[^A-Za-z0-9_-]"), "_")
+                                val safeName = estimate.name.replace(Regex("[^A-Za-zА-Яа-яІіЇїЄєҐґ0-9_-]"), "_").take(40).ifBlank { "koshtorys" }
+                                val numberPart = estimate.printableNumber?.replace(Regex("[^A-Za-zА-Яа-яІіЇїЄєҐґ0-9_-]"), "_")
                                 val filename = listOfNotNull(safeName, numberPart, if (numberPart != null) "v1" else null)
                                     .joinToString("_") + ".pdf"
                                 pdfLauncher.launch(filename)
