@@ -70,6 +70,8 @@ sqldelight {
     databases {
         create("PrototypeDatabase") {
             packageName.set("com.andreyceilings.shared.db")
+            // INSERT ... RETURNING requires SQLite >= 3.35 on every supported driver.
+            dialect("app.cash.sqldelight:sqlite-3-35-dialect:2.4.1")
         }
     }
 }
