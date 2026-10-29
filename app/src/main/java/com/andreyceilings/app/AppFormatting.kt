@@ -37,3 +37,10 @@ internal fun profileDisplayName(code: String): String = when (code) {
     "slott_tracks" -> "Слот / трековий"
     else -> code
 }
+
+/** Preserve a stored measurement's actual digits after the global precision changes. */
+internal fun formatStoredMeters(value: Double): String =
+    String.format(java.util.Locale.getDefault(), "%.3f", value).trimEnd('0').trimEnd('.', ',')
+
+internal fun formatStoredSquareMeters(value: Double): String =
+    String.format(java.util.Locale.getDefault(), "%.6f", value).trimEnd('0').trimEnd('.', ',')
