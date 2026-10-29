@@ -64,7 +64,7 @@ class EstimateNumberSettingsPersistenceTest {
             assertNotEquals(first.documentNumber, second.documentNumber)
 
             for (invalid in listOf(
-                custom.copy(template = "{year}-{sequence}"),
+                custom.copy(template = "{year}"),
                 custom.copy(template = "{uuid}-{uuid}"),
                 custom.copy(prefix = "../../unsafe"),
                 custom.copy(sequenceWidth = 13)
@@ -86,6 +86,33 @@ class EstimateNumberSettingsPersistenceTest {
             assertEquals(250L, repo.series(first.seriesUuid)?.deletedAt)
             assertEquals(1L, repo.revisions(first.seriesUuid).single().versionNumber)
             assertEquals(1L, repo.revisions(third.seriesUuid).single().versionNumber)
+        }
+    }
+
+    @Test
+    fun printableSettingCreatesNewShortNumbersWithoutModifyingPreviouslyIssuedCopies() {
+        JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).use { driver ->
+            PrototypeDatabase.Schema.create(driver)
+            driver.execute(null, "PRAGMA foreign_keys = ON", 0)
+            val db = PrototypeDatabase(driver)
+            val projectId = ProjectRepository(db).createReturningId(null, "Work", createdAt = 1L)
+            val repo = ImmutableEstimateRepository(db)
+            val legacy = repo.createSeries(
+                projectId, 2026, 100L, frozen(),
+                newSeriesUuid = { uuid(20) }, newRevisionUuid = { uuid(21) }
+            )
+            val before = EstimateNumbering.printable(legacy.documentNumber)
+            assertEquals("AC-2026-00001", before)
+            val visible = EstimateNumberPolicy("{prefix}-{year}-{sequence}", "КШ", 4)
+            repo.configureNumberPolicy(visible)
+            val created = repo.createSeries(
+                projectId, 2026, 200L, frozen(),
+                newSeriesUuid = { uuid(22) }, newRevisionUuid = { uuid(23) }
+            )
+            assertEquals("КШ-2026-0002", EstimateNumbering.printable(created.documentNumber))
+            assertTrue(created.documentNumber.contains(uuid(22)))
+            assertEquals(before, EstimateNumbering.printable(repo.series(legacy.seriesUuid)!!.documentNumber))
+            assertEquals(visible, repo.numberPolicy())
         }
     }
 
