@@ -1,6 +1,7 @@
 package com.andreyceilings.app
 
 import android.content.Context
+import android.net.Uri
 import androidx.sqlite.db.SupportSQLiteDatabase
 import androidx.sqlite.db.SupportSQLiteOpenHelper
 import androidx.test.core.app.ApplicationProvider
@@ -56,7 +57,20 @@ class RoomToSqlDelightStagingMigrationTest {
                 db.execSQL("INSERT INTO estimates VALUES(59, 19, 'Quote', 'PVC', 'standard', 'simple', 3, 4, 12, 14, 100, 20, 0, 0, 120, '{}', 105)")
             } finally { helper.close() }
             val old = context.getDatabasePath(oldName)
-            LegacyRoomDatabaseImporter.migrateToNewDatabase(context, old, context.getDatabasePath(newName), key)
+            // The first SQLCipher native call in the *separate debug-only process*
+            // must happen inside LegacyRoomDatabaseImporter. Previous tests loaded
+            // SQLCipher in their own process and could not catch cold-start failures.
+            val probeUri = Uri.Builder()
+                .scheme("content")
+                .authority("com.andreyceilings.app.migrationprobe")
+                .appendPath("migrate")
+                .appendQueryParameter("source", oldName)
+                .appendQueryParameter("destination", newName)
+                .build()
+            context.contentResolver.query(probeUri, null, null, null, null).use { cursor ->
+                assertTrue("Migration probe returned no result", cursor != null && cursor.moveToFirst())
+                assertEquals(1, cursor!!.getInt(0))
+            }
             createEncryptedPrototypeDriver(context, key, newName).use { driver ->
                 val q = PrototypeDatabase(driver).businessSchemaQueries
                 assertEquals(7L, q.selectClients().executeAsOne().id)
