@@ -290,7 +290,7 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
         hardWallMeters = hardWallMeters.toSafeDouble(),
         complexity = complexity
     )
-    // Go is the only calculation engine. Failure is surfaced to the user; no Kotlin fallback exists.
+    // The Android calculator now uses the shared Kotlin Multiplatform engine.
     val calculation = remember(length, width, pricePerM2, profilePrice, priceItems, calculatorOptions, material, profileType, measurementPrecision) {
         runCatching {
             CeilingCalculator.estimate(
@@ -318,7 +318,7 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
     }
     val estimate = calculation.getOrNull()
     val calculationError = calculation.exceptionOrNull()?.let { error ->
-        error.message?.takeIf { it.isNotBlank() } ?: "Невідома помилка Go-рушія"
+        error.message?.takeIf { it.isNotBlank() } ?: "Невідома помилка KMP-рушія"
     }
 
     val topContentPadding = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 64.dp + 16.dp
