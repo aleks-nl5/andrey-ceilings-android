@@ -1,6 +1,6 @@
 # Compose Multiplatform / Kotlin Multiplatform — план і фактичний стан
 
-**Актуально для PR #22, 29 жовтня 2026 року.** Робоча гілка: `architecture/cmp-kmp-migration-v2`, база: `main`. PR залишається Draft; власник об'єднує зміни лише після підтвердження.
+**Стан на 29 жовтня 2026 року:** PR #22 об’єднано з `main`, етап 1 завершено. Історичні критерії PR #22 наведені нижче; зараз робота триває над етапом 2 в окремій гілці `feature/kmp-calculation-parity`. Див. [GO_TO_KMP_PARITY.md](GO_TO_KMP_PARITY.md).
 
 ## Мета і межі PR #22
 
