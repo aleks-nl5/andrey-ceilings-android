@@ -42,6 +42,9 @@ internal object PortableBackupManager {
     private fun createVerifiedSnapshot(
         context: Context, database: CeilingsDatabase, key: ByteArray
     ): File {
+        // Must account for both the VACUUM INTO image and the separate
+        // integrity-verification copy, even if the initial UI check passed.
+        StorageSpaceGuard.requireForBackup(context, File(database.path))
         val snapshot = File.createTempFile("sqldelight_backup_", ".db", context.cacheDir)
         try {
             // SQLite VACUUM INTO requires a destination that does not yet exist.
@@ -69,6 +72,7 @@ internal object PortableBackupManager {
             val legacy = context.getDatabasePath(legacyName)
             val converted = context.getDatabasePath(convertedName)
             try {
+                StorageSpaceGuard.requireForImportValidation(context, contents.database.size.toLong())
                 legacy.parentFile?.mkdirs()
                 legacy.writeBytes(contents.database)
                 val alreadySqlDelight = runCatching {

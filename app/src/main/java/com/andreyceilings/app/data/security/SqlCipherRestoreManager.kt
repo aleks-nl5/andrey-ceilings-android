@@ -83,6 +83,9 @@ internal object SqlCipherRestoreManager {
         val live = context.getDatabasePath(CeilingsDatabase.DATABASE_NAME)
         val parent = checkNotNull(live.parentFile)
         check(parent.isDirectory || parent.mkdirs()) { "Каталог бази даних недоступний." }
+        // Do not create an incoming stage or a durable restore marker unless
+        // internal storage can hold all transient encrypted copies.
+        StorageSpaceGuard.requireForRestore(context, contents.database.size.toLong(), live)
         val rollback = rollbackFile(context)
         var incoming: File? = null
         var originalSnapshot: File? = null
