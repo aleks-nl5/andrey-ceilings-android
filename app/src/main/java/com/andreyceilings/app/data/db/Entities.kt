@@ -66,5 +66,6 @@ data class EstimateEntity(
     val totalCost: Double,
     val detailsJson: String = "{}",
     val createdAt: Long = System.currentTimeMillis(),
-    val documentNumber: String? = null
+    val documentNumber: String? = null,
+    val originalDocumentName: String? = null
 )
