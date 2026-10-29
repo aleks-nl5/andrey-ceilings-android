@@ -67,12 +67,14 @@ class EstimateNumberSettingsSqlCipherTest {
                     db.estimates().observeAll().first().first { it.id == firstId }.documentNumber
                 )
                 assertTrue(originalNumber.startsWith("AC-2026-00001-"))
+                assertEquals("AC-2026-00001",
+                    db.estimates().observeAll().first().first { it.id == firstId }.printableNumber)
                 assertEquals(EstimateNumberPolicy(), db.estimateNumberSettings().load())
 
                 assertEquals(custom, db.estimateNumberSettings().save(custom))
                 assertEquals(custom, db.estimateNumberSettings().load())
 
-                val invalid = custom.copy(template = "{sequence}") // no complete UUID
+                val invalid = custom.copy(template = "{year}") // missing sequence and UUID
                 val error = runCatching { db.estimateNumberSettings().save(invalid) }.exceptionOrNull()
                 assertTrue(error is IllegalArgumentException)
                 assertEquals(custom, db.estimateNumberSettings().load())
@@ -81,6 +83,8 @@ class EstimateNumberSettingsSqlCipherTest {
                 val estimates = db.estimates().observeAll().first()
                 changedNumber = requireNotNull(estimates.first { it.id == secondId }.documentNumber)
                 assertTrue(changedNumber.startsWith("STEL_2026_002_"))
+                assertEquals("STEL_2026_002",
+                    estimates.first { it.id == secondId }.printableNumber)
                 assertNotEquals(originalNumber, changedNumber)
                 assertEquals(originalNumber,
                     estimates.first { it.id == firstId }.documentNumber)
@@ -92,6 +96,8 @@ class EstimateNumberSettingsSqlCipherTest {
                 assertEquals(2, active.size)
                 assertTrue(active.any { it.documentNumber == originalNumber })
                 assertTrue(active.any { it.documentNumber == changedNumber })
+                assertTrue(active.all { it.printableNumber?.contains("12345678-") != true })
+                assertTrue(active.all { it.printableNumber?.length ?: 0 < it.documentNumber?.length ?: 0 })
                 val history = ImmutableEstimateRepository(db.database)
                 assertEquals("AC", history.seriesByNumber(originalNumber)?.policyPrefix)
                 assertEquals("STEL", history.seriesByNumber(changedNumber)?.policyPrefix)
