@@ -25,6 +25,10 @@ class EncryptedBusinessRepositoriesTest {
             SqlCipherWindowsDriverFactory.open(file, key).use { driver ->
                 PrototypeDatabase.Schema.create(driver)
                 driver.execute(null, "PRAGMA foreign_keys = ON", 0)
+                val foreignKeys = driver.executeQuery(null, "PRAGMA foreign_keys", { cursor ->
+                    app.cash.sqldelight.db.QueryResult.Value(if (cursor.next().value) cursor.getLong(0) else null)
+                }, 0).value
+                assertEquals(1L, foreignKeys, "SQLCipher JDBC connection must enforce foreign keys")
                 val db = PrototypeDatabase(driver)
                 ClientRepository(db).create("Encrypted client", createdAt = 100)
                 val clientId = ClientRepository(db).all().single().id
@@ -53,6 +57,10 @@ class EncryptedBusinessRepositoriesTest {
 
             SqlCipherWindowsDriverFactory.open(file, key).use { driver ->
                 driver.execute(null, "PRAGMA foreign_keys = ON", 0)
+                val foreignKeys = driver.executeQuery(null, "PRAGMA foreign_keys", { cursor ->
+                    app.cash.sqldelight.db.QueryResult.Value(if (cursor.next().value) cursor.getLong(0) else null)
+                }, 0).value
+                assertEquals(1L, foreignKeys, "SQLCipher JDBC connection must enforce foreign keys")
                 val db = PrototypeDatabase(driver)
                 val clients = ClientRepository(db)
                 val projects = ProjectRepository(db)
