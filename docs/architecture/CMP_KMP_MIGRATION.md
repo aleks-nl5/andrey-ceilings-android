@@ -1,202 +1,69 @@
-# Compose Multiplatform + Kotlin Multiplatform migration
+# Compose Multiplatform / Kotlin Multiplatform — план і фактичний стан
 
-**Status:** initial planning on `architecture/cmp-kmp-migration-v2`, created from the current `main`. No product screen is considered migrated until it is implemented and verified on the target platform.
+**Актуально для PR #22, 29 жовтня 2026 року.** Робоча гілка: `architecture/cmp-kmp-migration-v2`, база: `main`. PR залишається Draft; власник об'єднує зміни лише після підтвердження.
 
-## Purpose and strategy
+## Мета і межі PR #22
 
-Move Andrey Ceilings incrementally toward Compose Multiplatform (CMP) for shared UI and Kotlin Multiplatform (KMP) for shared domain/business logic across Android, iOS, and Windows desktop. Avoid a wholesale rewrite. The current Android app on `main` is the behavioral and visual reference.
+Поступово переводимо Andrey Ceilings на KMP/CMP для Android, Windows та iOS **без заміни чинного Android UI заглушками**. Цей PR завершує перший стабілізаційний етап: **спільна зашифрована локальна SQLDelight-БД + стабільний Android**. Переписування Go-ядра й перенесення повноцінного UI — наступні окремі PR, не об'єднувати їх в один великий ризикований реліз.
 
-This branch supersedes the technical approach in PR #21, but PR #21 remains an information source. Do not merge or cherry-pick its branch wholesale: it diverged from current `main` and contains older build/dependency choices and an earlier UI baseline.
+## Фактична архітектура
 
-## Preserve current work on main
+| Частина | Статус |
+|---|---|
+| `:app` Android | Робочий Compose Android UI, SQLDelight через `:shared`, SQLCipher/Keystore, збережені PDF/backup/Go-виклики |
+| `:shared` | KMP для Android/JVM/iOS; common domain, SQLDelight-схема, CRUD, `Flow` |
+| `:desktopApp` | Desktop JVM host збирається на Windows; повний бізнес-UI ще не перенесено |
+| iOS | Framework і SQLCipher-тести проходять на симуляторі; runnable Xcode host та фізичний пристрій — пізніше |
+| Розрахунки | Go/AAR — єдине поточне runtime-джерело; KMP-перенесення не починати без parity fixtures |
+| Синхронізація | **Не реалізовано**; лише метадані UUID/timestamps/tombstones для майбутнього етапу |
 
-Before moving screens, inventory and preserve the current UI and interactions, including:
-- Light, dark, and system theme modes, with the selected theme persisted and shared between the top bar and settings.
-- Local Inter font assets and the established typography weights/spacing.
-- Consistent themed cards and list surfaces on Objects, Measurements, and Estimates.
-- Calendar date selection and spacing.
-- Currency card labels, values, UAH notation, and latest-update timestamp.
-- Current navigation/back behavior, scroll reset behavior, edge-to-edge/system-bar insets, and keyboard handling.
-- Existing screen layouts and any UI work already merged into `main`. The migration scaffold must not replace the real app with a placeholder screen.
+### Сховище й безпека
 
-The full UI redesign is not yet complete. CMP migration and remaining visual redesign must be sequenced deliberately, not combined as one giant rewrite.
+- SQLDelight **2.4.1** — чинна Android production-runtime база; Room runtime та KSP Room compiler прибрано.
+- SQLCipher забезпечує шифрування на Android, iOS Simulator і Windows/JVM у перевірених тестах. Керування ключем iOS/Windows для production, фізичний iOS-пристрій, ліцензійні/native packaging перевірки та переносимість encrypted DB між платформами ще не завершені.
+- Таблиці `clients`, `projects`, `room_measurements`, `price_items`, `estimates` мають локальний `id`, стабільний UUID, `updatedAt` і `deletedAt`.
+- Протокол синхронізації, мережеві запити, сервер, акаунти та конфлікти — **поза поточним PR**. Offline-first залишається обов'язковим.
+- Тестова БД не переноситься: новий файл `andrey_ceilings_sqldelight_v2.db`; старі файли залишаються на диску, але не використовуються як джерело автоматичного імпорту.
+- Формат захищених паролем переносних резервних копій `.stpb` збережено. Ручний імпорт і сценарії аварій/конкурентних записів потрібно ще доробити й перевірити.
+- Робочий Android більше не використовує псевдо-Room `openHelper` / `invalidationTracker`. Адаптація старих Android UI-моделей до shared репозиторіїв лишається до реальної міграції екранів.
 
-## Non-negotiable product constraints
+Технічна специфікація SQLDelight та критерії приймання — [ROOM_TO_SQLDELIGHT_CUTOVER.md](ROOM_TO_SQLDELIGHT_CUTOVER.md), перевірки SQLCipher — [SQLDELIGHT_ENCRYPTION_SPIKE.md](SQLDELIGHT_ENCRYPTION_SPIKE.md).
 
-- Android remains the primary platform during migration.
-- The current app is still in the test phase and its database contains test data only; the owner accepts that this data may be discarded during the planned Room → SQLDelight transition. Do not spend effort migrating these test records. Clearly document any intentional reset and do not silently reset data in a later production release.
-- The target database must be encrypted on Android, iOS, and Windows, including correct key handling and safe backup/restore behavior. SQLDelight does not itself encrypt the SQLite database; select and verify a compatible encryption strategy before treating SQLDelight as approved for production.
-- Photos, drawings, and PDFs do not need separate file encryption.
-- Preserve offline-first local use, price-list demo seeding, clients, objects, measurements, estimates, duplicate/delete flows, PDF generation, and backup/restore.
-- Do not implement cross-device synchronization, accounts, or server infrastructure in this phase. Design the local data layer offline-first and synchronization-ready (stable record IDs, explicit repositories, timestamps/change metadata where useful, and deletion/conflict handling that can be added later) without coupling it to a specific server or cloud provider.
-- Planned direction: remove Go/AAR and move calculation/domain logic to Kotlin Multiplatform. Keep Go/AAR only as a temporary reference during the transition; remove it after representative parity fixtures and regression tests pass and all runtime consumers are migrated. Do not maintain two active calculation sources of truth after cutover.
-- Track and fix the known additional-works totals defect: additional works must be reflected consistently in the UI, saved estimate, and PDF.
-- A successful compile alone is not proof of functional parity. Require CI and appropriate device/platform smoke tests.
+## Етап 1 — стабілізація Android (PR #22)
 
-## Target architecture (evolve only after compatibility checks)
+- [x] KMP/CMP фундамент, Windows Desktop host, iOS Simulator framework, спільні моделі та SQLDelight-репозиторії.
+- [x] Підключити реальний Android UI до SQLDelight, видалити Room runtime/KSP, зберегти Go/AAR.
+- [x] Перевірити запуск, базові CRUD, резервування/експорт/імпорт на фізичному Android. Редагування клієнтів, об'єктів, замірів і кошторисів UI ще не реалізовано.
+- [x] Додати на кожну таблицю UUID, `updatedAt`, `deletedAt`, soft deletion із tombstones.
+- [x] Прибрати діагностичні Room-стилізовані адаптери; зберегти необхідний UI-шар до поступового CMP-перенесення.
+- [x] Додати регресійні тести метаданих і пошкоджених backup snapshots.
+- [ ] Усі відповідні CI jobs мають успішно пройти **на фінальному HEAD**.
+- [ ] Повторно перевірити нову тестову БД та найважливіші backup/restore/WAL сценарії на фізичному Android, включно з PDF.
+- [ ] Дозвіл власника на злиття в `main`.
 
-- `:app`: retain the existing Android application and platform-specific integrations while migrating incrementally.
-- `:shared`: common Kotlin domain models, validation, use cases, calculation logic, SQLDelight schema/queries/repositories, and shared Compose UI.
-- SQLDelight is the selected database migration candidate to replace Room, conditional on proving encrypted SQLite compatibility and correct operation on Android, iOS, and Windows. Keep SQLDelight-facing APIs in common code and isolate platform-specific driver/encryption setup behind platform source sets/adapters.
-- `:desktopApp`: JVM desktop host for Windows, using shared UI and a verified local database driver.
-- `iosApp`: a runnable Xcode/SwiftUI host for the shared Compose UI, plus iOS-specific integration.
-- Platform-specific adapters for encrypted storage, document/file pickers, PDF generation, backup/restore, and OS APIs.
+## Етап 2 — Go/AAR → Kotlin Multiplatform (новий PR)
 
-Module names may change if the current app can be preserved with less disruption. Do not move all Android code into a new module just to match an idealized diagram.
+- [ ] Зафіксувати результати поточного Go для нормальних, граничних та історичних прикладів.
+- [ ] Поступово перенести геометрію, матеріали, профілі, складність, опції, додаткові роботи та підсумки.
+- [ ] Зафіксувати правила округлення, грошових сум, одиниць, порожніх/некоректних полів.
+- [ ] Усунути відому невідповідність додаткових робіт між UI, збереженим кошторисом і PDF.
+- [ ] Замінити runtime-виклики й прибрати Go/AAR **лише** після підтвердження parity та регресійних тестів.
 
-## Toolchain policy
+## Етап 3 — реальний shared UI (окремі PR)
 
-The current `main` uses AGP 9.4.0, Kotlin Compose plugin 2.4.21, KSP 2.3.12, and Gradle 9.8.2 in CI. PR #21 used an older CMP/KMP toolchain. Neither set should be copied blindly.
+- [ ] Почати з прайс-листа (доступний повний CRUD), потім переносити інші екрани невеликими частинами.
+- [ ] Не втратити тему (світла/темна/системна), Inter, картки та списки, календар, навігацію, відступи, edge-to-edge, клавіатуру, поведінку скролу.
+- [ ] Поступово реалізувати клієнтів, об'єкти, заміри, кошториси, дублікат/редагування/PDF у CMP.
+- [ ] Windows: повноцінний Desktop UI, пакування, нативні залежності, захист ключів.
+- [ ] iOS: runnable Xcode host, Swift/Compose UI, key storage, файл/backup/PDF адаптери, тести на фізичному пристрої.
 
-Compatibility audit (2026-10-27): the official Kotlin Multiplatform compatibility table lists Kotlin 2.4.20–2.4.21 with Gradle up to 9.7.0 and AGP up to 9.3.1; the current `main` toolchain exceeds those listed maxima. The official Compose compatibility page says current stable Compose Multiplatform 1.12.2 is compatible with the latest Kotlin release (currently 2.4.21). Therefore, before adding KMP plugins, select a stable, explicitly compatible set around Kotlin 2.4.21 + Compose Multiplatform 1.12.2 and align AGP/Gradle to the officially supported range, then validate KSP 2.3.12 against that selection. This may require a deliberate toolchain adjustment, but do not downgrade blindly: keep the existing Android build working and use completed CI as evidence. References: https://kotlinlang.org/docs/multiplatform/multiplatform-compatibility-guide.html and https://kotlinlang.org/docs/multiplatform/compose-compatibility-and-versioning.html.
+## Етап 4 — синхронізація (ще пізніше)
 
-References:
-- https://kotlinlang.org/docs/multiplatform/multiplatform-compatibility-guide.html
-- https://kotlinlang.org/docs/multiplatform/compose-compatibility-and-versioning.html
-- https://kotlinlang.org/docs/multiplatform/compose-multiplatform-getting-started.html
-- https://kotlinlang.org/docs/ksp-overview.html
+- [ ] Обрати transport/provider, авторизацію та схему розмежування користувачів.
+- [ ] Визначити курсори змін, зв'язки локальних ID з UUID, порядок ідемпотентного застосування змін.
+- [ ] Реалізувати віддалені видалення, повтори, мережеву безпеку й вирішення конфліктів.
+- [ ] До реалізації зберегти всі основні можливості без інтернету.
 
-## Migration phases
+## Критерії злиття
 
-### Phase 0 — Baseline and inventory
-- [x] Confirm the new branch starts at the current `main` and keep PR #21 separate.
-- [x] Run the existing Android CI/build unchanged and capture a baseline result (workflow run 40584526142 succeeded before build-system changes).
-- [ ] Inventory current screens, theme, fonts, navigation, data models, Room/SQLCipher encryption, Go/AAR calls, PDF, backup/restore, and existing tests.
-- [ ] Record the current Android smoke-test checklist and known bugs.
-- [ ] Verify official compatibility guidance and select the KMP/CMP toolchain before changing Gradle files.
-
-### Phase 1 — Minimal multiplatform build foundation
-- [x] Add the initial `:shared` Kotlin Multiplatform module with common Compose dependencies and a minimal shared component; the existing Android UI is untouched. CI passed on run `40595098996`.
-- [x] Add a minimal JVM Compose Desktop host that consumes `SharedFoundationStatus()` from `:shared`; desktop compilation passed on runs `40595076763` and `40595098996` after fixing the missing Material 3 dependency.
-- [ ] Add iOS framework targets and a runnable iOS host/Xcode project; the iOS framework target is configured in `:shared`, and a new macOS workflow now verifies framework linking. A runnable Xcode/SwiftUI host is still pending.
-- [x] Add/extend CI jobs for shared tests, Android APK, desktop compilation, and iOS framework. Android, shared, and desktop checks passed on run `40595098996`; the new macOS iOS-framework workflow is pending its first result.
-- [x] Confirm the existing Android APK still builds in CI with the original UI unchanged (run `40595098996`); manual launch check for this migration branch remains pending.
-- [ ] Do not mark this phase complete until CI has completed successfully; cancelled jobs do not count.
-
-### Phase 2 — Shared domain and calculations
-- [ ] Inspect `go-core/core/calculator.go` and current app call sites before porting any rule.
-- [x] Add the first pure common-domain slice: client, project, and room-measurement models plus input validation. Common tests and Android/platform CI pass; this is still an isolated domain slice.
-- [ ] Add SQLDelight to `:shared` as the planned replacement for Room after verifying current plugin/runtime/driver compatibility with Kotlin 2.4.21 and the target platforms.
-- [ ] Define common SQL schema and queries for clients, projects, measurements, price items, estimates, and estimate lines; treat current test data as disposable for this schema transition.
-- [ ] Prove database encryption on Android, iOS, and Windows before marking the shared database layer complete; do not assume SQLDelight provides encryption by itself.
-- [ ] Add common repository interfaces and platform drivers/adapters; connect one low-risk CRUD flow and test persistence before migrating all entities/screens.
-- [ ] Create representative Go/Kotlin input-output fixtures and compare exact business outputs.
-- [ ] Port geometry, price/cost, complexity, options, additional works, and estimate totals to common Kotlin in small slices.
-- [ ] Define rounding, money precision, units, invalid-input behavior, and defaults explicitly.
-- [ ] Add common tests for normal, boundary, invalid, and historical estimate cases.
-- [ ] Verify additional works are included in UI, persisted totals, and PDF.
-- [ ] Remove Go/AAR only after parity is demonstrated, all runtime consumers are migrated, and regression tests pass.
-
-### Phase 3 — Shared UI and platform adapters
-- [ ] Preserve the existing Android app as the reference; do not swap in a placeholder UI.
-- [ ] Prototype one small real screen and compare appearance/behavior against current Android.
-- [ ] Migrate real screens incrementally, starting with a low-risk screen (price list or area calculator), after data/domain boundaries are clear.
-- [ ] Migrate clients, objects, measurements, estimates, and estimate editing in separate slices.
-- [ ] Preserve theme modes, Inter typography, navigation, scroll behavior, system insets, keyboard handling, and accessibility.
-- [ ] Isolate encrypted database, files, PDF, backup, and OS APIs behind platform interfaces.
-- [ ] Keep Android behavior stable before broadening to iOS/Desktop.
-
-### Phase 4 — Data safety and end-to-end validation
-- [ ] Since the current database contains disposable test data, validate a clean SQLDelight database creation instead of migrating Room test records; retain backup/restore behavior as a product feature.
-- [ ] Verify encryption and key storage on Android, iOS, and Windows rather than relying on configuration names alone.
-- [ ] Verify backup/restore: valid password, invalid password, corrupt file, and data integrity.
-- [ ] Test create/edit/delete/duplicate flows and persistence after restart.
-- [ ] Compare estimate totals and PDFs against the current Android reference.
-- [ ] Test Android on a physical device, Windows desktop, and iOS simulator/device where supported.
-
-### Phase 5 — Keep the architecture ready for future synchronization
-- [x] Decide that synchronization is a future feature, not part of the current migration.
-- [ ] Keep the app offline-first: all core operations work from the local SQLDelight database without network access.
-- [ ] Use stable cross-device record identifiers and repository boundaries; add creation/update metadata and deletion markers when the data model needs them.
-- [ ] Avoid coupling repositories/domain models to a specific cloud provider or server protocol.
-- [ ] When synchronization becomes a priority, separately design change transport, authentication, conflict resolution, deletion propagation, retries, and encryption in transit.
-
-## Status inherited from PR #21 (historical, not verified on this branch)
-
-PR #21 established a useful direction and documentation, and proposed:
-- a `:shared` Compose module, `:desktopApp` JVM entry point, iOS framework named `AndreyCeilingsShared`, and CI workflows;
-- a first common-Kotlin geometry calculator and seven common geometry tests;
-- gradual screen migration, domain parity tests, and retaining Go/AAR until parity;
-- explicit merge gates for CI, real-device checks, encrypted database, PDF, backup/restore, and user approval.
-
-However, the PR's Android workflow had been cancelled during APK build and its iOS workflow during framework compilation; the geometry tests were not confirmed by a completed CI run at the time of that report. Its code and build settings are not assumed to be correct or compatible with current `main`. Re-audit and reimplement only what remains useful.
-
-## Acceptance / merge criteria
-
-- Current Android build and all existing screens remain functional.
-- Real shared UI screens exist; a scaffold alone is insufficient.
-- Common calculations have verified parity/regression tests before Go/AAR removal.
-- Database encryption, existing data, PDF, backup/restore, and offline use are preserved.
-- CI succeeds for applicable Android, shared, desktop, and iOS targets.
-- Required real-device/platform smoke tests are completed.
-- The owner explicitly approves merging; keep the migration PR Draft until then.
-
-## Progress log — 2026-10-28
-
-- Latest confirmed CI runs `40651441664` (Android APK) and `40651441699` / `40651436609` (iOS simulator framework, Compose Desktop compilation, shared JVM tests) succeeded at commit `8a9d2817`.
-- Added `shared/.../domain/DomainModels.kt` with platform-independent `Client`, `Project`, and `RoomMeasurement` data classes and validation helpers. Added common tests for valid/invalid input. These are parallel domain types only: no Room schema, existing records, Android screens, or Go calculation code was changed. CI for this new slice is pending.
-
-## Progress log — 2026-10-27
-
-- Created `architecture/cmp-kmp-migration-v2` from current `main`.
-- Baseline Android workflow run `40584526142` completed successfully before build-system changes.
-- Added the first `:shared` KMP module with Android, JVM, iOS device/simulator targets, common Compose dependencies, a small shared composable, and an initial common test. Workflow run `40586217184` passed all jobs, including Go tests, shared KMP assemble/JVM compile/common tests, Android unit tests, debug APK, and release APK.
-- Added a minimal `:desktopApp` Compose Desktop host and a CI compile step. The first desktop CI attempt failed because the host imported Material 3 directly without a desktop dependency; changed the host to consume `SharedFoundationStatus()` from `:shared` (commit `d712309d`). Corrected CI runs `40595076763` and `40595098996` succeeded, including desktop compilation.
-- Updated the Gradle/AGP versions to the documented Kotlin 2.4.21 compatibility range (AGP 9.3.1 / Gradle 9.7.0). CI runs `40595076763` and `40595098996` passed with this combination, including KSP-dependent Android build, shared JVM tests, desktop compilation, and APK artifacts. iOS framework linking remains to be confirmed by the new macOS workflow.
-- Added `.github/workflows/cmp-kmp-platforms.yml` on commit `6c61b0e` to compile the iOS simulator framework and desktop host on macOS and run shared JVM tests. Its first run is pending.
-- The existing Android UI has not been replaced or connected to the new shared component.
-
-
-## Architecture decision update — SQLDelight, Go retirement, and future sync (2026-10-28)
-
-- **Database direction:** SQLDelight is the preferred replacement candidate for Room because it can share schema, SQL queries, and typed APIs across KMP targets. This is a conditional decision: first prove a viable encrypted SQLite configuration for Android, iOS, and Windows, and verify driver/native compatibility. SQLDelight alone is not encryption.
-- **Test data:** the current database contains test data only and may be recreated during the Room → SQLDelight transition. Do not build a production-data migration path just to preserve these records. Any reset must be explicit and limited to this migration/testing stage.
-- **Calculation direction:** Kotlin Multiplatform is the intended final source for domain and estimate calculations. Go/AAR is transitional and must not be removed until parity fixtures, regression tests, and runtime call-site migration are complete.
-- **Future sync:** do not build network synchronization now. Keep local/offline-first behavior and avoid architecture choices that make future change tracking, stable cross-device IDs, deletions, or conflict resolution unnecessarily difficult. No server/provider is selected.
-- **Next technical gate:** complete the SQLDelight CRUD prototype and CI. The Android prototype factory wraps the existing SQLCipher SupportOpenHelperFactory and requires the app-managed 32-byte passphrase; it intentionally has no plaintext fallback. JVM CRUD tests use an in-memory SQLite driver and prove generated query behavior only, not encryption. iOS and Windows/JVM encrypted-driver support remain unproven; do not migrate Room or expose these targets to persistent unencrypted storage until that gate is closed.
-
-
-## Progress log — SQLDelight feasibility prototype (2026-10-28)
-
-- Added SQLDelight Gradle plugin **2.4.0** and the common runtime to `:shared`, matching the current official SQLDelight release/docs.
-- Added a deliberately small `prototype_client` schema with generated list/read/insert/update/delete queries.
-- Added a JVM in-memory CRUD test for generated SQLDelight APIs. This test is not an encryption test.
-- Added an Android-only encrypted driver factory using the existing SQLCipher Android library and a passphrase supplied by the app's existing key manager. The factory has no plaintext fallback and does not duplicate key management.
-- CI for this new prototype is running. A green compile/test run is required before calling the prototype validated.
-- **Open security gate:** no encrypted driver has been implemented or validated yet for iOS or Windows desktop/JVM. SQLDelight remains a candidate, not an approved production replacement. Do not connect production repositories or replace Room yet.
-
-
-## Progress log — SQLDelight 2.4.1 and Android encryption test (2026-10-28)
-
-- Updated the SQLDelight Gradle plugin, runtime, Android driver, and JVM SQLite driver from 2.4.0 to **2.4.1**. CI passed for the version bump at commit `5bd9e704`.
-- Added Android instrumentation coverage for the SQLCipher-backed SQLDelight prototype: write a row, close and reopen the encrypted database, verify the row persists, check that the file does not have the plaintext SQLite header, and verify a wrong passphrase cannot read the database.
-- Added AndroidX instrumentation dependencies and an emulator CI step to run `:app:connectedDebugAndroidTest`. This is a new security test gate; it is **not yet confirmed successful** until the current workflow completes.
-- The test uses an isolated prototype database name and random per-test key. It does not alter the existing Room database or its key.
-- Remaining gates: inspect the emulator test result; confirm whether SQLCipher has suitable encrypted SQLDelight driver paths for iOS and Windows/JVM; do not replace Room or migrate app repositories until those checks and app key-management integration are complete.
-
-## Architecture note — future offline-first synchronization (2026-10-28)
-
-**Decision:** prepare the architecture for synchronization, but do not implement server/network synchronization in this migration PR. No backend/provider has been selected.
-
-- Synchronize domain changes through a future versioned API; do not copy encrypted SQLite database files between devices as the synchronization protocol.
-- Keep local-first behavior: core workflows must continue offline, with changes queued for later delivery.
-- Review the schema before making changes. Synchronizable entities should use stable globally unique IDs (for example UUIDs) rather than relying on device-local auto-increment IDs; preserve stable relationships between clients, projects/objects, measurements, and estimates.
-- Plan UTC creation/update timestamps and version/concurrency metadata. Client timestamps alone must not decide conflicts.
-- For eventual reliable delivery, use a transactional Outbox: persist the domain change and its pending-sync operation in the same local transaction. Give each operation a stable ID and make server processing idempotent so retries do not duplicate records.
-- Represent deletions with tombstones until they have been propagated and safely reconciled; otherwise an offline device could resurrect deleted records.
-- Define conflict rules by entity/field. Financial estimate changes must not be silently overwritten; detect conflicts and support an explicit resolution path where needed.
-- Keep a future SyncEngine and API adapter behind repository/domain boundaries. UI and calculation logic must not depend on a specific backend vendor.
-- Version the sync API and local schema migrations so Android, iOS, and Desktop releases can coexist during staged updates.
-- Treat local database encryption, transport security, server-side storage protection, authorization, key management, and backup/recovery as separate but coordinated controls. Never send local encryption keys as ordinary sync fields.
-- Do not assume encrypted SQLite files are portable across platforms or cipher implementations. If cross-platform backup is required, test it explicitly or provide a separate logical export/import format.
-- Do not add server code, network dependencies, Outbox tables, or a SyncEngine to production just for speculative future-proofing. First complete the local database/platform encryption gates and review the actual schema; add only the minimum required foundations in separate, tested PRs.
-
-### Future implementation gates
-
-1. Agree on synchronized entities, globally stable IDs, relationships, deletion semantics, and conflict policy.
-2. Define authentication/authorization and a versioned API contract.
-3. Prototype one entity end-to-end, including offline edits, retries, idempotency, restart recovery, and conflict tests.
-4. Expand to related entities only after integrity and access-control tests pass.
-5. Verify backup/restore and key-loss/device-loss recovery before production rollout.
-
-This is an architectural plan only. It does not mean synchronization, a server, or conflict resolution is implemented.
+Наявні Android-екрани та основні сценарії працюють на пристрої; БД зашифрована; резервування/імпорт не знищують дані при помилці; фінальний Android, Windows та iOS Simulator CI — зелений; diff переглянуто; власник схвалив злиття. PR #21 не переносити повністю: його можна використовувати тільки як довідку.

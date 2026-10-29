@@ -78,7 +78,7 @@ class RoomToSqlDelightStagingMigrationTest {
                 assertEquals(23L, q.selectAllMeasurements().executeAsOne().id)
                 assertEquals(41L, q.selectPriceItems().executeAsOne().id)
                 assertEquals(59L, q.selectAllEstimates().executeAsOne().id)
-                q.deleteProject(19)
+                com.andreyceilings.shared.db.ProjectRepository(PrototypeDatabase(driver)).delete(19)
                 assertTrue(q.selectAllEstimates().executeAsList().isEmpty())
                 assertEquals(1, q.selectAllMeasurements().executeAsList().size)
             }

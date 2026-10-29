@@ -101,6 +101,15 @@ internal object PortableBackupManager {
                     { cursor -> QueryResult.Value(if (cursor.next().value) cursor.getLong(0) else null) },
                     0).value
                 check(count == 5L) { "Резервна копія не містить повної схеми SQLDelight." }
+                // A pre-UUID test backup must not overwrite a database using the
+                // new sync-ready schema. A table-name check alone is insufficient.
+                listOf("clients", "projects", "room_measurements", "price_items", "estimates")
+                    .forEach { table ->
+                        driver.executeQuery(null,
+                            "SELECT uuid, updatedAt, deletedAt FROM $table LIMIT 0",
+                            { cursor -> QueryResult.Value(cursor.next().value) }, 0
+                        ).value
+                    }
             }
         } finally {
             context.deleteDatabase(testName)

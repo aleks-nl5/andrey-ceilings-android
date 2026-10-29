@@ -60,6 +60,41 @@ class SqlDelightProductionAdaptersTest {
                     assertTrue(runCatching {
                         PortableBackupManager.validate(context, envelope, "wrong-password".toCharArray())
                     }.isFailure)
+                    // Truncation and corruption must fail without replacing or altering
+                    // the active encrypted database.
+                    val truncated = envelope.copyOf(envelope.size / 2)
+                    try {
+                        assertTrue(runCatching {
+                            PortableBackupManager.validate(context, truncated, password)
+                        }.isFailure)
+                    } finally { truncated.fill(0) }
+                    val corrupted = envelope.copyOf()
+                    try {
+                        corrupted[corrupted.lastIndex] = (corrupted.last().toInt() xor 1).toByte()
+                        assertTrue(runCatching {
+                            PortableBackupManager.validate(context, corrupted, password)
+                        }.isFailure)
+                    } finally { corrupted.fill(0) }
+                    assertEquals(1, database.clients().count())
+                    assertTrue(database.checkIntegrity())
+
+                    // A .stpb snapshot must remain at the old state after new edits.
+                    database.clients().insert(ClientEntity(name = "Written after backup"))
+                    assertEquals(2, database.clients().count())
+                    val oldSnapshot = PortableBackupManager.validate(context, envelope, password)
+                    val restoredName = "sqldelight_test_backups_restored.db"
+                    context.deleteDatabase(restoredName)
+                    try {
+                        context.getDatabasePath(restoredName).writeBytes(oldSnapshot.database)
+                        CeilingsDatabase.openIsolatedForTesting(context, restoredName, oldSnapshot.passphrase).use { restored ->
+                            assertEquals(1, restored.clients().count())
+                            assertTrue(restored.checkIntegrity())
+                        }
+                    } finally {
+                        oldSnapshot.database.fill(0)
+                        oldSnapshot.passphrase.fill(0)
+                        context.deleteDatabase(restoredName)
+                    }
                 } finally {
                     envelope.fill(0)
                 }
