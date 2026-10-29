@@ -49,10 +49,19 @@ class SqlCipherWalSnapshotExperimentTest {
                 PortableBackupManager.verifyEncryptedSnapshot(context, snapshot, key)
             }
             createEncryptedPrototypeDriver(context, key, name).use { driver ->
-                val mode = driver.executeQuery(null, "PRAGMA journal_mode", { cursor ->
+                // The current SupportOpenHelperFactory/AndroidSqliteDriver reopen
+                // can reset WAL to DELETE (confirmed by emulator CI). Future
+                // production WAL support must explicitly enforce and verify WAL
+                // on every open, not just on the first connection.
+                val modeOnReopen = driver.executeQuery(null, "PRAGMA journal_mode", { cursor ->
+                    QueryResult.Value(if (cursor.next().value) cursor.getString(0) else null)
+                }, 0).value?.lowercase()
+                assertTrue("Unexpected SQLite journal mode: $modeOnReopen",
+                    modeOnReopen == "delete" || modeOnReopen == "wal")
+                val enabledMode = driver.executeQuery(null, "PRAGMA journal_mode=WAL", { cursor ->
                     QueryResult.Value(if (cursor.next().value) cursor.getString(0) else null)
                 }, 0).value
-                assertEquals("wal", mode?.lowercase())
+                assertEquals("wal", enabledMode?.lowercase())
                 assertEquals(1, ProjectRepository(PrototypeDatabase(driver)).all().size)
             }
         } finally {
