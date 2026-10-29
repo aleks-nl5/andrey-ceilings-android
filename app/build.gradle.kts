@@ -1,7 +1,6 @@
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.plugin.compose")
-    id("com.google.devtools.ksp")
 }
 
 android {
@@ -56,6 +55,7 @@ dependencies {
     // Foundation for replacing Room DAOs with the shared SQLDelight repositories.
     // Room remains the Android production store until UI and backup adapters pass CI.
     implementation(project(":shared"))
+    implementation("app.cash.sqldelight:runtime:2.4.1")
     // Required Go mobile library: all calculations run in Go; no Kotlin fallback exists.
     implementation(files("libs/ceilings-core.aar"))
     implementation(platform("androidx.compose:compose-bom:2026.06.01"))
@@ -68,9 +68,6 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.11.0")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.11.0")
     implementation("androidx.navigation:navigation-compose:2.9.8")
-    implementation("androidx.room:room-runtime:2.8.5")
-    implementation("androidx.room:room-ktx:2.8.5")
-    ksp("androidx.room:room-compiler:2.8.5")
     implementation("net.zetetic:sqlcipher-android:4.19.1")
     implementation("androidx.sqlite:sqlite:2.7.1")
     implementation("androidx.datastore:datastore-preferences:1.3.0")
@@ -86,6 +83,3 @@ dependencies {
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
 }
 
-ksp {
-    arg("room.schemaLocation", "$projectDir/schemas")
-}

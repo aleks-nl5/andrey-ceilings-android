@@ -467,7 +467,7 @@ internal fun SettingsScreen(databaseStatus: String, database: CeilingsDatabase?,
             DisposableEffect(databaseChangeEnabled, database) {
                 val db = database
                 val observer = if (databaseChangeEnabled && db != null) {
-                    object : androidx.room.InvalidationTracker.Observer(
+                    object : com.andreyceilings.app.data.db.BusinessChangeTracker.Observer(
                         "clients", "projects", "room_measurements", "price_items", "estimates"
                     ) {
                         override fun onInvalidated(tables: Set<String>) {
@@ -713,36 +713,10 @@ internal fun SettingsScreen(databaseStatus: String, database: CeilingsDatabase?,
                             val snapshot = java.io.File(context.cacheDir, "andrey_ceilings_secure_export.tmp")
                             source.inputStream().use { input -> snapshot.outputStream().use { output -> input.copyTo(output) } }
                             check(snapshot.length() > 0L) { "Створена копія порожня." }
-                            // Verify this exact snapshot through Room's SQLCipher SupportFactory.
-                            // The passphrase is binary; do not convert it to CharArray.
-                            val passphrase = com.andreyceilings.app.data.security.DatabaseKeyManager
-                                .getOrCreatePassphrase(context.applicationContext)
+                            // Verify snapshot using the SQLDelight/SQLCipher driver, not Room.
+                            val passphrase = com.andreyceilings.app.data.security.DatabaseKeyManager.getOrCreatePassphrase(context.applicationContext)
                             try {
-                                System.loadLibrary("sqlcipher")
-                                val verifier = androidx.room.Room.databaseBuilder(
-                                    context.applicationContext,
-                                    CeilingsDatabase::class.java,
-                                    snapshot.absolutePath
-                                ).openHelperFactory(
-                                    net.zetetic.database.sqlcipher.SupportOpenHelperFactory(passphrase.copyOf())
-                                ).build()
-                                try {
-                                    val verifiedDb = verifier.openHelper.readableDatabase
-                                    val integrity = verifiedDb.query("PRAGMA integrity_check").use { cursor ->
-                                        check(cursor.moveToFirst()) { "SQLCipher не повернув результат integrity_check." }
-                                        cursor.getString(0)
-                                    }
-                                    check(integrity.equals("ok", ignoreCase = true)) {
-                                        "SQLCipher integrity_check не пройшов: $integrity"
-                                    }
-                                    val schemaCount = verifiedDb.query("SELECT count(*) FROM sqlite_master").use { cursor ->
-                                        check(cursor.moveToFirst()) { "Не вдалося прочитати схему копії." }
-                                        cursor.getLong(0)
-                                    }
-                                    check(schemaCount > 0L) { "У копії не знайдено об'єктів схеми." }
-                                } finally {
-                                    verifier.close()
-                                }
+                                com.andreyceilings.app.data.security.PortableBackupManager.verifyEncryptedSnapshot(context.applicationContext, snapshot, passphrase)
                             } finally {
                                 passphrase.fill(0)
                             }
@@ -773,7 +747,7 @@ internal fun SettingsScreen(databaseStatus: String, database: CeilingsDatabase?,
                             "Перевірено: SQLCipher відкрив копію, integrity_check = ok, схема доступна з ключем, звичайний SQLite без ключа не прочитав схему. Ключ не експортується. Виберіть папку для збереження."
                         }.getOrElse { "Не вдалося підготувати копію: " + (it.message ?: "невідома помилка") }
                     }
-                    if (pendingExportFile != null) exportDocumentLauncher.launch("andrey_ceilings_secure_test.db")
+                    if (pendingExportFile != null) exportDocumentLauncher.launch("andrey_ceilings_sqldelight_test.db")
                 }
             }, modifier = Modifier.fillMaxWidth(), enabled = database != null) { Text("Експортувати тестову копію БД") }
             ListItem(leadingContent = { Icon(Icons.Default.Backup, null) }, headlineContent = { Text("Резервна копія") }, supportingContent = { Text("Експортована копія зашифрована; ключ не додається до файла") })
@@ -784,20 +758,7 @@ private fun verifyEncryptedBackup(context: android.content.Context, file: java.i
     check(file.isFile && file.length() > 0L) { "Файл відсутній або порожній." }
     val passphrase = com.andreyceilings.app.data.security.DatabaseKeyManager.getOrCreatePassphrase(context.applicationContext)
     try {
-        System.loadLibrary("sqlcipher")
-        val verifier = androidx.room.Room.databaseBuilder(context.applicationContext, CeilingsDatabase::class.java, file.absolutePath)
-            .openHelperFactory(net.zetetic.database.sqlcipher.SupportOpenHelperFactory(passphrase.copyOf())).build()
-        try {
-            val db = verifier.openHelper.readableDatabase
-            val integrity = db.query("PRAGMA integrity_check").use { cursor ->
-                check(cursor.moveToFirst()) { "SQLCipher не повернув результат integrity_check." }; cursor.getString(0)
-            }
-            check(integrity.equals("ok", ignoreCase = true)) { "integrity_check: $integrity" }
-            val count = db.query("SELECT count(*) FROM sqlite_master").use { cursor ->
-                check(cursor.moveToFirst()) { "Не вдалося прочитати схему." }; cursor.getLong(0)
-            }
-            check(count > 0L) { "У файлі немає схеми БД." }
-        } finally { verifier.close() }
+        com.andreyceilings.app.data.security.PortableBackupManager.verifyEncryptedSnapshot(context.applicationContext, file, passphrase)
     } finally { passphrase.fill(0) }
     var plain: android.database.sqlite.SQLiteDatabase? = null
     var unreadable = false

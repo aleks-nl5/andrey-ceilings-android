@@ -1,13 +1,11 @@
 package com.andreyceilings.app.data.db
 
-import androidx.room.Entity
-import androidx.room.Index
-import androidx.room.PrimaryKey
-import androidx.room.ForeignKey
-
-@Entity(tableName = "clients", indices = [Index(value = ["name"])])
+/**
+ * Android UI compatibility models. No Room annotations or Android persistence types.
+ * The source of truth is the generated SQLDelight schema in :shared.
+ */
 data class ClientEntity(
-    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val id: Long = 0,
     val name: String,
     val phone: String = "",
     val email: String = "",
@@ -15,9 +13,8 @@ data class ClientEntity(
     val createdAt: Long = System.currentTimeMillis()
 )
 
-@Entity(tableName = "projects", indices = [Index(value = ["clientId"]), Index(value = ["status"])])
 data class ProjectEntity(
-    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val id: Long = 0,
     val clientId: Long?,
     val title: String,
     val address: String = "",
@@ -27,9 +24,8 @@ data class ProjectEntity(
     val updatedAt: Long = System.currentTimeMillis()
 )
 
-@Entity(tableName = "room_measurements", indices = [Index(value = ["projectId"])])
 data class RoomMeasurementEntity(
-    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val id: Long = 0,
     val projectId: Long,
     val name: String,
     val shape: String = "rectangle",
@@ -42,9 +38,8 @@ data class RoomMeasurementEntity(
     val createdAt: Long = System.currentTimeMillis()
 )
 
-@Entity(tableName = "price_items", indices = [Index(value = ["category", "code"], unique = true)])
 data class PriceItemEntity(
-    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val id: Long = 0,
     val code: String,
     val title: String,
     val category: String,
@@ -53,19 +48,8 @@ data class PriceItemEntity(
     val updatedAt: Long = System.currentTimeMillis()
 )
 
-
-@Entity(
-    tableName = "estimates",
-    indices = [Index(value = ["projectId"]), Index(value = ["createdAt"])],
-    foreignKeys = [ForeignKey(
-        entity = ProjectEntity::class,
-        parentColumns = ["id"],
-        childColumns = ["projectId"],
-        onDelete = ForeignKey.CASCADE
-    )]
-)
 data class EstimateEntity(
-    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val id: Long = 0,
     val projectId: Long,
     val name: String,
     val material: String,

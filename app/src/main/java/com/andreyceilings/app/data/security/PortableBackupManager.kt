@@ -1,79 +1,112 @@
 package com.andreyceilings.app.data.security
 
 import android.content.Context
+import app.cash.sqldelight.db.QueryResult
 import com.andreyceilings.app.data.db.CeilingsDatabase
-import net.zetetic.database.sqlcipher.SupportOpenHelperFactory
-import androidx.room.Room
+import com.andreyceilings.app.data.db.LegacyRoomDatabaseImporter
+import com.andreyceilings.shared.db.createEncryptedPrototypeDriver
 import java.io.File
 
 /**
- * Builds and validates portable backup bytes. Call from Dispatchers.IO.
- * The caller is responsible for writing the returned bytes to a user-selected URI.
+ * Portable .stpb backups for the encrypted SQLDelight database.
+ * Legacy Room-v2 .stpb backups can be converted without Room runtime.
  */
 internal object PortableBackupManager {
-    private const val DATABASE_NAME = "andrey_ceilings_secure.db"
-
     fun create(context: Context, database: CeilingsDatabase, password: CharArray): ByteArray {
         val sqlDb = database.openHelper.writableDatabase
         sqlDb.query("PRAGMA wal_checkpoint(FULL)").use { cursor ->
-            check(cursor.moveToFirst()) { "Не вдалося завершити запис бази перед резервним копіюванням." }
-            check(cursor.getLong(0) == 0L) { "База даних зайнята. Спробуйте ще раз." }
+            check(cursor.moveToFirst() && cursor.getLong(0) == 0L) {
+                "База даних зайнята. Не вдалося завершити WAL checkpoint."
+            }
         }
-        val sourcePath = sqlDb.path ?: error("Шлях до бази даних недоступний.")
-        val source = File(sourcePath)
-        check(source.isFile && source.length() > 0) { "Файл бази даних відсутній або порожній." }
-
-        val snapshot = File.createTempFile("portable_db_", ".tmp", context.cacheDir)
-        val passphrase = DatabaseKeyManager.getOrCreatePassphrase(context)
+        val source = File(sqlDb.path)
+        check(source.isFile && source.length() > 16L) { "Зашифрована БД відсутня або порожня." }
+        val snapshot = File.createTempFile("sqldelight_backup_", ".db", context.cacheDir)
+        val key = DatabaseKeyManager.getOrCreatePassphrase(context)
         try {
-            source.inputStream().use { input -> snapshot.outputStream().use { output -> input.copyTo(output) } }
-            validateDatabase(context, snapshot, passphrase)
-            val payload = PortableBackupPayload.encode(snapshot.readBytes(), passphrase)
-            return PortableBackupEnvelope.seal(payload, password)
+            source.copyTo(snapshot, overwrite = true)
+            verifyEncryptedSnapshot(context, snapshot, key)
+            val payload = PortableBackupPayload.encode(snapshot.readBytes(), key)
+            try {
+                return PortableBackupEnvelope.seal(payload, password)
+            } finally {
+                payload.fill(0)
+            }
         } finally {
-            passphrase.fill(0)
+            key.fill(0)
             snapshot.delete()
         }
     }
 
-    /** Decrypts, parses, and verifies a portable backup without replacing the live database. */
+    /**
+     * Validate without replacing the live DB or key. Legacy Room schema v2
+     * snapshots are re-encrypted in the current SQLDelight format before restore.
+     * A corrupt file or incorrect password never triggers an empty fallback.
+     */
     fun validate(context: Context, envelope: ByteArray, password: CharArray): PortableBackupPayload.Contents {
         val payload = PortableBackupEnvelope.open(envelope, password)
-        val contents = PortableBackupPayload.decode(payload)
-        val staged = File.createTempFile("portable_restore_check_", ".db", context.cacheDir)
         try {
-            staged.outputStream().use { it.write(contents.database) }
-            validateDatabase(context, staged, contents.passphrase)
-            return contents
-        } catch (error: Exception) {
-            contents.passphrase.fill(0)
-            contents.database.fill(0)
-            throw error
+            val contents = PortableBackupPayload.decode(payload)
+            val legacyName = "legacy_restore_${System.nanoTime()}.db"
+            val convertedName = "converted_restore_${System.nanoTime()}.db"
+            val legacy = context.getDatabasePath(legacyName)
+            val converted = context.getDatabasePath(convertedName)
+            try {
+                legacy.parentFile?.mkdirs()
+                legacy.writeBytes(contents.database)
+                val alreadySqlDelight = runCatching {
+                    verifyEncryptedSnapshot(context, legacy, contents.passphrase)
+                }.isSuccess
+
+                if (alreadySqlDelight) return contents
+
+                // Only a valid encrypted legacy Room-v2 schema is accepted here.
+                LegacyRoomDatabaseImporter.migrateToNewDatabase(
+                    context, legacy, converted, contents.passphrase
+                )
+                verifyEncryptedSnapshot(context, converted, contents.passphrase)
+                val bytes = converted.readBytes()
+                contents.database.fill(0)
+                return PortableBackupPayload.Contents(bytes, contents.passphrase)
+            } catch (failure: Throwable) {
+                contents.database.fill(0)
+                contents.passphrase.fill(0)
+                throw failure
+            } finally {
+                context.deleteDatabase(legacyName)
+                context.deleteDatabase(convertedName)
+            }
         } finally {
-            staged.delete()
             payload.fill(0)
         }
     }
 
-    private fun validateDatabase(context: Context, file: File, passphrase: ByteArray) {
-        System.loadLibrary("sqlcipher")
-        val verifier = Room.databaseBuilder(context, CeilingsDatabase::class.java, file.absolutePath)
-            .openHelperFactory(SupportOpenHelperFactory(passphrase.copyOf()))
-            .build()
+    /**
+     * Copies the SQLCipher file into a separate test database and opens it with
+     * the real SQLDelight schema and supplied key. Does not touch the live DB.
+     */
+    fun verifyEncryptedSnapshot(context: Context, source: File, key: ByteArray) {
+        check(source.isFile && source.length() > 16L) { "Резервна копія відсутня або порожня." }
+        val testName = "sqlcipher_verify_${System.nanoTime()}.db"
+        val staged = context.getDatabasePath(testName)
         try {
-            val db = verifier.openHelper.readableDatabase
-            db.query("PRAGMA integrity_check").use { cursor ->
-                check(cursor.moveToFirst() && cursor.getString(0).equals("ok", ignoreCase = true)) {
-                    "Перевірка цілісності бази даних не пройдена."
+            staged.parentFile?.mkdirs()
+            source.copyTo(staged, overwrite = false)
+            createEncryptedPrototypeDriver(context, key, testName).use { driver ->
+                val integrity = driver.executeQuery(null, "PRAGMA integrity_check",
+                    { cursor -> QueryResult.Value(if (cursor.next().value) cursor.getString(0) else null) },
+                    0).value
+                check(integrity.equals("ok", ignoreCase = true)) {
+                    "Перевірка цілісності SQLCipher не пройдена."
                 }
-            }
-            db.query("SELECT count(*) FROM sqlite_master").use { cursor ->
-                check(cursor.moveToFirst() && cursor.getLong(0) > 0) {
-                    "У файлі не знайдено схему бази даних."
-                }
+                val count = driver.executeQuery(null,
+                    "SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name IN ('clients','projects','room_measurements','price_items','estimates')",
+                    { cursor -> QueryResult.Value(if (cursor.next().value) cursor.getLong(0) else null) },
+                    0).value
+                check(count == 5L) { "Резервна копія не містить повної схеми SQLDelight." }
             }
         } finally {
-            verifier.close()
+            context.deleteDatabase(testName)
         }
     }
 }
