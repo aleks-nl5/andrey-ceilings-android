@@ -51,4 +51,57 @@ class SqlCipherWindowsDriverTest {
             key.fill(0)
         }
     }
+
+    @Test
+    fun everyConnectionEnforcesForeignKeysAndTransactionsCommitOrRollback() {
+        if (!System.getProperty("os.name").startsWith("Windows", ignoreCase = true)) return
+        val directory = Files.createTempDirectory("andrey-windows-transactions-").toFile()
+        val file = File(directory, "transactions.db")
+        val key = ByteArray(32) { 53 }
+        try {
+            SqlCipherWindowsDriverFactory.open(file, key).use { driver ->
+                PrototypeDatabase.Schema.create(driver)
+                val database = PrototypeDatabase(driver)
+                val clients = ClientRepository(database)
+
+                // Each call is a separate physical connection outside a transaction.
+                repeat(3) {
+                    val foreignKeys = driver.executeQuery(null, "PRAGMA foreign_keys",
+                        { cursor -> app.cash.sqldelight.db.QueryResult.Value(
+                            if (cursor.next().value) cursor.getLong(0) else null
+                        ) }, 0).value
+                    assertEquals(1L, foreignKeys, "Connection ${it + 1} must enforce foreign keys")
+                }
+
+                // A generated SQLDelight transaction must share its connection.
+                assertFails {
+                    database.transaction {
+                        clients.create("Rolled back", createdAt = 1)
+                        assertEquals(1, clients.all().size)
+                        error("force rollback")
+                    }
+                }
+                assertTrue(clients.all().isEmpty(), "Rollback must remove uncommitted inserts")
+
+                database.transaction {
+                    clients.create("Committed", createdAt = 2)
+                    assertEquals("Committed", clients.all().single().name)
+                }
+                assertEquals("Committed", clients.all().single().name)
+            }
+            // A new driver also needs to initialize foreign_keys for every connection.
+            SqlCipherWindowsDriverFactory.open(file, key).use { driver ->
+                val clients = ClientRepository(PrototypeDatabase(driver))
+                assertEquals("Committed", clients.all().single().name)
+                val foreignKeys = driver.executeQuery(null, "PRAGMA foreign_keys",
+                    { cursor -> app.cash.sqldelight.db.QueryResult.Value(
+                        if (cursor.next().value) cursor.getLong(0) else null
+                    ) }, 0).value
+                assertEquals(1L, foreignKeys)
+            }
+        } finally {
+            key.fill(0)
+            directory.deleteRecursively()
+        }
+    }
 }
