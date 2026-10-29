@@ -43,11 +43,14 @@ internal fun EstimatePreviewDialog(
                 preview.lines.forEach { row ->
                     Text(row.before.title, style = MaterialTheme.typography.titleSmall)
                     Text("Було: ${money(row.before.lineTotal)} (${money(row.before.unitPrice)} × ${row.before.quantity} ${row.before.unit})")
-                    if (row.after != null) {
-                        Text("Стало: ${money(row.after.lineTotal)} (${money(row.after.unitPrice)} × ${row.after.quantity} ${row.after.unit})")
-                        Text("Різниця: ${money(checkNotNull(row.difference))}", color = MaterialTheme.colorScheme.primary)
-                        if (row.before.title != row.after.title) {
-                            Text("Нова назва: ${row.after.title}", style = MaterialTheme.typography.bodySmall)
+                    // Cache the cross-module nullable property in a local val:
+                    // Kotlin cannot smart-cast row.after across module boundaries.
+                    val updatedLine = row.after
+                    if (updatedLine != null) {
+                        Text("Стало: ${money(updatedLine.lineTotal)} (${money(updatedLine.unitPrice)} × ${updatedLine.quantity} ${updatedLine.unit})")
+                        Text("Різниця: ${money(updatedLine.lineTotal - row.before.lineTotal)}", color = MaterialTheme.colorScheme.primary)
+                        if (row.before.title != updatedLine.title) {
+                            Text("Нова назва: ${updatedLine.title}", style = MaterialTheme.typography.bodySmall)
                         }
                     } else {
                         Text(
