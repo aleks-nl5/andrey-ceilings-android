@@ -15,6 +15,8 @@ class BusinessDaoParityTest {
     fun generatedIdsCountsCaseInsensitiveLookupAndStatusUpdate() {
         JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).use { driver ->
             PrototypeDatabase.Schema.create(driver)
+            // Plain in-memory SQLite does not enable FK constraints by default.
+            driver.execute(null, "PRAGMA foreign_keys = ON", 0)
             val db = PrototypeDatabase(driver)
             val clients = ClientRepository(db)
             val projects = ProjectRepository(db)
