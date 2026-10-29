@@ -1,24 +1,44 @@
-# PR #28 — Android number-format settings via shared KMP SQLDelight
+# PR #28 — короткі публічні номери кошторисів і приватні UUID
 
-**Stage:** UI for configuring the format of **future** estimate document numbers after merged PR #27. [Issue #25](https://github.com/aleks-nl5/andrey-ceilings-android/issues/25).
+Після злитого PR #27 реалізовано налаштування **друкованого номера** без UUID для Android, зі спільним KMP-контрактом для Windows/iOS. Пов'язано з [#25](https://github.com/aleks-nl5/andrey-ceilings-android/issues/25).
 
-## Contract
+## Два рівні ідентифікації
 
-- **Single source of truth:** `estimate_number_settings` in the encrypted SQLDelight business database. The same `ImmutableEstimateRepository.numberPolicy()` / `configureNumberPolicy()` is consumed by Android, Windows/JVM and iOS through KMP. UI and Android DAO are thin adapters.
-- **Future documents only:** the new setting is applied by `createSeries()` when allocating a brand-new estimate. Existing `estimate_series.documentNumber`, `seriesUuid`, original format snapshot, `estimate_revisions`, and PDFs remain unchanged. Clones receive new numbers using the currently saved policy.
-- **Supported placeholders:** `{prefix}`, `{year}`, `{sequence}`, `{uuid}`. A full v4 UUID must appear exactly once. No unbounded free-form tokens or unsupported filename characters.
-- **UI:** four presets (standard, year/prefix/UUID, prefix/sequence/UUID, UUID-only); manually editable template and ASCII prefix; minimum padding width 1–12 for the local sequence. Invalid configurations are displayed before submission and fail validation in the KMP repository as well. A preview uses an illustrative UUID and sequence 125, **does not allocate or reserve a number**, and is not a real issued number.
-- **Saving:** only an explicit `Зберегти формат` writes the policy. `Скасувати` abandons unsaved edits. Errors leave the previously saved policy intact and visible. The setting is loaded again when the Android database session changes (e.g. restore).
-- **Offline uniqueness:** local sequence is not globally sequential; the canonical identifier retains full UUID, `UNIQUE(documentNumber)`, UUID collision detection/retry. Neither the prefix nor sequence is by itself a guarantee of global uniqueness.
-- **No schema migration:** PR #27 already added `estimate_number_settings` and persisted a default row on the first document allocation. The editor reads the default even before the first estimate exists. No new tables and no changes to SQLCipher `DELETE`, backup, calculation or PDF rendering.
+1. **Приватна ідентичність:** `estimate_series.seriesUuid` (повний UUID v4) і `estimate_series.documentNumber` (незмінний повний рядок з UUID). Ці значення використовують SQLDelight, синхронізація та архів, а не клієнт чи PDF. Для нових форматів без `{uuid}` він додається до internal `documentNumber` автоматично. SQLDelight зберігає UNIQUE для UUID і internal documentNumber; механізм retry та транзакцій PR #27 не змінений.
+2. **Публічний номер:** короткий рядок, згенерований із immutable `documentNumber` **з видаленням повного UUID**. Він показується в Android списку, буфері обміну, назві та тілі PDF. Номер повторно не обчислюється з поточних налаштувань: зміна шаблону не змінює вже присвоєні номери.
+3. **Без міграції:** попередні номери з `{uuid}`, включно з шаблонами де UUID на початку чи всередині, відкриваються з коротким друкованим відображенням. Для історичного `{uuid}`-only використовується заморожена локальна послідовність і префікс.
+4. **Важлива межа гарантій:** UUID забезпечує дуже високу практичну ймовірність різних приватних ідентичностей і перевірку колізій у локальній БД. Номери без UUID **не мають гарантованої глобальної унікальності** між незалежними офлайн-пристроями. Рекомендуються окремі префікси для робочих місць, наприклад `КШ1` / `КШ2`. Абсолютна гарантія коротких номерів потребує узгодженого серверного реєстру / розподілу номерів.
 
-## Verification
+## Приклади форматів у налаштуваннях
 
-- Shared JVM tests: policy persistence, valid presets and custom settings, rejection of invalid policy, immutable old number, current-policy new number, sequence retention after deletion, and preview without reserving.
-- Android emulator SQLCipher instrumentation: settings saved and read after reopening; old and new format numbers coexist; invalid attempts leave saved policy untouched; portable encrypted `.stpb` backup/restore preserves settings and both series.
-- CI required on **last PR #28 HEAD**: Android Debug/Release + instrumentation, Windows JVM and iOS Simulator.
-- Physical Android acceptance: open Settings → numbering; change prefix and template and preview, save, create new estimate with new number, clone it, export PDF, relaunch app, backup/restore; verify earlier estimate's number is unchanged.
+Усі приклади використовують умовний порядковий номер **125**, а кількість нулів залежить від обраної ширини:
 
-## Out of scope
+| Практичний стиль | Параметри | Як виглядає клієнту |
+| --- | --- | --- |
+| Кошторис за роком | `{prefix}-{year}-{sequence}`, `КШ`, 4 цифри | `КШ-2026-0125` |
+| Латинський комерційний | `{prefix}-{year}-{sequence}`, `AC`, 5 цифр | `AC-2026-00125` |
+| Рік / номер | `{year}/{sequence}`, 4 цифри | `2026/0125` |
+| Серія / рік / номер | `{prefix}/{year}/{sequence}`, `КШ`, 4 цифри | `КШ/2026/0125` |
+| Наскрізний | `{prefix}-{sequence}`, `КШ`, 4 цифри | `КШ-0125` |
+| Рік.номер | `{year}.{sequence}`, 4 цифри | `2026.0125` |
 
-Manual repricing preview and immutable v2/v3 UI/PDF; CMP shared settings screen migration; global server-issued short sequences; SQLCipher WAL (issue #26). These remain separate development stages.
+Це практичні формати внутрішніх комерційних документів, **не твердження про юридично обов'язковий формат**.
+
+## UI, дані, сумісність
+
+- **Єдине джерело налаштувань**: `estimate_number_settings` у зашифрованій SQLDelight-БД. UI Android звертається до `ImmutableEstimateRepository.configureNumberPolicy` через адаптер. В інших KMP-цілях алгоритм є спільним.
+- У UI не можна вводити `{uuid}` у друкований шаблон. Навіть якщо попередній шаблон містив UUID, редактор показує його скорочений вигляд. Службове збереження повного UUID гарантується KMP `EstimateNumbering.render`.
+- Підтримуються `{prefix}`, `{year}`, `{sequence}` (останній обов'язковий для нового людського формату), українські та латинські літери у префіксі, роздільники `-`, `_`, `.`, `/`.
+- Preview із умовним порядковим номером 125 не резервує номер і не записує UUID. Параметри зберігаються лише після натиснення `Зберегти формат`; можна відхилити незбережені зміни.
+- Публічний номер прив'язаний до записаного immutable `documentNumber`, а не до формату сьогоднішніх налаштувань. Зміна політики впливає лише на нові серії; дублювання кошторису отримує нову серію.
+- PDF та ім'я PDF не містять повного UUID. Файлове ім'я санітизується: `/` перетворюється на `_`, український префікс зберігається.
+- DB schema SQLDelight не змінюється, тому backup/restore, SQLCipher journal DELETE, ціни, калькулятор, frozen revisions v1 не зачіпаються.
+
+## Перевірки
+
+- KMP common: стандартизовані форматні варіанти, приватний ідентифікатор з UUID, публічне відображення **без UUID**, історичні позиції UUID та UUID-only.
+- Shared JVM: старі номери зберігаються, нові відповідають новим налаштуванням і залишаються глобально розрізнюваними за внутрішнім UUID.
+- Android instrumentation: публічні номери, дублікати, SQLCipher reopen, encrypted portable .stpb backup/restore.
+- CI на останньому HEAD Android Debug/Release, Windows/JVM, iOS/SQLCipher. Потім фізичний APK: друк PDF, копіювання номера, нові/старі записи, настройки та backup.
+
+**Поза цим PR:** UI історії версій v2/v3, preview перерахунку та PDF ревізій; окремий CMP UI; синхронізація коротких номерів і WAL (#26).
