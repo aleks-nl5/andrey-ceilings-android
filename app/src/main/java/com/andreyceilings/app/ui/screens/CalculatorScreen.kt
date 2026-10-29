@@ -64,7 +64,7 @@ internal fun CalculatorScreen(
     shadowProfileMeters: String, onShadowProfileMeters: (String) -> Unit,
     floatingCeilingMeters: String, onFloatingCeilingMeters: (String) -> Unit,
     chandeliersCount: String, onChandeliersCount: (String) -> Unit,
-    spotsCount: String, onSpotsCount: (String) -> Unit,
+    spotCount: String, onSpotCount: (String) -> Unit,
     pipePassCount: String, onPipePassCount: (String) -> Unit,
     curtainNicheMeters: String, onCurtainNicheMeters: (String) -> Unit,
     extraCorners: String, onExtraCorners: (String) -> Unit,
@@ -151,7 +151,7 @@ internal fun CalculatorScreen(
     }
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         OutlinedTextField(chandeliersCount, onChandeliersCount, label = { Text("Люстри, шт.") }, modifier = Modifier.weight(1f), singleLine = true)
-        OutlinedTextField(spotsCount, onSpotsCount, label = { Text("GX53, шт.") }, modifier = Modifier.weight(1f), singleLine = true)
+        OutlinedTextField(spotCount, onSpotCount, label = { Text("Точкові світильники, шт.") }, modifier = Modifier.weight(1f), singleLine = true)
     }
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         OutlinedTextField(pipePassCount, onPipePassCount, label = { Text("Обхід труб, шт.") }, modifier = Modifier.weight(1f), singleLine = true)
@@ -215,7 +215,7 @@ internal fun CalculatorScreen(
                 .put(EstimateOptionId.SHADOW_PROFILE.code, calculatorOptionsForSave(shadowProfileMeters))
                 .put(EstimateOptionId.FLOATING_PROFILE.code, calculatorOptionsForSave(floatingCeilingMeters))
                 .put(EstimateOptionId.CHANDELIER.code, calculatorOptionsForSave(chandeliersCount))
-                .put(EstimateOptionId.SPOT_GX53.code, calculatorOptionsForSave(spotsCount))
+                .put(EstimateOptionId.SPOT.code, calculatorOptionsForSave(spotCount))
                 .put(EstimateOptionId.PIPE_PASS.code, calculatorOptionsForSave(pipePassCount))
                 .put(EstimateOptionId.CURTAIN_NICHE.code, calculatorOptionsForSave(curtainNicheMeters))
                 .put(EstimateOptionId.EXTRA_CORNER.code, calculatorOptionsForSave(extraCorners))
