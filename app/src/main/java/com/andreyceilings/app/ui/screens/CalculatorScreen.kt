@@ -180,8 +180,8 @@ internal fun CalculatorScreen(
         Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) {
             Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("Результат · Go", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                Text("Площа: ${formatNumber(estimate.area)} м²")
-                Text("Периметр: ${formatNumber(estimate.perimeter)} м")
+                Text("Площа: ${formatMeasuredArea(estimate.area, measurementPrecision)} м²")
+                Text("Периметр: ${formatMeasuredLength(estimate.perimeter, measurementPrecision)} м")
                 HorizontalDivider()
                 Text("Полотно: ${money(estimate.canvasCost)}")
                 Text("Профіль: ${money(estimate.profileCost)}")
@@ -207,28 +207,31 @@ internal fun CalculatorScreen(
     val estimateForSave = estimate
     if (showSaveDialog && database != null && projects.isNotEmpty() && estimateForSave != null) SaveEstimateDialog(
         projects = projects,
-        defaultName = "Кімната ${formatNumber(length.toSafeDouble())} × ${formatNumber(width.toSafeDouble())} м",
+        defaultName = "Кімната ${formatMeasuredLength(measurementPrecision.length(length.toSafeDouble()), measurementPrecision)} × ${formatMeasuredLength(measurementPrecision.length(width.toSafeDouble()), measurementPrecision)} м",
         onDismiss = { showSaveDialog = false },
         onSave = { projectId, name ->
             val details = org.json.JSONObject()
-                .put(EstimateOptionId.LIGHT_LINE.code, calculatorOptionsForSave(lightLineMeters))
-                .put(EstimateOptionId.SHADOW_PROFILE.code, calculatorOptionsForSave(shadowProfileMeters))
-                .put(EstimateOptionId.FLOATING_PROFILE.code, calculatorOptionsForSave(floatingCeilingMeters))
+                .put("measurementPrecisionMeters", measurementPrecision.stepMeters)
+                .put(EstimateOptionId.LIGHT_LINE.code, measurementPrecision.length(calculatorOptionsForSave(lightLineMeters)))
+                .put(EstimateOptionId.SHADOW_PROFILE.code, measurementPrecision.length(calculatorOptionsForSave(shadowProfileMeters)))
+                .put(EstimateOptionId.FLOATING_PROFILE.code, measurementPrecision.length(calculatorOptionsForSave(floatingCeilingMeters)))
                 .put(EstimateOptionId.CHANDELIER.code, calculatorOptionsForSave(chandeliersCount))
                 .put(EstimateOptionId.SPOT.code, calculatorOptionsForSave(spotCount))
                 .put(EstimateOptionId.PIPE_PASS.code, calculatorOptionsForSave(pipePassCount))
-                .put(EstimateOptionId.CURTAIN_NICHE.code, calculatorOptionsForSave(curtainNicheMeters))
+                .put(EstimateOptionId.CURTAIN_NICHE.code, measurementPrecision.length(calculatorOptionsForSave(curtainNicheMeters)))
                 .put(EstimateOptionId.EXTRA_CORNER.code, calculatorOptionsForSave(extraCorners))
-                .put(EstimateOptionId.HARD_WALL.code, calculatorOptionsForSave(hardWallMeters))
+                .put(EstimateOptionId.HARD_WALL.code, measurementPrecision.length(calculatorOptionsForSave(hardWallMeters)))
             scope.launch {
                 runCatching {
                     val estimateDraft = EstimateEntity(
                         projectId = projectId, name = name.trim(), material = material, profileType = profileType, complexity = complexity,
-                        lengthMeters = length.toSafeDouble(), widthMeters = width.toSafeDouble(), areaSquareMeters = estimateForSave.area, perimeterMeters = estimateForSave.perimeter,
+                        lengthMeters = measurementPrecision.length(length.toSafeDouble().takeIf { it > 0.0 } ?: 4.0),
+                        widthMeters = measurementPrecision.length(width.toSafeDouble().takeIf { it > 0.0 } ?: 3.0),
+                        areaSquareMeters = estimateForSave.area, perimeterMeters = estimateForSave.perimeter,
                         canvasCost = estimateForSave.canvasCost, profileCost = estimateForSave.profileCost, complexityCost = estimateForSave.complexityCost,
                         optionsCost = estimateForSave.optionsCost, totalCost = estimateForSave.total, detailsJson = details.toString()
                     )
-                    val lineItems = com.andreyceilings.app.core.EstimateLineItems.create(estimateDraft, details, priceItems)
+                    val lineItems = com.andreyceilings.app.core.EstimateLineItems.create(estimateDraft, details, priceItems, measurementPrecision)
                     details.put("lineItems", com.andreyceilings.app.core.EstimateLineItems.toJson(lineItems))
                     database.estimates().insert(estimateDraft.copy(detailsJson = details.toString()))
                 }.onFailure { saveError = it.message ?: "Не вдалося зберегти кошторис" }
