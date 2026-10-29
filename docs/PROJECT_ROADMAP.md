@@ -1,14 +1,15 @@
 # Актуальний фокус — Kotlin Multiplatform калькулятор без Go (PR #23, 2026-10-29)
 
-**Етап 1 (PR #22, SQLDelight/SQLCipher Android) уже в `main`.** PR #23 (`feature/kmp-calculation-parity`, Draft) — поточний етап: на прохання власника **Android runtime переключено на Kotlin Multiplatform**, видалено Go-код, gomobile/AAR, Go-збірку та залежності. Гілку ще потрібно підтвердити кінцевим Android/Windows/iOS CI і **новим KMP APK на фізичному Android**. Не плутати зі старим APK, де розрахунки виконувалися через Go.
+**Етап 1 (PR #22, SQLDelight/SQLCipher Android) уже в `main`.** PR #23 (`feature/kmp-calculation-parity`, Draft) — поточний етап: на прохання власника **Android runtime переключено на Kotlin Multiplatform**, видалено Go-код, gomobile/AAR, Go-збірку та залежності. На кодовому HEAD `ae326a73` **Android/Windows/iOS CI успішні**, власник підтвердив роботу **нового KMP APK на фізичному Android** (розрахунки, кошториси, PDF). Окреме покриття всіх чотирьох варіантів точності та backup на пристрої ще не підтверджено.
 
 - [x] Реалізовано shared KMP геометрію/вартість і збережено золоті тестові вектори, сформовані раніше під час Go/KMP parity.
 - [x] Переключено Android `CeilingCalculator` → `KmpCeilingCalculator` зі збереженням обраних цін і всієї додаткової складності/опцій.
 - [x] Прибрано `go-core/`, AAR Gradle dependency, `scripts/build-android-aar.sh`, Go/gomobile steps у GitHub Actions; оновлено назву рушія в Android UI.
 - [x] Додано Android instrumentation перевірку KMP-адаптера (усі 4 точності, ціни прайсу, кошторис, сума) та перевірку незмінності збереженого кошторису після змін прайсу.
 - [x] До видалення Go: успішні [Android 40897166522](https://github.com/aleks-nl5/andrey-ceilings-android/actions/runs/40897166522), [Windows/iOS 40897166664](https://github.com/aleks-nl5/andrey-ceilings-android/actions/runs/40897166664); власник підтвердив, що **попередній Go APK** розраховував усе на телефоні.
-- [ ] Фінальна CI на останньому KMP-only кодовому HEAD: Android APK/instrumentation, Windows JVM, iOS Simulator.
-- [ ] Фізичний Android: розрахунки, прайс і опції, 10 см / 1 см / 5 мм / 1 мм, створення/збереження/дублювання кошторисів, PDF, повторне відкриття/backup.
+- [x] Фінальна CI KMP-only кодового HEAD `ae326a73`: [Android APK + instrumentation 40903911505](https://github.com/aleks-nl5/andrey-ceilings-android/actions/runs/40903911505), [Windows JVM + iOS Simulator 40903911291](https://github.com/aleks-nl5/andrey-ceilings-android/actions/runs/40903911291) — обидва **success**.
+- [x] Фізичний Android: власник підтвердив, що **новий KMP APK працює, розрахунки, кошториси та PDF працюють**.
+- [ ] Додаткові ручні граничні сценарії, окремо не підтверджені: кожен із 4 кроків точності, усі додаткові роботи, зміна прайсу, дублювання, повторне відкриття та backup.
 - [ ] Перевірити відсутність регресій і отримати окремий дозвіл власника на merge PR #23.
 - [ ] Наступний великий напрямок: поступово перенести реальний UI у CMP (спочатку прайс), далі повні Windows/iOS host.
 
