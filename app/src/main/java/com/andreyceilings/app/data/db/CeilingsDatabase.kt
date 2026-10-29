@@ -10,6 +10,7 @@ import com.andreyceilings.shared.db.ProjectRepository
 import com.andreyceilings.shared.db.MeasurementRepository
 import com.andreyceilings.shared.db.PriceRepository
 import com.andreyceilings.shared.db.EstimateRepository
+import com.andreyceilings.shared.estimate.ImmutableEstimateRepository
 import com.andreyceilings.shared.db.PrototypeDatabase
 import com.andreyceilings.shared.db.createEncryptedPrototypeDriver
 import java.io.Closeable
@@ -29,12 +30,14 @@ internal class CeilingsDatabase private constructor(
     private val measurementDao = RoomMeasurementDao(MeasurementRepository(database))
     private val priceDao = PriceItemDao(PriceRepository(database))
     private val estimateDao = EstimateDao(EstimateRepository(database))
+    private val numberingSettingsDao = EstimateNumberSettingsDao(ImmutableEstimateRepository(database))
 
     fun clients() = clientDao
     fun projects() = projectDao
     fun measurements() = measurementDao
     fun priceItems() = priceDao
     fun estimates() = estimateDao
+    fun estimateNumberSettings() = numberingSettingsDao
 
     val changeTracker = SqlDelightChangeTracker(database)
 
