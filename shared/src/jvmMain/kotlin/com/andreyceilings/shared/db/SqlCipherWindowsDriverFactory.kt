@@ -18,6 +18,8 @@ object SqlCipherWindowsDriverFactory {
         databaseFile.absoluteFile.parentFile?.mkdirs()
         val properties = Properties().apply {
             put(SqlCipherJdbcProperties.KEY_BYTES, key.copyOf())
+            // SQLite foreign keys are connection-local; configure every JDBC connection.
+            put("foreign_keys", "true")
             // Required by the verified SQLCipherMultiplatform 0.2.13 JDBC integration.
             put(SqlCipherJdbcProperties.SCRUB_KEY_MATERIAL_AFTER_CONNECT, false)
         }
