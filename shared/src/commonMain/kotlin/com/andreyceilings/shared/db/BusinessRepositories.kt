@@ -183,6 +183,13 @@ class EstimateRepository(private val database: PrototypeDatabase) {
 
     fun documentNumberForId(id: Long): String? =
         queries.selectDocumentNumberForEstimateId(id).executeAsOneOrNull()
+    fun printableNumberForId(id: Long): String? =
+        queries.selectPrintableNumberIdentityForEstimateId(id).executeAsOneOrNull()?.let {
+            com.andreyceilings.shared.estimate.EstimateNumbering.printable(
+                it.documentNumber, it.localSequence, it.policyPrefix, it.policySequenceWidth.toInt()
+            )
+        }
+
     fun originalRevisionInputForId(id: Long): String? =
         queries.selectFirstRevisionInputForEstimateId(id).executeAsOneOrNull()
 
