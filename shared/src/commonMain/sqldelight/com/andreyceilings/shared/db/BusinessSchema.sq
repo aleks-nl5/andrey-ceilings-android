@@ -1,0 +1,89 @@
+-- Initial shared SQLDelight schema mirrored from Android Room Entities.kt.
+-- Additive migration foundation only; Android production still uses Room.
+-- Application code supplies timestamps and other defaults when inserting rows.
+
+CREATE TABLE clients (
+    id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    phone TEXT NOT NULL DEFAULT '',
+    email TEXT NOT NULL DEFAULT '',
+    notes TEXT NOT NULL DEFAULT '',
+    createdAt INTEGER NOT NULL
+);
+CREATE INDEX index_clients_name ON clients(name);
+
+CREATE TABLE projects (
+    id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    clientId INTEGER,
+    title TEXT NOT NULL,
+    address TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'measurement',
+    notes TEXT NOT NULL DEFAULT '',
+    createdAt INTEGER NOT NULL,
+    updatedAt INTEGER NOT NULL
+);
+CREATE INDEX index_projects_clientId ON projects(clientId);
+CREATE INDEX index_projects_status ON projects(status);
+
+CREATE TABLE room_measurements (
+    id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    projectId INTEGER NOT NULL,
+    name TEXT NOT NULL,
+    shape TEXT NOT NULL DEFAULT 'rectangle',
+    lengthMeters REAL NOT NULL DEFAULT 0.0,
+    widthMeters REAL NOT NULL DEFAULT 0.0,
+    areaSquareMeters REAL NOT NULL DEFAULT 0.0,
+    perimeterMeters REAL NOT NULL DEFAULT 0.0,
+    drawingJson TEXT NOT NULL DEFAULT '{}',
+    notes TEXT NOT NULL DEFAULT '',
+    createdAt INTEGER NOT NULL
+);
+CREATE INDEX index_room_measurements_projectId ON room_measurements(projectId);
+
+CREATE TABLE price_items (
+    id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    code TEXT NOT NULL,
+    title TEXT NOT NULL,
+    category TEXT NOT NULL,
+    unit TEXT NOT NULL,
+    price REAL NOT NULL,
+    updatedAt INTEGER NOT NULL
+);
+CREATE UNIQUE INDEX index_price_items_category_code ON price_items(category, code);
+
+CREATE TABLE estimates (
+    id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    projectId INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    material TEXT NOT NULL,
+    profileType TEXT NOT NULL,
+    complexity TEXT NOT NULL,
+    lengthMeters REAL NOT NULL,
+    widthMeters REAL NOT NULL,
+    areaSquareMeters REAL NOT NULL,
+    perimeterMeters REAL NOT NULL,
+    canvasCost REAL NOT NULL,
+    profileCost REAL NOT NULL,
+    complexityCost REAL NOT NULL,
+    optionsCost REAL NOT NULL,
+    totalCost REAL NOT NULL,
+    detailsJson TEXT NOT NULL DEFAULT '{}',
+    createdAt INTEGER NOT NULL
+);
+CREATE INDEX index_estimates_projectId ON estimates(projectId);
+CREATE INDEX index_estimates_createdAt ON estimates(createdAt);
+
+selectClients:
+SELECT * FROM clients ORDER BY name;
+
+selectProjects:
+SELECT * FROM projects ORDER BY updatedAt DESC;
+
+selectMeasurementsForProject:
+SELECT * FROM room_measurements WHERE projectId = ? ORDER BY id;
+
+selectPriceItems:
+SELECT * FROM price_items ORDER BY category, code;
+
+selectEstimatesForProject:
+SELECT * FROM estimates WHERE projectId = ? ORDER BY createdAt DESC;
