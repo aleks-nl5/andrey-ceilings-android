@@ -52,12 +52,9 @@ android {
 }
 
 dependencies {
-    // Foundation for replacing Room DAOs with the shared SQLDelight repositories.
-    // Room remains the Android production store until UI and backup adapters pass CI.
+    // Shared KMP calculator and encrypted SQLDelight repositories.
     implementation(project(":shared"))
     implementation("app.cash.sqldelight:runtime:2.4.1")
-    // Required Go mobile library: all calculations run in Go; no Kotlin fallback exists.
-    implementation(files("libs/ceilings-core.aar"))
     implementation(platform("androidx.compose:compose-bom:2026.06.01"))
     implementation("androidx.activity:activity-compose:1.13.0")
     implementation("androidx.core:core-ktx:1.19.1") // WindowCompat.enableEdgeToEdge
