@@ -65,6 +65,8 @@ class NumberedEstimateAndroidIntegrationTest {
                 val first = db.estimates().observeAll().first().single()
                 firstNumber = requireNotNull(first.documentNumber)
                 assertTrue(firstNumber.startsWith("AC-"))
+                assertEquals("AC-2026-00001", first.printableNumber)
+                assertTrue(first.printableNumber!!.length < firstNumber.length)
                 val history = ImmutableEstimateRepository(db.database)
                 firstSeries = requireNotNull(db.database.businessSchemaQueries
                     .selectEstimateById(firstId).executeAsOne().seriesUuid)
@@ -79,6 +81,7 @@ class NumberedEstimateAndroidIntegrationTest {
                 assertNotEquals(firstId, duplicateId)
                 val copy = db.estimates().observeAll().first().first { it.id == duplicateId }
                 assertNotEquals(firstNumber, copy.documentNumber)
+                assertNotEquals(first.printableNumber, copy.printableNumber)
                 assertEquals(savedDetails, copy.detailsJson)
                 assertEquals(100.0, copy.totalCost, 0.0)
 
