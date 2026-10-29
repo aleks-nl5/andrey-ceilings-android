@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.andreyceilings.app.data.db.CeilingsDatabase
+import com.andreyceilings.app.data.db.ProductionDatabaseGate
 import com.andreyceilings.app.data.security.DatabaseKeyManager
 import com.andreyceilings.app.data.security.PortableBackupManager
 import com.andreyceilings.app.data.security.PortableBackupPayload
@@ -13,6 +14,7 @@ import java.io.IOException
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
+import java.util.concurrent.ConcurrentLinkedQueue
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -117,6 +119,118 @@ class SqlCipherRestoreWriteQuiescenceTest {
                 baseline.delete()
                 baselineBytes.fill(0)
                 initialKey.fill(0)
+            }
+        }
+    }
+
+    /**
+     * Several ongoing operations may hold the production gate simultaneously.
+     * The exclusive restore lease may enter only after ALL of them have left.
+     * Uses real threads and latches instead of sleep-based ordering guesses.
+     */
+    @Test fun restoreGateWaitsForAllConcurrentOperations() {
+        val workers = 6
+        val entered = CountDownLatch(workers)
+        val release = CountDownLatch(1)
+        val finished = CountDownLatch(workers)
+        val restoreAttempted = CountDownLatch(1)
+        val restoreAcquired = CountDownLatch(1)
+        val restoreFinished = CountDownLatch(1)
+        val failures = ConcurrentLinkedQueue<Throwable>()
+        val readers = List(workers) { index ->
+            Thread({
+                try {
+                    ProductionDatabaseGate.read {
+                        entered.countDown()
+                        check(release.await(20, TimeUnit.SECONDS)) {
+                            "Reader lease was not released"
+                        }
+                    }
+                } catch (error: Throwable) {
+                    failures.add(error)
+                } finally {
+                    finished.countDown()
+                }
+            }, "sqlcipher-restore-reader-$index")
+        }
+        val restorer = Thread({
+            try {
+                restoreAttempted.countDown()
+                ProductionDatabaseGate.restore {
+                    restoreAcquired.countDown()
+                }
+            } catch (error: Throwable) {
+                failures.add(error)
+            } finally {
+                restoreFinished.countDown()
+            }
+        }, "sqlcipher-restore-exclusive")
+        try {
+            readers.forEach { it.start() }
+            assertTrue("Concurrent readers never entered the gate",
+                entered.await(15, TimeUnit.SECONDS))
+            restorer.start()
+            assertTrue("Restore request not submitted",
+                restoreAttempted.await(5, TimeUnit.SECONDS))
+            assertTrue("Restore entered while reads were still active",
+                !restoreAcquired.await(250, TimeUnit.MILLISECONDS))
+            release.countDown()
+            assertTrue("Concurrent operations stalled",
+                finished.await(20, TimeUnit.SECONDS))
+            assertTrue("Exclusive restore never acquired its lease",
+                restoreAcquired.await(20, TimeUnit.SECONDS))
+            assertTrue("Restore thread did not finish",
+                restoreFinished.await(20, TimeUnit.SECONDS))
+            assertTrue("Unexpected concurrency failures: $failures",
+                failures.isEmpty())
+        } finally {
+            release.countDown()
+            readers.forEach { it.join(20000) }
+            if (restorer.isAlive) restorer.join(20000)
+        }
+    }
+
+    /** A worker holding an old SQLDelight reference must never write into a newly restored DB. */
+    @Test fun staleDriverHandleRejectsWritesAfterSuccessfulRestore() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val old = CeilingsDatabase.get(context)
+        val key = DatabaseKeyManager.getOrCreatePassphrase(context)
+        val snapshot = PortableBackupManager.createVerifiedSnapshot(context, old)
+        val image = snapshot.readBytes()
+        val previousTitles = ProjectRepository(old.database).all().map { it.title }.sorted()
+        try {
+            val replaced = SqlCipherRestoreManager.restore(
+                context, PortableBackupPayload.Contents(image, key)
+            )
+            assertTrue(replaced.checkIntegrity())
+            val blocked = runCatching {
+                ProjectRepository(old.database).createReturningId(
+                    clientId = null, title = "Never write with stale DB handle",
+                    createdAt = 901000L
+                )
+            }
+            assertTrue("Stale SQLDelight handle unexpectedly wrote after restore",
+                blocked.isFailure)
+            assertEquals("Old handle modified the installed database",
+                previousTitles,
+                ProjectRepository(replaced.database).all().map { it.title }.sorted())
+            val currentKey = DatabaseKeyManager.getOrCreatePassphrase(context)
+            try {
+                assertArrayEquals("Restore changed the SQLCipher key", key, currentKey)
+            } finally {
+                currentKey.fill(0)
+            }
+        } finally {
+            try {
+                CeilingsDatabase.closeAndReset()
+                SqlCipherRestoreManager.recoverIfNeeded(context)
+                SqlCipherRestoreManager.restore(
+                    context, PortableBackupPayload.Contents(image, key)
+                )
+            } finally {
+                snapshot.delete()
+                image.fill(0)
+                key.fill(0)
             }
         }
     }
