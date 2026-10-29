@@ -79,7 +79,7 @@ class ImmutableEstimateRepository(private val database: PrototypeDatabase) {
             queries.insertDefaultEstimateNumberSettings()
             val policy = numberPolicy()
             check(EstimateNumbering.validate(policy).isEmpty()) { "Stored numbering configuration is invalid" }
-            val sequence = queries.allocateEstimateSequence().executeAsOne()
+            val sequence = queries.allocateEstimateSequence().executeAsOne() - 1L
             var seriesUuid: String? = null
             var documentNumber: String? = null
             // A real collision is expected to be extremely rare. A deliberately
