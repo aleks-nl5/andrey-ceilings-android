@@ -41,11 +41,11 @@ const (
 )
 
 type RoomOptions struct {
-	LightLinesMeters      float64 `json:"lightLinesMeters"`
+	LightLineMeters      float64 `json:"lightLineMeters"`
 	ShadowProfileMeters   float64 `json:"shadowProfileMeters"`
 	FloatingCeilingMeters float64 `json:"floatingCeilingMeters"`
 	ChandeliersCount      float64 `json:"chandeliersCount"`
-	SpotsGX53Count        float64 `json:"spotsGX53Count"`
+	SpotCount        float64 `json:"spotCount"`
 	PipePassCount         float64 `json:"pipePassCount"`
 	CurtainNicheMeters    float64 `json:"curtainNicheMeters"`
 	ExtraCorners          float64 `json:"extraCorners"`
@@ -92,6 +92,7 @@ type CostInput struct {
 	Complexity   Complexity   `json:"complexity"`
 	ProfileType  ProfileType  `json:"profileType"`
 	Options      RoomOptions  `json:"options"`
+	PrecisionStepMeters float64 `json:"precisionStepMeters,omitempty"`
 }
 type CostBreakdown struct {
 	CanvasCost     float64 `json:"canvasCost"`
@@ -239,6 +240,13 @@ func CalculateCeilingCost(p CostInput, prices PriceList) CostBreakdown {
 		prices = DefaultPriceList()
 	}
 	area, perimeter := nonnegative(p.Area), nonnegative(p.Perimeter)
+    step := p.PrecisionStepMeters
+    if step != .1 && step != .01 && step != .005 && step != .001 { step = 0 }
+    linear := func(v float64) float64 { return measured(nonnegative(v), step) }
+    complexityLength := func(v float64) float64 {
+        if step == 0 { return math.Round(v*10)/10 }
+        return measured(v, step)
+    }
 	material := p.MaterialType
 	if _, ok := prices.CanvasPrices[material]; !ok {
 		material = PVCMatte
@@ -252,26 +260,26 @@ func CalculateCeilingCost(p CostInput, prices PriceList) CostBreakdown {
 	complexityCost := 0.0
 	switch p.Complexity {
 	case Multilevel:
-		length := math.Max(2, math.Round(perimeter*.35*10)/10)
+		length := math.Max(2, complexityLength(perimeter*.35))
 		complexityCost = math.Round(length * prices.MultilevelPerMeterCost)
 	case Curved:
-		length := math.Max(2, math.Round(perimeter*.25*10)/10)
+		length := math.Max(2, complexityLength(perimeter*.25))
 		complexityCost = math.Round(length * prices.CurvedPerMeterCost)
 	}
 	o := p.Options
-	optionsCost := nonnegative(o.LightLinesMeters) * prices.LightLinePerMeter
+	optionsCost := linear(o.LightLineMeters) * prices.LightLinePerMeter
 	if profile != ShadowKraab {
-		optionsCost += nonnegative(o.ShadowProfileMeters) * prices.ShadowProfilePerMeter
+		optionsCost += linear(o.ShadowProfileMeters) * prices.ShadowProfilePerMeter
 	}
 	if profile != FloatingLED {
-		optionsCost += nonnegative(o.FloatingCeilingMeters) * prices.FloatingProfilePerMeter
+		optionsCost += linear(o.FloatingCeilingMeters) * prices.FloatingProfilePerMeter
 	}
 	optionsCost += nonnegative(o.ChandeliersCount) * prices.ChandelierInstallation
-	optionsCost += nonnegative(o.SpotsGX53Count) * prices.SpotInstallation
+	optionsCost += nonnegative(o.SpotCount) * prices.SpotInstallation
 	optionsCost += nonnegative(o.PipePassCount) * prices.PipePass
-	optionsCost += nonnegative(o.CurtainNicheMeters) * prices.CurtainNichePerMeter
+	optionsCost += linear(o.CurtainNicheMeters) * prices.CurtainNichePerMeter
 	optionsCost += nonnegative(o.ExtraCorners) * prices.ExtraCornerCost
-	optionsCost += nonnegative(o.HardWallMeters) * prices.HardWallPerMeter
+	optionsCost += linear(o.HardWallMeters) * prices.HardWallPerMeter
 	optionsCost = math.Round(optionsCost)
 	return CostBreakdown{canvas, profileCost, complexityCost, optionsCost, canvas + profileCost + complexityCost + optionsCost}
 }
