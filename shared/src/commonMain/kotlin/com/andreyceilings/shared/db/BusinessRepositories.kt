@@ -2,6 +2,8 @@ package com.andreyceilings.shared.db
 
 import app.cash.sqldelight.coroutines.asFlow
 import app.cash.sqldelight.coroutines.mapToList
+import com.andreyceilings.shared.estimate.ImmutableEstimateDraft
+import com.andreyceilings.shared.estimate.ImmutableEstimateRepository
 import kotlinx.coroutines.Dispatchers
 
 /**
@@ -150,6 +152,38 @@ class EstimateRepository(private val database: PrototypeDatabase) {
     ): Long = queries.insertEstimateReturningId(projectId, name, material, profileType, complexity,
         lengthMeters, widthMeters, areaSquareMeters, perimeterMeters, canvasCost, profileCost,
         complexityCost, optionsCost, totalCost, detailsJson, createdAt, newRecordUuid(), createdAt).executeAsOne()
+    /**
+     * Android compatibility write: both the displayed estimate and its permanent
+     * number/v1/lines are committed or rolled back together. Callers must supply
+     * frozen line-item and measurement inputs; current price list is never read.
+     */
+    fun createNumberedReturningId(
+        projectId: Long, name: String, material: String, profileType: String, complexity: String,
+        lengthMeters: Double, widthMeters: Double, areaSquareMeters: Double, perimeterMeters: Double,
+        canvasCost: Double, profileCost: Double, complexityCost: Double, optionsCost: Double,
+        totalCost: Double, detailsJson: String, createdAt: Long, year: Int,
+        snapshot: ImmutableEstimateDraft,
+        newSeriesUuid: () -> String = ::newRecordUuid,
+        newRevisionUuid: () -> String = ::newRecordUuid
+    ): Long = database.transactionWithResult {
+        check(snapshot.detailsJson == detailsJson && snapshot.totalCost == totalCost) {
+            "Numbered history must match the frozen estimate exactly"
+        }
+        val id = createReturningId(projectId, name, material, profileType, complexity,
+            lengthMeters, widthMeters, areaSquareMeters, perimeterMeters, canvasCost,
+            profileCost, complexityCost, optionsCost, totalCost, detailsJson, createdAt)
+        val result = ImmutableEstimateRepository(database).createSeries(
+            projectId, year, createdAt, snapshot,
+            newSeriesUuid = newSeriesUuid, newRevisionUuid = newRevisionUuid
+        )
+        queries.linkLegacyEstimateToSeries(result.seriesUuid, id)
+        check(find(id)?.seriesUuid == result.seriesUuid) { "Failed to link numbered estimate" }
+        id
+    }
+
+    fun documentNumberForId(id: Long): String? =
+        queries.selectDocumentNumberForEstimateId(id).executeAsOneOrNull()
+
     fun find(id: Long) = queries.selectEstimateById(id).executeAsOneOrNull()
     fun create(
         projectId: Long, name: String, material: String, profileType: String, complexity: String,
@@ -164,8 +198,27 @@ class EstimateRepository(private val database: PrototypeDatabase) {
         lengthMeters: Double, widthMeters: Double, areaSquareMeters: Double, perimeterMeters: Double,
         canvasCost: Double, profileCost: Double, complexityCost: Double, optionsCost: Double,
         totalCost: Double, detailsJson: String
-    ) = queries.updateEstimate(name, material, profileType, complexity, lengthMeters,
-        widthMeters, areaSquareMeters, perimeterMeters, canvasCost, profileCost, complexityCost,
-        optionsCost, totalCost, detailsJson, id)
-    fun delete(id: Long) = queries.deleteEstimate(id)
+    ) {
+        val stored = checkNotNull(find(id)) { "Cannot update a missing estimate" }
+        if (stored.seriesUuid != null) {
+            check(stored.material == material && stored.profileType == profileType &&
+                stored.complexity == complexity && stored.lengthMeters == lengthMeters &&
+                stored.widthMeters == widthMeters && stored.areaSquareMeters == areaSquareMeters &&
+                stored.perimeterMeters == perimeterMeters && stored.canvasCost == canvasCost &&
+                stored.profileCost == profileCost && stored.complexityCost == complexityCost &&
+                stored.optionsCost == optionsCost && stored.totalCost == totalCost &&
+                stored.detailsJson == detailsJson
+            ) { "Numbered estimate calculations are immutable; create a revision instead" }
+            queries.updateEstimateDisplayName(name, id)
+        } else {
+            queries.updateEstimate(name, material, profileType, complexity, lengthMeters,
+                widthMeters, areaSquareMeters, perimeterMeters, canvasCost, profileCost,
+                complexityCost, optionsCost, totalCost, detailsJson, id)
+        }
+    }
+
+    fun delete(id: Long) = database.transaction {
+        queries.softDeleteNumberedSeriesForEstimate(id)
+        queries.deleteEstimate(id)
+    }
 }
