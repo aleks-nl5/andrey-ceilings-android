@@ -1,19 +1,20 @@
-# Актуальний фокус — етап 2, Go/AAR → Kotlin Multiplatform (2026-10-29)
+# Актуальний фокус — Kotlin Multiplatform калькулятор без Go (PR #23, 2026-10-29)
 
-**PR #22 уже об'єднано з `main`.** Його підсумок щодо бази даних і Android зафіксовано нижче як історію завершеного етапу 1. До production-запуску ще потрібні окремі crash/WAL hardening-тести.
+**Етап 1 (PR #22, SQLDelight/SQLCipher Android) уже в `main`.** PR #23 (`feature/kmp-calculation-parity`, Draft) — поточний етап: на прохання власника **Android runtime переключено на Kotlin Multiplatform**, видалено Go-код, gomobile/AAR, Go-збірку та залежності. Гілку ще потрібно підтвердити кінцевим Android/Windows/iOS CI і **новим KMP APK на фізичному Android**. Не плутати зі старим APK, де розрахунки виконувалися через Go.
 
-**Новий окремий Draft PR:** `feature/kmp-calculation-parity` — незалежне KMP-ядро геометрії та цін + спільні референсні вектори Go/KMP. **Go/AAR лишається Android runtime** до parity, CI та перевірки на телефоні.
+- [x] Реалізовано shared KMP геометрію/вартість і збережено золоті тестові вектори, сформовані раніше під час Go/KMP parity.
+- [x] Переключено Android `CeilingCalculator` → `KmpCeilingCalculator` зі збереженням обраних цін і всієї додаткової складності/опцій.
+- [x] Прибрано `go-core/`, AAR Gradle dependency, `scripts/build-android-aar.sh`, Go/gomobile steps у GitHub Actions; оновлено назву рушія в Android UI.
+- [x] Додано Android instrumentation перевірку KMP-адаптера (усі 4 точності, ціни прайсу, кошторис, сума) та перевірку незмінності збереженого кошторису після змін прайсу.
+- [x] До видалення Go: успішні [Android 40897166522](https://github.com/aleks-nl5/andrey-ceilings-android/actions/runs/40897166522), [Windows/iOS 40897166664](https://github.com/aleks-nl5/andrey-ceilings-android/actions/runs/40897166664); власник підтвердив, що **попередній Go APK** розраховував усе на телефоні.
+- [ ] Фінальна CI на останньому KMP-only кодовому HEAD: Android APK/instrumentation, Windows JVM, iOS Simulator.
+- [ ] Фізичний Android: розрахунки, прайс і опції, 10 см / 1 см / 5 мм / 1 мм, створення/збереження/дублювання кошторисів, PDF, повторне відкриття/backup.
+- [ ] Перевірити відсутність регресій і отримати окремий дозвіл власника на merge PR #23.
+- [ ] Наступний великий напрямок: поступово перенести реальний UI у CMP (спочатку прайс), далі повні Windows/iOS host.
 
-- [x] Реалізувати KMP геометрію, ціни, опції та ті самі golden vectors у Go і commonTest.
-- [x] Після додавання тесту незмінності збережених кошторисів Go/Android APK/instrumentation + Windows/iOS Simulator CI успішні на HEAD `1957ac13`: [Android 40897166522](https://github.com/aleks-nl5/andrey-ceilings-android/actions/runs/40897166522), [Windows/iOS 40897166664](https://github.com/aleks-nl5/andrey-ceilings-android/actions/runs/40897166664).
-- [x] Автоматизовано перевірки сум збережених рядків і незмінності після оновлення/видалення позицій прайсу, дублювання та повторного відкриття БД.
-- [x] Власник підтвердив на реальному телефоні: APK запускається, **калькулятор успішно рахує**. Поточний Android calculator runtime — Go/AAR; це не ручне підтвердження KMP runtime чи всіх сценаріїв точності, збереження й PDF.
-- [ ] Завершити ручну перевірку узгодженості UI / збереженого кошторису / PDF на фізичному Android для всіх чотирьох кроків точності.
-- [ ] Додати історичні й крайові приклади, потім перемикати runtime частинами без видалення Go завчасно.
-- [ ] Після цього — етап 3: реальні CMP-екрани (спочатку прайс), далі Windows/iOS застосунки.
-- [ ] Серверна синхронізація лишається майбутнім окремим етапом.
+Технічні критерії та тести: [GO_TO_KMP_PARITY.md](architecture/GO_TO_KMP_PARITY.md). Режим Android SQLCipher `DELETE` → майбутній окремий [WAL PR #26](https://github.com/aleks-nl5/andrey-ceilings-android/issues/26), не змішувати з калькулятором.
 
-План та критерії приймання: [GO_TO_KMP_PARITY.md](architecture/GO_TO_KMP_PARITY.md).
+---
 
 ## SQLDelight hardening — майбутній перехід Android із DELETE на WAL
 
