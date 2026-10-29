@@ -31,11 +31,11 @@ data class GeometryInput(
 data class RoomGeometry(val area: Double, val perimeter: Double, val cornersCount: Int)
 
 data class RoomOptions(
-    val lightLinesMeters: Double = 0.0,
+    val lightLineMeters: Double = 0.0,
     val shadowProfileMeters: Double = 0.0,
     val floatingCeilingMeters: Double = 0.0,
     val chandeliersCount: Double = 0.0,
-    val spotsGX53Count: Double = 0.0,
+    val spotCount: Double = 0.0,
     val pipePassCount: Double = 0.0,
     val curtainNicheMeters: Double = 0.0,
     val extraCorners: Double = 0.0,
@@ -64,7 +64,8 @@ data class CostInput(
     val materialType: String = "pvc_matte",
     val complexity: String = "straight",
     val profileType: String = "standard_alu",
-    val options: RoomOptions = RoomOptions()
+    val options: RoomOptions = RoomOptions(),
+    val precisionStepMeters: Double? = null
 )
 
 data class CostBreakdown(
@@ -180,6 +181,12 @@ object KmpCeilingCalculator {
     fun cost(input: CostInput, priceList: PriceList = defaultPriceList()): CostBreakdown {
         // The Go implementation resets the *whole* list only when canvasPrices is empty.
         val prices = if (priceList.canvasPrices.isEmpty()) defaultPriceList() else priceList
+        val step = input.precisionStepMeters
+        require(step == null || MeasurementPrecision.fromStep(step) != null) { "Unsupported measurement precision" }
+        fun linear(value: Double): Double = measuredValue(nonnegative(value), step)
+        fun complexityLength(value: Double): Double =
+            if (step == null) goRound(value * 10.0) / 10.0 else measured(value)
+        fun measured(value: Double): Double = measuredValue(value, step)
         val area = nonnegative(input.area)
         val perimeter = nonnegative(input.perimeter)
         val material = if (input.materialType in prices.canvasPrices) input.materialType else "pvc_matte"
@@ -189,29 +196,29 @@ object KmpCeilingCalculator {
         val profileCost = goRound(perimeter * (prices.profilePrices[profile] ?: 0.0))
         val complexityCost = when (input.complexity) {
             "multilevel" -> {
-                val run = max(2.0, goRound(perimeter * 0.35 * 10.0) / 10.0)
+                val run = max(2.0, complexityLength(perimeter * 0.35))
                 goRound(run * prices.multilevelPerMeterCost)
             }
             "curved" -> {
-                val run = max(2.0, goRound(perimeter * 0.25 * 10.0) / 10.0)
+                val run = max(2.0, complexityLength(perimeter * 0.25))
                 goRound(run * prices.curvedPerMeterCost)
             }
             else -> 0.0
         }
         val o = input.options
-        var optionsCost = nonnegative(o.lightLinesMeters) * prices.lightLinePerMeter
+        var optionsCost = linear(o.lightLineMeters) * prices.lightLinePerMeter
         if (profile != "shadow_kraab") {
-            optionsCost += nonnegative(o.shadowProfileMeters) * prices.shadowProfilePerMeter
+            optionsCost += linear(o.shadowProfileMeters) * prices.shadowProfilePerMeter
         }
         if (profile != "floating_led") {
-            optionsCost += nonnegative(o.floatingCeilingMeters) * prices.floatingProfilePerMeter
+            optionsCost += linear(o.floatingCeilingMeters) * prices.floatingProfilePerMeter
         }
         optionsCost += nonnegative(o.chandeliersCount) * prices.chandelierInstallation
-        optionsCost += nonnegative(o.spotsGX53Count) * prices.spotInstallation
+        optionsCost += nonnegative(o.spotCount) * prices.spotInstallation
         optionsCost += nonnegative(o.pipePassCount) * prices.pipePass
-        optionsCost += nonnegative(o.curtainNicheMeters) * prices.curtainNichePerMeter
+        optionsCost += linear(o.curtainNicheMeters) * prices.curtainNichePerMeter
         optionsCost += nonnegative(o.extraCorners) * prices.extraCornerCost
-        optionsCost += nonnegative(o.hardWallMeters) * prices.hardWallPerMeter
+        optionsCost += linear(o.hardWallMeters) * prices.hardWallPerMeter
         optionsCost = goRound(optionsCost)
         return CostBreakdown(
             canvasCost, profileCost, complexityCost, optionsCost,
@@ -228,7 +235,8 @@ object KmpCeilingCalculator {
         val dimensions = geometry(geometryInput)
         return CalculationResult(
             dimensions,
-            cost(costInput.copy(area = dimensions.area, perimeter = dimensions.perimeter), prices)
+            cost(costInput.copy(area = dimensions.area, perimeter = dimensions.perimeter,
+                precisionStepMeters = geometryInput.precisionStepMeters), prices)
         )
     }
 }
