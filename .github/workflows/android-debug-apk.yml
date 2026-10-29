@@ -58,42 +58,7 @@ jobs:
           # Let trusted branches in this repository save caches; keep fork PRs read-only.
           cache-read-only: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
 
-      # Configure Go after other toolchain actions so its PATH entry is the active one.
-      - name: Set up Go
-        uses: actions/setup-go@v7
-        with:
-          go-version: '1.27.3'
-          cache-dependency-path: go-core/go.mod
-
-      - name: Verify Go toolchain
-        run: |
-          echo "Resolved Go executable: $(command -v go)"
-          type -a go
-          go version
-          test "$(go env GOVERSION)" = "go1.27.3"
-
-      - name: Test Go core
-        working-directory: go-core
-        run: go test ./...
-
-      # Pin gomobile to the exact x/mobile revision validated by this toolchain refresh.
-      - name: Install gomobile
-        env:
-          X_MOBILE_VERSION: v0.0.0-20261011034528-197770444867
-        run: |
-          GOTOOLCHAIN=auto go install "golang.org/x/mobile/cmd/gomobile@${X_MOBILE_VERSION}"
-          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
-
-      - name: Initialize gomobile
-        run: GOTOOLCHAIN=auto gomobile init
-
-      - name: Build required Go Android library
-        env:
-          GOTOOLCHAIN: auto
-          X_MOBILE_VERSION: v0.0.0-20261011034528-197770444867
-        run: bash scripts/build-android-aar.sh
-
-      - name: Build and test shared KMP foundation
+      - name: Build and test shared KMP calculator and SQLDelight
         run: gradle --no-daemon :shared:assemble :shared:compileKotlinJvm :shared:jvmTest --stacktrace --warning-mode all
 
       - name: Compile Compose Desktop host
