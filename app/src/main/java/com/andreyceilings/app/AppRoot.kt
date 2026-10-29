@@ -402,7 +402,15 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
                             hardWallMeters = hardWallMeters, onHardWallMeters = { hardWallMeters = it },
                             complexity = complexity, onComplexity = { complexity = it }
                         )
-                        AppTab.SETTINGS -> SettingsScreen(databaseStatus, database, onDatabaseReplaced, themeMode, onThemeModeChange, onOpenPriceList = { navigateTo(AppTab.PRICES) })
+                        AppTab.SETTINGS -> SettingsScreen(
+                            databaseStatus, database, onDatabaseReplaced, themeMode, onThemeModeChange,
+                            onOpenPriceList = { navigateTo(AppTab.PRICES) },
+                            measurementPrecision = measurementPrecision,
+                            onMeasurementPrecision = { selected ->
+                                measurementPrecision = selected
+                                precisionPreferences.edit().putString("measurement_precision", selected.name).apply()
+                            }
+                        )
                         else -> Unit
                     }
                 }
