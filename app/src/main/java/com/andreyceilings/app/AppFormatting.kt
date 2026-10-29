@@ -1,5 +1,13 @@
 package com.andreyceilings.app
 
+import com.andreyceilings.shared.calculation.MeasurementPrecision
+
+internal fun formatMeasuredLength(value: Double, precision: MeasurementPrecision): String =
+    String.format(java.util.Locale.getDefault(), "%.${precision.lengthDigits}f", value)
+
+internal fun formatMeasuredArea(value: Double, precision: MeasurementPrecision): String =
+    String.format(java.util.Locale.getDefault(), "%.${precision.areaDigits}f", value)
+
 internal fun calculatorOptionsForSave(value: String): Double = value.toSafeDouble()
 
 internal fun formatNumber(value: Double) = String.format("%.2f", value)
