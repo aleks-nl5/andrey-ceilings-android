@@ -173,8 +173,8 @@ class ImmutableEstimateRepository(private val database: PrototypeDatabase) {
         draft.lines.forEach { line ->
             require(line.stableCode.isNotBlank() && line.title.isNotBlank() && line.unit.isNotBlank())
             require(line.quantity.isFinite() && line.quantity >= 0.0)
-            require(line.unitPrice.isFinite() && line.unitPrice >= 0.0)
-            require(line.lineTotal.isFinite() && line.lineTotal >= 0.0)
+            require(line.unitPrice.isFinite() && (line.unitPrice >= 0.0 || line.stableCode == "system.rounding"))
+            require(line.lineTotal.isFinite() && (line.lineTotal >= 0.0 || line.stableCode == "system.rounding"))
         }
         require(abs(draft.lines.sumOf { it.lineTotal } - draft.totalCost) < 0.01) {
             "Saved line totals must equal the document total"
