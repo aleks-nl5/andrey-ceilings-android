@@ -26,10 +26,7 @@ checks the imported IDs and preservation of the original encrypted file.
 The provider accepts only disposable test database filenames and is not
 included in Release APKs.
 
-**Verification gate:** wait for Android emulator run (including this new cold
-process test) and Windows/iOS checks on the final commit. Then install the
-new Android APK over the old version on the physical device *without clearing
-app data*; ensure all five lists and the backup flow remain usable.
+**Verification result (2026-10-29):** CI on `4fa4632` passed Android (`40868367460`), Windows and iOS (`40868367549`). The user then confirmed on an actual Android device that the updated APK installed, launched successfully, imported the legacy database, and that automatic backups, database export, exported-file verification, and database import all work. Do not extrapolate this report to untested concurrency, crash recovery or all editing operations.
 
 ## Current implementation — 2026-10-29
 
