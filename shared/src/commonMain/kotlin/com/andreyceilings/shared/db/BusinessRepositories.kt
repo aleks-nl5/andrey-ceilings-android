@@ -59,6 +59,7 @@ class ProjectRepository(private val database: PrototypeDatabase) {
     }
     fun delete(id: Long) = database.transaction {
         queries.softDeleteEstimatesForProject(id)
+        database.estimateHistoryQueries.softDeleteEstimateSeriesForProject(id)
         queries.deleteProject(id)
     }
 }
