@@ -13,13 +13,10 @@ import java.io.File
  */
 internal object PortableBackupManager {
     fun create(context: Context, database: CeilingsDatabase, password: CharArray): ByteArray {
-        val sqlDb = database.openHelper.writableDatabase
-        sqlDb.query("PRAGMA wal_checkpoint(FULL)").use { cursor ->
-            check(cursor.moveToFirst() && cursor.getLong(0) == 0L) {
-                "База даних зайнята. Не вдалося завершити WAL checkpoint."
-            }
+        check(database.checkpoint(CeilingsDatabase.WalMode.FULL).complete) {
+            "База даних зайнята. Не вдалося завершити WAL checkpoint."
         }
-        val source = File(sqlDb.path)
+        val source = File(database.path)
         check(source.isFile && source.length() > 16L) { "Зашифрована БД відсутня або порожня." }
         val snapshot = File.createTempFile("sqldelight_backup_", ".db", context.cacheDir)
         val key = DatabaseKeyManager.getOrCreatePassphrase(context)

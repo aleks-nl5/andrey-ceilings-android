@@ -3,7 +3,7 @@ package com.andreyceilings.app
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import com.andreyceilings.app.data.db.BusinessChangeTracker
+import com.andreyceilings.app.data.db.SqlDelightChangeTracker
 import com.andreyceilings.app.data.db.CeilingsDatabase
 import com.andreyceilings.app.data.db.ClientEntity
 import com.andreyceilings.app.data.security.DatabaseKeyManager
@@ -31,19 +31,19 @@ class SqlDelightProductionAdaptersTest {
         try {
             CeilingsDatabase.openIsolatedForTesting(context, filename, key).use { database ->
                 val updates = AtomicInteger()
-                val observer = object : BusinessChangeTracker.Observer("clients") {
+                val observer = object : SqlDelightChangeTracker.Observer("clients") {
                     override fun onInvalidated(tables: Set<String>) {
                         updates.incrementAndGet()
                     }
                 }
-                database.invalidationTracker.addObserver(observer)
+                database.changeTracker.addObserver(observer)
                 try {
                     val id = database.clients().insert(ClientEntity(name = "Backup client"))
                     assertTrue(id > 0L)
                     assertEquals(1, database.clients().count())
                     assertTrue("SQLDelight insert must invalidate the clients query", updates.get() > 0)
                 } finally {
-                    database.invalidationTracker.removeObserver(observer)
+                    database.changeTracker.removeObserver(observer)
                 }
                 val envelope = PortableBackupManager.create(context, database, password)
                 try {

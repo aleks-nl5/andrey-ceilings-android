@@ -16,12 +16,8 @@ import java.io.Closeable
 import java.io.File
 
 /**
- * Android SQLDelight database entry point. The name is kept for existing UI
- * call sites, but this type no longer extends RoomDatabase and contains no Room.
- *
- * A new filename prevents downgrading Room's schema v2 to SQLDelight v1.
- * The old encrypted file is retained until a verified, ID-preserving import
- * has finished; a failed conversion NEVER starts with an empty replacement.
+ * Android SQLDelight entry point. No Room compatibility database/driver facade.
+ * This test-cycle schema uses a new filename; old disposable files are left untouched.
  */
 internal class CeilingsDatabase private constructor(
     internal val driver: SqlDriver,
@@ -40,42 +36,45 @@ internal class CeilingsDatabase private constructor(
     fun priceItems() = priceDao
     fun estimates() = estimateDao
 
-    /** Minimal diagnostic API used by existing Settings and backup UI. */
-    val openHelper = DatabaseHelper(this)
-    val invalidationTracker = BusinessChangeTracker(database)
+    val changeTracker = SqlDelightChangeTracker(database)
 
     override fun close() {
-        invalidationTracker.close()
+        changeTracker.close()
         driver.close()
     }
 
     internal fun execute(sql: String) { driver.execute(null, sql, 0) }
 
-    internal fun queryLong(sql: String): Long? = driver.executeQuery(
-        null, sql, { cursor ->
-            QueryResult.Value(if (cursor.next().value) cursor.getLong(0) else null)
+    fun queryLong(sql: String): Long? = driver.executeQuery(null, sql, { cursor ->
+        QueryResult.Value(if (cursor.next().value) cursor.getLong(0) else null)
+    }, 0).value
+
+    fun queryText(sql: String): String? = driver.executeQuery(null, sql, { cursor ->
+        QueryResult.Value(if (cursor.next().value) cursor.getString(0) else null)
+    }, 0).value
+
+    data class WalCheckpoint(val busy: Long, val frames: Long, val checkpointed: Long) {
+        val complete get() = busy == 0L && (frames < 0L || checkpointed >= frames)
+    }
+
+    enum class WalMode { PASSIVE, FULL }
+
+    fun checkpoint(mode: WalMode): WalCheckpoint = driver.executeQuery(
+        null, "PRAGMA wal_checkpoint(${mode.name})", { cursor ->
+            check(cursor.next().value) { "SQLite did not return a WAL checkpoint result" }
+            QueryResult.Value(WalCheckpoint(
+                cursor.getLong(0) ?: -1L,
+                cursor.getLong(1) ?: -1L,
+                cursor.getLong(2) ?: -1L
+            ))
         }, 0
     ).value
 
-    internal fun rawQuery(sql: String): DatabaseCursor {
-        val columns = when {
-            "wal_checkpoint" in sql.lowercase() -> 3
-            // Settings' combined summary of five subqueries.
-            "SELECT COUNT(*) FROM clients" in sql && "SELECT COUNT(*) FROM estimates" in sql -> 5
-            else -> 1
-        }
-        val rows = driver.executeQuery(null, sql, { cursor ->
-            val values = mutableListOf<List<String?>>()
-            while (cursor.next().value) {
-                values.add((0 until columns).map { cursor.getString(it) })
-            }
-            QueryResult.Value(values)
-        }, 0).value
-        return DatabaseCursor(rows)
-    }
+    fun checkIntegrity(): Boolean =
+        queryText("PRAGMA integrity_check").equals("ok", ignoreCase = true)
 
     companion object {
-        const val DATABASE_NAME = "andrey_ceilings_sqldelight.db"
+        const val DATABASE_NAME = "andrey_ceilings_sqldelight_v2.db"
         const val LEGACY_DATABASE_NAME = "andrey_ceilings_secure.db"
 
         @Volatile private var INSTANCE: CeilingsDatabase? = null
@@ -103,14 +102,10 @@ internal class CeilingsDatabase private constructor(
 
         private fun build(context: Context): CeilingsDatabase {
             val live = context.getDatabasePath(DATABASE_NAME)
-            val legacy = context.getDatabasePath(LEGACY_DATABASE_NAME)
             val key = DatabaseKeyManager.getOrCreatePassphrase(context)
             try {
-                // No silent destructive fallback. Existing legacy databases are imported
-                // offline and only published after an integrity-checked transaction.
-                if (!live.exists() && legacy.exists()) {
-                    LegacyRoomDatabaseImporter.migrateToNewDatabase(context, legacy, live, key)
-                }
+                // No migration of disposable test data in PR #22.
+                // A new filename creates a clean encrypted database, leaving earlier files intact.
                 val driver = createEncryptedPrototypeDriver(context, key, DATABASE_NAME)
                 return try {
                     val result = CeilingsDatabase(driver, live.absolutePath)
@@ -128,26 +123,7 @@ internal class CeilingsDatabase private constructor(
     }
 }
 
-/** A tiny read-only cursor used by SQLCipher diagnostics; it is not Room/SQLiteOpenHelper. */
-internal class DatabaseCursor(private val rows: List<List<String?>>) : Closeable {
-    private var position = -1
-    fun moveToFirst(): Boolean { position = if (rows.isNotEmpty()) 0 else -1; return position == 0 }
-    fun getString(index: Int): String? = rows[position][index]
-    fun getLong(index: Int): Long = getString(index)?.toLongOrNull() ?: 0L
-    override fun close() = Unit
-}
-
-internal class DatabaseHelper(private val owner: CeilingsDatabase) {
-    val writableDatabase get() = DatabaseConnection(owner)
-    val readableDatabase get() = DatabaseConnection(owner)
-}
-
-internal class DatabaseConnection(private val owner: CeilingsDatabase) {
-    val path: String get() = owner.path
-    fun query(sql: String): DatabaseCursor = owner.rawQuery(sql)
-}
-
-internal class BusinessChangeTracker(private val database: PrototypeDatabase) : Closeable {
+internal class SqlDelightChangeTracker(private val database: PrototypeDatabase) : Closeable {
     abstract class Observer(vararg val tables: String) {
         abstract fun onInvalidated(tables: Set<String>)
     }

@@ -1,6 +1,7 @@
 package com.andreyceilings.app.data.db
 
 import kotlinx.coroutines.flow.first
+import com.andreyceilings.shared.db.newRecordUuid
 
 /**
  * Immutable logical snapshot of the five Room-v2 business tables.
@@ -59,23 +60,25 @@ internal object RoomToSqlDelightStagingImporter {
             ) { "Staging database must be empty; refusing to overwrite existing rows" }
 
             snapshot.clients.forEach {
-                queries.importClientWithId(it.id, it.name, it.phone, it.email, it.notes, it.createdAt)
+                queries.importClientWithId(it.id, it.name, it.phone, it.email, it.notes, it.createdAt, newRecordUuid(), it.createdAt)
             }
             snapshot.projects.forEach {
                 queries.importProjectWithId(
                     it.id, it.clientId, it.title, it.address, it.status, it.notes,
-                    it.createdAt, it.updatedAt
+                    it.createdAt, it.updatedAt, newRecordUuid()
                 )
             }
             snapshot.measurements.forEach {
                 queries.importMeasurementWithId(
                     it.id, it.projectId, it.name, it.shape, it.lengthMeters, it.widthMeters,
-                    it.areaSquareMeters, it.perimeterMeters, it.drawingJson, it.notes, it.createdAt
+                    it.areaSquareMeters, it.perimeterMeters, it.drawingJson, it.notes, it.createdAt,
+                    newRecordUuid(), it.createdAt
                 )
             }
             snapshot.priceItems.forEach {
                 queries.importPriceItemWithId(
-                    it.id, it.code, it.title, it.category, it.unit, it.price, it.updatedAt
+                    it.id, it.code, it.title, it.category, it.unit, it.price, it.updatedAt,
+                    newRecordUuid()
                 )
             }
             snapshot.estimates.forEach {
@@ -83,7 +86,8 @@ internal object RoomToSqlDelightStagingImporter {
                     it.id, it.projectId, it.name, it.material, it.profileType,
                     it.complexity, it.lengthMeters, it.widthMeters, it.areaSquareMeters,
                     it.perimeterMeters, it.canvasCost, it.profileCost, it.complexityCost,
-                    it.optionsCost, it.totalCost, it.detailsJson, it.createdAt
+                    it.optionsCost, it.totalCost, it.detailsJson, it.createdAt,
+                    newRecordUuid(), it.createdAt
                 )
             }
             val counts = StagedImportCounts(
