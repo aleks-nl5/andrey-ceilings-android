@@ -43,7 +43,7 @@ func TestCalculateJSONInvalidInput(t *testing.T) {
 }
 
 func TestCalculateJSONUsesPriceOverridesAndOptions(t *testing.T) {
-	got := CalculateJSON(`{"geometry":{"shape":"rectangle","length":5.4,"width":3.8},"cost":{"materialType":"pvc_matte","profileType":"standard_alu","complexity":"straight","options":{"lightLinesMeters":2}},"prices":{"canvasPrices":{"pvc_matte":100},"profilePrices":{"standard_alu":10},"lightLinePerMeter":50}}`)
+	got := CalculateJSON(`{"geometry":{"shape":"rectangle","length":5.4,"width":3.8},"cost":{"materialType":"pvc_matte","profileType":"standard_alu","complexity":"straight","options":{"lightLineMeters":2}},"prices":{"canvasPrices":{"pvc_matte":100},"profilePrices":{"standard_alu":10},"lightLinePerMeter":50}}`)
 	var response struct {
 		Cost struct {
 			CanvasCost  float64 `json:"canvasCost"`
