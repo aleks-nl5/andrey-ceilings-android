@@ -57,7 +57,7 @@ class KmpCeilingCalculatorParityTest {
     @Test
     fun fullDefaultCostWithExtraWorkMatchesGo() {
         val input = CostInput(area = 20.52, perimeter = 18.4,
-            options = RoomOptions(chandeliersCount = 1.0, spotsGX53Count = 4.0,
+            options = RoomOptions(chandeliersCount = 1.0, spotCount = 4.0,
                 pipePassCount = 1.0))
         assertEquals(CostBreakdown(5951.0, 2392.0, 0.0, 1410.0, 9753.0),
             calculator.cost(input))
@@ -74,7 +74,7 @@ class KmpCeilingCalculatorParityTest {
             geometryInput = GeometryInput(length = 5.4, width = 3.8),
             // The Go mobile API ignores these stale dimensions and uses geometry().
             costInput = CostInput(area = 999.0, perimeter = 999.0,
-                options = RoomOptions(lightLinesMeters = 2.0)),
+                options = RoomOptions(lightLineMeters = 2.0)),
             prices = prices
         )
         assertEquals(RoomGeometry(20.52, 18.4, 4), result.geometry)
@@ -99,10 +99,10 @@ class KmpCeilingCalculatorParityTest {
     fun negativeInputsFallbacksAndRoundingMatchGo() {
         assertEquals(CostBreakdown(0.0, 0.0, 0.0, 0.0, 0.0),
             calculator.cost(CostInput(area = -10.0, perimeter = -3.0,
-                options = RoomOptions(spotsGX53Count = -2.0))))
+                options = RoomOptions(spotCount = -2.0))))
         assertEquals(800.0, calculator.cost(CostInput(area = 0.0, perimeter = 0.0,
-            options = RoomOptions(lightLinesMeters = 0.5,
-                spotsGX53Count = 1.5, extraCorners = 0.5))).optionsCost)
+            options = RoomOptions(lightLineMeters = 0.5,
+                spotCount = 1.5, extraCorners = 0.5))).optionsCost)
         assertEquals(CostBreakdown(1.0, 0.0, 0.0, 0.0, 1.0),
             calculator.cost(CostInput(area = 0.005, perimeter = 0.0),
                 PriceList(mapOf("pvc_matte" to 100.0), mapOf("standard_alu" to 0.0))))
