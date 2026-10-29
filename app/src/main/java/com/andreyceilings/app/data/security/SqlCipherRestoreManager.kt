@@ -55,15 +55,29 @@ internal object SqlCipherRestoreManager {
         }
     }
 
-    fun restore(context: Context, contents: PortableBackupPayload.Contents): CeilingsDatabase =
+    /** Fault points are opt-in and supplied only by instrumentation tests. */
+    internal enum class RestoreCheckpoint {
+        AFTER_MARKER,
+        AFTER_OLD_FILES_REMOVED,
+        AFTER_IMPORTED_FILE_INSTALLED,
+        AFTER_KEY_REPLACED
+    }
+
+    fun restore(
+        context: Context,
+        contents: PortableBackupPayload.Contents,
+        onCheckpoint: ((RestoreCheckpoint) -> Unit)? = null
+    ): CeilingsDatabase =
         CeilingsDatabase.withExclusiveRestoreLock {
             synchronized(this) {
-                restoreLocked(context.applicationContext, contents)
+                restoreLocked(context.applicationContext, contents, onCheckpoint)
             }
         }
 
     private fun restoreLocked(
-        context: Context, contents: PortableBackupPayload.Contents
+        context: Context,
+        contents: PortableBackupPayload.Contents,
+        onCheckpoint: ((RestoreCheckpoint) -> Unit)?
     ): CeilingsDatabase {
         recoverIfNeeded(context)
         val live = context.getDatabasePath(CeilingsDatabase.DATABASE_NAME)
@@ -96,13 +110,17 @@ internal object SqlCipherRestoreManager {
 
             DatabaseKeyManager.beginPendingRestore(context)
             pending = true
+            onCheckpoint?.invoke(RestoreCheckpoint.AFTER_MARKER)
             CeilingsDatabase.closeAndReset()
             // The rollback snapshot already includes every committed WAL frame.
             // After closure, old sidecars must not accompany the imported DB.
             removeClosedDatabaseFiles(live)
+            onCheckpoint?.invoke(RestoreCheckpoint.AFTER_OLD_FILES_REMOVED)
             check(stage.renameTo(live)) { "Не вдалося встановити імпортовану БД." }
             incoming = null
+            onCheckpoint?.invoke(RestoreCheckpoint.AFTER_IMPORTED_FILE_INSTALLED)
             DatabaseKeyManager.replacePassphrase(context, contents.passphrase)
+            onCheckpoint?.invoke(RestoreCheckpoint.AFTER_KEY_REPLACED)
             installing = true
             val restored = CeilingsDatabase.get(context)
             check(restored.checkIntegrity()) { "Імпортована БД не пройшла integrity_check." }

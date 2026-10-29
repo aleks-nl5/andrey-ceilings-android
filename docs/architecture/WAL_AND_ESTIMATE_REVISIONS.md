@@ -38,7 +38,8 @@ This does **not** mean enabling WAL before ensuring a consistent encrypted snaps
 - [x] Replace direct `.db` copy in portable/automatic `.stpb` and manual SQLCipher export with one verified `VACUUM INTO` snapshot helper. [ ] Add contention, disk-full and failure-injection tests.
 - [x] Stage/verify imported SQLCipher image, retain a verified encrypted rollback snapshot and a Keystore-wrapped original-key marker; recover interrupted import before any production DB open. Offline WAL/SHM cleanup only after closing driver; never after reopening. **Runtime, crash and contention instrumentation tests are still required before WAL rollout**.
 - [x] Android instrumentation regression for valid restore, corrupt imported image (original untouched), simulated interrupted replacement on cold reopen, and encrypted rollback from an active WAL with an uncheckpointed committed row. Tests additionally check two successive WAL snapshots preserve different committed versions. **New CI must confirm.**
-- [ ] Verify wrong .stpb password, disk-full, active readers/writers and checkpoint contention, plus forced process termination; retain database on failure.
+- [x] Add deterministic restore fault injection after durable marker, after offline live-file removal, after incoming install and after key switch; each must restore original encrypted data and Keystore key. Add negative snapshot destination test. **Awaiting Android CI.**
+- [ ] Verify wrong .stpb password, actual disk-full, active readers/writers and checkpoint contention, plus forced process termination; retain database on failure.
 - [ ] Only **after** these pass: enable verified WAL mode in the sole production driver opening path, with explicit return value check and no plaintext fallback.
 - [ ] Verify checkpoint, `SQLITE_BUSY`, listeners/Flow, Android CRUD and backup across reopen. Do **not** change Windows/iOS journal mode without platform tests.
 

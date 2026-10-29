@@ -19,6 +19,38 @@ import org.junit.runner.RunWith
  */
 @RunWith(AndroidJUnit4::class)
 class SqlCipherWalSnapshotExperimentTest {
+    @Test fun invalidSnapshotDestinationFailsWithoutMutatingWal() {
+        val context: Context = ApplicationProvider.getApplicationContext()
+        val name = "sqldelight_test_wal_snapshot_failure.db"
+        val key = ByteArray(32) { 0x64.toByte() }
+        val existing = File.createTempFile("wal_invalid_destination_", ".db", context.cacheDir)
+        context.deleteDatabase(name)
+        try {
+            CeilingsDatabase.openIsolatedForTesting(context, name, key).use { db ->
+                assertEquals("wal", db.queryText("PRAGMA journal_mode=WAL")?.lowercase())
+                ProjectRepository(db.database).createReturningId(
+                    clientId = null, title = "Survives failed snapshot", createdAt = 100L
+                )
+                val failure = runCatching { db.writeConsistentEncryptedSnapshot(existing) }
+                assertTrue("Existing destination must be rejected", failure.isFailure)
+                assertTrue(db.checkIntegrity())
+                assertEquals(1, ProjectRepository(db.database).all().size)
+                val good = File.createTempFile("wal_usable_after_failure_", ".db", context.cacheDir)
+                try {
+                    assertTrue(good.delete())
+                    db.writeConsistentEncryptedSnapshot(good)
+                    PortableBackupManager.verifyEncryptedSnapshot(context, good, key)
+                } finally {
+                    good.delete()
+                }
+            }
+        } finally {
+            existing.delete()
+            context.deleteDatabase(name)
+            key.fill(0)
+        }
+    }
+
     @Test fun isolatedWalAndVacuumSnapshotStayEncryptedAndSurviveReopen() {
         val context: Context = ApplicationProvider.getApplicationContext()
         val name = "sqldelight_test_wal_snapshot.db"

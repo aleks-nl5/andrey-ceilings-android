@@ -12,6 +12,7 @@ import com.andreyceilings.shared.db.ProjectRepository
 import com.andreyceilings.shared.db.PrototypeDatabase
 import com.andreyceilings.shared.db.createEncryptedPrototypeDriver
 import java.io.File
+import java.io.IOException
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
@@ -110,6 +111,81 @@ class SqlCipherRestoreManagerTest {
         } finally {
             // A failed test must not leave the instrumentation app in a
             // partially restored state or with an uncommitted key marker.
+            runCatching {
+                CeilingsDatabase.closeAndReset()
+                SqlCipherRestoreManager.recoverIfNeeded(context)
+            }
+            try {
+                SqlCipherRestoreManager.restore(
+                    context, PortableBackupPayload.Contents(originalImage, originalKey)
+                )
+            } finally {
+                originalSnapshot.delete()
+                context.deleteDatabase(sourceName)
+                importedKey.fill(0)
+                originalKey.fill(0)
+                originalImage.fill(0)
+            }
+        }
+    }
+
+    @Test fun injectedFailuresRollbackDatabaseAndKeystoreKeyAtEveryPhase() {
+        val context: Context = ApplicationProvider.getApplicationContext()
+        val sourceName = "sqldelight_test_fault_restore_source.db"
+        val importedKey = ByteArray(32) { 0x53.toByte() }
+        val originalKey = DatabaseKeyManager.getOrCreatePassphrase(context)
+        val originalSnapshot = PortableBackupManager.createVerifiedSnapshot(
+            context, CeilingsDatabase.get(context)
+        )
+        val originalImage = originalSnapshot.readBytes()
+        val originalTitles = ProjectRepository(CeilingsDatabase.get(context).database)
+            .all().map { it.title }.sorted()
+        val rollback = File(
+            context.getDatabasePath(CeilingsDatabase.DATABASE_NAME).parentFile,
+            ".ceilings_restore_rollback.db"
+        )
+        context.deleteDatabase(sourceName)
+        try {
+            createEncryptedPrototypeDriver(context, importedKey, sourceName).use { driver ->
+                ProjectRepository(PrototypeDatabase(driver)).createReturningId(
+                    clientId = null, title = "Must never survive a failed restore",
+                    createdAt = 98765L
+                )
+            }
+            val incomingImage = context.getDatabasePath(sourceName).readBytes()
+            try {
+                SqlCipherRestoreManager.RestoreCheckpoint.entries.forEach { checkpoint ->
+                    val injected = IOException("Simulated failure at $checkpoint")
+                    val failed = runCatching {
+                        SqlCipherRestoreManager.restore(
+                            context,
+                            PortableBackupPayload.Contents(incomingImage, importedKey)
+                        ) { reached ->
+                            if (reached == checkpoint) throw injected
+                        }
+                    }
+                    assertTrue("Checkpoint not reached: $checkpoint",
+                        failed.exceptionOrNull() === injected)
+                    val live = CeilingsDatabase.get(context)
+                    assertTrue("Integrity failed after $checkpoint", live.checkIntegrity())
+                    assertEquals("Rows lost after $checkpoint", originalTitles,
+                        ProjectRepository(live.database).all().map { it.title }.sorted())
+                    assertTrue("Rollback file leaked after $checkpoint", !rollback.exists())
+                    val activeKey = DatabaseKeyManager.getOrCreatePassphrase(context)
+                    try {
+                        assertArrayEquals("SQLCipher key changed after $checkpoint",
+                            originalKey, activeKey)
+                    } finally {
+                        activeKey.fill(0)
+                    }
+                    // A valid new snapshot after rollback proves the database
+                    // remains usable for future backup and subsequent imports.
+                    PortableBackupManager.createVerifiedSnapshot(context, live).delete()
+                }
+            } finally {
+                incomingImage.fill(0)
+            }
+        } finally {
             runCatching {
                 CeilingsDatabase.closeAndReset()
                 SqlCipherRestoreManager.recoverIfNeeded(context)
