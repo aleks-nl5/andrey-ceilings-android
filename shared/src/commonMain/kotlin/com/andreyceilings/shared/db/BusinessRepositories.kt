@@ -183,6 +183,8 @@ class EstimateRepository(private val database: PrototypeDatabase) {
 
     fun documentNumberForId(id: Long): String? =
         queries.selectDocumentNumberForEstimateId(id).executeAsOneOrNull()
+    fun originalRevisionInputForId(id: Long): String? =
+        queries.selectFirstRevisionInputForEstimateId(id).executeAsOneOrNull()
 
     fun find(id: Long) = queries.selectEstimateById(id).executeAsOneOrNull()
     fun create(
