@@ -5,13 +5,29 @@
 **Новий окремий Draft PR:** `feature/kmp-calculation-parity` — незалежне KMP-ядро геометрії та цін + спільні референсні вектори Go/KMP. **Go/AAR лишається Android runtime** до parity, CI та перевірки на телефоні.
 
 - [x] Реалізувати KMP геометрію, ціни, опції та ті самі golden vectors у Go і commonTest.
-- [ ] Підтвердити на фінальному HEAD Go/Android/Windows/iOS CI.
+- [x] CI Android APK + KMP/Windows/iOS на HEAD `33792473` (до майбутніх WAL-документаційних змін) успішний: [Android 40891419341](https://github.com/aleks-nl5/andrey-ceilings-android/actions/runs/40891419341), [Windows/iOS 40891419346](https://github.com/aleks-nl5/andrey-ceilings-android/actions/runs/40891419346).
 - [ ] Перевірити/виправити узгодженість додаткових робіт у UI, збереженому кошторисі й PDF.
 - [ ] Додати історичні й крайові приклади, потім перемикати runtime частинами без видалення Go завчасно.
 - [ ] Після цього — етап 3: реальні CMP-екрани (спочатку прайс), далі Windows/iOS застосунки.
 - [ ] Серверна синхронізація лишається майбутнім окремим етапом.
 
 План та критерії приймання: [GO_TO_KMP_PARITY.md](architecture/GO_TO_KMP_PARITY.md).
+
+## SQLDelight hardening — майбутній перехід Android із DELETE на WAL
+
+**Статус: заплановано, не реалізовано.** Технічний план і критерії приймання: [GitHub Issue #26 — безпечне ввімкнення SQLCipher WAL](https://github.com/aleks-nl5/andrey-ceilings-android/issues/26). Виконувати **окремим PR після стабілізації PR #23**, не змішувати з Go → KMP.
+
+**Факт із фізичного Android (29.10.2026):** власник запустив «Налаштування → Діагностика бази даних → Перевірити БД і кількість записів» та підтвердив **`PRAGMA journal_mode = delete`**. Це не помилка. Поточний `createEncryptedPrototypeDriver` не виконує `PRAGMA journal_mode=WAL`; у застосунку вже є діагностика поточного journal mode та `checkpoint(PASSIVE/FULL)`, але наявність checkpoint API **не означає ввімкнений WAL**.
+
+- [ ] Перш ніж перемикати режим, перевірити всі шляхи збереження та відновлення зашифрованої БД: автоматичні backup-тригери, згортання, ручний `.stpb` export, перевірку, імпорт і атомарну заміну файла.
+- [ ] Усунути ризик, що **`checkpoint(FULL)` + копіювання основного `.db`** збереже неповні дані під час конкурентного запису; використати тестований консистентний snapshot / контроль одночасних записів; не видаляти чинний `-wal/-shm` при відкритому драйвері.
+- [ ] В окремому Android PR явно ввімкнути WAL у SQLCipher-драйвері й перевіряти реальну відповідь `PRAGMA journal_mode`; налаштувати checkpoint/busy handling лише за тестами.
+- [ ] Додати Android instrumentation тести на паралельні читання/запис, зайнятий WAL, PASSIVE/FULL checkpoint, crash/restore, auto backup, export/import, повторне відкриття, відсутність втрат підтверджених транзакцій та захист SQLCipher.
+- [ ] Перевірити Debug/Release CI і APK на телефоні; Windows/iOS journal mode перевіряти й змінювати **окремо** у відповідних драйверах.
+
+**Поточне рішення:** поки залишити робочий `DELETE`, не змінювати backup/restore заради формального переходу на WAL. Деталі: [ROOM_TO_SQLDELIGHT_CUTOVER.md](architecture/ROOM_TO_SQLDELIGHT_CUTOVER.md) і [Issue #26](https://github.com/aleks-nl5/andrey-ceilings-android/issues/26).
+
+---
 
 ## Запланований етап — глобально розрізнювані номери кошторисів
 
