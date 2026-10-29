@@ -77,6 +77,22 @@ class NumberedEstimateCompatibilityTest {
             }
             assertEquals(2L, estimates.count())
             assertEquals(2, history.seriesForProject(projectId).size)
+
+            // Fail AFTER the legacy row and series have been inserted: the
+            // injected v1 revision UUID already exists. Neither row nor counter
+            // may remain after the nested transaction aborts.
+            assertFails {
+                estimates.createNumberedReturningId(
+                    projectId, "Broken revision", "pvc_matte", "standard_alu", "simple",
+                    3.0, 4.0, 12.0, 14.0, 101.0, 0.0, 0.0, 0.0, 100.0,
+                    snapshot().detailsJson, 4L, 2026, snapshot(),
+                    newSeriesUuid = { uuid(9) }, newRevisionUuid = { uuid(101) }
+                )
+            }
+            assertNull(history.series(uuid(9)))
+            assertEquals(2L, estimates.count())
+            assertEquals(2, history.seriesForProject(projectId).size)
+
             assertEquals(3L, history.createSeries(projectId, 2026, 5L, snapshot(),
                 newSeriesUuid = { uuid(3) }, newRevisionUuid = { uuid(103) }).localSequence)
 
