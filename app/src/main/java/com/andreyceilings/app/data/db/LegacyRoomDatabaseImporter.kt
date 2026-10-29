@@ -20,6 +20,11 @@ internal object LegacyRoomDatabaseImporter {
         check(source.parentFile?.canonicalPath == context.getDatabasePath("x.db").parentFile?.canonicalPath) {
             "Legacy snapshot must be staged inside the app's databases directory"
         }
+        // Cold-start upgrade path runs BEFORE createEncryptedPrototypeDriver(), which
+        // normally loads the SQLCipher JNI library. AndroidX SupportOpenHelperFactory
+        // does not load it for us. Without this, an installed Room-v2 database
+        // crashes with SQLiteConnection.nativeOpen UnsatisfiedLinkError.
+        System.loadLibrary("sqlcipher")
         val helper = SupportOpenHelperFactory(key.copyOf()).create(
             SupportSQLiteOpenHelper.Configuration.builder(context)
                 .name(source.name)
