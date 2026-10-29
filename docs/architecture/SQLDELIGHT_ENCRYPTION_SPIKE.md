@@ -181,3 +181,11 @@ A fresh review of the upstream README and Maven Central metadata found a publish
 - Review actual workflow durations and dependencies before changing YAML. A fast gate must not be mistaken for full cross-platform validation.
 
 **Temporary POCs:** retain `tools/sqlcipher-windows-poc/` and `tools/sqlcipher-sqldelight-jdbc-poc/` until feasibility conclusions are recorded and equivalent relevant coverage is retained. Remove the disposable projects and their CI steps later in a separate, explicit cleanup commit.
+
+
+### POC cleanup after successful shared integration — 2026-10-29
+
+- On commit `87545e8032e60b59eef108b3b6e911a547a22c73`, both Android APK and CMP/KMP platform workflows succeeded; the Windows job included `:shared:jvmTest` and the standalone proofs.
+- The Windows SQLCipher JDBC dependencies and opt-in driver factory now live in `:shared:jvmMain`, with encrypted-file, reopen, and wrong-key regression coverage in `:shared:jvmTest` on Windows.
+- Removed redundant standalone proof CI steps and the two standalone POC projects' Gradle settings/build files and Kotlin entry points. Retain this research document as the historical record.
+- **Re-run CI after cleanup** before treating this branch state as verified. The JVM integration remains opt-in, not a replacement for production Room repositories; licensing and cross-platform format/key management remain open.
