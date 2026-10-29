@@ -105,7 +105,10 @@ internal class EstimateDao(private val repo: EstimateRepository) {
             it.complexity, it.lengthMeters, it.widthMeters, it.areaSquareMeters,
             it.perimeterMeters, it.canvasCost, it.profileCost, it.complexityCost,
             it.optionsCost, it.totalCost, it.detailsJson, it.createdAt,
-            repo.documentNumberForId(it.id)) }
+            repo.documentNumberForId(it.id),
+            repo.originalRevisionInputForId(it.id)?.let { source ->
+                runCatching { JSONObject(source).optString("name").ifBlank { null } }.getOrNull()
+            }) }
     }
     fun observeForProject(projectId: Long): Flow<List<EstimateEntity>> =
         repo.observeForProject(projectId).map { rows ->
@@ -113,7 +116,10 @@ internal class EstimateDao(private val repo: EstimateRepository) {
                 it.complexity, it.lengthMeters, it.widthMeters, it.areaSquareMeters,
                 it.perimeterMeters, it.canvasCost, it.profileCost, it.complexityCost,
                 it.optionsCost, it.totalCost, it.detailsJson, it.createdAt,
-                repo.documentNumberForId(it.id)) }
+                repo.documentNumberForId(it.id),
+            repo.originalRevisionInputForId(it.id)?.let { source ->
+                runCatching { JSONObject(source).optString("name").ifBlank { null } }.getOrNull()
+            }) }
         }
     suspend fun count() = withContext(Dispatchers.IO) { repo.count().toInt() }
     suspend fun insert(item: EstimateEntity) = withContext(Dispatchers.IO) {
