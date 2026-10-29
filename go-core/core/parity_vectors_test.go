@@ -111,3 +111,20 @@ func TestSelectedMeasurementPrecision(t *testing.T) {
         t.Fatalf("10 cm precision: %+v",gotCoarse)
     }
 }
+
+
+func TestSelectedPrecisionFlowsThroughEntireEstimate(t *testing.T) {
+    dims := CalculateRoomGeometry(GeometryInput{
+        Shape: Rectangle, Length: 1.006, Width: 1.006, PrecisionStepMeters: .01,
+    })
+    if math.Abs(dims.Area-1.0201) > 1e-8 || math.Abs(dims.Perimeter-4.04) > 1e-8 {
+        t.Fatalf("unexpected rounded geometry: %+v", dims)
+    }
+    got := CalculateCeilingCost(CostInput{
+        Area: dims.Area, Perimeter: dims.Perimeter, MaterialType: PVCMatte,
+        ProfileType: StandardAlu, Complexity: Multilevel, PrecisionStepMeters: .01,
+        Options: RoomOptions{LightLineMeters: 1.006, SpotCount: 1},
+    }, DefaultPriceList())
+    want := CostBreakdown{296, 525, 1300, 1079, 3200}
+    if got != want { t.Fatalf("whole estimate mismatch: got %+v want %+v", got, want) }
+}
