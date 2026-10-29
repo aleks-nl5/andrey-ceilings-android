@@ -206,10 +206,28 @@ internal fun EstimatesScreen(database: CeilingsDatabase?) {
                             IconButton(onClick = {
                                 pendingPdfEstimate = estimate
                                 val safeName = estimate.name.replace(Regex("[^A-Za-zА-Яа-яІіЇїЄє0-9_-]"), "_").take(40).ifBlank { "koshtorys" }
-                                pdfLauncher.launch("$safeName.pdf")
+                                val numberPart = estimate.documentNumber?.replace(Regex("[^A-Za-z0-9_-]"), "_")
+                                val filename = listOfNotNull(safeName, numberPart, if (numberPart != null) "v1" else null)
+                                    .joinToString("_") + ".pdf"
+                                pdfLauncher.launch(filename)
                             }) { Icon(Icons.Default.PictureAsPdf, contentDescription = "Експортувати PDF") }
                             IconButton(onClick = { scope.launch { runCatching { database.estimates().deleteById(estimate.id) }.onFailure { error = it.message ?: "Не вдалося видалити кошторис" } } }) {
                                 Icon(Icons.Default.Delete, contentDescription = "Видалити кошторис")
+                            }
+                        }
+                        estimate.documentNumber?.let { number ->
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text("№ $number · v1", modifier = Modifier.weight(1f),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.primary)
+                                IconButton(onClick = {
+                                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE)
+                                        as android.content.ClipboardManager
+                                    clipboard.setPrimaryClip(android.content.ClipData.newPlainText("Номер кошторису", number))
+                                    status = "Повний номер кошторису скопійовано."
+                                }) {
+                                    Icon(Icons.Default.ContentCopy, contentDescription = "Копіювати повний номер кошторису")
+                                }
                             }
                         }
                         val estimatePrecision = remember(estimate.detailsJson) { precisionForEstimate(estimate.detailsJson) }
@@ -261,9 +279,13 @@ private fun writeEstimatePdf(context: Context, uri: Uri, estimate: EstimateEntit
     data class PdfLine(val text: String, val kind: Int = 0)
     val lines = mutableListOf<PdfLine>()
     lines += PdfLine("КОШТОРИС НАТЯЖНОЇ СТЕЛІ", 2)
+    if (estimate.documentNumber != null) {
+        lines += PdfLine("№ документа: ${estimate.documentNumber}")
+        lines += PdfLine("Версія: v1")
+    }
     lines += PdfLine("Об’єкт: $projectTitle")
-    lines += PdfLine("Кошторис: ${estimate.name}")
-    lines += PdfLine("Дата: ${java.text.SimpleDateFormat("dd.MM.yyyy", Locale.getDefault()).format(java.util.Date())}")
+    lines += PdfLine("Кошторис: ${estimate.originalDocumentName ?: estimate.name}")
+    lines += PdfLine("Дата створення: ${java.text.SimpleDateFormat("dd.MM.yyyy", Locale.getDefault()).format(java.util.Date(estimate.createdAt))}")
     lines += PdfLine("")
     lines += PdfLine("ПАРАМЕТРИ ПРИМІЩЕННЯ", 1)
     lines += PdfLine("Розмір: ${formatMeasuredLength(estimate.lengthMeters, estimatePrecision)} × ${formatMeasuredLength(estimate.widthMeters, estimatePrecision)} м")

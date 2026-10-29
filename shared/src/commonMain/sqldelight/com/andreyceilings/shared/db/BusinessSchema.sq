@@ -81,9 +81,11 @@ CREATE TABLE estimates (
     createdAt INTEGER NOT NULL,
     uuid TEXT NOT NULL UNIQUE,
     updatedAt INTEGER NOT NULL,
-    deletedAt INTEGER
+    deletedAt INTEGER,
+    seriesUuid TEXT REFERENCES estimate_series(seriesUuid)
 );
 CREATE INDEX index_estimates_projectId ON estimates(projectId);
+CREATE UNIQUE INDEX index_estimates_seriesUuid ON estimates(seriesUuid) WHERE seriesUuid IS NOT NULL;
 CREATE INDEX index_estimates_createdAt ON estimates(createdAt);
 
 selectClients:
@@ -294,3 +296,28 @@ UPDATE estimates
 SET updatedAt = max(updatedAt + 1, CAST(strftime('%s','now') AS INTEGER) * 1000),
     deletedAt = max(updatedAt + 1, CAST(strftime('%s','now') AS INTEGER) * 1000)
 WHERE projectId = ? AND deletedAt IS NULL;
+
+-- Resolve frozen public document identity for the Android compatibility list/PDF.
+selectDocumentNumberForEstimateId:
+SELECT s.documentNumber FROM estimates e JOIN estimate_series s ON e.seriesUuid = s.seriesUuid
+WHERE e.id = ? AND e.deletedAt IS NULL;
+
+linkLegacyEstimateToSeries:
+UPDATE estimates SET seriesUuid = ? WHERE id = ? AND seriesUuid IS NULL AND deletedAt IS NULL;
+
+-- Legacy list remains a compatibility projection; numbering is owned by series.
+updateEstimateDisplayName:
+UPDATE estimates SET name = ?, updatedAt = max(updatedAt + 1, CAST(strftime('%s','now') AS INTEGER) * 1000)
+WHERE id = ? AND deletedAt IS NULL;
+
+softDeleteNumberedSeriesForEstimate:
+UPDATE estimate_series SET deletedAt = max(createdAt + 1, CAST(strftime('%s','now') AS INTEGER) * 1000)
+WHERE seriesUuid = (SELECT seriesUuid FROM estimates WHERE id = ? AND deletedAt IS NULL)
+  AND deletedAt IS NULL;
+
+selectFirstRevisionInputForEstimateId:
+SELECT r.sourceMeasurementJson
+FROM estimates e
+JOIN estimate_revisions r ON r.seriesUuid = e.seriesUuid
+WHERE e.id = ? AND r.versionNumber = 1 AND e.deletedAt IS NULL
+LIMIT 1;
