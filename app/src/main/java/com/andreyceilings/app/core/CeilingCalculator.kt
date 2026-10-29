@@ -18,11 +18,11 @@ data class CeilingEstimate(
 )
 
 data class CalculatorOptions(
-    val lightLinesMeters: Double = 0.0,
+    val lightLineMeters: Double = 0.0,
     val shadowProfileMeters: Double = 0.0,
     val floatingCeilingMeters: Double = 0.0,
     val chandeliersCount: Double = 0.0,
-    val spotsGX53Count: Double = 0.0,
+    val spotCount: Double = 0.0,
     val pipePassCount: Double = 0.0,
     val curtainNicheMeters: Double = 0.0,
     val extraCorners: Double = 0.0,
@@ -84,7 +84,7 @@ object CeilingCalculator {
             dbPrices["work.shadow_profile"]?.let { prices.put("shadowProfilePerMeter", it) }
             dbPrices["work.floating_ceiling"]?.let { prices.put("floatingProfilePerMeter", it) }
             dbPrices["light.chandelier"]?.let { prices.put("chandelierInstallation", it) }
-            dbPrices["light.spot_gx53"]?.let { prices.put("spotInstallation", it) }
+            dbPrices["light.spot"]?.let { prices.put("spotInstallation", it) }
             dbPrices["work.pipe_pass"]?.let { prices.put("pipePass", it) }
             dbPrices["work.curtain_niche"]?.let { prices.put("curtainNichePerMeter", it) }
             dbPrices["work.extra_corner"]?.let { prices.put("extraCornerCost", it) }
@@ -102,11 +102,11 @@ object CeilingCalculator {
                 .put("profileType", profileType)
                 .put("complexity", options.complexity)
                 .put("options", JSONObject()
-                    .put("lightLinesMeters", options.lightLinesMeters)
+                    .put("lightLineMeters", options.lightLineMeters)
                     .put("shadowProfileMeters", options.shadowProfileMeters)
                     .put("floatingCeilingMeters", options.floatingCeilingMeters)
                     .put("chandeliersCount", options.chandeliersCount)
-                    .put("spotsGX53Count", options.spotsGX53Count)
+                    .put("spotCount", options.spotCount)
                     .put("pipePassCount", options.pipePassCount)
                     .put("curtainNicheMeters", options.curtainNicheMeters)
                     .put("extraCorners", options.extraCorners)
