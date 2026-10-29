@@ -248,4 +248,78 @@ class SqlCipherRestoreManagerTest {
         }
     }
 
+
+    /**
+     * A durable key marker without its encrypted rollback is an incomplete
+     * restore. Opening must fail before SQLDelight can create an empty DB.
+     * Repairing the rollback allows recovery on the next cold open.
+     */
+    @Test fun missingOrCorruptedRollbackFailsClosedThenRecoversOnColdOpen() {
+        val context: Context = ApplicationProvider.getApplicationContext()
+        val current = CeilingsDatabase.get(context)
+        val originalKey = DatabaseKeyManager.getOrCreatePassphrase(context)
+        val originalTitles = ProjectRepository(current.database).all()
+            .map { it.title }.sorted()
+        val snapshot = PortableBackupManager.createVerifiedSnapshot(context, current)
+        val live = context.getDatabasePath(CeilingsDatabase.DATABASE_NAME)
+        val rollback = File(live.parentFile, ".ceilings_restore_rollback.db")
+        try {
+            assertTrue("Stale rollback file before test", !rollback.exists())
+            CeilingsDatabase.closeAndReset()
+            val liveBefore = live.readBytes()
+            try {
+                DatabaseKeyManager.beginPendingRestore(context)
+                val missing = runCatching { CeilingsDatabase.get(context) }
+                assertTrue("Missing encrypted rollback must fail closed", missing.isFailure)
+                assertArrayEquals("Missing rollback modified the live database",
+                    liveBefore, live.readBytes())
+
+                rollback.writeBytes(ByteArray(64) { 0x56.toByte() })
+                val damaged = runCatching { CeilingsDatabase.get(context) }
+                assertTrue("Corrupted encrypted rollback must fail closed", damaged.isFailure)
+                assertArrayEquals("Corrupt rollback modified the live database",
+                    liveBefore, live.readBytes())
+
+                // Simulates repair of the retained, authenticated backup
+                // before a subsequent app start. The original key marker
+                // must still be present after both failed opens.
+                snapshot.copyTo(rollback, overwrite = true)
+                val recovered = CeilingsDatabase.get(context)
+                assertTrue(recovered.checkIntegrity())
+                assertEquals(originalTitles,
+                    ProjectRepository(recovered.database).all().map { it.title }.sorted())
+                assertTrue("Rollback marker file was not cleaned", !rollback.exists())
+                val keyAfter = DatabaseKeyManager.getOrCreatePassphrase(context)
+                try {
+                    assertArrayEquals(originalKey, keyAfter)
+                } finally {
+                    keyAfter.fill(0)
+                }
+                CeilingsDatabase.closeAndReset()
+                val reopened = CeilingsDatabase.get(context)
+                assertTrue("Recovery must remain durable after reopen",
+                    reopened.checkIntegrity())
+                assertEquals(originalTitles,
+                    ProjectRepository(reopened.database).all().map { it.title }.sorted())
+            } finally {
+                liveBefore.fill(0)
+            }
+        } finally {
+            // Never strand the instrumentation DB with a pending key marker,
+            // even if an assertion above fails.
+            runCatching { CeilingsDatabase.closeAndReset() }
+            try {
+                val pending = DatabaseKeyManager.pendingRestoreOriginalPassphrase(context)
+                if (pending != null) {
+                    pending.fill(0)
+                    snapshot.copyTo(rollback, overwrite = true)
+                    SqlCipherRestoreManager.recoverIfNeeded(context)
+                }
+            } finally {
+                rollback.delete()
+                snapshot.delete()
+                originalKey.fill(0)
+            }
+        }
+    }
 }
