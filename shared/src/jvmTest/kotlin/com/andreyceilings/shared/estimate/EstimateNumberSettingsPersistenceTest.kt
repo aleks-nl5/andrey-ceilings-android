@@ -42,7 +42,7 @@ class EstimateNumberSettingsPersistenceTest {
                 sequenceWidth = 3
             )
             val preview = EstimateNumbering.preview(custom)
-            assertTrue(preview.contains("2026_NL_001_"))
+            assertEquals("2026_NL_001", preview)
             // Preview does not advance the persisted sequence.
             assertEquals(1L, first.localSequence)
 
