@@ -5,8 +5,9 @@
 **Новий окремий Draft PR:** `feature/kmp-calculation-parity` — незалежне KMP-ядро геометрії та цін + спільні референсні вектори Go/KMP. **Go/AAR лишається Android runtime** до parity, CI та перевірки на телефоні.
 
 - [x] Реалізувати KMP геометрію, ціни, опції та ті самі golden vectors у Go і commonTest.
-- [x] CI Android APK + KMP/Windows/iOS на HEAD `33792473` (до майбутніх WAL-документаційних змін) успішний: [Android 40891419341](https://github.com/aleks-nl5/andrey-ceilings-android/actions/runs/40891419341), [Windows/iOS 40891419346](https://github.com/aleks-nl5/andrey-ceilings-android/actions/runs/40891419346).
-- [ ] Перевірити/виправити узгодженість додаткових робіт у UI, збереженому кошторисі й PDF.
+- [x] Після додавання тесту незмінності збережених кошторисів Go/Android APK/instrumentation + Windows/iOS Simulator CI успішні на HEAD `1957ac13`: [Android 40897166522](https://github.com/aleks-nl5/andrey-ceilings-android/actions/runs/40897166522), [Windows/iOS 40897166664](https://github.com/aleks-nl5/andrey-ceilings-android/actions/runs/40897166664).
+- [x] Автоматизовано перевірки сум збережених рядків і незмінності після оновлення/видалення позицій прайсу, дублювання та повторного відкриття БД.
+- [ ] Завершити ручну перевірку узгодженості UI / збереженого кошторису / PDF на фізичному Android для всіх чотирьох кроків точності.
 - [ ] Додати історичні й крайові приклади, потім перемикати runtime частинами без видалення Go завчасно.
 - [ ] Після цього — етап 3: реальні CMP-екрани (спочатку прайс), далі Windows/iOS застосунки.
 - [ ] Серверна синхронізація лишається майбутнім окремим етапом.
