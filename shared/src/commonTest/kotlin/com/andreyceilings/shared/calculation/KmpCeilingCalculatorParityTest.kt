@@ -29,6 +29,24 @@ class KmpCeilingCalculatorParityTest {
     private val calculator = KmpCeilingCalculator
 
     @Test
+    fun precisionAppliesToGeometryExtrasAndCostTogether() {
+        val dimensions = GeometryInput(length = 1.006, width = 1.006, precisionStepMeters = 0.01)
+        val input = CostInput(area = 99.0, perimeter = 99.0, complexity = "multilevel",
+            options = RoomOptions(lightLineMeters = 1.006, spotCount = 1.0))
+        val result = calculator.estimate(dimensions, input)
+        assertEquals(1.0201, result.geometry.area, 1e-8)
+        assertEquals(4.04, result.geometry.perimeter, 1e-8)
+        assertEquals(CostBreakdown(296.0, 525.0, 1300.0, 1079.0, 3200.0), result.cost)
+        val canonical = input.options.toCanonicalQuantities()
+        assertEquals(1.006, canonical[EstimateOptionId.LIGHT_LINE.code])
+        assertEquals(1.0, canonical[EstimateOptionId.SPOT.code])
+        assertEquals(input.options, roomOptionsFromCanonicalQuantities(canonical))
+        assertEquals("light.spot", EstimateOptionId.SPOT.code)
+    }
+
+
+
+    @Test
     fun geometryMatchesGoForNormalFallbackAndCustomShapes() {
         assertEquals(RoomGeometry(20.52, 18.4, 4),
             calculator.geometry(GeometryInput(shape = "rectangle", length = 5.4, width = 3.8)))
