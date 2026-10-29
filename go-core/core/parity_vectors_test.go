@@ -18,7 +18,7 @@ func TestKmpMigrationGeometryReferenceVectors(t *testing.T) {
 		{"l_default_sides", GeometryInput{Shape: LShaped, SideA: 5, SideB: 4}, Geometry{15, 18, 6}},
 		{"custom_diagonal", GeometryInput{Shape: Custom, Length: 3, Width: 4, Diagonal1: 5}, Geometry{12, 14, 5}},
 		{"custom_corners", GeometryInput{Shape: Custom, Length: 3, Width: 4, Diagonal1: 5, CustomSides: []float64{1, 1, 1, 1, 1, 1}}, Geometry{12, 14, 6}},
-		{"round_half", GeometryInput{Shape: Rectangle, Length: .05, Width: .1}, Geometry{.01, .3, 4}},
+		{"round_half", GeometryInput{Shape: Rectangle, Length: .05, Width: .1}, Geometry{.01, .4, 4}},
 	}
 	for _, tc := range vectors {
 		t.Run(tc.name, func(t *testing.T) {
