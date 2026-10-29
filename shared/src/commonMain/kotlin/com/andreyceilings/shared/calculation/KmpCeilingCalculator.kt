@@ -24,7 +24,8 @@ data class GeometryInput(
     val sideE: Double = 0.0,
     val sideF: Double = 0.0,
     val diagonal1: Double = 0.0,
-    val customSides: List<Double> = emptyList()
+    val customSides: List<Double> = emptyList(),
+    val precisionStepMeters: Double? = null
 )
 
 data class RoomGeometry(val area: Double, val perimeter: Double, val cornersCount: Int)
@@ -99,9 +100,25 @@ object KmpCeilingCalculator {
         if (value >= 0.0) floor(value + 0.5) else ceil(value - 0.5)
 
     private fun round2(value: Double): Double = goRound(value * 100.0) / 100.0
+
+    private fun roundToStep(value: Double, step: Double): Double =
+        goRound(value / step) * step
+
+    /** Default null preserves Go legacy geometry; selected resolution rounds dimensions. */
+    private fun measuredValue(value: Double, step: Double?): Double =
+        if (step == null) value else roundToStep(value, step)
+
+    private fun geometryResult(area: Double, perimeter: Double, corners: Int, step: Double?): RoomGeometry =
+        if (step == null) RoomGeometry(round2(area), round2(perimeter), corners)
+        else RoomGeometry(roundToStep(area, step * step), roundToStep(perimeter, step), corners)
     private fun nonnegative(value: Double): Double = if (value < 0.0) 0.0 else value
 
     fun geometry(input: GeometryInput): RoomGeometry {
+        val step = input.precisionStepMeters
+        require(step == null || step in setOf(0.1, 0.01, 0.005, 0.001)) {
+            "Unsupported measurement precision"
+        }
+        fun measured(value: Double): Double = measuredValue(value, step)
         val length = if (input.length <= 0.0) 4.0 else input.length
         val width = if (input.width <= 0.0) 3.0 else input.width
 
@@ -112,13 +129,13 @@ object KmpCeilingCalculator {
                 else -> 3.0
             }
             val s = max(0.1, side)
-            return RoomGeometry(round2(s * s), round2(4.0 * s), 4)
+            return geometryResult(measured(s) * measured(s), 4.0 * measured(s), 4, step)
         }
 
         if (input.shape == "rectangle" || input.shape.isEmpty()) {
             val l = max(0.1, length)
             val w = max(0.1, width)
-            return RoomGeometry(round2(l * w), round2(2.0 * (l + w)), 4)
+            return geometryResult(measured(l) * measured(w), 2.0 * (measured(l) + measured(w)), 4, step)
         }
 
         if (input.shape == "l_shaped") {
@@ -136,15 +153,15 @@ object KmpCeilingCalculator {
             val d = if (input.sideD > 0.0) input.sideD else b * 0.5
             val e = if (input.sideE > 0.0) input.sideE else max(0.1, a - c)
             val f = if (input.sideF > 0.0) input.sideF else max(0.1, b - d)
-            val area = max(1.0, a * b - max(0.0, e * f))
-            return RoomGeometry(round2(area), round2(a + b + c + d + e + f), 6)
+            val area = max(1.0, measured(a) * measured(b) - max(0.0, measured(e) * measured(f)))
+            return geometryResult(area, measured(a) + measured(b) + measured(c) + measured(d) + measured(e) + measured(f), 6, step)
         }
 
         val a = if (input.sideA > 0.0) input.sideA else length
         val b = if (input.sideB > 0.0) input.sideB else width
         val c = if (input.sideC > 0.0) input.sideC else length
         val d = if (input.sideD > 0.0) input.sideD else width
-        var area = length * width
+        var area = measured(length) * measured(width)
         if (input.diagonal1 > 0.0) {
             fun triangle(x: Double, y: Double, diagonal: Double): Double {
                 val semiperimeter = (x + y + diagonal) / 2.0
@@ -152,12 +169,12 @@ object KmpCeilingCalculator {
                     (semiperimeter - y) * (semiperimeter - diagonal)
                 return if (product <= 0.0) 0.0 else sqrt(product)
             }
-            val candidate = triangle(a, b, input.diagonal1) +
-                triangle(c, d, input.diagonal1)
+            val candidate = triangle(measured(a), measured(b), measured(input.diagonal1)) +
+                triangle(measured(c), measured(d), measured(input.diagonal1))
             if (candidate > 0.0) area = candidate
         }
         val corners = if (input.customSides.size >= 4) input.customSides.size else 5
-        return RoomGeometry(round2(area), round2(a + b + c + d), corners)
+        return geometryResult(area, measured(a) + measured(b) + measured(c) + measured(d), corners, step)
     }
 
     fun cost(input: CostInput, priceList: PriceList = defaultPriceList()): CostBreakdown {
