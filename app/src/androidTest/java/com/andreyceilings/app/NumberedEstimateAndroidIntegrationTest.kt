@@ -46,7 +46,7 @@ class NumberedEstimateAndroidIntegrationTest {
             profileType = "standard_alu", complexity = "simple",
             lengthMeters = 1.0, widthMeters = 1.0, areaSquareMeters = 1.0,
             perimeterMeters = 4.0, canvasCost = 51.0, profileCost = 50.0,
-            complexityCost = 0.0, optionsCost = -1.0, totalCost = 100.0,
+            complexityCost = 0.0, optionsCost = 0.0, totalCost = 100.0,
             detailsJson = savedDetails, createdAt = timestamp
         )
         var firstNumber = ""
@@ -81,6 +81,7 @@ class NumberedEstimateAndroidIntegrationTest {
                 val afterRename = db.estimates().observeAll().first().first { it.id == firstId }
                 assertEquals(firstNumber, afterRename.documentNumber)
                 assertEquals("Нова назва", afterRename.name)
+                assertEquals("Кухня", afterRename.originalDocumentName) // PDF must keep v1 title
                 assertEquals(savedDetails, afterRename.detailsJson)
                 var blocked = false
                 try { db.estimates().update(afterRename.copy(totalCost = 500.0)) }
