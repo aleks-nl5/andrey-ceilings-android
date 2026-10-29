@@ -2,12 +2,30 @@ package com.andreyceilings.shared.calculation
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 
 /**
  * Golden values are asserted independently in go-core/core/parity_vectors_test.go.
  * Never update these expectations to match Kotlin without verifying the Go result.
  */
 class KmpCeilingCalculatorParityTest {
+    @Test
+    fun selectedMeasurementResolutionMatchesGo() {
+        fun geometryFor(step: Double) = KmpCeilingCalculator.geometry(
+            GeometryInput(length = 1.006, width = 1.006, precisionStepMeters = step)
+        )
+        val coarse = geometryFor(0.1)
+        assertEquals(1.0, coarse.area, 1e-8)
+        assertEquals(4.0, coarse.perimeter, 1e-8)
+        val centimetre = geometryFor(0.01)
+        assertEquals(1.0201, centimetre.area, 1e-8)
+        assertEquals(4.04, centimetre.perimeter, 1e-8)
+        val fine = geometryFor(0.005)
+        assertEquals(1.010025, fine.area, 1e-8)
+        assertEquals(4.02, fine.perimeter, 1e-8)
+        assertTrue(coarse.area != centimetre.area && fine.area != centimetre.area)
+    }
+
     private val calculator = KmpCeilingCalculator
 
     @Test
