@@ -9,7 +9,9 @@
 - [x] Додано KMP common-тести: 10 000 офлайн-ідентичностей із однаковим локальним лічильником, навмисна колізія UUID, неправильні шаблони, некоректні ідентичності, незмінність згенерованого номера після зміни політики.
 - [x] Описано контракт і залежності: [ESTIMATE_NUMBERING_FOUNDATION.md](architecture/ESTIMATE_NUMBERING_FOUNDATION.md). Поки це **лише pure domain**, без переходу БД чи UI.
 - [ ] CI Android/JVM/iOS та перевірка PR перед об’єднанням.
-- [ ] **Наступний невеликий PR:** SQLDelight `estimate_series` / immutable revisions (#24 + #25), `UNIQUE(documentNumber)`, атомарне створення та колізії; резервування номерів tombstones. Старі дані наразі тестові; не витрачати час на міграцію тестової БД.
+- [x] **Розширено PR #27:** SQLDelight `estimate_series` / `estimate_revisions` / snapshot lines (#24 + #25), `UNIQUE(documentNumber)`, атомарне створення v1 / додавання v2, колізії та rollback, tombstones і додаткова міграція схеми без перезапису наявних даних. JVM тести й Android SQLCipher instrumentation додано; **результат нових CI ще очікується**.
+- [ ] Під'єднати створення/дублювання Android кошторисів до immutable-series без часткового dual-write; узгодити `detailsJson` / lineItems та Android PDF. Поки Android використовує старий `estimates` repository.
+- [ ] Перед історією версій: фіналізувати immutable захист схеми, надійний preview/price revision token і повну перевірку backup/restore з новими таблицями.
 - [ ] Наступний UI PR: налаштування шаблону, номер і версії у кошторисах і PDF (після транзакційного сховища).
 
 ## Паралельна черга, без змішування PR
