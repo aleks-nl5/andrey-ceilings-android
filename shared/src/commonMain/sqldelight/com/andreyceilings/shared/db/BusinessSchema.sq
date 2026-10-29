@@ -314,3 +314,10 @@ softDeleteNumberedSeriesForEstimate:
 UPDATE estimate_series SET deletedAt = max(createdAt + 1, CAST(strftime('%s','now') AS INTEGER) * 1000)
 WHERE seriesUuid = (SELECT seriesUuid FROM estimates WHERE id = ? AND deletedAt IS NULL)
   AND deletedAt IS NULL;
+
+selectFirstRevisionInputForEstimateId:
+SELECT r.sourceMeasurementJson
+FROM estimates e
+JOIN estimate_revisions r ON r.seriesUuid = e.seriesUuid
+WHERE e.id = ? AND r.versionNumber = 1 AND e.deletedAt IS NULL
+LIMIT 1;
