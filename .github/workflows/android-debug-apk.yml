@@ -7,6 +7,11 @@ on:
   push:
     branches: [ main, master, feat/automatic-and-portable-backups, fix/gradle-8-14-6 ]
 
+concurrency:
+  # Don't waste hosted runners on obsolete commits while iterating on draft PR #22.
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
