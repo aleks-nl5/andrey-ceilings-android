@@ -274,7 +274,7 @@ private fun writeEstimatePdf(context: Context, uri: Uri, estimate: EstimateEntit
         lines += PdfLine("Версія: v1")
     }
     lines += PdfLine("Об’єкт: $projectTitle")
-    lines += PdfLine("Кошторис: ${estimate.name}")
+    lines += PdfLine("Кошторис: ${estimate.originalDocumentName ?: estimate.name}")
     lines += PdfLine("Дата створення: ${java.text.SimpleDateFormat("dd.MM.yyyy", Locale.getDefault()).format(java.util.Date(estimate.createdAt))}")
     lines += PdfLine("")
     lines += PdfLine("ПАРАМЕТРИ ПРИМІЩЕННЯ", 1)
