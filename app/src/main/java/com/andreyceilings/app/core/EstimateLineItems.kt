@@ -2,6 +2,7 @@ package com.andreyceilings.app.core
 
 import com.andreyceilings.app.data.db.EstimateEntity
 import com.andreyceilings.app.data.db.PriceItemEntity
+import com.andreyceilings.shared.calculation.EstimateOptionId
 import org.json.JSONArray
 import org.json.JSONObject
 import kotlin.math.max
@@ -66,22 +67,22 @@ object EstimateLineItems {
         }
 
         val optionRows = listOf(
-            Triple("Світлова лінія", "lightLineMeters", "light.line") to ("м.п." to 850.0),
-            Triple("Додатковий тіньовий профіль", "shadowProfileMeters", "work.shadow_profile") to ("м.п." to 380.0),
-            Triple("Додатковий парящий профіль", "floatingCeilingMeters", "work.floating_ceiling") to ("м.п." to 420.0),
-            Triple("Монтаж люстри", "chandeliersCount", "light.chandelier") to ("шт." to 350.0),
-            Triple("Точковий світильник GX53", "spotsCount", "light.spot_gx53") to ("шт." to 220.0),
-            Triple("Обхід труби", "pipePassCount", "work.pipe_pass") to ("шт." to 180.0),
-            Triple("Ніша для штор", "curtainNicheMeters", "work.curtain_niche") to ("м.п." to 450.0),
-            Triple("Додатковий кут", "extraCorners", "work.extra_corner") to ("шт." to 90.0),
-            Triple("Складна стіна", "hardWallMeters", "work.hard_wall") to ("м.п." to 220.0)
+            Triple("Світлова лінія", EstimateOptionId.LIGHT_LINE.code, EstimateOptionId.LIGHT_LINE.code) to ("м.п." to 850.0),
+            Triple("Додатковий тіньовий профіль", EstimateOptionId.SHADOW_PROFILE.code, EstimateOptionId.SHADOW_PROFILE.code) to ("м.п." to 380.0),
+            Triple("Додатковий парящий профіль", EstimateOptionId.FLOATING_PROFILE.code, EstimateOptionId.FLOATING_PROFILE.code) to ("м.п." to 420.0),
+            Triple("Монтаж люстри", EstimateOptionId.CHANDELIER.code, EstimateOptionId.CHANDELIER.code) to ("шт." to 350.0),
+            Triple("Точковий світильник GX53", EstimateOptionId.SPOT_GX53.code, EstimateOptionId.SPOT_GX53.code) to ("шт." to 220.0),
+            Triple("Обхід труби", EstimateOptionId.PIPE_PASS.code, EstimateOptionId.PIPE_PASS.code) to ("шт." to 180.0),
+            Triple("Ніша для штор", EstimateOptionId.CURTAIN_NICHE.code, EstimateOptionId.CURTAIN_NICHE.code) to ("м.п." to 450.0),
+            Triple("Додатковий кут", EstimateOptionId.EXTRA_CORNER.code, EstimateOptionId.EXTRA_CORNER.code) to ("шт." to 90.0),
+            Triple("Складна стіна", EstimateOptionId.HARD_WALL.code, EstimateOptionId.HARD_WALL.code) to ("м.п." to 220.0)
         )
         optionRows.forEach { (spec, unitSpec) ->
             val (title, key, code) = spec
             val (unit, fallback) = unitSpec
             val qty = quantity(key)
-            if (key == "shadowProfileMeters" && estimate.profileType == "shadow_kraab") return@forEach
-            if (key == "floatingCeilingMeters" && estimate.profileType == "floating_led") return@forEach
+            if (key == EstimateOptionId.SHADOW_PROFILE.code && estimate.profileType == "shadow_kraab") return@forEach
+            if (key == EstimateOptionId.FLOATING_PROFILE.code && estimate.profileType == "floating_led") return@forEach
             add(title, qty, unit, price(code, fallback))
         }
 
