@@ -1,0 +1,82 @@
+name: Verify CMP KMP platforms
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [ main ]
+
+concurrency:
+  # Don't waste hosted runners on obsolete commits while iterating on draft PR #22.
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  ios-and-desktop:
+    runs-on: macos-15
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v7
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v4
+
+      - name: Install Android SDK platform required by shared
+        run: sdkmanager 'platforms;android-37.0'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          gradle-version: '9.7.0'
+
+      - name: Verify Xcode toolchain
+        run: xcodebuild -version
+
+      - name: Compile iOS simulator framework
+        run: gradle --no-daemon :shared:linkDebugFrameworkIosSimulatorArm64 --stacktrace --warning-mode all
+
+      - name: Run isolated SQLCipher tests on iOS Simulator
+        run: gradle --no-daemon :shared:iosSimulatorArm64Test --stacktrace --warning-mode all
+
+      - name: Compile Compose Desktop host
+        run: gradle --no-daemon :desktopApp:compileKotlin --stacktrace --warning-mode all
+
+      - name: Run shared JVM tests
+        run: gradle --no-daemon :shared:jvmTest --stacktrace --warning-mode all
+
+  windows-desktop:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v7
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v4
+
+      - name: Install Android SDK platform required by shared
+        run: sdkmanager 'platforms;android-37.0'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          gradle-version: '9.7.0'
+
+      - name: Compile Compose Desktop host on Windows
+        run: gradle --no-daemon :desktopApp:compileKotlin --stacktrace --warning-mode all
+
+      - name: Run shared JVM tests on Windows
+        run: gradle --no-daemon :shared:jvmTest --stacktrace --warning-mode all

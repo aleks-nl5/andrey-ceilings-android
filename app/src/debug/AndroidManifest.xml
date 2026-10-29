@@ -1,0 +1,10 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <!-- Debug/instrumented-test only; isolated process guarantees no prior JNI load. -->
+        <provider
+            android:name="com.andreyceilings.app.data.db.LegacyMigrationProbeProvider"
+            android:authorities="com.andreyceilings.app.migrationprobe"
+            android:exported="false"
+            android:process=":legacy_migration_probe" />
+    </application>
+</manifest>

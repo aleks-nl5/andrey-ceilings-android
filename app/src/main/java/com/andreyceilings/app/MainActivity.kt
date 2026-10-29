@@ -52,7 +52,6 @@ class MainActivity : ComponentActivity() {
                 val db = withContext(Dispatchers.IO) {
                     val databaseOpenStartedAt = SystemClock.elapsedRealtime()
                     val database = CeilingsDatabase.get(applicationContext)
-                    database.openHelper.writableDatabase
                     val databaseOpenedAt = SystemClock.elapsedRealtime()
                     com.andreyceilings.app.data.db.DemoPriceList.seedIfEmpty(database.priceItems())
                     val initializationFinishedAt = SystemClock.elapsedRealtime()

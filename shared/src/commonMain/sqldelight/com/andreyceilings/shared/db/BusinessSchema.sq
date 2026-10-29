@@ -1,0 +1,296 @@
+-- Shared SQLDelight schema. Fresh test database for PR #22; no migration of disposable data.
+-- Every business row has a globally unique UUID, change time and soft-delete tombstone.
+-- Application code supplies timestamps and other defaults when inserting rows.
+
+CREATE TABLE clients (
+    id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    phone TEXT NOT NULL DEFAULT '',
+    email TEXT NOT NULL DEFAULT '',
+    notes TEXT NOT NULL DEFAULT '',
+    createdAt INTEGER NOT NULL,
+    uuid TEXT NOT NULL UNIQUE,
+    updatedAt INTEGER NOT NULL,
+    deletedAt INTEGER
+);
+CREATE INDEX index_clients_name ON clients(name);
+
+CREATE TABLE projects (
+    id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    clientId INTEGER,
+    title TEXT NOT NULL,
+    address TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'measurement',
+    notes TEXT NOT NULL DEFAULT '',
+    createdAt INTEGER NOT NULL,
+    updatedAt INTEGER NOT NULL,
+    uuid TEXT NOT NULL UNIQUE,
+    deletedAt INTEGER
+);
+CREATE INDEX index_projects_clientId ON projects(clientId);
+CREATE INDEX index_projects_status ON projects(status);
+
+CREATE TABLE room_measurements (
+    id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    projectId INTEGER NOT NULL,
+    name TEXT NOT NULL,
+    shape TEXT NOT NULL DEFAULT 'rectangle',
+    lengthMeters REAL NOT NULL DEFAULT 0.0,
+    widthMeters REAL NOT NULL DEFAULT 0.0,
+    areaSquareMeters REAL NOT NULL DEFAULT 0.0,
+    perimeterMeters REAL NOT NULL DEFAULT 0.0,
+    drawingJson TEXT NOT NULL DEFAULT '{}',
+    notes TEXT NOT NULL DEFAULT '',
+    createdAt INTEGER NOT NULL,
+    uuid TEXT NOT NULL UNIQUE,
+    updatedAt INTEGER NOT NULL,
+    deletedAt INTEGER
+);
+CREATE INDEX index_room_measurements_projectId ON room_measurements(projectId);
+
+CREATE TABLE price_items (
+    id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    code TEXT NOT NULL,
+    title TEXT NOT NULL,
+    category TEXT NOT NULL,
+    unit TEXT NOT NULL,
+    price REAL NOT NULL,
+    updatedAt INTEGER NOT NULL,
+    uuid TEXT NOT NULL UNIQUE,
+    deletedAt INTEGER
+);
+CREATE UNIQUE INDEX index_price_items_category_code ON price_items(category, code) WHERE deletedAt IS NULL;
+
+CREATE TABLE estimates (
+    id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    projectId INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    material TEXT NOT NULL,
+    profileType TEXT NOT NULL,
+    complexity TEXT NOT NULL,
+    lengthMeters REAL NOT NULL,
+    widthMeters REAL NOT NULL,
+    areaSquareMeters REAL NOT NULL,
+    perimeterMeters REAL NOT NULL,
+    canvasCost REAL NOT NULL,
+    profileCost REAL NOT NULL,
+    complexityCost REAL NOT NULL,
+    optionsCost REAL NOT NULL,
+    totalCost REAL NOT NULL,
+    detailsJson TEXT NOT NULL DEFAULT '{}',
+    createdAt INTEGER NOT NULL,
+    uuid TEXT NOT NULL UNIQUE,
+    updatedAt INTEGER NOT NULL,
+    deletedAt INTEGER
+);
+CREATE INDEX index_estimates_projectId ON estimates(projectId);
+CREATE INDEX index_estimates_createdAt ON estimates(createdAt);
+
+selectClients:
+SELECT * FROM clients WHERE deletedAt IS NULL ORDER BY name COLLATE NOCASE;
+
+selectProjects:
+SELECT * FROM projects WHERE deletedAt IS NULL ORDER BY updatedAt DESC;
+
+selectMeasurementsForProject:
+SELECT * FROM room_measurements WHERE projectId = ? AND deletedAt IS NULL ORDER BY createdAt DESC;
+
+selectPriceItems:
+SELECT * FROM price_items WHERE deletedAt IS NULL ORDER BY category, title;
+
+selectEstimatesForProject:
+SELECT * FROM estimates WHERE projectId = ? AND deletedAt IS NULL ORDER BY createdAt DESC;
+
+-- Clients CRUD
+insertClient:
+INSERT INTO clients(name, phone, email, notes, createdAt, uuid, updatedAt)
+VALUES (?, ?, ?, ?, ?, ?, ?);
+
+selectClientById:
+SELECT * FROM clients WHERE id = ? AND deletedAt IS NULL;
+
+updateClient:
+UPDATE clients SET name = ?, phone = ?, email = ?, notes = ?, updatedAt = max(updatedAt + 1, CAST(strftime('%s','now') AS INTEGER) * 1000) WHERE id = ? AND deletedAt IS NULL;
+
+deleteClient:
+UPDATE clients
+SET updatedAt = max(updatedAt + 1, CAST(strftime('%s','now') AS INTEGER) * 1000),
+    deletedAt = max(updatedAt + 1, CAST(strftime('%s','now') AS INTEGER) * 1000)
+WHERE id = ? AND deletedAt IS NULL;
+
+-- Projects CRUD
+insertProject:
+INSERT INTO projects(clientId, title, address, status, notes, createdAt, updatedAt, uuid)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+
+selectProjectById:
+SELECT * FROM projects WHERE id = ? AND deletedAt IS NULL;
+
+selectProjectsByClient:
+SELECT * FROM projects WHERE clientId = ? AND deletedAt IS NULL ORDER BY updatedAt DESC;
+
+updateProject:
+UPDATE projects SET clientId = ?, title = ?, address = ?, status = ?, notes = ?, updatedAt = max(?, updatedAt + 1) WHERE id = ? AND deletedAt IS NULL;
+
+deleteProject:
+UPDATE projects
+SET updatedAt = max(updatedAt + 1, CAST(strftime('%s','now') AS INTEGER) * 1000),
+    deletedAt = max(updatedAt + 1, CAST(strftime('%s','now') AS INTEGER) * 1000)
+WHERE id = ? AND deletedAt IS NULL;
+
+-- Measurements CRUD
+insertMeasurement:
+INSERT INTO room_measurements(projectId, name, shape, lengthMeters, widthMeters, areaSquareMeters, perimeterMeters, drawingJson, notes, createdAt, uuid, updatedAt)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+selectMeasurementById:
+SELECT * FROM room_measurements WHERE id = ? AND deletedAt IS NULL;
+
+updateMeasurement:
+UPDATE room_measurements SET name = ?, shape = ?, lengthMeters = ?, widthMeters = ?, areaSquareMeters = ?, perimeterMeters = ?, drawingJson = ?, notes = ?, updatedAt = max(updatedAt + 1, CAST(strftime('%s','now') AS INTEGER) * 1000) WHERE id = ? AND deletedAt IS NULL;
+
+deleteMeasurement:
+UPDATE room_measurements
+SET updatedAt = max(updatedAt + 1, CAST(strftime('%s','now') AS INTEGER) * 1000),
+    deletedAt = max(updatedAt + 1, CAST(strftime('%s','now') AS INTEGER) * 1000)
+WHERE id = ? AND deletedAt IS NULL;
+
+-- Price catalog CRUD
+insertPriceItem:
+INSERT INTO price_items(code, title, category, unit, price, updatedAt, uuid)
+VALUES (?, ?, ?, ?, ?, ?, ?);
+
+selectPriceItemById:
+SELECT * FROM price_items WHERE id = ? AND deletedAt IS NULL;
+
+updatePriceItem:
+UPDATE price_items SET code = ?, title = ?, category = ?, unit = ?, price = ?, updatedAt = max(?, updatedAt + 1) WHERE id = ? AND deletedAt IS NULL;
+
+deletePriceItem:
+UPDATE price_items
+SET updatedAt = max(updatedAt + 1, CAST(strftime('%s','now') AS INTEGER) * 1000),
+    deletedAt = max(updatedAt + 1, CAST(strftime('%s','now') AS INTEGER) * 1000)
+WHERE id = ? AND deletedAt IS NULL;
+
+-- Estimates CRUD
+insertEstimate:
+INSERT INTO estimates(projectId, name, material, profileType, complexity, lengthMeters, widthMeters, areaSquareMeters, perimeterMeters, canvasCost, profileCost, complexityCost, optionsCost, totalCost, detailsJson, createdAt, uuid, updatedAt)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+selectEstimateById:
+SELECT * FROM estimates WHERE id = ? AND deletedAt IS NULL;
+
+updateEstimate:
+UPDATE estimates SET name = ?, material = ?, profileType = ?, complexity = ?, lengthMeters = ?, widthMeters = ?, areaSquareMeters = ?, perimeterMeters = ?, canvasCost = ?, profileCost = ?, complexityCost = ?, optionsCost = ?, totalCost = ?, detailsJson = ?, updatedAt = max(updatedAt + 1, CAST(strftime('%s','now') AS INTEGER) * 1000) WHERE id = ? AND deletedAt IS NULL;
+
+deleteEstimate:
+UPDATE estimates
+SET updatedAt = max(updatedAt + 1, CAST(strftime('%s','now') AS INTEGER) * 1000),
+    deletedAt = max(updatedAt + 1, CAST(strftime('%s','now') AS INTEGER) * 1000)
+WHERE id = ? AND deletedAt IS NULL;
+
+-- Room DAO parity needed before the Android production cutover.
+-- Keep the existing query names stable for cross-platform repository consumers.
+countClients:
+SELECT COUNT(*) FROM clients WHERE deletedAt IS NULL;
+
+findClientByName:
+SELECT * FROM clients WHERE name = ? COLLATE NOCASE AND deletedAt IS NULL LIMIT 1;
+
+countProjects:
+SELECT COUNT(*) FROM projects WHERE deletedAt IS NULL;
+
+updateProjectStatus:
+UPDATE projects SET status = ?, updatedAt = max(?, updatedAt + 1) WHERE id = ? AND deletedAt IS NULL;
+
+countMeasurements:
+SELECT COUNT(*) FROM room_measurements WHERE deletedAt IS NULL;
+
+selectAllMeasurements:
+SELECT * FROM room_measurements WHERE deletedAt IS NULL ORDER BY createdAt DESC;
+
+countPriceItems:
+SELECT COUNT(*) FROM price_items WHERE deletedAt IS NULL;
+
+countEstimates:
+SELECT COUNT(*) FROM estimates WHERE deletedAt IS NULL;
+
+selectAllEstimates:
+SELECT * FROM estimates WHERE deletedAt IS NULL ORDER BY createdAt DESC;
+
+-- RETURNING keeps the generated ID on the same SQLite connection as the insert.
+-- A separate last_insert_rowid() query would be incorrect with short-lived JDBC connections.
+insertClientReturningId:
+INSERT INTO clients(name, phone, email, notes, createdAt, uuid, updatedAt)
+VALUES (?, ?, ?, ?, ?, ?, ?)
+RETURNING id;
+
+insertProjectReturningId:
+INSERT INTO projects(clientId, title, address, status, notes, createdAt, updatedAt, uuid)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+RETURNING id;
+
+insertMeasurementReturningId:
+INSERT INTO room_measurements(projectId, name, shape, lengthMeters, widthMeters, areaSquareMeters, perimeterMeters, drawingJson, notes, createdAt, uuid, updatedAt)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+RETURNING id;
+
+insertEstimateReturningId:
+INSERT INTO estimates(projectId, name, material, profileType, complexity, lengthMeters, widthMeters, areaSquareMeters, perimeterMeters, canvasCost, profileCost, complexityCost, optionsCost, totalCost, detailsJson, createdAt, uuid, updatedAt)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+RETURNING id;
+
+-- A repeat (category, code) must update the existing row and keep its UUID.
+-- Do not use INSERT OR REPLACE: it can discard the old identity without a tombstone.
+selectActivePriceByKey:
+SELECT * FROM price_items WHERE category = ? AND code = ? AND deletedAt IS NULL LIMIT 1;
+
+insertPriceItemReturningId:
+INSERT INTO price_items(code, title, category, unit, price, updatedAt, uuid)
+VALUES (?, ?, ?, ?, ?, ?, ?)
+RETURNING id;
+
+-- Offline Room-v2 logical data transfer into a fresh SQLDelight database.
+-- Preserve all identifiers so project/client/estimate references remain valid.
+-- These are intentionally separate from regular autoincrement CRUD methods.
+importClientWithId:
+INSERT INTO clients(id, name, phone, email, notes, createdAt, uuid, updatedAt)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+
+importProjectWithId:
+INSERT INTO projects(id, clientId, title, address, status, notes, createdAt, updatedAt, uuid)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+importMeasurementWithId:
+INSERT INTO room_measurements(id, projectId, name, shape, lengthMeters, widthMeters, areaSquareMeters, perimeterMeters, drawingJson, notes, createdAt, uuid, updatedAt)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+importPriceItemWithId:
+INSERT INTO price_items(id, code, title, category, unit, price, updatedAt, uuid)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+
+importEstimateWithId:
+INSERT INTO estimates(id, projectId, name, material, profileType, complexity, lengthMeters, widthMeters, areaSquareMeters, perimeterMeters, canvasCost, profileCost, complexityCost, optionsCost, totalCost, detailsJson, createdAt, uuid, updatedAt)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+-- Tombstones stay in the encrypted local database for future synchronization.
+selectDeletedClients:
+SELECT * FROM clients WHERE deletedAt IS NOT NULL ORDER BY deletedAt;
+
+selectDeletedProjects:
+SELECT * FROM projects WHERE deletedAt IS NOT NULL ORDER BY deletedAt;
+
+selectDeletedMeasurements:
+SELECT * FROM room_measurements WHERE deletedAt IS NOT NULL ORDER BY deletedAt;
+
+selectDeletedPriceItems:
+SELECT * FROM price_items WHERE deletedAt IS NOT NULL ORDER BY deletedAt;
+
+selectDeletedEstimates:
+SELECT * FROM estimates WHERE deletedAt IS NOT NULL ORDER BY deletedAt;
+
+softDeleteEstimatesForProject:
+UPDATE estimates
+SET updatedAt = max(updatedAt + 1, CAST(strftime('%s','now') AS INTEGER) * 1000),
+    deletedAt = max(updatedAt + 1, CAST(strftime('%s','now') AS INTEGER) * 1000)
+WHERE projectId = ? AND deletedAt IS NULL;

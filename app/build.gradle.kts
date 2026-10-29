@@ -1,7 +1,6 @@
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.plugin.compose")
-    id("com.google.devtools.ksp")
 }
 
 android {
@@ -12,6 +11,7 @@ android {
         applicationId = "com.andreyceilings.app"
         minSdk = 30
         targetSdk = 37
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         // GitHub Actions run number is appended to the visible version for test builds.
         val actionsRunNumber = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 0
         versionCode = 600000 + actionsRunNumber
@@ -52,6 +52,10 @@ android {
 }
 
 dependencies {
+    // Foundation for replacing Room DAOs with the shared SQLDelight repositories.
+    // Room remains the Android production store until UI and backup adapters pass CI.
+    implementation(project(":shared"))
+    implementation("app.cash.sqldelight:runtime:2.4.1")
     // Required Go mobile library: all calculations run in Go; no Kotlin fallback exists.
     implementation(files("libs/ceilings-core.aar"))
     implementation(platform("androidx.compose:compose-bom:2026.06.01"))
@@ -64,9 +68,6 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.11.0")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.11.0")
     implementation("androidx.navigation:navigation-compose:2.9.8")
-    implementation("androidx.room:room-runtime:2.8.5")
-    implementation("androidx.room:room-ktx:2.8.5")
-    ksp("androidx.room:room-compiler:2.8.5")
     implementation("net.zetetic:sqlcipher-android:4.19.1")
     implementation("androidx.sqlite:sqlite:2.7.1")
     implementation("androidx.datastore:datastore-preferences:1.3.0")
@@ -75,8 +76,10 @@ dependencies {
     implementation("androidx.work:work-runtime-ktx:2.12.0")
     debugImplementation("androidx.compose.ui:ui-tooling")
     testImplementation("junit:junit:4.13.2")
+    androidTestImplementation(project(":shared"))
+    androidTestImplementation("androidx.test:core:1.6.1")
+    androidTestImplementation("androidx.test:runner:1.6.2")
+    androidTestImplementation("androidx.test:rules:1.6.1")
+    androidTestImplementation("androidx.test.ext:junit:1.2.1")
 }
 
-ksp {
-    arg("room.schemaLocation", "$projectDir/schemas")
-}

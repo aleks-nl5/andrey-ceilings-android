@@ -262,8 +262,7 @@ internal fun SettingsScreen(databaseStatus: String, database: CeilingsDatabase?,
                         fileCheck = withContext(Dispatchers.IO) {
                             runCatching {
                                 val db = database ?: error("База даних ще не готова.")
-                                val sqlDb = db.openHelper.writableDatabase
-                                val path = sqlDb.path ?: error("Шлях до файлу БД недоступний.")
+                                val path = db.path
                                 val file = java.io.File(path)
                                 val clients = db.clients().count()
                                 val projects = db.projects().count()
@@ -285,24 +284,14 @@ internal fun SettingsScreen(databaseStatus: String, database: CeilingsDatabase?,
                                     }
                                 } else ByteArray(0)
                                 val plainSqlite = header.toString(Charsets.US_ASCII).startsWith("SQLite format 3")
-                                val journalMode = sqlDb.query("PRAGMA journal_mode").use { cursor ->
-                                    if (cursor.moveToFirst()) cursor.getString(0) else "невідомо"
-                                }
-                                val pageSize = sqlDb.query("PRAGMA page_size").use { cursor ->
-                                    if (cursor.moveToFirst()) cursor.getLong(0) else -1L
-                                }
-                                val pageCount = sqlDb.query("PRAGMA page_count").use { cursor ->
-                                    if (cursor.moveToFirst()) cursor.getLong(0) else -1L
-                                }
+                                val journalMode = db.queryText("PRAGMA journal_mode") ?: "невідомо"
+                                val pageSize = db.queryLong("PRAGMA page_size") ?: -1L
+                                val pageCount = db.queryLong("PRAGMA page_count") ?: -1L
                                 val cipherVersion = runCatching {
-                                    sqlDb.query("PRAGMA cipher_version").use { cursor ->
-                                        if (cursor.moveToFirst()) cursor.getString(0)?.takeIf { it.isNotBlank() } else null
-                                    }
+                                    db.queryText("PRAGMA cipher_version")?.takeIf { it.isNotBlank() }
                                 }.getOrNull()
                                 val schemaCheck = runCatching {
-                                    sqlDb.query("SELECT count(*) FROM sqlite_master").use { cursor ->
-                                        if (cursor.moveToFirst()) cursor.getLong(0) else -1L
-                                    }
+                                    db.queryLong("SELECT count(*) FROM sqlite_master") ?: -1L
                                 }
                                 val dbLogicalBytes = if (pageSize > 0 && pageCount >= 0) pageSize * pageCount else -1L
                                 "Записи в БД:\nКлієнти: $clients\nОб’єкти: $projects\nЗаміри: $measurements\nКошториси: $estimates\nПозиції прайсу: $prices\n\nSQLite:\nРежим журналювання: $journalMode\nРозмір сторінки: $pageSize байт\nКількість сторінок: $pageCount\nЛогічний розмір БД: $dbLogicalBytes байт\n\nФайли:\n$fileInfo\n\nПеревірка SQLCipher:\nВерсія cipher: ${cipherVersion ?: "не повернута (це саме по собі не доводить відсутність SQLCipher)"}\nЧитання системної схеми: " + schemaCheck.fold({ count -> if (count >= 0) "успішно (${count} об’єктів)" else "не вдалося" }, { error -> "ПОМИЛКА — ${error.message ?: "невідома помилка"}" }) + "\n\nВідкритий заголовок SQLite: " +
@@ -320,17 +309,8 @@ internal fun SettingsScreen(databaseStatus: String, database: CeilingsDatabase?,
                         fileCheck = withContext(Dispatchers.IO) {
                             runCatching {
                                 val db = database ?: error("База даних ще не готова.")
-                                val sqlDb = db.openHelper.writableDatabase
-                                sqlDb.query("PRAGMA wal_checkpoint(PASSIVE)").use { cursor ->
-                                    if (!cursor.moveToFirst()) {
-                                        "SQLite не повернула результат checkpoint."
-                                    } else {
-                                        val busy = cursor.getLong(0)
-                                        val logFrames = cursor.getLong(1)
-                                        val checkpointedFrames = cursor.getLong(2)
-                                        "Результат WAL checkpoint (PASSIVE):\nЗайнятий: $busy\nКадрів у WAL: $logFrames\nПеренесено кадрів: $checkpointedFrames\n\nЦе не видаляє файли вручну. Повторіть звичайну діагностику, щоб порівняти розміри."
-                                    }
-                                }
+                                val status = db.checkpoint(CeilingsDatabase.WalMode.PASSIVE)
+                                "Результат WAL checkpoint (PASSIVE):\nЗайнятий: ${status.busy}\nКадрів у WAL: ${status.frames}\nПеренесено кадрів: ${status.checkpointed}\n\nЦе не видаляє файли вручну. Повторіть звичайну діагностику, щоб порівняти розміри."
                             }.getOrElse { "Checkpoint не виконано: ${it.message ?: "невідома помилка"}" }
                         }
                     }
@@ -384,7 +364,7 @@ internal fun SettingsScreen(databaseStatus: String, database: CeilingsDatabase?,
                             val result = withContext(Dispatchers.IO) { runCatching {
                                 val contents = payload ?: error("Спочатку перевірте файл .stpb.")
                                 val appContext = context.applicationContext
-                                val live = appContext.getDatabasePath("andrey_ceilings_secure.db")
+                                val live = appContext.getDatabasePath(CeilingsDatabase.DATABASE_NAME)
                                 val oldDb = java.io.File.createTempFile("ceilings_before_restore_", ".db", context.cacheDir)
                                 val oldKey = com.andreyceilings.app.data.security.DatabaseKeyManager.getOrCreatePassphrase(context)
                                 val wal = java.io.File("${live.absolutePath}-wal")
@@ -392,8 +372,10 @@ internal fun SettingsScreen(databaseStatus: String, database: CeilingsDatabase?,
                                 var oldSaved = false
                                 var keyChanged = false
                                 try {
-                                    database?.openHelper?.writableDatabase?.query("PRAGMA wal_checkpoint(FULL)")?.use { cursor ->
-                                        check(cursor.moveToFirst() && cursor.getLong(0) == 0L) { "Не вдалося завершити запис поточної БД." }
+                                    database?.let { current ->
+                                        check(current.checkpoint(CeilingsDatabase.WalMode.FULL).complete) {
+                                            "Не вдалося завершити запис поточної БД."
+                                        }
                                     }
                                     CeilingsDatabase.closeAndReset()
                                     wal.delete(); shm.delete()
@@ -402,20 +384,8 @@ internal fun SettingsScreen(databaseStatus: String, database: CeilingsDatabase?,
                                     com.andreyceilings.app.data.security.DatabaseKeyManager.replacePassphrase(context, contents.passphrase)
                                     keyChanged = true
                                     val reopened = CeilingsDatabase.get(appContext)
-                                    val sql = reopened.openHelper.writableDatabase
-                                    sql.query("PRAGMA integrity_check").use { cursor ->
-                                        check(cursor.moveToFirst() && cursor.getString(0).equals("ok", ignoreCase = true)) { "Перевірка цілісності після відновлення не пройдена." }
-                                    }
-                                    val importedCounts = sql.query("""
-                                        SELECT
-                                            (SELECT COUNT(*) FROM clients),
-                                            (SELECT COUNT(*) FROM projects),
-                                            (SELECT COUNT(*) FROM room_measurements),
-                                            (SELECT COUNT(*) FROM estimates),
-                                            (SELECT COUNT(*) FROM price_items)
-                                    """.trimIndent()).use { cursor ->
-                                        check(cursor.moveToFirst()) { "Не вдалося порахувати імпортовані записи." }
-                                        (0..4).map { cursor.getLong(it) }
+                                    check(reopened.checkIntegrity()) {
+                                        "Перевірка цілісності після відновлення не пройдена."
                                     }
                                     reopened
                                 } catch (failure: Exception) {
@@ -432,18 +402,11 @@ internal fun SettingsScreen(databaseStatus: String, database: CeilingsDatabase?,
                             result.onSuccess { restored ->
                                 onDatabaseReplaced(restored)
                                 val counts = withContext(Dispatchers.IO) {
-                                    val sql = restored.openHelper.writableDatabase
-                                    sql.query("""
-                                        SELECT
-                                            (SELECT COUNT(*) FROM clients),
-                                            (SELECT COUNT(*) FROM projects),
-                                            (SELECT COUNT(*) FROM room_measurements),
-                                            (SELECT COUNT(*) FROM estimates),
-                                            (SELECT COUNT(*) FROM price_items)
-                                    """.trimIndent()).use { cursor ->
-                                        check(cursor.moveToFirst()) { "Не вдалося прочитати кількість записів після імпорту." }
-                                        (0..4).map { cursor.getLong(it) }
-                                    }
+                                    listOf(
+                                        restored.clients().count(), restored.projects().count(),
+                                        restored.measurements().count(), restored.estimates().count(),
+                                        restored.priceItems().count()
+                                    )
                                 }
                                 backupStatus = "ІМПОРТ УСПІШНИЙ — базу відновлено й перевірено.\n" +
                                     "Клієнти: ${counts[0]}\n" +
@@ -467,7 +430,7 @@ internal fun SettingsScreen(databaseStatus: String, database: CeilingsDatabase?,
             DisposableEffect(databaseChangeEnabled, database) {
                 val db = database
                 val observer = if (databaseChangeEnabled && db != null) {
-                    object : androidx.room.InvalidationTracker.Observer(
+                    object : com.andreyceilings.app.data.db.SqlDelightChangeTracker.Observer(
                         "clients", "projects", "room_measurements", "price_items", "estimates"
                     ) {
                         override fun onInvalidated(tables: Set<String>) {
@@ -476,9 +439,9 @@ internal fun SettingsScreen(databaseStatus: String, database: CeilingsDatabase?,
                                 AutomaticBackupScheduler.triggerOnDatabaseChange(context)
                             }
                         }
-                    }.also { db.invalidationTracker.addObserver(it) }
+                    }.also { db.changeTracker.addObserver(it) }
                 } else null
-                onDispose { if (observer != null && db != null) db.invalidationTracker.removeObserver(observer) }
+                onDispose { if (observer != null && db != null) db.changeTracker.removeObserver(observer) }
             }
             ListItem(
                 headlineContent = { Text("Резервування за графіком") },
@@ -699,50 +662,19 @@ internal fun SettingsScreen(databaseStatus: String, database: CeilingsDatabase?,
                     exportStatus = withContext(Dispatchers.IO) {
                         runCatching {
                             val db = database ?: error("База даних ще не готова.")
-                            val sqlDb = db.openHelper.writableDatabase
-                            val sourcePath = sqlDb.path ?: error("Шлях до файла БД недоступний.")
+                            val sourcePath = db.path
                             val source = java.io.File(sourcePath)
                             check(source.isFile) { "Файл БД не знайдено." }
-                            sqlDb.query("PRAGMA wal_checkpoint(FULL)").use { cursor ->
-                                check(cursor.moveToFirst()) { "SQLite не повернула результат WAL checkpoint." }
-                                val busy = cursor.getLong(0)
-                                val frames = cursor.getLong(1)
-                                val copied = cursor.getLong(2)
-                                check(busy == 0L && (frames < 0L || copied >= frames)) { "WAL checkpoint не завершився повністю. Повторіть, коли БД не використовується." }
+                            check(db.checkpoint(CeilingsDatabase.WalMode.FULL).complete) {
+                                "WAL checkpoint не завершився повністю. Повторіть, коли БД не використовується."
                             }
                             val snapshot = java.io.File(context.cacheDir, "andrey_ceilings_secure_export.tmp")
                             source.inputStream().use { input -> snapshot.outputStream().use { output -> input.copyTo(output) } }
                             check(snapshot.length() > 0L) { "Створена копія порожня." }
-                            // Verify this exact snapshot through Room's SQLCipher SupportFactory.
-                            // The passphrase is binary; do not convert it to CharArray.
-                            val passphrase = com.andreyceilings.app.data.security.DatabaseKeyManager
-                                .getOrCreatePassphrase(context.applicationContext)
+                            // Verify snapshot using the SQLDelight/SQLCipher driver, not Room.
+                            val passphrase = com.andreyceilings.app.data.security.DatabaseKeyManager.getOrCreatePassphrase(context.applicationContext)
                             try {
-                                System.loadLibrary("sqlcipher")
-                                val verifier = androidx.room.Room.databaseBuilder(
-                                    context.applicationContext,
-                                    CeilingsDatabase::class.java,
-                                    snapshot.absolutePath
-                                ).openHelperFactory(
-                                    net.zetetic.database.sqlcipher.SupportOpenHelperFactory(passphrase.copyOf())
-                                ).build()
-                                try {
-                                    val verifiedDb = verifier.openHelper.readableDatabase
-                                    val integrity = verifiedDb.query("PRAGMA integrity_check").use { cursor ->
-                                        check(cursor.moveToFirst()) { "SQLCipher не повернув результат integrity_check." }
-                                        cursor.getString(0)
-                                    }
-                                    check(integrity.equals("ok", ignoreCase = true)) {
-                                        "SQLCipher integrity_check не пройшов: $integrity"
-                                    }
-                                    val schemaCount = verifiedDb.query("SELECT count(*) FROM sqlite_master").use { cursor ->
-                                        check(cursor.moveToFirst()) { "Не вдалося прочитати схему копії." }
-                                        cursor.getLong(0)
-                                    }
-                                    check(schemaCount > 0L) { "У копії не знайдено об'єктів схеми." }
-                                } finally {
-                                    verifier.close()
-                                }
+                                com.andreyceilings.app.data.security.PortableBackupManager.verifyEncryptedSnapshot(context.applicationContext, snapshot, passphrase)
                             } finally {
                                 passphrase.fill(0)
                             }
@@ -773,7 +705,7 @@ internal fun SettingsScreen(databaseStatus: String, database: CeilingsDatabase?,
                             "Перевірено: SQLCipher відкрив копію, integrity_check = ok, схема доступна з ключем, звичайний SQLite без ключа не прочитав схему. Ключ не експортується. Виберіть папку для збереження."
                         }.getOrElse { "Не вдалося підготувати копію: " + (it.message ?: "невідома помилка") }
                     }
-                    if (pendingExportFile != null) exportDocumentLauncher.launch("andrey_ceilings_secure_test.db")
+                    if (pendingExportFile != null) exportDocumentLauncher.launch("andrey_ceilings_sqldelight_test.db")
                 }
             }, modifier = Modifier.fillMaxWidth(), enabled = database != null) { Text("Експортувати тестову копію БД") }
             ListItem(leadingContent = { Icon(Icons.Default.Backup, null) }, headlineContent = { Text("Резервна копія") }, supportingContent = { Text("Експортована копія зашифрована; ключ не додається до файла") })
@@ -784,20 +716,7 @@ private fun verifyEncryptedBackup(context: android.content.Context, file: java.i
     check(file.isFile && file.length() > 0L) { "Файл відсутній або порожній." }
     val passphrase = com.andreyceilings.app.data.security.DatabaseKeyManager.getOrCreatePassphrase(context.applicationContext)
     try {
-        System.loadLibrary("sqlcipher")
-        val verifier = androidx.room.Room.databaseBuilder(context.applicationContext, CeilingsDatabase::class.java, file.absolutePath)
-            .openHelperFactory(net.zetetic.database.sqlcipher.SupportOpenHelperFactory(passphrase.copyOf())).build()
-        try {
-            val db = verifier.openHelper.readableDatabase
-            val integrity = db.query("PRAGMA integrity_check").use { cursor ->
-                check(cursor.moveToFirst()) { "SQLCipher не повернув результат integrity_check." }; cursor.getString(0)
-            }
-            check(integrity.equals("ok", ignoreCase = true)) { "integrity_check: $integrity" }
-            val count = db.query("SELECT count(*) FROM sqlite_master").use { cursor ->
-                check(cursor.moveToFirst()) { "Не вдалося прочитати схему." }; cursor.getLong(0)
-            }
-            check(count > 0L) { "У файлі немає схеми БД." }
-        } finally { verifier.close() }
+        com.andreyceilings.app.data.security.PortableBackupManager.verifyEncryptedSnapshot(context.applicationContext, file, passphrase)
     } finally { passphrase.fill(0) }
     var plain: android.database.sqlite.SQLiteDatabase? = null
     var unreadable = false
