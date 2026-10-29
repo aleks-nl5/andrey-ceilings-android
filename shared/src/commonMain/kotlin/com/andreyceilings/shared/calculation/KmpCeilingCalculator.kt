@@ -204,14 +204,14 @@ object KmpCeilingCalculator {
 
     /** Matches mobileapi.CalculateJSON: geometry always overrides input cost area/perimeter. */
     fun estimate(
-        geometry: GeometryInput,
-        cost: CostInput,
+        geometryInput: GeometryInput,
+        costInput: CostInput,
         prices: PriceList = defaultPriceList()
     ): CalculationResult {
-        val dimensions = geometry(geometry)
+        val dimensions = geometry(geometryInput)
         return CalculationResult(
             dimensions,
-            cost(cost.copy(area = dimensions.area, perimeter = dimensions.perimeter), prices)
+            cost(costInput.copy(area = dimensions.area, perimeter = dimensions.perimeter), prices)
         )
     }
 }
