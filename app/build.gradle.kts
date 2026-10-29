@@ -53,6 +53,9 @@ android {
 }
 
 dependencies {
+    // Foundation for replacing Room DAOs with the shared SQLDelight repositories.
+    // Room remains the Android production store until UI and backup adapters pass CI.
+    implementation(project(":shared"))
     // Required Go mobile library: all calculations run in Go; no Kotlin fallback exists.
     implementation(files("libs/ceilings-core.aar"))
     implementation(platform("androidx.compose:compose-bom:2026.06.01"))
