@@ -7,7 +7,6 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertNotEquals
-import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class EstimateNumberSettingsPersistenceTest {
@@ -84,10 +83,9 @@ class EstimateNumberSettingsPersistenceTest {
                 newSeriesUuid = { uuid(3) }, newRevisionUuid = { uuid(13) }
             )
             assertEquals("2026_NL_003_${uuid(3)}", third.documentNumber)
-            assertNull(repo.series(first.seriesUuid)?.let {
-                if (it.deletedAt == null) it else null
-            })
-            assertEquals(3, repo.revisions(third.seriesUuid).first().versionNumber.toInt() + 2)
+            assertEquals(250L, repo.series(first.seriesUuid)?.deletedAt)
+            assertEquals(1L, repo.revisions(first.seriesUuid).single().versionNumber)
+            assertEquals(1L, repo.revisions(third.seriesUuid).single().versionNumber)
         }
     }
 
