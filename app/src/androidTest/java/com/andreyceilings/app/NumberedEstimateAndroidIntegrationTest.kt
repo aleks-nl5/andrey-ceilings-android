@@ -6,6 +6,11 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.andreyceilings.app.data.db.CeilingsDatabase
 import com.andreyceilings.app.data.db.EstimateEntity
 import com.andreyceilings.app.data.db.ProjectEntity
+import com.andreyceilings.app.data.security.PortableBackupPayload
+import com.andreyceilings.app.data.security.PortableBackupEnvelope
+import com.andreyceilings.app.data.security.PortableBackupManager
+import com.andreyceilings.shared.db.createEncryptedPrototypeDriver
+import com.andreyceilings.shared.db.PrototypeDatabase
 import com.andreyceilings.shared.db.EstimateRepository
 import com.andreyceilings.shared.estimate.ImmutableEstimateRepository
 import kotlinx.coroutines.flow.first
@@ -104,6 +109,35 @@ class NumberedEstimateAndroidIntegrationTest {
                 assertEquals(1, active.size)
                 assertNotEquals(firstNumber, active.single().documentNumber)
                 assertEquals(100.0, active.single().totalCost, 0.0)
+            }
+
+            // Portable .stpb payload must preserve all immutable history and the
+            // original encrypted DB passphrase, not just the five legacy tables.
+            val recoveryPassword = "test-password-do-not-use".toCharArray()
+            val payload = PortableBackupPayload.encode(context.getDatabasePath(dbName).readBytes(), key)
+            try {
+                val archive = PortableBackupEnvelope.seal(payload, recoveryPassword)
+                val recovered = PortableBackupManager.validate(context, archive, recoveryPassword)
+                val restoredName = "sqldelight_test_numbered_restore.db"
+                try {
+                    context.deleteDatabase(restoredName)
+                    val target = context.getDatabasePath(restoredName)
+                    target.parentFile?.mkdirs()
+                    target.writeBytes(recovered.database)
+                    createEncryptedPrototypeDriver(context, recovered.passphrase, restoredName).use { driver ->
+                        val history = ImmutableEstimateRepository(PrototypeDatabase(driver))
+                        assertNotNull(history.seriesByNumber(firstNumber))
+                        assertEquals(1, history.revisions(firstSeries).size)
+                        assertEquals(1L, history.revisions(firstSeries).first().versionNumber)
+                    }
+                } finally {
+                    context.deleteDatabase(restoredName)
+                    recovered.database.fill(0)
+                    recovered.passphrase.fill(0)
+                }
+            } finally {
+                payload.fill(0)
+                recoveryPassword.fill('\u0000')
             }
         } finally {
             context.deleteDatabase(dbName)
