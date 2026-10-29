@@ -27,6 +27,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.andreyceilings.app.data.db.*
 import com.andreyceilings.app.core.EstimateLineItems
+import com.andreyceilings.app.core.EstimateLineItem
+import com.andreyceilings.shared.calculation.MeasurementPrecision
+import org.json.JSONObject
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.onEach
 import android.os.SystemClock
@@ -43,6 +46,18 @@ import android.graphics.Typeface
 import android.graphics.pdf.PdfDocument
 
 import com.andreyceilings.app.*
+
+private fun precisionForEstimate(detailsJson: String): MeasurementPrecision {
+    val step = runCatching { JSONObject(detailsJson).optDouble("measurementPrecisionMeters", 0.01) }.getOrDefault(0.01)
+    return MeasurementPrecision.fromStep(step) ?: MeasurementPrecision.ONE_CENTIMETER
+}
+
+private fun formattedQuantity(line: EstimateLineItem, precision: MeasurementPrecision): String = when (line.unit) {
+    "м²" -> formatMeasuredArea(line.quantity, precision)
+    "м.п.", "м" -> formatMeasuredLength(line.quantity, precision)
+    else -> line.quantity.format2()
+}
+
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -197,14 +212,15 @@ internal fun EstimatesScreen(database: CeilingsDatabase?) {
                                 Icon(Icons.Default.Delete, contentDescription = "Видалити кошторис")
                             }
                         }
-                        Text("${estimate.lengthMeters.format2()} × ${estimate.widthMeters.format2()} м · ${estimate.areaSquareMeters.format2()} м² · ${estimate.material} · ${estimate.profileType}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        val estimatePrecision = remember(estimate.detailsJson) { precisionForEstimate(estimate.detailsJson) }
+                        Text("${formatMeasuredLength(estimate.lengthMeters, estimatePrecision)} × ${formatMeasuredLength(estimate.widthMeters, estimatePrecision)} м · ${formatMeasuredArea(estimate.areaSquareMeters, estimatePrecision)} м² · ${materialDisplayName(estimate.material)} · ${profileDisplayName(estimate.profileType)}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         Text("Полотно ${money(estimate.canvasCost)} · профіль ${money(estimate.profileCost)} · роботи ${money(estimate.complexityCost + estimate.optionsCost)}")
                         val itemizedRows = remember(estimate.detailsJson) { EstimateLineItems.fromJson(estimate.detailsJson) }
                         if (itemizedRows.isNotEmpty()) {
                             HorizontalDivider()
                             Text("Розбивка за позиціями", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
                             itemizedRows.forEach { line ->
-                                Text("${line.title}: ${line.quantity.format2()} ${line.unit} × ${money(line.unitPrice)} = ${money(line.total)}", style = MaterialTheme.typography.bodySmall)
+                                Text("${line.title}: ${formattedQuantity(line, estimatePrecision)} ${line.unit} × ${money(line.unitPrice)} = ${money(line.total)}", style = MaterialTheme.typography.bodySmall)
                             }
                         }
                         Text(money(estimate.totalCost), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
@@ -236,6 +252,7 @@ internal fun EstimatesScreen(database: CeilingsDatabase?) {
 }
 
 private fun writeEstimatePdf(context: Context, uri: Uri, estimate: EstimateEntity, projectTitle: String) {
+    val estimatePrecision = precisionForEstimate(estimate.detailsJson)
     val document = PdfDocument()
     val titlePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { typeface = Typeface.create("sans-serif", Typeface.BOLD); textSize = 18f }
     val headingPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { typeface = Typeface.create("sans-serif", Typeface.BOLD); textSize = 12f }
@@ -249,10 +266,10 @@ private fun writeEstimatePdf(context: Context, uri: Uri, estimate: EstimateEntit
     lines += PdfLine("Дата: ${java.text.SimpleDateFormat("dd.MM.yyyy", Locale.getDefault()).format(java.util.Date())}")
     lines += PdfLine("")
     lines += PdfLine("ПАРАМЕТРИ ПРИМІЩЕННЯ", 1)
-    lines += PdfLine("Розмір: ${estimate.lengthMeters.format2()} × ${estimate.widthMeters.format2()} м")
-    lines += PdfLine("Площа: ${estimate.areaSquareMeters.format2()} м²    Периметр: ${estimate.perimeterMeters.format2()} м")
-    lines += PdfLine("Матеріал: ${estimate.material}")
-    lines += PdfLine("Профіль: ${estimate.profileType}")
+    lines += PdfLine("Розмір: ${formatMeasuredLength(estimate.lengthMeters, estimatePrecision)} × ${formatMeasuredLength(estimate.widthMeters, estimatePrecision)} м")
+    lines += PdfLine("Площа: ${formatMeasuredArea(estimate.areaSquareMeters, estimatePrecision)} м²    Периметр: ${formatMeasuredLength(estimate.perimeterMeters, estimatePrecision)} м")
+    lines += PdfLine("Матеріал: ${materialDisplayName(estimate.material)}")
+    lines += PdfLine("Профіль: ${profileDisplayName(estimate.profileType)}")
     lines += PdfLine("Складність: ${when (estimate.complexity) { "multilevel" -> "Багаторівнева"; "curved" -> "Криволінійна"; else -> "Пряма" }}")
     lines += PdfLine("")
     lines += PdfLine("ДЕТАЛЬНИЙ РОЗРАХУНОК", 1)
@@ -260,7 +277,7 @@ private fun writeEstimatePdf(context: Context, uri: Uri, estimate: EstimateEntit
     if (lineItems.isNotEmpty()) {
         lines += PdfLine("Позиція | Кількість | Ціна за одиницю | Сума", 1)
         lineItems.forEach { item ->
-            lines += PdfLine("${item.title} | ${item.quantity.format2()} ${item.unit} | ${money(item.unitPrice)} | ${money(item.total)}")
+            lines += PdfLine("${item.title} | ${formattedQuantity(item, estimatePrecision)} ${item.unit} | ${money(item.unitPrice)} | ${money(item.total)}")
         }
     } else {
         lines += PdfLine("Полотно: ${money(estimate.canvasCost)}")

@@ -2,6 +2,19 @@
 
 > Це актуальна специфікація стану гілки `architecture/cmp-kmp-migration-v2`. Старі плани, де Android описано як Room-програму, більше не застосовуються.
 
+## Поточне журналювання Android (підтверджено власником 29.10.2026)
+
+**Фактичний `PRAGMA journal_mode = delete`** у встановленому Android APK — підтверджено через «Налаштування → Діагностика бази даних». Це робочий SQLite/SQLCipher rollback-journal режим, не помилка. **WAL не ввімкнено** в поточному шляху відкриття: `CeilingsDatabase` → `createEncryptedPrototypeDriver` → `AndroidSqliteDriver`/`SupportOpenHelperFactory`; драйвер явно задає `PRAGMA foreign_keys = ON`, але **не задає `journal_mode=WAL`**. Наявність `wal_checkpoint(PASSIVE/FULL)` у діагностиці й backup-коді сама по собі не доводить активність WAL.
+
+**План:** [Issue #26 — окремий SQLDelight/SQLCipher WAL hardening PR](https://github.com/aleks-nl5/andrey-ceilings-android/issues/26), після стабілізації поточного Go → KMP PR #23. До того не міняти робочий DELETE. Основна передумова — перегляд усіх резервних копій, імпорту й відновлення: `checkpoint(FULL)` + пряме копіювання `.db` не є достатньою гарантією коректного snapshot за конкурентних записів. Потрібні перевірені консистентні snapshot-и / write-exclusion, відсутність передчасного видалення `-wal/-shm` та регресійні тести аварійних сценаріїв.
+
+- [ ] Звірити всі backup/restore/export/import/auto-backup шляхи та поведінку SQLCipher/SQLDelight під конкурентним навантаженням.
+- [ ] Лише після захисту backup атомарно перемикати Android-драйвер у WAL, перевіряти результат `PRAGMA journal_mode` і конфігурацію checkpoint/busy.
+- [ ] Тести Android instrumentation: read/write конкуренція, `SQLITE_BUSY`, checkpoint, зростання WAL, crash recovery, відновлення, авто/ручний backup, integrity check та реальний телефон.
+- [ ] На Windows та iOS дослідити фактичний journal mode окремо: Android-факт `DELETE` не переносити на інші платформи автоматично.
+
+**Межі:** жодних WAL-виправлень у PR #23, серверної синхронізації чи перенесення тестової БД. Повні acceptance criteria — [задача #26](https://github.com/aleks-nl5/andrey-ceilings-android/issues/26).
+
 ## Реалізовано
 
 - Android використовує **SQLDelight 2.4.1** та зашифровану SQLite через SQLCipher; Room runtime і KSP Room compiler видалено.

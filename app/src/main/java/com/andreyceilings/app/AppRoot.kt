@@ -60,6 +60,7 @@ import com.andreyceilings.app.ui.theme.ThemeModeSelector
 import com.andreyceilings.app.core.CeilingEstimate
 import com.andreyceilings.app.core.CeilingCalculator
 import com.andreyceilings.app.core.CalculatorOptions
+import com.andreyceilings.shared.calculation.MeasurementPrecision
 import com.andreyceilings.app.data.db.PriceItemEntity
 import com.andreyceilings.app.data.db.ProjectEntity
 import com.andreyceilings.app.data.db.EstimateEntity
@@ -240,17 +241,27 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
             }
         }
     }
+    val precisionPreferences = remember(context) {
+        context.applicationContext.getSharedPreferences("calculator_preferences", Context.MODE_PRIVATE)
+    }
+    var measurementPrecision by remember {
+        mutableStateOf(
+            MeasurementPrecision.entries.firstOrNull {
+                it.name == precisionPreferences.getString("measurement_precision", "")
+            } ?: MeasurementPrecision.ONE_CENTIMETER
+        )
+    }
     var length by remember { mutableStateOf("5.4") }
     var width by remember { mutableStateOf("3.8") }
     var pricePerM2 by remember { mutableStateOf("290") }
     var profilePrice by remember { mutableStateOf("130") }
-    var profileType by remember { mutableStateOf("Алюмінієвий гарпунний") }
-    var material by remember { mutableStateOf("ПВХ матовий") }
+    var profileType by remember { mutableStateOf("standard_alu") }
+    var material by remember { mutableStateOf("pvc_matte") }
     var lightLineMeters by remember { mutableStateOf("0") }
     var shadowProfileMeters by remember { mutableStateOf("0") }
     var floatingCeilingMeters by remember { mutableStateOf("0") }
     var chandeliersCount by remember { mutableStateOf("0") }
-    var spotsCount by remember { mutableStateOf("0") }
+    var spotCount by remember { mutableStateOf("0") }
     var pipePassCount by remember { mutableStateOf("0") }
     var curtainNicheMeters by remember { mutableStateOf("0") }
     var extraCorners by remember { mutableStateOf("0") }
@@ -261,51 +272,34 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
         database?.priceItems()?.observeAll() ?: flowOf<List<PriceItemEntity>>(emptyList())
     }
     val priceItems by priceItemsFlow.collectAsState(initial = emptyList())
-    fun materialCode(label: String): String = when (label) {
-        "ПВХ матовий" -> "canvas.pvc_matte"
-        "ПВХ глянцевий" -> "canvas.pvc_glossy"
-        "ПВХ сатиновий" -> "canvas.pvc_satin"
-        "Тканинний Descor" -> "canvas.fabric"
-        "Негорючий KM2" -> "canvas.fireproof_km2"
-        "Акустичний" -> "canvas.acoustic"
-        else -> "canvas.pvc_matte"
-    }
-    fun profileCode(label: String): String = when (label) {
-        "Алюмінієвий гарпунний" -> "profile.standard_alu"
-        "ПВХ стіновий" -> "profile.pvc"
-        "Тіньовий EuroKRAAB" -> "profile.shadow_kraab"
-        "Парящий з LED" -> "profile.floating_led"
-        "Слот / трековий" -> "profile.slott_tracks"
-        else -> "profile.standard_alu"
-    }
-
     // Keep calculator defaults synchronized with the current encrypted price list.
     LaunchedEffect(priceItems, material, profileType) {
-        priceItems.firstOrNull { it.code == materialCode(material) }?.let { pricePerM2 = it.price.toPriceInput() }
-        priceItems.firstOrNull { it.code == profileCode(profileType) }?.let { profilePrice = it.price.toPriceInput() }
+        priceItems.firstOrNull { it.code == "canvas.$material" }?.let { pricePerM2 = it.price.toPriceInput() }
+        priceItems.firstOrNull { it.code == "profile.$profileType" }?.let { profilePrice = it.price.toPriceInput() }
     }
 
     val calculatorOptions = CalculatorOptions(
-        lightLinesMeters = lightLineMeters.toSafeDouble(),
+        lightLineMeters = lightLineMeters.toSafeDouble(),
         shadowProfileMeters = shadowProfileMeters.toSafeDouble(),
         floatingCeilingMeters = floatingCeilingMeters.toSafeDouble(),
         chandeliersCount = chandeliersCount.toSafeDouble(),
-        spotsGX53Count = spotsCount.toSafeDouble(),
+        spotCount = spotCount.toSafeDouble(),
         pipePassCount = pipePassCount.toSafeDouble(),
         curtainNicheMeters = curtainNicheMeters.toSafeDouble(),
         extraCorners = extraCorners.toSafeDouble(),
         hardWallMeters = hardWallMeters.toSafeDouble(),
         complexity = complexity
     )
-    // Go is the only calculation engine. Failure is surfaced to the user; no Kotlin fallback exists.
-    val calculation = remember(length, width, pricePerM2, profilePrice, priceItems, calculatorOptions, material, profileType) {
+    // The Android calculator now uses the shared Kotlin Multiplatform engine.
+    val calculation = remember(length, width, pricePerM2, profilePrice, priceItems, calculatorOptions, material, profileType, measurementPrecision) {
         runCatching {
             CeilingCalculator.estimate(
                 length.toSafeDouble(), width.toSafeDouble(),
                 pricePerM2.toSafeDouble(), profilePrice.toSafeDouble(),
                 priceItems = priceItems, options = calculatorOptions,
-                materialType = materialCode(material).removePrefix("canvas."),
-                profileType = profileCode(profileType).removePrefix("profile."),
+                materialType = material,
+                profileType = profileType,
+                precisionStepMeters = measurementPrecision.stepMeters,
                 onTimings = if (BuildConfig.DEBUG &&
                     PerformanceDiagnosticsSettings.isEnabled(context.applicationContext)
                 ) {
@@ -324,7 +318,7 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
     }
     val estimate = calculation.getOrNull()
     val calculationError = calculation.exceptionOrNull()?.let { error ->
-        error.message?.takeIf { it.isNotBlank() } ?: "Невідома помилка Go-рушія"
+        error.message?.takeIf { it.isNotBlank() } ?: "Невідома помилка KMP-рушія"
     }
 
     val topContentPadding = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 64.dp + 16.dp
@@ -353,7 +347,7 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
                 ) {
                     when (tab) {
                         AppTab.OBJECTS -> ObjectsScreen(database)
-                        AppTab.MEASUREMENTS -> MeasurementsScreen(database, onOpenEstimates = { navigateTo(AppTab.ESTIMATES) })
+                        AppTab.MEASUREMENTS -> MeasurementsScreen(database, measurementPrecision, onOpenEstimates = { navigateTo(AppTab.ESTIMATES) })
                         AppTab.ESTIMATES -> EstimatesScreen(database)
                         AppTab.PRICES -> PriceListScreen(database)
                         AppTab.CALENDAR -> CalendarScreen(database)
@@ -388,6 +382,11 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
                             profilePrice = profilePrice, onProfilePrice = { profilePrice = it },
                             material = material, onMaterial = { material = it },
                             profileType = profileType, onProfileType = { profileType = it },
+                            measurementPrecision = measurementPrecision,
+                            onMeasurementPrecision = { selected ->
+                                measurementPrecision = selected
+                                precisionPreferences.edit().putString("measurement_precision", selected.name).apply()
+                            },
                             estimate = estimate,
                             calculationError = calculationError,
                             priceItems = priceItems,
@@ -396,14 +395,22 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
                             shadowProfileMeters = shadowProfileMeters, onShadowProfileMeters = { shadowProfileMeters = it },
                             floatingCeilingMeters = floatingCeilingMeters, onFloatingCeilingMeters = { floatingCeilingMeters = it },
                             chandeliersCount = chandeliersCount, onChandeliersCount = { chandeliersCount = it },
-                            spotsCount = spotsCount, onSpotsCount = { spotsCount = it },
+                            spotCount = spotCount, onSpotCount = { spotCount = it },
                             pipePassCount = pipePassCount, onPipePassCount = { pipePassCount = it },
                             curtainNicheMeters = curtainNicheMeters, onCurtainNicheMeters = { curtainNicheMeters = it },
                             extraCorners = extraCorners, onExtraCorners = { extraCorners = it },
                             hardWallMeters = hardWallMeters, onHardWallMeters = { hardWallMeters = it },
                             complexity = complexity, onComplexity = { complexity = it }
                         )
-                        AppTab.SETTINGS -> SettingsScreen(databaseStatus, database, onDatabaseReplaced, themeMode, onThemeModeChange, onOpenPriceList = { navigateTo(AppTab.PRICES) })
+                        AppTab.SETTINGS -> SettingsScreen(
+                            databaseStatus, database, onDatabaseReplaced, themeMode, onThemeModeChange,
+                            onOpenPriceList = { navigateTo(AppTab.PRICES) },
+                            measurementPrecision = measurementPrecision,
+                            onMeasurementPrecision = { selected ->
+                                measurementPrecision = selected
+                                precisionPreferences.edit().putString("measurement_precision", selected.name).apply()
+                            }
+                        )
                         else -> Unit
                     }
                 }

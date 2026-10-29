@@ -27,6 +27,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.andreyceilings.app.data.db.*
 import com.andreyceilings.app.core.EstimateLineItems
+import com.andreyceilings.shared.calculation.MeasurementPrecision
+import com.andreyceilings.shared.calculation.KmpCeilingCalculator
+import com.andreyceilings.shared.calculation.GeometryInput
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
@@ -105,7 +108,7 @@ internal fun ObjectsScreen(database: CeilingsDatabase?) {
 }
 
 @Composable
-internal fun MeasurementsScreen(database: CeilingsDatabase?, onOpenEstimates: () -> Unit) {
+internal fun MeasurementsScreen(database: CeilingsDatabase?, precision: MeasurementPrecision, onOpenEstimates: () -> Unit) {
  val measurementsFlow = remember(database) { database?.measurements()?.observeAll() ?: flowOf<List<RoomMeasurementEntity>>(emptyList()) }
  val projectsFlow = remember(database) { database?.projects()?.observeAll() ?: flowOf<List<ProjectEntity>>(emptyList()) }
  val measurements by measurementsFlow.collectAsState(initial = emptyList())
@@ -130,15 +133,15 @@ internal fun MeasurementsScreen(database: CeilingsDatabase?, onOpenEstimates: ()
     val project = projectsById[measurement.projectId]
     Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) { Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
      Icon(Icons.Default.Straighten, null, tint = MaterialTheme.colorScheme.primary); Spacer(Modifier.width(10.dp))
-     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) { Text(measurement.name, fontWeight = FontWeight.SemiBold); Text(project?.title ?: "Об’єкт #${measurement.projectId}", style = MaterialTheme.typography.bodySmall); Text("${measurement.lengthMeters.format2()} × ${measurement.widthMeters.format2()} м · ${measurement.areaSquareMeters.format2()} м² · периметр ${measurement.perimeterMeters.format2()} м", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) { Text(measurement.name, fontWeight = FontWeight.SemiBold); Text(project?.title ?: "Об’єкт #${measurement.projectId}", style = MaterialTheme.typography.bodySmall); Text("${formatStoredMeters(measurement.lengthMeters)} × ${formatStoredMeters(measurement.widthMeters)} м · ${formatStoredSquareMeters(measurement.areaSquareMeters)} м² · периметр ${formatStoredMeters(measurement.perimeterMeters)} м", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
      IconButton(onClick = { scope.launch { runCatching { database.measurements().deleteById(measurement.id) }.onFailure { error = it.message ?: "Не вдалося видалити замір" } } }) { Icon(Icons.Default.Delete, contentDescription = "Видалити замір") }
     } }
    }
   }
   item { error?.let { Text(it, color = MaterialTheme.colorScheme.error) } }
  }
- if (showDialog && database != null && projects.isNotEmpty()) AddMeasurementDialog(projects = projects, onDismiss = { showDialog = false }, onSave = { projectId, name, length, width ->
-  scope.launch { val area = length * width; val perimeter = 2.0 * (length + width); runCatching { database.measurements().insert(RoomMeasurementEntity(projectId = projectId, name = name.trim(), lengthMeters = length, widthMeters = width, areaSquareMeters = area, perimeterMeters = perimeter)) }.onFailure { error = it.message ?: "Не вдалося зберегти замір" }; showDialog = false }
+ if (showDialog && database != null && projects.isNotEmpty()) AddMeasurementDialog(projects = projects, precision = precision, onDismiss = { showDialog = false }, onSave = { projectId, name, length, width ->
+  scope.launch { val geometry = KmpCeilingCalculator.geometry(GeometryInput(length = length, width = width, precisionStepMeters = precision.stepMeters)); runCatching { database.measurements().insert(RoomMeasurementEntity(projectId = projectId, name = name.trim(), lengthMeters = precision.roomDimension(length, 4.0), widthMeters = precision.roomDimension(width, 3.0), areaSquareMeters = geometry.area, perimeterMeters = geometry.perimeter)) }.onFailure { error = it.message ?: "Не вдалося зберегти замір" }; showDialog = false }
  })
 }
 
@@ -179,7 +182,7 @@ private fun AddProjectDialog(onDismiss: () -> Unit, onSave: (String, String, Str
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun AddMeasurementDialog(projects: List<ProjectEntity>, onDismiss: () -> Unit, onSave: (Long, String, Double, Double) -> Unit) {
+private fun AddMeasurementDialog(projects: List<ProjectEntity>, precision: MeasurementPrecision, onDismiss: () -> Unit, onSave: (Long, String, Double, Double) -> Unit) {
     var selectedProjectId by remember(projects) { mutableLongStateOf(projects.first().id) }
     var name by remember { mutableStateOf("") }
     var length by remember { mutableStateOf("5.0") }
@@ -198,7 +201,12 @@ private fun AddMeasurementDialog(projects: List<ProjectEntity>, onDismiss: () ->
             OutlinedTextField(name, { name = it }, label = { Text("Назва кімнати *") }, singleLine = true)
             OutlinedTextField(length, { length = it }, label = { Text("Довжина, м") }, singleLine = true)
             OutlinedTextField(width, { width = it }, label = { Text("Ширина, м") }, singleLine = true)
-            if (parsedLength != null && parsedWidth != null && parsedLength > 0 && parsedWidth > 0) Text("Площа: ${(parsedLength * parsedWidth).format2()} м² · периметр: ${(2 * (parsedLength + parsedWidth)).format2()} м")
+            if (parsedLength != null && parsedWidth != null && parsedLength > 0 && parsedWidth > 0) {
+                val geometry = KmpCeilingCalculator.geometry(GeometryInput(
+                    length = parsedLength, width = parsedWidth, precisionStepMeters = precision.stepMeters
+                ))
+                Text("Площа: ${formatMeasuredArea(geometry.area, precision)} м² · периметр: ${formatMeasuredLength(geometry.perimeter, precision)} м")
+            }
         }
     }, confirmButton = { Button(onClick = { if (name.isNotBlank() && parsedLength != null && parsedWidth != null && parsedLength > 0 && parsedWidth > 0) onSave(selectedProjectId, name, parsedLength, parsedWidth) }, enabled = name.isNotBlank() && parsedLength != null && parsedWidth != null && parsedLength > 0 && parsedWidth > 0) { Text("Зберегти") } }, dismissButton = { TextButton(onClick = onDismiss) { Text("Скасувати") } })
 }

@@ -5,6 +5,7 @@ import com.andreyceilings.app.ui.theme.AppExposedDropdownMenu
 import com.andreyceilings.app.*
 import com.andreyceilings.app.data.PerformanceDiagnosticsSettings
 import com.andreyceilings.app.data.PerformanceDiagnosticsLog
+import com.andreyceilings.shared.calculation.MeasurementPrecision
 
 import android.os.Bundle
 import android.net.Uri
@@ -50,7 +51,7 @@ import kotlinx.coroutines.flow.flowOf
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-internal fun SettingsScreen(databaseStatus: String, database: CeilingsDatabase?, onDatabaseReplaced: (CeilingsDatabase) -> Unit, themeMode: ThemeMode, onThemeModeChange: (ThemeMode) -> Unit, onOpenPriceList: () -> Unit) {
+internal fun SettingsScreen(databaseStatus: String, database: CeilingsDatabase?, onDatabaseReplaced: (CeilingsDatabase) -> Unit, themeMode: ThemeMode, onThemeModeChange: (ThemeMode) -> Unit, onOpenPriceList: () -> Unit, measurementPrecision: MeasurementPrecision, onMeasurementPrecision: (MeasurementPrecision) -> Unit) {
     var fileCheck by remember { mutableStateOf("Натисніть кнопку, щоб перевірити записи та файли бази даних.") }
     var exportStatus by remember { mutableStateOf("Експорт створює копію зашифрованого файла БД без ключа.") }
     var pendingExportFile by remember { mutableStateOf<java.io.File?>(null) }
@@ -200,6 +201,34 @@ internal fun SettingsScreen(databaseStatus: String, database: CeilingsDatabase?,
                     onModeChange = onThemeModeChange,
                     modifier = Modifier.fillMaxWidth()
                 )
+            }
+            HorizontalDivider()
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Точність вимірювань", style = MaterialTheme.typography.titleSmall)
+                Text("Спільна для замірів, геометрії, лінійних робіт і кошторисів. Округлення вартості окреме.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                var precisionExpanded by remember { mutableStateOf(false) }
+                ExposedDropdownMenuBox(
+                    expanded = precisionExpanded,
+                    onExpandedChange = { precisionExpanded = it }
+                ) {
+                    OutlinedTextField(
+                        value = measurementPrecision.label,
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text("Крок вимірювання") },
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(precisionExpanded) },
+                        modifier = Modifier.menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable, enabled = true).fillMaxWidth()
+                    )
+                    AppExposedDropdownMenu(expanded = precisionExpanded, onDismissRequest = { precisionExpanded = false }) {
+                        MeasurementPrecision.entries.forEach { selected ->
+                            DropdownMenuItem(text = { Text(selected.label) }, onClick = {
+                                onMeasurementPrecision(selected)
+                                precisionExpanded = false
+                            })
+                        }
+                    }
+                }
             }
             if (BuildConfig.DEBUG) {
                 var performanceDiagnosticsEnabled by remember {

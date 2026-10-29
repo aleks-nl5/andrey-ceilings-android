@@ -37,6 +37,8 @@ import androidx.compose.ui.unit.dp
 import com.andreyceilings.app.ui.theme.CeilingsTheme
 import com.andreyceilings.app.core.CeilingEstimate
 import com.andreyceilings.app.core.CeilingCalculator
+import com.andreyceilings.shared.calculation.EstimateOptionId
+import com.andreyceilings.shared.calculation.MeasurementPrecision
 import com.andreyceilings.app.core.CalculatorOptions
 import com.andreyceilings.app.data.db.PriceItemEntity
 import com.andreyceilings.app.data.db.ProjectEntity
@@ -53,6 +55,7 @@ internal fun CalculatorScreen(
     profilePrice: String, onProfilePrice: (String) -> Unit,
     material: String, onMaterial: (String) -> Unit,
     profileType: String, onProfileType: (String) -> Unit,
+    measurementPrecision: MeasurementPrecision, onMeasurementPrecision: (MeasurementPrecision) -> Unit,
     estimate: CeilingEstimate?,
     calculationError: String?,
     priceItems: List<PriceItemEntity>,
@@ -61,7 +64,7 @@ internal fun CalculatorScreen(
     shadowProfileMeters: String, onShadowProfileMeters: (String) -> Unit,
     floatingCeilingMeters: String, onFloatingCeilingMeters: (String) -> Unit,
     chandeliersCount: String, onChandeliersCount: (String) -> Unit,
-    spotsCount: String, onSpotsCount: (String) -> Unit,
+    spotCount: String, onSpotCount: (String) -> Unit,
     pipePassCount: String, onPipePassCount: (String) -> Unit,
     curtainNicheMeters: String, onCurtainNicheMeters: (String) -> Unit,
     extraCorners: String, onExtraCorners: (String) -> Unit,
@@ -78,23 +81,53 @@ internal fun CalculatorScreen(
         OutlinedTextField(length, onLength, label = { Text("Довжина, м") }, modifier = Modifier.weight(1f), singleLine = true)
         OutlinedTextField(width, onWidth, label = { Text("Ширина, м") }, modifier = Modifier.weight(1f), singleLine = true)
     }
+    var precisionExpanded by remember { mutableStateOf(false) }
+    ExposedDropdownMenuBox(expanded = precisionExpanded, onExpandedChange = { precisionExpanded = it }) {
+        OutlinedTextField(
+            value = measurementPrecision.label, onValueChange = {}, readOnly = true,
+            label = { Text("Точність вимірювань") },
+            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(precisionExpanded) },
+            modifier = Modifier.menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable, enabled = true).fillMaxWidth()
+        )
+        AppExposedDropdownMenu(expanded = precisionExpanded, onDismissRequest = { precisionExpanded = false }) {
+            MeasurementPrecision.entries.forEach { precision ->
+                DropdownMenuItem(text = { Text(precision.label) }, onClick = {
+                    onMeasurementPrecision(precision)
+                    precisionExpanded = false
+                })
+            }
+        }
+    }
+    Text("Округлення розмірів до вибраного кроку; грошові суми округлюються окремо.",
+        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     OutlinedTextField(price, onPrice, label = { Text("Полотно, ₴/м²") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
     OutlinedTextField(profilePrice, onProfilePrice, label = { Text("Профіль, ₴/м.п.") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
     var materialExpanded by remember { mutableStateOf(false) }
     ExposedDropdownMenuBox(expanded = materialExpanded, onExpandedChange = { materialExpanded = it }) {
-        OutlinedTextField(material, {}, readOnly = true, label = { Text("Матеріал") }, trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(materialExpanded) }, modifier = Modifier.menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable, enabled = true).fillMaxWidth())
+        OutlinedTextField(
+            materialDisplayName(material), {}, readOnly = true, label = { Text("Матеріал") }, trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(materialExpanded) }, modifier = Modifier.menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable, enabled = true).fillMaxWidth())
         AppExposedDropdownMenu(expanded = materialExpanded, onDismissRequest = { materialExpanded = false }) {
-            listOf("ПВХ матовий", "ПВХ глянцевий", "ПВХ сатиновий", "Тканинний Descor", "Негорючий KM2", "Акустичний").forEach {
-                DropdownMenuItem(text = { Text(it) }, onClick = { onMaterial(it); materialExpanded = false })
+            listOf(
+                "pvc_matte" to "ПВХ матовий", "pvc_glossy" to "ПВХ глянцевий",
+                "pvc_satin" to "ПВХ сатиновий", "fabric" to "Тканинний Descor",
+                "fireproof_km2" to "Негорючий KM2", "acoustic" to "Акустичний"
+            ).forEach { (id, title) ->
+                DropdownMenuItem(text = { Text(title) }, onClick = { onMaterial(id); materialExpanded = false })
             }
         }
     }
     var profileExpanded by remember { mutableStateOf(false) }
     ExposedDropdownMenuBox(expanded = profileExpanded, onExpandedChange = { profileExpanded = it }) {
-        OutlinedTextField(profileType, {}, readOnly = true, label = { Text("Система профілю") }, trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(profileExpanded) }, modifier = Modifier.menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable, enabled = true).fillMaxWidth())
+        OutlinedTextField(
+            profileDisplayName(profileType), {}, readOnly = true, label = { Text("Система профілю") }, trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(profileExpanded) }, modifier = Modifier.menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable, enabled = true).fillMaxWidth())
         AppExposedDropdownMenu(expanded = profileExpanded, onDismissRequest = { profileExpanded = false }) {
-            listOf("Алюмінієвий гарпунний", "ПВХ стіновий", "Тіньовий EuroKRAAB", "Парящий з LED", "Слот / трековий").forEach {
-                DropdownMenuItem(text = { Text(it) }, onClick = { onProfileType(it); profileExpanded = false })
+            listOf(
+                "standard_alu" to "Алюмінієвий гарпунний", "pvc" to "ПВХ стіновий",
+                "shadow_kraab" to "Тіньовий EuroKRAAB",
+                "floating_led" to "Парящий з LED",
+                "slott_tracks" to "Слот / трековий"
+            ).forEach { (id, title) ->
+                DropdownMenuItem(text = { Text(title) }, onClick = { onProfileType(id); profileExpanded = false })
             }
         }
     }
@@ -105,7 +138,7 @@ internal fun CalculatorScreen(
     }
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         OutlinedTextField(chandeliersCount, onChandeliersCount, label = { Text("Люстри, шт.") }, modifier = Modifier.weight(1f), singleLine = true)
-        OutlinedTextField(spotsCount, onSpotsCount, label = { Text("GX53, шт.") }, modifier = Modifier.weight(1f), singleLine = true)
+        OutlinedTextField(spotCount, onSpotCount, label = { Text("Точкові світильники, шт.") }, modifier = Modifier.weight(1f), singleLine = true)
     }
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         OutlinedTextField(pipePassCount, onPipePassCount, label = { Text("Обхід труб, шт.") }, modifier = Modifier.weight(1f), singleLine = true)
@@ -133,9 +166,9 @@ internal fun CalculatorScreen(
     if (estimate != null) {
         Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) {
             Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("Результат · Go", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                Text("Площа: ${formatNumber(estimate.area)} м²")
-                Text("Периметр: ${formatNumber(estimate.perimeter)} м")
+                Text("Результат · Kotlin KMP", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Text("Площа: ${formatMeasuredArea(estimate.area, measurementPrecision)} м²")
+                Text("Периметр: ${formatMeasuredLength(estimate.perimeter, measurementPrecision)} м")
                 HorizontalDivider()
                 Text("Полотно: ${money(estimate.canvasCost)}")
                 Text("Профіль: ${money(estimate.profileCost)}")
@@ -147,9 +180,9 @@ internal fun CalculatorScreen(
     } else {
         Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text("Go-рушій: помилка", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                Text("Розрахунок не виконано. Kotlin не підміняє Go.")
-                Text(calculationError ?: "Go не повернув результат.", style = MaterialTheme.typography.bodySmall)
+                Text("KMP-рушій: помилка", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Text("Розрахунок не виконано. Перевірте введені дані.")
+                Text(calculationError ?: "KMP не повернув результат.", style = MaterialTheme.typography.bodySmall)
             }
         }
     }
@@ -161,28 +194,31 @@ internal fun CalculatorScreen(
     val estimateForSave = estimate
     if (showSaveDialog && database != null && projects.isNotEmpty() && estimateForSave != null) SaveEstimateDialog(
         projects = projects,
-        defaultName = "Кімната ${formatNumber(length.toSafeDouble())} × ${formatNumber(width.toSafeDouble())} м",
+        defaultName = "Кімната ${formatMeasuredLength(measurementPrecision.roomDimension(length.toSafeDouble(), 4.0), measurementPrecision)} × ${formatMeasuredLength(measurementPrecision.roomDimension(width.toSafeDouble(), 3.0), measurementPrecision)} м",
         onDismiss = { showSaveDialog = false },
         onSave = { projectId, name ->
             val details = org.json.JSONObject()
-                .put("lightLineMeters", calculatorOptionsForSave(lightLineMeters))
-                .put("shadowProfileMeters", calculatorOptionsForSave(shadowProfileMeters))
-                .put("floatingCeilingMeters", calculatorOptionsForSave(floatingCeilingMeters))
-                .put("chandeliersCount", calculatorOptionsForSave(chandeliersCount))
-                .put("spotsCount", calculatorOptionsForSave(spotsCount))
-                .put("pipePassCount", calculatorOptionsForSave(pipePassCount))
-                .put("curtainNicheMeters", calculatorOptionsForSave(curtainNicheMeters))
-                .put("extraCorners", calculatorOptionsForSave(extraCorners))
-                .put("hardWallMeters", calculatorOptionsForSave(hardWallMeters))
+                .put("measurementPrecisionMeters", measurementPrecision.stepMeters)
+                .put(EstimateOptionId.LIGHT_LINE.code, measurementPrecision.length(calculatorOptionsForSave(lightLineMeters)))
+                .put(EstimateOptionId.SHADOW_PROFILE.code, measurementPrecision.length(calculatorOptionsForSave(shadowProfileMeters)))
+                .put(EstimateOptionId.FLOATING_PROFILE.code, measurementPrecision.length(calculatorOptionsForSave(floatingCeilingMeters)))
+                .put(EstimateOptionId.CHANDELIER.code, calculatorOptionsForSave(chandeliersCount))
+                .put(EstimateOptionId.SPOT.code, calculatorOptionsForSave(spotCount))
+                .put(EstimateOptionId.PIPE_PASS.code, calculatorOptionsForSave(pipePassCount))
+                .put(EstimateOptionId.CURTAIN_NICHE.code, measurementPrecision.length(calculatorOptionsForSave(curtainNicheMeters)))
+                .put(EstimateOptionId.EXTRA_CORNER.code, calculatorOptionsForSave(extraCorners))
+                .put(EstimateOptionId.HARD_WALL.code, measurementPrecision.length(calculatorOptionsForSave(hardWallMeters)))
             scope.launch {
                 runCatching {
                     val estimateDraft = EstimateEntity(
                         projectId = projectId, name = name.trim(), material = material, profileType = profileType, complexity = complexity,
-                        lengthMeters = length.toSafeDouble(), widthMeters = width.toSafeDouble(), areaSquareMeters = estimateForSave.area, perimeterMeters = estimateForSave.perimeter,
+                        lengthMeters = measurementPrecision.roomDimension(length.toSafeDouble(), 4.0),
+                        widthMeters = measurementPrecision.roomDimension(width.toSafeDouble(), 3.0),
+                        areaSquareMeters = estimateForSave.area, perimeterMeters = estimateForSave.perimeter,
                         canvasCost = estimateForSave.canvasCost, profileCost = estimateForSave.profileCost, complexityCost = estimateForSave.complexityCost,
                         optionsCost = estimateForSave.optionsCost, totalCost = estimateForSave.total, detailsJson = details.toString()
                     )
-                    val lineItems = com.andreyceilings.app.core.EstimateLineItems.create(estimateDraft, details, priceItems)
+                    val lineItems = com.andreyceilings.app.core.EstimateLineItems.create(estimateDraft, details, priceItems, measurementPrecision)
                     details.put("lineItems", com.andreyceilings.app.core.EstimateLineItems.toJson(lineItems))
                     database.estimates().insert(estimateDraft.copy(detailsJson = details.toString()))
                 }.onFailure { saveError = it.message ?: "Не вдалося зберегти кошторис" }
@@ -192,7 +228,7 @@ internal fun CalculatorScreen(
     )
     Text(if (priceItemsAvailable) "Ціни матеріалу й профілю синхронізуються із зашифрованим прайс-листом. Зміни в прайсі впливають на нові розрахунки." else "Прайс-лист ще не завантажено; використовуються тимчасові значення.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     Text(
-        if (estimate != null) "Рушій розрахунку: Go · працює" else "Рушій розрахунку: Go · помилка",
+        if (estimate != null) "Рушій розрахунку: Kotlin KMP · працює" else "Рушій розрахунку: Kotlin KMP · помилка",
         style = MaterialTheme.typography.labelSmall,
         color = if (estimate != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
     )

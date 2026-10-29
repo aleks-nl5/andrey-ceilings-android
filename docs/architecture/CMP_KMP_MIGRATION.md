@@ -1,6 +1,15 @@
 # Compose Multiplatform / Kotlin Multiplatform — план і фактичний стан
 
-**Актуально для PR #22, 29 жовтня 2026 року.** Робоча гілка: `architecture/cmp-kmp-migration-v2`, база: `main`. PR залишається Draft; власник об'єднує зміни лише після підтвердження.
+**Стан на 29 жовтня 2026 року:** PR #22 об'єднано з `main`, етап 1 завершено. У Draft PR #23 на прохання власника переведено Android-калькулятор на shared Kotlin KMP та видалено Go/AAR; KMP-only кодовий HEAD `ae326a73` пройшов Android та Windows/iOS CI, власник підтвердив на телефоні роботу нового KMP APK (розрахунки, кошториси, PDF); PR #23 підготовлено до огляду, але **у `main` не об'єднано**. Наведені нижче початкові рішення PR #22 — **історичний стан**, а не опис актуального runtime. Деталі: [GO_TO_KMP_PARITY.md](GO_TO_KMP_PARITY.md).
+
+## Актуальна архітектура PR #23 (KMP-only калькулятор)
+
+- **Android:** Compose UI → `CeilingCalculator` (адаптер) → `:shared` `KmpCeilingCalculator`; SQLDelight/SQLCipher, збереження знімків кошторисів і Android PDF без змін інтерфейсу.
+- **Windows/iOS:** `:shared` KMP-розрахунки доступні в targets; iOS Simulator, JVM/Windows тести й framework продовжують збиратися. Повний реальний UI цих платформ іще попереду.
+- **Go видалено** разом з AAR, gomobile toolchain та CI Go steps. Еталонні тестові вектори залишилися у Kotlin.
+- **Підтверджено:** [Android CI 40903911505](https://github.com/aleks-nl5/andrey-ceilings-android/actions/runs/40903911505) і [Windows/iOS CI 40903911291](https://github.com/aleks-nl5/andrey-ceilings-android/actions/runs/40903911291) — успішні на `ae326a73`; власник перевірив KMP APK, розрахунки, кошториси та PDF. Не заявляти додаткові невиконані ручні граничні сценарії як пройдені. Merge — тільки за власником; WAL/синхронізація — окремі задачі.
+
+Наступні розділи про `PR #22`, `Go/AAR` та первинні чеклісти збережені як історія, не як поточні інструкції.
 
 ## Мета і межі PR #22
 
