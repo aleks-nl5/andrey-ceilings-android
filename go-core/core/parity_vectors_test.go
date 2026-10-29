@@ -47,10 +47,10 @@ func TestKmpMigrationCostReferenceVectors(t *testing.T) {
 		want   CostBreakdown
 	}{
 		{"all_default_extras", CostInput{Area: 20.52, Perimeter: 18.4, MaterialType: PVCMatte, ProfileType: StandardAlu,
-			Options: RoomOptions{ChandeliersCount: 1, SpotsGX53Count: 4, PipePassCount: 1}}, defaults,
+			Options: RoomOptions{ChandeliersCount: 1, SpotCount: 4, PipePassCount: 1}}, defaults,
 			CostBreakdown{5951, 2392, 0, 1410, 9753}},
 		{"partial_override", CostInput{Area: 20.52, Perimeter: 18.4, MaterialType: PVCMatte, ProfileType: StandardAlu,
-			Options: RoomOptions{LightLinesMeters: 2}}, partial, CostBreakdown{2052, 184, 0, 100, 2336}},
+			Options: RoomOptions{LightLineMeters: 2}}, partial, CostBreakdown{2052, 184, 0, 100, 2336}},
 		{"multilevel", CostInput{Area: 10, Perimeter: 18.4, MaterialType: PVCMatte, ProfileType: StandardAlu, Complexity: Multilevel},
 			defaults, CostBreakdown{2900, 2392, 4160, 0, 9452}},
 		{"curved", CostInput{Area: 10, Perimeter: 18.4, MaterialType: PVCMatte, ProfileType: StandardAlu, Complexity: Curved},
@@ -61,10 +61,10 @@ func TestKmpMigrationCostReferenceVectors(t *testing.T) {
 		{"floating_no_double_charge", CostInput{Area: 10, Perimeter: 12, MaterialType: PVCMatte,
 			ProfileType: FloatingLED, Options: RoomOptions{FloatingCeilingMeters: 12}}, defaults,
 			CostBreakdown{2900, 5040, 0, 0, 7940}},
-		{"negative", CostInput{Area: -10, Perimeter: -3, Options: RoomOptions{SpotsGX53Count: -2}},
+		{"negative", CostInput{Area: -10, Perimeter: -3, Options: RoomOptions{SpotCount: -2}},
 			defaults, CostBreakdown{}},
 		{"fractional_options", CostInput{Area: 0, Perimeter: 0, Options: RoomOptions{
-			LightLinesMeters: .5, SpotsGX53Count: 1.5, ExtraCorners: .5}}, defaults,
+			LightLineMeters: .5, SpotCount: 1.5, ExtraCorners: .5}}, defaults,
 			CostBreakdown{0, 0, 0, 800, 800}},
 		{"round_positive_half", CostInput{Area: .005}, PriceList{
 			CanvasPrices: map[MaterialType]float64{PVCMatte: 100},
