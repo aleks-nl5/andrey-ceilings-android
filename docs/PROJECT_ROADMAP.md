@@ -1,3 +1,18 @@
+## Наступний етап після PR #28 — один Draft PR: SQLCipher WAL + ревізії кошторисів (29.10.2026)
+
+**PR #28 злитий у `main`** (`07d60f5`). Новий PR ведеться лише в `feature/wal-and-estimate-revisions`; `main` не змінюємо до ручного погодження.
+
+- [x] Узгоджено спільний PR для задач [#24](https://github.com/aleks-nl5/andrey-ceilings-android/issues/24) (історія v2/v3, ручний перерахунок) і [#26](https://github.com/aleks-nl5/andrey-ceilings-android/issues/26) (SQLCipher WAL).
+- [x] Додано чистий KMP preview «було/стало/різниця» з перевіркою UUID/code, назви, одиниць, відсутніх позицій, небезпечних fallback/legacy; preview **не пише БД**.
+- [x] Додано ізольований Android proof-test WAL + encrypted `VACUUM INTO`, без зміни робочого журналювання.
+- [ ] Безпечний консистентний backup, атомарне відновлення без видалення активних WAL/SHM; після тестів — увімкнення `PRAGMA journal_mode=WAL` на Android з перевіркою результату.
+- [ ] Прив'язка preview до актуального прайсу й джерельної ревізії, повторна перевірка при підтвердженні, транзакційне v2/v3, історія та PDF конкретної версії.
+- [ ] Android/Windows/iOS CI, фізичний Android, усі варіанти backup/restore, підтвердження власником і тільки після цього merge.
+
+**Стан:** Draft, функціонал ще не завершено. Поточна production БД залишається в `DELETE`, старі v1, короткі номери та PDF не змінені. Детальна специфікація: [WAL_AND_ESTIMATE_REVISIONS.md](architecture/WAL_AND_ESTIMATE_REVISIONS.md).
+
+---
+
 ## PR #28 — відокремлення друкованого номера від службового UUID (29.10.2026)
 
 - [x] За запитом власника **UUID не друкується** та не копіюється як номер для клієнта. Повний UUID v4 залишається у внутрішньому `documentNumber`, `seriesUuid` та immutable SQLDelight-контракті.
