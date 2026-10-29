@@ -97,7 +97,7 @@ class EstimateNumberSettingsSqlCipherTest {
                 assertTrue(active.any { it.documentNumber == originalNumber })
                 assertTrue(active.any { it.documentNumber == changedNumber })
                 assertTrue(active.all { it.printableNumber?.contains("12345678-") != true })
-                assertTrue(active.all { it.printableNumber?.length ?: 0 < it.documentNumber?.length ?: 0 })
+                assertTrue(active.all { (it.printableNumber?.length ?: 0) < (it.documentNumber?.length ?: 0) })
                 val history = ImmutableEstimateRepository(db.database)
                 assertEquals("AC", history.seriesByNumber(originalNumber)?.policyPrefix)
                 assertEquals("STEL", history.seriesByNumber(changedNumber)?.policyPrefix)
