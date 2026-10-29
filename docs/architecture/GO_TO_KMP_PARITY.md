@@ -38,7 +38,7 @@
 ## Результати CI та додаткові тести (29.10.2026)
 
 - [x] На коді PR #23 із точністю, канонічними ID, Go/KMP parity і початковими Android tests пройшли: [Android APK + Go + unit + instrumentation 40891419341](https://github.com/aleks-nl5/andrey-ceilings-android/actions/runs/40891419341), [Windows/iOS Simulator 40891419346](https://github.com/aleks-nl5/andrey-ceilings-android/actions/runs/40891419346), HEAD `33792473` (до наступних доповнень документації/тесту).
-- [x] Власник повідомив: APK працює на фізичному Android. **Це підтвердження запуску, а не повної перевірки кожного кроку точності/розрахунку/PDF.**
+- [x] Власник повідомив: APK працює на фізичному Android, а **калькулятор успішно виконує розрахунки**. У поточному Android UI розрахунковий рушій — **Go/AAR**, тоді як самостійний KMP-рушій поки перевіряється golden vectors у CI. Це не є підтвердженням ручної перевірки всіх чотирьох кроків точності, точних PDF-сум чи Android runtime cutover на Kotlin.
 - [x] Додано й перевірено Android instrumentation через [run 40897166522](https://github.com/aleks-nl5/andrey-ceilings-android/actions/runs/40897166522) `EstimateSnapshotPersistenceInstrumentedTest`: реальний SQLCipher/SQLDelight, збереження деталізації, зміна ціни й назви/видалення прайсу, дублювання зі свіжим UUID, повторне відкриття БД. Збережені коди, рядки та загальна сума не змінюються.
 - [x] Перевірено CI останнього кодового HEAD `1957ac13`: Go/Android APK та instrumentation + KMP/Windows/iOS, у т.ч. новий persistence-тест.
 - [ ] Smoke-перевірка на реальному Android: кожен крок 10 см / 1 см / 5 мм / 1 мм, геометрія, замір, розрахунок, повторне відкриття/дублювання, PDF та відповідність сум.
