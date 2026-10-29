@@ -107,7 +107,7 @@ internal class EstimateDao(private val repo: EstimateRepository) {
             it.optionsCost, it.totalCost, it.detailsJson, it.createdAt,
             repo.documentNumberForId(it.id),
             repo.originalRevisionInputForId(it.id)?.let { source ->
-                runCatching { JSONObject(source).optString("name").ifBlank { null } }.getOrNull()
+                runCatching { JSONObject(source).optString("name").takeIf { it.isNotBlank() } }.getOrNull()
             }) }
     }
     fun observeForProject(projectId: Long): Flow<List<EstimateEntity>> =
@@ -118,7 +118,7 @@ internal class EstimateDao(private val repo: EstimateRepository) {
                 it.optionsCost, it.totalCost, it.detailsJson, it.createdAt,
                 repo.documentNumberForId(it.id),
             repo.originalRevisionInputForId(it.id)?.let { source ->
-                runCatching { JSONObject(source).optString("name").ifBlank { null } }.getOrNull()
+                runCatching { JSONObject(source).optString("name").takeIf { it.isNotBlank() } }.getOrNull()
             }) }
         }
     suspend fun count() = withContext(Dispatchers.IO) { repo.count().toInt() }
