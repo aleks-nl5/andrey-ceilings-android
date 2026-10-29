@@ -28,6 +28,9 @@ included in Release APKs.
 
 **Verification result (2026-10-29):** CI on `4fa4632` passed Android (`40868367460`), Windows and iOS (`40868367549`). The user then confirmed on an actual Android device that the updated APK installed, launched successfully, imported the legacy database, and that automatic backups, database export, exported-file verification, and database import all work. Do not extrapolate this report to untested concurrency, crash recovery or all editing operations.
 
+**Additional real-device acceptance report (2026-10-29):** The user confirms that **create and delete** work for clients, projects, measurements and estimates. For **price items**, create, edit and delete all work. Editing clients, projects, measurements and estimates has **not yet been implemented in the UI**, so it must not be marked as tested, broken or migrated functionality. These confirmations are from a physical Android device; no Windows/iOS business UI parity or device-to-device synchronization is implied.
+
+
 ## Current implementation — 2026-10-29
 
 **Android runtime cutover implemented in PR #22, under CI verification.** The older implementation checklists below are retained for historical context and follow-up requirements. The live Android application now uses `:shared` SQLDelight via UI-compatible Kotlin data adapters; Room runtime and its KSP compiler were removed from `app/build.gradle.kts`. The Windows/JVM and iOS simulator tests use the **same common SQLDelight schema**, with platform SQLCipher drivers. No online cross-device synchronization is provided.
