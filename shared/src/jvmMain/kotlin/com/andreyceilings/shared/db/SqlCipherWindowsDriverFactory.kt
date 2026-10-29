@@ -25,7 +25,14 @@ object SqlCipherWindowsDriverFactory {
         return ConfiguredSqlCipherJdbcDriver(
             url = "jdbc:sqlcipher:${databaseFile.absolutePath}",
             key = key
-        ).also { it.verifyConnection() }
+        ).also { driver ->
+            try {
+                driver.verifyConnection()
+            } catch (failure: Throwable) {
+                driver.close() // Zero the owned key even when initial validation fails.
+                throw failure
+            }
+        }
     }
 }
 
