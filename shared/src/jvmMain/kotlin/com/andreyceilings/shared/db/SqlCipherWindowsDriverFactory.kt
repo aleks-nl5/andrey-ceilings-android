@@ -1,6 +1,7 @@
 package com.andreyceilings.shared.db
 
 import app.cash.sqldelight.db.SqlDriver
+import app.cash.sqldelight.db.QueryResult
 import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
 import io.github.s0d3s.sqlcipher_multiplatform_jdbc.SqlCipherJdbcProperties
 import java.io.File
@@ -18,11 +19,16 @@ object SqlCipherWindowsDriverFactory {
         databaseFile.absoluteFile.parentFile?.mkdirs()
         val properties = Properties().apply {
             put(SqlCipherJdbcProperties.KEY_BYTES, key.copyOf())
-            // SQLite foreign keys are connection-local; configure every JDBC connection.
-            put("foreign_keys", "true")
             // Required by the verified SQLCipherMultiplatform 0.2.13 JDBC integration.
             put(SqlCipherJdbcProperties.SCRUB_KEY_MATERIAL_AFTER_CONNECT, false)
         }
-        return JdbcSqliteDriver("jdbc:sqlcipher:${databaseFile.absolutePath}", properties)
+        return JdbcSqliteDriver("jdbc:sqlcipher:${databaseFile.absolutePath}", properties).also { driver ->
+            driver.execute(null, "PRAGMA foreign_keys = ON", 0)
+            val enabled = driver.executeQuery(null, "PRAGMA foreign_keys",
+                { cursor -> QueryResult.Value(if (cursor.next().value) cursor.getLong(0) else null) },
+                0
+            ).value
+            check(enabled == 1L) { "SQLCipher foreign keys disabled: $enabled" }
+        }
     }
 }
