@@ -1,0 +1,113 @@
+-- Additive estimate-series history. These tables are independent of the legacy estimates
+-- list until the Android UI is switched to immutable revision snapshots.
+CREATE TABLE estimate_number_settings (
+    id INTEGER NOT NULL PRIMARY KEY CHECK (id = 1),
+    template TEXT NOT NULL,
+    prefix TEXT NOT NULL,
+    sequenceWidth INTEGER NOT NULL CHECK (sequenceWidth BETWEEN 1 AND 12),
+    nextSequence INTEGER NOT NULL DEFAULT 1 CHECK (nextSequence > 0)
+);
+
+CREATE TABLE estimate_series (
+    seriesUuid TEXT NOT NULL PRIMARY KEY,
+    documentNumber TEXT NOT NULL UNIQUE,
+    projectId INTEGER NOT NULL REFERENCES projects(id),
+    measurementUuid TEXT,
+    policyTemplate TEXT NOT NULL,
+    policyPrefix TEXT NOT NULL,
+    policySequenceWidth INTEGER NOT NULL,
+    localSequence INTEGER NOT NULL,
+    createdAt INTEGER NOT NULL,
+    deletedAt INTEGER
+);
+CREATE INDEX index_estimate_series_project ON estimate_series(projectId, createdAt);
+
+CREATE TABLE estimate_revisions (
+    revisionUuid TEXT NOT NULL PRIMARY KEY,
+    seriesUuid TEXT NOT NULL REFERENCES estimate_series(seriesUuid) ON DELETE RESTRICT,
+    parentRevisionUuid TEXT REFERENCES estimate_revisions(revisionUuid) ON DELETE RESTRICT,
+    versionNumber INTEGER NOT NULL CHECK (versionNumber > 0),
+    createdAt INTEGER NOT NULL,
+    sourceMeasurementJson TEXT NOT NULL,
+    detailsJson TEXT NOT NULL,
+    measurementPrecisionMeters REAL NOT NULL CHECK (measurementPrecisionMeters > 0),
+    calculationRuleVersion TEXT NOT NULL,
+    currency TEXT NOT NULL,
+    moneyRoundingPolicy TEXT NOT NULL,
+    totalCost REAL NOT NULL CHECK (totalCost >= 0),
+    UNIQUE (seriesUuid, versionNumber)
+);
+CREATE INDEX index_estimate_revisions_series ON estimate_revisions(seriesUuid, versionNumber);
+
+CREATE TABLE estimate_revision_lines (
+    revisionUuid TEXT NOT NULL REFERENCES estimate_revisions(revisionUuid) ON DELETE RESTRICT,
+    sortIndex INTEGER NOT NULL CHECK (sortIndex >= 0),
+    stableCode TEXT NOT NULL,
+    priceItemUuid TEXT,
+    titleSnapshot TEXT NOT NULL,
+    unitSnapshot TEXT NOT NULL,
+    quantitySnapshot REAL NOT NULL CHECK (quantitySnapshot >= 0),
+    unitPriceSnapshot REAL NOT NULL CHECK (unitPriceSnapshot >= 0),
+    lineTotalSnapshot REAL NOT NULL CHECK (lineTotalSnapshot >= 0),
+    PRIMARY KEY (revisionUuid, sortIndex)
+);
+
+-- Settings are shared across KMP targets and allocated transactionally.
+insertDefaultEstimateNumberSettings:
+INSERT INTO estimate_number_settings(id, template, prefix, sequenceWidth, nextSequence)
+VALUES (1, '{prefix}-{year}-{sequence}-{uuid}', 'AC', 5, 1)
+ON CONFLICT(id) DO NOTHING;
+
+selectEstimateNumberSettings:
+SELECT * FROM estimate_number_settings WHERE id = 1;
+
+updateEstimateNumberSettings:
+UPDATE estimate_number_settings SET template = ?, prefix = ?, sequenceWidth = ? WHERE id = 1;
+
+allocateEstimateSequence:
+UPDATE estimate_number_settings SET nextSequence = nextSequence + 1 WHERE id = 1
+RETURNING nextSequence - 1;
+
+-- Only a first insert may allocate a document number. Conflicting UUID/number
+-- returns no row; caller retries with another UUID, never overwrites a document.
+insertEstimateSeriesIfFree:
+INSERT INTO estimate_series(seriesUuid, documentNumber, projectId, measurementUuid,
+    policyTemplate, policyPrefix, policySequenceWidth, localSequence, createdAt)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT DO NOTHING
+RETURNING seriesUuid;
+
+selectEstimateSeries:
+SELECT * FROM estimate_series WHERE seriesUuid = ?;
+
+selectEstimateSeriesByNumber:
+SELECT * FROM estimate_series WHERE documentNumber = ?;
+
+selectEstimateSeriesForProject:
+SELECT * FROM estimate_series WHERE projectId = ? AND deletedAt IS NULL ORDER BY createdAt DESC;
+
+softDeleteEstimateSeries:
+UPDATE estimate_series SET deletedAt = ? WHERE seriesUuid = ? AND deletedAt IS NULL;
+
+insertImmutableEstimateRevision:
+INSERT INTO estimate_revisions(revisionUuid, seriesUuid, parentRevisionUuid, versionNumber,
+    createdAt, sourceMeasurementJson, detailsJson, measurementPrecisionMeters,
+    calculationRuleVersion, currency, moneyRoundingPolicy, totalCost)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+insertImmutableEstimateRevisionLine:
+INSERT INTO estimate_revision_lines(revisionUuid, sortIndex, stableCode, priceItemUuid,
+    titleSnapshot, unitSnapshot, quantitySnapshot, unitPriceSnapshot, lineTotalSnapshot)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+selectEstimateRevision:
+SELECT * FROM estimate_revisions WHERE revisionUuid = ?;
+
+selectEstimateRevisions:
+SELECT * FROM estimate_revisions WHERE seriesUuid = ? ORDER BY versionNumber;
+
+selectLatestEstimateRevision:
+SELECT * FROM estimate_revisions WHERE seriesUuid = ? ORDER BY versionNumber DESC LIMIT 1;
+
+selectEstimateRevisionLines:
+SELECT * FROM estimate_revision_lines WHERE revisionUuid = ? ORDER BY sortIndex;
