@@ -58,7 +58,7 @@ class DomainModelsTest {
             ),
             DomainValidation.validateRoomMeasurement(measurement)
         )
-        // Area/perimeter are preserved as supplied; the Go core still owns geometry.
+        // Area/perimeter are preserved as supplied; the shared KMP calculator owns geometry.
         assertEquals(20.0, measurement.areaSquareMeters)
         assertEquals(15.0, measurement.perimeterMeters)
     }
