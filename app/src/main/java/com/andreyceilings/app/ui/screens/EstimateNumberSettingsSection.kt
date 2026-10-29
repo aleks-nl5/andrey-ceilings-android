@@ -58,8 +58,8 @@ internal fun EstimateNumberSettingsSection(database: CeilingsDatabase?) {
         loadError = null
         runCatching { settings.load() }
             .onSuccess {
-                savedPolicy = it
-                draft = it
+                savedPolicy = normalizedForCustomer(it)
+                draft = normalizedForCustomer(it)
                 loading = false
                 feedback = null
             }
@@ -70,22 +70,36 @@ internal fun EstimateNumberSettingsSection(database: CeilingsDatabase?) {
     }
 
     val presets = listOf(
-        "Стандартний" to "{prefix}-{year}-{sequence}-{uuid}",
-        "Рік і номер" to "{year}-{prefix}-{uuid}",
-        "Порядковий і UUID" to "{prefix}_{sequence}_{uuid}",
-        "Лише UUID" to "{uuid}"
+        Triple("Кошторис · КШ-2026-0125", "{prefix}-{year}-{sequence}", "КШ"),
+        Triple("Бізнес · AC-2026-00125", "{prefix}-{year}-{sequence}", "AC"),
+        Triple("Рік / номер · 2026/0125", "{year}/{sequence}", "AC"),
+        Triple("Серія / рік / номер", "{prefix}/{year}/{sequence}", "КШ"),
+        Triple("Наскрізна серія · КШ-0125", "{prefix}-{sequence}", "КШ"),
+        Triple("Рік і номер через крапку", "{year}.{sequence}", "AC")
     )
-    val selectedPreset = presets.firstOrNull { it.second == draft.template }?.first ?: "Власний шаблон"
-    val errors = remember(draft) { EstimateNumbering.validate(draft) }
+    val selectedPreset = presets.firstOrNull {
+        it.second == draft.template &&
+            (!draft.template.contains("{prefix}") || it.third == draft.prefix)
+    }?.first ?: "Власний шаблон"
+    val errors = remember(draft) {
+        EstimateNumbering.validate(draft) + when {
+            "{uuid}" in draft.template -> listOf("The printable number must not contain UUID")
+            "{sequence}" !in draft.template -> listOf("Public template must contain {sequence}")
+            else -> emptyList()
+        }
+    }
     val preview = remember(draft) {
         if (errors.isNotEmpty()) null else runCatching {
-            EstimateNumbering.render(
-                draft,
-                EstimateNumberContext(
-                    seriesUuid = "12345678-1234-4abc-8def-0123456789ab",
-                    year = Calendar.getInstance().get(Calendar.YEAR),
-                    localSequence = 125L
-                )
+            EstimateNumbering.printable(
+                EstimateNumbering.render(
+                    draft,
+                    EstimateNumberContext(
+                        seriesUuid = "12345678-1234-4abc-8def-0123456789ab",
+                        year = Calendar.getInstance().get(Calendar.YEAR),
+                        localSequence = 125L
+                    )
+                ),
+                localSequence = 125L, prefix = draft.prefix, sequenceWidth = draft.sequenceWidth
             )
         }.getOrNull()
     }
@@ -94,8 +108,9 @@ internal fun EstimateNumberSettingsSection(database: CeilingsDatabase?) {
     Column(verticalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
         Text("Нумерація кошторисів", style = MaterialTheme.typography.titleSmall)
         Text(
-            "Формат діятиме лише для нових кошторисів. Номери вже збережених документів, " +
-                "їхніх копій і PDF не змінюються.",
+            "На друк та в PDF виводиться короткий номер. Повний UUID " +
+                "використовується тільки всередині застосунку. Зміна шаблону впливає " +
+                "лише на нові кошториси, але не змінює вже присвоєні номери.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -131,9 +146,9 @@ internal fun EstimateNumberSettingsSection(database: CeilingsDatabase?) {
                 expanded = presetsExpanded && editable,
                 onDismissRequest = { presetsExpanded = false }
             ) {
-                presets.forEach { (label, template) ->
+                presets.forEach { (label, template, prefix) ->
                     DropdownMenuItem(text = { Text(label) }, onClick = {
-                        draft = draft.copy(template = template)
+                        draft = draft.copy(template = template, prefix = prefix, sequenceWidth = if (label.startsWith("Бізнес")) 5 else 4)
                         feedback = null
                         presetsExpanded = false
                     })
@@ -146,7 +161,7 @@ internal fun EstimateNumberSettingsSection(database: CeilingsDatabase?) {
             onValueChange = { draft = draft.copy(template = it); feedback = null },
             enabled = editable,
             label = { Text("Шаблон номера") },
-            supportingText = { Text("{prefix} · {year} · {sequence} · {uuid}") },
+            supportingText = { Text("Доступно: {prefix}, {year}, {sequence}. UUID додається службово.") },
             isError = errors.isNotEmpty(),
             modifier = Modifier.fillMaxWidth(),
             singleLine = false,
@@ -157,7 +172,7 @@ internal fun EstimateNumberSettingsSection(database: CeilingsDatabase?) {
             onValueChange = { draft = draft.copy(prefix = it); feedback = null },
             enabled = editable && draft.template.contains("{prefix}"),
             label = { Text("Префікс") },
-            supportingText = { Text("Латинські літери, цифри, - або _, до 20 символів") },
+            supportingText = { Text("Українські/латинські літери, цифри, - або _, до 20 символів") },
             modifier = Modifier.fillMaxWidth(),
             singleLine = true
         )
@@ -187,8 +202,8 @@ internal fun EstimateNumberSettingsSection(database: CeilingsDatabase?) {
                 style = MaterialTheme.typography.labelMedium)
             Text(preview, style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.primary)
-            Text("У прикладі використано умовний UUID і порядковий номер 125. " +
-                    "Реальний номер буде виділено автоматично під час збереження.",
+            Text("Приклад із порядковим номером 125. Це не зарезервований номер; " +
+                    "справжній буде присвоєно під час створення кошторису.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
@@ -227,8 +242,9 @@ internal fun EstimateNumberSettingsSection(database: CeilingsDatabase?) {
                 else MaterialTheme.colorScheme.primary)
         }
         Text(
-            "Повний UUID обов’язковий у шаблоні. Локальна послідовність може повторюватися " +
-                "на різних офлайн-пристроях, тому її не слід використовувати без UUID.",
+            "Два незалежні офлайн-пристрої можуть надрукувати той самий короткий номер. " +
+                "Для їх розрізнення використовуйте різні префікси (наприклад, КШ1 і КШ2). " +
+                "Службовий повний UUID залишається в базі та забезпечує розрізнення записів.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -238,12 +254,19 @@ internal fun EstimateNumberSettingsSection(database: CeilingsDatabase?) {
 private fun numberPolicyErrorUa(message: String): String = when {
     message.contains("1–96") -> "Шаблон має містити від 1 до 96 символів."
     message.contains("unsupported") -> "Шаблон містить недопустимі символи."
-    message.contains("{uuid} exactly once") -> "Шаблон повинен містити {uuid} рівно один раз."
+    message.contains("must not contain UUID") -> "UUID не виводиться на друк. Видаліть {uuid} із шаблону."
+    message.contains("must contain {sequence}") -> "Додайте {sequence}, щоб нові кошториси мали різні номери."
     message.contains("unknown placeholder") -> "У шаблоні є невідомий параметр."
     message.contains("repeat placeholders") -> "Не можна повторювати параметри в шаблоні."
     message.contains("invalid placeholder") -> "Перевірте фігурні дужки параметрів."
-    message.contains("Prefix") -> "Префікс: 1–20 латинських літер, цифр, - або _."
+    message.contains("Prefix") -> "Префікс: 1–20 українських/латинських літер, цифр, - або _."
     message.contains("Sequence width") -> "Кількість цифр має бути від 1 до 12."
     message.contains("exceed") -> "Максимальна довжина номера — 128 символів."
     else -> message
+}
+
+/** Legacy UUID-bearing templates are displayed as customer-friendly formats. */
+private fun normalizedForCustomer(policy: EstimateNumberPolicy): EstimateNumberPolicy {
+    val visible = EstimateNumbering.printableTemplate(policy.template)
+    return policy.copy(template = if ("{sequence}" in visible) visible else "{prefix}-{sequence}")
 }
