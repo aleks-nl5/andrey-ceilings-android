@@ -18,3 +18,22 @@ internal fun Double.toPriceInput(): String = if (this % 1.0 == 0.0) toLong().toS
 internal fun String.toSafeDouble(): Double = replace(',', '.').toDoubleOrNull()?.coerceAtLeast(0.0) ?: 0.0
 
 internal fun Double.format2(): String = String.format(java.util.Locale.getDefault(), "%.2f", this)
+
+internal fun materialDisplayName(code: String): String = when (code) {
+    "pvc_matte" -> "ПВХ матовий"
+    "pvc_glossy" -> "ПВХ глянцевий"
+    "pvc_satin" -> "ПВХ сатиновий"
+    "fabric" -> "Тканинний Descor"
+    "fireproof_km2" -> "Негорючий KM2"
+    "acoustic" -> "Акустичний"
+    else -> code
+}
+
+internal fun profileDisplayName(code: String): String = when (code) {
+    "standard_alu" -> "Алюмінієвий гарпунний"
+    "pvc" -> "ПВХ стіновий"
+    "shadow_kraab" -> "Тіньовий EuroKRAAB"
+    "floating_led" -> "Парящий з LED"
+    "slott_tracks" -> "Слот / трековий"
+    else -> code
+}
