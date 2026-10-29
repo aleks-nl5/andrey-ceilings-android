@@ -13,10 +13,10 @@ Offline-first застосунок для замірів, розрахунків
 
 ## Збірка Android
 
-Відкрити проєкт в Android Studio з підтримкою AGP 9.3.1, JDK 21 та актуальним Android SDK. Зібрати:
+Відкрити проєкт в Android Studio з підтримкою AGP 9.3.1, JDK 21 та актуальним Android SDK. Зібрати (з установленим Gradle 9.7.0, як у GitHub Actions; у репозиторії поки немає Gradle Wrapper):
 
 ```bash
-./gradlew :shared:jvmTest :app:assembleDebug
+gradle --no-daemon :shared:jvmTest :app:assembleDebug
 ```
 
 APK: `app/build/outputs/apk/debug/app-debug.apk`.
@@ -34,9 +34,9 @@ APK: `app/build/outputs/apk/debug/app-debug.apk`.
 ## Розробка та перевірки
 
 ```bash
-./gradlew :shared:jvmTest :app:testDebugUnitTest
-./gradlew :app:connectedDebugAndroidTest   # Потрібен Android emulator/пристрій
-./gradlew :shared:iosSimulatorArm64Test     # Потрібен macOS/Xcode
+gradle --no-daemon :shared:jvmTest :app:testDebugUnitTest
+gradle --no-daemon :app:connectedDebugAndroidTest   # Потрібен Android emulator/пристрій
+gradle --no-daemon :shared:iosSimulatorArm64Test     # Потрібен macOS/Xcode
 ```
 
 Окремі загальні KMP-тести мають зафіксовані еталонні розрахунки колишнього Go-рушія; тестові вектори залишаються у Kotlin після видалення Go. Критерії приймання й поточний стан — [дорожня карта](docs/PROJECT_ROADMAP.md), [KMP-калькулятор](docs/architecture/GO_TO_KMP_PARITY.md) і [SQLDelight](docs/architecture/ROOM_TO_SQLDELIGHT_CUTOVER.md).
