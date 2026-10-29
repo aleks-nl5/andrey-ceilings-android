@@ -51,10 +51,12 @@ class SqlCipherSeparateConnectionsTest {
                     // Emulator run 40952735193 confirmed SQLITE_BUSY after the
                     // default lock-retry window. Fail closed and retry only
                     // after releasing the reader; this is a rollout blocker.
-                    writer.execute("PRAGMA busy_timeout=250")
+                    // busy_timeout is a query PRAGMA: AndroidSqliteDriver
+                    // execute() routes to executeUpdateDelete and rejects
+                    // statements returning rows.
+                    assertEquals(250L, writer.queryLong("PRAGMA busy_timeout=250"))
                     var committedDuringReader = false
-                    reader.execute("BEGIN")
-                    try {
+                    reader.database.transaction {
                         assertEquals(1L, reader.queryLong("SELECT count(*) FROM projects"))
                         val overlap = runCatching {
                             repository.createReturningId(
@@ -83,10 +85,10 @@ class SqlCipherSeparateConnectionsTest {
                             assertTrue("Unexpected checkpoint error: $failure",
                                 failure is SQLiteDatabaseLockedException)
                         }
-                    } finally {
-                        reader.execute("ROLLBACK")
                     }
 
+                    // SQLDelight owns the reader transaction lifecycle and
+                    // releases it before any retry; no raw BEGIN/ROLLBACK calls.
                     // A blocked write must succeed after releasing the reader;
                     // never lose or duplicate the record on retry.
                     if (!committedDuringReader) {
