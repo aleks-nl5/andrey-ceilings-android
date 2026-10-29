@@ -5,6 +5,12 @@ import com.andreyceilings.shared.db.ProjectRepository
 import com.andreyceilings.shared.db.MeasurementRepository
 import com.andreyceilings.shared.db.PriceRepository
 import com.andreyceilings.shared.db.EstimateRepository
+import com.andreyceilings.app.core.EstimateLineItems
+import com.andreyceilings.shared.calculation.MeasurementPrecision
+import com.andreyceilings.shared.estimate.ImmutableEstimateDraft
+import com.andreyceilings.shared.estimate.ImmutableEstimateLine
+import org.json.JSONObject
+import java.util.Calendar
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -98,21 +104,25 @@ internal class EstimateDao(private val repo: EstimateRepository) {
         rows.map { EstimateEntity(it.id, it.projectId, it.name, it.material, it.profileType,
             it.complexity, it.lengthMeters, it.widthMeters, it.areaSquareMeters,
             it.perimeterMeters, it.canvasCost, it.profileCost, it.complexityCost,
-            it.optionsCost, it.totalCost, it.detailsJson, it.createdAt) }
+            it.optionsCost, it.totalCost, it.detailsJson, it.createdAt,
+            repo.documentNumberForId(it.id)) }
     }
     fun observeForProject(projectId: Long): Flow<List<EstimateEntity>> =
         repo.observeForProject(projectId).map { rows ->
             rows.map { EstimateEntity(it.id, it.projectId, it.name, it.material, it.profileType,
                 it.complexity, it.lengthMeters, it.widthMeters, it.areaSquareMeters,
                 it.perimeterMeters, it.canvasCost, it.profileCost, it.complexityCost,
-                it.optionsCost, it.totalCost, it.detailsJson, it.createdAt) }
+                it.optionsCost, it.totalCost, it.detailsJson, it.createdAt,
+                repo.documentNumberForId(it.id)) }
         }
     suspend fun count() = withContext(Dispatchers.IO) { repo.count().toInt() }
     suspend fun insert(item: EstimateEntity) = withContext(Dispatchers.IO) {
-        repo.createReturningId(item.projectId, item.name, item.material, item.profileType,
+        val snapshot = snapshotForNumberedEstimate(item)
+        val year = Calendar.getInstance().apply { timeInMillis = item.createdAt }.get(Calendar.YEAR)
+        repo.createNumberedReturningId(item.projectId, item.name, item.material, item.profileType,
             item.complexity, item.lengthMeters, item.widthMeters, item.areaSquareMeters,
             item.perimeterMeters, item.canvasCost, item.profileCost, item.complexityCost,
-            item.optionsCost, item.totalCost, item.detailsJson, item.createdAt)
+            item.optionsCost, item.totalCost, item.detailsJson, item.createdAt, year, snapshot)
     }
     suspend fun update(item: EstimateEntity) = withContext(Dispatchers.IO) {
         repo.update(item.id, item.name, item.material, item.profileType,
@@ -121,4 +131,58 @@ internal class EstimateDao(private val repo: EstimateRepository) {
             item.optionsCost, item.totalCost, item.detailsJson)
     }
     suspend fun deleteById(id: Long) = withContext(Dispatchers.IO) { repo.delete(id) }
+}
+
+
+/**
+ * Freeze exactly what Android calculated: the room inputs, options JSON and
+ * line-item prices. Do not read the current price list during duplication.
+ */
+private fun snapshotForNumberedEstimate(item: EstimateEntity): ImmutableEstimateDraft {
+    val details = JSONObject(item.detailsJson)
+    val precision = MeasurementPrecision.fromStep(details.optDouble("measurementPrecisionMeters", 0.01))
+        ?: MeasurementPrecision.ONE_CENTIMETER
+    val measurement = JSONObject()
+        .put("name", item.name)
+        .put("material", item.material)
+        .put("profileType", item.profileType)
+        .put("complexity", item.complexity)
+        .put("lengthMeters", item.lengthMeters)
+        .put("widthMeters", item.widthMeters)
+        .put("areaSquareMeters", item.areaSquareMeters)
+        .put("perimeterMeters", item.perimeterMeters)
+    val saved = EstimateLineItems.fromJson(item.detailsJson)
+    val lines = if (saved.isNotEmpty()) {
+        saved.map {
+            ImmutableEstimateLine(it.code, it.title, it.unit, it.quantity,
+                it.unitPrice, it.total)
+        }
+    } else {
+        // Earlier test estimates may have only the four frozen totals.
+        // Never invent current prices for a historic document.
+        val legacy = listOf(
+            "legacy.canvas" to ("Полотно (збережена сума)" to item.canvasCost),
+            "legacy.profile" to ("Профіль (збережена сума)" to item.profileCost),
+            "legacy.complexity" to ("Складність (збережена сума)" to item.complexityCost),
+            "legacy.options" to ("Додаткові роботи (збережена сума)" to item.optionsCost)
+        ).filter { it.second.second > 0.0 }.map {
+            ImmutableEstimateLine(it.first, it.second.first, "посл.", 1.0, it.second.second, it.second.second)
+        }
+        val rounding = item.totalCost - legacy.sumOf { it.lineTotal }
+        legacy + if (kotlin.math.abs(rounding) > 0.001) {
+            listOf(ImmutableEstimateLine("system.rounding", "Коригування округлення",
+                "посл.", 1.0, rounding, rounding))
+        } else emptyList()
+    }
+    val frozenLines = lines.ifEmpty {
+        listOf(ImmutableEstimateLine("legacy.zero", "Збережений підсумок", "посл.", 1.0, 0.0, 0.0))
+    }
+    return ImmutableEstimateDraft(
+        sourceMeasurementJson = measurement.toString(),
+        detailsJson = item.detailsJson,
+        measurementPrecisionMeters = precision.stepMeters,
+        calculationRuleVersion = "kmp-v1",
+        totalCost = item.totalCost,
+        lines = frozenLines
+    )
 }
