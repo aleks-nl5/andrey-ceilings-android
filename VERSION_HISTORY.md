@@ -1,6 +1,6 @@
 # Історія версій — СтеляПро
 
-> **Поточний Draft PR #23 (29.10.2026):** Android-калькулятор переведено на shared Kotlin KMP; Go/AAR і gomobile видалено. Новий код очікує фінальної CI і ручного приймання нового KMP APK. Історичні Go/Room записи нижче не є описом поточного runtime. Версія у `app/build.gradle.kts` зараз `0.6.2` з номером GitHub Actions для тестових збірок.
+> **Поточний Draft PR #23 (29.10.2026):** Android-калькулятор переведено на shared Kotlin KMP; Go/AAR і gomobile видалено. Кодовий HEAD `ae326a73` пройшов [Android CI 40903911505](https://github.com/aleks-nl5/andrey-ceilings-android/actions/runs/40903911505) і [Windows/iOS CI 40903911291](https://github.com/aleks-nl5/andrey-ceilings-android/actions/runs/40903911291); власник підтвердив на телефоні розрахунки, кошториси та PDF у новому KMP APK. Відкритий PR #23 не об'єднано з `main`. Історичні Go/Room записи нижче не є описом поточного runtime. Версія у `app/build.gradle.kts` зараз `0.6.2` з номером GitHub Actions для тестових збірок.
 
 
 > Документ узагальнює історію розробки за доступними GitHub Pull Request, змінами гілок і зафіксованими результатами тестування. Це журнал етапів роботи, а не твердження, що кожен пункт уже пройшов повний регресійний тест на пристрої.
