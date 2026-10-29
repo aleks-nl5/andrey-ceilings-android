@@ -108,12 +108,19 @@ class PriceRepository(private val database: PrototypeDatabase) {
     fun upsertReturningId(
         id: Long = 0, code: String, title: String, category: String,
         unit: String, price: Double, updatedAt: Long
-    ): Long = if (id > 0L) {
-        checkNotNull(find(id)) { "Cannot update missing or deleted price item: $id" }
-        queries.updatePriceItem(code, title, category, unit, price, updatedAt, id)
-        id
-    } else {
-        queries.upsertPriceItemReturningId(0L, code, title, category, unit, price, updatedAt, newRecordUuid()).executeAsOne()
+    ): Long {
+        val existingId = if (id > 0L) {
+            checkNotNull(find(id)) { "Cannot update missing or deleted price item: $id" }.id
+        } else {
+            queries.selectActivePriceByKey(category, code).executeAsOneOrNull()?.id
+        }
+        return if (existingId != null) {
+            queries.updatePriceItem(code, title, category, unit, price, updatedAt, existingId)
+            existingId
+        } else {
+            queries.insertPriceItemReturningId(code, title, category, unit, price, updatedAt, newRecordUuid())
+                .executeAsOne()
+        }
     }
     fun find(id: Long) = queries.selectPriceItemById(id).executeAsOneOrNull()
     fun create(code: String, title: String, category: String, unit: String, price: Double, updatedAt: Long) =

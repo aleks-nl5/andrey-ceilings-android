@@ -51,6 +51,9 @@ class SyncMetadataTest {
             estimates.update(estimate, "Changed", "PVC", "standard", "simple",
                 2.0, 3.0, 6.0, 10.0, 100.0, 25.0, 0.0, 0.0, 125.0, "{}")
             prices.upsertReturningId(price, "FILM", "Updated film", "Materials", "m2", 30.0, 150)
+            // Updating by natural key must preserve both local ID and global UUID.
+            assertEquals(price, prices.upsertReturningId(code = "FILM", title = "Updated again",
+                category = "Materials", unit = "m2", price = 31.0, updatedAt = 151))
             projects.updateStatus(project, "estimate", 160)
 
             assertEquals(originalUuids, listOf(
@@ -61,7 +64,7 @@ class SyncMetadataTest {
             assertTrue(clients.find(client)!!.updatedAt > 100L)
             assertTrue(measurements.find(measurement)!!.updatedAt > 120L)
             assertTrue(estimates.find(estimate)!!.updatedAt > 140L)
-            assertEquals(150L, prices.find(price)!!.updatedAt)
+            assertEquals(151L, prices.find(price)!!.updatedAt)
             assertEquals(160L, projects.find(project)!!.updatedAt)
         }
     }

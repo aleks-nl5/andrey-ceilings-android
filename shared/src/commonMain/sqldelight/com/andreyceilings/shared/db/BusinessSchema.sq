@@ -240,11 +240,14 @@ INSERT INTO estimates(projectId, name, material, profileType, complexity, length
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 RETURNING id;
 
--- Room uses OnConflictStrategy.REPLACE for PriceItemDao.upsert.
--- NULLIF(id, 0) retains Room's autoincrement behavior for new items.
-upsertPriceItemReturningId:
-INSERT OR REPLACE INTO price_items(id, code, title, category, unit, price, updatedAt, uuid, deletedAt)
-VALUES (NULLIF(?, 0), ?, ?, ?, ?, ?, ?, ?, NULL)
+-- A repeat (category, code) must update the existing row and keep its UUID.
+-- Do not use INSERT OR REPLACE: it can discard the old identity without a tombstone.
+selectActivePriceByKey:
+SELECT * FROM price_items WHERE category = ? AND code = ? AND deletedAt IS NULL LIMIT 1;
+
+insertPriceItemReturningId:
+INSERT INTO price_items(code, title, category, unit, price, updatedAt, uuid)
+VALUES (?, ?, ?, ?, ?, ?, ?)
 RETURNING id;
 
 -- Offline Room-v2 logical data transfer into a fresh SQLDelight database.
