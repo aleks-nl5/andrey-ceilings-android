@@ -304,3 +304,13 @@ WHERE e.id = ? AND e.deletedAt IS NULL;
 
 linkLegacyEstimateToSeries:
 UPDATE estimates SET seriesUuid = ? WHERE id = ? AND seriesUuid IS NULL AND deletedAt IS NULL;
+
+-- Legacy list remains a compatibility projection; numbering is owned by series.
+updateEstimateDisplayName:
+UPDATE estimates SET name = ?, updatedAt = max(updatedAt + 1, CAST(strftime('%s','now') AS INTEGER) * 1000)
+WHERE id = ? AND deletedAt IS NULL;
+
+softDeleteNumberedSeriesForEstimate:
+UPDATE estimate_series SET deletedAt = max(createdAt + 1, CAST(strftime('%s','now') AS INTEGER) * 1000)
+WHERE seriesUuid = (SELECT seriesUuid FROM estimates WHERE id = ? AND deletedAt IS NULL)
+  AND deletedAt IS NULL;
