@@ -11,7 +11,7 @@ func TestDefaultPriceListAndRectangle(t *testing.T) {
 	c := CalculateCeilingCost(CostInput{
 		Area: g.Area, Perimeter: g.Perimeter, MaterialType: PVCMatte,
 		Complexity: Straight, ProfileType: StandardAlu,
-		Options: RoomOptions{ChandeliersCount: 1, SpotsGX53Count: 4, PipePassCount: 1},
+		Options: RoomOptions{ChandeliersCount: 1, SpotCount: 4, PipePassCount: 1},
 	}, prices)
 	if c.CanvasCost != 5951 || c.ProfileCost != 2392 || c.OptionsCost != 1410 {
 		t.Fatalf("unexpected cost: %+v", c)
@@ -31,7 +31,7 @@ func TestProfileDoesNotDoubleChargeShadow(t *testing.T) {
 	}
 }
 func TestNegativeValuesAreClamped(t *testing.T) {
-	got := CalculateCeilingCost(CostInput{Area: -10, Perimeter: -3, MaterialType: PVCMatte, ProfileType: StandardAlu, Options: RoomOptions{SpotsGX53Count: -2}}, DefaultPriceList())
+	got := CalculateCeilingCost(CostInput{Area: -10, Perimeter: -3, MaterialType: PVCMatte, ProfileType: StandardAlu, Options: RoomOptions{SpotCount: -2}}, DefaultPriceList())
 	if got.TotalCost != 0 {
 		t.Fatalf("expected zero for negative inputs, got %+v", got)
 	}
