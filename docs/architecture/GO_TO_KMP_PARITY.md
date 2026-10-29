@@ -1,6 +1,6 @@
 # Етап 2 — Kotlin Multiplatform як єдиний розрахунковий рушій
 
-**Стан 29.10.2026 · PR #23 (Draft), гілка `feature/kmp-calculation-parity`.** На прохання власника після успішного baseline CI і підтвердженої роботи Go APK на телефоні Android-калькулятор **перемкнуто на KMP**, а Go-ядро, gomobile, AAR і Go-етапи CI **видалено в цій гілці**. **Новий KMP APK і всі платформи ще мають пройти CI та ручну перевірку; `main` не змінено.**
+**Стан 29.10.2026 · PR #23 (Draft), гілка `feature/kmp-calculation-parity`.** На прохання власника після успішного baseline CI і підтвердженої роботи Go APK на телефоні Android-калькулятор **перемкнуто на KMP**, а Go-ядро, gomobile, AAR і Go-етапи CI **видалено в цій гілці**. **На кодовому HEAD `ae326a73` Android, Windows та iOS CI успішні; власник підтвердив на фізичному Android роботу нового KMP APK, розрахунків, кошторисів і PDF.** Перевірка кожного режиму точності, усіх опцій, backup і всіх сценаріїв дублювання окремо не заявлена. `main` не змінено.
 
 ## Єдиний runtime
 
@@ -26,10 +26,11 @@
 - [x] Власник перевірив на фізичному Android: **попередній Go APK успішно виконував розрахунки**. Цей результат не можна поширювати на новий KMP APK.
 - [x] Додано `CeilingCalculatorKmpInstrumentedTest` для Android UI-адаптера: усі чотири точності, комплексний кошторис, ціни матеріалу/профілю й додаткових робіт із прайсу, `Kotlin KMP` engine.
 - [x] Додано `EstimateSnapshotPersistenceInstrumentedTest` на реальній Android SQLCipher/SQLDelight: зміна/видалення прайсу, копія, повторне відкриття БД, незмінні `lineItems` і `totalCost`.
-- [ ] **Фінальна CI саме після видалення Go**: Android Debug/Release APK, unit/instrumentation KMP tests, Windows JVM, iOS Simulator.
-- [ ] **Ручна перевірка нового KMP APK на телефоні**: 10 см / 1 см / 5 мм / 1 мм, усі опції, складність, зміна прайсу, збереження, дублювання, повторний запуск, PDF і відповідність сум.
+- [x] **Фінальна CI після видалення Go** на кодовому HEAD `ae326a73`: [Android Debug/Release APK, shared JVM, Android instrumentation 40903911505](https://github.com/aleks-nl5/andrey-ceilings-android/actions/runs/40903911505) і [Windows JVM / iOS Simulator 40903911291](https://github.com/aleks-nl5/andrey-ceilings-android/actions/runs/40903911291) — **success**.
+- [x] **Власник підтвердив новий KMP APK на фізичному Android**: застосунок запускається, розрахунки, кошториси та PDF працюють.
+- [ ] **Розширена вибіркова перевірка на телефоні (окремо не підтверджена):** точність 10 см / 1 см / 5 мм / 1 мм, усі типи опцій/складності, зміни прайсу, дублювання, повторний запуск, backup і поелементне звіряння сум PDF.
 - [ ] Зафіксувати й відпрацювати будь-які регресії KMP до рішення власника щодо merge.
 
 **Не входить у PR #23:** [#24 — ручний перерахунок/версії](https://github.com/aleks-nl5/andrey-ceilings-android/issues/24), [#25 — глобальна нумерація](https://github.com/aleks-nl5/andrey-ceilings-android/issues/25), [#26 — безпечний WAL](https://github.com/aleks-nl5/andrey-ceilings-android/issues/26). Android БД працює в `DELETE` за результатом `PRAGMA journal_mode`; тут режим не змінюємо.
 
-Після перевірки нового KMP APK — завершити PR #23 за дозволом власника, перейти до CMP-екранів (перший — прайс). **PR залишається Draft, автоматично не зливати.**
+Основний runtime cutover успішно перевірено CI і на фізичному Android; рішення щодо завершення та злиття PR #23 — **лише за окремим дозволом власника**. Наступний напрямок після цього — CMP-екрани (перший — прайс). **PR залишається Draft, автоматично не зливати.**
