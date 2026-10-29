@@ -47,8 +47,8 @@ CREATE TABLE estimate_revision_lines (
     titleSnapshot TEXT NOT NULL,
     unitSnapshot TEXT NOT NULL,
     quantitySnapshot REAL NOT NULL CHECK (quantitySnapshot >= 0),
-    unitPriceSnapshot REAL NOT NULL CHECK (unitPriceSnapshot >= 0),
-    lineTotalSnapshot REAL NOT NULL CHECK (lineTotalSnapshot >= 0),
+    unitPriceSnapshot REAL NOT NULL CHECK (unitPriceSnapshot >= 0 OR stableCode = 'system.rounding'),
+    lineTotalSnapshot REAL NOT NULL CHECK (lineTotalSnapshot >= 0 OR stableCode = 'system.rounding'),
     PRIMARY KEY (revisionUuid, sortIndex)
 );
 
