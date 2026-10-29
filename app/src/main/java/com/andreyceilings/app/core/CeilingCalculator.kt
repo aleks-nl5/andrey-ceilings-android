@@ -41,6 +41,7 @@ object CeilingCalculator {
         options: CalculatorOptions,
         materialType: String,
         profileType: String,
+        precisionStepMeters: Double = 0.01,
         onTimings: ((List<Pair<String, Long>>) -> Unit)? = null
     ): CeilingEstimate {
         val totalStartedAt = if (onTimings != null) SystemClock.elapsedRealtimeNanos() else 0L
@@ -94,7 +95,8 @@ object CeilingCalculator {
             .put("geometry", JSONObject()
                 .put("shape", "rectangle")
                 .put("length", length.coerceAtLeast(0.0))
-                .put("width", width.coerceAtLeast(0.0)))
+                .put("width", width.coerceAtLeast(0.0))
+                .put("precisionStepMeters", precisionStepMeters))
             .put("cost", JSONObject()
                 .put("materialType", materialType)
                 .put("profileType", profileType)
