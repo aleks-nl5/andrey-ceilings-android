@@ -37,6 +37,8 @@ import androidx.compose.ui.unit.dp
 import com.andreyceilings.app.ui.theme.CeilingsTheme
 import com.andreyceilings.app.core.CeilingEstimate
 import com.andreyceilings.app.core.CeilingCalculator
+import com.andreyceilings.shared.calculation.EstimateOptionId
+import com.andreyceilings.shared.calculation.MeasurementPrecision
 import com.andreyceilings.app.core.CalculatorOptions
 import com.andreyceilings.app.data.db.PriceItemEntity
 import com.andreyceilings.app.data.db.ProjectEntity
@@ -53,6 +55,7 @@ internal fun CalculatorScreen(
     profilePrice: String, onProfilePrice: (String) -> Unit,
     material: String, onMaterial: (String) -> Unit,
     profileType: String, onProfileType: (String) -> Unit,
+    measurementPrecision: MeasurementPrecision, onMeasurementPrecision: (MeasurementPrecision) -> Unit,
     estimate: CeilingEstimate?,
     calculationError: String?,
     priceItems: List<PriceItemEntity>,
@@ -78,23 +81,66 @@ internal fun CalculatorScreen(
         OutlinedTextField(length, onLength, label = { Text("Довжина, м") }, modifier = Modifier.weight(1f), singleLine = true)
         OutlinedTextField(width, onWidth, label = { Text("Ширина, м") }, modifier = Modifier.weight(1f), singleLine = true)
     }
+    var precisionExpanded by remember { mutableStateOf(false) }
+    ExposedDropdownMenuBox(expanded = precisionExpanded, onExpandedChange = { precisionExpanded = it }) {
+        OutlinedTextField(
+            value = measurementPrecision.label, onValueChange = {}, readOnly = true,
+            label = { Text("Точність вимірювань") },
+            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(precisionExpanded) },
+            modifier = Modifier.menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable, enabled = true).fillMaxWidth()
+        )
+        AppExposedDropdownMenu(expanded = precisionExpanded, onDismissRequest = { precisionExpanded = false }) {
+            MeasurementPrecision.entries.forEach { precision ->
+                DropdownMenuItem(text = { Text(precision.label) }, onClick = {
+                    onMeasurementPrecision(precision)
+                    precisionExpanded = false
+                })
+            }
+        }
+    }
+    Text("Округлення розмірів до вибраного кроку; грошові суми округлюються окремо.",
+        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     OutlinedTextField(price, onPrice, label = { Text("Полотно, ₴/м²") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
     OutlinedTextField(profilePrice, onProfilePrice, label = { Text("Профіль, ₴/м.п.") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
     var materialExpanded by remember { mutableStateOf(false) }
     ExposedDropdownMenuBox(expanded = materialExpanded, onExpandedChange = { materialExpanded = it }) {
-        OutlinedTextField(material, {}, readOnly = true, label = { Text("Матеріал") }, trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(materialExpanded) }, modifier = Modifier.menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable, enabled = true).fillMaxWidth())
+        OutlinedTextField(
+            when (material) {
+                "pvc_glossy" -> "ПВХ глянцевий"
+                "pvc_satin" -> "ПВХ сатиновий"
+                "fabric" -> "Тканинний Descor"
+                "fireproof_km2" -> "Негорючий KM2"
+                "acoustic" -> "Акустичний"
+                else -> "ПВХ матовий"
+            }, {}, readOnly = true, label = { Text("Матеріал") }, trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(materialExpanded) }, modifier = Modifier.menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable, enabled = true).fillMaxWidth())
         AppExposedDropdownMenu(expanded = materialExpanded, onDismissRequest = { materialExpanded = false }) {
-            listOf("ПВХ матовий", "ПВХ глянцевий", "ПВХ сатиновий", "Тканинний Descor", "Негорючий KM2", "Акустичний").forEach {
-                DropdownMenuItem(text = { Text(it) }, onClick = { onMaterial(it); materialExpanded = false })
+            listOf(
+                "pvc_matte" to "ПВХ матовий", "pvc_glossy" to "ПВХ глянцевий",
+                "pvc_satin" to "ПВХ сатиновий", "fabric" to "Тканинний Descor",
+                "fireproof_km2" to "Негорючий KM2", "acoustic" to "Акустичний"
+            ).forEach { (id, title) ->
+                DropdownMenuItem(text = { Text(title) }, onClick = { onMaterial(id); materialExpanded = false })
             }
         }
     }
     var profileExpanded by remember { mutableStateOf(false) }
     ExposedDropdownMenuBox(expanded = profileExpanded, onExpandedChange = { profileExpanded = it }) {
-        OutlinedTextField(profileType, {}, readOnly = true, label = { Text("Система профілю") }, trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(profileExpanded) }, modifier = Modifier.menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable, enabled = true).fillMaxWidth())
+        OutlinedTextField(
+            when (profileType) {
+                "pvc" -> "ПВХ стіновий"
+                "shadow_kraab" -> "Тіньовий EuroKRAAB"
+                "floating_led" -> "Парящий з LED"
+                "slott_tracks" -> "Слот / трековий"
+                else -> "Алюмінієвий гарпунний"
+            }, {}, readOnly = true, label = { Text("Система профілю") }, trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(profileExpanded) }, modifier = Modifier.menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable, enabled = true).fillMaxWidth())
         AppExposedDropdownMenu(expanded = profileExpanded, onDismissRequest = { profileExpanded = false }) {
-            listOf("Алюмінієвий гарпунний", "ПВХ стіновий", "Тіньовий EuroKRAAB", "Парящий з LED", "Слот / трековий").forEach {
-                DropdownMenuItem(text = { Text(it) }, onClick = { onProfileType(it); profileExpanded = false })
+            listOf(
+                "standard_alu" to "Алюмінієвий гарпунний", "pvc" to "ПВХ стіновий",
+                "shadow_kraab" to "Тіньовий EuroKRAAB",
+                "floating_led" to "Парящий з LED",
+                "slott_tracks" to "Слот / трековий"
+            ).forEach { (id, title) ->
+                DropdownMenuItem(text = { Text(title) }, onClick = { onProfileType(id); profileExpanded = false })
             }
         }
     }
@@ -165,15 +211,15 @@ internal fun CalculatorScreen(
         onDismiss = { showSaveDialog = false },
         onSave = { projectId, name ->
             val details = org.json.JSONObject()
-                .put("lightLineMeters", calculatorOptionsForSave(lightLineMeters))
-                .put("shadowProfileMeters", calculatorOptionsForSave(shadowProfileMeters))
-                .put("floatingCeilingMeters", calculatorOptionsForSave(floatingCeilingMeters))
-                .put("chandeliersCount", calculatorOptionsForSave(chandeliersCount))
-                .put("spotsCount", calculatorOptionsForSave(spotsCount))
-                .put("pipePassCount", calculatorOptionsForSave(pipePassCount))
-                .put("curtainNicheMeters", calculatorOptionsForSave(curtainNicheMeters))
-                .put("extraCorners", calculatorOptionsForSave(extraCorners))
-                .put("hardWallMeters", calculatorOptionsForSave(hardWallMeters))
+                .put(EstimateOptionId.LIGHT_LINE.code, calculatorOptionsForSave(lightLineMeters))
+                .put(EstimateOptionId.SHADOW_PROFILE.code, calculatorOptionsForSave(shadowProfileMeters))
+                .put(EstimateOptionId.FLOATING_PROFILE.code, calculatorOptionsForSave(floatingCeilingMeters))
+                .put(EstimateOptionId.CHANDELIER.code, calculatorOptionsForSave(chandeliersCount))
+                .put(EstimateOptionId.SPOT_GX53.code, calculatorOptionsForSave(spotsCount))
+                .put(EstimateOptionId.PIPE_PASS.code, calculatorOptionsForSave(pipePassCount))
+                .put(EstimateOptionId.CURTAIN_NICHE.code, calculatorOptionsForSave(curtainNicheMeters))
+                .put(EstimateOptionId.EXTRA_CORNER.code, calculatorOptionsForSave(extraCorners))
+                .put(EstimateOptionId.HARD_WALL.code, calculatorOptionsForSave(hardWallMeters))
             scope.launch {
                 runCatching {
                     val estimateDraft = EstimateEntity(
