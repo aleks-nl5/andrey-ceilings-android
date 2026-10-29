@@ -87,3 +87,76 @@ SELECT * FROM price_items ORDER BY category, code;
 
 selectEstimatesForProject:
 SELECT * FROM estimates WHERE projectId = ? ORDER BY createdAt DESC;
+
+-- Clients CRUD
+insertClient:
+INSERT INTO clients(name, phone, email, notes, createdAt)
+VALUES (?, ?, ?, ?, ?);
+
+selectClientById:
+SELECT * FROM clients WHERE id = ?;
+
+updateClient:
+UPDATE clients SET name = ?, phone = ?, email = ?, notes = ? WHERE id = ?;
+
+deleteClient:
+DELETE FROM clients WHERE id = ?;
+
+-- Projects CRUD
+insertProject:
+INSERT INTO projects(clientId, title, address, status, notes, createdAt, updatedAt)
+VALUES (?, ?, ?, ?, ?, ?, ?);
+
+selectProjectById:
+SELECT * FROM projects WHERE id = ?;
+
+selectProjectsByClient:
+SELECT * FROM projects WHERE clientId = ? ORDER BY updatedAt DESC;
+
+updateProject:
+UPDATE projects SET clientId = ?, title = ?, address = ?, status = ?, notes = ?, updatedAt = ? WHERE id = ?;
+
+deleteProject:
+DELETE FROM projects WHERE id = ?;
+
+-- Measurements CRUD
+insertMeasurement:
+INSERT INTO room_measurements(projectId, name, shape, lengthMeters, widthMeters, areaSquareMeters, perimeterMeters, drawingJson, notes, createdAt)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+selectMeasurementById:
+SELECT * FROM room_measurements WHERE id = ?;
+
+updateMeasurement:
+UPDATE room_measurements SET name = ?, shape = ?, lengthMeters = ?, widthMeters = ?, areaSquareMeters = ?, perimeterMeters = ?, drawingJson = ?, notes = ? WHERE id = ?;
+
+deleteMeasurement:
+DELETE FROM room_measurements WHERE id = ?;
+
+-- Price catalog CRUD
+insertPriceItem:
+INSERT INTO price_items(code, title, category, unit, price, updatedAt)
+VALUES (?, ?, ?, ?, ?, ?);
+
+selectPriceItemById:
+SELECT * FROM price_items WHERE id = ?;
+
+updatePriceItem:
+UPDATE price_items SET code = ?, title = ?, category = ?, unit = ?, price = ?, updatedAt = ? WHERE id = ?;
+
+deletePriceItem:
+DELETE FROM price_items WHERE id = ?;
+
+-- Estimates CRUD
+insertEstimate:
+INSERT INTO estimates(projectId, name, material, profileType, complexity, lengthMeters, widthMeters, areaSquareMeters, perimeterMeters, canvasCost, profileCost, complexityCost, optionsCost, totalCost, detailsJson, createdAt)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+selectEstimateById:
+SELECT * FROM estimates WHERE id = ?;
+
+updateEstimate:
+UPDATE estimates SET name = ?, material = ?, profileType = ?, complexity = ?, lengthMeters = ?, widthMeters = ?, areaSquareMeters = ?, perimeterMeters = ?, canvasCost = ?, profileCost = ?, complexityCost = ?, optionsCost = ?, totalCost = ?, detailsJson = ? WHERE id = ?;
+
+deleteEstimate:
+DELETE FROM estimates WHERE id = ?;
