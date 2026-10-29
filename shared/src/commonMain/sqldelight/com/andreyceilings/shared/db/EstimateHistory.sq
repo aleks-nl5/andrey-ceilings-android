@@ -66,7 +66,7 @@ UPDATE estimate_number_settings SET template = ?, prefix = ?, sequenceWidth = ? 
 
 allocateEstimateSequence:
 UPDATE estimate_number_settings SET nextSequence = nextSequence + 1 WHERE id = 1
-RETURNING nextSequence - 1;
+RETURNING nextSequence;
 
 -- Only a first insert may allocate a document number. Conflicting UUID/number
 -- returns no row; caller retries with another UUID, never overwrites a document.
