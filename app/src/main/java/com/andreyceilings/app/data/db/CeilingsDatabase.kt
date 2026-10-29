@@ -112,9 +112,13 @@ internal class CeilingsDatabase private constructor(
 
         @Volatile private var INSTANCE: CeilingsDatabase? = null
 
-        fun get(context: Context): CeilingsDatabase = INSTANCE ?: synchronized(this) {
+        fun get(context: Context): CeilingsDatabase = synchronized(this) {
             INSTANCE ?: build(context.applicationContext).also { INSTANCE = it }
         }
+
+        /** Serialize a restore with all singleton opens and resets. */
+        internal fun <T> withExclusiveRestoreLock(action: () -> T): T =
+            synchronized(this) { action() }
 
         /**
          * Only for instrumentation tests. Does not open the user's live database.
@@ -134,6 +138,10 @@ internal class CeilingsDatabase private constructor(
         }
 
         private fun build(context: Context): CeilingsDatabase {
+            // On an interrupted restore, never open or create an empty live DB.
+            if (!com.andreyceilings.app.data.security.SqlCipherRestoreManager.installing) {
+                com.andreyceilings.app.data.security.SqlCipherRestoreManager.recoverIfNeeded(context)
+            }
             val live = context.getDatabasePath(DATABASE_NAME)
             val key = DatabaseKeyManager.getOrCreatePassphrase(context)
             try {

@@ -395,40 +395,13 @@ internal fun SettingsScreen(databaseStatus: String, database: CeilingsDatabase?,
                             backupStatus = "Відновлюю переносну копію…"
                             val result = withContext(Dispatchers.IO) { runCatching {
                                 val contents = payload ?: error("Спочатку перевірте файл .stpb.")
-                                val appContext = context.applicationContext
-                                val live = appContext.getDatabasePath(CeilingsDatabase.DATABASE_NAME)
-                                val oldDb = java.io.File.createTempFile("ceilings_before_restore_", ".db", context.cacheDir)
-                                val oldKey = com.andreyceilings.app.data.security.DatabaseKeyManager.getOrCreatePassphrase(context)
-                                val wal = java.io.File("${live.absolutePath}-wal")
-                                val shm = java.io.File("${live.absolutePath}-shm")
-                                var oldSaved = false
-                                var keyChanged = false
                                 try {
-                                    database?.let { current ->
-                                        check(current.checkpoint(CeilingsDatabase.WalMode.FULL).complete) {
-                                            "Не вдалося завершити запис поточної БД."
-                                        }
-                                    }
-                                    CeilingsDatabase.closeAndReset()
-                                    wal.delete(); shm.delete()
-                                    if (live.exists()) { live.copyTo(oldDb, overwrite = true); oldSaved = true }
-                                    live.writeBytes(contents.database)
-                                    com.andreyceilings.app.data.security.DatabaseKeyManager.replacePassphrase(context, contents.passphrase)
-                                    keyChanged = true
-                                    val reopened = CeilingsDatabase.get(appContext)
-                                    check(reopened.checkIntegrity()) {
-                                        "Перевірка цілісності після відновлення не пройдена."
-                                    }
-                                    reopened
-                                } catch (failure: Exception) {
-                                    CeilingsDatabase.closeAndReset()
-                                    wal.delete(); shm.delete()
-                                    if (oldSaved && oldDb.exists()) oldDb.copyTo(live, overwrite = true)
-                                    if (keyChanged) com.andreyceilings.app.data.security.DatabaseKeyManager.replacePassphrase(context, oldKey)
-                                    throw failure
+                                    com.andreyceilings.app.data.security.SqlCipherRestoreManager.restore(
+                                        context.applicationContext, contents
+                                    )
                                 } finally {
-                                    wal.delete(); shm.delete(); oldDb.delete(); oldKey.fill(0)
-                                    contents.database.fill(0); contents.passphrase.fill(0)
+                                    contents.database.fill(0)
+                                    contents.passphrase.fill(0)
                                 }
                             } }
                             result.onSuccess { restored ->
@@ -446,7 +419,11 @@ internal fun SettingsScreen(databaseStatus: String, database: CeilingsDatabase?,
                                     "Виміри: ${counts[2]}\n" +
                                     "Кошториси: ${counts[3]}\n" +
                                     "Позиції прайсу: ${counts[4]}"
-                            }.onFailure { backupStatus = "Відновлення не виконано: ${it.message ?: "невідома помилка"}. Перевірте базу перед подальшою роботою." }
+                            }.onFailure { error ->
+                                runCatching { CeilingsDatabase.get(context.applicationContext) }
+                                    .onSuccess(onDatabaseReplaced)
+                                backupStatus = "Відновлення не виконано: ${error.message ?: "невідома помилка"}. Початкову БД збережено для відкату."
+                            }
                         }
                     }) { Text("Відновити") } },
                     dismissButton = { TextButton(onClick = { showRestoreConfirmation = false; pendingRestoreContents?.let { it.database.fill(0); it.passphrase.fill(0) }; pendingRestoreContents = null }) { Text("Скасувати") } }
