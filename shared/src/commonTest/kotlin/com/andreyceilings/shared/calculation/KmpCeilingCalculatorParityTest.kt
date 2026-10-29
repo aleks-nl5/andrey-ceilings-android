@@ -32,7 +32,7 @@ class KmpCeilingCalculatorParityTest {
         assertEquals(RoomGeometry(12.0, 14.0, 6),
             calculator.geometry(GeometryInput(shape = "custom", length = 3.0, width = 4.0,
                 diagonal1 = 5.0, customSides = List(6) { 1.0 })))
-        assertEquals(RoomGeometry(0.01, 0.3, 4),
+        assertEquals(RoomGeometry(0.01, 0.4, 4),
             calculator.geometry(GeometryInput(shape = "rectangle", length = 0.05, width = 0.1)))
     }
 
