@@ -18,7 +18,7 @@ internal object DemoPriceList {
         PriceItemEntity(code = "work.curved", title = "Криволінійна конструкція", category = "Роботи", unit = "м.п.", price = 350.0),
         PriceItemEntity(code = "light.line", title = "Світлова лінія", category = "Освітлення", unit = "м.п.", price = 850.0),
         PriceItemEntity(code = "light.chandelier", title = "Монтаж люстри", category = "Освітлення", unit = "шт.", price = 350.0),
-        PriceItemEntity(code = "light.spot_gx53", title = "Точковий світильник GX53", category = "Освітлення", unit = "шт.", price = 220.0),
+        PriceItemEntity(code = "light.spot", title = "Точковий світильник", category = "Освітлення", unit = "шт.", price = 220.0),
         PriceItemEntity(code = "work.pipe_pass", title = "Обхід труби", category = "Додаткові роботи", unit = "шт.", price = 180.0),
         PriceItemEntity(code = "work.curtain_niche", title = "Ніша для штор", category = "Додаткові роботи", unit = "м.п.", price = 450.0),
         PriceItemEntity(code = "work.shadow_profile", title = "Додатковий тіньовий профіль", category = "Додаткові роботи", unit = "м.п.", price = 380.0),
