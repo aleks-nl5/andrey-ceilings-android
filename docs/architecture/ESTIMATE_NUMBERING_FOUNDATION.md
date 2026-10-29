@@ -1,3 +1,18 @@
+## Update — Android numbering cutover (PR #27)
+
+**Implemented in code, CI on new HEAD pending:** the normal Android `EstimateDao.insert` now creates a legacy UI/PDF projection **and** a fresh numbered immutable `estimate_series` + frozen revision v1/lines in one nested SQLDelight transaction. The database has an additive version-2-to-3 migration (`2.sqm`) linking `estimates.seriesUuid` to the numbered series. Existing rows remain readable with `null` document number; there is **no forced renumbering**, copying or dropping old records.
+
+- The list displays a full number with `v1`; PDF displays stored number and creation date, and uses the v1 name snapshot even after the UI label is renamed. The filename includes the full number and version.
+- Duplicating via the Android list calls the same `EstimateDao.insert` path, allocating a **new** series UUID and number and copying historical prices/line items without consulting the current price list.
+- Android `update` accepts name-only changes for numbered estimates; changes to stored financial and measurement values fail explicitly. Soft-deleting an estimate also tombstones its series, preserving permanent number reservation and immutable history.
+- A signed `system.rounding` line is permitted and tested; other frozen price and totals must remain nonnegative.
+- Android instrumentation checks real SQLCipher create/duplicate/rename/soft delete/reopen and signed rounding; shared JVM tests check coupled atomic writes, rollback, version-2-to-3 migration, and old unnumbered rows.
+
+**Remaining:** check the Android/Windows/iOS CI on the latest HEAD, manually test the numbered UI/PDF/backup on physical Android, add a settings UI for templates, implement read-only preview diff and user-controlled v2/v3 revision history, then extend PDF export to select historical revisions. No automatic repricing or WAL change.
+
+---
+
+
 ## Update — SQLDelight persistence foundation (stage 2, PR #27)
 
 **Implemented, CI verification pending:** added additive schema migration `1.sqm` and `EstimateHistory.sq`. New structures do not modify the existing `estimates` UI table. Existing Android screens, pricing calculations, PDF export and backup code still use the original table/format.
