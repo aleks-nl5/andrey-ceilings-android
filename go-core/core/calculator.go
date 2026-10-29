@@ -78,6 +78,7 @@ type GeometryInput struct {
 	SideF       float64   `json:"sideF"`
 	Diagonal1   float64   `json:"diagonal1"`
 	CustomSides []float64 `json:"customSides"`
+	PrecisionStepMeters float64 `json:"precisionStepMeters,omitempty"`
 }
 type Geometry struct {
 	Area         float64 `json:"area"`
@@ -101,6 +102,17 @@ type CostBreakdown struct {
 }
 
 func round2(v float64) float64 { return math.Round(v*100) / 100 }
+
+// Selected measurement resolution changes dimensions and geometry outputs.
+// Zero preserves pre-existing Go behavior for legacy tests and requests.
+func measured(v, step float64) float64 {
+    if step == 0 { return v }
+    return math.Round(v/step)*step
+}
+func geometryResult(area, perimeter float64, corners int, step float64) Geometry {
+    if step == 0 { return Geometry{round2(area), round2(perimeter), corners} }
+    return Geometry{measured(area, step*step), measured(perimeter, step), corners}
+}
 func nonnegative(v float64) float64 {
 	if v < 0 {
 		return 0
@@ -125,6 +137,8 @@ func DefaultPriceList() PriceList {
 
 // CalculateRoomGeometry mirrors the source web calculator's default geometry rules.
 func CalculateRoomGeometry(p GeometryInput) Geometry {
+    step := p.PrecisionStepMeters
+    if step != .1 && step != .01 && step != .005 && step != .001 { step = 0 }
 	l, w := p.Length, p.Width
 	if l <= 0 {
 		l = 4
@@ -141,11 +155,11 @@ func CalculateRoomGeometry(p GeometryInput) Geometry {
 			s = 3
 		}
 		s = math.Max(.1, s)
-		return Geometry{round2(s * s), round2(4 * s), 4}
+		return geometryResult(measured(s, step)*measured(s, step), 4*measured(s, step), 4, step)
 	}
 	if p.Shape == Rectangle || p.Shape == "" {
 		l, w = math.Max(.1, l), math.Max(.1, w)
-		return Geometry{round2(l * w), round2(2 * (l + w)), 4}
+		return geometryResult(measured(l, step)*measured(w, step), 2*(measured(l, step)+measured(w, step)), 4, step)
 	}
 	if p.Shape == LShaped {
 		a := p.SideA
@@ -178,8 +192,8 @@ func CalculateRoomGeometry(p GeometryInput) Geometry {
 		if f <= 0 {
 			f = math.Max(.1, b-d)
 		}
-		area := math.Max(1, a*b-math.Max(0, e*f))
-		return Geometry{round2(area), round2(a + b + c + d + e + f), 6}
+		area := math.Max(1, measured(a, step)*measured(b, step)-math.Max(0, measured(e, step)*measured(f, step)))
+		return geometryResult(area, measured(a, step)+measured(b, step)+measured(c, step)+measured(d, step)+measured(e, step)+measured(f, step), 6, step)
 	}
 	a := p.SideA
 	if a <= 0 {
@@ -197,7 +211,7 @@ func CalculateRoomGeometry(p GeometryInput) Geometry {
 	if d <= 0 {
 		d = w
 	}
-	area := l * w
+	area := measured(l, step) * measured(w, step)
 	if p.Diagonal1 > 0 {
 		tri := func(x, y, diag float64) float64 {
 			s := (x + y + diag) / 2
@@ -207,7 +221,7 @@ func CalculateRoomGeometry(p GeometryInput) Geometry {
 			}
 			return math.Sqrt(product)
 		}
-		candidate := tri(a, b, p.Diagonal1) + tri(c, d, p.Diagonal1)
+		candidate := tri(measured(a, step), measured(b, step), measured(p.Diagonal1, step)) + tri(measured(c, step), measured(d, step), measured(p.Diagonal1, step))
 		if candidate > 0 {
 			area = candidate
 		}
@@ -216,7 +230,7 @@ func CalculateRoomGeometry(p GeometryInput) Geometry {
 	if len(p.CustomSides) >= 4 {
 		corners = len(p.CustomSides)
 	}
-	return Geometry{round2(area), round2(a + b + c + d), corners}
+	return geometryResult(area, measured(a, step)+measured(b, step)+measured(c, step)+measured(d, step), corners, step)
 }
 
 // CalculateCeilingCost mirrors calculateCeilingCost() in src/utils/calculator.ts.
