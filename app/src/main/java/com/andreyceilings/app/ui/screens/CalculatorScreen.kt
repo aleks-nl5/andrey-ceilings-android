@@ -105,14 +105,7 @@ internal fun CalculatorScreen(
     var materialExpanded by remember { mutableStateOf(false) }
     ExposedDropdownMenuBox(expanded = materialExpanded, onExpandedChange = { materialExpanded = it }) {
         OutlinedTextField(
-            when (material) {
-                "pvc_glossy" -> "ПВХ глянцевий"
-                "pvc_satin" -> "ПВХ сатиновий"
-                "fabric" -> "Тканинний Descor"
-                "fireproof_km2" -> "Негорючий KM2"
-                "acoustic" -> "Акустичний"
-                else -> "ПВХ матовий"
-            }, {}, readOnly = true, label = { Text("Матеріал") }, trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(materialExpanded) }, modifier = Modifier.menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable, enabled = true).fillMaxWidth())
+            materialDisplayName(material), {}, readOnly = true, label = { Text("Матеріал") }, trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(materialExpanded) }, modifier = Modifier.menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable, enabled = true).fillMaxWidth())
         AppExposedDropdownMenu(expanded = materialExpanded, onDismissRequest = { materialExpanded = false }) {
             listOf(
                 "pvc_matte" to "ПВХ матовий", "pvc_glossy" to "ПВХ глянцевий",
@@ -126,13 +119,7 @@ internal fun CalculatorScreen(
     var profileExpanded by remember { mutableStateOf(false) }
     ExposedDropdownMenuBox(expanded = profileExpanded, onExpandedChange = { profileExpanded = it }) {
         OutlinedTextField(
-            when (profileType) {
-                "pvc" -> "ПВХ стіновий"
-                "shadow_kraab" -> "Тіньовий EuroKRAAB"
-                "floating_led" -> "Парящий з LED"
-                "slott_tracks" -> "Слот / трековий"
-                else -> "Алюмінієвий гарпунний"
-            }, {}, readOnly = true, label = { Text("Система профілю") }, trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(profileExpanded) }, modifier = Modifier.menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable, enabled = true).fillMaxWidth())
+            profileDisplayName(profileType), {}, readOnly = true, label = { Text("Система профілю") }, trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(profileExpanded) }, modifier = Modifier.menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable, enabled = true).fillMaxWidth())
         AppExposedDropdownMenu(expanded = profileExpanded, onDismissRequest = { profileExpanded = false }) {
             listOf(
                 "standard_alu" to "Алюмінієвий гарпунний", "pvc" to "ПВХ стіновий",
