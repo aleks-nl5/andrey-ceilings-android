@@ -71,7 +71,7 @@ object EstimateLineItems {
             Triple("Додатковий тіньовий профіль", EstimateOptionId.SHADOW_PROFILE.code, EstimateOptionId.SHADOW_PROFILE.code) to ("м.п." to 380.0),
             Triple("Додатковий парящий профіль", EstimateOptionId.FLOATING_PROFILE.code, EstimateOptionId.FLOATING_PROFILE.code) to ("м.п." to 420.0),
             Triple("Монтаж люстри", EstimateOptionId.CHANDELIER.code, EstimateOptionId.CHANDELIER.code) to ("шт." to 350.0),
-            Triple("Точковий світильник GX53", EstimateOptionId.SPOT_GX53.code, EstimateOptionId.SPOT_GX53.code) to ("шт." to 220.0),
+            Triple("Точковий світильник", EstimateOptionId.SPOT.code, EstimateOptionId.SPOT.code) to ("шт." to 220.0),
             Triple("Обхід труби", EstimateOptionId.PIPE_PASS.code, EstimateOptionId.PIPE_PASS.code) to ("шт." to 180.0),
             Triple("Ніша для штор", EstimateOptionId.CURTAIN_NICHE.code, EstimateOptionId.CURTAIN_NICHE.code) to ("м.п." to 450.0),
             Triple("Додатковий кут", EstimateOptionId.EXTRA_CORNER.code, EstimateOptionId.EXTRA_CORNER.code) to ("шт." to 90.0),
