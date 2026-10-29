@@ -5,8 +5,9 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 /**
- * Golden values are asserted independently in go-core/core/parity_vectors_test.go.
- * Never update these expectations to match Kotlin without verifying the Go result.
+ * Fixed golden calculation vectors established during the Go-to-KMP parity phase.
+ * The old Go engine has been removed; changing these expected results requires
+ * an explicit business-rule decision and a separately reviewed regression.
  */
 class KmpCeilingCalculatorParityTest {
     @Test
