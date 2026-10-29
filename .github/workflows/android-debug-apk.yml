@@ -100,6 +100,21 @@ jobs:
       - name: Run JVM unit tests
         run: gradle --no-daemon :app:testDebugUnitTest --stacktrace --warning-mode all
 
+      # GitHub's Ubuntu runner exposes /dev/kvm, but the runner user may not have
+      # access. Without KVM, the x86_64 emulator takes minutes to boot and its
+      # package manager may never become usable (observed in run 40850655184).
+      - name: Enable hardware acceleration for Android emulator
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ ! -c /dev/kvm ]; then
+            echo "::error::This runner has no /dev/kvm; cannot run reliable x86_64 Android tests."
+            exit 1
+          fi
+          sudo chmod a+rw /dev/kvm
+          test -r /dev/kvm && test -w /dev/kvm
+          ls -l /dev/kvm
+
       - name: Verify encrypted SQLDelight database on Android emulator
         uses: reactivecircus/android-emulator-runner@v2
         with:
