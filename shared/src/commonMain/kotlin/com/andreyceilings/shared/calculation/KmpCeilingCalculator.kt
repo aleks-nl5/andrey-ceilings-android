@@ -6,12 +6,9 @@ import kotlin.math.max
 import kotlin.math.sqrt
 
 /**
- * Independent KMP port of go-core/core/calculator.go.
- *
- * During migration the Android app still uses Go/AAR. This implementation is
- * deliberately not connected to production UI until parity tests cover all
- * calculation paths. Inputs and prices are expected to be finite (as in the
- * current Android calculator adapter).
+ * Shared Android/iOS/Windows Kotlin Multiplatform calculation engine.
+ * Golden vectors from the former Go implementation are retained in commonTest.
+ * Callers should provide finite input values and valid measurement precision.
  */
 data class GeometryInput(
     val shape: String = "rectangle",
