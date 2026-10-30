@@ -130,13 +130,15 @@ internal class EstimateRevisionSnapshotAssembler(private val database: Prototype
         val details = JSONObject(saved.detailsJson)
         // The KMP registry owns the full, versioned field contract.
         // Neither SQLDelight nor Android may infer missing geometry inputs.
-        val frozenShape = FrozenGeometrySnapshotSchema.requireShape(
-            keys = source.keys().asSequence().toSet(),
-            shapeId = if (source.has("shape")) source.getString("shape") else null,
-            schemaVersion = if (source.has("geometrySchemaVersion")) {
-                source.getLong("geometrySchemaVersion")
-            } else null
-        )
+        val isPolygonV2 = FrozenPolygonGeometryJson.isVersion2(source)
+        val frozenShape = if (isPolygonV2) null else
+            FrozenGeometrySnapshotSchema.requireShape(
+                keys = source.keys().asSequence().toSet(),
+                shapeId = if (source.has("shape")) source.getString("shape") else null,
+                schemaVersion = if (source.has("geometrySchemaVersion")) {
+                    source.getLong("geometrySchemaVersion")
+                } else null
+            )
         check(source.getString("name").isNotBlank())
         val complexity = source.getString("complexity")
         check(complexity in setOf("straight", "multilevel", "curved")) {
@@ -200,7 +202,15 @@ internal class EstimateRevisionSnapshotAssembler(private val database: Prototype
         check(preview.baseRevisionUuid == latest.revisionUuid) {
             "Source revision changed while preparing a candidate"
         }
-        val candidate = when (frozenShape) {
+        val candidate = if (isPolygonV2) {
+            EstimateRevisionCandidates.preparePolygonWithOptions(
+                saved,
+                FrozenPolygonGeometryJson.read(source, precision),
+                complexity,
+                preview,
+                savedOptionQuantities
+            )
+        } else when (frozenShape) {
             FrozenCeilingShape.RECTANGLE -> EstimateRevisionCandidates.prepareRectangleWithOptions(
                 saved,
                 VerifiedRectangleInputs(
@@ -231,6 +241,7 @@ internal class EstimateRevisionSnapshotAssembler(private val database: Prototype
                 preview,
                 savedOptionQuantities
             )
+            else -> error("Unsupported frozen geometry")
         }
         val proposedLines = JSONArray()
         candidate.lines.forEach { line ->
