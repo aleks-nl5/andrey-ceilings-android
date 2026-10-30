@@ -43,14 +43,31 @@ class EstimateRecalculationPreviewTest {
         assertEquals(RecalculationProblem.AMBIGUOUS_PRICE, result.lines.single().problem)
     }
 
-    @Test fun stableUuidTakesPriorityOverRenamedCode() {
+    @Test fun matchingUuidCannotHideSemanticCodeChange() {
         val result = preview(
             rows = listOf(before(uuid = "price-2")),
-            prices = listOf(price(uuid = "price-1"), price(code = "canvas.renamed", uuid = "price-2", amount = 140.0))
+            prices = listOf(
+                price(uuid = "price-1"),
+                price(code = "canvas.other_material", uuid = "price-2", amount = 140.0)
+            )
+        )
+        assertFalse(result.canConfirm)
+        assertNull(result.proposedTotal)
+        assertEquals(RecalculationProblem.CHANGED_CODE, result.lines.single().problem)
+    }
+
+    @Test fun matchingUuidAndCodeAllowPriceAndDisplayTitleChange() {
+        val result = preview(
+            rows = listOf(before(uuid = "price-2")),
+            prices = listOf(
+                price(uuid = "price-1", code = "profile.other"),
+                price(code = "canvas.pvc", uuid = "price-2", amount = 140.0)
+            )
         )
         assertTrue(result.canConfirm)
         assertEquals(420.0, result.proposedTotal)
-        assertEquals("canvas.renamed", result.lines.single().after?.stableCode)
+        assertEquals("canvas.pvc", result.lines.single().after?.stableCode)
+        assertEquals("Нова назва", result.lines.single().after?.title)
     }
 
     @Test fun missingUuidCannotBeReplacedBySameNameOrCode() {

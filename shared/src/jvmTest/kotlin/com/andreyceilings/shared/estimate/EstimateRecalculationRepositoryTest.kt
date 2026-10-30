@@ -233,4 +233,61 @@ class EstimateRecalculationRepositoryTest {
             assertEquals(2, history.revisions(series.seriesUuid).size)
         }
     }
+    @Test fun sameUuidWithChangedPriceCodeBlocksTransactionalRevisionInsert() {
+        JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).use { driver ->
+            PrototypeDatabase.Schema.create(driver)
+            driver.execute(null, "PRAGMA foreign_keys = ON", 0)
+            val db = PrototypeDatabase(driver)
+            val project = ProjectRepository(db).createReturningId(
+                clientId = null, title = "Semantic price identity", createdAt = 100L
+            )
+            val prices = PriceRepository(db)
+            val priceId = prices.upsertReturningId(
+                code = "canvas.pvc", title = "Canvas PVC", category = "canvas",
+                unit = "m²", price = 100.0, updatedAt = 100L
+            )
+            val savedPrice = prices.find(priceId)!!
+            val history = ImmutableEstimateRepository(db)
+            val source = ImmutableEstimateDraft(
+                sourceMeasurementJson = """{"shape":"rectangle","area":3}""",
+                detailsJson = """{"measurementPrecisionMeters":0.01}""",
+                measurementPrecisionMeters = 0.01,
+                calculationRuleVersion = "kmp-v1",
+                totalCost = 300.0,
+                lines = listOf(ImmutableEstimateLine(
+                    "canvas.pvc", "Canvas PVC", "m²", 3.0, 100.0, 300.0,
+                    priceItemUuid = savedPrice.uuid
+                ))
+            )
+            val series = history.createSeries(
+                projectId = project, year = 2026, createdAt = 200L,
+                firstRevision = source
+            )
+            val recalculation = EstimateRecalculationRepository(db)
+            val validPreview = recalculation.previewLatest(series.seriesUuid)
+            assertTrue(validPreview.canConfirm)
+
+            // The *same* catalog row/UUID now represents another material.
+            // Even if the numeric price and unit stay equal, v2 is unsafe.
+            prices.upsertReturningId(
+                id = priceId, code = "canvas.fabric", title = "Different fabric",
+                category = "canvas", unit = "m²", price = 100.0, updatedAt = 100L
+            )
+            val blocked = recalculation.previewLatest(series.seriesUuid)
+            assertFalse(blocked.canConfirm)
+            assertEquals(setOf(RecalculationProblem.CHANGED_CODE), blocked.problems)
+            val attempted = runCatching {
+                recalculation.withVerifiedPreviewTransaction(series.seriesUuid, blocked) {
+                    history.appendRevision(
+                        series.seriesUuid, blocked.baseRevisionUuid, 300L, source
+                    )
+                }
+            }
+            assertTrue(attempted.isFailure)
+            assertFalse(recalculation.isPreviewCurrent(series.seriesUuid, validPreview))
+            assertEquals(1, history.revisions(series.seriesUuid).size)
+            assertEquals(300.0, history.revision(series.initialRevisionUuid)?.totalCost)
+        }
+    }
+
 }

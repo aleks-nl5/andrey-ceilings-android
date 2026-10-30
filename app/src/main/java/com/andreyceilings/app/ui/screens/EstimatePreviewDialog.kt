@@ -84,6 +84,7 @@ internal fun EstimatePreviewDialog(
 private fun problemLabel(problem: RecalculationProblem?): String = when (problem) {
     RecalculationProblem.MISSING_PRICE -> "Позицію не знайдено в поточному прайсі."
     RecalculationProblem.AMBIGUOUS_PRICE -> "Кілька позицій із тим самим кодом. Потрібен точний UUID."
+    RecalculationProblem.CHANGED_CODE -> "Службовий код позиції прайсу змінився — потрібна ручна перевірка."
     RecalculationProblem.CHANGED_UNIT -> "Одиниця виміру змінилася; автоматична заміна заборонена."
     RecalculationProblem.INVALID_PRICE -> "Поточна ціна некоректна."
     RecalculationProblem.HISTORICAL_ADJUSTMENT -> "Історичне коригування/legacy потребує ручного рішення."

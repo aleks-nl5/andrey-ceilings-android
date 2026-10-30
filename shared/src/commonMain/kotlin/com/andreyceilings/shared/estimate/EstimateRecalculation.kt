@@ -24,6 +24,7 @@ data class CurrentEstimatePrice(
 enum class RecalculationProblem {
     MISSING_PRICE,
     AMBIGUOUS_PRICE,
+    CHANGED_CODE,
     CHANGED_UNIT,
     INVALID_PRICE,
     HISTORICAL_ADJUSTMENT,
@@ -120,6 +121,12 @@ object EstimateRecalculation {
             val problem = when {
                 matches.isEmpty() -> RecalculationProblem.MISSING_PRICE
                 matches.size != 1 -> RecalculationProblem.AMBIGUOUS_PRICE
+                // UUID identifies a specific price row, but a change of
+                // stable code may change the *kind* of work/material it
+                // represents. Do not silently reprice historical quantities
+                // against a different semantic code, even at the same UUID.
+                matches.single().stableCode != before.stableCode ->
+                    RecalculationProblem.CHANGED_CODE
                 matches.single().unit != before.unit -> RecalculationProblem.CHANGED_UNIT
                 !matches.single().unitPrice.isFinite() || matches.single().unitPrice < 0.0 ->
                     RecalculationProblem.INVALID_PRICE
