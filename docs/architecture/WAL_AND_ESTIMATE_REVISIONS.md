@@ -1,5 +1,15 @@
 # Combined PR: SQLCipher WAL hardening + immutable estimate revisions v2/v3
 
+## Real emulator /data ENOSPC proof after approved polygon APK (30 Oct 2026)
+
+The owner explicitly confirmed **complete manual polygon acceptance works**. Android [#41137038122](https://github.com/aleks-nl5/andrey-ceilings-android/actions/runs/41137038122) and Windows/iOS [#41137038029](https://github.com/aleks-nl5/andrey-ceilings-android/actions/runs/41137038029) also passed for the earlier `b417b80f` head. The previous roadmap item for manual polygon acceptance is now closed.
+
+The previously open **real full-/data ENOSPC** issue gets a dedicated `SqlCipherRealFullPartitionEnospcTest`, excluded from normal Android instrumentation using the existing isolation marker. `ci/verify-sqlcipher-enospc.sh` invokes it **last** on a disposable CI emulator after normal SQLDelight + process-death checks; a CI trap removes the fixed-name block-reservation file on failure. The test requires an explicit instrumentation argument, emulator hardware and a debuggable application; do not run on a physical phone or persistent user's data.
+
+The test creates a WAL-committed row, an authenticated encrypted backup, then makes `restoreWithStageOutputForTesting` execute its real preflight and temporary-stage creation. Only at that point it uses **kernel `posix_fallocate` on a disposable file located on the same `/data`** to exhaust actual remaining blocks, requiring a real `ENOSPC` from `FileOutputStream.write`. Unlike previous simulated IOException, EPIPE, or `StatFs` tests this proves the OS storage failure. The filler is removed before assertions. The live driver, project rows, Keystore key, pending-restore marker, rollback/staging files and `PRAGMA integrity_check` are checked; a later real snapshot, successful restore and cold reopen prove recovery after freeing space.
+
+**Status: test added and awaiting fresh all-platform CI.** A build failure due to emulator filesystem/kernel limitations is **not** proof of successful ENOSPC coverage. No production code was loosened; all existing WAL, backup, history and PDF tests remain enabled.
+
 ## Accepted v3 Android fix and protected end-to-end history (30 Oct 2026)
 
 The previous Android emulator run failed exactly one of 51 instrumentation tests because the nested `FrozenPolygonGeometryJson.readGeometryFields` allowed v2 only. Commit `75778c42` corrected its strict v2/v3 version gate. [Android CI #41128915568](https://github.com/aleks-nl5/andrey-ceilings-android/actions/runs/41128915568) and [Windows/iOS CI #41128915482](https://github.com/aleks-nl5/andrey-ceilings-android/actions/runs/41128915482) both passed, and the owner confirmed the APK works.
