@@ -60,6 +60,7 @@ import com.andreyceilings.app.ui.theme.ThemeModeSelector
 import com.andreyceilings.app.core.CeilingEstimate
 import com.andreyceilings.app.core.CeilingCalculator
 import com.andreyceilings.app.core.CalculatorOptions
+import com.andreyceilings.shared.calculation.CeilingShapeTemplates
 import com.andreyceilings.shared.calculation.MeasurementPrecision
 import com.andreyceilings.shared.estimate.FrozenCeilingShape
 import com.andreyceilings.shared.estimate.VerifiedCeilingGeometry
@@ -253,12 +254,23 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
             } ?: MeasurementPrecision.ONE_CENTIMETER
         )
     }
-    var length by remember { mutableStateOf("5.4") }
-    var width by remember { mutableStateOf("3.8") }
     var geometryShape by remember { mutableStateOf(FrozenCeilingShape.RECTANGLE.wireId) }
-    val lShapedSides = remember {
-        mutableStateListOf("5", "4", "2", "2", "3", "2")
+    // A single keyed measurement store serves every registered shape template.
+    // New templates require no new Compose fields or per-shape state variables.
+    val geometryMeasurements = remember {
+        mutableStateMapOf(
+            "rectangle.length" to "5.4", "rectangle.width" to "3.8",
+            "l_shaped.A" to "5", "l_shaped.B" to "4",
+            "l_shaped.C" to "2", "l_shaped.D" to "2",
+            "l_shaped.E" to "3", "l_shaped.F" to "2"
+        )
     }
+    val length = geometryMeasurements["rectangle.length"].orEmpty()
+    val width = geometryMeasurements["rectangle.width"].orEmpty()
+    val templateMeasurements = CeilingShapeTemplates.template(geometryShape)
+        ?.parameterKeys?.associateWith { key ->
+            geometryMeasurements["$geometryShape.$key"].orEmpty()
+        }.orEmpty()
     var pricePerM2 by remember { mutableStateOf("290") }
     var profilePrice by remember { mutableStateOf("130") }
     var profileType by remember { mutableStateOf("standard_alu") }
@@ -297,22 +309,15 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
         complexity = complexity
     )
     // The Android calculator now uses the shared Kotlin Multiplatform engine.
-    val calculation = remember(length, width, geometryShape, lShapedSides.toList(), pricePerM2, profilePrice, priceItems, calculatorOptions, material, profileType, measurementPrecision) {
+    val calculation = remember(geometryShape, templateMeasurements, pricePerM2, profilePrice, priceItems, calculatorOptions, material, profileType, measurementPrecision) {
         runCatching {
-            val verifiedGeometry = when (geometryShape) {
-                FrozenCeilingShape.RECTANGLE.wireId ->
-                    VerifiedCeilingGeometry.capturedRectangle(
-                        length.toSafeDouble(), width.toSafeDouble(),
-                        measurementPrecision.stepMeters
-                    )
-                FrozenCeilingShape.L_SHAPED.wireId -> VerifiedCeilingGeometry.capturedLShaped(
-                    lShapedSides.map {
-                        it.trim().replace(',', '.').toDoubleOrNull() ?: Double.NaN
-                    },
-                    measurementPrecision.stepMeters
-                )
-                else -> error("Невідомий тип геометрії")
-            }
+            val verifiedGeometry = VerifiedCeilingGeometry.capturedTemplate(
+                geometryShape,
+                templateMeasurements.mapValues { (_, text) ->
+                    text.trim().replace(',', '.').toDoubleOrNull() ?: Double.NaN
+                },
+                measurementPrecision.stepMeters
+            )
             CeilingCalculator.estimate(
                 length.toSafeDouble(), width.toSafeDouble(),
                 pricePerM2.toSafeDouble(), profilePrice.toSafeDouble(),
@@ -397,12 +402,14 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
                         )
                         AppTab.CALCULATOR -> CalculatorScreen(
                             database = database,
-                            length = length, onLength = { length = it },
-                            width = width, onWidth = { width = it },
+                            length = length,
+                            width = width,
                             geometryShape = geometryShape,
                             onGeometryShape = { geometryShape = it },
-                            lShapedSides = lShapedSides.toList(),
-                            onLShapedSide = { index, value -> lShapedSides[index] = value },
+                            shapeMeasurements = templateMeasurements,
+                            onShapeMeasurement = { key, value ->
+                                geometryMeasurements["$geometryShape.$key"] = value
+                            },
                             price = pricePerM2, onPrice = { pricePerM2 = it },
                             profilePrice = profilePrice, onProfilePrice = { profilePrice = it },
                             material = material, onMaterial = { material = it },
