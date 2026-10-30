@@ -1,6 +1,7 @@
 package com.andreyceilings.app
 
 import android.content.Context
+import android.system.Os
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.andreyceilings.app.data.db.CeilingsDatabase
@@ -20,31 +21,28 @@ import org.junit.Test
 import org.junit.runner.RunWith
 
 /**
- * Non-destructive, OS-generated ENOSPC proof on the Android emulator.
+ * Real kernel write(2) failure through a pipe with no readers. The Android
+ * sandbox denies /dev/full with EACCES, so it cannot prove a true ENOSPC on
+ * standard CI emulators. EPIPE tests the very same staging stream's handling
+ * of an unexpected OS write error without filling the emulator filesystem.
  *
- * /dev/full is a Linux character device which fails actual write(2) calls
- * with ENOSPC. Redirecting only the incoming staging *stream* to this device
- * tests the real restore failure path after a successful StatFs check without
- * exhausting emulator flash storage or ever replacing the live SQLCipher DB.
- * It is NOT a proof of a physically filled Android data partition.
+ * This is NOT a genuine Android /data exhaustion test, and the separate
+ * deterministic ENOSPC fault-injection regressions remain required.
  */
 @RunWith(AndroidJUnit4::class)
-class SqlCipherKernelEnospcTest {
-    @Test fun kernelEnospcDuringIncomingStageLeavesLiveDatabaseAndKeyUntouched() {
+class SqlCipherKernelWriteFailureTest {
+    @Test fun kernelBrokenPipeDuringIncomingStageLeavesDatabaseAndKeyUntouched() {
         val context: Context = ApplicationProvider.getApplicationContext()
-        val full = File("/dev/full")
-        assertTrue("Android emulator has no /dev/full ENOSPC device", full.exists())
 
-        // Prove the kernel actually reports ENOSPC; permission errors and
-        // arbitrary IOException must not be counted as a disk-full proof.
-        val kernelError = runCatching {
-            FileOutputStream(full).use { fd ->
-                fd.write(ByteArray(4096) { 0x3f })
-                fd.fd.sync()
+        // A real, app-accessible kernel write error. The read end is closed
+        // before writing, so the OS returns EPIPE (not a synthetic exception).
+        val directFailure = runCatching {
+            brokenPipeOutput().use { stream ->
+                stream.write(ByteArray(4096) { 0x3f })
             }
         }.exceptionOrNull()
-        assertTrue("Expected OS ENOSPC, got: $kernelError",
-            isKernelNoSpaceError(kernelError))
+        assertTrue("Expected kernel EPIPE from a readerless pipe, got: $directFailure",
+            isBrokenPipe(directFailure))
 
         val database = CeilingsDatabase.get(context)
         val key = DatabaseKeyManager.getOrCreatePassphrase(context)
@@ -58,42 +56,37 @@ class SqlCipherKernelEnospcTest {
             val failure = runCatching {
                 SqlCipherRestoreManager.restoreWithStageOutputForTesting(
                     context, PortableBackupPayload.Contents(image, key)
-                ) { _ ->
-                    FileOutputStream(full)
-                }
+                ) { _ -> brokenPipeOutput() }
             }.exceptionOrNull()
-            assertTrue("Restore did not propagate kernel ENOSPC: $failure",
-                isKernelNoSpaceError(failure))
+            assertTrue("Restore did not propagate kernel EPIPE: $failure",
+                isBrokenPipe(failure))
 
-            // No marker/key mutation or driver closure is allowed before a
-            // fully persisted and verified incoming SQLCipher image exists.
+            // Failure must happen during incoming staging, before any
+            // production driver closure, Keystore swap or recovery marker.
             assertTrue("Live SQLCipher database failed integrity_check",
                 database.checkIntegrity())
-            assertTrue("Production driver was replaced despite failed staging",
+            assertTrue("Live driver was replaced after a failed stage",
                 CeilingsDatabase.get(context) === database)
-            assertEquals("Committed projects were changed by ENOSPC",
+            assertEquals("Committed projects changed after EPIPE",
                 before, ProjectRepository(database.database).all().map { it.title }.sorted())
             val nowKey = DatabaseKeyManager.getOrCreatePassphrase(context)
             try {
-                assertArrayEquals("Keystore passphrase changed despite ENOSPC", key, nowKey)
+                assertArrayEquals("Keystore passphrase changed after EPIPE", key, nowKey)
             } finally {
                 nowKey.fill(0)
             }
             val pending = DatabaseKeyManager.pendingRestoreOriginalPassphrase(context)
             try {
-                assertTrue("A false pending-restore marker was written", pending == null)
+                assertTrue("Pending-restore marker was written on EPIPE", pending == null)
             } finally {
                 pending?.fill(0)
             }
-            assertFalse("An unnecessary rollback file was created", rollback.exists())
+            assertFalse("Rollback was created before incoming validation", rollback.exists())
             val leaked = live.parentFile?.listFiles()
                 ?.filter { it.name.startsWith("restore_incoming_") ||
                     it.name.startsWith("restore_prepared_") }
                 .orEmpty()
-            assertTrue("Partial restore staging files remain after ENOSPC: $leaked",
-                leaked.isEmpty())
-
-            // Backup must still be available after the failing write.
+            assertTrue("Partial restore files leaked on EPIPE: $leaked", leaked.isEmpty())
             val next = PortableBackupManager.createVerifiedSnapshot(context, database)
             try {
                 PortableBackupManager.verifyEncryptedSnapshot(context, next, key)
@@ -107,12 +100,26 @@ class SqlCipherKernelEnospcTest {
         }
     }
 
-    private fun isKernelNoSpaceError(failure: Throwable?): Boolean {
+    /**
+     * Only OS descriptors created inside this test are used. No access to
+     * privileged device nodes, external storage or users' files is required.
+     */
+    private fun brokenPipeOutput(): FileOutputStream {
+        val ends = Os.pipe()
+        try {
+            Os.close(ends[0])
+        } catch (failure: Throwable) {
+            Os.close(ends[1])
+            throw failure
+        }
+        return FileOutputStream(ends[1])
+    }
+
+    private fun isBrokenPipe(failure: Throwable?): Boolean {
         if (failure !is IOException) return false
-        val reason = generateSequence(failure as Throwable?) { it.cause }
-            .mapNotNull { it.message }
-            .joinToString(" ")
-        return reason.contains("ENOSPC", ignoreCase = true) ||
-            reason.contains("No space left on device", ignoreCase = true)
+        val descriptions = generateSequence(failure as Throwable?) { it.cause }
+            .mapNotNull { it.message }.joinToString(" ")
+        return descriptions.contains("EPIPE", ignoreCase = true) ||
+            descriptions.contains("Broken pipe", ignoreCase = true)
     }
 }
