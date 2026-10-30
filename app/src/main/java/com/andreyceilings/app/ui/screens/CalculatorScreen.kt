@@ -111,7 +111,7 @@ internal fun CalculatorScreen(
     }
     if (geometryShape == FrozenCeilingShape.L_SHAPED.wireId) {
         Text(
-            "Прямі кути встановлюються автоматично: A = C + E, B = D + F.",
+            "Достатньо 4 розмірів. Прямі кути автоматичні: E = A − C, F = B − D.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
