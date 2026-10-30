@@ -36,6 +36,9 @@ object VerifiedCeilingGeometry {
         }
         val lengthMm = mm(lengthMeters, precision)
         val widthMm = mm(widthMeters, precision)
+        require(lengthMm >= 100L && widthMm >= 100L) {
+            "Прямокутна стеля має мати сторони не менше 0,1 м"
+        }
         val polygon = CeilingShapeTemplates.fromMeasurements(
             "rectangle", mapOf("length" to lengthMm, "width" to widthMm)
         )
@@ -69,6 +72,12 @@ object VerifiedCeilingGeometry {
             "The selected ceiling template requires all its measurements"
         }
         val roundedMm = measurementsMeters.mapValues { (_, value) -> mm(value, precision) }
+        if (shapeType == "rectangle") {
+            require(roundedMm.getValue("length") >= 100L &&
+                roundedMm.getValue("width") >= 100L) {
+                "Прямокутна стеля має мати сторони не менше 0,1 м"
+            }
+        }
         val polygon = template.build(roundedMm)
         CeilingPolygonCalculator.calculate(polygon, precisionStepMeters)
         return when (shapeType) {
