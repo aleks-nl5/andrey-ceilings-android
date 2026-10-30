@@ -1,6 +1,7 @@
 package com.andreyceilings.app.ui.screens
 
 import com.andreyceilings.app.data.db.EstimateEntity
+import com.andreyceilings.app.data.db.frozenLShapedGeometryFromSource
 import com.andreyceilings.shared.db.ProjectRepository
 import com.andreyceilings.shared.db.PrototypeDatabase
 import com.andreyceilings.shared.estimate.EstimateNumbering
@@ -52,16 +53,23 @@ internal fun loadImmutableEstimatePdfSnapshot(
     }
 
     val original = JSONObject(revision.sourceMeasurementJson)
-    val sourceKeys = setOf(
-        "name", "material", "profileType", "complexity", "lengthMeters",
-        "widthMeters", "areaSquareMeters", "perimeterMeters"
+    // This is the exact immutable version, not the current estimate row.
+    // The shared schema validates its complete geometry before any PDF bytes
+    // are rendered. Old rectangle-only assumptions must not reject L rooms.
+    val frozenLShape = frozenLShapedGeometryFromSource(
+        revision.sourceMeasurementJson, revision.measurementPrecisionMeters
     )
-    check(original.keys().asSequence().toSet().containsAll(sourceKeys)) {
-        "Відсутні вихідні параметри історичного кошторису."
+    val dimensions = if (frozenLShape != null) {
+        listOf(
+            frozenLShape.sideA, frozenLShape.sideB,
+            original.getDouble("areaSquareMeters"),
+            original.getDouble("perimeterMeters")
+        )
+    } else {
+        listOf(
+            "lengthMeters", "widthMeters", "areaSquareMeters", "perimeterMeters"
+        ).map(original::getDouble)
     }
-    val dimensions = listOf(
-        "lengthMeters", "widthMeters", "areaSquareMeters", "perimeterMeters"
-    ).map(original::getDouble)
     check(dimensions.all { it.isFinite() && it >= 0.0 }) {
         "Некоректні історичні розміри."
     }
@@ -141,7 +149,8 @@ internal fun loadImmutableEstimatePdfSnapshot(
             detailsJson = details.toString(),
             createdAt = revision.createdAt,
             printableNumber = publicNumber,
-            originalDocumentName = name
+            originalDocumentName = name,
+            frozenGeometryInput = frozenLShape
         ),
         projectTitle = project.title,
         versionNumber = revision.versionNumber,
