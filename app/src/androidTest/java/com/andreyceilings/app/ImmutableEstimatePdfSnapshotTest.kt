@@ -8,6 +8,9 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.andreyceilings.app.ui.screens.loadImmutableEstimatePdfSnapshot
 import com.andreyceilings.app.ui.screens.writeEstimatePdf
+import com.andreyceilings.app.data.db.FrozenPolygonGeometryJson
+import com.andreyceilings.shared.calculation.CeilingPointMm
+import com.andreyceilings.shared.estimate.FrozenPolygonGeometryContract
 import com.andreyceilings.shared.db.PriceRepository
 import com.andreyceilings.shared.db.ProjectRepository
 import com.andreyceilings.shared.db.PrototypeDatabase
@@ -281,6 +284,121 @@ class ImmutableEstimatePdfSnapshotTest {
                 }
                 assertEquals(230.0,
                     history.revision(created.initialRevisionUuid)!!.totalCost, 0.0)
+            }
+        } finally {
+            files.forEach { it.delete() }
+            context.deleteDatabase(name)
+            key.fill(0)
+        }
+    }
+
+    @Test fun immutablePolygonV2PdfsRenderExactFrozenConcaveContourAcrossColdReopen() {
+        val context: Context = ApplicationProvider.getApplicationContext()
+        val name = "sqldelight_test_polygon_v2_pdf.db"
+        val key = ByteArray(32) { 0x68.toByte() }
+        val files = mutableListOf<File>()
+        context.deleteDatabase(name)
+        try {
+            lateinit var seriesUuid: String
+            lateinit var revisionIds: List<String>
+            val polygon = FrozenPolygonGeometryContract.capture(
+                "polygon", listOf(
+                    CeilingPointMm(0, 0), CeilingPointMm(6000, 0),
+                    CeilingPointMm(6000, 2000), CeilingPointMm(3000, 2000),
+                    CeilingPointMm(3000, 5000), CeilingPointMm(0, 5000)
+                ), emptyMap(), 0.01
+            )
+            fun frozenDraft(canvas: Double): ImmutableEstimateDraft {
+                val rows = listOf(
+                    ImmutableEstimateLine(
+                        "canvas.pvc_matte", "Frozen polygon canvas", "м²",
+                        21.0, canvas, 21.0 * canvas
+                    ),
+                    ImmutableEstimateLine(
+                        "profile.standard_alu", "Frozen polygon profile", "м.п.",
+                        22.0, 5.0, 110.0
+                    )
+                )
+                val jsonLines = JSONArray()
+                rows.forEach { line ->
+                    jsonLines.put(JSONObject()
+                        .put("code", line.stableCode).put("title", line.title)
+                        .put("unit", line.unit).put("quantity", line.quantity)
+                        .put("unitPrice", line.unitPrice).put("total", line.lineTotal))
+                }
+                return ImmutableEstimateDraft(
+                    sourceMeasurementJson = FrozenPolygonGeometryJson.write(
+                        "Polygon room", "pvc_matte", "standard_alu",
+                        "straight", polygon
+                    ).toString(),
+                    detailsJson = JSONObject()
+                        .put("measurementPrecisionMeters", 0.01)
+                        .put("lineItems", jsonLines).toString(),
+                    measurementPrecisionMeters = 0.01,
+                    calculationRuleVersion =
+                        FrozenPolygonGeometryContract.CALCULATION_RULE_VERSION,
+                    totalCost = rows.sumOf { it.lineTotal },
+                    lines = rows
+                )
+            }
+            createEncryptedPrototypeDriver(
+                context, key, name, enableWalForTesting = true
+            ).use { driver ->
+                val db = PrototypeDatabase(driver)
+                val projectId = ProjectRepository(db).createReturningId(
+                    clientId = null, title = "Polygon PDF project", createdAt = 100L
+                )
+                val history = ImmutableEstimateRepository(db)
+                val first = history.createSeries(
+                    projectId, 2026, 200L, frozenDraft(10.0)
+                )
+                val v2 = history.appendRevision(
+                    first.seriesUuid, first.initialRevisionUuid,
+                    300L, frozenDraft(20.0)
+                )
+                seriesUuid = first.seriesUuid
+                revisionIds = listOf(first.initialRevisionUuid, v2)
+                PriceRepository(db).upsertReturningId(
+                    code = "canvas.pvc_matte", title = "Current unrelated canvas",
+                    category = "canvas", unit = "м²",
+                    price = 999.0, updatedAt = 400L
+                )
+            }
+            createEncryptedPrototypeDriver(
+                context, key, name, enableWalForTesting = true
+            ).use { driver ->
+                val db = PrototypeDatabase(driver)
+                revisionIds.forEachIndexed { i, id ->
+                    val revision = loadImmutableEstimatePdfSnapshot(
+                        db, seriesUuid, id
+                    )
+                    assertEquals((i + 1).toLong(), revision.versionNumber)
+                    assertEquals(listOf(320.0, 530.0)[i],
+                        revision.estimate.totalCost, 0.0)
+                    assertEquals(polygon, revision.estimate.frozenPolygon)
+                    assertEquals(6.0, revision.estimate.lengthMeters, 0.0)
+                    assertEquals(5.0, revision.estimate.widthMeters, 0.0)
+                    assertFalse(revision.estimate.detailsJson.contains("999.0"))
+                    val file = File.createTempFile(
+                        "polygon_v2_${i}_", ".pdf", context.cacheDir
+                    )
+                    files += file
+                    writeEstimatePdf(
+                        context, Uri.fromFile(file), revision.estimate,
+                        revision.projectTitle, revision.versionNumber
+                    )
+                    assertTrue(file.length() > 100L)
+                    ParcelFileDescriptor.open(
+                        file, ParcelFileDescriptor.MODE_READ_ONLY
+                    ).use { descriptor ->
+                        PdfRenderer(descriptor).use { renderer ->
+                            assertTrue(renderer.pageCount > 0)
+                        }
+                    }
+                }
+                assertEquals(listOf(320.0, 530.0),
+                    ImmutableEstimateRepository(db).revisions(seriesUuid)
+                        .map { it.totalCost })
             }
         } finally {
             files.forEach { it.delete() }
