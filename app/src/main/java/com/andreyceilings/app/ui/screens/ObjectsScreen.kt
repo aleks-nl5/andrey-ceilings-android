@@ -414,7 +414,7 @@ private fun AddMeasurementDialog(
                 ) {
                     OutlinedTextField(
                         value = activeTemplate?.title ?:
-                            if (shape == "polygon") "Довільний багатокутник" else shape,
+                            if (shape == "polygon") "Багатокутник (прямі кути)" else shape,
                         onValueChange = {}, readOnly = true,
                         label = { Text("Форма стелі") },
                         trailingIcon = {
@@ -430,7 +430,7 @@ private fun AddMeasurementDialog(
                     ) {
                         (CeilingShapeTemplates.templates.map {
                             it.shapeType to it.title
-                        } + ("polygon" to "Довільний багатокутник")).forEach { (id, title) ->
+                        } + ("polygon" to "Багатокутник (прямі кути)")).forEach { (id, title) ->
                             DropdownMenuItem(text = { Text(title) }, onClick = {
                                 shape = id; shapeExpanded = false
                             })
