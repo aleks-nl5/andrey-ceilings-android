@@ -6,5 +6,12 @@
             android:authorities="com.andreyceilings.app.migrationprobe"
             android:exported="false"
             android:process=":legacy_migration_probe" />
+        <!-- Android instrumentation only: deliberately terminates this *separate*
+             process during an import to prove cold-start SQLCipher recovery. -->
+        <provider
+            android:name="com.andreyceilings.app.data.security.RestoreCrashProbeProvider"
+            android:authorities="com.andreyceilings.app.restorecrashprobe"
+            android:exported="false"
+            android:process=":restore_crash_probe" />
     </application>
 </manifest>
