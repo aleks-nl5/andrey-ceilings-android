@@ -39,6 +39,8 @@ import com.andreyceilings.app.core.CeilingEstimate
 import com.andreyceilings.app.core.CeilingCalculator
 import com.andreyceilings.shared.calculation.EstimateOptionId
 import com.andreyceilings.shared.calculation.MeasurementPrecision
+import com.andreyceilings.shared.estimate.FrozenCeilingShape
+import com.andreyceilings.shared.estimate.VerifiedCeilingGeometry
 import com.andreyceilings.app.core.CalculatorOptions
 import com.andreyceilings.app.data.db.PriceItemEntity
 import com.andreyceilings.app.data.db.ProjectEntity
@@ -51,6 +53,8 @@ internal fun CalculatorScreen(
     database: CeilingsDatabase?,
     length: String, onLength: (String) -> Unit,
     width: String, onWidth: (String) -> Unit,
+    geometryShape: String, onGeometryShape: (String) -> Unit,
+    lShapedSides: List<String>, onLShapedSide: (Int, String) -> Unit,
     price: String, onPrice: (String) -> Unit,
     profilePrice: String, onProfilePrice: (String) -> Unit,
     material: String, onMaterial: (String) -> Unit,
@@ -77,9 +81,61 @@ internal fun CalculatorScreen(
     var showSaveDialog by remember { mutableStateOf(false) }
     var saveError by remember { mutableStateOf<String?>(null) }
     SectionTitle("Калькулятор стелі", "Попередній кошторис за розмірами приміщення")
-    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        OutlinedTextField(length, onLength, label = { Text("Довжина, м") }, modifier = Modifier.weight(1f), singleLine = true)
-        OutlinedTextField(width, onWidth, label = { Text("Ширина, м") }, modifier = Modifier.weight(1f), singleLine = true)
+    var geometryExpanded by remember { mutableStateOf(false) }
+    ExposedDropdownMenuBox(
+        expanded = geometryExpanded, onExpandedChange = { geometryExpanded = it }
+    ) {
+        OutlinedTextField(
+            value = if (geometryShape == FrozenCeilingShape.L_SHAPED.wireId) {
+                "L-подібне приміщення"
+            } else "Прямокутник",
+            onValueChange = {}, readOnly = true,
+            label = { Text("Форма стелі") },
+            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(geometryExpanded) },
+            modifier = Modifier.menuAnchor(
+                ExposedDropdownMenuAnchorType.PrimaryNotEditable, enabled = true
+            ).fillMaxWidth()
+        )
+        AppExposedDropdownMenu(
+            expanded = geometryExpanded,
+            onDismissRequest = { geometryExpanded = false }
+        ) {
+            listOf(
+                "Прямокутник" to FrozenCeilingShape.RECTANGLE.wireId,
+                "L-подібне приміщення" to FrozenCeilingShape.L_SHAPED.wireId
+            ).forEach { (label, shape) ->
+                DropdownMenuItem(text = { Text(label) }, onClick = {
+                    onGeometryShape(shape)
+                    geometryExpanded = false
+                })
+            }
+        }
+    }
+    if (geometryShape == FrozenCeilingShape.L_SHAPED.wireId) {
+        Text(
+            "Шість сторін за контуром A–F. Для прямокутного вирізу A = C + E та B = D + F.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        val labels = listOf("A", "B", "C", "D", "E", "F")
+        for (pair in 0..2) {
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                for (index in (pair * 2)..(pair * 2 + 1)) {
+                    OutlinedTextField(
+                        value = lShapedSides[index],
+                        onValueChange = { onLShapedSide(index, it) },
+                        label = { Text("Сторона ${labels[index]}, м") },
+                        modifier = Modifier.weight(1f),
+                        singleLine = true
+                    )
+                }
+            }
+        }
+    } else {
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            OutlinedTextField(length, onLength, label = { Text("Довжина, м") }, modifier = Modifier.weight(1f), singleLine = true)
+            OutlinedTextField(width, onWidth, label = { Text("Ширина, м") }, modifier = Modifier.weight(1f), singleLine = true)
+        }
     }
     var precisionExpanded by remember { mutableStateOf(false) }
     ExposedDropdownMenuBox(expanded = precisionExpanded, onExpandedChange = { precisionExpanded = it }) {
@@ -186,15 +242,45 @@ internal fun CalculatorScreen(
             }
         }
     }
-    Button(onClick = { showSaveDialog = true }, modifier = Modifier.fillMaxWidth(), enabled = database != null && projects.isNotEmpty() && estimate != null && estimate.area > 0.0) {
+    Button(onClick = { showSaveDialog = true }, modifier = Modifier.fillMaxWidth(), enabled = database != null && projects.isNotEmpty() && estimate != null && estimate.area > 0.0 &&
+        (geometryShape == FrozenCeilingShape.RECTANGLE.wireId ||
+            runCatching {
+                VerifiedCeilingGeometry.capturedLShaped(
+                    lShapedSides.map {
+                        it.trim().replace(',', '.').toDoubleOrNull() ?: Double.NaN
+                    }, measurementPrecision.stepMeters
+                )
+            }.isSuccess)) {
         Icon(Icons.Default.Save, null); Spacer(Modifier.width(8.dp)); Text("Зберегти кошторис до об’єкта")
     }
     if (projects.isEmpty()) Text("Щоб зберегти кошторис, спочатку створіть об’єкт у вкладці «Об’єкти».", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     saveError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
     val estimateForSave = estimate
-    if (showSaveDialog && database != null && projects.isNotEmpty() && estimateForSave != null) SaveEstimateDialog(
+    // The exact six captured sides are validated by common KMP BEFORE the
+    // initial SQLDelight insert. Never infer them from area/perimeter.
+    val frozenLShape = if (estimateForSave != null &&
+        geometryShape == FrozenCeilingShape.L_SHAPED.wireId
+    ) {
+        runCatching {
+            VerifiedCeilingGeometry.capturedLShaped(
+                lShapedSides.map {
+                    it.trim().replace(',', '.').toDoubleOrNull() ?: Double.NaN
+                },
+                measurementPrecision.stepMeters
+            )
+        }.getOrNull()
+    } else null
+    val defaultEstimateName = if (frozenLShape != null) {
+        "L-кімната ${formatMeasuredLength(frozenLShape.sideA, measurementPrecision)} × ${formatMeasuredLength(frozenLShape.sideB, measurementPrecision)} м"
+    } else {
+        "Кімната ${formatMeasuredLength(measurementPrecision.roomDimension(length.toSafeDouble(), 4.0), measurementPrecision)} × ${formatMeasuredLength(measurementPrecision.roomDimension(width.toSafeDouble(), 3.0), measurementPrecision)} м"
+    }
+    if (showSaveDialog && database != null && projects.isNotEmpty() &&
+        estimateForSave != null &&
+        (geometryShape == FrozenCeilingShape.RECTANGLE.wireId || frozenLShape != null)
+    ) SaveEstimateDialog(
         projects = projects,
-        defaultName = "Кімната ${formatMeasuredLength(measurementPrecision.roomDimension(length.toSafeDouble(), 4.0), measurementPrecision)} × ${formatMeasuredLength(measurementPrecision.roomDimension(width.toSafeDouble(), 3.0), measurementPrecision)} м",
+        defaultName = defaultEstimateName,
         onDismiss = { showSaveDialog = false },
         onSave = { projectId, name ->
             val details = org.json.JSONObject()
@@ -212,11 +298,12 @@ internal fun CalculatorScreen(
                 runCatching {
                     val estimateDraft = EstimateEntity(
                         projectId = projectId, name = name.trim(), material = material, profileType = profileType, complexity = complexity,
-                        lengthMeters = measurementPrecision.roomDimension(length.toSafeDouble(), 4.0),
-                        widthMeters = measurementPrecision.roomDimension(width.toSafeDouble(), 3.0),
+                        lengthMeters = frozenLShape?.sideA ?: measurementPrecision.roomDimension(length.toSafeDouble(), 4.0),
+                        widthMeters = frozenLShape?.sideB ?: measurementPrecision.roomDimension(width.toSafeDouble(), 3.0),
                         areaSquareMeters = estimateForSave.area, perimeterMeters = estimateForSave.perimeter,
                         canvasCost = estimateForSave.canvasCost, profileCost = estimateForSave.profileCost, complexityCost = estimateForSave.complexityCost,
-                        optionsCost = estimateForSave.optionsCost, totalCost = estimateForSave.total, detailsJson = details.toString()
+                        optionsCost = estimateForSave.optionsCost, totalCost = estimateForSave.total,
+                        detailsJson = details.toString(), frozenGeometryInput = frozenLShape
                     )
                     val lineItems = com.andreyceilings.app.core.EstimateLineItems.create(estimateDraft, details, priceItems, measurementPrecision)
                     details.put("lineItems", com.andreyceilings.app.core.EstimateLineItems.toJson(lineItems))
