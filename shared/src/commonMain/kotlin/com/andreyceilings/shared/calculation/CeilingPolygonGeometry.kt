@@ -124,11 +124,14 @@ object CeilingPolygonCalculator {
  */
 class CeilingShapeTemplate(
     val shapeType: String,
-    val parameterKeys: Set<String>,
+    val title: String,
+    /** Explicit order drives the UI without shape-specific form layouts. */
+    val parameterKeys: List<String>,
+    val parameterLabels: Map<String, String>,
     private val vertexBuilder: (Map<String, Long>) -> List<CeilingPointMm>
 ) {
     fun build(measurementsMm: Map<String, Long>): CeilingPolygon {
-        require(measurementsMm.keys == parameterKeys &&
+        require(measurementsMm.keys == parameterKeys.toSet() &&
             measurementsMm.values.all { it > 0L }) {
             "Incomplete or invalid ceiling template measurements"
         }
@@ -139,7 +142,11 @@ class CeilingShapeTemplate(
 object CeilingShapeTemplates {
     private val rectangle = CeilingShapeTemplate(
         shapeType = "rectangle",
-        parameterKeys = setOf("length", "width")
+        title = "Прямокутник",
+        parameterKeys = listOf("length", "width"),
+        parameterLabels = mapOf(
+            "length" to "Довжина, м", "width" to "Ширина, м"
+        )
     ) { m ->
         val a = m.getValue("length")
         val b = m.getValue("width")
@@ -151,7 +158,10 @@ object CeilingShapeTemplates {
 
     private val lShape = CeilingShapeTemplate(
         shapeType = "l_shaped",
-        parameterKeys = setOf("A", "B", "C", "D", "E", "F")
+        title = "L-подібна стеля",
+        parameterKeys = listOf("A", "B", "C", "D", "E", "F"),
+        parameterLabels = listOf("A", "B", "C", "D", "E", "F")
+            .associateWith { "Сторона $it, м" }
     ) { m ->
         val a = m.getValue("A")
         val b = m.getValue("B")
