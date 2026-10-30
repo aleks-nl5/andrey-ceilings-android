@@ -47,7 +47,8 @@ object CeilingCalculator {
         materialType: String,
         profileType: String,
         precisionStepMeters: Double = 0.01,
-        onTimings: ((List<Pair<String, Long>>) -> Unit)? = null
+        onTimings: ((List<Pair<String, Long>>) -> Unit)? = null,
+        geometryInput: GeometryInput? = null
     ): CeilingEstimate {
         val totalStartedAt = if (onTimings != null) SystemClock.elapsedRealtimeNanos() else 0L
         val phaseTimings = mutableListOf<Pair<String, Long>>()
@@ -90,7 +91,7 @@ object CeilingCalculator {
             }
             val result = measure("kmp_calculate") {
                 KmpCeilingCalculator.estimate(
-                    geometryInput = GeometryInput(
+                    geometryInput = geometryInput ?: GeometryInput(
                         shape = "rectangle",
                         length = length.coerceAtLeast(0.0),
                         width = width.coerceAtLeast(0.0),
