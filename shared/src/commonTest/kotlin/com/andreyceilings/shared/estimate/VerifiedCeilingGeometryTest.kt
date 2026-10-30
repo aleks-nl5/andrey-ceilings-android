@@ -54,4 +54,25 @@ class VerifiedCeilingGeometryTest {
             VerifiedCeilingGeometry.capturedLShaped(valid, 0.123)
         }
     }
+    @Test fun activeRectangleAndLGeometryUseOneVerifiedVertexCalculation() {
+        val rectangle = VerifiedCeilingGeometry.capturedRectangle(
+            1.006, 1.006, 0.01
+        )
+        assertEquals(4, rectangle.verticesMm.size)
+        assertEquals(1.0201, KmpCeilingCalculator.geometry(rectangle).area, 0.000001)
+        assertEquals(4.04, KmpCeilingCalculator.geometry(rectangle).perimeter, 0.000001)
+
+        val historicalL = VerifiedCeilingGeometry.capturedLShaped(
+            listOf(5.0, 4.0, 2.0, 2.0, 3.0, 2.0), 0.01
+        )
+        val polygonL = VerifiedCeilingGeometry.polygonForCalculation(historicalL)
+        assertEquals(6, polygonL.verticesMm.size)
+        assertEquals(KmpCeilingCalculator.geometry(historicalL),
+            KmpCeilingCalculator.geometry(polygonL))
+        assertEquals(14.0, KmpCeilingCalculator.geometry(polygonL).area, 0.0)
+        assertEquals(18.0, KmpCeilingCalculator.geometry(polygonL).perimeter, 0.0)
+        // The original immutable KMP input is NOT modified.
+        assertEquals(emptyList(), historicalL.verticesMm)
+    }
+
 }
