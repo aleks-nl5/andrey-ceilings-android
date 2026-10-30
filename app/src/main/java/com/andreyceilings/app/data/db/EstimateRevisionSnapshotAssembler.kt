@@ -16,10 +16,10 @@ import org.json.JSONObject
  * Bridges the persisted Android v1 snapshot to KMP's write-free revision
  * candidate, without reconstructing missing historical values.
  *
- * Strictly scoped to straight rectangles with canonical, independently
- * verified option lines. Unsupported profiles, legacy rounding and partial
- * snapshots fail closed. This is a read-only preparation API, NOT the v2/v3
- * confirmation path; it cannot change SQLDelight records.
+ * Strictly scoped to rectangular geometry with canonical optional and
+ * explicitly frozen complexity work. No polygon guesses, legacy rounding,
+ * missing works or historical data fallbacks are allowed. Preparation is
+ * read-only; confirmation must recheck in the single SQLDelight transaction.
  */
 internal class EstimateRevisionSnapshotAssembler(private val database: PrototypeDatabase) {
     internal data class Prepared(
@@ -137,8 +137,9 @@ internal class EstimateRevisionSnapshotAssembler(private val database: Prototype
             "Incomplete or unsupported frozen measurement inputs"
         }
         check(source.getString("name").isNotBlank())
-        check(source.getString("complexity") == "straight") {
-            "Complex ceiling requires full KMP options calculation"
+        val complexity = source.getString("complexity")
+        check(complexity in setOf("straight", "multilevel", "curved")) {
+            "Unsupported ceiling complexity: missing independent KMP replay"
         }
         check(source.getString("material").isNotBlank() &&
             source.getString("profileType").isNotBlank())
@@ -159,8 +160,10 @@ internal class EstimateRevisionSnapshotAssembler(private val database: Prototype
         check(precision == latest.measurementPrecisionMeters) {
             "Frozen measurement precision differs between snapshots"
         }
-        check(savedLines.size == 2 + savedOptionQuantities.values.count { it > 0.0 }) {
-            "Each nonzero saved option needs its own immutable priced line"
+        val complexityCount = if (complexity == "straight") 0 else 1
+        check(savedLines.size == 2 + complexityCount +
+            savedOptionQuantities.values.count { it > 0.0 }) {
+            "Every complexity/option work item needs its own frozen priced line"
         }
         val canvas = savedLines.singleOrNull { it.stableCode.startsWith("canvas.") }
             ?: error("Exactly one frozen canvas line is required")
@@ -203,7 +206,8 @@ internal class EstimateRevisionSnapshotAssembler(private val database: Prototype
                 widthMeters = source.getDouble("widthMeters"),
                 storedAreaSquareMeters = source.getDouble("areaSquareMeters"),
                 storedPerimeterMeters = source.getDouble("perimeterMeters"),
-                precisionStepMeters = precision
+                precisionStepMeters = precision,
+                complexity = complexity
             ),
             preview,
             savedOptionQuantities
