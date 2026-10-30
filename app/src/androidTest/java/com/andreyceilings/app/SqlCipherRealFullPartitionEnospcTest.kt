@@ -88,7 +88,8 @@ class SqlCipherRealFullPartitionEnospcTest {
         val importedImage = originalSnapshot.readBytes()
         var availableAtFailure = -1L
         try {
-            val failure = runCatching {
+            try {
+                val failure = runCatching {
                 SqlCipherRestoreManager.restoreWithStageOutputForTesting(
                     context, PortableBackupPayload.Contents(importedImage, key)
                 ) { stage ->
@@ -114,12 +115,11 @@ class SqlCipherRealFullPartitionEnospcTest {
                     availableAtFailure + " error=" + failure,
                 isRealEnospc(failure)
             )
-        } finally {
-            // Remove the large allocation BEFORE any integrity/key assertions
-            // or snapshot work. Also mirrored by a CI shell trap on crash.
-            filler.delete()
-        }
-        try {
+            } finally {
+                // Remove the large allocation BEFORE any integrity/key assertions
+                // or snapshot work. Also mirrored by a CI shell trap on crash.
+                filler.delete()
+            }
             assertTrue("Storage was not released after the ENOSPC test",
                 StatFs(diskPath).availableBytes >= 64L * MIB)
             assertTrue("Full /data damaged committed SQLCipher WAL", db.checkIntegrity())
