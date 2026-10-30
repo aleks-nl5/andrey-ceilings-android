@@ -429,7 +429,7 @@ class EstimateRevisionSnapshotAssemblerTest {
                 // An L-shape with a missing side, false closure or stale area
                 // never becomes an accepted revision, even in a disposable DB.
                 for (bad in listOf(
-                    JSONObject(frozenSource).remove("sideE"),
+                    JSONObject(frozenSource).apply { remove("sideE") },
                     JSONObject(frozenSource).put("sideE", 3.5),
                     JSONObject(frozenSource).put("areaSquareMeters", 13.0)
                 )) {
