@@ -130,7 +130,7 @@ internal class EstimateRevisionSnapshotAssembler(private val database: Prototype
         val details = JSONObject(saved.detailsJson)
         // The KMP registry owns the full, versioned field contract.
         // Neither SQLDelight nor Android may infer missing geometry inputs.
-        val isPolygonV2 = FrozenPolygonGeometryJson.isVersion2(source)
+        val isPolygonV2 = FrozenPolygonGeometryJson.isVersioned(source)
         val frozenShape = if (isPolygonV2) null else
             FrozenGeometrySnapshotSchema.requireShape(
                 keys = source.keys().asSequence().toSet(),
