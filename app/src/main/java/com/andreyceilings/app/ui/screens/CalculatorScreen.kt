@@ -38,6 +38,7 @@ import com.andreyceilings.app.ui.theme.CeilingsTheme
 import com.andreyceilings.app.core.CeilingEstimate
 import com.andreyceilings.app.core.CeilingCalculator
 import com.andreyceilings.shared.calculation.EstimateOptionId
+import com.andreyceilings.shared.calculation.CeilingShapeTemplates
 import com.andreyceilings.shared.calculation.MeasurementPrecision
 import com.andreyceilings.shared.estimate.FrozenCeilingShape
 import com.andreyceilings.shared.estimate.VerifiedCeilingGeometry
@@ -51,10 +52,11 @@ import kotlinx.coroutines.flow.flowOf
 @Composable
 internal fun CalculatorScreen(
     database: CeilingsDatabase?,
-    length: String, onLength: (String) -> Unit,
-    width: String, onWidth: (String) -> Unit,
+    length: String,
+    width: String,
     geometryShape: String, onGeometryShape: (String) -> Unit,
-    lShapedSides: List<String>, onLShapedSide: (Int, String) -> Unit,
+    shapeMeasurements: Map<String, String>,
+    onShapeMeasurement: (String, String) -> Unit,
     price: String, onPrice: (String) -> Unit,
     profilePrice: String, onProfilePrice: (String) -> Unit,
     material: String, onMaterial: (String) -> Unit,
@@ -82,13 +84,12 @@ internal fun CalculatorScreen(
     var saveError by remember { mutableStateOf<String?>(null) }
     SectionTitle("Калькулятор стелі", "Попередній кошторис за розмірами приміщення")
     var geometryExpanded by remember { mutableStateOf(false) }
+    val activeTemplate = CeilingShapeTemplates.template(geometryShape)
     ExposedDropdownMenuBox(
         expanded = geometryExpanded, onExpandedChange = { geometryExpanded = it }
     ) {
         OutlinedTextField(
-            value = if (geometryShape == FrozenCeilingShape.L_SHAPED.wireId) {
-                "L-подібне приміщення"
-            } else "Прямокутник",
+            value = activeTemplate?.title ?: "Непідтримувана форма",
             onValueChange = {}, readOnly = true,
             label = { Text("Форма стелі") },
             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(geometryExpanded) },
@@ -100,12 +101,9 @@ internal fun CalculatorScreen(
             expanded = geometryExpanded,
             onDismissRequest = { geometryExpanded = false }
         ) {
-            listOf(
-                "Прямокутник" to FrozenCeilingShape.RECTANGLE.wireId,
-                "L-подібне приміщення" to FrozenCeilingShape.L_SHAPED.wireId
-            ).forEach { (label, shape) ->
-                DropdownMenuItem(text = { Text(label) }, onClick = {
-                    onGeometryShape(shape)
+            CeilingShapeTemplates.templates.forEach { template ->
+                DropdownMenuItem(text = { Text(template.title) }, onClick = {
+                    onGeometryShape(template.shapeType)
                     geometryExpanded = false
                 })
             }
@@ -113,28 +111,23 @@ internal fun CalculatorScreen(
     }
     if (geometryShape == FrozenCeilingShape.L_SHAPED.wireId) {
         Text(
-            "Шість сторін за контуром A–F. Для прямокутного вирізу A = C + E та B = D + F.",
+            "Прямі кути встановлюються автоматично: A = C + E, B = D + F.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
-        val labels = listOf("A", "B", "C", "D", "E", "F")
-        for (pair in 0..2) {
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                for (index in (pair * 2)..(pair * 2 + 1)) {
-                    OutlinedTextField(
-                        value = lShapedSides[index],
-                        onValueChange = { onLShapedSide(index, it) },
-                        label = { Text("Сторона ${labels[index]}, м") },
-                        modifier = Modifier.weight(1f),
-                        singleLine = true
-                    )
-                }
-            }
-        }
-    } else {
+    }
+    // Every shape uses the same layout. Only template fields and labels vary.
+    activeTemplate?.parameterKeys?.chunked(2)?.forEach { pair ->
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            OutlinedTextField(length, onLength, label = { Text("Довжина, м") }, modifier = Modifier.weight(1f), singleLine = true)
-            OutlinedTextField(width, onWidth, label = { Text("Ширина, м") }, modifier = Modifier.weight(1f), singleLine = true)
+            pair.forEach { key ->
+                OutlinedTextField(
+                    value = shapeMeasurements[key].orEmpty(),
+                    onValueChange = { onShapeMeasurement(key, it) },
+                    label = { Text(activeTemplate.parameterLabels.getValue(key)) },
+                    modifier = Modifier.weight(1f),
+                    singleLine = true
+                )
+            }
         }
     }
     var precisionExpanded by remember { mutableStateOf(false) }
@@ -242,15 +235,12 @@ internal fun CalculatorScreen(
             }
         }
     }
-    Button(onClick = { showSaveDialog = true }, modifier = Modifier.fillMaxWidth(), enabled = database != null && projects.isNotEmpty() && estimate != null && estimate.area > 0.0 &&
-        (geometryShape == FrozenCeilingShape.RECTANGLE.wireId ||
-            runCatching {
-                VerifiedCeilingGeometry.capturedLShaped(
-                    lShapedSides.map {
-                        it.trim().replace(',', '.').toDoubleOrNull() ?: Double.NaN
-                    }, measurementPrecision.stepMeters
-                )
-            }.isSuccess)) {
+    Button(
+        onClick = { showSaveDialog = true },
+        modifier = Modifier.fillMaxWidth(),
+        enabled = database != null && projects.isNotEmpty() &&
+            estimate != null && estimate.area > 0.0
+    ) {
         Icon(Icons.Default.Save, null); Spacer(Modifier.width(8.dp)); Text("Зберегти кошторис до об’єкта")
     }
     if (projects.isEmpty()) Text("Щоб зберегти кошторис, спочатку створіть об’єкт у вкладці «Об’єкти».", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -262,12 +252,13 @@ internal fun CalculatorScreen(
         geometryShape == FrozenCeilingShape.L_SHAPED.wireId
     ) {
         runCatching {
-            VerifiedCeilingGeometry.capturedLShaped(
-                lShapedSides.map {
-                    it.trim().replace(',', '.').toDoubleOrNull() ?: Double.NaN
+            VerifiedCeilingGeometry.capturedTemplate(
+                geometryShape,
+                shapeMeasurements.mapValues { (_, value) ->
+                    value.trim().replace(',', '.').toDoubleOrNull() ?: Double.NaN
                 },
                 measurementPrecision.stepMeters
-            )
+            ).copy(verticesMm = emptyList())
         }.getOrNull()
     } else null
     val defaultEstimateName = if (frozenLShape != null) {
