@@ -211,4 +211,132 @@ class SqlCipherSeparateConnectionsTest {
             key.fill(0)
         }
     }
+
+    /**
+     * Previous tests exercised concurrent snapshots from a single driver,
+     * and independent WAL readers/writers without snapshots. This combines
+     * both: a writer commits on one SQLCipher connection while a second
+     * WAL-aware connection produces encrypted VACUUM INTO snapshots.
+     *
+     * Every verified snapshot must represent a committed prefix, and the
+     * original DB must preserve all rows after FULL checkpoint + cold reopen.
+     */
+    @Test fun independentWalWriterAndSnapshotReaderPreserveCommittedPrefixes() {
+        val context: Context = ApplicationProvider.getApplicationContext()
+        val name = "sqldelight_test_independent_wal_snapshots.db"
+        val copyName = "sqldelight_test_independent_wal_snapshot_copy.db"
+        val key = ByteArray(32) { 0x76.toByte() }
+        val writeCount = 48
+        val snapshotCount = 8
+        val writerStarted = CountDownLatch(1)
+        val writerDone = CountDownLatch(1)
+        val writerError = AtomicReference<Throwable?>(null)
+        val recordedCounts = mutableListOf<Int>()
+        var overlappingSnapshots = 0
+        context.deleteDatabase(name)
+        context.deleteDatabase(copyName)
+        try {
+            CeilingsDatabase.openIsolatedForTesting(
+                context, name, key, enableWalForTesting = true
+            ).use { writer ->
+                CeilingsDatabase.openIsolatedForTesting(
+                    context, name, key, enableWalForTesting = true
+                ).use { snapshotReader ->
+                    assertEquals("wal", writer.queryText("PRAGMA journal_mode")?.lowercase())
+                    assertEquals("wal", snapshotReader.queryText("PRAGMA journal_mode")?.lowercase())
+                    assertEquals(3000L, writer.queryLong("PRAGMA busy_timeout=3000"))
+                    assertEquals(3000L, snapshotReader.queryLong("PRAGMA busy_timeout=3000"))
+
+                    val thread = Thread({
+                        try {
+                            val projects = ProjectRepository(writer.database)
+                            repeat(writeCount) { index ->
+                                projects.createReturningId(
+                                    clientId = null,
+                                    title = "Parallel WAL snapshot row $index",
+                                    createdAt = 10000L + index
+                                )
+                                if (index == 0) writerStarted.countDown()
+                                Thread.sleep(18)
+                            }
+                        } catch (error: Throwable) {
+                            writerError.set(error)
+                        } finally {
+                            writerStarted.countDown()
+                            writerDone.countDown()
+                        }
+                    }, "sqlcipher-wal-independent-snapshot-writer")
+                    thread.start()
+                    try {
+                        assertTrue("Independent writer did not start",
+                            writerStarted.await(15, TimeUnit.SECONDS))
+                        repeat(snapshotCount) { imageIndex ->
+                            if (writerDone.count > 0L) overlappingSnapshots++
+                            val snapshot = File.createTempFile(
+                                "wal_independent_snapshot_$imageIndex", ".db", context.cacheDir
+                            )
+                            try {
+                                assertTrue(snapshot.delete())
+                                snapshotReader.writeConsistentEncryptedSnapshot(snapshot)
+                                PortableBackupManager.verifyEncryptedSnapshot(
+                                    context, snapshot, key
+                                )
+                                context.deleteDatabase(copyName)
+                                snapshot.copyTo(context.getDatabasePath(copyName))
+                                CeilingsDatabase.openIsolatedForTesting(
+                                    context, copyName, key, enableWalForTesting = true
+                                ).use { reopenedCopy ->
+                                    assertEquals("wal",
+                                        reopenedCopy.queryText("PRAGMA journal_mode")?.lowercase())
+                                    assertTrue(reopenedCopy.checkIntegrity())
+                                    val rows = ProjectRepository(reopenedCopy.database).all()
+                                    val actual = rows.map { it.title }.toSet()
+                                    val prefix = (0 until rows.size).map {
+                                        "Parallel WAL snapshot row $it"
+                                    }.toSet()
+                                    assertEquals(
+                                        "Snapshot #$imageIndex is not a committed prefix",
+                                        prefix, actual
+                                    )
+                                    assertTrue(rows.size in 1..writeCount)
+                                    recordedCounts += rows.size
+                                }
+                            } finally {
+                                snapshot.delete()
+                                context.deleteDatabase(copyName)
+                            }
+                        }
+                    } finally {
+                        thread.join(30000)
+                    }
+                    assertTrue("Independent WAL writer stalled", writerDone.count == 0L)
+                    assertTrue("Independent WAL writer thread was not stopped", !thread.isAlive)
+                    writerError.get()?.let { throw AssertionError("WAL writer failed", it) }
+                    assertTrue("No snapshots overlapped live WAL commits",
+                        overlappingSnapshots > 0)
+                    assertTrue("Snapshots moved backwards in committed history",
+                        recordedCounts.zipWithNext().all { (earlier, later) ->
+                            earlier <= later
+                        })
+                    assertEquals(writeCount,
+                        ProjectRepository(snapshotReader.database).all().size)
+                    assertTrue("FULL checkpoint did not finish",
+                        writer.checkpoint(CeilingsDatabase.WalMode.FULL).complete)
+                    assertTrue(writer.checkIntegrity())
+                    assertTrue(snapshotReader.checkIntegrity())
+                }
+            }
+            CeilingsDatabase.openIsolatedForTesting(
+                context, name, key, enableWalForTesting = true
+            ).use { reopened ->
+                assertEquals("wal", reopened.queryText("PRAGMA journal_mode")?.lowercase())
+                assertEquals(writeCount, ProjectRepository(reopened.database).all().size)
+                assertTrue(reopened.checkIntegrity())
+            }
+        } finally {
+            context.deleteDatabase(copyName)
+            context.deleteDatabase(name)
+            key.fill(0)
+        }
+    }
 }

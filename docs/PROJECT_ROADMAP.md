@@ -8,7 +8,8 @@
 - [x] Консистентний SQLCipher backup через перевірений `VACUUM INTO` для portable/automatic і ручного експорту; без plaintext fallback.
 - [x] Підготовлено захищене відновлення через staging, encrypted rollback і маркер попереднього ключа з автоматичним відкатом після перерваного імпорту.
 - [x] Android: encrypted backup/restore, захист транзакцій, конкурентні тести та ін'єкції збоїв. **Android CI `41026323125` успішний: 30 звичайних тестів і 2 окремі реальні SIGKILL/cold-recovery перевірки після заміни БД і ключа**. Windows/iOS CI `41026323146` успішний. Наступний крок — тест безпечного відкриття старої зашифрованої DELETE-БД у режимі WAL, snapshot/checkpoint і повторне відкриття (очікує новий CI).
-- [ ] Реальний ENOSPC та повна перевірка WAL після окремого ввімкнення у production Android; поки працює DELETE.
+- [x] Ізольований DELETE → WAL перехід, перевірка режиму при відкритті, checkpoint, snapshot, reopen — Android CI `41028113998` та Windows/iOS CI `41028114121` успішні. Додано поєднаний стрес-тест двох незалежних SQLCipher-драйверів із паралельними записами й вісьмома encrypted snapshots (очікує CI).
+- [ ] Реальний OS-level ENOSPC та повна перевірка WAL після окремого ввімкнення у production Android; поки працює DELETE.
 - [x] Read-only preview із актуального SQLDelight-прайсу й останньої ревізії, кнопка «Перерахувати — перегляд» на екрані Android; жодних змін у v1.
 - [ ] Повний перерахунок геометрії, optimistic price token, явне підтвердження, транзакційне v2/v3, історія та PDF конкретної версії.
 - [ ] Android/Windows/iOS CI, фізичний Android, усі варіанти backup/restore, підтвердження власником і тільки після цього merge.
