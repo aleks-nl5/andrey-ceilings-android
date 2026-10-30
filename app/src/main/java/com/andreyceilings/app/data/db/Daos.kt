@@ -7,6 +7,8 @@ import com.andreyceilings.shared.db.PriceRepository
 import com.andreyceilings.shared.db.EstimateRepository
 import com.andreyceilings.app.core.EstimateLineItems
 import com.andreyceilings.shared.calculation.MeasurementPrecision
+import com.andreyceilings.shared.estimate.FrozenCeilingShape
+import com.andreyceilings.shared.estimate.FrozenGeometrySnapshotSchema
 import com.andreyceilings.shared.estimate.ImmutableEstimateDraft
 import com.andreyceilings.shared.estimate.ImmutableEstimateLine
 import org.json.JSONObject
@@ -149,6 +151,8 @@ private fun snapshotForNumberedEstimate(item: EstimateEntity): ImmutableEstimate
     val precision = MeasurementPrecision.fromStep(details.optDouble("measurementPrecisionMeters", 0.01))
         ?: MeasurementPrecision.ONE_CENTIMETER
     val measurement = JSONObject()
+        .put("shape", FrozenCeilingShape.RECTANGLE.wireId)
+        .put("geometrySchemaVersion", FrozenGeometrySnapshotSchema.CURRENT_VERSION)
         .put("name", item.name)
         .put("material", item.material)
         .put("profileType", item.profileType)
