@@ -118,9 +118,7 @@ object VerifiedCeilingGeometry {
                 "A" to mm(frozen.sideA, precision),
                 "B" to mm(frozen.sideB, precision),
                 "C" to mm(frozen.sideC, precision),
-                "D" to mm(frozen.sideD, precision),
-                "E" to mm(frozen.sideE, precision),
-                "F" to mm(frozen.sideF, precision)
+                "D" to mm(frozen.sideD, precision)
             )
         )
         val generic = CeilingPolygonCalculator.calculate(
