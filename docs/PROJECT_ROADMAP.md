@@ -7,7 +7,7 @@
 - [x] Додано ізольований Android proof-test WAL + encrypted `VACUUM INTO`, без зміни робочого журналювання.
 - [x] Консистентний SQLCipher backup через перевірений `VACUUM INTO` для portable/automatic і ручного експорту; без plaintext fallback.
 - [x] Підготовлено захищене відновлення через staging, encrypted rollback і маркер попереднього ключа з автоматичним відкатом після перерваного імпорту.
-- [x] Android: encrypted backup/restore, захист транзакцій, конкурентні тести та ін'єкції збоїв. Додано окремий debug-only Android SIGKILL test (після заміни БД/ключа). CI `41023917636` обірвав стандартний test runner через навмисний crash, а `41025631398` не запустив тести через багаторядкову shell-команду в android-emulator-runner (`Task '\\' not found`). Винесено orchestration в один Bash-скрипт із двома окремими ADB-сесіями, durable-marker та холодним відновленням. **Новий CI очікується.**
+- [x] Android: encrypted backup/restore, захист транзакцій, конкурентні тести та ін'єкції збоїв. **Android CI `41026323125` успішний: 30 звичайних тестів і 2 окремі реальні SIGKILL/cold-recovery перевірки після заміни БД і ключа**. Windows/iOS CI `41026323146` успішний. Наступний крок — тест безпечного відкриття старої зашифрованої DELETE-БД у режимі WAL, snapshot/checkpoint і повторне відкриття (очікує новий CI).
 - [ ] Реальний ENOSPC та повна перевірка WAL після окремого ввімкнення у production Android; поки працює DELETE.
 - [x] Read-only preview із актуального SQLDelight-прайсу й останньої ревізії, кнопка «Перерахувати — перегляд» на екрані Android; жодних змін у v1.
 - [ ] Повний перерахунок геометрії, optimistic price token, явне підтвердження, транзакційне v2/v3, історія та PDF конкретної версії.

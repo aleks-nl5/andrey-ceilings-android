@@ -109,4 +109,67 @@ class SqlCipherWalSnapshotExperimentTest {
             key.fill(0)
         }
     }
+
+    /**
+     * Proof of the future production open path, on disposable encrypted
+     * files only: existing DELETE-mode rows survive opening a WAL-aware
+     * SQLCipher driver and every subsequent reopen.
+     */
+    @Test fun existingEncryptedDeleteDatabaseMigratesToWalWithoutLosingRows() {
+        val context: Context = ApplicationProvider.getApplicationContext()
+        val name = "sqldelight_test_delete_to_wal.db"
+        val copyName = "sqldelight_test_delete_to_wal_snapshot_copy.db"
+        val key = ByteArray(32) { 0x58.toByte() }
+        val snapshot = File(context.cacheDir, "sqldelight_delete_to_wal_snapshot.db")
+        context.deleteDatabase(name)
+        context.deleteDatabase(copyName)
+        snapshot.delete()
+        try {
+            CeilingsDatabase.openIsolatedForTesting(context, name, key).use { db ->
+                assertEquals("delete", db.queryText("PRAGMA journal_mode")?.lowercase())
+                ProjectRepository(db.database).createReturningId(
+                    clientId = null, title = "Committed in DELETE", createdAt = 100L
+                )
+                assertTrue(db.checkIntegrity())
+            }
+            CeilingsDatabase.openIsolatedForTesting(
+                context, name, key, enableWalForTesting = true
+            ).use { db ->
+                // No PRAGMA journal_mode=WAL setter: the helper must provide WAL.
+                assertEquals("wal", db.queryText("PRAGMA journal_mode")?.lowercase())
+                assertEquals(listOf("Committed in DELETE"),
+                    ProjectRepository(db.database).all().map { it.title })
+                ProjectRepository(db.database).createReturningId(
+                    clientId = null, title = "Committed in WAL", createdAt = 200L
+                )
+                assertTrue(db.checkpoint(CeilingsDatabase.WalMode.FULL).complete)
+                db.writeConsistentEncryptedSnapshot(snapshot)
+                PortableBackupManager.verifyEncryptedSnapshot(context, snapshot, key)
+                assertTrue(db.checkIntegrity())
+            }
+            CeilingsDatabase.openIsolatedForTesting(
+                context, name, key, enableWalForTesting = true
+            ).use { reopened ->
+                assertEquals("wal", reopened.queryText("PRAGMA journal_mode")?.lowercase())
+                assertEquals(
+                    setOf("Committed in DELETE", "Committed in WAL"),
+                    ProjectRepository(reopened.database).all().map { it.title }.toSet()
+                )
+                assertTrue(reopened.checkIntegrity())
+            }
+            snapshot.copyTo(context.getDatabasePath(copyName))
+            CeilingsDatabase.openIsolatedForTesting(
+                context, copyName, key, enableWalForTesting = true
+            ).use { fromBackup ->
+                assertEquals("wal", fromBackup.queryText("PRAGMA journal_mode")?.lowercase())
+                assertEquals(2, ProjectRepository(fromBackup.database).all().size)
+                assertTrue(fromBackup.checkIntegrity())
+            }
+        } finally {
+            snapshot.delete()
+            context.deleteDatabase(copyName)
+            context.deleteDatabase(name)
+            key.fill(0)
+        }
+    }
 }
