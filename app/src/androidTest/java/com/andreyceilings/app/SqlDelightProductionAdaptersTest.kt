@@ -105,4 +105,138 @@ class SqlDelightProductionAdaptersTest {
             password.fill('\u0000')
         }
     }
+
+    /**
+     * Actual Android DAO adapters and SQLDelight listeners running on the
+     * WAL-aware SQLCipher driver, not just raw SQLite statements. Covers
+     * price/estimate CRUD, portable encrypted backup and two cold opens.
+     * Uses ONLY disposable sqldelight_test_ names; production remains DELETE.
+     */
+    @Test
+    fun walAdaptersAndEncryptedPortableBackupSurviveReopenWithoutRepricing() {
+        val context: Context = ApplicationProvider.getApplicationContext()
+        val liveName = "sqldelight_test_wal_android_adapters.db"
+        val copyName = "sqldelight_test_wal_android_backup_copy.db"
+        val key = DatabaseKeyManager.getOrCreatePassphrase(context)
+        val password = "isolated-wal-android-adapters-2026".toCharArray()
+        var backup: ByteArray? = null
+        context.deleteDatabase(liveName)
+        context.deleteDatabase(copyName)
+        try {
+            CeilingsDatabase.openIsolatedForTesting(
+                context, liveName, key, enableWalForTesting = true
+            ).use { database ->
+                assertEquals("wal", database.queryText("PRAGMA journal_mode")?.lowercase())
+                val updates = AtomicInteger()
+                val observer = object : SqlDelightChangeTracker.Observer(
+                    "clients", "projects", "price_items", "estimates"
+                ) {
+                    override fun onInvalidated(tables: Set<String>) {
+                        updates.incrementAndGet()
+                    }
+                }
+                database.changeTracker.addObserver(observer)
+                try {
+                    val clientId = database.clients().insert(
+                        ClientEntity(name = "WAL backup customer")
+                    )
+                    val projectId = com.andreyceilings.shared.db.ProjectRepository(
+                        database.database
+                    ).createReturningId(
+                        clientId = clientId, title = "WAL quote", createdAt = 101L
+                    )
+                    val priceId = com.andreyceilings.shared.db.PriceRepository(
+                        database.database
+                    ).upsertReturningId(
+                        code = "test.wal.canvas", title = "WAL canvas",
+                        category = "canvas", unit = "m2",
+                        price = 150.0, updatedAt = 102L
+                    )
+                    val estimateId = com.andreyceilings.shared.db.EstimateRepository(
+                        database.database
+                    ).createReturningId(
+                        projectId, "WAL immutable amount", "PVC", "standard", "simple",
+                        2.0, 3.0, 6.0, 10.0,
+                        900.0, 60.0, 0.0, 0.0, 960.0,
+                        createdAt = 103L
+                    )
+                    assertTrue(clientId > 0L && projectId > 0L)
+                    assertTrue(priceId > 0L && estimateId > 0L)
+                    assertTrue("SQLDelight change observers did not fire in WAL",
+                        updates.get() >= 4)
+                } finally {
+                    database.changeTracker.removeObserver(observer)
+                }
+
+                backup = PortableBackupManager.create(context, database, password)
+                assertTrue(database.checkIntegrity())
+                database.clients().insert(ClientEntity(name = "Only after snapshot"))
+                val prices = com.andreyceilings.shared.db.PriceRepository(database.database)
+                val row = prices.all().single()
+                prices.upsertReturningId(
+                    id = row.id, code = row.code, title = "Repriced after backup",
+                    category = row.category, unit = row.unit,
+                    price = 250.0, updatedAt = 104L
+                )
+                assertTrue(database.checkpoint(CeilingsDatabase.WalMode.FULL).complete)
+                assertEquals(2, database.clients().count())
+                assertEquals(960.0,
+                    com.andreyceilings.shared.db.EstimateRepository(database.database)
+                        .all().single().totalCost, 0.0)
+            }
+
+            CeilingsDatabase.openIsolatedForTesting(
+                context, liveName, key, enableWalForTesting = true
+            ).use { reopened ->
+                assertEquals("wal", reopened.queryText("PRAGMA journal_mode")?.lowercase())
+                assertEquals(2, reopened.clients().count())
+                assertEquals("Repriced after backup",
+                    com.andreyceilings.shared.db.PriceRepository(reopened.database)
+                        .all().single().title)
+                assertEquals(960.0,
+                    com.andreyceilings.shared.db.EstimateRepository(reopened.database)
+                        .all().single().totalCost, 0.0)
+                assertTrue(reopened.checkIntegrity())
+            }
+
+            val archive = requireNotNull(backup)
+            val content = PortableBackupManager.validate(context, archive, password)
+            try {
+                context.getDatabasePath(copyName).writeBytes(content.database)
+                CeilingsDatabase.openIsolatedForTesting(
+                    context, copyName, content.passphrase, enableWalForTesting = true
+                ).use { restored ->
+                    assertEquals("wal",
+                        restored.queryText("PRAGMA journal_mode")?.lowercase())
+                    assertEquals(1, restored.clients().count())
+                    assertEquals("WAL backup customer",
+                        restored.clients().all().single().name)
+                    val price = com.andreyceilings.shared.db.PriceRepository(restored.database)
+                        .all().single()
+                    assertEquals("WAL canvas", price.title)
+                    assertEquals(150.0, price.price, 0.0)
+                    assertEquals(960.0,
+                        com.andreyceilings.shared.db.EstimateRepository(restored.database)
+                            .all().single().totalCost, 0.0)
+                    assertTrue(restored.checkIntegrity())
+                }
+            } finally {
+                content.database.fill(0)
+                content.passphrase.fill(0)
+            }
+            // The portable archive must remain independently valid even after
+            // the original WAL DB has been closed and repriced.
+            assertTrue(runCatching {
+                PortableBackupManager.validate(
+                    context, archive, "wrong-wal-password".toCharArray()
+                )
+            }.isFailure)
+        } finally {
+            backup?.fill(0)
+            context.deleteDatabase(copyName)
+            context.deleteDatabase(liveName)
+            key.fill(0)
+            password.fill('\u0000')
+        }
+    }
 }
