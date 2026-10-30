@@ -112,7 +112,12 @@ internal fun ObjectsScreen(database: CeilingsDatabase?) {
 }
 
 @Composable
-internal fun MeasurementsScreen(database: CeilingsDatabase?, precision: MeasurementPrecision, onOpenEstimates: () -> Unit) {
+internal fun MeasurementsScreen(
+ database: CeilingsDatabase?,
+ precision: MeasurementPrecision,
+ onOpenEstimates: () -> Unit,
+ onUseMeasurement: (RoomMeasurementEntity) -> Unit
+) {
  val measurementsFlow = remember(database) { database?.measurements()?.observeAll() ?: flowOf<List<RoomMeasurementEntity>>(emptyList()) }
  val projectsFlow = remember(database) { database?.projects()?.observeAll() ?: flowOf<List<ProjectEntity>>(emptyList()) }
  val measurements by measurementsFlow.collectAsState(initial = emptyList())
@@ -148,6 +153,10 @@ internal fun MeasurementsScreen(database: CeilingsDatabase?, precision: Measurem
          style = MaterialTheme.typography.bodySmall,
          color = MaterialTheme.colorScheme.onSurfaceVariant
      ) }
+     TextButton(onClick = {
+      runCatching { onUseMeasurement(measurement) }
+       .onFailure { error = it.message ?: "Не вдалося відкрити замір у калькуляторі" }
+     }) { Text("Розрахувати") }
      IconButton(onClick = {
       editingMeasurement = measurement
       showDialog = true
