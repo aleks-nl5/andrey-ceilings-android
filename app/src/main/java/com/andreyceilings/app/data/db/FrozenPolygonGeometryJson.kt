@@ -63,8 +63,9 @@ internal object FrozenPolygonGeometryJson {
     private fun readGeometryFields(
         source: JSONObject, precisionStepMeters: Double
     ): FrozenPolygonGeometry {
-        require(source.getLong("geometrySchemaVersion") ==
-            FrozenPolygonGeometryContract.SCHEMA_VERSION) {
+        // The same strict parser supports both historical vertex-only v2
+        // and the side/turn-preserving v3 snapshot. Unknown versions fail closed.
+        require(isVersioned(source)) {
             "Unsupported geometry schema"
         }
         val sides = if (isVersion3(source)) {
