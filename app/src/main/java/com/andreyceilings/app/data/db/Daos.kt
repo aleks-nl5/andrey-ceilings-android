@@ -111,7 +111,17 @@ internal class EstimateDao(private val repo: EstimateRepository) {
             repo.documentNumberForId(it.id),
             repo.originalRevisionInputForId(it.id)?.let { source ->
                 runCatching { JSONObject(source).optString("name").takeIf { it.isNotBlank() } }.getOrNull()
-            }, repo.printableNumberForId(it.id)) }
+            }, repo.printableNumberForId(it.id),
+            repo.originalRevisionInputForId(it.id)?.let { source ->
+                if (JSONObject(source).has("shape")) {
+                    frozenLShapedGeometryFromSource(
+                        source,
+                        checkNotNull(MeasurementPrecision.fromStep(
+                            JSONObject(it.detailsJson).getDouble("measurementPrecisionMeters")
+                        )).stepMeters
+                    )
+                } else null
+            }) }
     }
     fun observeForProject(projectId: Long): Flow<List<EstimateEntity>> =
         repo.observeForProject(projectId).map { rows ->
@@ -122,7 +132,17 @@ internal class EstimateDao(private val repo: EstimateRepository) {
                 repo.documentNumberForId(it.id),
             repo.originalRevisionInputForId(it.id)?.let { source ->
                 runCatching { JSONObject(source).optString("name").takeIf { it.isNotBlank() } }.getOrNull()
-            }, repo.printableNumberForId(it.id)) }
+            }, repo.printableNumberForId(it.id),
+            repo.originalRevisionInputForId(it.id)?.let { source ->
+                if (JSONObject(source).has("shape")) {
+                    frozenLShapedGeometryFromSource(
+                        source,
+                        checkNotNull(MeasurementPrecision.fromStep(
+                            JSONObject(it.detailsJson).getDouble("measurementPrecisionMeters")
+                        )).stepMeters
+                    )
+                } else null
+            }) }
         }
     suspend fun count() = withContext(Dispatchers.IO) { repo.count().toInt() }
     suspend fun insert(item: EstimateEntity) = withContext(Dispatchers.IO) {
