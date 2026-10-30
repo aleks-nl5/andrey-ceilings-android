@@ -15,6 +15,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.andreyceilings.shared.calculation.CeilingPointMm
 import com.andreyceilings.shared.calculation.MeasuredOrthogonalSide
 import com.andreyceilings.shared.calculation.MeasurementPrecision
