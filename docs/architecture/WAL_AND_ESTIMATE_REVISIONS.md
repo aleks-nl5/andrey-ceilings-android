@@ -72,7 +72,8 @@ This does **not** mean enabling WAL before ensuring a consistent encrypted snaps
 ### 3. Immutable versions and Android UI
 
 - [ ] `preview` read-only, with per-line Before / After / Delta and blockers. Cancel must not write anything.
-- [ ] Explicit confirm: atomically validate source revision UUID plus price-list token; append a new immutable v2/v3, never mutate v1; reject concurrent/stale previews.
+- [x] **Internal atomic confirmation for supported rectangle/options revisions (commits `a87b3eab`, `6dfe22bc`)**: prepare carries full KMP preview and verified immutable snapshot. Under ONE SQLDelight write transaction re-read all current price rows, source version UUID, geometry/details and calculated lines; reject stale or altered input. Append immutable v2/v3 and verify persisted revision header plus all lines before commit. Android encrypted WAL regression covers v1=132 → v2=230 → v3=240, unchanged document number and v1, same-timestamp price edit, unrelated catalog change, stale repeated confirmation, and injected failure after INSERT rolling back both the header and children. **New CI pending. This is internal only: no UI confirm button or version PDF yet.**
+- [ ] Add explicit Android confirmation UI, v1/v2/v3 history and PDFs from each saved immutable snapshot.
 - [ ] Version timeline including immutable dates and totals, with specific-version view and PDF generated from that **version's saved snapshot**.
 - [ ] Preserve same public document number across versions, with version suffix v1/v2/v3; keep private UUID off printed documents.
 - [ ] Duplicate creates a new series/number, not a copy of history. Deletion retains reservations and revisions.
