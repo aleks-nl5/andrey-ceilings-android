@@ -141,7 +141,9 @@ internal fun MeasurementsScreen(
    item { Button(onClick = { editingMeasurement = null; showDialog = true }, modifier = Modifier.fillMaxWidth(), enabled = projects.isNotEmpty()) { Icon(Icons.Default.Add, null); Spacer(Modifier.width(8.dp)); Text("Створити замір") }; if (projects.isEmpty()) EmptyDataCard("Спочатку створіть об’єкт у вкладці «Об’єкти»."); if (measurements.isEmpty() && projects.isNotEmpty()) EmptyDataCard("Заміри ще не додані.") }
    items(measurements, key = { it.id }) { measurement ->
     val project = projectsById[measurement.projectId]
-    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) { Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
+     Column {
+      Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
      Icon(Icons.Default.Straighten, null, tint = MaterialTheme.colorScheme.primary); Spacer(Modifier.width(10.dp))
      Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) { Text(measurement.name, fontWeight = FontWeight.SemiBold); Text(project?.title ?: "Об’єкт #${measurement.projectId}", style = MaterialTheme.typography.bodySmall); Text(
          "${when (measurement.shape) {
@@ -162,7 +164,33 @@ internal fun MeasurementsScreen(
       showDialog = true
      }) { Icon(Icons.Default.Edit, contentDescription = "Редагувати замір") }
      IconButton(onClick = { scope.launch { runCatching { database.measurements().deleteById(measurement.id) }.onFailure { error = it.message ?: "Не вдалося видалити замір" } } }) { Icon(Icons.Default.Delete, contentDescription = "Видалити замір") }
-    } }
+      }
+      val drawing = remember(measurement.drawingJson) {
+       runCatching {
+        FrozenPolygonGeometryJson.readMeasurement(measurement.drawingJson)
+       }.getOrNull()
+      }
+      if (drawing != null) {
+       MeasurementDrawingPreview(drawing, Modifier.fillMaxWidth().padding(12.dp))
+      } else if (measurement.shape == "rectangle" &&
+          measurement.lengthMeters > 0.0 && measurement.widthMeters > 0.0) {
+       val legacyDrawing = runCatching {
+        val input = VerifiedCeilingGeometry.capturedRectangle(
+         measurement.lengthMeters, measurement.widthMeters, precision.stepMeters
+        )
+        FrozenPolygonGeometryContract.capture(
+         "rectangle", input.verticesMm,
+         mapOf("length" to kotlin.math.round(input.length * 1000.0).toLong(),
+               "width" to kotlin.math.round(input.width * 1000.0).toLong()),
+         precision.stepMeters
+        )
+       }.getOrNull()
+       if (legacyDrawing != null) {
+        MeasurementDrawingPreview(legacyDrawing, Modifier.fillMaxWidth().padding(12.dp))
+       }
+      }
+     }
+    }
    }
   }
   item { error?.let { Text(it, color = MaterialTheme.colorScheme.error) } }
