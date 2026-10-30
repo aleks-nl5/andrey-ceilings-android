@@ -159,19 +159,26 @@ object CeilingShapeTemplates {
     private val lShape = CeilingShapeTemplate(
         shapeType = "l_shaped",
         title = "L-подібна стеля",
-        parameterKeys = listOf("A", "B", "C", "D", "E", "F"),
-        parameterLabels = listOf("A", "B", "C", "D", "E", "F")
-            .associateWith { "Сторона $it, м" }
+        // A,B are overall bounds; C,D are the inner arms. E,F are
+        // derived from right angles, so the user enters only FOUR values.
+        parameterKeys = listOf("A", "B", "C", "D"),
+        parameterLabels = mapOf(
+            "A" to "Загальна довжина A, м",
+            "B" to "Загальна ширина B, м",
+            "C" to "Внутрішня довжина C, м",
+            "D" to "Внутрішня ширина D, м"
+        )
     ) { m ->
         val a = m.getValue("A")
         val b = m.getValue("B")
         val c = m.getValue("C")
         val d = m.getValue("D")
-        val e = m.getValue("E")
-        val f = m.getValue("F")
-        require(a == c + e && b == d + f) {
-            "L-shaped template must satisfy A=C+E and B=D+F"
+        require(c < a && d < b) {
+            "L-shaped cutout must fit inside overall dimensions"
         }
+        val e = a - c
+        val f = b - d
+        require(e > 0L && f > 0L) { "L-shaped cutout must be positive" }
         listOf(
             CeilingPointMm(0, 0), CeilingPointMm(a, 0),
             CeilingPointMm(a, d), CeilingPointMm(c, d),
