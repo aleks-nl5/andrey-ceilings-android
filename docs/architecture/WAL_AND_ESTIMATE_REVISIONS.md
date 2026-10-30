@@ -1,5 +1,7 @@
 # Combined PR: SQLCipher WAL hardening + immutable estimate revisions v2/v3
 
+**Test-only reset exception (owner clarification, 2026-10-30):** The current local test database and historical *test* `.stpb` archives may be discarded; compatibility migrations for those inputs are not a release gate. This exception does NOT weaken immutable v1/v2/v3 revisions, persisted price and PDF snapshots, production encrypted backups/restores for the new schema, crash safety, SQLCipher WAL correctness, cross-platform CI, device acceptance, or owner-approved merge. Retain fail-closed validation for incomplete geometry. `main` remains unchanged.
+
 Status: **DRAFT / incremental, not ready to merge**. Based on `main` after merged PR #28 (`07d60f5`). Tracks [#24](https://github.com/aleks-nl5/andrey-ceilings-android/issues/24) and [#26](https://github.com/aleks-nl5/andrey-ceilings-android/issues/26).
 
 ## Why one PR?
