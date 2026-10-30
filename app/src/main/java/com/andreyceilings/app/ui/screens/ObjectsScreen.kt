@@ -266,7 +266,7 @@ private fun AddMeasurementDialog(
     }
     var selectedPrecision by remember(existing?.id, precision) {
         mutableStateOf(
-            previous?.precisionStepMeters?.let(MeasurementPrecision::fromStep)
+            previous?.precisionStepMeters?.let { MeasurementPrecision.fromStep(it) }
                 ?: precision
         )
     }
@@ -278,8 +278,10 @@ private fun AddMeasurementDialog(
             put("l_shaped.B", "4")
             put("l_shaped.C", "2")
             put("l_shaped.D", "2")
-            previous?.measurementsMm?.forEach { (key, mm) ->
-                put("${previous.shapeType}.$key", (mm / 1000.0).toString())
+            previous?.let { saved ->
+                saved.measurementsMm.forEach { (key, mm) ->
+                    put("${saved.shapeType}.$key", (mm / 1000.0).toString())
+                }
             }
         }
     }
