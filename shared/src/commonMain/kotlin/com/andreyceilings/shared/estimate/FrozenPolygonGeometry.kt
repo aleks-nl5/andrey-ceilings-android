@@ -6,6 +6,8 @@ import com.andreyceilings.shared.calculation.CeilingPolygonCalculator
 import com.andreyceilings.shared.calculation.CeilingShapeTemplates
 import com.andreyceilings.shared.calculation.MeasurementPrecision
 import com.andreyceilings.shared.calculation.RoomGeometry
+import com.andreyceilings.shared.calculation.MeasuredOrthogonalSide
+import com.andreyceilings.shared.calculation.OrthogonalSideContour
 import kotlin.math.abs
 
 /**
@@ -21,17 +23,36 @@ data class FrozenPolygonGeometry(
     val measurementsMm: Map<String, Long>,
     val precisionStepMeters: Double,
     val areaSquareMeters: Double,
-    val perimeterMeters: Double
+    val perimeterMeters: Double,
+    /** Nonempty only for polygon schema v3, preserving actual walls and turns. */
+    val sides: List<MeasuredOrthogonalSide> = emptyList()
 )
 
 object FrozenPolygonGeometryContract {
     const val SCHEMA_VERSION = 2L
+    const val SIDES_SCHEMA_VERSION = 3L
     const val CALCULATION_RULE_VERSION = "kmp-polygon-v1"
     val sourceFields: Set<String> = setOf(
         "name", "material", "profileType", "complexity",
         "shape", "geometrySchemaVersion", "vertices",
         "measurementsMm", "areaSquareMeters", "perimeterMeters"
     )
+
+    val sidesSourceFields: Set<String> = sourceFields + "sides"
+
+    fun captureSides(
+        sides: List<MeasuredOrthogonalSide>,
+        precisionStepMeters: Double
+    ): FrozenPolygonGeometry {
+        val polygon = OrthogonalSideContour.build(sides, precisionStepMeters)
+        val geometry = CeilingPolygonCalculator.calculate(
+            polygon, precisionStepMeters
+        ).geometry
+        return requireValid(FrozenPolygonGeometry(
+            "polygon", polygon.vertices, emptyMap(), precisionStepMeters,
+            geometry.area, geometry.perimeter, sides.toList()
+        ))
+    }
 
     fun capture(
         shapeType: String,
@@ -58,6 +79,17 @@ object FrozenPolygonGeometryContract {
             value > 0L && value <= CeilingPolygonCalculator.MAX_COORDINATE_MM &&
                 value % stepMm == 0L
         }) { "Invalid frozen template measurements" }
+        if (frozen.sides.isNotEmpty()) {
+            require(frozen.shapeType == "polygon" && frozen.measurementsMm.isEmpty()) {
+                "Side measurements must belong to an orthogonal polygon"
+            }
+            val reconstructed = OrthogonalSideContour.build(
+                frozen.sides, frozen.precisionStepMeters
+            )
+            require(reconstructed.vertices == frozen.vertices) {
+                "Saved measured walls do not match the derived polygon vertices"
+            }
+        }
         val template = CeilingShapeTemplates.template(frozen.shapeType)
         if (template == null) {
             require(frozen.shapeType == "polygon" && frozen.measurementsMm.isEmpty()) {
