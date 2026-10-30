@@ -4,6 +4,11 @@ import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.andreyceilings.app.data.db.EstimateRevisionSnapshotAssembler
+import com.andreyceilings.app.data.db.EstimateDao
+import com.andreyceilings.app.data.db.EstimateEntity
+import com.andreyceilings.shared.db.EstimateRepository
+import com.andreyceilings.shared.estimate.VerifiedCeilingGeometry
+import kotlinx.coroutines.runBlocking
 import com.andreyceilings.shared.calculation.EstimateOptionId
 import com.andreyceilings.shared.db.PriceRepository
 import com.andreyceilings.shared.db.ProjectRepository
@@ -445,6 +450,92 @@ class EstimateRevisionSnapshotAssemblerTest {
                     }.isFailure)
                     assertEquals(1, history.revisions(invalid.seriesUuid).size)
                 }
+            }
+        } finally {
+            context.deleteDatabase(name)
+            key.fill(0)
+        }
+    }
+
+    @Test fun androidFirstSaveFreezesActualSixSidesAndRepricesWithoutMutatingV1() = runBlocking {
+        val context: Context = ApplicationProvider.getApplicationContext()
+        val name = "sqldelight_test_l_shaped_first_save.db"
+        val key = ByteArray(32) { 0x51.toByte() }
+        context.deleteDatabase(name)
+        try {
+            createEncryptedPrototypeDriver(
+                context, key, name, enableWalForTesting = true
+            ).use { driver ->
+                val db = PrototypeDatabase(driver)
+                val projectId = ProjectRepository(db).createReturningId(
+                    clientId = null, title = "Saved L geometry", createdAt = 100L
+                )
+                val prices = PriceRepository(db)
+                prices.upsertReturningId(
+                    code = "canvas.pvc_matte", title = "Updated canvas",
+                    category = "canvas", unit = "м²", price = 20.0, updatedAt = 120L
+                )
+                prices.upsertReturningId(
+                    code = "profile.standard_alu", title = "Updated profile",
+                    category = "profile", unit = "м.п.", price = 6.0, updatedAt = 120L
+                )
+                val frozen = VerifiedCeilingGeometry.capturedLShaped(
+                    listOf(5.0, 4.0, 2.0, 2.0, 3.0, 2.0), 0.01
+                )
+                val oldLines = listOf(
+                    ImmutableEstimateLine("canvas.pvc_matte", "Original canvas",
+                        "м²", 14.0, 10.0, 140.0),
+                    ImmutableEstimateLine("profile.standard_alu", "Original profile",
+                        "м.п.", 18.0, 5.0, 90.0)
+                )
+                val input = EstimateEntity(
+                    projectId = projectId, name = "Real L measurement",
+                    material = "pvc_matte", profileType = "standard_alu",
+                    complexity = "straight",
+                    lengthMeters = frozen.sideA, widthMeters = frozen.sideB,
+                    areaSquareMeters = 14.0, perimeterMeters = 18.0,
+                    canvasCost = 140.0, profileCost = 90.0,
+                    complexityCost = 0.0, optionsCost = 0.0,
+                    totalCost = 230.0, detailsJson = detailsJson(oldLines),
+                    frozenGeometryInput = frozen
+                )
+                val compat = EstimateRepository(db)
+                val id = EstimateDao(compat).insert(input)
+                val frozenJson = JSONObject(compat.originalRevisionInputForId(id)!!)
+                assertEquals("l_shaped", frozenJson.getString("shape"))
+                assertEquals(1L, frozenJson.getLong("geometrySchemaVersion"))
+                listOf("sideA", "sideB", "sideC", "sideD", "sideE", "sideF")
+                    .forEach { side -> assertTrue(frozenJson.has(side)) }
+                assertEquals(14.0, frozenJson.getDouble("areaSquareMeters"), 0.0)
+                assertEquals(18.0, frozenJson.getDouble("perimeterMeters"), 0.0)
+                assertTrue(!frozenJson.has("lengthMeters"))
+                assertTrue(!frozenJson.has("widthMeters"))
+                val seriesUuid = checkNotNull(compat.find(id)?.seriesUuid)
+                val history = ImmutableEstimateRepository(db)
+                val v1 = history.revisions(seriesUuid).single()
+                assertEquals(230.0, v1.totalCost, 0.0)
+                val prepared = EstimateRevisionSnapshotAssembler(db)
+                    .prepareLatestSimpleRectangle(seriesUuid)
+                assertEquals(388.0, prepared.draft.totalCost, 0.0)
+                val v2 = EstimateRevisionSnapshotAssembler(db)
+                    .confirmPreparedRectangle(prepared, createdAt = 150L)
+                assertEquals(2L, v2.versionNumber)
+                assertEquals(230.0, history.revision(v1.revisionUuid)!!.totalCost, 0.0)
+                assertEquals("Original canvas",
+                    history.lines(v1.revisionUuid).first().titleSnapshot)
+                assertEquals(v1.sourceMeasurementJson,
+                    history.revision(v2.revisionUuid)!!.sourceMeasurementJson)
+
+                // Bad metadata cannot be inserted as a new commercial v1.
+                assertTrue(runCatching {
+                    EstimateDao(compat).insert(
+                        input.copy(
+                            areaSquareMeters = 13.0,
+                            name = "Invalid L room"
+                        )
+                    )
+                }.isFailure)
+                assertEquals(1L, compat.count())
             }
         } finally {
             context.deleteDatabase(name)
