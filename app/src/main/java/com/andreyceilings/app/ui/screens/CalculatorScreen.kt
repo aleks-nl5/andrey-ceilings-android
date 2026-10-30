@@ -96,7 +96,7 @@ internal fun CalculatorScreen(
     ) {
         OutlinedTextField(
             value = activeTemplate?.title ?:
-                if (geometryShape == "polygon") "Довільний багатокутник"
+                if (geometryShape == "polygon") "Багатокутник (прямі кути)"
                 else "Непідтримувана форма",
             onValueChange = {}, readOnly = true,
             label = { Text("Форма стелі") },
@@ -115,7 +115,7 @@ internal fun CalculatorScreen(
                     geometryExpanded = false
                 })
             }
-            DropdownMenuItem(text = { Text("Довільний багатокутник") }, onClick = {
+            DropdownMenuItem(text = { Text("Багатокутник (прямі кути)") }, onClick = {
                 onGeometryShape("polygon")
                 geometryExpanded = false
             })
