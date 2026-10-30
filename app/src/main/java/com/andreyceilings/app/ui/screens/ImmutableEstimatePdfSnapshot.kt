@@ -2,6 +2,7 @@ package com.andreyceilings.app.ui.screens
 
 import com.andreyceilings.app.data.db.EstimateEntity
 import com.andreyceilings.app.data.db.frozenLShapedGeometryFromSource
+import com.andreyceilings.app.data.db.FrozenPolygonGeometryJson
 import com.andreyceilings.shared.db.ProjectRepository
 import com.andreyceilings.shared.db.PrototypeDatabase
 import com.andreyceilings.shared.estimate.EstimateNumbering
@@ -56,17 +57,29 @@ internal fun loadImmutableEstimatePdfSnapshot(
     // This is the exact immutable version, not the current estimate row.
     // The shared schema validates its complete geometry before any PDF bytes
     // are rendered. Old rectangle-only assumptions must not reject L rooms.
-    val frozenLShape = frozenLShapedGeometryFromSource(
-        revision.sourceMeasurementJson, revision.measurementPrecisionMeters
-    )
-    val dimensions = if (frozenLShape != null) {
-        listOf(
+    val polygonV2 = if (FrozenPolygonGeometryJson.isVersion2(original)) {
+        FrozenPolygonGeometryJson.read(original, revision.measurementPrecisionMeters)
+    } else null
+    val frozenLShape = if (polygonV2 == null) {
+        frozenLShapedGeometryFromSource(
+            revision.sourceMeasurementJson, revision.measurementPrecisionMeters
+        )
+    } else null
+    val dimensions = when {
+        polygonV2 != null -> {
+            val points = polygonV2.vertices
+            listOf(
+                (points.maxOf { it.xMm } - points.minOf { it.xMm }) / 1000.0,
+                (points.maxOf { it.yMm } - points.minOf { it.yMm }) / 1000.0,
+                polygonV2.areaSquareMeters, polygonV2.perimeterMeters
+            )
+        }
+        frozenLShape != null -> listOf(
             frozenLShape.sideA, frozenLShape.sideB,
             original.getDouble("areaSquareMeters"),
             original.getDouble("perimeterMeters")
         )
-    } else {
-        listOf(
+        else -> listOf(
             "lengthMeters", "widthMeters", "areaSquareMeters", "perimeterMeters"
         ).map(original::getDouble)
     }
@@ -150,7 +163,8 @@ internal fun loadImmutableEstimatePdfSnapshot(
             createdAt = revision.createdAt,
             printableNumber = publicNumber,
             originalDocumentName = name,
-            frozenGeometryInput = frozenLShape
+            frozenGeometryInput = frozenLShape,
+            frozenPolygon = polygonV2
         ),
         projectTitle = project.title,
         versionNumber = revision.versionNumber,
