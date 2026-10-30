@@ -1,5 +1,11 @@
 # Заміри за сторонами та креслення — погоджене UX-рішення
 
+## Verified v3 schema fix and regression checkpoint (30 Oct 2026)
+
+The `geometrySchemaVersion=3` reader bug in `FrozenPolygonGeometryJson.readGeometryFields` was fixed at `75778c42` by accepting **only** supported v2/v3 schemas instead of the stale v2-only test. The owner reports the APK works; CI for that SHA was successful across Android [#41128915568](https://github.com/aleks-nl5/andrey-ceilings-android/actions/runs/41128915568) and Windows/iOS [#41128915482](https://github.com/aleks-nl5/andrey-ceilings-android/actions/runs/41128915482).
+
+A subsequent Android instrumentation regression, `MeasuredSidesV3EstimateRegressionTest`, protects the end-to-end encrypted WAL v3 path: measured polygon initial estimate, duplicate, later price revisions, historical PDFs across cold reopen, immutable side/turn fidelity and tamper rejection. This new test is committed but needs **fresh CI acceptance**. The owner did not separately report all these v3-specific PDF/revision/backup operations on a device. The interactive free-drawing editor and T/U/trapezoid templates remain separate future PR work.
+
 ## Implementation checkpoint — side-first entry and drawing (30 Oct 2026)
 
 The first code increment replaces the X/Y entry control with `OrthogonalSidesEditor` on Measurement and Calculator screens. Users provide all side lengths and each 90° turn. The shared `OrthogonalSideContour` builder verifies both endpoint/heading closure, then the common polygon engine validates the resulting geometry. An unclosed shape cannot be saved or priced. A shared read-only Compose `MeasurementDrawingPreview` presents the true contour and wall-length labels on new and saved measurements.
