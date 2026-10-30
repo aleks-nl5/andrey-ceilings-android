@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -18,17 +19,22 @@ import com.andreyceilings.shared.estimate.EstimateRecalculationPreview
 import com.andreyceilings.shared.estimate.RecalculationProblem
 
 /**
- * Read-only comparison. No "Save version" action until optimistic-lock
- * confirmation, consistent detailsJson and WAL-safe backup are implemented.
+ * Explicit, review-before-save path for a verified immutable revision. The
+ * caller only supplies onConfirm when KMP geometry, frozen line items, saved
+ * options and regenerated detailsJson have all passed strict validation.
  */
 @Composable
 internal fun EstimatePreviewDialog(
     preview: EstimateRecalculationPreview,
     printableNumber: String?,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    proposedVersion: Long? = null,
+    unavailableReason: String? = null,
+    saving: Boolean = false,
+    onConfirm: (() -> Unit)? = null
 ) {
     AppAlertDialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = { if (!saving) onDismiss() },
         title = { Text("Перерахунок — перегляд") },
         text = {
             Column(
@@ -65,19 +71,40 @@ internal fun EstimatePreviewDialog(
                     Text("Стало разом: ${money(total)} · зміна ${money(total - preview.originalTotal)}",
                         style = MaterialTheme.typography.titleMedium)
                 }
+                val ready = preview.canConfirm &&
+                    proposedVersion == preview.baseVersionNumber + 1L &&
+                    onConfirm != null && unavailableReason == null
                 Text(
-                    if (preview.canConfirm) {
-                        "Це попередній перегляд. Збереження нової v2/v3 буде доступне після завершення перевірки актуальності прайсу й запису незмінних версій."
-                    } else {
-                        "Є блокувальні проблеми. Нова версія не створюється без явного вирішення цих розбіжностей."
+                    when {
+                        !preview.canConfirm ->
+                            "Є блокувальні проблеми. Нова версія не створюється без їхнього вирішення."
+                        !ready -> unavailableReason
+                            ?: "Потрібна повна перевірка збережених замірів, опцій і сум. Нова версія не створюється."
+                        else ->
+                            "Створення v$proposedVersion потребує вашого підтвердження. Попередні версії залишаться незмінними; поточний прайс повторно перевіряється під час запису."
                     },
-                    color = if (preview.canConfirm) MaterialTheme.colorScheme.onSurfaceVariant
+                    color = if (ready) MaterialTheme.colorScheme.onSurfaceVariant
                         else MaterialTheme.colorScheme.error,
                     style = MaterialTheme.typography.bodySmall
                 )
             }
         },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("Закрити") } }
+        confirmButton = {
+            if (preview.canConfirm && onConfirm != null && proposedVersion != null) {
+                Button(
+                    onClick = onConfirm,
+                    enabled = !saving && unavailableReason == null &&
+                        proposedVersion == preview.baseVersionNumber + 1L
+                ) {
+                    Text(if (saving) "Зберігаю…" else "Створити v$proposedVersion")
+                }
+            } else {
+                TextButton(onClick = onDismiss, enabled = !saving) { Text("Закрити") }
+            }
+        },
+        dismissButton = if (onConfirm != null) {
+            { TextButton(onClick = onDismiss, enabled = !saving) { Text("Скасувати") } }
+        } else null
     )
 }
 
