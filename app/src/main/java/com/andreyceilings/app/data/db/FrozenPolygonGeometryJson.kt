@@ -1,6 +1,8 @@
 package com.andreyceilings.app.data.db
 
 import com.andreyceilings.shared.calculation.CeilingPointMm
+import com.andreyceilings.shared.calculation.MeasuredOrthogonalSide
+import com.andreyceilings.shared.calculation.OrthogonalTurn
 import com.andreyceilings.shared.calculation.CeilingPolygonCalculator
 import com.andreyceilings.shared.estimate.FrozenPolygonGeometry
 import com.andreyceilings.shared.estimate.FrozenPolygonGeometryContract
@@ -22,7 +24,9 @@ internal object FrozenPolygonGeometryJson {
 
     fun readMeasurement(sourceJson: String): FrozenPolygonGeometry {
         val source = JSONObject(sourceJson)
-        require(source.keys().asSequence().toSet() == measurementFields) {
+        val expected = if (isVersion3(source)) measurementFields + "sides"
+            else measurementFields
+        require(source.keys().asSequence().toSet() == expected) {
             "Incomplete or unsupported saved measurement geometry"
         }
         return readGeometryFields(
@@ -35,13 +39,22 @@ internal object FrozenPolygonGeometryJson {
             source.getLong("geometrySchemaVersion") ==
                 FrozenPolygonGeometryContract.SCHEMA_VERSION
 
+    fun isVersion3(source: JSONObject): Boolean =
+        source.has("geometrySchemaVersion") &&
+            source.getLong("geometrySchemaVersion") ==
+                FrozenPolygonGeometryContract.SIDES_SCHEMA_VERSION
+
+    fun isVersioned(source: JSONObject): Boolean =
+        isVersion2(source) || isVersion3(source)
+
     fun read(source: JSONObject, precisionStepMeters: Double): FrozenPolygonGeometry {
-        require(source.keys().asSequence().toSet() ==
-            FrozenPolygonGeometryContract.sourceFields) {
+        val expected = if (isVersion3(source)) {
+            FrozenPolygonGeometryContract.sidesSourceFields
+        } else FrozenPolygonGeometryContract.sourceFields
+        require(source.keys().asSequence().toSet() == expected) {
             "Unknown, incomplete or malformed polygon source snapshot"
         }
-        require(source.getLong("geometrySchemaVersion") ==
-            FrozenPolygonGeometryContract.SCHEMA_VERSION) {
+        require(isVersioned(source)) {
             "Unsupported polygon schema"
         }
         return readGeometryFields(source, precisionStepMeters)
@@ -54,6 +67,22 @@ internal object FrozenPolygonGeometryJson {
             FrozenPolygonGeometryContract.SCHEMA_VERSION) {
             "Unsupported geometry schema"
         }
+        val sides = if (isVersion3(source)) {
+            val values = source.getJSONArray("sides")
+            require(values.length() in 4..CeilingPolygonCalculator.MAX_VERTICES) {
+                "Incorrect number of measured walls"
+            }
+            (0 until values.length()).map { index ->
+                val value = values.getJSONObject(index)
+                require(value.keys().asSequence().toSet() == setOf(
+                    "lengthMm", "turnAfter"
+                )) { "Unknown measured side fields" }
+                MeasuredOrthogonalSide(
+                    exactLong(value, "lengthMm"),
+                    OrthogonalTurn.valueOf(value.getString("turnAfter"))
+                )
+            }
+        } else emptyList()
         val verticesJson = source.getJSONArray("vertices")
         require(verticesJson.length() in 3..CeilingPolygonCalculator.MAX_VERTICES) {
             "Invalid frozen polygon vertex count"
@@ -77,7 +106,8 @@ internal object FrozenPolygonGeometryJson {
                 measurementsMm = dimensions,
                 precisionStepMeters = precisionStepMeters,
                 areaSquareMeters = source.getDouble("areaSquareMeters"),
-                perimeterMeters = source.getDouble("perimeterMeters")
+                perimeterMeters = source.getDouble("perimeterMeters"),
+                sides = sides
             )
         )
     }
@@ -100,13 +130,22 @@ internal object FrozenPolygonGeometryJson {
         }
         val measurements = JSONObject()
         frozen.measurementsMm.forEach { (key, mm) -> measurements.put(key, mm) }
-        return JSONObject()
+        val sides = JSONArray()
+        frozen.sides.forEach { wall ->
+            sides.put(JSONObject().put("lengthMm", wall.lengthMm)
+                .put("turnAfter", wall.turnAfter.name))
+        }
+        val result = JSONObject()
             .put("shape", frozen.shapeType)
-            .put("geometrySchemaVersion", FrozenPolygonGeometryContract.SCHEMA_VERSION)
+            .put("geometrySchemaVersion", if (frozen.sides.isNotEmpty()) {
+                FrozenPolygonGeometryContract.SIDES_SCHEMA_VERSION
+            } else FrozenPolygonGeometryContract.SCHEMA_VERSION)
             .put("vertices", vertices)
             .put("measurementsMm", measurements)
             .put("areaSquareMeters", frozen.areaSquareMeters)
             .put("perimeterMeters", frozen.perimeterMeters)
+        if (frozen.sides.isNotEmpty()) result.put("sides", sides)
+        return result
     }
 
     private fun exactLong(json: JSONObject, key: String): Long {
