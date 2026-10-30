@@ -119,4 +119,66 @@ class EstimateRevisionCandidateTest {
                 measurement(), proposed.copy(proposedTotal = 999.0))
         }
     }
+
+    @Test fun canonicalOptionsProduceConsistentKmpRectangleRepricing() {
+        val option = ImmutableEstimateLine(
+            "light.spot", "Old spotlight", "шт.", 2.0, 11.0, 22.0, "spot-uuid"
+        )
+        val frozen = listOf(
+            ImmutableEstimateLine(
+                "canvas.pvc_matte", "Old canvas", "м²", 6.0, 10.0, 60.0, "canvas-uuid"
+            ),
+            ImmutableEstimateLine(
+                "profile.standard_alu", "Old profile", "м.п.", 10.0, 5.0, 50.0, "profile-uuid"
+            ),
+            option
+        )
+        val saved = source(frozen)
+        val prices = listOf(
+            CurrentEstimatePrice(
+                "canvas.pvc_matte", "canvas-uuid", "New canvas", "м²", 20.0, 100L
+            ),
+            CurrentEstimatePrice(
+                "profile.standard_alu", "profile-uuid", "New profile", "м.п.", 6.0, 100L
+            ),
+            CurrentEstimatePrice(
+                "light.spot", "spot-uuid", "New spotlight", "шт.", 25.0, 100L
+            )
+        )
+        val comparison = EstimateRecalculation.preview(
+            "old-v1", 1L, saved.totalCost, saved.lines, prices
+        )
+        val options = com.andreyceilings.shared.calculation.EstimateOptionId.entries
+            .associate { it.code to (if (it.code == "light.spot") 2.0 else 0.0) }
+        val result = EstimateRevisionCandidates.prepareRectangleWithOptions(
+            saved, measurement(), comparison, options
+        )
+        assertEquals(230.0, result.totalCost)
+        assertEquals(listOf(120.0, 60.0, 50.0),
+            result.lines.map { it.lineTotal })
+
+        // Lost options, mismatched units or quantities, and extra hidden
+        // lines must stop before any future v2/v3 INSERT.
+        assertFailsWith<IllegalStateException> {
+            EstimateRevisionCandidates.prepareRectangleWithOptions(
+                saved, measurement(), comparison, options + ("light.spot" to 0.0)
+            )
+        }
+        assertFailsWith<IllegalStateException> {
+            EstimateRevisionCandidates.prepareRectangleWithOptions(
+                saved, measurement(), comparison, options - "light.spot"
+            )
+        }
+        val altered = saved.copy(lines = frozen.map {
+            if (it.stableCode == "light.spot") it.copy(quantity = 3.0) else it
+        })
+        val alteredPreview = EstimateRecalculation.preview(
+            "old-v1", 1L, altered.totalCost, altered.lines, prices
+        )
+        assertFailsWith<IllegalStateException> {
+            EstimateRevisionCandidates.prepareRectangleWithOptions(
+                altered, measurement(), alteredPreview, options
+            )
+        }
+    }
 }

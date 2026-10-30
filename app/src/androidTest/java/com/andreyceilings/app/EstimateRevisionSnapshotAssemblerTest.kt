@@ -124,6 +124,54 @@ class EstimateRevisionSnapshotAssemblerTest {
                     assembler.prepareLatestSimpleRectangle(other.seriesUuid)
                 }.isFailure)
 
+                // A real nonzero canonical option must be preserved in the
+                // immutable snapshot AND in regenerated PDF detailsJson.
+                prices.upsertReturningId(
+                    code = EstimateOptionId.SPOT.code, title = "New spot",
+                    category = "lighting", unit = "шт.", price = 25.0,
+                    updatedAt = 31L
+                )
+                val optionLine = ImmutableEstimateLine(
+                    EstimateOptionId.SPOT.code, "Old spot", "шт.", 2.0, 11.0, 22.0
+                )
+                val withPricedOption = saved.copy(
+                    totalCost = 132.0,
+                    lines = original + optionLine,
+                    detailsJson = detailsJson(original + optionLine, optionValue = 2.0)
+                )
+                val optionSeries = history.createSeries(
+                    projectId = projectId, year = 2026,
+                    createdAt = 24L, firstRevision = withPricedOption
+                )
+                val preparedOption = assembler.prepareLatestSimpleRectangle(
+                    optionSeries.seriesUuid
+                )
+                assertEquals(230.0, preparedOption.draft.totalCost, 0.0)
+                assertEquals(listOf(120.0, 60.0, 50.0),
+                    preparedOption.draft.lines.map { it.lineTotal })
+                val optionDetails = JSONObject(preparedOption.draft.detailsJson)
+                assertEquals(2.0, optionDetails.getDouble(EstimateOptionId.SPOT.code), 0.0)
+                assertEquals(3, optionDetails.getJSONArray("lineItems").length())
+                assertEquals(1, history.revisions(optionSeries.seriesUuid).size)
+                assertEquals(132.0, history.revision(optionSeries.initialRevisionUuid)!!
+                    .totalCost, 0.0)
+
+                // Even with three saved lines, a mismatching option quantity
+                // must not be treated as a trustworthy previous calculation.
+                val mismatchedQuantity = history.createSeries(
+                    projectId = projectId, year = 2026,
+                    createdAt = 25L, firstRevision = withPricedOption.copy(
+                        detailsJson = detailsJson(
+                            original + optionLine, optionValue = 3.0
+                        )
+                    )
+                )
+                assertTrue(runCatching {
+                    assembler.prepareLatestSimpleRectangle(
+                        mismatchedQuantity.seriesUuid
+                    )
+                }.isFailure)
+
                 val badDetails = JSONObject(saved.detailsJson)
                     .put("lineItems", JSONArray().put(JSONObject()
                         .put("code", original[0].stableCode)

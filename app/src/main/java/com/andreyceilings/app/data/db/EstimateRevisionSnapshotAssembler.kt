@@ -15,9 +15,10 @@ import org.json.JSONObject
  * Bridges the persisted Android v1 snapshot to KMP's write-free revision
  * candidate, without reconstructing missing historical values.
  *
- * Strictly scoped to an ordinary rectangle with two frozen lines and NO
- * priced or unpriced options. This is a read-only preparation API, NOT the
- * v2/v3 confirmation path. It cannot change any SQLDelight records.
+ * Strictly scoped to straight rectangles with canonical, independently
+ * verified option lines. Unsupported profiles, legacy rounding and partial
+ * snapshots fail closed. This is a read-only preparation API, NOT the v2/v3
+ * confirmation path; it cannot change SQLDelight records.
  */
 internal class EstimateRevisionSnapshotAssembler(private val database: PrototypeDatabase) {
     internal data class Prepared(
@@ -81,19 +82,20 @@ internal class EstimateRevisionSnapshotAssembler(private val database: Prototype
         check(details.keys().asSequence().toSet() == detailFields) {
             "Missing or unrecognized saved estimate options"
         }
-        for (code in optionKeys) {
-            // Even an unpriced historical option changes the geometry or
-            // included works. Never silently drop it when saving a new v2.
+        val savedOptionQuantities = optionKeys.associateWith { code ->
             val amount = details.getDouble(code)
-            check(amount.isFinite() && amount == 0.0) {
-                "Nonzero option $code requires full KMP calculation"
+            check(amount.isFinite() && amount >= 0.0) {
+                "Invalid saved option quantity for $code"
             }
+            amount
         }
         val precision = details.getDouble("measurementPrecisionMeters")
         check(precision == latest.measurementPrecisionMeters) {
             "Frozen measurement precision differs between snapshots"
         }
-        check(savedLines.size == 2)
+        check(savedLines.size == 2 + savedOptionQuantities.values.count { it > 0.0 }) {
+            "Each nonzero saved option needs its own immutable priced line"
+        }
         val canvas = savedLines.singleOrNull { it.stableCode.startsWith("canvas.") }
             ?: error("Exactly one frozen canvas line is required")
         val profile = savedLines.singleOrNull { it.stableCode.startsWith("profile.") }
@@ -128,7 +130,7 @@ internal class EstimateRevisionSnapshotAssembler(private val database: Prototype
         check(preview.baseRevisionUuid == latest.revisionUuid) {
             "Source revision changed while preparing a candidate"
         }
-        val candidate = EstimateRevisionCandidates.prepareSimpleRectangle(
+        val candidate = EstimateRevisionCandidates.prepareRectangleWithOptions(
             saved,
             VerifiedRectangleInputs(
                 lengthMeters = source.getDouble("lengthMeters"),
@@ -137,7 +139,8 @@ internal class EstimateRevisionSnapshotAssembler(private val database: Prototype
                 storedPerimeterMeters = source.getDouble("perimeterMeters"),
                 precisionStepMeters = precision
             ),
-            preview
+            preview,
+            savedOptionQuantities
         )
         val proposedLines = JSONArray()
         candidate.lines.forEach { line ->
@@ -151,8 +154,8 @@ internal class EstimateRevisionSnapshotAssembler(private val database: Prototype
         }
 
         // Do not mutate the original JSON. Retain exact saved measurement
-        // inputs and all explicitly-zero options. Replace only lineItems with
-        // the independently verified new frozen prices and totals.
+        // inputs and ALL saved options, including priced nonzero ones.
+        // Replace only lineItems after KMP has verified their new totals.
         val rebuiltDetails = JSONObject(saved.detailsJson)
             .put("lineItems", proposedLines)
             .toString()
