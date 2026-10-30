@@ -257,7 +257,9 @@ class EstimateRevisionCandidateTest {
             ImmutableEstimateLine("profile.standard_alu", "Old profile",
                 "м.п.", 18.0, 5.0, 90.0, "profile")
         )
-        val saved = source(oldLines)
+        val saved = source(oldLines).copy(sourceMeasurementJson =
+            """{"shape":"l_shaped","sideA":5.0,"sideB":4.0,"sideC":2.0,"sideD":2.0,"sideE":3.0,"sideF":2.0,"areaSquareMeters":14.0,"perimeterMeters":18.0}"""
+        )
         val newPrices = listOf(
             CurrentEstimatePrice("canvas.pvc_matte", "canvas",
                 "Canvas", "м²", 20.0, 111L),
