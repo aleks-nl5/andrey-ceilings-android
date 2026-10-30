@@ -29,6 +29,24 @@ data class VerifiedRectangleInputs(
     val complexity: String = "straight"
 )
 
+/**
+ * Complete frozen six-side input for a right-angled L-shaped room.
+ * No side may be reconstructed from its area, perimeter or the calculator's
+ * legacy defaults. The Android snapshot reader must validate provenance.
+ */
+data class VerifiedLShapedInputs(
+    val sideA: Double,
+    val sideB: Double,
+    val sideC: Double,
+    val sideD: Double,
+    val sideE: Double,
+    val sideF: Double,
+    val storedAreaSquareMeters: Double,
+    val storedPerimeterMeters: Double,
+    val precisionStepMeters: Double,
+    val complexity: String = "straight"
+)
+
 data class EstimateRevisionCandidate(
     val baseRevisionUuid: String,
     val proposedVersionNumber: Long,
@@ -70,9 +88,80 @@ object EstimateRevisionCandidates {
     ): EstimateRevisionCandidate =
         prepareRectangle(source, input, preview, savedOptionQuantities, verifyOptions = true)
 
+    /**
+     * First nonrectangular, write-free replay. Supported only when all six
+     * frozen sides were actually saved, with orthogonal closure. This does
+     * not enable Android confirmation for legacy snapshots without sides.
+     */
+    fun prepareLShapedWithOptions(
+        source: ImmutableEstimateDraft,
+        input: VerifiedLShapedInputs,
+        preview: EstimateRecalculationPreview,
+        savedOptionQuantities: Map<String, Double>
+    ): EstimateRevisionCandidate {
+        val precision = checkNotNull(MeasurementPrecision.fromStep(input.precisionStepMeters)) {
+            "Unsupported historical measurement precision"
+        }
+        val sides = listOf(
+            input.sideA, input.sideB, input.sideC,
+            input.sideD, input.sideE, input.sideF
+        )
+        require(sides.all { it.isFinite() && it > 0.0 }) {
+            "All six historical L-shaped sides must be present and positive"
+        }
+        check(sides.all { abs(precision.length(it) - it) < 0.000001 }) {
+            "Frozen L-shaped sides must use the historical measurement precision"
+        }
+        check(abs(input.sideA - input.sideC - input.sideE) < 0.000001 &&
+            abs(input.sideB - input.sideD - input.sideF) < 0.000001) {
+            "L-shaped sides do not form a closed orthogonal room"
+        }
+        // The legacy KMP geometry routine clamps tiny areas to 1 m².
+        // Reject those cases instead of accepting an invented canvas area.
+        check(input.sideA * input.sideB - input.sideE * input.sideF >= 1.0) {
+            "L-shaped canvas area would use a legacy fallback"
+        }
+        return prepareVerifiedGeometry(
+            source, GeometryInput(
+                shape = "l_shaped",
+                sideA = input.sideA, sideB = input.sideB, sideC = input.sideC,
+                sideD = input.sideD, sideE = input.sideE, sideF = input.sideF,
+                precisionStepMeters = input.precisionStepMeters
+            ),
+            input.storedAreaSquareMeters, input.storedPerimeterMeters,
+            input.precisionStepMeters, input.complexity, preview,
+            savedOptionQuantities, verifyOptions = true
+        )
+    }
+
     private fun prepareRectangle(
         source: ImmutableEstimateDraft,
         input: VerifiedRectangleInputs,
+        preview: EstimateRecalculationPreview,
+        savedOptionQuantities: Map<String, Double>,
+        verifyOptions: Boolean
+    ): EstimateRevisionCandidate {
+        require(input.lengthMeters.isFinite() && input.lengthMeters > 0.0)
+        require(input.widthMeters.isFinite() && input.widthMeters > 0.0)
+        return prepareVerifiedGeometry(
+            source, GeometryInput(
+                shape = "rectangle",
+                length = input.lengthMeters, width = input.widthMeters,
+                precisionStepMeters = input.precisionStepMeters
+            ),
+            input.storedAreaSquareMeters, input.storedPerimeterMeters,
+            input.precisionStepMeters, input.complexity, preview,
+            savedOptionQuantities, verifyOptions
+        )
+    }
+
+    private fun prepareVerifiedGeometry(
+        source: ImmutableEstimateDraft,
+        geometryInput: GeometryInput,
+        storedAreaSquareMeters: Double,
+        storedPerimeterMeters: Double,
+        precisionStepMeters: Double,
+        complexity: String,
         preview: EstimateRecalculationPreview,
         savedOptionQuantities: Map<String, Double>,
         verifyOptions: Boolean
@@ -89,33 +178,23 @@ object EstimateRevisionCandidates {
             source.currency == "UAH") {
             "Unsupported source calculation or rounding policy"
         }
-        val precision = MeasurementPrecision.fromStep(input.precisionStepMeters)
+        val precision = MeasurementPrecision.fromStep(precisionStepMeters)
         check(precision != null &&
-            source.measurementPrecisionMeters == input.precisionStepMeters) {
+            source.measurementPrecisionMeters == precisionStepMeters) {
             "Measurement precision is missing or changed"
         }
-        require(input.lengthMeters.isFinite() && input.lengthMeters > 0.0)
-        require(input.widthMeters.isFinite() && input.widthMeters > 0.0)
-        require(input.storedAreaSquareMeters.isFinite() && input.storedAreaSquareMeters > 0.0)
-        require(input.storedPerimeterMeters.isFinite() && input.storedPerimeterMeters > 0.0)
-
-        // The caller must obtain these typed values from the saved source
-        // measurement JSON; this pure function never makes up dimensions.
-        val geometry = KmpCeilingCalculator.geometry(GeometryInput(
-            shape = "rectangle",
-            length = input.lengthMeters,
-            width = input.widthMeters,
-            precisionStepMeters = input.precisionStepMeters
-        ))
-        check(abs(geometry.area - input.storedAreaSquareMeters) < 0.000001 &&
-            abs(geometry.perimeter - input.storedPerimeterMeters) < 0.000001) {
+        require(storedAreaSquareMeters.isFinite() && storedAreaSquareMeters > 0.0)
+        require(storedPerimeterMeters.isFinite() && storedPerimeterMeters > 0.0)
+        val geometry = KmpCeilingCalculator.geometry(geometryInput)
+        check(abs(geometry.area - storedAreaSquareMeters) < 0.000001 &&
+            abs(geometry.perimeter - storedPerimeterMeters) < 0.000001) {
             "Saved geometry is not reproducible by the KMP calculator"
         }
 
-        check(input.complexity in setOf("straight", "multilevel", "curved")) {
+        check(complexity in setOf("straight", "multilevel", "curved")) {
             "Unknown ceiling complexity must not be silently priced as straight"
         }
-        val complexityCode = when (input.complexity) {
+        val complexityCode = when (complexity) {
             "multilevel" -> "work.multilevel"
             "curved" -> "work.curved"
             else -> null
@@ -162,7 +241,7 @@ object EstimateRevisionCandidates {
             }
             if (complexityCode != null) {
                 val complexity = source.lines[2]
-                val ratio = if (input.complexity == "multilevel") 0.35 else 0.25
+                val ratio = if (complexity == "multilevel") 0.35 else 0.25
                 val requiredLength = kotlin.math.max(
                     2.0, precision.length(geometry.perimeter * ratio)
                 )
@@ -251,9 +330,9 @@ object EstimateRevisionCandidates {
                 CostInput(
                     area = geometry.area, perimeter = geometry.perimeter,
                     materialType = material, profileType = profileType,
-                    complexity = input.complexity,
+                    complexity = complexity,
                     options = roomOptionsFromCanonicalQuantities(options),
-                    precisionStepMeters = input.precisionStepMeters
+                    precisionStepMeters = precisionStepMeters
                 ),
                 calculatorPrices
             )
