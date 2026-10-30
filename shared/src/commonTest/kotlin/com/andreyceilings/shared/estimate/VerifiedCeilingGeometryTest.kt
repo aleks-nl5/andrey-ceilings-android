@@ -75,4 +75,19 @@ class VerifiedCeilingGeometryTest {
         assertEquals(emptyList(), historicalL.verticesMm)
     }
 
+    @Test fun fourEnteredLParametersDeriveTwoSidesAndPreserveFullFrozenGeometry() {
+        val active = VerifiedCeilingGeometry.capturedTemplate(
+            "l_shaped",
+            mapOf("A" to 5.0, "B" to 4.0, "C" to 2.0, "D" to 2.0),
+            0.01
+        )
+        assertEquals(3.0, active.sideE, 0.0)
+        assertEquals(2.0, active.sideF, 0.0)
+        assertEquals(6, active.verticesMm.size)
+        val historical = active.copy(verticesMm = emptyList())
+        assertEquals(historical, VerifiedCeilingGeometry.requireFrozenLShaped(historical))
+        assertEquals(14.0, KmpCeilingCalculator.geometry(active).area, 0.0)
+        assertEquals(18.0, KmpCeilingCalculator.geometry(active).perimeter, 0.0)
+    }
+
 }
