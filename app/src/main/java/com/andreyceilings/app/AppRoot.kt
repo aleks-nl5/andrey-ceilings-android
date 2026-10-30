@@ -61,6 +61,8 @@ import com.andreyceilings.app.core.CeilingEstimate
 import com.andreyceilings.app.core.CeilingCalculator
 import com.andreyceilings.app.core.CalculatorOptions
 import com.andreyceilings.shared.calculation.MeasurementPrecision
+import com.andreyceilings.shared.estimate.FrozenCeilingShape
+import com.andreyceilings.shared.estimate.VerifiedCeilingGeometry
 import com.andreyceilings.app.data.db.PriceItemEntity
 import com.andreyceilings.app.data.db.ProjectEntity
 import com.andreyceilings.app.data.db.EstimateEntity
@@ -253,6 +255,10 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
     }
     var length by remember { mutableStateOf("5.4") }
     var width by remember { mutableStateOf("3.8") }
+    var geometryShape by remember { mutableStateOf(FrozenCeilingShape.RECTANGLE.wireId) }
+    val lShapedSides = remember {
+        mutableStateListOf("5", "4", "2", "2", "3", "2")
+    }
     var pricePerM2 by remember { mutableStateOf("290") }
     var profilePrice by remember { mutableStateOf("130") }
     var profileType by remember { mutableStateOf("standard_alu") }
@@ -291,8 +297,18 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
         complexity = complexity
     )
     // The Android calculator now uses the shared Kotlin Multiplatform engine.
-    val calculation = remember(length, width, pricePerM2, profilePrice, priceItems, calculatorOptions, material, profileType, measurementPrecision) {
+    val calculation = remember(length, width, geometryShape, lShapedSides.toList(), pricePerM2, profilePrice, priceItems, calculatorOptions, material, profileType, measurementPrecision) {
         runCatching {
+            val verifiedGeometry = when (geometryShape) {
+                FrozenCeilingShape.RECTANGLE.wireId -> null
+                FrozenCeilingShape.L_SHAPED.wireId -> VerifiedCeilingGeometry.capturedLShaped(
+                    lShapedSides.map {
+                        it.trim().replace(',', '.').toDoubleOrNull() ?: Double.NaN
+                    },
+                    measurementPrecision.stepMeters
+                )
+                else -> error("Невідомий тип геометрії")
+            }
             CeilingCalculator.estimate(
                 length.toSafeDouble(), width.toSafeDouble(),
                 pricePerM2.toSafeDouble(), profilePrice.toSafeDouble(),
@@ -300,6 +316,7 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
                 materialType = material,
                 profileType = profileType,
                 precisionStepMeters = measurementPrecision.stepMeters,
+                geometryInput = verifiedGeometry,
                 onTimings = if (BuildConfig.DEBUG &&
                     PerformanceDiagnosticsSettings.isEnabled(context.applicationContext)
                 ) {
@@ -378,6 +395,10 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
                             database = database,
                             length = length, onLength = { length = it },
                             width = width, onWidth = { width = it },
+                            geometryShape = geometryShape,
+                            onGeometryShape = { geometryShape = it },
+                            lShapedSides = lShapedSides.toList(),
+                            onLShapedSide = { index, value -> lShapedSides[index] = value },
                             price = pricePerM2, onPrice = { pricePerM2 = it },
                             profilePrice = profilePrice, onProfilePrice = { profilePrice = it },
                             material = material, onMaterial = { material = it },
