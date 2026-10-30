@@ -126,4 +126,111 @@ class EstimateRecalculationRepositoryTest {
             assertEquals(2, history.revisions(series.seriesUuid).size)
         }
     }
+
+    @Test fun transactionRejectsStaleAndModifiedPreviewsBeforeAnyRevisionWrite() {
+        JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).use { driver ->
+            PrototypeDatabase.Schema.create(driver)
+            driver.execute(null, "PRAGMA foreign_keys = ON", 0)
+            val db = PrototypeDatabase(driver)
+            val project = ProjectRepository(db).createReturningId(
+                clientId = null, title = "Guarded preview", createdAt = 100L
+            )
+            val prices = PriceRepository(db)
+            val item = prices.upsertReturningId(
+                code = "canvas.safe", title = "Old", category = "canvas",
+                unit = "m2", price = 10.0, updatedAt = 100L
+            )
+            val history = ImmutableEstimateRepository(db)
+            val snapshot = ImmutableEstimateDraft(
+                sourceMeasurementJson = """{"area":3}""",
+                detailsJson = """{"measurementPrecisionMeters":0.01}""",
+                measurementPrecisionMeters = 0.01,
+                calculationRuleVersion = "kmp-v1",
+                totalCost = 30.0,
+                lines = listOf(ImmutableEstimateLine(
+                    "canvas.safe", "Old", "m2", 3.0, 10.0, 30.0
+                ))
+            )
+            val series = history.createSeries(
+                projectId = project, year = 2026,
+                createdAt = 200L, firstRevision = snapshot
+            )
+            val recalculation = EstimateRecalculationRepository(db)
+            val preview = recalculation.previewLatest(series.seriesUuid)
+            assertTrue(preview.canConfirm)
+
+            // A changed preview cannot be smuggled through even when the
+            // latest revision and entire price-list token are still valid.
+            val tampered = preview.copy(proposedTotal = 999.0)
+            kotlin.test.assertFails {
+                recalculation.withVerifiedPreviewTransaction(series.seriesUuid, tampered) {
+                    history.appendRevision(
+                        series.seriesUuid, preview.baseRevisionUuid, 250L, snapshot
+                    )
+                }
+            }
+            assertEquals(1, history.revisions(series.seriesUuid).size)
+
+            // Change title and price but keep the timestamp equal. A
+            // timestamp-only optimistic check would miss this edit.
+            prices.upsertReturningId(
+                id = item, code = "canvas.safe", title = "New",
+                category = "canvas", unit = "m2",
+                price = 20.0, updatedAt = 100L
+            )
+            kotlin.test.assertFails {
+                recalculation.withVerifiedPreviewTransaction(series.seriesUuid, preview) {
+                    history.appendRevision(
+                        series.seriesUuid, preview.baseRevisionUuid, 250L, snapshot
+                    )
+                }
+            }
+            assertEquals(1, history.revisions(series.seriesUuid).size)
+
+            // A valid preview can enter the guarded transaction. Inject
+            // failure AFTER the nested append; the outer transaction must
+            // still roll back its revision and every revision line.
+            val updated = recalculation.previewLatest(series.seriesUuid)
+            val revisedSnapshot = snapshot.copy(
+                totalCost = 60.0,
+                lines = listOf(ImmutableEstimateLine(
+                    "canvas.safe", "New", "m2", 3.0, 20.0, 60.0
+                ))
+            )
+            val deliberate = IllegalStateException("Simulated failed confirmation")
+            val failed = runCatching {
+                recalculation.withVerifiedPreviewTransaction(series.seriesUuid, updated) {
+                    history.appendRevision(
+                        series.seriesUuid, updated.baseRevisionUuid, 300L, revisedSnapshot
+                    )
+                    throw deliberate
+                }
+            }
+            assertTrue(failed.exceptionOrNull() === deliberate)
+            assertEquals(1, history.revisions(series.seriesUuid).size)
+            assertEquals(30.0, history.revision(series.initialRevisionUuid)?.totalCost)
+
+            // Successful KMP transaction appends exactly one immutable
+            // child. PDF/detailsJson migration is deliberately deferred.
+            val newRevisionId = recalculation.withVerifiedPreviewTransaction(
+                series.seriesUuid, updated
+            ) {
+                history.appendRevision(
+                    series.seriesUuid, updated.baseRevisionUuid, 400L, revisedSnapshot
+                )
+            }
+            assertEquals(2, history.revisions(series.seriesUuid).size)
+            assertEquals(60.0, history.revision(newRevisionId)?.totalCost)
+            assertEquals(30.0, history.revision(series.initialRevisionUuid)?.totalCost)
+            assertFalse(recalculation.isPreviewCurrent(series.seriesUuid, updated))
+            kotlin.test.assertFails {
+                recalculation.withVerifiedPreviewTransaction(series.seriesUuid, updated) {
+                    history.appendRevision(
+                        series.seriesUuid, updated.baseRevisionUuid, 500L, revisedSnapshot
+                    )
+                }
+            }
+            assertEquals(2, history.revisions(series.seriesUuid).size)
+        }
+    }
 }

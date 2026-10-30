@@ -53,6 +53,37 @@ class EstimateRecalculationRepository(private val database: PrototypeDatabase) {
         return EstimateRecalculation.priceListStateToken(priceRows) == preview.priceListStateToken
     }
 
+    /**
+     * Transactional gate for the future v2/v3 confirmation path.
+     *
+     * The caller's action MUST perform its immutable INSERT on this same
+     * SQLDelight handle inside the callback; checking isPreviewCurrent()
+     * before opening a separate transaction would be vulnerable to a
+     * time-of-check/time-of-use race.
+     *
+     * Recompute the entire proposal, not just the price-list token. This
+     * rejects a forged or mutated preview as well as a stale price catalog
+     * or a different latest source revision. The callback can write only
+     * after all conditions pass; exceptions roll back the whole transaction.
+     *
+     * Internal until the revision candidate can carry matching detailsJson,
+     * measurement inputs, rule version and line totals. No UI save yet.
+     */
+    internal fun <R> withVerifiedPreviewTransaction(
+        seriesUuid: String,
+        preview: EstimateRecalculationPreview,
+        appendInsideTransaction: () -> R
+    ): R = database.transactionWithResult {
+        check(preview.canConfirm && preview.priceListStateToken.isNotBlank()) {
+            "Unconfirmable or incomplete recalculation preview"
+        }
+        val current = previewLatest(seriesUuid)
+        check(current.canConfirm && current == preview) {
+            "Stale or modified preview: the source revision or price catalog changed"
+        }
+        appendInsideTransaction()
+    }
+
     private fun currentPrices(): List<CurrentEstimatePrice> = prices.all().map { row ->
         CurrentEstimatePrice(
             stableCode = row.code,

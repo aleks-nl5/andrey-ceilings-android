@@ -27,7 +27,8 @@ This does **not** mean enabling WAL before ensuring a consistent encrypted snaps
 - [x] Read source revision and current price rows from the canonical KMP SQLDelight repository, preserving stable identifiers; JVM regression test confirms v1 is untouched.
 - [x] Add Android read-only preview dialog from the estimate card; cancellation/closing makes no changes.
 - [x] Add an exact, order-independent, length-prefixed **price catalog state token** to every read-only preview (all active price UUIDs/codes/titles/units/categories/values/timestamps). Read-only `isPreviewCurrent()` checks both latest immutable source revision UUID/version and the complete price token. Unlike max(updatedAt), this detects same-timestamp updates and deletes. Add JVM regressions. **CI pending.**
-- [ ] Require both tokens again **inside the same SQLDelight transaction** as future v2/v3 INSERT; the read-only freshness method alone is not safe authorization to write.
+- [x] Add **internal transactional verification gate** for future v2/v3 acceptance: within one SQLDelight write transaction, reread latest immutable revision and all active prices, independently regenerate the entire preview and reject stale/tampered/unconfirmable previews before running an insert callback on the same handle. JVM tests assert same-timestamp price edit rejection, tampered preview rejection, full rollback of nested inserts on failure, and stale v2 replay rejection. **Await CI.**
+- [ ] Hook up final v2/v3 confirmation only after a geometrically complete candidate snapshot and matching `detailsJson`, rounding and line totals are generated; this gate is internal and not wired to Android Save.
 - [ ] Recalculate geometry/options from original measurement snapshot using the agreed KMP calculator, rounding policy and measurement precision.
 - [ ] Preserve consistent `detailsJson`, line rows, quantities and totals in candidate snapshots.
 
