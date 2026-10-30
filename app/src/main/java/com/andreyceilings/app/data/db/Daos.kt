@@ -179,6 +179,10 @@ private fun snapshotForNumberedEstimate(item: EstimateEntity): ImmutableEstimate
         VerifiedCeilingGeometry.requireFrozenLShaped(it)
     }
     if (frozenLShape != null) {
+        check(details.has("measurementPrecisionMeters") &&
+            frozenLShape.precisionStepMeters == precision.stepMeters) {
+            "Frozen L-shaped precision differs from estimate details"
+        }
         val (area, perimeter) =
             VerifiedCeilingGeometry.checkedFrozenLShapedAreaAndPerimeter(frozenLShape)
         check(kotlin.math.abs(area - item.areaSquareMeters) < 0.000001 &&
