@@ -8,6 +8,7 @@ import com.andreyceilings.shared.estimate.EstimateRevisionCandidates
 import com.andreyceilings.shared.estimate.ImmutableEstimateDraft
 import com.andreyceilings.shared.estimate.ImmutableEstimateLine
 import com.andreyceilings.shared.estimate.ImmutableEstimateRepository
+import com.andreyceilings.shared.estimate.VerifiedLShapedInputs
 import com.andreyceilings.shared.estimate.VerifiedRectangleInputs
 import org.json.JSONArray
 import org.json.JSONObject
@@ -16,10 +17,10 @@ import org.json.JSONObject
  * Bridges the persisted Android v1 snapshot to KMP's write-free revision
  * candidate, without reconstructing missing historical values.
  *
- * Strictly scoped to rectangular geometry with canonical optional and
- * explicitly frozen complexity work. No polygon guesses, legacy rounding,
- * missing works or historical data fallbacks are allowed. Preparation is
- * read-only; confirmation must recheck in the single SQLDelight transaction.
+ * Only fully saved rectangle or orthogonal six-side L-shaped geometry is
+ * accepted, with canonical options and frozen complexity work. No inferred
+ * polygon sides, legacy rounding, missing works or historical fallbacks.
+ * Preparation is read-only; confirmation rechecks in one SQLDelight transaction.
  */
 internal class EstimateRevisionSnapshotAssembler(private val database: PrototypeDatabase) {
     internal data class Prepared(
@@ -38,7 +39,7 @@ internal class EstimateRevisionSnapshotAssembler(private val database: Prototype
     )
 
     /**
-     * Explicit confirmation entry point (NOT yet connected to Android UI).
+     * Explicit confirmation entry point for verified frozen geometries.
      * All validation and INSERTs share ONE SQLDelight write transaction.
      *
      * Do not trust the supplied snapshot: regenerate the entire preview and
@@ -125,16 +126,24 @@ internal class EstimateRevisionSnapshotAssembler(private val database: Prototype
 
         val source = JSONObject(saved.sourceMeasurementJson)
         val details = JSONObject(saved.detailsJson)
-        // Current Android v1 saves exactly these fields. Reject missing,
-        // unknown or newly introduced inputs until they have a tested replay
-        // mapping. In particular never treat a missing complexity as straight.
-        val sourceFields = setOf(
-            "name", "material", "profileType", "complexity", "lengthMeters",
-            "widthMeters", "areaSquareMeters", "perimeterMeters"
+        // Recognize complete persisted schemas only. The shape is never
+        // reconstructed from area/perimeter or from a live measurement.
+        val commonSourceFields = setOf(
+            "name", "material", "profileType", "complexity",
+            "areaSquareMeters", "perimeterMeters"
+        )
+        val rectangleSourceFields = commonSourceFields + setOf(
+            "lengthMeters", "widthMeters"
+        )
+        val lShapedSourceFields = commonSourceFields + setOf(
+            "shape", "sideA", "sideB", "sideC", "sideD", "sideE", "sideF"
         )
         val actualSourceKeys = source.keys().asSequence().toSet()
-        check(actualSourceKeys == sourceFields) {
-            "Incomplete or unsupported frozen measurement inputs"
+        val frozenShape = when {
+            actualSourceKeys == rectangleSourceFields -> "rectangle"
+            actualSourceKeys == lShapedSourceFields &&
+                source.getString("shape") == "l_shaped" -> "l_shaped"
+            else -> error("Incomplete or unsupported frozen measurement inputs")
         }
         check(source.getString("name").isNotBlank())
         val complexity = source.getString("complexity")
@@ -199,19 +208,39 @@ internal class EstimateRevisionSnapshotAssembler(private val database: Prototype
         check(preview.baseRevisionUuid == latest.revisionUuid) {
             "Source revision changed while preparing a candidate"
         }
-        val candidate = EstimateRevisionCandidates.prepareRectangleWithOptions(
-            saved,
-            VerifiedRectangleInputs(
-                lengthMeters = source.getDouble("lengthMeters"),
-                widthMeters = source.getDouble("widthMeters"),
-                storedAreaSquareMeters = source.getDouble("areaSquareMeters"),
-                storedPerimeterMeters = source.getDouble("perimeterMeters"),
-                precisionStepMeters = precision,
-                complexity = complexity
-            ),
-            preview,
-            savedOptionQuantities
-        )
+        val candidate = when (frozenShape) {
+            "rectangle" -> EstimateRevisionCandidates.prepareRectangleWithOptions(
+                saved,
+                VerifiedRectangleInputs(
+                    lengthMeters = source.getDouble("lengthMeters"),
+                    widthMeters = source.getDouble("widthMeters"),
+                    storedAreaSquareMeters = source.getDouble("areaSquareMeters"),
+                    storedPerimeterMeters = source.getDouble("perimeterMeters"),
+                    precisionStepMeters = precision,
+                    complexity = complexity
+                ),
+                preview,
+                savedOptionQuantities
+            )
+            "l_shaped" -> EstimateRevisionCandidates.prepareLShapedWithOptions(
+                saved,
+                VerifiedLShapedInputs(
+                    sideA = source.getDouble("sideA"),
+                    sideB = source.getDouble("sideB"),
+                    sideC = source.getDouble("sideC"),
+                    sideD = source.getDouble("sideD"),
+                    sideE = source.getDouble("sideE"),
+                    sideF = source.getDouble("sideF"),
+                    storedAreaSquareMeters = source.getDouble("areaSquareMeters"),
+                    storedPerimeterMeters = source.getDouble("perimeterMeters"),
+                    precisionStepMeters = precision,
+                    complexity = complexity
+                ),
+                preview,
+                savedOptionQuantities
+            )
+            else -> error("Unsupported frozen geometry")
+        }
         val proposedLines = JSONArray()
         candidate.lines.forEach { line ->
             proposedLines.put(JSONObject()
