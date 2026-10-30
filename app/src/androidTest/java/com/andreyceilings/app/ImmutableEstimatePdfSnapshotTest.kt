@@ -186,4 +186,106 @@ class ImmutableEstimatePdfSnapshotTest {
             key.fill(0)
         }
     }
+    @Test fun historicalLShapedPdfsIncludeSixFrozenSidesAcrossV1AndV2() {
+        val context: Context = ApplicationProvider.getApplicationContext()
+        val name = "sqldelight_test_l_shaped_pdf_history.db"
+        val key = ByteArray(32) { 0x67.toByte() }
+        val files = mutableListOf<File>()
+        context.deleteDatabase(name)
+        try {
+            createEncryptedPrototypeDriver(
+                context, key, name, enableWalForTesting = true
+            ).use { driver ->
+                val db = PrototypeDatabase(driver)
+                val projectId = ProjectRepository(db).createReturningId(
+                    clientId = null, title = "L shaped PDF", createdAt = 100L
+                )
+                val immutableSource = JSONObject(source())
+                    .remove("lengthMeters")
+                immutableSource.remove("widthMeters")
+                immutableSource.put("shape", "l_shaped")
+                    .put("geometrySchemaVersion", 1L)
+                    .put("sideA", 5.0).put("sideB", 4.0)
+                    .put("sideC", 2.0).put("sideD", 2.0)
+                    .put("sideE", 3.0).put("sideF", 2.0)
+                    .put("areaSquareMeters", 14.0).put("perimeterMeters", 18.0)
+                fun frozenDraft(price: Double): ImmutableEstimateDraft {
+                    val items = listOf(
+                        ImmutableEstimateLine(
+                            "canvas.pvc_matte", "L canvas", "м²",
+                            14.0, price, 14.0 * price
+                        ),
+                        ImmutableEstimateLine(
+                            "profile.standard_alu", "L profile", "м.п.",
+                            18.0, 5.0, 90.0
+                        )
+                    )
+                    val rows = JSONArray()
+                    items.forEach { line ->
+                        rows.put(JSONObject()
+                            .put("code", line.stableCode)
+                            .put("title", line.title)
+                            .put("unit", line.unit)
+                            .put("quantity", line.quantity)
+                            .put("unitPrice", line.unitPrice)
+                            .put("total", line.lineTotal))
+                    }
+                    return ImmutableEstimateDraft(
+                        sourceMeasurementJson = immutableSource.toString(),
+                        detailsJson = JSONObject()
+                            .put("measurementPrecisionMeters", 0.01)
+                            .put("lineItems", rows).toString(),
+                        measurementPrecisionMeters = 0.01,
+                        calculationRuleVersion = "kmp-v1",
+                        totalCost = items.sumOf { it.lineTotal },
+                        lines = items
+                    )
+                }
+                val history = ImmutableEstimateRepository(db)
+                val created = history.createSeries(
+                    projectId, 2026, 200L, frozenDraft(10.0)
+                )
+                val v2 = history.appendRevision(
+                    created.seriesUuid, created.initialRevisionUuid,
+                    300L, frozenDraft(20.0)
+                )
+                listOf(created.initialRevisionUuid, v2).forEachIndexed {
+                    index, revisionId ->
+                    val frozen = loadImmutableEstimatePdfSnapshot(
+                        db, created.seriesUuid, revisionId
+                    )
+                    assertEquals((index + 1).toLong(), frozen.versionNumber)
+                    assertEquals(listOf(230.0, 370.0)[index],
+                        frozen.estimate.totalCost, 0.0)
+                    val input = checkNotNull(frozen.estimate.frozenGeometryInput)
+                    assertEquals("l_shaped", input.shape)
+                    assertEquals(5.0, input.sideA, 0.0)
+                    assertEquals(2.0, input.sideF, 0.0)
+                    val output = File.createTempFile(
+                        "l_pdf_v${index + 1}_", ".pdf", context.cacheDir
+                    )
+                    files += output
+                    writeEstimatePdf(
+                        context, Uri.fromFile(output), frozen.estimate,
+                        frozen.projectTitle, frozen.versionNumber
+                    )
+                    assertTrue(output.length() > 100L)
+                    ParcelFileDescriptor.open(
+                        output, ParcelFileDescriptor.MODE_READ_ONLY
+                    ).use { fd ->
+                        PdfRenderer(fd).use { renderer ->
+                            assertTrue(renderer.pageCount > 0)
+                        }
+                    }
+                }
+                assertEquals(230.0,
+                    history.revision(created.initialRevisionUuid)!!.totalCost, 0.0)
+            }
+        } finally {
+            files.forEach { it.delete() }
+            context.deleteDatabase(name)
+            key.fill(0)
+        }
+    }
+
 }
