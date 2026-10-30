@@ -58,6 +58,10 @@ internal fun CalculatorScreen(
     geometryShape: String, onGeometryShape: (String) -> Unit,
     shapeMeasurements: Map<String, String>,
     onShapeMeasurement: (String, String) -> Unit,
+    polygonVertices: List<Pair<String, String>>,
+    onPolygonVertex: (Int, Pair<String, String>) -> Unit,
+    onAddPolygonVertex: () -> Unit,
+    onRemovePolygonVertex: (Int) -> Unit,
     price: String, onPrice: (String) -> Unit,
     profilePrice: String, onProfilePrice: (String) -> Unit,
     material: String, onMaterial: (String) -> Unit,
@@ -90,7 +94,9 @@ internal fun CalculatorScreen(
         expanded = geometryExpanded, onExpandedChange = { geometryExpanded = it }
     ) {
         OutlinedTextField(
-            value = activeTemplate?.title ?: "Непідтримувана форма",
+            value = activeTemplate?.title ?:
+                if (geometryShape == "polygon") "Довільний багатокутник"
+                else "Непідтримувана форма",
             onValueChange = {}, readOnly = true,
             label = { Text("Форма стелі") },
             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(geometryExpanded) },
@@ -108,6 +114,10 @@ internal fun CalculatorScreen(
                     geometryExpanded = false
                 })
             }
+            DropdownMenuItem(text = { Text("Довільний багатокутник") }, onClick = {
+                onGeometryShape("polygon")
+                geometryExpanded = false
+            })
         }
     }
     if (geometryShape == FrozenCeilingShape.L_SHAPED.wireId) {
@@ -130,6 +140,14 @@ internal fun CalculatorScreen(
                 )
             }
         }
+    }
+    if (geometryShape == "polygon") {
+        PolygonVerticesEditor(
+            vertices = polygonVertices,
+            onEdit = onPolygonVertex,
+            onAdd = onAddPolygonVertex,
+            onRemove = onRemovePolygonVertex
+        )
     }
     var precisionExpanded by remember { mutableStateOf(false) }
     ExposedDropdownMenuBox(expanded = precisionExpanded, onExpandedChange = { precisionExpanded = it }) {
@@ -242,12 +260,15 @@ internal fun CalculatorScreen(
         val numericInputs = shapeMeasurements.mapValues { (_, value) ->
             value.trim().replace(',', '.').toDoubleOrNull() ?: Double.NaN
         }
-        val verified = VerifiedCeilingGeometry.capturedTemplate(
+        val verified = if (geometryShape == "polygon") {
+            capturedPolygonFromText(polygonVertices, measurementPrecision.stepMeters)
+        } else VerifiedCeilingGeometry.capturedTemplate(
             geometryShape, numericInputs, measurementPrecision.stepMeters
         )
-        val measurementsMm = numericInputs.mapValues { (_, value) ->
-            kotlin.math.round(measurementPrecision.length(value) * 1000.0).toLong()
-        }
+        val measurementsMm = if (geometryShape == "polygon") emptyMap() else
+            numericInputs.mapValues { (_, value) ->
+                kotlin.math.round(measurementPrecision.length(value) * 1000.0).toLong()
+            }
         FrozenPolygonGeometryContract.capture(
             geometryShape, verified.verticesMm, measurementsMm,
             measurementPrecision.stepMeters
@@ -279,7 +300,9 @@ internal fun CalculatorScreen(
             ).copy(verticesMm = emptyList())
         }.getOrNull()
     } else null
-    val defaultEstimateName = if (frozenLShape != null) {
+    val defaultEstimateName = if (geometryShape == "polygon" && frozenPolygon != null) {
+        "Багатокутник · ${frozenPolygon.vertices.size} вершин"
+    } else if (frozenLShape != null) {
         "L-кімната ${formatMeasuredLength(frozenLShape.sideA, measurementPrecision)} × ${formatMeasuredLength(frozenLShape.sideB, measurementPrecision)} м"
     } else {
         "Кімната ${formatMeasuredLength(measurementPrecision.roomDimension(length.toSafeDouble(), 4.0), measurementPrecision)} × ${formatMeasuredLength(measurementPrecision.roomDimension(width.toSafeDouble(), 3.0), measurementPrecision)} м"
