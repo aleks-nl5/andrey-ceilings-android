@@ -92,7 +92,17 @@ jobs:
           arch: x86_64
           profile: pixel_6
           disable-animations: true
-          script: gradle --no-daemon :app:connectedDebugAndroidTest --stacktrace --warning-mode all
+          script: |
+            # SIGKILL intentionally crashes Android; exclude those methods from
+            # the normal connected-test run and execute each in a fresh
+            # standalone instrumentation invocation below.
+            gradle --no-daemon :app:connectedDebugAndroidTest \
+              -Pandroid.testInstrumentationRunnerArguments.notAnnotation=com.andreyceilings.app.IsolatedProcessDeathProof \
+              --stacktrace --warning-mode all
+            # AGP may uninstall the APKs after the connected task completes.
+            adb install -r app/build/outputs/apk/debug/app-debug.apk
+            adb install -r app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+            bash ci/verify-sqlcipher-process-death.sh
 
       - name: Prepare persistent signing
         env:
