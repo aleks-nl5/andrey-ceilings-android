@@ -344,7 +344,13 @@ internal fun EstimatesScreen(database: CeilingsDatabase?) {
                         }
                         val estimatePrecision = remember(estimate.detailsJson) { precisionForEstimate(estimate.detailsJson) }
                         Text(
-                            (if (estimate.frozenGeometryInput != null) {
+                            (if (estimate.frozenPolygon != null) {
+                                when (estimate.frozenPolygon.shapeType) {
+                                    "l_shaped" -> "L-подібна · 6 сторін"
+                                    "rectangle" -> "${formatMeasuredLength(estimate.lengthMeters, estimatePrecision)} × ${formatMeasuredLength(estimate.widthMeters, estimatePrecision)} м"
+                                    else -> "Багатокутник · ${estimate.frozenPolygon.vertices.size} сторін"
+                                }
+                            } else if (estimate.frozenGeometryInput != null) {
                                 "L-подібна · 6 сторін"
                             } else {
                                 "${formatMeasuredLength(estimate.lengthMeters, estimatePrecision)} × ${formatMeasuredLength(estimate.widthMeters, estimatePrecision)} м"
@@ -484,8 +490,28 @@ internal fun writeEstimatePdf(
     lines += PdfLine("Дата створення: ${java.text.SimpleDateFormat("dd.MM.yyyy", Locale.getDefault()).format(java.util.Date(estimate.createdAt))}")
     lines += PdfLine("")
     lines += PdfLine("ПАРАМЕТРИ ПРИМІЩЕННЯ", 1)
+    val polygon = estimate.frozenPolygon
     val frozenL = estimate.frozenGeometryInput
-    if (frozenL == null) {
+    if (polygon != null) {
+        // Print the captured measurements and ordered contour from the exact
+        // immutable revision; no shape-specific PDF implementation required.
+        val template = com.andreyceilings.shared.calculation.CeilingShapeTemplates
+            .template(polygon.shapeType)
+        lines += PdfLine("Форма: " + (template?.title ?: "Довільний багатокутник"))
+        if (template != null) {
+            template.parameterKeys.forEach { key ->
+                val mm = checkNotNull(polygon.measurementsMm[key]) {
+                    "Неповні збережені параметри контуру"
+                }
+                lines += PdfLine("${template.parameterLabels.getValue(key)}: " +
+                    formatMeasuredLength(mm / 1000.0, estimatePrecision))
+            }
+        }
+        lines += PdfLine("Вершини контуру, мм (за порядком):")
+        polygon.vertices.forEachIndexed { index, point ->
+            lines += PdfLine("${index + 1}: ${point.xMm}, ${point.yMm}")
+        }
+    } else if (frozenL == null) {
         lines += PdfLine("Розмір: ${formatMeasuredLength(estimate.lengthMeters, estimatePrecision)} × ${formatMeasuredLength(estimate.widthMeters, estimatePrecision)} м")
     } else {
         // Never label a bounding box as an L-shaped room's full geometry.
