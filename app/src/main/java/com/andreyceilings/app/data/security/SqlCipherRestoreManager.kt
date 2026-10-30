@@ -77,10 +77,28 @@ internal object SqlCipherRestoreManager {
             }
         }
 
+    /**
+     * Instrumentation-only I/O seam: direct the incoming staging stream at
+     * Android's /dev/full to produce a real kernel ENOSPC after the StatFs
+     * preflight. Do not expose this route through the application UI.
+     * Production restore always writes to its actual staging File.
+     */
+    internal fun restoreWithStageOutputForTesting(
+        context: Context,
+        contents: PortableBackupPayload.Contents,
+        stageOutput: (File) -> FileOutputStream
+    ): CeilingsDatabase =
+        CeilingsDatabase.withExclusiveRestoreLock {
+            synchronized(this) {
+                restoreLocked(context.applicationContext, contents, null, stageOutput)
+            }
+        }
+
     private fun restoreLocked(
         context: Context,
         contents: PortableBackupPayload.Contents,
-        onCheckpoint: ((RestoreCheckpoint) -> Unit)?
+        onCheckpoint: ((RestoreCheckpoint) -> Unit)?,
+        stageOutput: (File) -> FileOutputStream = { FileOutputStream(it) }
     ): CeilingsDatabase {
         recoverIfNeeded(context)
         val live = context.getDatabasePath(CeilingsDatabase.DATABASE_NAME)
@@ -98,7 +116,7 @@ internal object SqlCipherRestoreManager {
             // Validate new file and key BEFORE closing any production DB handle.
             val stage = File.createTempFile("restore_incoming_", ".db", parent)
             incoming = stage
-            FileOutputStream(stage).use { out ->
+            stageOutput(stage).use { out ->
                 // Test hook fires after some bytes are written, before the
                 // full encrypted incoming image is durable. An IOException
                 // here simulates ENOSPC; the partial stage is removed below.
