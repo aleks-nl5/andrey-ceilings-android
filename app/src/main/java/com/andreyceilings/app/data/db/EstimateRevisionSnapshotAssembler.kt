@@ -2,6 +2,7 @@ package com.andreyceilings.app.data.db
 
 import com.andreyceilings.shared.calculation.EstimateOptionId
 import com.andreyceilings.shared.db.PrototypeDatabase
+import com.andreyceilings.shared.estimate.EstimateRecalculationPreview
 import com.andreyceilings.shared.estimate.EstimateRecalculationRepository
 import com.andreyceilings.shared.estimate.EstimateRevisionCandidates
 import com.andreyceilings.shared.estimate.ImmutableEstimateDraft
@@ -25,8 +26,73 @@ internal class EstimateRevisionSnapshotAssembler(private val database: Prototype
         val seriesUuid: String,
         val sourceRevisionUuid: String,
         val proposedVersion: Long,
-        val draft: ImmutableEstimateDraft
+        val draft: ImmutableEstimateDraft,
+        /** Full source-revision, catalog and repriced line snapshot at preview. */
+        val preview: EstimateRecalculationPreview
     )
+
+    internal data class Confirmed(
+        val seriesUuid: String,
+        val revisionUuid: String,
+        val versionNumber: Long
+    )
+
+    /**
+     * Explicit confirmation entry point (NOT yet connected to Android UI).
+     * All validation and INSERTs share ONE SQLDelight write transaction.
+     *
+     * Do not trust the supplied snapshot: regenerate the entire preview and
+     * candidate against the current revision and complete current catalog.
+     * Failure at any point rolls back revision header and all child lines.
+     */
+    internal fun confirmPreparedRectangle(
+        prepared: Prepared,
+        createdAt: Long,
+        afterInsertForTesting: (() -> Unit)? = null
+    ): Confirmed {
+        require(createdAt > 0L)
+        return database.transactionWithResult {
+            val previewNow = EstimateRecalculationRepository(database)
+                .previewLatest(prepared.seriesUuid)
+            check(previewNow.canConfirm && previewNow == prepared.preview) {
+                "Stale preview: immutable source revision or catalog changed"
+            }
+            val fresh = prepareLatestSimpleRectangle(prepared.seriesUuid)
+            check(fresh == prepared &&
+                fresh.proposedVersion == previewNow.baseVersionNumber + 1L) {
+                "Stale or modified candidate snapshot"
+            }
+            val history = ImmutableEstimateRepository(database)
+            val id = history.appendRevision(
+                seriesUuid = prepared.seriesUuid,
+                expectedLatestRevisionUuid = prepared.sourceRevisionUuid,
+                createdAt = createdAt,
+                snapshot = fresh.draft
+            )
+            afterInsertForTesting?.invoke()
+            val inserted = checkNotNull(history.revision(id))
+            check(inserted.seriesUuid == prepared.seriesUuid &&
+                inserted.parentRevisionUuid == prepared.sourceRevisionUuid &&
+                inserted.versionNumber == prepared.proposedVersion &&
+                inserted.totalCost == prepared.draft.totalCost &&
+                inserted.detailsJson == prepared.draft.detailsJson &&
+                inserted.sourceMeasurementJson == prepared.draft.sourceMeasurementJson) {
+                "Persisted immutable revision differs from confirmed candidate"
+            }
+            val rows = history.lines(id).map { row ->
+                ImmutableEstimateLine(
+                    stableCode = row.stableCode, title = row.titleSnapshot,
+                    unit = row.unitSnapshot, quantity = row.quantitySnapshot,
+                    unitPrice = row.unitPriceSnapshot, lineTotal = row.lineTotalSnapshot,
+                    priceItemUuid = row.priceItemUuid
+                )
+            }
+            check(rows == prepared.draft.lines) {
+                "Persisted revision lines differ from confirmed candidate"
+            }
+            Confirmed(prepared.seriesUuid, id, inserted.versionNumber)
+        }
+    }
 
     fun prepareLatestSimpleRectangle(seriesUuid: String): Prepared {
         val history = ImmutableEstimateRepository(database)
@@ -169,7 +235,8 @@ internal class EstimateRevisionSnapshotAssembler(private val database: Prototype
             seriesUuid = seriesUuid,
             sourceRevisionUuid = candidate.baseRevisionUuid,
             proposedVersion = candidate.proposedVersionNumber,
-            draft = draft
+            draft = draft,
+            preview = preview
         )
     }
 }
