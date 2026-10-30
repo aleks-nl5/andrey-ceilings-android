@@ -57,7 +57,7 @@ internal fun loadImmutableEstimatePdfSnapshot(
     // This is the exact immutable version, not the current estimate row.
     // The shared schema validates its complete geometry before any PDF bytes
     // are rendered. Old rectangle-only assumptions must not reject L rooms.
-    val polygonV2 = if (FrozenPolygonGeometryJson.isVersion2(original)) {
+    val polygonV2 = if (FrozenPolygonGeometryJson.isVersioned(original)) {
         FrozenPolygonGeometryJson.read(original, revision.measurementPrecisionMeters)
     } else null
     val frozenLShape = if (polygonV2 == null) {
