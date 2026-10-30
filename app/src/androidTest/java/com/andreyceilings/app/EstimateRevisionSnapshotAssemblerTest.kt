@@ -334,4 +334,120 @@ class EstimateRevisionSnapshotAssemblerTest {
             key.fill(0)
         }
     }
+    @Test fun encryptedWalLShapedRevisionV1ToV3PreservesEveryFrozenVersion() {
+        val context: Context = ApplicationProvider.getApplicationContext()
+        val name = "sqldelight_test_l_shaped_revision_assembler.db"
+        val key = ByteArray(32) { 0x37.toByte() }
+        context.deleteDatabase(name)
+        try {
+            createEncryptedPrototypeDriver(
+                context, key, name, enableWalForTesting = true
+            ).use { driver ->
+                val db = PrototypeDatabase(driver)
+                val project = ProjectRepository(db).createReturningId(
+                    clientId = null, title = "L-shaped ceiling", createdAt = 10L
+                )
+                val prices = PriceRepository(db)
+                val canvasId = prices.upsertReturningId(
+                    code = "canvas.pvc_matte", title = "New canvas",
+                    category = "canvas", unit = "м²", price = 20.0, updatedAt = 30L
+                )
+                prices.upsertReturningId(
+                    code = "profile.standard_alu", title = "New profile",
+                    category = "profile", unit = "м.п.", price = 6.0, updatedAt = 30L
+                )
+                val original = listOf(
+                    ImmutableEstimateLine(
+                        "canvas.pvc_matte", "Old canvas", "м²", 14.0, 10.0, 140.0
+                    ),
+                    ImmutableEstimateLine(
+                        "profile.standard_alu", "Old profile", "м.п.", 18.0, 5.0, 90.0
+                    )
+                )
+                val frozenSource = JSONObject()
+                    .put("name", "L-shaped ceiling")
+                    .put("material", "pvc_matte")
+                    .put("profileType", "standard_alu")
+                    .put("complexity", "straight")
+                    .put("shape", "l_shaped")
+                    .put("sideA", 5.0).put("sideB", 4.0)
+                    .put("sideC", 2.0).put("sideD", 2.0)
+                    .put("sideE", 3.0).put("sideF", 2.0)
+                    .put("areaSquareMeters", 14.0)
+                    .put("perimeterMeters", 18.0).toString()
+                val saved = ImmutableEstimateDraft(
+                    sourceMeasurementJson = frozenSource,
+                    detailsJson = detailsJson(original),
+                    measurementPrecisionMeters = 0.01,
+                    calculationRuleVersion = "kmp-v1",
+                    totalCost = 230.0,
+                    lines = original
+                )
+                val history = ImmutableEstimateRepository(db)
+                val created = history.createSeries(
+                    projectId = project, year = 2026, createdAt = 20L,
+                    firstRevision = saved
+                )
+                val documentNumber = history.series(created.seriesUuid)!!.documentNumber
+                val assembler = EstimateRevisionSnapshotAssembler(db)
+                val prepared = assembler.prepareLatestSimpleRectangle(created.seriesUuid)
+                assertEquals(388.0, prepared.draft.totalCost, 0.0)
+                assertEquals(listOf(280.0, 108.0),
+                    prepared.draft.lines.map { it.lineTotal })
+                assertEquals(frozenSource, prepared.draft.sourceMeasurementJson)
+                assertEquals(1, history.revisions(created.seriesUuid).size)
+                val v2 = assembler.confirmPreparedRectangle(prepared, createdAt = 31L)
+                assertEquals(2L, v2.versionNumber)
+                assertEquals(created.initialRevisionUuid,
+                    history.revision(v2.revisionUuid)!!.parentRevisionUuid)
+                assertEquals(230.0,
+                    history.revision(created.initialRevisionUuid)!!.totalCost, 0.0)
+                assertEquals("Old canvas",
+                    history.lines(created.initialRevisionUuid).first().titleSnapshot)
+                assertTrue(runCatching {
+                    assembler.confirmPreparedRectangle(prepared, createdAt = 32L)
+                }.isFailure)
+
+                prices.upsertReturningId(
+                    id = canvasId, code = "canvas.pvc_matte",
+                    title = "Canvas v3", category = "canvas",
+                    unit = "м²", price = 21.0, updatedAt = 40L
+                )
+                val next = assembler.prepareLatestSimpleRectangle(created.seriesUuid)
+                assertEquals(402.0, next.draft.totalCost, 0.0)
+                val v3 = assembler.confirmPreparedRectangle(next, createdAt = 41L)
+                assertEquals(3L, v3.versionNumber)
+                assertEquals(v2.revisionUuid,
+                    history.revision(v3.revisionUuid)!!.parentRevisionUuid)
+                assertEquals(listOf(230.0, 388.0, 402.0),
+                    history.revisions(created.seriesUuid).map { it.totalCost })
+                assertEquals(documentNumber,
+                    history.series(created.seriesUuid)!!.documentNumber)
+                assertEquals(frozenSource,
+                    history.revision(v3.revisionUuid)!!.sourceMeasurementJson)
+
+                // An L-shape with a missing side, false closure or stale area
+                // never becomes an accepted revision, even in a disposable DB.
+                for (bad in listOf(
+                    JSONObject(frozenSource).remove("sideE"),
+                    JSONObject(frozenSource).put("sideE", 3.5),
+                    JSONObject(frozenSource).put("areaSquareMeters", 13.0)
+                )) {
+                    val invalid = history.createSeries(
+                        projectId = project, year = 2026,
+                        createdAt = 50L + history.revisions(created.seriesUuid).size,
+                        firstRevision = saved.copy(sourceMeasurementJson = bad.toString())
+                    )
+                    assertTrue(runCatching {
+                        assembler.prepareLatestSimpleRectangle(invalid.seriesUuid)
+                    }.isFailure)
+                    assertEquals(1, history.revisions(invalid.seriesUuid).size)
+                }
+            }
+        } finally {
+            context.deleteDatabase(name)
+            key.fill(0)
+        }
+    }
+
 }
