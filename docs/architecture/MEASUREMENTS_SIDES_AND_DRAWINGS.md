@@ -1,5 +1,11 @@
 # Заміри за сторонами та креслення — погоджене UX-рішення
 
+## Implementation checkpoint — side-first entry and drawing (30 Oct 2026)
+
+The first code increment replaces the X/Y entry control with `OrthogonalSidesEditor` on Measurement and Calculator screens. Users provide all side lengths and each 90° turn. The shared `OrthogonalSideContour` builder verifies both endpoint/heading closure, then the common polygon engine validates the resulting geometry. An unclosed shape cannot be saved or priced. A shared read-only Compose `MeasurementDrawingPreview` presents the true contour and wall-length labels on new and saved measurements.
+
+For **new orthogonal side-based polygon measurements/estimates only**, `geometrySchemaVersion=3` persists ordered `sides` with integer `lengthMm` and `turnAfter` alongside the derived `vertices`. The v2 JSON contract remains unchanged for earlier polygons and existing rectangle/L templates. Historical v2 records do not gain inferred side measurements and remain readable; new v3 PDF shows side lengths and turns rather than technical vertices. This is a versioned extension, not a migration of immutable history. Manual APK and latest all-platform CI approval still required; this is NOT a claim that drawing mode or other templates have been delivered.
+
 **Рішення погоджене 30.10.2026 для Andrey Ceilings.** Це специфікація подальшої реалізації, а не опис уже готового UI. У PR #29 уже є технічний редактор координат X/Y; за рішенням власника його потрібно **прибрати з користувацького інтерфейсу** й замінити введенням виміряних сторін. Існуючий код, що працює з вершинами, не видаляти з KMP-геометрії чи сховища.
 
 ## 1. Основний принцип
