@@ -200,9 +200,10 @@ class ImmutableEstimatePdfSnapshotTest {
                 val projectId = ProjectRepository(db).createReturningId(
                     clientId = null, title = "L shaped PDF", createdAt = 100L
                 )
-                val immutableSource = JSONObject(source())
-                    .remove("lengthMeters")
-                immutableSource.remove("widthMeters")
+                val immutableSource = JSONObject(source()).apply {
+                    remove("lengthMeters")
+                    remove("widthMeters")
+                }
                 immutableSource.put("shape", "l_shaped")
                     .put("geometrySchemaVersion", 1L)
                     .put("sideA", 5.0).put("sideB", 4.0)
