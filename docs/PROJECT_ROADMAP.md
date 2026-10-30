@@ -12,13 +12,14 @@
 - [x] Android CI `41029919623`, Windows/iOS CI `41029919687` підтвердили стрес-тест: два незалежні WAL-драйвери, 48 записів, 8 encrypted snapshots.
 - [x] Android kernel EPIPE тест успішний: CI `41032741563`; Windows/iOS CI `41032741538` теж успішний. Реальний full-partition ENOSPC залишається відкритим.
 - [x] Android інтеграційний тест WAL з DAO, SQLDelight-сповіщеннями, кошторисом і `.stpb` backup успішний: Android CI `41034664301` (34 тести + 2 реальні SIGKILL), Windows/iOS CI `41034664102`.
-- [x] Додано облік реального розміру `.db` + `-wal` + `-shm` під час попередження про нестачу місця, резервування та імпорту; Android тести створюють реальні тимчасові sidecar-файли та перевіряють запас пам'яті. Очікує новий CI; production `DELETE`.
-- [ ] Реальний full-partition ENOSPC та повна перевірка WAL після окремого production ввімкнення; поки `DELETE`.
+- [x] Облік розміру `.db` + `-wal` + `-shm` під час попередження/backup/restore: Android CI `41036424004`, Windows/iOS CI `41036423974` успішні.
+- [x] **Android production WAL увімкнено у Draft PR #29** на єдиній точці відкриття SQLCipher, з подвійною перевіркою `journal_mode=wal`, без зміни схеми/ключа і без впливу на Windows/iOS. Додано production-singleton тест резервування/відновлення та перевірки WAL після реального SIGKILL. **Очікує CI й перевірку APK на телефоні.**
+- [ ] Реальний full-partition ENOSPC, повна перевірка CRUD/Flow/checkpoint/backup/restore на фізичному Android та остаточне погодження; `main` не змінено.
 - [x] Read-only preview із актуального SQLDelight-прайсу й останньої ревізії, кнопка «Перерахувати — перегляд» на екрані Android; жодних змін у v1.
 - [ ] Повний перерахунок геометрії, optimistic price token, явне підтвердження, транзакційне v2/v3, історія та PDF конкретної версії.
 - [ ] Android/Windows/iOS CI, фізичний Android, усі варіанти backup/restore, підтвердження власником і тільки після цього merge.
 
-**Стан:** Draft, функціонал ще не завершено. Поточна production БД залишається в `DELETE`, старі v1, короткі номери та PDF не змінені. Детальна специфікація: [WAL_AND_ESTIMATE_REVISIONS.md](architecture/WAL_AND_ESTIMATE_REVISIONS.md).
+**Стан:** Draft, функціонал ще не завершено. У цьому PR Android production відкриває SQLCipher в `WAL` (очікує нові CI й фізичний APK); `main` досі в `DELETE`. Старі v1, короткі номери та PDF не змінені. Детальна специфікація: [WAL_AND_ESTIMATE_REVISIONS.md](architecture/WAL_AND_ESTIMATE_REVISIONS.md).
 
 ---
 

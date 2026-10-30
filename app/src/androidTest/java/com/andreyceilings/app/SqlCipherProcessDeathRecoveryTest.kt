@@ -145,6 +145,8 @@ class SqlCipherProcessDeathRecoveryTest {
             "verify", null, null
         )) { "No response from cold-process SQLCipher recovery" }
         assertTrue("Recovery failed integrity_check", verified.getBoolean("integrity"))
+        assertEquals("Remote cold-open after crash must return to WAL", "wal",
+            verified.getString("journalMode")?.lowercase())
         assertFalse("Recovery marker was not cleaned", verified.getBoolean("pendingRestore"))
         assertEquals("Committed rows were not recovered", titles,
             verified.getStringArrayList("projects")?.sorted())
@@ -152,6 +154,8 @@ class SqlCipherProcessDeathRecoveryTest {
             verified.getStringArrayList("projects").orEmpty().contains(FORBIDDEN_TITLE))
 
         val reopened = CeilingsDatabase.get(context)
+        assertEquals("Production WAL mode lost after crash recovery", "wal",
+            reopened.queryText("PRAGMA journal_mode")?.lowercase())
         assertTrue("Second reopen lost integrity", reopened.checkIntegrity())
         assertEquals(titles,
             ProjectRepository(reopened.database).all().map { it.title }.sorted())

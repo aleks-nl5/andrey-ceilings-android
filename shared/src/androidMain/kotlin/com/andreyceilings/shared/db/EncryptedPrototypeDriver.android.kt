@@ -7,12 +7,12 @@ import app.cash.sqldelight.driver.android.AndroidSqliteDriver
 import net.zetetic.database.sqlcipher.SupportOpenHelperFactory
 
 /**
- * SQLDelight + SQLCipher driver shared by production Android (currently DELETE)
- * and isolated Android instrumentation databases.
+ * SQLDelight + SQLCipher driver shared by Android production and isolated
+ * instrumentation databases. Production deliberately enables WAL at its
+ * single opening boundary; old DELETE-mode databases upgrade on next open.
  *
  * The caller supplies the passphrase; never fall back to plaintext or invent
- * a replacement key on a wrong passphrase. WAL opt-in remains test-only
- * until all restore and low-storage acceptance checks are complete.
+ * a replacement key on a wrong passphrase. WAL is always verified at open.
  */
 fun createEncryptedPrototypeDriver(
     context: Context,
@@ -27,9 +27,10 @@ fun createEncryptedPrototypeDriver(
     System.loadLibrary("sqlcipher")
     val driver = AndroidSqliteDriver(
         schema = PrototypeDatabase.Schema,
-        // Keep the production default (DELETE) unchanged. Only disposable
-        // instrumentation databases opt into SQLCipher's open-helper WAL
-        // connection management; PRAGMA alone does not enable its pool.
+        // The fourth argument enables SQLCipher's WAL-aware OPEN HELPER,
+        // including the correct connection-pool behavior. PRAGMA alone
+        // does not activate that pool. Production explicitly opts into WAL
+        // at CeilingsDatabase.build; some disposable tests still use DELETE.
         factory = SupportOpenHelperFactory(passphrase.copyOf(), null, enableWalForTesting),
         context = context.applicationContext,
         name = databaseName
@@ -48,9 +49,10 @@ fun createEncryptedPrototypeDriver(
             0
         ).value
         if (enableWalForTesting) {
-            // A manual PRAGMA journal_mode=WAL would not enable SQLCipher's
-            // WAL-aware open-helper connection management. Observe the mode
-            // already selected on open and fail closed if it is not WAL.
+            // A manual PRAGMA journal_mode=WAL does not enable SQLCipher's
+            // WAL-aware open-helper pool. The mode MUST already be WAL on
+            // every open, including production, or fail closed without
+            // returning a DB handle to the app.
             val journalMode = driver.executeQuery(null, "PRAGMA journal_mode",
                 { cursor -> QueryResult.Value(
                     if (cursor.next().value) cursor.getString(0) else null

@@ -70,6 +70,7 @@ internal class RestoreCrashProbeProvider : ContentProvider() {
                     originalKeyMarker?.fill(0)
                     Bundle().apply {
                         putBoolean("integrity", database.checkIntegrity())
+                        putString("journalMode", database.queryText("PRAGMA journal_mode"))
                         putBoolean("pendingRestore", originalKeyMarker != null)
                         putStringArrayList("projects", ArrayList(
                             ProjectRepository(database.database).all().map { it.title }.sorted()

@@ -154,14 +154,26 @@ internal class CeilingsDatabase private constructor(
             val live = context.getDatabasePath(DATABASE_NAME)
             val key = DatabaseKeyManager.getOrCreatePassphrase(context)
             try {
-                // No migration of disposable test data in PR #22.
-                // A new filename creates a clean encrypted database, leaving earlier files intact.
+                // PR #29: switch only the Android production SQLCipher
+                // opening boundary from DELETE to WAL; the helper configures
+                // WAL-aware connections and verifies journal_mode=wal before
+                // returning. Existing encrypted DELETE databases switch in
+                // place without copying, rekeying or changing SQLDelight schema.
+                // The 'ForTesting' option name is historical; the same verified
+                // helper now powers WAL in this production entry point.
                 val driver = ProductionDatabaseGate.wrap(
-                    createEncryptedPrototypeDriver(context, key, DATABASE_NAME)
+                    createEncryptedPrototypeDriver(
+                        context, key, DATABASE_NAME, enableWalForTesting = true
+                    )
                 )
                 return try {
                     val result = CeilingsDatabase(driver, live.absolutePath)
-                    // Force an encrypted-schema read before returning to the UI.
+                    // Never silently fall back to DELETE after a restore or
+                    // cold start. The shared open helper performs the same
+                    // check before this production wrapper is constructed.
+                    check(result.queryText("PRAGMA journal_mode")?.lowercase() == "wal") {
+                        "Робоча SQLCipher БД не перейшла у WAL."
+                    }
                     check((result.queryLong("SELECT count(*) FROM sqlite_master") ?: 0L) > 0L)
                     result
                 } catch (failure: Throwable) {
