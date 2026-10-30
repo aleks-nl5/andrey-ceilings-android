@@ -20,8 +20,7 @@ class CeilingPolygonGeometryTest {
         val l = CeilingShapeTemplates.fromMeasurements(
             "l_shaped", mapOf(
                 "A" to 5_000L, "B" to 4_000L,
-                "C" to 2_000L, "D" to 2_000L,
-                "E" to 3_000L, "F" to 2_000L
+                "C" to 2_000L, "D" to 2_000L
             )
         )
         assertEquals(6, l.vertices.size)
@@ -79,20 +78,19 @@ class CeilingPolygonGeometryTest {
     @Test fun templateMustHaveAllMeasuredInputsAndCorrectOrthogonalClosure() {
         val correct = mapOf(
             "A" to 5000L, "B" to 4000L,
-            "C" to 2000L, "D" to 2000L,
-            "E" to 3000L, "F" to 2000L
+            "C" to 2000L, "D" to 2000L
         )
         assertFailsWith<IllegalArgumentException> {
-            CeilingShapeTemplates.fromMeasurements("l_shaped", correct - "E")
+            CeilingShapeTemplates.fromMeasurements("l_shaped", correct - "C")
         }
         assertFailsWith<IllegalArgumentException> {
             CeilingShapeTemplates.fromMeasurements(
-                "l_shaped", correct + ("E" to 3500L)
+                "l_shaped", correct + ("C" to 5500L)
             )
         }
         assertFailsWith<IllegalArgumentException> {
             CeilingShapeTemplates.fromMeasurements(
-                "l_shaped", correct + ("G" to 1000L)
+                "l_shaped", correct + ("E" to 3000L)
             )
         }
         assertFailsWith<IllegalArgumentException> {
