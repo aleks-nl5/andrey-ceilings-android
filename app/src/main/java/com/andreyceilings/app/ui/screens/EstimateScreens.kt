@@ -507,9 +507,23 @@ internal fun writeEstimatePdf(
                     formatMeasuredLength(mm / 1000.0, estimatePrecision))
             }
         }
-        lines += PdfLine("Вершини контуру, мм (за порядком):")
-        polygon.vertices.forEachIndexed { index, point ->
-            lines += PdfLine("${index + 1}: ${point.xMm}, ${point.yMm}")
+        if (polygon.sides.isNotEmpty()) {
+            lines += PdfLine("Виміряні сторони й повороти 90°:")
+            polygon.sides.forEachIndexed { index, wall ->
+                val turn = if (wall.turnAfter ==
+                    com.andreyceilings.shared.calculation.OrthogonalTurn.LEFT) {
+                    "ліворуч"
+                } else "праворуч"
+                lines += PdfLine("Сторона ${index + 1}: " +
+                    formatMeasuredLength(wall.lengthMm / 1000.0, estimatePrecision) +
+                    " м · поворот ${turn}")
+            }
+        } else {
+            // Legacy v2 snapshots keep their original vertex-based record.
+            lines += PdfLine("Вершини контуру, мм (за порядком):")
+            polygon.vertices.forEachIndexed { index, point ->
+                lines += PdfLine("${index + 1}: ${point.xMm}, ${point.yMm}")
+            }
         }
     } else if (frozenL == null) {
         lines += PdfLine("Розмір: ${formatMeasuredLength(estimate.lengthMeters, estimatePrecision)} × ${formatMeasuredLength(estimate.widthMeters, estimatePrecision)} м")
