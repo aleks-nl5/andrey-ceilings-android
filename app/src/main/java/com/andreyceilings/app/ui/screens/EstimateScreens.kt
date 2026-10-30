@@ -157,10 +157,39 @@ internal fun EstimatesScreen(database: CeilingsDatabase?) {
         val selected = pendingPdfEstimate
         pendingPdfEstimate = null
         if (uri != null && selected != null) {
-            val projectTitle = projectsById[selected.projectId]?.title ?: "Об’єкт #${selected.projectId}"
             scope.launch {
-                runCatching { withContext(Dispatchers.IO) { writeEstimatePdf(context, uri, selected, projectTitle) } }
-                    .onSuccess { status = "PDF-кошторис збережено." }
+                runCatching {
+                    withContext(Dispatchers.IO) {
+                        // Even a direct v1 export must use the immutable source,
+                        // not a mutable estimate compatibility row.
+                        val activeDb = checkNotNull(database) {
+                            "База даних недоступна."
+                        }
+                        val stored = checkNotNull(
+                            com.andreyceilings.shared.db.EstimateRepository(
+                                activeDb.database
+                            ).find(selected.id)
+                        ) { "Кошторис не знайдено." }
+                        val seriesUuid = checkNotNull(stored.seriesUuid) {
+                            "Збережений знімок кошторису недоступний."
+                        }
+                        val history = com.andreyceilings.shared.estimate.ImmutableEstimateRepository(
+                            activeDb.database
+                        )
+                        val first = checkNotNull(
+                            history.revisions(seriesUuid).firstOrNull {
+                                it.versionNumber == 1L
+                            }
+                        ) { "Первинну версію кошторису не знайдено." }
+                        val pdf = loadImmutableEstimatePdfSnapshot(
+                            activeDb.database, seriesUuid, first.revisionUuid
+                        )
+                        writeEstimatePdf(
+                            context, uri, pdf.estimate, pdf.projectTitle,
+                            pdf.versionNumber
+                        )
+                    }
+                }.onSuccess { status = "PDF-кошторис збережено." }
                     .onFailure { error = "Не вдалося створити PDF: ${it.message ?: "помилка запису"}" }
             }
         }
@@ -314,7 +343,15 @@ internal fun EstimatesScreen(database: CeilingsDatabase?) {
                             ) { Text("Історія версій") }
                         }
                         val estimatePrecision = remember(estimate.detailsJson) { precisionForEstimate(estimate.detailsJson) }
-                        Text("${formatMeasuredLength(estimate.lengthMeters, estimatePrecision)} × ${formatMeasuredLength(estimate.widthMeters, estimatePrecision)} м · ${formatMeasuredArea(estimate.areaSquareMeters, estimatePrecision)} м² · ${materialDisplayName(estimate.material)} · ${profileDisplayName(estimate.profileType)}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(
+                            (if (estimate.frozenGeometryInput != null) {
+                                "L-подібна · 6 сторін"
+                            } else {
+                                "${formatMeasuredLength(estimate.lengthMeters, estimatePrecision)} × ${formatMeasuredLength(estimate.widthMeters, estimatePrecision)} м"
+                            }) + " · ${formatMeasuredArea(estimate.areaSquareMeters, estimatePrecision)} м² · ${materialDisplayName(estimate.material)} · ${profileDisplayName(estimate.profileType)}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                         Text("Полотно ${money(estimate.canvasCost)} · профіль ${money(estimate.profileCost)} · роботи ${money(estimate.complexityCost + estimate.optionsCost)}")
                         val itemizedRows = remember(estimate.detailsJson) { EstimateLineItems.fromJson(estimate.detailsJson) }
                         if (itemizedRows.isNotEmpty()) {
@@ -447,7 +484,17 @@ internal fun writeEstimatePdf(
     lines += PdfLine("Дата створення: ${java.text.SimpleDateFormat("dd.MM.yyyy", Locale.getDefault()).format(java.util.Date(estimate.createdAt))}")
     lines += PdfLine("")
     lines += PdfLine("ПАРАМЕТРИ ПРИМІЩЕННЯ", 1)
-    lines += PdfLine("Розмір: ${formatMeasuredLength(estimate.lengthMeters, estimatePrecision)} × ${formatMeasuredLength(estimate.widthMeters, estimatePrecision)} м")
+    val frozenL = estimate.frozenGeometryInput
+    if (frozenL == null) {
+        lines += PdfLine("Розмір: ${formatMeasuredLength(estimate.lengthMeters, estimatePrecision)} × ${formatMeasuredLength(estimate.widthMeters, estimatePrecision)} м")
+    } else {
+        // Never label a bounding box as an L-shaped room's full geometry.
+        lines += PdfLine("Форма: L-подібна")
+        lines += PdfLine("Сторони A–C: " + listOf(frozenL.sideA, frozenL.sideB, frozenL.sideC)
+            .joinToString(" / ") { formatMeasuredLength(it, estimatePrecision) } + " м")
+        lines += PdfLine("Сторони D–F: " + listOf(frozenL.sideD, frozenL.sideE, frozenL.sideF)
+            .joinToString(" / ") { formatMeasuredLength(it, estimatePrecision) } + " м")
+    }
     lines += PdfLine("Площа: ${formatMeasuredArea(estimate.areaSquareMeters, estimatePrecision)} м²    Периметр: ${formatMeasuredLength(estimate.perimeterMeters, estimatePrecision)} м")
     lines += PdfLine("Матеріал: ${materialDisplayName(estimate.material)}")
     lines += PdfLine("Профіль: ${profileDisplayName(estimate.profileType)}")
