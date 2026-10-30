@@ -1,10 +1,20 @@
 # Combined PR: SQLCipher WAL hardening + immutable estimate revisions v2/v3
 
+## Acceptance checkpoint — 30 Oct 2026
+
+**Confirmed green CI at `cce36edc`:** Android [#41116946000](https://github.com/aleks-nl5/andrey-ceilings-android/actions/runs/41116946000); Windows/iOS [#41116945962](https://github.com/aleks-nl5/andrey-ceilings-android/actions/runs/41116945962).
+
+**Physical APK acceptance confirmed by the owner:** rectangle/L calculator; creation, saved estimates, duplication, revisions, PDF exports and portable `.stpb` backup restore all work on the device. This confirms the reported manual paths, not untested future screens.
+
+**Implemented now:** geometry schema v2 in immutable `sourceMeasurementJson` stores `shape`, `geometrySchemaVersion=2`, integer-mm `vertices`, `measurementsMm`, frozen `areaSquareMeters` and `perimeterMeters`; calculation rule `kmp-polygon-v1`. KMP validation and SQLDelight replay/PDF share the geometry contract; v1 history readers remain supported without rewriting historical documents. Adding a straight-edged form does not require another polygon calculation engine or another shape-specific table. Arbitrary polygon back-end support is present, but a visual free-vertex editor is still a future UI task.
+
+**Next milestone:** free polygon vertex entry/editing from the measurement screen and subsequent T/trapezoid templates, with positive edge/precision/closure/intersection validation and PDF regression; preserve immutable historical revisions, SQLCipher WAL, `.stpb`, Android/Windows/iOS CI. This PR remains Draft and must not be merged without explicit approval.
+
 ## One polygon calculator and schema-driven entry (30 Oct 2026)
 
 New common KMP `CeilingPolygonCalculator` models a simple straight-edged room as an ordered list of integer-millimetre `CeilingPointMm`. It calculates area by the shoelace algorithm and perimeter from all edges (last-to-first included), with exact-integer intersection checks, bounds, precision, duplicate-vertex and self-overlap rejection. This supports concave polygons and either orientation but not holes or curves. `CeilingShapeTemplates` supplies the shape name, ordered measurement keys, visible field labels, and a builder from measurements to vertices. Android CalculatorScreen now generates its fields/dropdown from the registry and calls a single `VerifiedCeilingGeometry.capturedTemplate` entry point; rectangle and right-angle L use identical polygon math for new calculator previews. Additional straight-edge templates will not need a new UI layout or area/perimeter formula.
 
-**Immutable history boundary:** existing schema-v1 frozen rectangle/L source inputs, KMP replay and PDFs remain intact and are never reinterpreted as new vertices. The source of truth remains the frozen immutable revision; do not infer unavailable geometry. The next step (not yet implemented) is schema-v2 generic immutable `vertices` + `measurements` snapshots with a common reader, version-specific PDF, and generic v2/v3 replay, under SQLCipher/WAL and Android/Windows/iOS regression tests. Do NOT claim that arbitrary polygon first-save/PDF/revision support is enabled yet. Curved shapes will need separately versioned segment primitives, not a fictitious polygon approximation.
+**Immutable history boundary:** existing schema-v1 frozen rectangle/L source inputs, KMP replay and PDFs remain intact and are never reinterpreted as new vertices. The source of truth remains the frozen immutable revision; do not infer unavailable geometry. The generic schema-v2 `vertices` + `measurementsMm` immutable snapshot, Android reader, version-specific PDF and generic repricing path have now been implemented and tested. The free-vertex editor UI remains future work; do not claim it is released. Curved shapes will need separately versioned segment primitives, not a fictitious polygon approximation.
 
 ## First-save Android L-shaped geometry and version-safe PDF (30 Oct 2026)
 
