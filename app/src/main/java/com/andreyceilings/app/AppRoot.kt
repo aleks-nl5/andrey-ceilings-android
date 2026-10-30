@@ -261,8 +261,7 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
         mutableStateMapOf(
             "rectangle.length" to "5.4", "rectangle.width" to "3.8",
             "l_shaped.A" to "5", "l_shaped.B" to "4",
-            "l_shaped.C" to "2", "l_shaped.D" to "2",
-            "l_shaped.E" to "3", "l_shaped.F" to "2"
+            "l_shaped.C" to "2", "l_shaped.D" to "2"
         )
     }
     val length = geometryMeasurements["rectangle.length"].orEmpty()
