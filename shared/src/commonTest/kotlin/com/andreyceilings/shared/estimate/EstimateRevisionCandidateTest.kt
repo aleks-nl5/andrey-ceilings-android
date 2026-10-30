@@ -250,4 +250,95 @@ class EstimateRevisionCandidateTest {
             }
         }
     }
+    @Test fun completeLShapedSixSidesReplayInKmpWithoutWritingHistory() {
+        val oldLines = listOf(
+            ImmutableEstimateLine("canvas.pvc_matte", "Old canvas",
+                "м²", 14.0, 10.0, 140.0, "canvas"),
+            ImmutableEstimateLine("profile.standard_alu", "Old profile",
+                "м.п.", 18.0, 5.0, 90.0, "profile")
+        )
+        val saved = source(oldLines)
+        val newPrices = listOf(
+            CurrentEstimatePrice("canvas.pvc_matte", "canvas",
+                "Canvas", "м²", 20.0, 111L),
+            CurrentEstimatePrice("profile.standard_alu", "profile",
+                "Profile", "м.п.", 6.0, 112L)
+        )
+        val preview = EstimateRecalculation.preview(
+            "l-shaped-v1", 1L, saved.totalCost, saved.lines, newPrices
+        )
+        val options = com.andreyceilings.shared.calculation.EstimateOptionId.entries
+            .associate { it.code to 0.0 }
+        val sides = VerifiedLShapedInputs(
+            sideA = 5.0, sideB = 4.0, sideC = 2.0,
+            sideD = 2.0, sideE = 3.0, sideF = 2.0,
+            storedAreaSquareMeters = 14.0,
+            storedPerimeterMeters = 18.0,
+            precisionStepMeters = 0.01
+        )
+        val proposal = EstimateRevisionCandidates.prepareLShapedWithOptions(
+            saved, sides, preview, options
+        )
+        assertEquals(14.0, proposal.geometry.area)
+        assertEquals(18.0, proposal.geometry.perimeter)
+        assertEquals(6, proposal.geometry.cornersCount)
+        assertEquals(2L, proposal.proposedVersionNumber)
+        assertEquals(388.0, proposal.totalCost)
+        assertEquals(listOf(280.0, 108.0), proposal.lines.map { it.lineTotal })
+        assertEquals(230.0, saved.totalCost) // Frozen source remains untouched.
+        assertEquals("Old canvas", saved.lines.first().title)
+
+        // Loss of any one side, incorrect closure, changed stored geometry,
+        // rounding/default fallback and a falsified historical line all fail.
+        assertFailsWith<IllegalArgumentException> {
+            EstimateRevisionCandidates.prepareLShapedWithOptions(
+                saved, sides.copy(sideF = 0.0), preview, options
+            )
+        }
+        assertFailsWith<IllegalStateException> {
+            EstimateRevisionCandidates.prepareLShapedWithOptions(
+                saved, sides.copy(sideF = 2.5), preview, options
+            )
+        }
+        assertFailsWith<IllegalStateException> {
+            EstimateRevisionCandidates.prepareLShapedWithOptions(
+                saved, sides.copy(storedAreaSquareMeters = 15.0), preview, options
+            )
+        }
+        assertFailsWith<IllegalStateException> {
+            EstimateRevisionCandidates.prepareLShapedWithOptions(
+                saved, sides.copy(sideA = 5.001), preview, options
+            )
+        }
+        val falsified = saved.copy(lines = oldLines.mapIndexed { index, line ->
+            if (index == 0) line.copy(quantity = 13.0) else line
+        })
+        val falsifiedPreview = EstimateRecalculation.preview(
+            "l-shaped-v1", 1L, falsified.totalCost, falsified.lines, newPrices
+        )
+        assertFailsWith<IllegalStateException> {
+            EstimateRevisionCandidates.prepareLShapedWithOptions(
+                falsified, sides, falsifiedPreview, options
+            )
+        }
+        assertFailsWith<IllegalStateException> {
+            EstimateRevisionCandidates.prepareLShapedWithOptions(
+                saved, sides, preview, options - "light.spot"
+            )
+        }
+        assertFailsWith<IllegalStateException> {
+            EstimateRevisionCandidates.prepareLShapedWithOptions(
+                saved,
+                VerifiedLShapedInputs(
+                    sideA = 1.0, sideB = 1.0, sideC = 0.5,
+                    sideD = 0.5, sideE = 0.5, sideF = 0.5,
+                    storedAreaSquareMeters = 1.0,
+                    storedPerimeterMeters = 4.0,
+                    precisionStepMeters = 0.01
+                ),
+                preview, options
+            )
+        }
+    }
+
 }
