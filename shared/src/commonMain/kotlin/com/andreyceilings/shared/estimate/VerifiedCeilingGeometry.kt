@@ -27,7 +27,12 @@ object VerifiedCeilingGeometry {
         require(rounded.all { it.isFinite() && it > 0.0 }) {
             "Розміри L-подібної стелі занадто малі для вибраної точності"
         }
-        val (a, b, c, d, e, f) = rounded
+        val a = rounded[0]
+        val b = rounded[1]
+        val c = rounded[2]
+        val d = rounded[3]
+        val e = rounded[4]
+        val f = rounded[5]
         require(abs(a - c - e) < 0.000001 && abs(b - d - f) < 0.000001) {
             "L-подібна стеля: перевірте A = C + E та B = D + F"
         }
