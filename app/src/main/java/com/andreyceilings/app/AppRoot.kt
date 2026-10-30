@@ -20,6 +20,7 @@ import kotlinx.coroutines.withContext
 import com.andreyceilings.app.data.PerformanceDiagnosticsLog
 import com.andreyceilings.app.data.PerformanceDiagnosticsSettings
 import com.andreyceilings.app.data.db.CeilingsDatabase
+import com.andreyceilings.app.data.db.FrozenPolygonGeometryJson
 import com.andreyceilings.app.data.backup.BackupPasswordStore
 import com.andreyceilings.app.data.backup.AutomaticBackupScheduler
 import com.andreyceilings.app.data.backup.AutomaticBackupSettings
@@ -381,7 +382,52 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
                 ) {
                     when (tab) {
                         AppTab.OBJECTS -> ObjectsScreen(database)
-                        AppTab.MEASUREMENTS -> MeasurementsScreen(database, measurementPrecision, onOpenEstimates = { navigateTo(AppTab.ESTIMATES) })
+                        AppTab.MEASUREMENTS -> MeasurementsScreen(
+                            database = database,
+                            precision = measurementPrecision,
+                            onOpenEstimates = { navigateTo(AppTab.ESTIMATES) },
+                            onUseMeasurement = { measured ->
+                                // A saved measurement is copied into calculator STATE.
+                                // Never mutate its SQLDelight row or any old estimate revision.
+                                val legacy = measured.shape == "rectangle" &&
+                                    measured.drawingJson.trim() == "{}"
+                                if (legacy) {
+                                    check(measured.lengthMeters > 0.0 &&
+                                        measured.widthMeters > 0.0) {
+                                        "Історичний замір не має коректних габаритів"
+                                    }
+                                    geometryShape = "rectangle"
+                                    geometryMeasurements["rectangle.length"] =
+                                        measured.lengthMeters.toString()
+                                    geometryMeasurements["rectangle.width"] =
+                                        measured.widthMeters.toString()
+                                } else {
+                                    val source = FrozenPolygonGeometryJson.readMeasurement(
+                                        measured.drawingJson
+                                    )
+                                    val selected = checkNotNull(
+                                        MeasurementPrecision.fromStep(source.precisionStepMeters)
+                                    )
+                                    measurementPrecision = selected
+                                    precisionPreferences.edit()
+                                        .putString("measurement_precision", selected.name).apply()
+                                    geometryShape = source.shapeType
+                                    if (source.shapeType == "polygon") {
+                                        polygonVertices.clear()
+                                        polygonVertices.addAll(source.vertices.map { point ->
+                                            (point.xMm / 1000.0).toString() to
+                                                (point.yMm / 1000.0).toString()
+                                        })
+                                    } else {
+                                        source.measurementsMm.forEach { (key, mm) ->
+                                            geometryMeasurements["${source.shapeType}.$key"] =
+                                                (mm / 1000.0).toString()
+                                        }
+                                    }
+                                }
+                                navigateTo(AppTab.CALCULATOR)
+                            }
+                        )
                         AppTab.ESTIMATES -> EstimatesScreen(database)
                         AppTab.PRICES -> PriceListScreen(database)
                         AppTab.CALENDAR -> CalendarScreen(database)
