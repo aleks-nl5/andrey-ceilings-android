@@ -1,5 +1,13 @@
 # Combined PR: SQLCipher WAL hardening + immutable estimate revisions v2/v3
 
+## Android free polygon editor and measurement-to-estimate handoff (30 Oct 2026)
+
+This change adds one shared `PolygonVerticesEditor` to Android's **Measurements** and **Calculator** screens. Users enter 3–128 ordered X/Y vertex coordinates in metres; the final edge back to the initial point is automatic. `VerifiedCeilingGeometry.capturedPolygon` in `shared/commonMain` accepts zero/negative coordinates and requires **exact** alignment to the selected precision grid. Every invalid/self-intersecting/open-in-data/zero-area contour fails closed; UI cannot save or price an invalid polygon.
+
+Measurement create/edit now uses the same `CeilingShapeTemplates` parameter registry for rectangles and right-angled L forms, plus the generic polygon editor. A saved `RoomMeasurementEntity.drawingJson` uses the same strict v2 geometry field codec as immutable estimates, with `precisionStepMeters`. `FrozenPolygonGeometryJson.readMeasurement` validates exact fields and immutable geometry before use. The `Розрахувати` action transfers the **validated copy** into calculator state; the saved measurement remains untouched, and when the user saves a new estimate, the estimate receives its own independent immutable `sourceMeasurementJson`. Legacy blank-drawing rectangles get a bounded dimension-only compatibility path, not a fabricated polygon.
+
+Android encrypted SQLCipher WAL regression `MeasurementPolygonPersistenceTest` exercises creation, editing, cold reopen, full contour preservation and tampered geometry rejection. KMP tests cover concave forms, negative coordinates, precision violations, duplicate vertices and crossing edges. Cross-target CI must remain green; real-device APK confirmation for the new editor/hand-off is **not yet reported**. Existing accepted rectangle/L estimates, historical PDF, revisions and `.stpb` must not regress. PR remains Draft; no automatic merge.
+
 ## Acceptance checkpoint — 30 Oct 2026
 
 **Confirmed green CI at `cce36edc`:** Android [#41116946000](https://github.com/aleks-nl5/andrey-ceilings-android/actions/runs/41116946000); Windows/iOS [#41116945962](https://github.com/aleks-nl5/andrey-ceilings-android/actions/runs/41116945962).
