@@ -90,4 +90,46 @@ class VerifiedCeilingGeometryTest {
         assertEquals(18.0, KmpCeilingCalculator.geometry(active).perimeter, 0.0)
     }
 
+    @Test fun freePolygonCoordinatesAreValidatedBeforeAnyEstimateSave() {
+        val shape = VerifiedCeilingGeometry.capturedPolygon(
+            listOf(
+                0.0 to 0.0, 6.0 to 0.0,
+                6.0 to 2.0, 3.0 to 2.0,
+                3.0 to 5.0, 0.0 to 5.0
+            ), 0.01
+        )
+        assertEquals("polygon", shape.shape)
+        assertEquals(6, shape.verticesMm.size)
+        assertEquals(21.0, KmpCeilingCalculator.geometry(shape).area, 0.0)
+        assertEquals(22.0, KmpCeilingCalculator.geometry(shape).perimeter, 0.0)
+
+        val otherOrigin = VerifiedCeilingGeometry.capturedPolygon(
+            listOf(
+                -1.0 to -1.0, 1.0 to -1.0,
+                1.0 to 1.0, -1.0 to 1.0
+            ), 0.01
+        )
+        assertEquals(4.0, KmpCeilingCalculator.geometry(otherOrigin).area, 0.0)
+
+        assertFailsWith<IllegalArgumentException> {
+            VerifiedCeilingGeometry.capturedPolygon(
+                listOf(0.0 to 0.0, 1.005 to 0.0, 1.0 to 1.0),
+                0.01
+            )
+        }
+        assertFailsWith<IllegalArgumentException> {
+            VerifiedCeilingGeometry.capturedPolygon(
+                listOf(0.0 to 0.0, 2.0 to 2.0,
+                    0.0 to 2.0, 2.0 to 0.0),
+                0.01
+            )
+        }
+        assertFailsWith<IllegalArgumentException> {
+            VerifiedCeilingGeometry.capturedPolygon(
+                listOf(0.0 to 0.0, 2.0 to 0.0, 0.0 to 0.0),
+                0.01
+            )
+        }
+    }
+
 }
