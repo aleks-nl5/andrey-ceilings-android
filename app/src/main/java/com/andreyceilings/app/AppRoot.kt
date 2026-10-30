@@ -65,8 +65,8 @@ import com.andreyceilings.shared.calculation.CeilingShapeTemplates
 import com.andreyceilings.shared.calculation.MeasurementPrecision
 import com.andreyceilings.shared.estimate.FrozenCeilingShape
 import com.andreyceilings.shared.estimate.VerifiedCeilingGeometry
-import com.andreyceilings.app.ui.screens.capturedPolygonFromText
-import com.andreyceilings.app.ui.screens.defaultPolygonVertices
+import com.andreyceilings.app.ui.screens.sidesFromText
+import com.andreyceilings.app.ui.screens.defaultPolygonSides
 import com.andreyceilings.app.data.db.PriceItemEntity
 import com.andreyceilings.app.data.db.ProjectEntity
 import com.andreyceilings.app.data.db.EstimateEntity
@@ -267,10 +267,14 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
             "l_shaped.C" to "2", "l_shaped.D" to "2"
         )
     }
-    val polygonVertices = remember {
-        mutableStateListOf<Pair<String, String>>().apply {
-            addAll(defaultPolygonVertices())
-        }
+    val polygonSides = remember {
+        mutableStateListOf<Pair<String, com.andreyceilings.shared.calculation.OrthogonalTurn>>()
+            .apply { addAll(defaultPolygonSides()) }
+    }
+    // Existing historical v2 polygon sources stay readable. New side records
+    // never inherit this legacy-only geometry unless the user explicitly edits.
+    var legacyPolygonSource by remember {
+        mutableStateOf<com.andreyceilings.shared.estimate.FrozenPolygonGeometry?>(null)
     }
     val length = geometryMeasurements["rectangle.length"].orEmpty()
     val width = geometryMeasurements["rectangle.width"].orEmpty()
@@ -316,10 +320,29 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
         complexity = complexity
     )
     // The Android calculator now uses the shared Kotlin Multiplatform engine.
-    val calculation = remember(geometryShape, templateMeasurements, polygonVertices.toList(), pricePerM2, profilePrice, priceItems, calculatorOptions, material, profileType, measurementPrecision) {
+    val calculation = remember(geometryShape, templateMeasurements, polygonSides.toList(), legacyPolygonSource, pricePerM2, profilePrice, priceItems, calculatorOptions, material, profileType, measurementPrecision) {
         runCatching {
             val verifiedGeometry = if (geometryShape == "polygon") {
-                capturedPolygonFromText(polygonVertices.toList(), measurementPrecision.stepMeters)
+                val old = legacyPolygonSource
+                if (old != null) {
+                    require(old.precisionStepMeters == measurementPrecision.stepMeters) {
+                        "Точність збереженого заміру змінилась"
+                    }
+                    com.andreyceilings.shared.estimate.FrozenPolygonGeometryContract.requireValid(old)
+                    com.andreyceilings.shared.calculation.GeometryInput(
+                        shape = "polygon", verticesMm = old.vertices,
+                        precisionStepMeters = old.precisionStepMeters
+                    )
+                } else {
+                    val sides = sidesFromText(polygonSides.toList(), measurementPrecision.stepMeters)
+                    val contour = com.andreyceilings.shared.calculation.OrthogonalSideContour.build(
+                        sides, measurementPrecision.stepMeters
+                    )
+                    com.andreyceilings.shared.calculation.GeometryInput(
+                        shape = "polygon", verticesMm = contour.vertices,
+                        precisionStepMeters = measurementPrecision.stepMeters
+                    )
+                }
             } else VerifiedCeilingGeometry.capturedTemplate(
                 geometryShape,
                 templateMeasurements.mapValues { (_, text) ->
@@ -413,11 +436,15 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
                                         .putString("measurement_precision", selected.name).apply()
                                     geometryShape = source.shapeType
                                     if (source.shapeType == "polygon") {
-                                        polygonVertices.clear()
-                                        polygonVertices.addAll(source.vertices.map { point ->
-                                            (point.xMm / 1000.0).toString() to
-                                                (point.yMm / 1000.0).toString()
-                                        })
+                                        if (source.sides.isEmpty()) {
+                                            legacyPolygonSource = source
+                                        } else {
+                                            legacyPolygonSource = null
+                                            polygonSides.clear()
+                                            polygonSides.addAll(source.sides.map { wall ->
+                                                (wall.lengthMm / 1000.0).toString() to wall.turnAfter
+                                            })
+                                        }
                                     } else {
                                         source.measurementsMm.forEach { (key, mm) ->
                                             geometryMeasurements["${source.shapeType}.$key"] =
@@ -459,16 +486,28 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
                             length = length,
                             width = width,
                             geometryShape = geometryShape,
-                            onGeometryShape = { geometryShape = it },
+                            onGeometryShape = {
+                                legacyPolygonSource = null
+                                geometryShape = it
+                            },
                             shapeMeasurements = templateMeasurements,
                             onShapeMeasurement = { key, value ->
                                 geometryMeasurements["$geometryShape.$key"] = value
                             },
-                            polygonVertices = polygonVertices.toList(),
-                            onPolygonVertex = { index, point -> polygonVertices[index] = point },
-                            onAddPolygonVertex = { polygonVertices.add("" to "") },
-                            onRemovePolygonVertex = { index ->
-                                if (polygonVertices.size > 3) polygonVertices.removeAt(index)
+                            polygonSides = polygonSides.toList(),
+                            legacyPolygonSource = legacyPolygonSource,
+                            onPolygonSide = { index, side ->
+                                legacyPolygonSource = null
+                                polygonSides[index] = side
+                            },
+                            onAddPolygonSide = {
+                                legacyPolygonSource = null
+                                polygonSides.add("" to
+                                    com.andreyceilings.shared.calculation.OrthogonalTurn.RIGHT)
+                            },
+                            onRemovePolygonSide = { index ->
+                                legacyPolygonSource = null
+                                if (polygonSides.size > 4) polygonSides.removeAt(index)
                             },
                             price = pricePerM2, onPrice = { pricePerM2 = it },
                             profilePrice = profilePrice, onProfilePrice = { profilePrice = it },
