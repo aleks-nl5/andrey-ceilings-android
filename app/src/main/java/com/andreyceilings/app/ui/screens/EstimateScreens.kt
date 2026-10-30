@@ -137,21 +137,18 @@ internal fun EstimatesScreen(database: CeilingsDatabase?) {
     var status by remember { mutableStateOf<String?>(null) }
     var editingEstimate by remember { mutableStateOf<EstimateEntity?>(null) }
     var pendingPdfEstimate by remember { mutableStateOf<EstimateEntity?>(null) }
-    var activePreview by remember { mutableStateOf<EstimateRecalculationPreview?>(null) }
-    var activePrepared by remember { mutableStateOf<EstimateRevisionSnapshotAssembler.Prepared?>(null) }
-    var activePreviewNumber by remember { mutableStateOf<String?>(null) }
-    var activePreviewReason by remember { mutableStateOf<String?>(null) }
-    var activeHistory by remember { mutableStateOf<Pair<String, String>?>(null) }
-    var previewSaving by remember { mutableStateOf(false) }
-    var previewLoading by remember { mutableStateOf(false) }
-    LaunchedEffect(database) {
-        // A portable restore replaces the entire SQLDelight driver. Never
-        // let a dialog retain a prepared candidate from the old handle.
-        activePreview = null
-        activePrepared = null
-        activePreviewReason = null
-        activeHistory = null
+    // Bind every prepared proposal and open dialog to this exact live driver.
+    // After encrypted restore a new SQLDelight handle invalidates all old UI
+    // candidates, including callbacks still completing on the old screen.
+    var activePreview by remember(database) { mutableStateOf<EstimateRecalculationPreview?>(null) }
+    var activePrepared by remember(database) {
+        mutableStateOf<EstimateRevisionSnapshotAssembler.Prepared?>(null)
     }
+    var activePreviewNumber by remember(database) { mutableStateOf<String?>(null) }
+    var activePreviewReason by remember(database) { mutableStateOf<String?>(null) }
+    var activeHistory by remember(database) { mutableStateOf<Pair<String, String>?>(null) }
+    var previewSaving by remember(database) { mutableStateOf(false) }
+    var previewLoading by remember(database) { mutableStateOf(false) }
     var renameText by remember { mutableStateOf("") }
     val estimatesByProject = remember(estimates) { estimates.groupBy { it.projectId } }
     val projectsById = remember(projects) { projects.associateBy { it.id } }
@@ -307,7 +304,7 @@ internal fun EstimatesScreen(database: CeilingsDatabase?) {
                                                 }
                                             }
                                         }.onSuccess { id ->
-                                            activeHistory = id to estimate.printableNumber
+                                            activeHistory = id to checkNotNull(estimate.printableNumber)
                                         }.onFailure { failure ->
                                             error = "Історія версій недоступна: " +
                                                 (failure.message ?: "невідома помилка")
