@@ -285,41 +285,53 @@ private fun AddMeasurementDialog(
             }
         }
     }
-    val vertices = remember(existing?.id) {
-        mutableStateListOf<Pair<String, String>>().apply {
-            addAll(
-                previous?.vertices?.map { (x, y) ->
-                    (x / 1000.0).toString() to (y / 1000.0).toString()
-                } ?: defaultPolygonVertices()
-            )
-        }
+    val sides = remember(existing?.id) {
+        mutableStateListOf<Pair<String, com.andreyceilings.shared.calculation.OrthogonalTurn>>()
+            .apply {
+                addAll(
+                    previous?.sides?.takeIf { it.isNotEmpty() }?.map { wall ->
+                        (wall.lengthMm / 1000.0).toString() to wall.turnAfter
+                    } ?: defaultPolygonSides()
+                )
+            }
+    }
+    val historicalPolygon = previous?.takeIf {
+        it.shapeType == "polygon" && it.sides.isEmpty()
     }
     var projectExpanded by remember { mutableStateOf(false) }
     var shapeExpanded by remember { mutableStateOf(false) }
     var precisionExpanded by remember { mutableStateOf(false) }
     val activeTemplate = CeilingShapeTemplates.template(shape)
     val validation = runCatching {
-        val input = if (shape == "polygon") {
-            capturedPolygonFromText(vertices.toList(), selectedPrecision.stepMeters)
+        if (shape == "polygon") {
+            if (historicalPolygon != null) {
+                require(historicalPolygon.precisionStepMeters == selectedPrecision.stepMeters) {
+                    "Точність історичного заміру не можна змінювати"
+                }
+                FrozenPolygonGeometryContract.requireValid(historicalPolygon)
+            } else {
+                FrozenPolygonGeometryContract.captureSides(
+                    sidesFromText(sides.toList(), selectedPrecision.stepMeters),
+                    selectedPrecision.stepMeters
+                )
+            }
         } else {
             val template = requireNotNull(activeTemplate) { "Невідома форма стелі" }
-            VerifiedCeilingGeometry.capturedTemplate(
+            val input = VerifiedCeilingGeometry.capturedTemplate(
                 shape, template.parameterKeys.associateWith { key ->
                     fields["$shape.$key"]?.trim()?.replace(',', '.')?.toDoubleOrNull()
                         ?: Double.NaN
                 }, selectedPrecision.stepMeters
             )
-        }
-        val measurementsMm = if (shape == "polygon") emptyMap() else
-            checkNotNull(activeTemplate).parameterKeys.associateWith { key ->
-                val value = checkNotNull(input.let {
-                    fields["$shape.$key"]?.replace(',', '.')?.toDoubleOrNull()
-                })
+            val measurementsMm = template.parameterKeys.associateWith { key ->
+                val value = checkNotNull(fields["$shape.$key"]
+                    ?.replace(',', '.')?.toDoubleOrNull())
                 kotlin.math.round(selectedPrecision.length(value) * 1000.0).toLong()
             }
-        FrozenPolygonGeometryContract.capture(
-            shape, input.verticesMm, measurementsMm, selectedPrecision.stepMeters
-        )
+            FrozenPolygonGeometryContract.capture(
+                shape, input.verticesMm, measurementsMm, selectedPrecision.stepMeters
+            )
+        }
     }
     val geometry = validation.getOrNull()
     AppAlertDialog(
@@ -425,14 +437,24 @@ private fun AddMeasurementDialog(
                     }
                 }
                 if (shape == "polygon") {
-                    PolygonVerticesEditor(
-                        vertices = vertices.toList(),
-                        onEdit = { i, point -> vertices[i] = point },
+                    if (historicalPolygon != null) {
+                        Text(
+                            "Цей замір створено в попередньому форматі. " +
+                                "Початкові довжини стін не зберігалися. " +
+                                "Можна переглянути креслення, але не змінювати " +
+                                "його геометрію без нових вимірів.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    } else OrthogonalSidesEditor(
+                        sides = sides.toList(),
+                        onEdit = { i, wall -> sides[i] = wall },
                         onAdd = {
-                            vertices.add("" to "")
+                            sides.add("" to
+                                com.andreyceilings.shared.calculation.OrthogonalTurn.RIGHT)
                         },
                         onRemove = { i ->
-                            if (vertices.size > 3) vertices.removeAt(i)
+                            if (sides.size > 4) sides.removeAt(i)
                         }
                     )
                 } else {
@@ -452,6 +474,7 @@ private fun AddMeasurementDialog(
                     }
                 }
                 if (geometry != null) {
+                    MeasurementDrawingPreview(geometry)
                     Text(
                         "Площа: ${formatMeasuredArea(geometry.areaSquareMeters, selectedPrecision)} м²" +
                             " · Периметр: ${formatMeasuredLength(geometry.perimeterMeters, selectedPrecision)} м",
@@ -460,7 +483,7 @@ private fun AddMeasurementDialog(
                 } else {
                     Text(
                         validation.exceptionOrNull()?.message
-                            ?: "Перевірте форму та координати вершин.",
+                            ?: "Перевірте довжини сторін і повороти.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.error
                     )
