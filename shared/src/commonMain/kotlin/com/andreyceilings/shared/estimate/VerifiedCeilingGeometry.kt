@@ -89,10 +89,14 @@ object VerifiedCeilingGeometry {
                 verticesMm = polygon.vertices
             )
             "l_shaped" -> {
-                val canonical = capturedLShaped(
-                    template.parameterKeys.map { roundedMm.getValue(it) / 1000.0 },
-                    precisionStepMeters
-                )
+                val a = roundedMm.getValue("A")
+                val b = roundedMm.getValue("B")
+                val c = roundedMm.getValue("C")
+                val d = roundedMm.getValue("D")
+                // Orthogonal closure gives the two omitted sides exactly.
+                val sides = listOf(a, b, c, d, a - c, b - d)
+                    .map { it / 1000.0 }
+                val canonical = capturedLShaped(sides, precisionStepMeters)
                 polygonForCalculation(canonical)
             }
             else -> GeometryInput(
