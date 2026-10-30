@@ -69,8 +69,8 @@ object CeilingPolygonCalculator {
             points.toSet().size == points.size) {
             "A ceiling needs 3–128 distinct, ordered vertices"
         }
-        require(points.all { abs(it.xMm) <= MAX_COORDINATE_MM &&
-            abs(it.yMm) <= MAX_COORDINATE_MM }) {
+        require(points.all { it.xMm in -MAX_COORDINATE_MM..MAX_COORDINATE_MM &&
+            it.yMm in -MAX_COORDINATE_MM..MAX_COORDINATE_MM }) {
             "Ceiling coordinates exceed safe measurement bounds"
         }
         val stepMm = (precision.stepMeters * 1000.0).toLong()
