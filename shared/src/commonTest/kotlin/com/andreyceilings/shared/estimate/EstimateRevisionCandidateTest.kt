@@ -181,4 +181,73 @@ class EstimateRevisionCandidateTest {
             )
         }
     }
+
+    @Test fun multilevelAndCurvedRectangleWorkRepricedThroughSharedKmp() {
+        val options = com.andreyceilings.shared.calculation.EstimateOptionId.entries
+            .associate { it.code to (if (it.code == "light.spot") 2.0 else 0.0) }
+        for ((complexity, length, newPrice) in listOf(
+            Triple("multilevel", 3.5, 200.0),
+            Triple("curved", 2.5, 100.0)
+        )) {
+            val code = "work.$complexity"
+            val lines = listOf(
+                ImmutableEstimateLine(
+                    "canvas.pvc_matte", "Canvas", "м²", 6.0, 10.0, 60.0, "canvas"
+                ),
+                ImmutableEstimateLine(
+                    "profile.standard_alu", "Profile", "м.п.", 10.0, 5.0, 50.0, "profile"
+                ),
+                ImmutableEstimateLine(
+                    code, "Construction", "м.п.", length, 50.0, length * 50.0,
+                    "construction"
+                ),
+                ImmutableEstimateLine("light.spot", "Spot", "шт.", 2.0, 11.0, 22.0, "spot")
+            )
+            val saved = source(lines)
+            val prices = listOf(
+                CurrentEstimatePrice(
+                    "canvas.pvc_matte", "canvas", "New canvas", "м²", 20.0, 100L
+                ),
+                CurrentEstimatePrice(
+                    "profile.standard_alu", "profile", "New profile", "м.п.", 6.0, 100L
+                ),
+                CurrentEstimatePrice(
+                    code, "construction", "New work", "м.п.", newPrice, 100L
+                ),
+                CurrentEstimatePrice(
+                    "light.spot", "spot", "Spot", "шт.", 25.0, 100L
+                )
+            )
+            val preview = EstimateRecalculation.preview(
+                "base-v1", 1L, saved.totalCost, saved.lines, prices
+            )
+            val candidate = EstimateRevisionCandidates.prepareRectangleWithOptions(
+                saved, measurement().copy(complexity = complexity), preview, options
+            )
+            assertEquals(180.0 + length * newPrice + 50.0, candidate.totalCost)
+            assertEquals(length * newPrice, candidate.lines[2].lineTotal)
+            assertFailsWith<IllegalStateException> {
+                EstimateRevisionCandidates.prepareRectangleWithOptions(
+                    saved, measurement().copy(complexity = "straight"), preview, options
+                )
+            }
+            assertFailsWith<IllegalStateException> {
+                EstimateRevisionCandidates.prepareRectangleWithOptions(
+                    saved, measurement().copy(complexity = "unknown"), preview, options
+                )
+            }
+            val wrong = saved.copy(lines = lines.map {
+                if (it.stableCode == code) it.copy(quantity = length + 0.5) else it
+            })
+            val wrongPreview = EstimateRecalculation.preview(
+                "base-v1", 1L, wrong.totalCost, wrong.lines, prices
+            )
+            assertFailsWith<IllegalStateException> {
+                EstimateRevisionCandidates.prepareRectangleWithOptions(
+                    wrong, measurement().copy(complexity = complexity),
+                    wrongPreview, options
+                )
+            }
+        }
+    }
 }
