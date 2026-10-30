@@ -185,7 +185,7 @@ class EstimateRevisionPortableRestoreTest {
                 baseline.delete()
                 baselineImage.fill(0)
                 initialKey.fill(0)
-                password.fill('\\u0000')
+                password.fill(0.toChar())
             }
         }
     }
