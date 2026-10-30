@@ -62,7 +62,7 @@ object FrozenGeometrySnapshotSchema {
         val shape = if (shapeId == null && !versioned) {
             FrozenCeilingShape.RECTANGLE
         } else {
-            requireNotNull(shapeId?.let(FrozenCeilingShape::fromWireId)) {
+            requireNotNull(shapeId?.let { FrozenCeilingShape.fromWireId(it) }) {
                 "Unknown or missing frozen ceiling shape"
             }
         }
