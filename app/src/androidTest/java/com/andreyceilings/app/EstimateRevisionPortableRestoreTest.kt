@@ -1,6 +1,9 @@
 package com.andreyceilings.app
 
 import android.content.Context
+import android.graphics.pdf.PdfRenderer
+import android.net.Uri
+import android.os.ParcelFileDescriptor
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.andreyceilings.app.data.db.CeilingsDatabase
@@ -9,6 +12,7 @@ import com.andreyceilings.app.data.security.PortableBackupManager
 import com.andreyceilings.app.data.security.PortableBackupPayload
 import com.andreyceilings.app.data.security.SqlCipherRestoreManager
 import com.andreyceilings.app.ui.screens.loadImmutableEstimatePdfSnapshot
+import com.andreyceilings.app.ui.screens.writeEstimatePdf
 import com.andreyceilings.shared.db.PriceRepository
 import com.andreyceilings.shared.db.ProjectRepository
 import com.andreyceilings.shared.estimate.ImmutableEstimateDraft
@@ -22,6 +26,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
+import java.io.File
 
 /**
  * Complete production portable-backup round trip of immutable v1/v2/v3:
@@ -80,6 +85,7 @@ class EstimateRevisionPortableRestoreTest {
         val baselineImage = baseline.readBytes()
         val password = "Test revs v1-v2-v3 backup 2026".toCharArray()
         var validatedContents: PortableBackupPayload.Contents? = null
+        val renderedPdfFiles = mutableListOf<File>()
         try {
             assertEquals("wal", original.queryText("PRAGMA journal_mode")?.lowercase())
             val project = ProjectRepository(original.database).createReturningId(
@@ -156,6 +162,31 @@ class EstimateRevisionPortableRestoreTest {
                     assertFalse(pdf.printableNumber.contains(first.seriesUuid))
                     assertFalse(pdf.estimate.detailsJson.contains("999.0"))
                     printable += pdf.printableNumber
+
+                    // Read-only history is not sufficient: the actual PDF
+                    // must still render after the encrypted .stpb restore
+                    // and again after a WAL cold reopen. Use only the frozen
+                    // revision, never today's (post-backup) price list.
+                    val rendered = File.createTempFile(
+                        "restored_revision_v${index + 1}_", ".pdf", context.cacheDir
+                    )
+                    renderedPdfFiles += rendered
+                    writeEstimatePdf(
+                        context, Uri.fromFile(rendered), pdf.estimate,
+                        pdf.projectTitle, pdf.versionNumber
+                    )
+                    assertTrue("Restored PDF v${index + 1} is empty",
+                        rendered.length() > 100L)
+                    ParcelFileDescriptor.open(
+                        rendered, ParcelFileDescriptor.MODE_READ_ONLY
+                    ).use { descriptor ->
+                        PdfRenderer(descriptor).use { renderer ->
+                            assertTrue(
+                                "Restored PDF v${index + 1} has no readable pages",
+                                renderer.pageCount > 0
+                            )
+                        }
+                    }
                 }
                 assertEquals(1, printable.size)
             }
@@ -182,6 +213,7 @@ class EstimateRevisionPortableRestoreTest {
             } finally {
                 validatedContents?.database?.fill(0)
                 validatedContents?.passphrase?.fill(0)
+                renderedPdfFiles.forEach { it.delete() }
                 baseline.delete()
                 baselineImage.fill(0)
                 initialKey.fill(0)
