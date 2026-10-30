@@ -9,6 +9,7 @@ import com.andreyceilings.app.data.db.EstimateEntity
 import com.andreyceilings.shared.db.EstimateRepository
 import com.andreyceilings.shared.estimate.VerifiedCeilingGeometry
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.flow.first
 import com.andreyceilings.shared.calculation.EstimateOptionId
 import com.andreyceilings.shared.db.PriceRepository
 import com.andreyceilings.shared.db.ProjectRepository
@@ -536,6 +537,23 @@ class EstimateRevisionSnapshotAssemblerTest {
                     )
                 }.isFailure)
                 assertEquals(1L, compat.count())
+
+                // The Android list adapter must retain frozen sides too:
+                // otherwise copying a valid L estimate would silently turn
+                // its immutable source into a rectangle.
+                val reloaded = EstimateDao(compat).observeAll().first().single()
+                assertEquals(frozen, reloaded.frozenGeometryInput)
+                val duplicateId = EstimateDao(compat).insert(
+                    reloaded.copy(
+                        id = 0L, name = "L-shaped copy", createdAt = 160L
+                    )
+                )
+                val duplicateSource = JSONObject(
+                    compat.originalRevisionInputForId(duplicateId)!!
+                )
+                assertEquals("l_shaped", duplicateSource.getString("shape"))
+                assertEquals(3.0, duplicateSource.getDouble("sideE"), 0.0)
+                assertEquals(2L, compat.count())
             }
         } finally {
             context.deleteDatabase(name)
