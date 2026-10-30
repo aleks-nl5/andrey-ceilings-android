@@ -6,6 +6,7 @@ import com.andreyceilings.shared.calculation.CostInput
 import com.andreyceilings.shared.calculation.GeometryInput
 import com.andreyceilings.shared.calculation.KmpCeilingCalculator
 import com.andreyceilings.shared.calculation.RoomOptions
+import com.andreyceilings.shared.estimate.VerifiedCeilingGeometry
 
 /** The Android UI contract for the shared Kotlin Multiplatform calculation engine. */
 data class CeilingEstimate(
@@ -91,12 +92,15 @@ object CeilingCalculator {
             }
             val result = measure("kmp_calculate") {
                 KmpCeilingCalculator.estimate(
-                    geometryInput = geometryInput ?: GeometryInput(
-                        shape = "rectangle",
-                        length = length.coerceAtLeast(0.0),
-                        width = width.coerceAtLeast(0.0),
-                        precisionStepMeters = precisionStepMeters
-                    ),
+                    geometryInput = when (geometryInput?.shape) {
+                        "l_shaped" -> VerifiedCeilingGeometry.polygonForCalculation(geometryInput)
+                        else -> geometryInput ?: GeometryInput(
+                            shape = "rectangle",
+                            length = length.coerceAtLeast(0.0),
+                            width = width.coerceAtLeast(0.0),
+                            precisionStepMeters = precisionStepMeters
+                        )
+                    },
                     costInput = CostInput(
                         area = 0.0,
                         perimeter = 0.0,
