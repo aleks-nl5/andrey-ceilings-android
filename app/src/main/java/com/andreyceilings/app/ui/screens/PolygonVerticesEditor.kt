@@ -32,6 +32,7 @@ import com.andreyceilings.shared.calculation.OrthogonalTurn
  * Deliberately uses real measured wall lengths, NOT coordinates.
  * The internal polygon vertices only exist below the KMP geometry boundary.
  */
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 internal fun OrthogonalSidesEditor(
     sides: List<Pair<String, OrthogonalTurn>>,
