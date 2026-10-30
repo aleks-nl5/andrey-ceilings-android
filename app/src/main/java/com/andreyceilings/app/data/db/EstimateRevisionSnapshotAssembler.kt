@@ -8,6 +8,8 @@ import com.andreyceilings.shared.estimate.EstimateRevisionCandidates
 import com.andreyceilings.shared.estimate.ImmutableEstimateDraft
 import com.andreyceilings.shared.estimate.ImmutableEstimateLine
 import com.andreyceilings.shared.estimate.ImmutableEstimateRepository
+import com.andreyceilings.shared.estimate.FrozenCeilingShape
+import com.andreyceilings.shared.estimate.FrozenGeometrySnapshotSchema
 import com.andreyceilings.shared.estimate.VerifiedLShapedInputs
 import com.andreyceilings.shared.estimate.VerifiedRectangleInputs
 import org.json.JSONArray
@@ -126,25 +128,15 @@ internal class EstimateRevisionSnapshotAssembler(private val database: Prototype
 
         val source = JSONObject(saved.sourceMeasurementJson)
         val details = JSONObject(saved.detailsJson)
-        // Recognize complete persisted schemas only. The shape is never
-        // reconstructed from area/perimeter or from a live measurement.
-        val commonSourceFields = setOf(
-            "name", "material", "profileType", "complexity",
-            "areaSquareMeters", "perimeterMeters"
+        // The KMP registry owns the full, versioned field contract.
+        // Neither SQLDelight nor Android may infer missing geometry inputs.
+        val frozenShape = FrozenGeometrySnapshotSchema.requireShape(
+            keys = source.keys().asSequence().toSet(),
+            shapeId = if (source.has("shape")) source.getString("shape") else null,
+            schemaVersion = if (source.has("geometrySchemaVersion")) {
+                source.getLong("geometrySchemaVersion")
+            } else null
         )
-        val rectangleSourceFields = commonSourceFields + setOf(
-            "lengthMeters", "widthMeters"
-        )
-        val lShapedSourceFields = commonSourceFields + setOf(
-            "shape", "sideA", "sideB", "sideC", "sideD", "sideE", "sideF"
-        )
-        val actualSourceKeys = source.keys().asSequence().toSet()
-        val frozenShape = when {
-            actualSourceKeys == rectangleSourceFields -> "rectangle"
-            actualSourceKeys == lShapedSourceFields &&
-                source.getString("shape") == "l_shaped" -> "l_shaped"
-            else -> error("Incomplete or unsupported frozen measurement inputs")
-        }
         check(source.getString("name").isNotBlank())
         val complexity = source.getString("complexity")
         check(complexity in setOf("straight", "multilevel", "curved")) {
@@ -209,7 +201,7 @@ internal class EstimateRevisionSnapshotAssembler(private val database: Prototype
             "Source revision changed while preparing a candidate"
         }
         val candidate = when (frozenShape) {
-            "rectangle" -> EstimateRevisionCandidates.prepareRectangleWithOptions(
+            FrozenCeilingShape.RECTANGLE -> EstimateRevisionCandidates.prepareRectangleWithOptions(
                 saved,
                 VerifiedRectangleInputs(
                     lengthMeters = source.getDouble("lengthMeters"),
@@ -222,7 +214,7 @@ internal class EstimateRevisionSnapshotAssembler(private val database: Prototype
                 preview,
                 savedOptionQuantities
             )
-            "l_shaped" -> EstimateRevisionCandidates.prepareLShapedWithOptions(
+            FrozenCeilingShape.L_SHAPED -> EstimateRevisionCandidates.prepareLShapedWithOptions(
                 saved,
                 VerifiedLShapedInputs(
                     sideA = source.getDouble("sideA"),
@@ -239,7 +231,6 @@ internal class EstimateRevisionSnapshotAssembler(private val database: Prototype
                 preview,
                 savedOptionQuantities
             )
-            else -> error("Unsupported frozen geometry")
         }
         val proposedLines = JSONArray()
         candidate.lines.forEach { line ->
