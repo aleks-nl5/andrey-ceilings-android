@@ -138,8 +138,20 @@ internal fun EstimatesScreen(database: CeilingsDatabase?) {
     var editingEstimate by remember { mutableStateOf<EstimateEntity?>(null) }
     var pendingPdfEstimate by remember { mutableStateOf<EstimateEntity?>(null) }
     var activePreview by remember { mutableStateOf<EstimateRecalculationPreview?>(null) }
+    var activePrepared by remember { mutableStateOf<EstimateRevisionSnapshotAssembler.Prepared?>(null) }
     var activePreviewNumber by remember { mutableStateOf<String?>(null) }
+    var activePreviewReason by remember { mutableStateOf<String?>(null) }
+    var activeHistory by remember { mutableStateOf<Pair<String, String>?>(null) }
+    var previewSaving by remember { mutableStateOf(false) }
     var previewLoading by remember { mutableStateOf(false) }
+    LaunchedEffect(database) {
+        // A portable restore replaces the entire SQLDelight driver. Never
+        // let a dialog retain a prepared candidate from the old handle.
+        activePreview = null
+        activePrepared = null
+        activePreviewReason = null
+        activeHistory = null
+    }
     var renameText by remember { mutableStateOf("") }
     val estimatesByProject = remember(estimates) { estimates.groupBy { it.projectId } }
     val projectsById = remember(projects) { projects.associateBy { it.id } }
@@ -237,7 +249,7 @@ internal fun EstimatesScreen(database: CeilingsDatabase?) {
                         }
                         if (estimate.printableNumber != null) {
                             OutlinedButton(
-                                enabled = !previewLoading,
+                                enabled = !previewLoading && !previewSaving,
                                 onClick = {
                                     scope.launch {
                                         previewLoading = true
@@ -250,14 +262,30 @@ internal fun EstimatesScreen(database: CeilingsDatabase?) {
                                                 val seriesUuid = checkNotNull(stored?.seriesUuid) {
                                                     "Для цього кошторису немає історії ревізій."
                                                 }
-                                                EstimateRecalculationRepository(
+                                                val comparison = EstimateRecalculationRepository(
                                                     activeDatabase.database
                                                 ).previewLatest(seriesUuid)
+                                                val proposed = if (comparison.canConfirm) {
+                                                    runCatching {
+                                                        EstimateRevisionSnapshotAssembler(
+                                                            activeDatabase.database
+                                                        ).prepareLatestSimpleRectangle(seriesUuid)
+                                                    }.getOrNull()
+                                                } else null
+                                                comparison to proposed
                                             }
                                         }.onSuccess { result ->
+                                            activePreview = result.first
+                                            activePrepared = result.second
                                             activePreviewNumber = estimate.printableNumber
-                                            activePreview = result
+                                            activePreviewReason = if (result.first.canConfirm &&
+                                                result.second == null) {
+                                                "Для цього кошторису ще неможливо підтвердити " +
+                                                    "повний розрахунок збережених замірів, " +
+                                                    "опцій і сум. Попередні версії не змінені."
+                                            } else null
                                         }.onFailure { failure ->
+                                            activePrepared = null
                                             error = "Попередній перегляд недоступний: " +
                                                 (failure.message ?: "невідома помилка")
                                         }
@@ -265,6 +293,28 @@ internal fun EstimatesScreen(database: CeilingsDatabase?) {
                                     }
                                 }
                             ) { Text(if (previewLoading) "Перевіряю прайс…" else "Перерахувати — перегляд") }
+                            OutlinedButton(
+                                enabled = !previewLoading && !previewSaving,
+                                onClick = {
+                                    scope.launch {
+                                        runCatching {
+                                            withContext(Dispatchers.IO) {
+                                                val stored = com.andreyceilings.shared.db.EstimateRepository(
+                                                    database.database
+                                                ).find(estimate.id)
+                                                checkNotNull(stored?.seriesUuid) {
+                                                    "Історія версій для цього кошторису відсутня."
+                                                }
+                                            }
+                                        }.onSuccess { id ->
+                                            activeHistory = id to estimate.printableNumber
+                                        }.onFailure { failure ->
+                                            error = "Історія версій недоступна: " +
+                                                (failure.message ?: "невідома помилка")
+                                        }
+                                    }
+                                }
+                            ) { Text("Історія версій") }
                         }
                         val estimatePrecision = remember(estimate.detailsJson) { precisionForEstimate(estimate.detailsJson) }
                         Text("${formatMeasuredLength(estimate.lengthMeters, estimatePrecision)} × ${formatMeasuredLength(estimate.widthMeters, estimatePrecision)} м · ${formatMeasuredArea(estimate.areaSquareMeters, estimatePrecision)} м² · ${materialDisplayName(estimate.material)} · ${profileDisplayName(estimate.profileType)}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -286,10 +336,65 @@ internal fun EstimatesScreen(database: CeilingsDatabase?) {
         item { error?.let { Text(it, color = MaterialTheme.colorScheme.error) } }
     }
     activePreview?.let { result ->
+        val ready = activePrepared
         EstimatePreviewDialog(
             preview = result,
             printableNumber = activePreviewNumber,
-            onDismiss = { activePreview = null; activePreviewNumber = null }
+            proposedVersion = ready?.proposedVersion,
+            unavailableReason = activePreviewReason,
+            saving = previewSaving,
+            onDismiss = {
+                if (!previewSaving) {
+                    activePreview = null
+                    activePrepared = null
+                    activePreviewNumber = null
+                    activePreviewReason = null
+                }
+            },
+            onConfirm = if (ready != null && database != null && result.canConfirm) {
+                {
+                    if (!previewSaving) {
+                        previewSaving = true
+                        scope.launch {
+                            runCatching {
+                                withContext(Dispatchers.IO) {
+                                    EstimateRevisionSnapshotAssembler(database.database)
+                                        .confirmPreparedRectangle(
+                                            ready, System.currentTimeMillis()
+                                        )
+                                }
+                            }.onSuccess { confirmed ->
+                                status = "Збережено незмінну версію v${confirmed.versionNumber}. " +
+                                    "Попередні версії та номер кошторису не змінені."
+                                activeHistory = confirmed.seriesUuid to
+                                    (activePreviewNumber ?: "Без номера")
+                                activePreview = null
+                                activePrepared = null
+                                activePreviewNumber = null
+                                activePreviewReason = null
+                            }.onFailure { failure ->
+                                error = "Нову версію не створено. " +
+                                    "Прайс або вихідні дані могли змінитися. " +
+                                    "Повторіть перегляд. " +
+                                    (failure.message ?: "")
+                                // Force a new, explicit review after ANY failure.
+                                activePreview = null
+                                activePrepared = null
+                                activePreviewReason = null
+                            }
+                            previewSaving = false
+                        }
+                    }
+                }
+            } else null
+        )
+    }
+    activeHistory?.let { (id, number) ->
+        EstimateHistoryDialog(
+            database = database,
+            seriesUuid = id,
+            printableNumber = number,
+            onDismiss = { activeHistory = null }
         )
     }
     editingEstimate?.let { selected ->
