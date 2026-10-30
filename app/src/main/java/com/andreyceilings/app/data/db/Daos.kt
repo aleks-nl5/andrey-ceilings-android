@@ -9,6 +9,7 @@ import com.andreyceilings.app.core.EstimateLineItems
 import com.andreyceilings.shared.calculation.MeasurementPrecision
 import com.andreyceilings.shared.estimate.FrozenCeilingShape
 import com.andreyceilings.shared.estimate.FrozenGeometrySnapshotSchema
+import com.andreyceilings.shared.estimate.VerifiedCeilingGeometry
 import com.andreyceilings.shared.estimate.ImmutableEstimateDraft
 import com.andreyceilings.shared.estimate.ImmutableEstimateLine
 import org.json.JSONObject
@@ -150,17 +151,50 @@ private fun snapshotForNumberedEstimate(item: EstimateEntity): ImmutableEstimate
     val details = JSONObject(item.detailsJson)
     val precision = MeasurementPrecision.fromStep(details.optDouble("measurementPrecisionMeters", 0.01))
         ?: MeasurementPrecision.ONE_CENTIMETER
+    // Freeze only actual user-supplied, validated geometry at first INSERT.
+    // The estimate compatibility row still stores rectangular bounding dimensions;
+    // the immutable source snapshot owns the complete L-shaped measurement.
+    val sourceGeometry = item.frozenGeometryInput
+    val frozenLShape = sourceGeometry?.let {
+        VerifiedCeilingGeometry.requireFrozenLShaped(it)
+    }
+    if (frozenLShape != null) {
+        val (area, perimeter) =
+            VerifiedCeilingGeometry.checkedFrozenLShapedAreaAndPerimeter(frozenLShape)
+        check(kotlin.math.abs(area - item.areaSquareMeters) < 0.000001 &&
+            kotlin.math.abs(perimeter - item.perimeterMeters) < 0.000001 &&
+            item.lengthMeters == frozenLShape.sideA &&
+            item.widthMeters == frozenLShape.sideB) {
+            "New L-shaped estimate differs from the validated KMP measurement"
+        }
+    }
     val measurement = JSONObject()
-        .put("shape", FrozenCeilingShape.RECTANGLE.wireId)
+        .put("shape", if (frozenLShape == null) {
+            FrozenCeilingShape.RECTANGLE.wireId
+        } else FrozenCeilingShape.L_SHAPED.wireId)
         .put("geometrySchemaVersion", FrozenGeometrySnapshotSchema.CURRENT_VERSION)
         .put("name", item.name)
         .put("material", item.material)
         .put("profileType", item.profileType)
         .put("complexity", item.complexity)
-        .put("lengthMeters", item.lengthMeters)
-        .put("widthMeters", item.widthMeters)
         .put("areaSquareMeters", item.areaSquareMeters)
         .put("perimeterMeters", item.perimeterMeters)
+    if (frozenLShape == null) {
+        measurement.put("lengthMeters", item.lengthMeters)
+            .put("widthMeters", item.widthMeters)
+    } else {
+        measurement.put("sideA", frozenLShape.sideA)
+            .put("sideB", frozenLShape.sideB)
+            .put("sideC", frozenLShape.sideC)
+            .put("sideD", frozenLShape.sideD)
+            .put("sideE", frozenLShape.sideE)
+            .put("sideF", frozenLShape.sideF)
+    }
+    FrozenGeometrySnapshotSchema.requireShape(
+        measurement.keys().asSequence().toSet(),
+        measurement.getString("shape"),
+        measurement.getLong("geometrySchemaVersion")
+    )
     val saved = EstimateLineItems.fromJson(item.detailsJson)
     val lines = if (saved.isNotEmpty()) {
         saved.map {
