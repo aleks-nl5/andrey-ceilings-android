@@ -49,6 +49,51 @@ object VerifiedCeilingGeometry {
         )
     }
 
+    /**
+     * The sole entry point needed by a template-driven measurement form.
+     * A newly registered template immediately gets the same vertex geometry
+     * calculation without changes to price calculation or field rendering.
+     */
+    fun capturedTemplate(
+        shapeType: String,
+        measurementsMeters: Map<String, Double>,
+        precisionStepMeters: Double
+    ): GeometryInput {
+        val precision = requireNotNull(MeasurementPrecision.fromStep(precisionStepMeters)) {
+            "Unsupported measurement precision"
+        }
+        val template = requireNotNull(CeilingShapeTemplates.template(shapeType)) {
+            "Unknown ceiling input template"
+        }
+        require(measurementsMeters.keys == template.parameterKeys.toSet()) {
+            "The selected ceiling template requires all its measurements"
+        }
+        val roundedMm = measurementsMeters.mapValues { (_, value) -> mm(value, precision) }
+        val polygon = template.build(roundedMm)
+        CeilingPolygonCalculator.calculate(polygon, precisionStepMeters)
+        return when (shapeType) {
+            "rectangle" -> GeometryInput(
+                shape = shapeType,
+                length = roundedMm.getValue("length") / 1000.0,
+                width = roundedMm.getValue("width") / 1000.0,
+                precisionStepMeters = precisionStepMeters,
+                verticesMm = polygon.vertices
+            )
+            "l_shaped" -> {
+                val canonical = capturedLShaped(
+                    template.parameterKeys.map { roundedMm.getValue(it) / 1000.0 },
+                    precisionStepMeters
+                )
+                polygonForCalculation(canonical)
+            }
+            else -> GeometryInput(
+                shape = shapeType,
+                precisionStepMeters = precisionStepMeters,
+                verticesMm = polygon.vertices
+            )
+        }
+    }
+
     /** Add vertices to a validated, six-side L-shape for unified pricing. */
     fun polygonForCalculation(input: GeometryInput): GeometryInput {
         val frozen = requireFrozenLShaped(input)
