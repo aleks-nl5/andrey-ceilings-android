@@ -114,7 +114,7 @@ internal class EstimateDao(private val repo: EstimateRepository) {
             }, repo.printableNumberForId(it.id),
             repo.originalRevisionInputForId(it.id)?.let { source ->
                 if (JSONObject(source).has("shape") &&
-                    !FrozenPolygonGeometryJson.isVersion2(JSONObject(source))) {
+                    !FrozenPolygonGeometryJson.isVersioned(JSONObject(source))) {
                     frozenLShapedGeometryFromSource(
                         source,
                         checkNotNull(MeasurementPrecision.fromStep(
@@ -125,7 +125,7 @@ internal class EstimateDao(private val repo: EstimateRepository) {
             },
             repo.originalRevisionInputForId(it.id)?.let { source ->
                 val json = JSONObject(source)
-                if (FrozenPolygonGeometryJson.isVersion2(json)) {
+                if (FrozenPolygonGeometryJson.isVersioned(json)) {
                     FrozenPolygonGeometryJson.read(
                         json,
                         checkNotNull(MeasurementPrecision.fromStep(
@@ -147,7 +147,7 @@ internal class EstimateDao(private val repo: EstimateRepository) {
             }, repo.printableNumberForId(it.id),
             repo.originalRevisionInputForId(it.id)?.let { source ->
                 if (JSONObject(source).has("shape") &&
-                    !FrozenPolygonGeometryJson.isVersion2(JSONObject(source))) {
+                    !FrozenPolygonGeometryJson.isVersioned(JSONObject(source))) {
                     frozenLShapedGeometryFromSource(
                         source,
                         checkNotNull(MeasurementPrecision.fromStep(
@@ -158,7 +158,7 @@ internal class EstimateDao(private val repo: EstimateRepository) {
             },
             repo.originalRevisionInputForId(it.id)?.let { source ->
                 val json = JSONObject(source)
-                if (FrozenPolygonGeometryJson.isVersion2(json)) {
+                if (FrozenPolygonGeometryJson.isVersioned(json)) {
                     FrozenPolygonGeometryJson.read(
                         json,
                         checkNotNull(MeasurementPrecision.fromStep(
