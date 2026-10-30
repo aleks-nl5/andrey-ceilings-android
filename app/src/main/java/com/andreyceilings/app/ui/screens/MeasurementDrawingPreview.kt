@@ -29,7 +29,8 @@ import kotlin.math.round
 @Composable
 internal fun MeasurementDrawingPreview(
     frozen: FrozenPolygonGeometry,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    compact: Boolean = false
 ) {
     val points = frozen.vertices
     val ink = MaterialTheme.colorScheme.primary
@@ -44,7 +45,7 @@ internal fun MeasurementDrawingPreview(
     Column(modifier) {
         Text("Креслення заміру", style = MaterialTheme.typography.titleSmall)
         Canvas(
-            modifier = Modifier.fillMaxWidth().height(235.dp).padding(8.dp)
+            modifier = Modifier.fillMaxWidth().height(if (compact) 155.dp else 235.dp).padding(8.dp)
         ) {
             val left = points.minOf { it.xMm }.toFloat()
             val right = points.maxOf { it.xMm }.toFloat()
