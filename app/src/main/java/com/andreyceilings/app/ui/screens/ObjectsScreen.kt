@@ -171,7 +171,7 @@ internal fun MeasurementsScreen(
        }.getOrNull()
       }
       if (drawing != null) {
-       MeasurementDrawingPreview(drawing, Modifier.fillMaxWidth().padding(12.dp))
+       MeasurementDrawingPreview(drawing, Modifier.fillMaxWidth().padding(12.dp), compact = true)
       } else if (measurement.shape == "rectangle" &&
           measurement.lengthMeters > 0.0 && measurement.widthMeters > 0.0) {
        val legacyDrawing = runCatching {
@@ -186,7 +186,7 @@ internal fun MeasurementsScreen(
         )
        }.getOrNull()
        if (legacyDrawing != null) {
-        MeasurementDrawingPreview(legacyDrawing, Modifier.fillMaxWidth().padding(12.dp))
+        MeasurementDrawingPreview(legacyDrawing, Modifier.fillMaxWidth().padding(12.dp), compact = true)
        }
       }
      }
