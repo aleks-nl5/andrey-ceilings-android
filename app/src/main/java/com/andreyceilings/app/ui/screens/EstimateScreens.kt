@@ -416,7 +416,19 @@ internal fun EstimatesScreen(database: CeilingsDatabase?) {
     }
 }
 
-private fun writeEstimatePdf(context: Context, uri: Uri, estimate: EstimateEntity, projectTitle: String) {
+/**
+ * Shared PDF renderer. Legacy list export calls with the v1 default; history
+ * exports supply a version-specific estimate reconstructed exclusively from
+ * immutable SQLDelight revision rows.
+ */
+internal fun writeEstimatePdf(
+    context: Context,
+    uri: Uri,
+    estimate: EstimateEntity,
+    projectTitle: String,
+    versionNumber: Long = 1L
+) {
+    require(versionNumber > 0L)
     val estimatePrecision = precisionForEstimate(estimate.detailsJson)
     val document = PdfDocument()
     val titlePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { typeface = Typeface.create("sans-serif", Typeface.BOLD); textSize = 18f }
@@ -428,7 +440,7 @@ private fun writeEstimatePdf(context: Context, uri: Uri, estimate: EstimateEntit
     lines += PdfLine("КОШТОРИС НАТЯЖНОЇ СТЕЛІ", 2)
     if (estimate.printableNumber != null) {
         lines += PdfLine("№ документа: ${estimate.printableNumber}")
-        lines += PdfLine("Версія: v1")
+        lines += PdfLine("Версія: v$versionNumber")
     }
     lines += PdfLine("Об’єкт: $projectTitle")
     lines += PdfLine("Кошторис: ${estimate.originalDocumentName ?: estimate.name}")
@@ -456,7 +468,11 @@ private fun writeEstimatePdf(context: Context, uri: Uri, estimate: EstimateEntit
     }
     lines += PdfLine("")
     lines += PdfLine("РАЗОМ: ${money(estimate.totalCost)}", 2)
-    lines += PdfLine("Ціни зафіксовано на момент створення кошторису.", 3)
+    lines += PdfLine(
+        if (versionNumber == 1L) "Ціни зафіксовано на момент створення кошторису."
+        else "Ціни зафіксовано для цієї збереженої версії кошторису.",
+        3
+    )
     lines += PdfLine("Документ сформовано застосунком Andrey Ceilings.", 3)
 
     val linesPerPage = 35
