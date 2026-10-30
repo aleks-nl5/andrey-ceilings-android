@@ -8,6 +8,8 @@ import com.andreyceilings.app.data.db.RoomMeasurementDao
 import com.andreyceilings.app.data.db.RoomMeasurementEntity
 import com.andreyceilings.shared.calculation.CeilingPointMm
 import com.andreyceilings.shared.calculation.CeilingShapeTemplates
+import com.andreyceilings.shared.calculation.MeasuredOrthogonalSide
+import com.andreyceilings.shared.calculation.OrthogonalTurn
 import com.andreyceilings.shared.db.MeasurementRepository
 import com.andreyceilings.shared.db.ProjectRepository
 import com.andreyceilings.shared.db.PrototypeDatabase
@@ -112,4 +114,66 @@ class MeasurementPolygonPersistenceTest {
             key.fill(0)
         }
     }
+    @Test fun sideTurnV3IsSavedAndReopenedWithoutLosingMeasuredInputs() = runBlocking {
+        val context: Context = ApplicationProvider.getApplicationContext()
+        val dbName = "sqldelight_orthogonal_sides_v3.db"
+        val key = ByteArray(32) { 0x53.toByte() }
+        context.deleteDatabase(dbName)
+        val r = OrthogonalTurn.RIGHT
+        val l = OrthogonalTurn.LEFT
+        val walls = listOf(
+            MeasuredOrthogonalSide(5000, r),
+            MeasuredOrthogonalSide(2000, r),
+            MeasuredOrthogonalSide(3000, l),
+            MeasuredOrthogonalSide(2000, r),
+            MeasuredOrthogonalSide(2000, r),
+            MeasuredOrthogonalSide(4000, r)
+        )
+        val frozen = FrozenPolygonGeometryContract.captureSides(walls, 0.01)
+        try {
+            createEncryptedPrototypeDriver(
+                context, key, dbName, enableWalForTesting = true
+            ).use { driver ->
+                val db = PrototypeDatabase(driver)
+                val projectId = ProjectRepository(db).createReturningId(
+                    clientId = null, title = "Measured sides", createdAt = 10L
+                )
+                val dao = RoomMeasurementDao(MeasurementRepository(db))
+                dao.insert(RoomMeasurementEntity(
+                    projectId = projectId, name = "Orthogonal L room",
+                    shape = "polygon",
+                    lengthMeters = 5.0, widthMeters = 4.0,
+                    areaSquareMeters = 14.0, perimeterMeters = 18.0,
+                    drawingJson = FrozenPolygonGeometryJson.writeMeasurement(frozen)
+                ))
+            }
+            createEncryptedPrototypeDriver(
+                context, key, dbName, enableWalForTesting = true
+            ).use { driver ->
+                val dao = RoomMeasurementDao(
+                    MeasurementRepository(PrototypeDatabase(driver))
+                )
+                val stored = dao.observeAll().first().single()
+                val source = JSONObject(stored.drawingJson)
+                assertEquals(3L, source.getLong("geometrySchemaVersion"))
+                assertEquals(6, source.getJSONArray("sides").length())
+                assertEquals(frozen,
+                    FrozenPolygonGeometryJson.readMeasurement(stored.drawingJson))
+                source.getJSONArray("sides").getJSONObject(0)
+                    .put("lengthMm", 5100L)
+                assertTrue(runCatching {
+                    FrozenPolygonGeometryJson.readMeasurement(source.toString())
+                }.isFailure)
+                source.getJSONArray("sides").getJSONObject(0)
+                    .put("lengthMm", 5000L).put("turnAfter", "UP")
+                assertTrue(runCatching {
+                    FrozenPolygonGeometryJson.readMeasurement(source.toString())
+                }.isFailure)
+            }
+        } finally {
+            context.deleteDatabase(dbName)
+            key.fill(0)
+        }
+    }
+
 }
