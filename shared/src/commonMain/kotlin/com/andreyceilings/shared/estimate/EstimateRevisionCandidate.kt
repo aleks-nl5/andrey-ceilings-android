@@ -24,7 +24,9 @@ data class VerifiedRectangleInputs(
     val widthMeters: Double,
     val storedAreaSquareMeters: Double,
     val storedPerimeterMeters: Double,
-    val precisionStepMeters: Double
+    val precisionStepMeters: Double,
+    /** Saved ceiling complexity, never inferred from line labels or price. */
+    val complexity: String = "straight"
 )
 
 data class EstimateRevisionCandidate(
@@ -47,8 +49,12 @@ object EstimateRevisionCandidates {
         source: ImmutableEstimateDraft,
         input: VerifiedRectangleInputs,
         preview: EstimateRecalculationPreview
-    ): EstimateRevisionCandidate =
-        prepareRectangle(source, input, preview, emptyMap(), verifyOptions = false)
+    ): EstimateRevisionCandidate {
+        check(input.complexity == "straight") {
+            "Simple rectangle entry point rejects extra complexity work"
+        }
+        return prepareRectangle(source, input, preview, emptyMap(), verifyOptions = false)
+    }
 
     /**
      * The caller must provide EVERY persisted canonical option, including
@@ -106,6 +112,15 @@ object EstimateRevisionCandidates {
             "Saved geometry is not reproducible by the KMP calculator"
         }
 
+        check(input.complexity in setOf("straight", "multilevel", "curved")) {
+            "Unknown ceiling complexity must not be silently priced as straight"
+        }
+        val complexityCode = when (input.complexity) {
+            "multilevel" -> "work.multilevel"
+            "curved" -> "work.curved"
+            else -> null
+        }
+        val complexityCount = if (complexityCode != null) 1 else 0
         val options = if (verifyOptions) {
             val canonicalCodes = EstimateOptionId.entries.map { it.code }.toSet()
             check(savedOptionQuantities.keys == canonicalCodes) {
@@ -119,7 +134,7 @@ object EstimateRevisionCandidates {
         val enabledOptions = EstimateOptionId.entries.filter {
             (options[it.code] ?: 0.0) > 0.0
         }
-        val expectedLineCount = 2 + enabledOptions.size
+        val expectedLineCount = 2 + complexityCount + enabledOptions.size
         check(source.lines.size == expectedLineCount &&
             preview.lines.size == expectedLineCount &&
             source.lines == preview.lines.map { it.before }) {
@@ -141,8 +156,21 @@ object EstimateRevisionCandidates {
         if (verifyOptions) {
             check(source.lines.first() == canvases.single() &&
                 source.lines[1] == profiles.single() &&
-                source.lines.drop(2).map { it.stableCode } == enabledOptions.map { it.code }) {
-                "Saved option rows must follow the canonical nonzero option sequence"
+                source.lines.drop(2 + complexityCount).map { it.stableCode } ==
+                    enabledOptions.map { it.code }) {
+                "Frozen complexity and option rows must use the canonical order"
+            }
+            if (complexityCode != null) {
+                val complexity = source.lines[2]
+                val ratio = if (input.complexity == "multilevel") 0.35 else 0.25
+                val requiredLength = kotlin.math.max(
+                    2.0, precision.length(geometry.perimeter * ratio)
+                )
+                check(complexity.stableCode == complexityCode &&
+                    complexity.unit == "м.п." &&
+                    kotlin.math.abs(complexity.quantity - requiredLength) < 0.000001) {
+                    "Frozen complexity code, unit or measured length is inconsistent"
+                }
             }
             check(source.lines.map { it.stableCode }.toSet().size == source.lines.size) {
                 "Repeated price codes in immutable snapshot"
@@ -207,6 +235,8 @@ object EstimateRevisionCandidates {
             val calculatorPrices = PriceList(
                 canvasPrices = mapOf(material to canvas.unitPrice),
                 profilePrices = mapOf(profileType to profile.unitPrice),
+                multilevelPerMeterCost = byCode["work.multilevel"]?.unitPrice ?: 0.0,
+                curvedPerMeterCost = byCode["work.curved"]?.unitPrice ?: 0.0,
                 lightLinePerMeter = byCode[EstimateOptionId.LIGHT_LINE.code]?.unitPrice ?: 0.0,
                 shadowProfilePerMeter = byCode[EstimateOptionId.SHADOW_PROFILE.code]?.unitPrice ?: 0.0,
                 floatingProfilePerMeter = byCode[EstimateOptionId.FLOATING_PROFILE.code]?.unitPrice ?: 0.0,
@@ -221,6 +251,7 @@ object EstimateRevisionCandidates {
                 CostInput(
                     area = geometry.area, perimeter = geometry.perimeter,
                     materialType = material, profileType = profileType,
+                    complexity = input.complexity,
                     options = roomOptionsFromCanonicalQuantities(options),
                     precisionStepMeters = input.precisionStepMeters
                 ),
@@ -228,8 +259,11 @@ object EstimateRevisionCandidates {
             )
             check(kmp.canvasCost == canvas.lineTotal &&
                 kmp.profileCost == profile.lineTotal &&
-                kmp.complexityCost == 0.0 &&
-                kmp.optionsCost == lines.drop(2).sumOf { it.lineTotal } &&
+                kmp.complexityCost == (
+                    if (complexityCode != null) lines[2].lineTotal else 0.0
+                ) &&
+                kmp.optionsCost == lines.drop(2 + complexityCount)
+                    .sumOf { it.lineTotal } &&
                 kmp.totalCost == proposedTotal) {
                 "Option totals are inconsistent with the KMP calculator and its rounding"
             }
