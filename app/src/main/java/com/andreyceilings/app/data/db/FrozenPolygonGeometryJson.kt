@@ -9,6 +9,27 @@ import org.json.JSONObject
 
 /** Android JSON adapter; validation and geometry math live in shared KMP. */
 internal object FrozenPolygonGeometryJson {
+    private val measurementFields = setOf(
+        "shape", "geometrySchemaVersion", "vertices", "measurementsMm",
+        "areaSquareMeters", "perimeterMeters", "precisionStepMeters"
+    )
+
+    /** Measurement rows use the very same v2 vertex encoding as estimates. */
+    fun writeMeasurement(frozen: FrozenPolygonGeometry): String =
+        geometryFields(frozen)
+            .put("precisionStepMeters", frozen.precisionStepMeters)
+            .toString()
+
+    fun readMeasurement(sourceJson: String): FrozenPolygonGeometry {
+        val source = JSONObject(sourceJson)
+        require(source.keys().asSequence().toSet() == measurementFields) {
+            "Incomplete or unsupported saved measurement geometry"
+        }
+        return readGeometryFields(
+            source, source.getDouble("precisionStepMeters")
+        )
+    }
+
     fun isVersion2(source: JSONObject): Boolean =
         source.has("geometrySchemaVersion") &&
             source.getLong("geometrySchemaVersion") ==
@@ -22,6 +43,16 @@ internal object FrozenPolygonGeometryJson {
         require(source.getLong("geometrySchemaVersion") ==
             FrozenPolygonGeometryContract.SCHEMA_VERSION) {
             "Unsupported polygon schema"
+        }
+        return readGeometryFields(source, precisionStepMeters)
+    }
+
+    private fun readGeometryFields(
+        source: JSONObject, precisionStepMeters: Double
+    ): FrozenPolygonGeometry {
+        require(source.getLong("geometrySchemaVersion") ==
+            FrozenPolygonGeometryContract.SCHEMA_VERSION) {
+            "Unsupported geometry schema"
         }
         val verticesJson = source.getJSONArray("vertices")
         require(verticesJson.length() in 3..CeilingPolygonCalculator.MAX_VERTICES) {
@@ -57,7 +88,11 @@ internal object FrozenPolygonGeometryJson {
         profile: String,
         complexity: String,
         frozen: FrozenPolygonGeometry
-    ): JSONObject {
+    ): JSONObject = geometryFields(frozen)
+        .put("name", name).put("material", material)
+        .put("profileType", profile).put("complexity", complexity)
+
+    private fun geometryFields(frozen: FrozenPolygonGeometry): JSONObject {
         FrozenPolygonGeometryContract.requireValid(frozen)
         val vertices = JSONArray()
         frozen.vertices.forEach { point ->
@@ -66,8 +101,6 @@ internal object FrozenPolygonGeometryJson {
         val measurements = JSONObject()
         frozen.measurementsMm.forEach { (key, mm) -> measurements.put(key, mm) }
         return JSONObject()
-            .put("name", name).put("material", material)
-            .put("profileType", profile).put("complexity", complexity)
             .put("shape", frozen.shapeType)
             .put("geometrySchemaVersion", FrozenPolygonGeometryContract.SCHEMA_VERSION)
             .put("vertices", vertices)
