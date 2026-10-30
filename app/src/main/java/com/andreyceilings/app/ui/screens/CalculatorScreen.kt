@@ -39,6 +39,7 @@ import com.andreyceilings.app.core.CeilingEstimate
 import com.andreyceilings.app.core.CeilingCalculator
 import com.andreyceilings.shared.calculation.EstimateOptionId
 import com.andreyceilings.shared.calculation.CeilingShapeTemplates
+import com.andreyceilings.shared.estimate.FrozenPolygonGeometryContract
 import com.andreyceilings.shared.calculation.MeasurementPrecision
 import com.andreyceilings.shared.estimate.FrozenCeilingShape
 import com.andreyceilings.shared.estimate.VerifiedCeilingGeometry
@@ -235,11 +236,28 @@ internal fun CalculatorScreen(
             }
         }
     }
+    // A single geometry contract freezes the template inputs and final
+    // vertices for rectangles, L rooms and future straight-edge shapes.
+    val frozenPolygon = if (estimate != null) runCatching {
+        val numericInputs = shapeMeasurements.mapValues { (_, value) ->
+            value.trim().replace(',', '.').toDoubleOrNull() ?: Double.NaN
+        }
+        val verified = VerifiedCeilingGeometry.capturedTemplate(
+            geometryShape, numericInputs, measurementPrecision.stepMeters
+        )
+        val measurementsMm = numericInputs.mapValues { (_, value) ->
+            kotlin.math.round(measurementPrecision.length(value) * 1000.0).toLong()
+        }
+        FrozenPolygonGeometryContract.capture(
+            geometryShape, verified.verticesMm, measurementsMm,
+            measurementPrecision.stepMeters
+        )
+    }.getOrNull() else null
     Button(
         onClick = { showSaveDialog = true },
         modifier = Modifier.fillMaxWidth(),
         enabled = database != null && projects.isNotEmpty() &&
-            estimate != null && estimate.area > 0.0
+            estimate != null && estimate.area > 0.0 && frozenPolygon != null
     ) {
         Icon(Icons.Default.Save, null); Spacer(Modifier.width(8.dp)); Text("Зберегти кошторис до об’єкта")
     }
@@ -268,7 +286,7 @@ internal fun CalculatorScreen(
     }
     if (showSaveDialog && database != null && projects.isNotEmpty() &&
         estimateForSave != null &&
-        (geometryShape == FrozenCeilingShape.RECTANGLE.wireId || frozenLShape != null)
+        frozenPolygon != null
     ) SaveEstimateDialog(
         projects = projects,
         defaultName = defaultEstimateName,
@@ -289,12 +307,17 @@ internal fun CalculatorScreen(
                 runCatching {
                     val estimateDraft = EstimateEntity(
                         projectId = projectId, name = name.trim(), material = material, profileType = profileType, complexity = complexity,
-                        lengthMeters = frozenLShape?.sideA ?: measurementPrecision.roomDimension(length.toSafeDouble(), 4.0),
-                        widthMeters = frozenLShape?.sideB ?: measurementPrecision.roomDimension(width.toSafeDouble(), 3.0),
+                        lengthMeters = checkNotNull(frozenPolygon).vertices.let { points ->
+                            (points.maxOf { it.xMm } - points.minOf { it.xMm }) / 1000.0
+                        },
+                        widthMeters = frozenPolygon.vertices.let { points ->
+                            (points.maxOf { it.yMm } - points.minOf { it.yMm }) / 1000.0
+                        },
                         areaSquareMeters = estimateForSave.area, perimeterMeters = estimateForSave.perimeter,
                         canvasCost = estimateForSave.canvasCost, profileCost = estimateForSave.profileCost, complexityCost = estimateForSave.complexityCost,
                         optionsCost = estimateForSave.optionsCost, totalCost = estimateForSave.total,
-                        detailsJson = details.toString(), frozenGeometryInput = frozenLShape
+                        detailsJson = details.toString(),
+                        frozenPolygon = frozenPolygon
                     )
                     val lineItems = com.andreyceilings.app.core.EstimateLineItems.create(estimateDraft, details, priceItems, measurementPrecision)
                     details.put("lineItems", com.andreyceilings.app.core.EstimateLineItems.toJson(lineItems))
