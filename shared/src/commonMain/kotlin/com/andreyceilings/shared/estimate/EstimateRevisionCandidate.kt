@@ -63,6 +63,41 @@ data class EstimateRevisionCandidate(
  * rounding corrections still fail closed instead of inventing amounts.
  */
 object EstimateRevisionCandidates {
+    /**
+     * One KMP repricing path for every geometry-v2 straight-edged contour.
+     * Polygon source validation checks the EXACT captured vertices and template
+     * parameters; prices/options and source revision are independently checked
+     * by the immutable candidate and caller's transaction.
+     */
+    fun preparePolygonWithOptions(
+        source: ImmutableEstimateDraft,
+        frozen: FrozenPolygonGeometry,
+        complexity: String,
+        preview: EstimateRecalculationPreview,
+        savedOptionQuantities: Map<String, Double>
+    ): EstimateRevisionCandidate {
+        val validated = FrozenPolygonGeometryContract.requireValid(frozen)
+        check(source.calculationRuleVersion ==
+            FrozenPolygonGeometryContract.CALCULATION_RULE_VERSION) {
+            "Source snapshot is not a supported polygon calculation version"
+        }
+        return prepareVerifiedGeometry(
+            source = source,
+            geometryInput = GeometryInput(
+                shape = validated.shapeType,
+                verticesMm = validated.vertices,
+                precisionStepMeters = validated.precisionStepMeters
+            ),
+            storedAreaSquareMeters = validated.areaSquareMeters,
+            storedPerimeterMeters = validated.perimeterMeters,
+            precisionStepMeters = validated.precisionStepMeters,
+            complexity = complexity,
+            preview = preview,
+            savedOptionQuantities = savedOptionQuantities,
+            verifyOptions = true
+        )
+    }
+
     fun prepareSimpleRectangle(
         source: ImmutableEstimateDraft,
         input: VerifiedRectangleInputs,
@@ -173,7 +208,10 @@ object EstimateRevisionCandidates {
             preview.baseVersionNumber in 1 until Long.MAX_VALUE) {
             "Revision source identity is invalid"
         }
-        check(source.calculationRuleVersion == "kmp-v1" &&
+        val requiredRuleVersion = if (geometryInput.verticesMm.isNotEmpty()) {
+            FrozenPolygonGeometryContract.CALCULATION_RULE_VERSION
+        } else "kmp-v1"
+        check(source.calculationRuleVersion == requiredRuleVersion &&
             source.moneyRoundingPolicy == "HALF_AWAY_FROM_ZERO" &&
             source.currency == "UAH") {
             "Unsupported source calculation or rounding policy"
