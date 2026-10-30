@@ -17,3 +17,9 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 adb install -r app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
 
 bash ci/verify-sqlcipher-process-death.sh
+
+# This is intentionally LAST. It fills the throwaway emulator's /data to real
+# ENOSPC and immediately frees it before verifying SQLCipher WAL + Keystore.
+# The destructive test is excluded from ordinary Android instrumentation by
+# the same IsolatedProcessDeathProof isolation gate as SIGKILL tests.
+bash ci/verify-sqlcipher-enospc.sh
