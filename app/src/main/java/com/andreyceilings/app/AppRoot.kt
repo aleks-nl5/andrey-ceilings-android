@@ -64,6 +64,8 @@ import com.andreyceilings.shared.calculation.CeilingShapeTemplates
 import com.andreyceilings.shared.calculation.MeasurementPrecision
 import com.andreyceilings.shared.estimate.FrozenCeilingShape
 import com.andreyceilings.shared.estimate.VerifiedCeilingGeometry
+import com.andreyceilings.app.ui.screens.capturedPolygonFromText
+import com.andreyceilings.app.ui.screens.defaultPolygonVertices
 import com.andreyceilings.app.data.db.PriceItemEntity
 import com.andreyceilings.app.data.db.ProjectEntity
 import com.andreyceilings.app.data.db.EstimateEntity
@@ -264,6 +266,11 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
             "l_shaped.C" to "2", "l_shaped.D" to "2"
         )
     }
+    val polygonVertices = remember {
+        mutableStateListOf<Pair<String, String>>().apply {
+            addAll(defaultPolygonVertices())
+        }
+    }
     val length = geometryMeasurements["rectangle.length"].orEmpty()
     val width = geometryMeasurements["rectangle.width"].orEmpty()
     val templateMeasurements = CeilingShapeTemplates.template(geometryShape)
@@ -308,9 +315,11 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
         complexity = complexity
     )
     // The Android calculator now uses the shared Kotlin Multiplatform engine.
-    val calculation = remember(geometryShape, templateMeasurements, pricePerM2, profilePrice, priceItems, calculatorOptions, material, profileType, measurementPrecision) {
+    val calculation = remember(geometryShape, templateMeasurements, polygonVertices.toList(), pricePerM2, profilePrice, priceItems, calculatorOptions, material, profileType, measurementPrecision) {
         runCatching {
-            val verifiedGeometry = VerifiedCeilingGeometry.capturedTemplate(
+            val verifiedGeometry = if (geometryShape == "polygon") {
+                capturedPolygonFromText(polygonVertices.toList(), measurementPrecision.stepMeters)
+            } else VerifiedCeilingGeometry.capturedTemplate(
                 geometryShape,
                 templateMeasurements.mapValues { (_, text) ->
                     text.trim().replace(',', '.').toDoubleOrNull() ?: Double.NaN
@@ -408,6 +417,12 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
                             shapeMeasurements = templateMeasurements,
                             onShapeMeasurement = { key, value ->
                                 geometryMeasurements["$geometryShape.$key"] = value
+                            },
+                            polygonVertices = polygonVertices.toList(),
+                            onPolygonVertex = { index, point -> polygonVertices[index] = point },
+                            onAddPolygonVertex = { polygonVertices.add("" to "") },
+                            onRemovePolygonVertex = { index ->
+                                if (polygonVertices.size > 3) polygonVertices.removeAt(index)
                             },
                             price = pricePerM2, onPrice = { pricePerM2 = it },
                             profilePrice = profilePrice, onProfilePrice = { profilePrice = it },
