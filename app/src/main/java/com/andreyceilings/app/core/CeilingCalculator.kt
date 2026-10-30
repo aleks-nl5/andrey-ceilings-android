@@ -93,7 +93,17 @@ object CeilingCalculator {
             val result = measure("kmp_calculate") {
                 KmpCeilingCalculator.estimate(
                     geometryInput = when (geometryInput?.shape) {
-                        "l_shaped" -> VerifiedCeilingGeometry.polygonForCalculation(geometryInput)
+                        "l_shaped" -> {
+                            val exact = checkNotNull(geometryInput)
+                            val canonical = VerifiedCeilingGeometry.polygonForCalculation(
+                                exact.copy(verticesMm = emptyList())
+                            )
+                            check(exact.verticesMm.isEmpty() ||
+                                exact.verticesMm == canonical.verticesMm) {
+                                "L-shaped template vertices disagree with saved sides"
+                            }
+                            canonical
+                        }
                         else -> geometryInput ?: GeometryInput(
                             shape = "rectangle",
                             length = length.coerceAtLeast(0.0),
