@@ -1,6 +1,7 @@
 package com.andreyceilings.shared.estimate
 
 import com.andreyceilings.shared.calculation.CeilingShapeTemplates
+import com.andreyceilings.shared.calculation.CeilingPointMm
 import com.andreyceilings.shared.calculation.CeilingPolygonCalculator
 import com.andreyceilings.shared.calculation.GeometryInput
 import com.andreyceilings.shared.calculation.KmpCeilingCalculator
@@ -15,6 +16,47 @@ import kotlin.math.abs
  * old callers. Never use those defaults when creating a commercial L-shape.
  */
 object VerifiedCeilingGeometry {
+    /**
+     * Free-form vertex entry: coordinates may be negative or zero, but MUST
+     * exactly lie on the selected millimetre grid. Never silently move a
+     * measured vertex by rounding; doing so could create a false contour.
+     */
+    fun capturedPolygon(
+        coordinatesMeters: List<Pair<Double, Double>>,
+        precisionStepMeters: Double
+    ): GeometryInput {
+        val precision = requireNotNull(MeasurementPrecision.fromStep(precisionStepMeters)) {
+            "Unsupported measurement precision"
+        }
+        val stepMm = (precision.stepMeters * 1000.0).toLong()
+        fun coordinateMm(value: Double): Long {
+            require(value.isFinite()) { "Координати вершин мають бути числовими" }
+            val scaled = value * 1000.0
+            require(scaled.isFinite() &&
+                kotlin.math.abs(scaled) <=
+                    com.andreyceilings.shared.calculation.CeilingPolygonCalculator.MAX_COORDINATE_MM) {
+                "Координати вершини виходять за дозволені межі"
+            }
+            val rounded = kotlin.math.round(scaled / stepMm) * stepMm
+            require(kotlin.math.abs(rounded - scaled) < 0.000001) {
+                "Координати мають відповідати точності вимірювання"
+            }
+            return rounded.toLong()
+        }
+        val vertices = coordinatesMeters.map { (x, y) ->
+            CeilingPointMm(coordinateMm(x), coordinateMm(y))
+        }
+        CeilingPolygonCalculator.calculate(
+            CeilingShapeTemplates.fromVertices(vertices),
+            precisionStepMeters
+        )
+        return GeometryInput(
+            shape = "polygon",
+            verticesMm = vertices,
+            precisionStepMeters = precisionStepMeters
+        )
+    }
+
     private fun mm(value: Double, precision: MeasurementPrecision): Long {
         require(value.isFinite() && value > 0.0) { "Ceiling measurements must be positive" }
         val measured = precision.length(value)
