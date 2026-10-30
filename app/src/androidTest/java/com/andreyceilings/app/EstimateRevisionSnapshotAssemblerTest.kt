@@ -26,6 +26,7 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class EstimateRevisionSnapshotAssemblerTest {
     private fun sourceJson(): String = JSONObject()
+        .put("shape", "rectangle").put("geometrySchemaVersion", 1L)
         .put("name", "Kitchen").put("material", "pvc_matte")
         .put("profileType", "standard_alu").put("complexity", "straight")
         .put("lengthMeters", 2.0).put("widthMeters", 3.0)
@@ -370,6 +371,7 @@ class EstimateRevisionSnapshotAssemblerTest {
                     .put("profileType", "standard_alu")
                     .put("complexity", "straight")
                     .put("shape", "l_shaped")
+                    .put("geometrySchemaVersion", 1L)
                     .put("sideA", 5.0).put("sideB", 4.0)
                     .put("sideC", 2.0).put("sideD", 2.0)
                     .put("sideE", 3.0).put("sideF", 2.0)
