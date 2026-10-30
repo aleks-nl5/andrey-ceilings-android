@@ -11,7 +11,8 @@ import java.io.File
  * can change immediately after StatFs has been sampled.
  *
  * These estimates cover transient SQLCipher snapshot / verification / staged
- * restore files, NOT space on an arbitrary SAF export destination.
+ * restore files and the current DB/WAL/SHM footprint, NOT space on an arbitrary
+ * SAF export destination. They are conservative estimates, not quotas.
  */
 internal object StorageSpaceGuard {
     private const val MIB = 1024L * 1024L
@@ -26,6 +27,24 @@ internal object StorageSpaceGuard {
         return if (positive > Long.MAX_VALUE / factor) Long.MAX_VALUE
         else positive * factor
     }
+
+    /**
+     * A WAL-mode database also occupies -wal and -shm files. The main .db may
+     * lag committed WAL frames by many pages, so sizing only .db understates
+     * the transient headroom needed for an encrypted VACUUM INTO snapshot.
+     *
+     * Compute a conservative physical upper bound, not a precise VACUUM size:
+     * repeated WAL page versions can make this larger than a compact snapshot.
+     * A single file's File.length() is never sufficient for WAL preflight.
+     */
+    internal fun databaseFootprintWithSidecars(databaseFile: File): Long =
+        listOf(
+            databaseFile,
+            File(databaseFile.absolutePath + "-wal"),
+            File(databaseFile.absolutePath + "-shm")
+        ).fold(0L) { size, file ->
+            boundedAdd(size, file.length().coerceAtLeast(0L))
+        }
 
     /** Snapshot in cache + independent integrity-check copy in databases/. */
     internal fun bytesForBackup(databaseBytes: Long): Long =
@@ -52,7 +71,9 @@ internal object StorageSpaceGuard {
     fun startupWarning(context: Context): String? {
         val available = runCatching { internalAvailableBytes(context) }.getOrNull()
             ?: return null // A failed measurement must not block database open.
-        val databaseBytes = context.getDatabasePath(CeilingsDatabase.DATABASE_NAME).length()
+        val databaseBytes = databaseFootprintWithSidecars(
+            context.getDatabasePath(CeilingsDatabase.DATABASE_NAME)
+        )
         val recommended = maxOf(STARTUP_WARNING_FLOOR, bytesForBackup(databaseBytes))
         if (sufficient(available, recommended)) return null
         return "У внутрішній пам'яті доступно приблизно ${available.coerceAtLeast(0L) / MIB} МіБ. " +
@@ -73,7 +94,10 @@ internal object StorageSpaceGuard {
     }
 
     fun requireForBackup(context: Context, databaseFile: File) {
-        requireInternalSpace(context, bytesForBackup(databaseFile.length()), "резервування БД")
+        requireInternalSpace(
+            context, bytesForBackup(databaseFootprintWithSidecars(databaseFile)),
+            "резервування БД"
+        )
     }
 
     fun requireForImportValidation(context: Context, importedSize: Long) {
@@ -82,6 +106,7 @@ internal object StorageSpaceGuard {
 
     fun requireForRestore(context: Context, incomingSize: Long, currentFile: File) {
         requireInternalSpace(context,
-            bytesForRestore(incomingSize, currentFile.length()), "відновлення БД")
+            bytesForRestore(incomingSize, databaseFootprintWithSidecars(currentFile)),
+            "відновлення БД")
     }
 }

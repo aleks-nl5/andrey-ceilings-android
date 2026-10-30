@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.andreyceilings.app.data.security.StorageSpaceGuard
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -40,5 +41,47 @@ class StorageSpaceGuardTest {
         // A startup warning is advisory, and the storage probe must work
         // before CeilingsDatabase.get() has opened the driver.
         StorageSpaceGuard.startupWarning(context)
+    }
+
+    @Test fun walSidecarsCountTowardsBackupRestoreAndStartupHeadroom() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val main = java.io.File.createTempFile(
+            "wal_space_accounting_", ".db", context.cacheDir
+        )
+        val wal = java.io.File(main.absolutePath + "-wal")
+        val shm = java.io.File(main.absolutePath + "-shm")
+        try {
+            java.io.RandomAccessFile(main, "rw").use { it.setLength(6 * mib) }
+            java.io.RandomAccessFile(wal, "rw").use { it.setLength(13 * mib) }
+            java.io.RandomAccessFile(shm, "rw").use { it.setLength(2 * mib) }
+            assertEquals(21 * mib, StorageSpaceGuard.databaseFootprintWithSidecars(main))
+            assertTrue(
+                StorageSpaceGuard.bytesForBackup(
+                    StorageSpaceGuard.databaseFootprintWithSidecars(main)
+                ) > StorageSpaceGuard.bytesForBackup(main.length())
+            )
+            assertTrue(
+                StorageSpaceGuard.bytesForRestore(
+                    4 * mib, StorageSpaceGuard.databaseFootprintWithSidecars(main)
+                ) > StorageSpaceGuard.bytesForRestore(4 * mib, main.length())
+            )
+            assertTrue(wal.delete())
+            assertEquals(8 * mib, StorageSpaceGuard.databaseFootprintWithSidecars(main))
+            assertTrue(shm.delete())
+            assertEquals(6 * mib, StorageSpaceGuard.databaseFootprintWithSidecars(main))
+        } finally {
+            wal.delete()
+            shm.delete()
+            main.delete()
+        }
+    }
+
+    @Test fun absentDatabaseAndSidecarsHaveZeroFootprint() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val absent = java.io.File(
+            context.cacheDir, "sqldelight_test_nonexistent_footprint.db"
+        )
+        assertFalse(absent.exists())
+        assertEquals(0L, StorageSpaceGuard.databaseFootprintWithSidecars(absent))
     }
 }
