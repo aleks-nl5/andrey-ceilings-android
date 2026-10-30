@@ -1,5 +1,7 @@
 package com.andreyceilings.shared.estimate
 
+import com.andreyceilings.shared.calculation.CeilingShapeTemplates
+import com.andreyceilings.shared.calculation.CeilingPolygonCalculator
 import com.andreyceilings.shared.calculation.GeometryInput
 import com.andreyceilings.shared.calculation.KmpCeilingCalculator
 import com.andreyceilings.shared.calculation.MeasurementPrecision
@@ -13,6 +15,67 @@ import kotlin.math.abs
  * old callers. Never use those defaults when creating a commercial L-shape.
  */
 object VerifiedCeilingGeometry {
+    private fun mm(value: Double, precision: MeasurementPrecision): Long {
+        require(value.isFinite() && value > 0.0) { "Ceiling measurements must be positive" }
+        val measured = precision.length(value)
+        require(measured > 0.0 && measured.isFinite()) { "Ceiling side is too small" }
+        return kotlin.math.round(measured * 1000.0).toLong()
+    }
+
+    /**
+     * New rectangular measurements are also evaluated as vertices. An old
+     * version-1 snapshot still follows its original frozen KMP calculation.
+     */
+    fun capturedRectangle(
+        lengthMeters: Double,
+        widthMeters: Double,
+        precisionStepMeters: Double
+    ): GeometryInput {
+        val precision = requireNotNull(MeasurementPrecision.fromStep(precisionStepMeters)) {
+            "Unsupported measurement precision"
+        }
+        val lengthMm = mm(lengthMeters, precision)
+        val widthMm = mm(widthMeters, precision)
+        val polygon = CeilingShapeTemplates.fromMeasurements(
+            "rectangle", mapOf("length" to lengthMm, "width" to widthMm)
+        )
+        CeilingPolygonCalculator.calculate(polygon, precisionStepMeters)
+        return GeometryInput(
+            shape = "rectangle",
+            length = lengthMm / 1000.0,
+            width = widthMm / 1000.0,
+            precisionStepMeters = precisionStepMeters,
+            verticesMm = polygon.vertices
+        )
+    }
+
+    /** Add vertices to a validated, six-side L-shape for unified pricing. */
+    fun polygonForCalculation(input: GeometryInput): GeometryInput {
+        val frozen = requireFrozenLShaped(input)
+        val precision = requireNotNull(
+            MeasurementPrecision.fromStep(frozen.precisionStepMeters!!)
+        )
+        val polygon = CeilingShapeTemplates.fromMeasurements(
+            "l_shaped", mapOf(
+                "A" to mm(frozen.sideA, precision),
+                "B" to mm(frozen.sideB, precision),
+                "C" to mm(frozen.sideC, precision),
+                "D" to mm(frozen.sideD, precision),
+                "E" to mm(frozen.sideE, precision),
+                "F" to mm(frozen.sideF, precision)
+            )
+        )
+        val generic = CeilingPolygonCalculator.calculate(
+            polygon, frozen.precisionStepMeters
+        ).geometry
+        val historical = KmpCeilingCalculator.geometry(frozen)
+        check(abs(generic.area - historical.area) < 0.000001 &&
+            abs(generic.perimeter - historical.perimeter) < 0.000001) {
+            "Polygon geometry must reproduce the historical six-side KMP result"
+        }
+        return frozen.copy(verticesMm = polygon.vertices)
+    }
+
     fun capturedLShaped(
         sides: List<Double>,
         precisionStepMeters: Double
