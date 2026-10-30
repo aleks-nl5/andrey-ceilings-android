@@ -1,5 +1,11 @@
 # Combined PR: SQLCipher WAL hardening + immutable estimate revisions v2/v3
 
+## Accepted v3 Android fix and protected end-to-end history (30 Oct 2026)
+
+The previous Android emulator run failed exactly one of 51 instrumentation tests because the nested `FrozenPolygonGeometryJson.readGeometryFields` allowed v2 only. Commit `75778c42` corrected its strict v2/v3 version gate. [Android CI #41128915568](https://github.com/aleks-nl5/andrey-ceilings-android/actions/runs/41128915568) and [Windows/iOS CI #41128915482](https://github.com/aleks-nl5/andrey-ceilings-android/actions/runs/41128915482) both passed, and the owner confirmed the APK works.
+
+An additional `MeasuredSidesV3EstimateRegressionTest` (not yet confirmed by CI) now creates, duplicates and reprices a genuinely measured orthogonal polygon through versions 1–3 in encrypted WAL, reopens the DB cold, builds all historical PDFs and rejects mismatched saved measured walls/turns. This test verifies side provenance across saved estimates rather than only `RoomMeasurementEntity.drawingJson`. No historical v1/v2 revision is rewritten. Keep this new CI as a separate pending acceptance gate.
+
 ## Implemented side-first orthogonal polygon and measurement drawings (30 Oct 2026)
 
 PR #29 now includes `OrthogonalSideContour` in KMP: exact measured wall lengths on the selected mm grid and left/right 90° turns; strict endpoint AND heading closure and shared `CeilingPolygonCalculator` shape validation. It does not auto-create the final side. Android's polygon editor in both Measurements and Calculator now shows side lengths and turns, never user-facing X/Y. `MeasurementDrawingPreview` displays the actual scaled contours and wall-length labels for each saved/new measurement; internal coordinates remain for drawing and pricing.
