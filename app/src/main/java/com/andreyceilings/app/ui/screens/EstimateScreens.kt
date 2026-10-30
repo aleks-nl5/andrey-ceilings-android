@@ -390,12 +390,14 @@ internal fun EstimatesScreen(database: CeilingsDatabase?) {
         )
     }
     activeHistory?.let { (id, number) ->
-        EstimateHistoryDialog(
-            database = database,
-            seriesUuid = id,
-            printableNumber = number,
-            onDismiss = { activeHistory = null }
-        )
+        if (database != null) {
+            EstimateHistoryDialog(
+                database = database,
+                seriesUuid = id,
+                printableNumber = number,
+                onDismiss = { activeHistory = null }
+            )
+        }
     }
     editingEstimate?.let { selected ->
         AppAlertDialog(
