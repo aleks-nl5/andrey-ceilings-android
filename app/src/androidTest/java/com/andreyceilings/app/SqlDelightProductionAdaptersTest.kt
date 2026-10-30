@@ -113,7 +113,7 @@ class SqlDelightProductionAdaptersTest {
      * Uses ONLY disposable sqldelight_test_ names; production remains DELETE.
      */
     @Test
-    fun walAdaptersAndEncryptedPortableBackupSurviveReopenWithoutRepricing() {
+    fun walAdaptersAndEncryptedPortableBackupSurviveReopenWithoutRepricing() = runBlocking {
         val context: Context = ApplicationProvider.getApplicationContext()
         val liveName = "sqldelight_test_wal_android_adapters.db"
         val copyName = "sqldelight_test_wal_android_backup_copy.db"
@@ -210,7 +210,8 @@ class SqlDelightProductionAdaptersTest {
                         restored.queryText("PRAGMA journal_mode")?.lowercase())
                     assertEquals(1, restored.clients().count())
                     assertEquals("WAL backup customer",
-                        restored.clients().all().single().name)
+                        com.andreyceilings.shared.db.ClientRepository(restored.database)
+                            .all().single().name)
                     val price = com.andreyceilings.shared.db.PriceRepository(restored.database)
                         .all().single()
                     assertEquals("WAL canvas", price.title)
