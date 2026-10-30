@@ -8,6 +8,9 @@ import com.andreyceilings.app.data.db.EstimateDao
 import com.andreyceilings.app.data.db.EstimateEntity
 import com.andreyceilings.shared.db.EstimateRepository
 import com.andreyceilings.shared.estimate.VerifiedCeilingGeometry
+import com.andreyceilings.shared.calculation.CeilingShapeTemplates
+import com.andreyceilings.shared.estimate.FrozenPolygonGeometryContract
+import com.andreyceilings.app.data.db.FrozenPolygonGeometryJson
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.flow.first
 import com.andreyceilings.shared.calculation.EstimateOptionId
@@ -553,6 +556,130 @@ class EstimateRevisionSnapshotAssemblerTest {
                 )
                 assertEquals("l_shaped", duplicateSource.getString("shape"))
                 assertEquals(3.0, duplicateSource.getDouble("sideE"), 0.0)
+                assertEquals(2L, compat.count())
+            }
+        } finally {
+            context.deleteDatabase(name)
+            key.fill(0)
+        }
+    }
+
+    @Test fun encryptedWalPolygonV2FirstSaveCopyV2V3AndTamperingFailClosed() = runBlocking {
+        val context: Context = ApplicationProvider.getApplicationContext()
+        val name = "sqldelight_test_polygon_v2_first_save.db"
+        val key = ByteArray(32) { 0x6A.toByte() }
+        context.deleteDatabase(name)
+        try {
+            createEncryptedPrototypeDriver(
+                context, key, name, enableWalForTesting = true
+            ).use { driver ->
+                val db = PrototypeDatabase(driver)
+                val projectId = ProjectRepository(db).createReturningId(
+                    clientId = null, title = "Polygon geometry v2", createdAt = 100L
+                )
+                val prices = PriceRepository(db)
+                val canvasId = prices.upsertReturningId(
+                    code = "canvas.pvc_matte", title = "Repriced canvas",
+                    category = "canvas", unit = "м²", price = 20.0, updatedAt = 200L
+                )
+                prices.upsertReturningId(
+                    code = "profile.standard_alu", title = "Repriced profile",
+                    category = "profile", unit = "м.п.", price = 6.0, updatedAt = 200L
+                )
+                val inputsMm = mapOf(
+                    "A" to 5000L, "B" to 4000L,
+                    "C" to 2000L, "D" to 2000L
+                )
+                val polygon = FrozenPolygonGeometryContract.capture(
+                    "l_shaped",
+                    CeilingShapeTemplates.fromMeasurements(
+                        "l_shaped", inputsMm
+                    ).vertices,
+                    inputsMm, 0.01
+                )
+                val initialLines = listOf(
+                    ImmutableEstimateLine(
+                        "canvas.pvc_matte", "Canvas v1", "м²",
+                        14.0, 10.0, 140.0
+                    ),
+                    ImmutableEstimateLine(
+                        "profile.standard_alu", "Profile v1", "м.п.",
+                        18.0, 5.0, 90.0
+                    )
+                )
+                val row = EstimateEntity(
+                    projectId = projectId, name = "L polygon v2",
+                    material = "pvc_matte", profileType = "standard_alu",
+                    complexity = "straight",
+                    lengthMeters = 5.0, widthMeters = 4.0,
+                    areaSquareMeters = 14.0, perimeterMeters = 18.0,
+                    canvasCost = 140.0, profileCost = 90.0,
+                    complexityCost = 0.0, optionsCost = 0.0,
+                    totalCost = 230.0, detailsJson = detailsJson(initialLines),
+                    frozenPolygon = polygon
+                )
+                val compat = EstimateRepository(db)
+                val dao = EstimateDao(compat)
+                val id = dao.insert(row)
+                val source = compat.originalRevisionInputForId(id)!!
+                val parsed = JSONObject(source)
+                assertEquals(2L, parsed.getLong("geometrySchemaVersion"))
+                assertEquals("l_shaped", parsed.getString("shape"))
+                assertEquals(6, parsed.getJSONArray("vertices").length())
+                assertEquals(4, parsed.getJSONObject("measurementsMm").length())
+                assertEquals(polygon, FrozenPolygonGeometryJson.read(parsed, 0.01))
+                assertTrue(!parsed.has("sideE"))
+                assertTrue(!parsed.has("lengthMeters"))
+                val loaded = dao.observeAll().first().single()
+                assertEquals(polygon, loaded.frozenPolygon)
+                val copyId = dao.insert(
+                    loaded.copy(id = 0L, name = "L copy", createdAt = 160L)
+                )
+                val copySource = JSONObject(
+                    compat.originalRevisionInputForId(copyId)!!
+                )
+                assertEquals(2L, copySource.getLong("geometrySchemaVersion"))
+                assertEquals(polygon,
+                    FrozenPolygonGeometryJson.read(copySource, 0.01))
+                val history = ImmutableEstimateRepository(db)
+                val seriesUuid = checkNotNull(compat.find(id)?.seriesUuid)
+                val original = history.revisions(seriesUuid).single()
+                assertEquals(FrozenPolygonGeometryContract.CALCULATION_RULE_VERSION,
+                    original.calculationRuleVersion)
+                val assembler = EstimateRevisionSnapshotAssembler(db)
+                val prepared = assembler.prepareLatestSimpleRectangle(seriesUuid)
+                assertEquals(388.0, prepared.draft.totalCost, 0.0)
+                assertEquals(source, prepared.draft.sourceMeasurementJson)
+                val v2 = assembler.confirmPreparedRectangle(prepared, createdAt = 220L)
+                assertEquals(2L, v2.versionNumber)
+                prices.upsertReturningId(
+                    id = canvasId, code = "canvas.pvc_matte",
+                    title = "Canvas v3", category = "canvas",
+                    unit = "м²", price = 21.0, updatedAt = 230L
+                )
+                val preparedV3 = assembler.prepareLatestSimpleRectangle(seriesUuid)
+                assertEquals(402.0, preparedV3.draft.totalCost, 0.0)
+                val v3 = assembler.confirmPreparedRectangle(preparedV3, createdAt = 240L)
+                assertEquals(3L, v3.versionNumber)
+                assertEquals(listOf(230.0, 388.0, 402.0),
+                    history.revisions(seriesUuid).map { it.totalCost })
+                assertEquals(source,
+                    history.revision(v3.revisionUuid)!!.sourceMeasurementJson)
+                assertEquals("Canvas v1",
+                    history.lines(original.revisionUuid).first().titleSnapshot)
+                val badValues = listOf(
+                    polygon.copy(vertices = polygon.vertices.reversed()),
+                    polygon.copy(measurementsMm = polygon.measurementsMm - "C"),
+                    polygon.copy(areaSquareMeters = 13.0)
+                )
+                badValues.forEach { corrupted ->
+                    assertTrue(runCatching {
+                        dao.insert(row.copy(
+                            name = "Invalid geometry",
+                            frozenPolygon = corrupted
+                        ))
+                    }.isFailure)
+                }
                 assertEquals(2L, compat.count())
             }
         } finally {
