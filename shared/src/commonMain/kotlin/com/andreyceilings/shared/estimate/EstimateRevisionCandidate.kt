@@ -240,14 +240,14 @@ object EstimateRevisionCandidates {
                 "Frozen complexity and option rows must use the canonical order"
             }
             if (complexityCode != null) {
-                val complexity = source.lines[2]
+                val complexityLine = source.lines[2]
                 val ratio = if (complexity == "multilevel") 0.35 else 0.25
                 val requiredLength = kotlin.math.max(
                     2.0, precision.length(geometry.perimeter * ratio)
                 )
-                check(complexity.stableCode == complexityCode &&
-                    complexity.unit == "м.п." &&
-                    kotlin.math.abs(complexity.quantity - requiredLength) < 0.000001) {
+                check(complexityLine.stableCode == complexityCode &&
+                    complexityLine.unit == "м.п." &&
+                    kotlin.math.abs(complexityLine.quantity - requiredLength) < 0.000001) {
                     "Frozen complexity code, unit or measured length is inconsistent"
                 }
             }
