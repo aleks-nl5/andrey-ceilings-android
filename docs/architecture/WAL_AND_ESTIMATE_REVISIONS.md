@@ -1,5 +1,13 @@
 # Combined PR: SQLCipher WAL hardening + immutable estimate revisions v2/v3
 
+## First-save Android L-shaped geometry and version-safe PDF (30 Oct 2026)
+
+Android's calculator now offers rectangle and L-shaped rooms (user-supplied sides A–F). `VerifiedCeilingGeometry.capturedLShaped` performs finite-positive, selected-precision, orthogonal closure and non-fallback-area validation in pure common KMP before pricing. At first INSERT, Android supplies this exact typed geometry to the SQLDelight adapter, which rechecks precision and computed area/perimeter and freezes all six sides, shape and `geometrySchemaVersion` in the immutable v1 input. The compatibility estimate row's length/width are **only the outer bounding dimensions**, never the complete historical geometry.
+
+On reading an L-shaped estimate from SQLDelight, the Android adapter retrieves its original immutable input and validates its six sides, including for duplication, so creating a copy cannot turn L geometry into a rectangle. Historical PDF reconstruction reads the selected immutable revision and renders its six sides, not the bounding rectangle. Direct export of v1 also resolves the immutable SQLDelight snapshot (never mutable UI state). Shared KMP tests cover captured/frozen geometry; encrypted Android WAL tests cover creation, reload/copy, v1/v2 revision and PDF for both versions. No production data migrations are needed merely for the disposable current test DB.
+
+**Merge gate:** CI for Android, Windows and iOS after these commits, then physical Release APK acceptance of v1/v2/v3, geometry, immutable PDF and `.stpb` recovery. PR remains Draft; no merge without owner approval.
+
 ## Extensible frozen geometry foundation (30 Oct 2026)
 
 The immutable `sourceMeasurementJson` now carries an explicit `shape` and `geometrySchemaVersion=1` for newly created rectangular estimates. The cross-platform `FrozenGeometrySnapshotSchema` lists exact required shape-specific input keys; its Android SQLDelight reader rejects unknown versions, shapes, missing sides, and unexpected data. Existing older test snapshots can be read without rewriting them. Shape-specific numeric validation is still performed by KMP, independently from the schema/key check. Every revision retains its original inputs, historical amounts, and document identity.
