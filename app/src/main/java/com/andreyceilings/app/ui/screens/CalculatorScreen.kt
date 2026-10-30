@@ -58,10 +58,11 @@ internal fun CalculatorScreen(
     geometryShape: String, onGeometryShape: (String) -> Unit,
     shapeMeasurements: Map<String, String>,
     onShapeMeasurement: (String, String) -> Unit,
-    polygonVertices: List<Pair<String, String>>,
-    onPolygonVertex: (Int, Pair<String, String>) -> Unit,
-    onAddPolygonVertex: () -> Unit,
-    onRemovePolygonVertex: (Int) -> Unit,
+    polygonSides: List<Pair<String, com.andreyceilings.shared.calculation.OrthogonalTurn>>,
+    legacyPolygonSource: com.andreyceilings.shared.estimate.FrozenPolygonGeometry?,
+    onPolygonSide: (Int, Pair<String, com.andreyceilings.shared.calculation.OrthogonalTurn>) -> Unit,
+    onAddPolygonSide: () -> Unit,
+    onRemovePolygonSide: (Int) -> Unit,
     price: String, onPrice: (String) -> Unit,
     profilePrice: String, onProfilePrice: (String) -> Unit,
     material: String, onMaterial: (String) -> Unit,
@@ -142,11 +143,19 @@ internal fun CalculatorScreen(
         }
     }
     if (geometryShape == "polygon") {
-        PolygonVerticesEditor(
-            vertices = polygonVertices,
-            onEdit = onPolygonVertex,
-            onAdd = onAddPolygonVertex,
-            onRemove = onRemovePolygonVertex
+        if (legacyPolygonSource != null) {
+            Text(
+                "Історичний замір багатокутника: вихідні сторони не були збережені. " +
+                    "Його можна розрахувати без змін; щоб створити новий замір, " +
+                    "виберіть форму повторно й введіть сторони.",
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodySmall
+            )
+        } else OrthogonalSidesEditor(
+            sides = polygonSides,
+            onEdit = onPolygonSide,
+            onAdd = onAddPolygonSide,
+            onRemove = onRemovePolygonSide
         )
     }
     var precisionExpanded by remember { mutableStateOf(false) }
@@ -260,20 +269,31 @@ internal fun CalculatorScreen(
         val numericInputs = shapeMeasurements.mapValues { (_, value) ->
             value.trim().replace(',', '.').toDoubleOrNull() ?: Double.NaN
         }
-        val verified = if (geometryShape == "polygon") {
-            capturedPolygonFromText(polygonVertices, measurementPrecision.stepMeters)
-        } else VerifiedCeilingGeometry.capturedTemplate(
-            geometryShape, numericInputs, measurementPrecision.stepMeters
-        )
-        val measurementsMm = if (geometryShape == "polygon") emptyMap() else
-            numericInputs.mapValues { (_, value) ->
+        if (geometryShape == "polygon") {
+            if (legacyPolygonSource != null) {
+                FrozenPolygonGeometryContract.requireValid(legacyPolygonSource)
+            } else {
+                FrozenPolygonGeometryContract.captureSides(
+                    sidesFromText(polygonSides, measurementPrecision.stepMeters),
+                    measurementPrecision.stepMeters
+                )
+            }
+        } else {
+            val verified = VerifiedCeilingGeometry.capturedTemplate(
+                geometryShape, numericInputs, measurementPrecision.stepMeters
+            )
+            val measurementsMm = numericInputs.mapValues { (_, value) ->
                 kotlin.math.round(measurementPrecision.length(value) * 1000.0).toLong()
             }
-        FrozenPolygonGeometryContract.capture(
-            geometryShape, verified.verticesMm, measurementsMm,
-            measurementPrecision.stepMeters
-        )
+            FrozenPolygonGeometryContract.capture(
+                geometryShape, verified.verticesMm, measurementsMm,
+                measurementPrecision.stepMeters
+            )
+        }
     }.getOrNull() else null
+    if (frozenPolygon != null) {
+        MeasurementDrawingPreview(frozenPolygon)
+    }
     Button(
         onClick = { showSaveDialog = true },
         modifier = Modifier.fillMaxWidth(),
