@@ -204,4 +204,134 @@ class EstimateRevisionSnapshotAssemblerTest {
             key.fill(0)
         }
     }
+
+    @Test fun encryptedWalAtomicConfirmationRejectsStalePreviewAndRollsBack() {
+        val context: Context = ApplicationProvider.getApplicationContext()
+        val name = "sqldelight_test_revision_atomic_confirm.db"
+        val key = ByteArray(32) { 0x4f.toByte() }
+        context.deleteDatabase(name)
+        try {
+            createEncryptedPrototypeDriver(
+                context, key, name, enableWalForTesting = true
+            ).use { driver ->
+                val db = PrototypeDatabase(driver)
+                val project = ProjectRepository(db).createReturningId(
+                    clientId = null, title = "Versioned project", createdAt = 100L
+                )
+                val prices = PriceRepository(db)
+                prices.upsertReturningId(
+                    code = "canvas.pvc_matte", title = "New canvas",
+                    category = "canvas", unit = "м²", price = 20.0, updatedAt = 100L
+                )
+                prices.upsertReturningId(
+                    code = "profile.standard_alu", title = "New profile",
+                    category = "profile", unit = "м.п.", price = 6.0, updatedAt = 100L
+                )
+                val spotId = prices.upsertReturningId(
+                    code = EstimateOptionId.SPOT.code, title = "New spot",
+                    category = "lighting", unit = "шт.", price = 25.0, updatedAt = 100L
+                )
+                val original = listOf(
+                    ImmutableEstimateLine(
+                        "canvas.pvc_matte", "Old canvas", "м²", 6.0, 10.0, 60.0
+                    ),
+                    ImmutableEstimateLine(
+                        "profile.standard_alu", "Old profile", "м.п.", 10.0, 5.0, 50.0
+                    ),
+                    ImmutableEstimateLine(
+                        EstimateOptionId.SPOT.code, "Old spot", "шт.", 2.0, 11.0, 22.0
+                    )
+                )
+                val v1 = ImmutableEstimateDraft(
+                    sourceMeasurementJson = sourceJson(),
+                    detailsJson = detailsJson(original, optionValue = 2.0),
+                    measurementPrecisionMeters = 0.01,
+                    calculationRuleVersion = "kmp-v1",
+                    totalCost = 132.0, lines = original
+                )
+                val history = ImmutableEstimateRepository(db)
+                val created = history.createSeries(
+                    projectId = project, year = 2026, createdAt = 200L,
+                    firstRevision = v1
+                )
+                val number = history.series(created.seriesUuid)!!.documentNumber
+                val assembler = EstimateRevisionSnapshotAssembler(db)
+                val v2Preview = assembler.prepareLatestSimpleRectangle(created.seriesUuid)
+                assertEquals(1, history.revisions(created.seriesUuid).size)
+                assertEquals(230.0, v2Preview.draft.totalCost, 0.0)
+
+                val v2 = assembler.confirmPreparedRectangle(v2Preview, 300L)
+                assertEquals(2L, v2.versionNumber)
+                assertEquals(created.initialRevisionUuid,
+                    history.revision(v2.revisionUuid)!!.parentRevisionUuid)
+                assertEquals(230.0, history.revision(v2.revisionUuid)!!.totalCost, 0.0)
+                assertEquals(132.0,
+                    history.revision(created.initialRevisionUuid)!!.totalCost, 0.0)
+                assertEquals("Old canvas",
+                    history.lines(created.initialRevisionUuid).first().titleSnapshot)
+                assertEquals(number, history.series(created.seriesUuid)!!.documentNumber)
+                assertEquals(3, history.lines(v2.revisionUuid).size)
+
+                // A second confirmation of the same v1 proposal cannot
+                // create an extra v2 or overwrite the accepted v2.
+                assertTrue(runCatching {
+                    assembler.confirmPreparedRectangle(v2Preview, 301L)
+                }.isFailure)
+                assertEquals(2, history.revisions(created.seriesUuid).size)
+
+                // An unrelated added price changes the full catalog token,
+                // despite not changing the estimate's amount.
+                val staleV3 = assembler.prepareLatestSimpleRectangle(created.seriesUuid)
+                prices.upsertReturningId(
+                    code = "work.unused", title = "Unrelated",
+                    category = "work", unit = "шт.", price = 3.0, updatedAt = 101L
+                )
+                assertTrue(runCatching {
+                    assembler.confirmPreparedRectangle(staleV3, 400L)
+                }.isFailure)
+
+                // Detect same-timestamp price edits, not just max(updatedAt).
+                val oldPriceV3 = assembler.prepareLatestSimpleRectangle(created.seriesUuid)
+                prices.upsertReturningId(
+                    id = spotId, code = EstimateOptionId.SPOT.code,
+                    title = "Renamed spot", category = "lighting",
+                    unit = "шт.", price = 30.0, updatedAt = 100L
+                )
+                assertTrue(runCatching {
+                    assembler.confirmPreparedRectangle(oldPriceV3, 401L)
+                }.isFailure)
+                assertEquals(2, history.revisions(created.seriesUuid).size)
+
+                // Even a failure AFTER the header and lines were inserted
+                // must roll back the complete nested transaction.
+                val validV3 = assembler.prepareLatestSimpleRectangle(created.seriesUuid)
+                assertEquals(240.0, validV3.draft.totalCost, 0.0)
+                val deliberate = IllegalStateException("Injected after immutable INSERT")
+                val interrupted = runCatching {
+                    assembler.confirmPreparedRectangle(
+                        validV3, 402L, afterInsertForTesting = { throw deliberate }
+                    )
+                }
+                assertTrue(interrupted.exceptionOrNull() === deliberate)
+                assertEquals(2, history.revisions(created.seriesUuid).size)
+
+                val v3 = assembler.confirmPreparedRectangle(validV3, 403L)
+                assertEquals(3L, v3.versionNumber)
+                assertEquals(v2.revisionUuid,
+                    history.revision(v3.revisionUuid)!!.parentRevisionUuid)
+                assertEquals(240.0, history.revision(v3.revisionUuid)!!.totalCost, 0.0)
+                assertEquals("Renamed spot",
+                    history.lines(v3.revisionUuid).last().titleSnapshot)
+                assertEquals(listOf(1L, 2L, 3L),
+                    history.revisions(created.seriesUuid).map { it.versionNumber })
+                assertEquals(number, history.series(created.seriesUuid)!!.documentNumber)
+                assertEquals(132.0,
+                    history.revision(created.initialRevisionUuid)!!.totalCost, 0.0)
+                assertEquals(230.0, history.revision(v2.revisionUuid)!!.totalCost, 0.0)
+            }
+        } finally {
+            context.deleteDatabase(name)
+            key.fill(0)
+        }
+    }
 }
