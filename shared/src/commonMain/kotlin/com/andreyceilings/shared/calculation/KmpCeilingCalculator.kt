@@ -22,7 +22,9 @@ data class GeometryInput(
     val sideF: Double = 0.0,
     val diagonal1: Double = 0.0,
     val customSides: List<Double> = emptyList(),
-    val precisionStepMeters: Double? = null
+    val precisionStepMeters: Double? = null,
+    /** New straight-edged input: ordered coordinates, not a second formula. */
+    val verticesMm: List<CeilingPointMm> = emptyList()
 )
 
 data class RoomGeometry(val area: Double, val perimeter: Double, val cornersCount: Int)
@@ -112,6 +114,16 @@ object KmpCeilingCalculator {
     private fun nonnegative(value: Double): Double = if (value < 0.0) 0.0 else value
 
     fun geometry(input: GeometryInput): RoomGeometry {
+        if (input.verticesMm.isNotEmpty() || input.shape == "polygon") {
+            // Modern captured shapes use one validated polygon algorithm.
+            // Old snapshots without vertices keep their original rule version.
+            return CeilingPolygonCalculator.calculate(
+                CeilingPolygon(input.shape, input.verticesMm),
+                requireNotNull(input.precisionStepMeters) {
+                    "Polygon geometry requires explicit measurement precision"
+                }
+            ).geometry
+        }
         val step = input.precisionStepMeters
         require(step == null || step in setOf(0.1, 0.01, 0.005, 0.001)) {
             "Unsupported measurement precision"
