@@ -1,5 +1,13 @@
 # Combined PR: SQLCipher WAL hardening + immutable estimate revisions v2/v3
 
+## Implemented side-first orthogonal polygon and measurement drawings (30 Oct 2026)
+
+PR #29 now includes `OrthogonalSideContour` in KMP: exact measured wall lengths on the selected mm grid and left/right 90° turns; strict endpoint AND heading closure and shared `CeilingPolygonCalculator` shape validation. It does not auto-create the final side. Android's polygon editor in both Measurements and Calculator now shows side lengths and turns, never user-facing X/Y. `MeasurementDrawingPreview` displays the actual scaled contours and wall-length labels for each saved/new measurement; internal coordinates remain for drawing and pricing.
+
+The immutable polygon schema v3 extends v2 only for the side-based form with an ordered typed `sides` array (`lengthMm`, `turnAfter`); the reader and shared KMP contract reconstruct and compare every vertex, area and perimeter. Existing v1/v2 history remains readable and unmodified. Android PDF uses actual walls/turns for v3 while retaining the historical v2 vertex labels. A v2 polygon source lacks original measured turns; it remains viewable and usable without fabricated values.
+
+Tests: `OrthogonalSideContourTest` in shared/commonTest and a new v3 encrypted WAL measurement round-trip/tampering test. Latest Android/Windows/iOS CI and physical APK acceptance for this milestone remain pending. Separate interactive drawing mode and new shape templates are intentionally deferred.
+
 ## Approved superseding measurement UX: sides + turns, drawing for all shapes (30 Oct 2026)
 
 **Owner-approved architecture decision:** [`MEASUREMENTS_SIDES_AND_DRAWINGS.md`](MEASUREMENTS_SIDES_AND_DRAWINGS.md) is the authoritative UX design for PR #29 and subsequent drawing work. Existing X/Y vertex entry code described below is an **intermediate implementation to be replaced**, not the approved user-facing measurement method. Keep vertices internally for calculation, persistence and drawing; users enter measured **wall lengths and 90° left/right turns** for an **orthogonal polygon**. The side contour must close from measured values; never silently synthesize an edge or “correct” dimensions. General non-right-angle polygons cannot be reconstructed from edge lengths alone, and will require diagonals/angles in a later contract.
