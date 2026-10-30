@@ -300,7 +300,11 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
     val calculation = remember(length, width, geometryShape, lShapedSides.toList(), pricePerM2, profilePrice, priceItems, calculatorOptions, material, profileType, measurementPrecision) {
         runCatching {
             val verifiedGeometry = when (geometryShape) {
-                FrozenCeilingShape.RECTANGLE.wireId -> null
+                FrozenCeilingShape.RECTANGLE.wireId ->
+                    VerifiedCeilingGeometry.capturedRectangle(
+                        length.toSafeDouble(), width.toSafeDouble(),
+                        measurementPrecision.stepMeters
+                    )
                 FrozenCeilingShape.L_SHAPED.wireId -> VerifiedCeilingGeometry.capturedLShaped(
                     lShapedSides.map {
                         it.trim().replace(',', '.').toDoubleOrNull() ?: Double.NaN
