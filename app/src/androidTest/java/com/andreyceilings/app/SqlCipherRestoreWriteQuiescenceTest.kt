@@ -15,6 +15,15 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
 import java.util.concurrent.ConcurrentLinkedQueue
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.first
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -231,6 +240,86 @@ class SqlCipherRestoreWriteQuiescenceTest {
                 snapshot.delete()
                 image.fill(0)
                 key.fill(0)
+            }
+        }
+    }
+
+    /**
+     * Physical-device regression: a user restores a portable backup while
+     * Compose still collects an asFlow query bound to the OLD SQLCipher driver.
+     *
+     * Closing the old driver is required to install the encrypted image;
+     * cancellation then calls SQLDelight's removeListener() AFTER close.
+     * The old listener must detach harmlessly rather than crash the UI.
+     * The stale driver must still reject writes, and a new Flow must work.
+     */
+    @Test fun lateFlowCancellationAfterPortableRestoreDoesNotCrashUi() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val old = CeilingsDatabase.get(context)
+        val originalKey = DatabaseKeyManager.getOrCreatePassphrase(context)
+        val snapshot = PortableBackupManager.createVerifiedSnapshot(context, old)
+        val image = snapshot.readBytes()
+        val originalNames = ProjectRepository(old.database).all()
+            .map { it.title }.sorted()
+        val subscribed = CompletableDeferred<Unit>()
+        val oldFlow = launch(Dispatchers.Default) {
+            old.clients().observeAll().collect {
+                subscribed.complete(Unit)
+            }
+        }
+        try {
+            withTimeout(15_000L) { subscribed.await() }
+            val installed = withContext(Dispatchers.IO) {
+                SqlCipherRestoreManager.restore(
+                    context, PortableBackupPayload.Contents(image, originalKey)
+                )
+            }
+            assertTrue("Restored SQLCipher database failed integrity check",
+                installed.checkIntegrity())
+            assertEquals("Restore must preserve WAL on the new driver", "wal",
+                installed.queryText("PRAGMA journal_mode")?.lowercase())
+
+            // This used to fail with RestorableSqlDriver.removeListener:
+            // IllegalStateException("БД була замінена...") from asFlow finally.
+            oldFlow.cancelAndJoin()
+
+            // The fix must not turn stale database handles into writable ones.
+            val staleWrite = runCatching {
+                ProjectRepository(old.database).createReturningId(
+                    clientId = null, title = "Stale Flow must not permit writes",
+                    createdAt = 902001L
+                )
+            }
+            assertTrue("Old SQLCipher handle accepted a stale write",
+                staleWrite.isFailure)
+            assertEquals(originalNames,
+                ProjectRepository(installed.database).all()
+                    .map { it.title }.sorted())
+
+            // UI must be able to subscribe afresh to the installed DB.
+            val freshNames = withTimeout(15_000L) {
+                installed.clients().observeAll().first().map { it.name }
+            }
+            assertEquals(installed.clients().count(),
+                freshNames.size)
+            assertTrue(installed.checkIntegrity())
+        } finally {
+            try {
+                oldFlow.cancelAndJoin()
+            } finally {
+                try {
+                    withContext(Dispatchers.IO) {
+                        CeilingsDatabase.closeAndReset()
+                        SqlCipherRestoreManager.recoverIfNeeded(context)
+                        SqlCipherRestoreManager.restore(
+                            context, PortableBackupPayload.Contents(image, originalKey)
+                        )
+                    }
+                } finally {
+                    snapshot.delete()
+                    image.fill(0)
+                    originalKey.fill(0)
+                }
             }
         }
     }

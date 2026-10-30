@@ -115,8 +115,24 @@ private class RestorableSqlDriver(
         delegate.addListener(*queryKeys, listener = listener)
     }
 
-    override fun removeListener(vararg queryKeys: String, listener: Query.Listener) = withRead {
-        delegate.removeListener(*queryKeys, listener = listener)
+    override fun removeListener(vararg queryKeys: String, listener: Query.Listener) {
+        // An active Compose / SQLDelight asFlow() collector can be cancelled
+        // *after* a successful encrypted restore has closed its old driver.
+        // Removing that obsolete listener is cleanup, not a database read or
+        // write. It must be harmless after close, otherwise SQLDelight's
+        // Flow finally block throws on the UI dispatcher and crashes the app.
+        //
+        // Keep the same read lease used by regular operations so a concurrent
+        // restore cannot close the delegate between this check and removal.
+        // All query, transaction and write operations still fail on stale
+        // drivers, as required by the restore safety gate.
+        val lock = access.readLock()
+        lock.lock()
+        try {
+            if (!closed) delegate.removeListener(*queryKeys, listener = listener)
+        } finally {
+            lock.unlock()
+        }
     }
 
     override fun notifyListeners(vararg queryKeys: String) = withRead {
