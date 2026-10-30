@@ -1,5 +1,13 @@
 # Combined PR: SQLCipher WAL hardening + immutable estimate revisions v2/v3
 
+## Extensible frozen geometry foundation (30 Oct 2026)
+
+The immutable `sourceMeasurementJson` now carries an explicit `shape` and `geometrySchemaVersion=1` for newly created rectangular estimates. The cross-platform `FrozenGeometrySnapshotSchema` lists exact required shape-specific input keys; its Android SQLDelight reader rejects unknown versions, shapes, missing sides, and unexpected data. Existing older test snapshots can be read without rewriting them. Shape-specific numeric validation is still performed by KMP, independently from the schema/key check. Every revision retains its original inputs, historical amounts, and document identity.
+
+Only rectangle and six-side orthogonal L-shape have supported immutable replay contracts today. Future T/U/trapezoids/polygons/arcs must introduce complete typed inputs (including required vertices/diagonals/curve definitions), verified calculations, and cross-platform tests. Do not invent geometry from area/perimeter; do not reinterpret historical v1/v2/v3 when adding a shape. Android L input UI + full first-save source remain a separate implementation gate.
+
+CI analysis of prior green SHA `13f0693c`: emulator/instrumentation took approximately five minutes, iOS simulator framework link almost seven minutes. Preserve those gates; optimize setup/caching only after verifying correctness.
+
 **Test-only reset exception (owner clarification, 2026-10-30):** The current local test database and historical *test* `.stpb` archives may be discarded; compatibility migrations for those inputs are not a release gate. This exception does NOT weaken immutable v1/v2/v3 revisions, persisted price and PDF snapshots, production encrypted backups/restores for the new schema, crash safety, SQLCipher WAL correctness, cross-platform CI, device acceptance, or owner-approved merge. Retain fail-closed validation for incomplete geometry. `main` remains unchanged.
 
 Status: **DRAFT / incremental, not ready to merge**. Based on `main` after merged PR #28 (`07d60f5`). Tracks [#24](https://github.com/aleks-nl5/andrey-ceilings-android/issues/24) and [#26](https://github.com/aleks-nl5/andrey-ceilings-android/issues/26).
