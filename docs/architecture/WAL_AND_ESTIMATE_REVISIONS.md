@@ -1,5 +1,17 @@
 # Combined PR: SQLCipher WAL hardening + immutable estimate revisions v2/v3
 
+## Current policy for Android WAL and SAF (31 Oct 2026)
+
+**Owner-approved final scope:** the live SQLCipher DB and its WAL/SHM files are held in Android private internal storage, with proven real /data ENOSPC for both staged restore and SQLite WAL INSERT ([Android CI #41179759728](https://github.com/aleks-nl5/andrey-ceilings-android/actions/runs/41179759728)). External/cloud SAF destinations are user-selected **exports**, not live database storage. No separate full-SD/cloud stress tests will be added to PR #29; error handling for failed export/automatic backups must remain in place.
+
+An additional **small, observational WAL policy** has been committed, requiring fresh Android CI:
+- The existing DB diagnostics now reads effective `busy_timeout`, `wal_autocheckpoint`, `synchronous`, and `.db/-wal/-shm` physical bytes plus a session-local last manual `PASSIVE` checkpoint. No PRAGMA setter is invoked by the diagnostic screen.
+- `SqlCipherWalOperationalPolicyTest` samples WAL growth over 160 real encrypted transactions and checks idle `PASSIVE`, integrity, settings and cold reopen without requiring a hardcoded WAL file-size ceiling.
+- We retain the native SQLCipher/SQLite auto-checkpoint and busy timeout, avoid arbitrary retry/timeouts, frequent `FULL`, background idle workers, explicit WAL deletion and redundant Android services.
+- Full current rules: [WAL_OPERATION_POLICY.md](WAL_OPERATION_POLICY.md).
+
+The earlier “ENOSPC not yet tested”, “production still DELETE”, “awaiting Android CI”, and X/Y editor notes **below are historical intermediate checkpoints, not current blockers**. PR remains Draft, main unchanged.
+
 ## Real emulator /data ENOSPC proof after approved polygon APK (30 Oct 2026)
 
 The owner explicitly confirmed **complete manual polygon acceptance works**. Android [#41137038122](https://github.com/aleks-nl5/andrey-ceilings-android/actions/runs/41137038122) and Windows/iOS [#41137038029](https://github.com/aleks-nl5/andrey-ceilings-android/actions/runs/41137038029) also passed for the earlier `b417b80f` head. The previous roadmap item for manual polygon acceptance is now closed.
