@@ -47,6 +47,7 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.semantics.contentDescription
@@ -409,6 +410,15 @@ private fun PriceEditorDialog(
                 if (mode == PriceEditorMode.FULL) {
                     OutlinedTextField(value = title, onValueChange = { title = it },
                         label = { Text("Назва *") }, singleLine = true, enabled = !pending)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.Top
+                    ) {
+                        Column(
+                            modifier = Modifier.weight(0.60f),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
                     Text("Категорія *", style = MaterialTheme.typography.labelMedium)
                     if (customCategory) {
                         OutlinedTextField(
@@ -430,7 +440,8 @@ private fun PriceEditorDialog(
                             OutlinedButton(
                                 onClick = { showCategories = true },
                                 enabled = !pending,
-                                modifier = Modifier.fillMaxWidth()
+                                modifier = Modifier.fillMaxWidth(),
+                                contentPadding = PaddingValues(horizontal = 6.dp)
                             ) {
                                 Row(
                                     Modifier.fillMaxWidth(),
@@ -438,7 +449,9 @@ private fun PriceEditorDialog(
                                 ) {
                                     Text(
                                         category.ifBlank { "Оберіть категорію" },
-                                        modifier = Modifier.weight(1f)
+                                        modifier = Modifier.weight(1f),
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
                                     )
                                     Text("▾")
                                 }
@@ -461,59 +474,47 @@ private fun PriceEditorDialog(
                             }
                         }
                     }
-                } else {
-                    Text(initial?.title.orEmpty())
-                }
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                    verticalAlignment = Alignment.Top
-                ) {
-                    if (mode == PriceEditorMode.FULL) {
-                        Column(modifier = Modifier.weight(0.45f)) {
+
+                        }
+                        Column(
+                            modifier = Modifier.weight(0.40f),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Text("Одиниця", style = MaterialTheme.typography.labelMedium)
                             if (customUnit) {
                                 OutlinedTextField(
                                     value = unit,
                                     onValueChange = { unit = it },
-                                    label = { Text("Одиниця") },
-                                    trailingIcon = {
-                                        IconButton(
-                                            onClick = {
-                                                customUnit = false
-                                                showUnits = true
-                                            },
-                                            enabled = !pending
-                                        ) { Text("▾") }
-                                    },
+                                    label = { Text("Власна одиниця") },
                                     singleLine = true,
                                     enabled = !pending,
                                     modifier = Modifier.fillMaxWidth()
                                 )
+                                TextButton(
+                                    onClick = { customUnit = false; unit = "" },
+                                    enabled = !pending
+                                ) { Text("Зі списку") }
                             } else {
                                 androidx.compose.foundation.layout.Box(Modifier.fillMaxWidth()) {
-                                    // Same Material3 outline, floating label and
-                                    // height as the price text field beside it.
-                                    OutlinedTextField(
-                                        value = unit,
-                                        onValueChange = {},
-                                        readOnly = true,
-                                        label = { Text("Одиниця") },
-                                        trailingIcon = { Text("▾") },
-                                        singleLine = true,
+                                    OutlinedButton(
+                                        onClick = { showUnits = true },
                                         enabled = !pending,
-                                        modifier = Modifier.fillMaxWidth()
-                                    )
-                                    // Let the entire field open the dropdown without
-                                    // giving focus to a read-only keyboard control.
-                                    androidx.compose.foundation.layout.Box(
-                                        Modifier.matchParentSize()
-                                            .semantics {
-                                                contentDescription = "Обрати одиницю вимірювання"
-                                            }
-                                            .clickable(enabled = !pending) {
-                                                showUnits = true
-                                            }
-                                    )
+                                        modifier = Modifier.fillMaxWidth(),
+                                        contentPadding = PaddingValues(horizontal = 4.dp)
+                                    ) {
+                                        Row(
+                                            Modifier.fillMaxWidth(),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text(
+                                                unit.ifBlank { "Оберіть" },
+                                                modifier = Modifier.weight(1f),
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                            Text("▾")
+                                        }
+                                    }
                                     DropdownMenu(
                                         expanded = showUnits,
                                         onDismissRequest = { showUnits = false }
@@ -532,12 +533,29 @@ private fun PriceEditorDialog(
                                     }
                                 }
                             }
+
                         }
+                    }
+                } else {
+                    Text(initial?.title.orEmpty())
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    if (mode == PriceEditorMode.FULL) {
+                        Text(
+                            "Зміни прайсу не змінюють історичні кошториси.",
+                            modifier = Modifier.weight(0.65f),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
                     OutlinedTextField(
                         value = price, onValueChange = { price = it },
                         label = { Text(if (mode == PriceEditorMode.FULL) "Ціна, ₴ *" else "Ціна продажу, ₴ *") },
-                        modifier = (if (mode == PriceEditorMode.FULL) Modifier.weight(0.55f) else Modifier.fillMaxWidth())
+                        modifier = (if (mode == PriceEditorMode.FULL) Modifier.weight(0.35f) else Modifier.fillMaxWidth())
                             .onFocusChanged { focus ->
                                 if (focus.isFocused) priceTapRequests++
                             }
@@ -559,10 +577,15 @@ private fun PriceEditorDialog(
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                         singleLine = true, enabled = !pending
                     )
+
                 }
-                Text("Зміни прайсу не змінюють історичні кошториси.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (mode == PriceEditorMode.QUICK) {
+                    Text(
+                        "Зміни прайсу не змінюють історичні кошториси.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
                 errorMessage?.let {
                     Text(it, style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.error)
