@@ -29,6 +29,8 @@ import com.andreyceilings.app.data.db.*
 import com.andreyceilings.app.core.EstimateLineItems
 import com.andreyceilings.app.core.EstimateLineItem
 import com.andreyceilings.shared.calculation.MeasurementPrecision
+import com.andreyceilings.shared.estimate.EstimateRecalculationPreview
+import com.andreyceilings.shared.estimate.EstimateRecalculationRepository
 import org.json.JSONObject
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.onEach
@@ -135,6 +137,18 @@ internal fun EstimatesScreen(database: CeilingsDatabase?) {
     var status by remember { mutableStateOf<String?>(null) }
     var editingEstimate by remember { mutableStateOf<EstimateEntity?>(null) }
     var pendingPdfEstimate by remember { mutableStateOf<EstimateEntity?>(null) }
+    // Bind every prepared proposal and open dialog to this exact live driver.
+    // After encrypted restore a new SQLDelight handle invalidates all old UI
+    // candidates, including callbacks still completing on the old screen.
+    var activePreview by remember(database) { mutableStateOf<EstimateRecalculationPreview?>(null) }
+    var activePrepared by remember(database) {
+        mutableStateOf<EstimateRevisionSnapshotAssembler.Prepared?>(null)
+    }
+    var activePreviewNumber by remember(database) { mutableStateOf<String?>(null) }
+    var activePreviewReason by remember(database) { mutableStateOf<String?>(null) }
+    var activeHistory by remember(database) { mutableStateOf<Pair<String, String>?>(null) }
+    var previewSaving by remember(database) { mutableStateOf(false) }
+    var previewLoading by remember(database) { mutableStateOf(false) }
     var renameText by remember { mutableStateOf("") }
     val estimatesByProject = remember(estimates) { estimates.groupBy { it.projectId } }
     val projectsById = remember(projects) { projects.associateBy { it.id } }
@@ -143,10 +157,39 @@ internal fun EstimatesScreen(database: CeilingsDatabase?) {
         val selected = pendingPdfEstimate
         pendingPdfEstimate = null
         if (uri != null && selected != null) {
-            val projectTitle = projectsById[selected.projectId]?.title ?: "Об’єкт #${selected.projectId}"
             scope.launch {
-                runCatching { withContext(Dispatchers.IO) { writeEstimatePdf(context, uri, selected, projectTitle) } }
-                    .onSuccess { status = "PDF-кошторис збережено." }
+                runCatching {
+                    withContext(Dispatchers.IO) {
+                        // Even a direct v1 export must use the immutable source,
+                        // not a mutable estimate compatibility row.
+                        val activeDb = checkNotNull(database) {
+                            "База даних недоступна."
+                        }
+                        val stored = checkNotNull(
+                            com.andreyceilings.shared.db.EstimateRepository(
+                                activeDb.database
+                            ).find(selected.id)
+                        ) { "Кошторис не знайдено." }
+                        val seriesUuid = checkNotNull(stored.seriesUuid) {
+                            "Збережений знімок кошторису недоступний."
+                        }
+                        val history = com.andreyceilings.shared.estimate.ImmutableEstimateRepository(
+                            activeDb.database
+                        )
+                        val first = checkNotNull(
+                            history.revisions(seriesUuid).firstOrNull {
+                                it.versionNumber == 1L
+                            }
+                        ) { "Первинну версію кошторису не знайдено." }
+                        val pdf = loadImmutableEstimatePdfSnapshot(
+                            activeDb.database, seriesUuid, first.revisionUuid
+                        )
+                        writeEstimatePdf(
+                            context, uri, pdf.estimate, pdf.projectTitle,
+                            pdf.versionNumber
+                        )
+                    }
+                }.onSuccess { status = "PDF-кошторис збережено." }
                     .onFailure { error = "Не вдалося створити PDF: ${it.message ?: "помилка запису"}" }
             }
         }
@@ -230,8 +273,91 @@ internal fun EstimatesScreen(database: CeilingsDatabase?) {
                                 }
                             }
                         }
+                        if (estimate.printableNumber != null) {
+                            OutlinedButton(
+                                enabled = !previewLoading && !previewSaving,
+                                onClick = {
+                                    scope.launch {
+                                        previewLoading = true
+                                        runCatching {
+                                            withContext(Dispatchers.IO) {
+                                                val activeDatabase = checkNotNull(database)
+                                                val stored = com.andreyceilings.shared.db.EstimateRepository(
+                                                    activeDatabase.database
+                                                ).find(estimate.id)
+                                                val seriesUuid = checkNotNull(stored?.seriesUuid) {
+                                                    "Для цього кошторису немає історії ревізій."
+                                                }
+                                                val comparison = EstimateRecalculationRepository(
+                                                    activeDatabase.database
+                                                ).previewLatest(seriesUuid)
+                                                val proposed = if (comparison.canConfirm) {
+                                                    runCatching {
+                                                        EstimateRevisionSnapshotAssembler(
+                                                            activeDatabase.database
+                                                        ).prepareLatestSimpleRectangle(seriesUuid)
+                                                    }.getOrNull()
+                                                } else null
+                                                comparison to proposed
+                                            }
+                                        }.onSuccess { result ->
+                                            activePreview = result.first
+                                            activePrepared = result.second
+                                            activePreviewNumber = estimate.printableNumber
+                                            activePreviewReason = if (result.first.canConfirm &&
+                                                result.second == null) {
+                                                "Для цього кошторису ще неможливо підтвердити " +
+                                                    "повний розрахунок збережених замірів, " +
+                                                    "опцій і сум. Попередні версії не змінені."
+                                            } else null
+                                        }.onFailure { failure ->
+                                            activePrepared = null
+                                            error = "Попередній перегляд недоступний: " +
+                                                (failure.message ?: "невідома помилка")
+                                        }
+                                        previewLoading = false
+                                    }
+                                }
+                            ) { Text(if (previewLoading) "Перевіряю прайс…" else "Перерахувати — перегляд") }
+                            OutlinedButton(
+                                enabled = !previewLoading && !previewSaving,
+                                onClick = {
+                                    scope.launch {
+                                        runCatching {
+                                            withContext(Dispatchers.IO) {
+                                                val stored = com.andreyceilings.shared.db.EstimateRepository(
+                                                    database.database
+                                                ).find(estimate.id)
+                                                checkNotNull(stored?.seriesUuid) {
+                                                    "Історія версій для цього кошторису відсутня."
+                                                }
+                                            }
+                                        }.onSuccess { id ->
+                                            activeHistory = id to checkNotNull(estimate.printableNumber)
+                                        }.onFailure { failure ->
+                                            error = "Історія версій недоступна: " +
+                                                (failure.message ?: "невідома помилка")
+                                        }
+                                    }
+                                }
+                            ) { Text("Історія версій") }
+                        }
                         val estimatePrecision = remember(estimate.detailsJson) { precisionForEstimate(estimate.detailsJson) }
-                        Text("${formatMeasuredLength(estimate.lengthMeters, estimatePrecision)} × ${formatMeasuredLength(estimate.widthMeters, estimatePrecision)} м · ${formatMeasuredArea(estimate.areaSquareMeters, estimatePrecision)} м² · ${materialDisplayName(estimate.material)} · ${profileDisplayName(estimate.profileType)}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(
+                            (if (estimate.frozenPolygon != null) {
+                                when (estimate.frozenPolygon.shapeType) {
+                                    "l_shaped" -> "L-подібна · 6 сторін"
+                                    "rectangle" -> "${formatMeasuredLength(estimate.lengthMeters, estimatePrecision)} × ${formatMeasuredLength(estimate.widthMeters, estimatePrecision)} м"
+                                    else -> "Багатокутник · ${estimate.frozenPolygon.vertices.size} сторін"
+                                }
+                            } else if (estimate.frozenGeometryInput != null) {
+                                "L-подібна · 6 сторін"
+                            } else {
+                                "${formatMeasuredLength(estimate.lengthMeters, estimatePrecision)} × ${formatMeasuredLength(estimate.widthMeters, estimatePrecision)} м"
+                            }) + " · ${formatMeasuredArea(estimate.areaSquareMeters, estimatePrecision)} м² · ${materialDisplayName(estimate.material)} · ${profileDisplayName(estimate.profileType)}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                         Text("Полотно ${money(estimate.canvasCost)} · профіль ${money(estimate.profileCost)} · роботи ${money(estimate.complexityCost + estimate.optionsCost)}")
                         val itemizedRows = remember(estimate.detailsJson) { EstimateLineItems.fromJson(estimate.detailsJson) }
                         if (itemizedRows.isNotEmpty()) {
@@ -248,6 +374,70 @@ internal fun EstimatesScreen(database: CeilingsDatabase?) {
         }
         item { status?.let { Text(it, color = MaterialTheme.colorScheme.primary) } }
         item { error?.let { Text(it, color = MaterialTheme.colorScheme.error) } }
+    }
+    activePreview?.let { result ->
+        val ready = activePrepared
+        EstimatePreviewDialog(
+            preview = result,
+            printableNumber = activePreviewNumber,
+            proposedVersion = ready?.proposedVersion,
+            unavailableReason = activePreviewReason,
+            saving = previewSaving,
+            onDismiss = {
+                if (!previewSaving) {
+                    activePreview = null
+                    activePrepared = null
+                    activePreviewNumber = null
+                    activePreviewReason = null
+                }
+            },
+            onConfirm = if (ready != null && database != null && result.canConfirm) {
+                {
+                    if (!previewSaving) {
+                        previewSaving = true
+                        scope.launch {
+                            runCatching {
+                                withContext(Dispatchers.IO) {
+                                    EstimateRevisionSnapshotAssembler(database.database)
+                                        .confirmPreparedRectangle(
+                                            ready, System.currentTimeMillis()
+                                        )
+                                }
+                            }.onSuccess { confirmed ->
+                                status = "Збережено незмінну версію v${confirmed.versionNumber}. " +
+                                    "Попередні версії та номер кошторису не змінені."
+                                activeHistory = confirmed.seriesUuid to
+                                    (activePreviewNumber ?: "Без номера")
+                                activePreview = null
+                                activePrepared = null
+                                activePreviewNumber = null
+                                activePreviewReason = null
+                            }.onFailure { failure ->
+                                error = "Нову версію не створено. " +
+                                    "Прайс або вихідні дані могли змінитися. " +
+                                    "Повторіть перегляд. " +
+                                    (failure.message ?: "")
+                                // Force a new, explicit review after ANY failure.
+                                activePreview = null
+                                activePrepared = null
+                                activePreviewReason = null
+                            }
+                            previewSaving = false
+                        }
+                    }
+                }
+            } else null
+        )
+    }
+    activeHistory?.let { (id, number) ->
+        if (database != null) {
+            EstimateHistoryDialog(
+                database = database,
+                seriesUuid = id,
+                printableNumber = number,
+                onDismiss = { activeHistory = null }
+            )
+        }
     }
     editingEstimate?.let { selected ->
         AppAlertDialog(
@@ -269,7 +459,19 @@ internal fun EstimatesScreen(database: CeilingsDatabase?) {
     }
 }
 
-private fun writeEstimatePdf(context: Context, uri: Uri, estimate: EstimateEntity, projectTitle: String) {
+/**
+ * Shared PDF renderer. Legacy list export calls with the v1 default; history
+ * exports supply a version-specific estimate reconstructed exclusively from
+ * immutable SQLDelight revision rows.
+ */
+internal fun writeEstimatePdf(
+    context: Context,
+    uri: Uri,
+    estimate: EstimateEntity,
+    projectTitle: String,
+    versionNumber: Long = 1L
+) {
+    require(versionNumber > 0L)
     val estimatePrecision = precisionForEstimate(estimate.detailsJson)
     val document = PdfDocument()
     val titlePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { typeface = Typeface.create("sans-serif", Typeface.BOLD); textSize = 18f }
@@ -281,14 +483,58 @@ private fun writeEstimatePdf(context: Context, uri: Uri, estimate: EstimateEntit
     lines += PdfLine("КОШТОРИС НАТЯЖНОЇ СТЕЛІ", 2)
     if (estimate.printableNumber != null) {
         lines += PdfLine("№ документа: ${estimate.printableNumber}")
-        lines += PdfLine("Версія: v1")
+        lines += PdfLine("Версія: v$versionNumber")
     }
     lines += PdfLine("Об’єкт: $projectTitle")
     lines += PdfLine("Кошторис: ${estimate.originalDocumentName ?: estimate.name}")
     lines += PdfLine("Дата створення: ${java.text.SimpleDateFormat("dd.MM.yyyy", Locale.getDefault()).format(java.util.Date(estimate.createdAt))}")
     lines += PdfLine("")
     lines += PdfLine("ПАРАМЕТРИ ПРИМІЩЕННЯ", 1)
-    lines += PdfLine("Розмір: ${formatMeasuredLength(estimate.lengthMeters, estimatePrecision)} × ${formatMeasuredLength(estimate.widthMeters, estimatePrecision)} м")
+    val polygon = estimate.frozenPolygon
+    val frozenL = estimate.frozenGeometryInput
+    if (polygon != null) {
+        // Print the captured measurements and ordered contour from the exact
+        // immutable revision; no shape-specific PDF implementation required.
+        val template = com.andreyceilings.shared.calculation.CeilingShapeTemplates
+            .template(polygon.shapeType)
+        lines += PdfLine("Форма: " + (template?.title ?: "Довільний багатокутник"))
+        if (template != null) {
+            template.parameterKeys.forEach { key ->
+                val mm = checkNotNull(polygon.measurementsMm[key]) {
+                    "Неповні збережені параметри контуру"
+                }
+                lines += PdfLine("${template.parameterLabels.getValue(key)}: " +
+                    formatMeasuredLength(mm / 1000.0, estimatePrecision))
+            }
+        }
+        if (polygon.sides.isNotEmpty()) {
+            lines += PdfLine("Виміряні сторони й повороти 90°:")
+            polygon.sides.forEachIndexed { index, wall ->
+                val turn = if (wall.turnAfter ==
+                    com.andreyceilings.shared.calculation.OrthogonalTurn.LEFT) {
+                    "ліворуч"
+                } else "праворуч"
+                lines += PdfLine("Сторона ${index + 1}: " +
+                    formatMeasuredLength(wall.lengthMm / 1000.0, estimatePrecision) +
+                    " м · поворот ${turn}")
+            }
+        } else {
+            // Legacy v2 snapshots keep their original vertex-based record.
+            lines += PdfLine("Вершини контуру, мм (за порядком):")
+            polygon.vertices.forEachIndexed { index, point ->
+                lines += PdfLine("${index + 1}: ${point.xMm}, ${point.yMm}")
+            }
+        }
+    } else if (frozenL == null) {
+        lines += PdfLine("Розмір: ${formatMeasuredLength(estimate.lengthMeters, estimatePrecision)} × ${formatMeasuredLength(estimate.widthMeters, estimatePrecision)} м")
+    } else {
+        // Never label a bounding box as an L-shaped room's full geometry.
+        lines += PdfLine("Форма: L-подібна")
+        lines += PdfLine("Сторони A–C: " + listOf(frozenL.sideA, frozenL.sideB, frozenL.sideC)
+            .joinToString(" / ") { formatMeasuredLength(it, estimatePrecision) } + " м")
+        lines += PdfLine("Сторони D–F: " + listOf(frozenL.sideD, frozenL.sideE, frozenL.sideF)
+            .joinToString(" / ") { formatMeasuredLength(it, estimatePrecision) } + " м")
+    }
     lines += PdfLine("Площа: ${formatMeasuredArea(estimate.areaSquareMeters, estimatePrecision)} м²    Периметр: ${formatMeasuredLength(estimate.perimeterMeters, estimatePrecision)} м")
     lines += PdfLine("Матеріал: ${materialDisplayName(estimate.material)}")
     lines += PdfLine("Профіль: ${profileDisplayName(estimate.profileType)}")
@@ -309,7 +555,11 @@ private fun writeEstimatePdf(context: Context, uri: Uri, estimate: EstimateEntit
     }
     lines += PdfLine("")
     lines += PdfLine("РАЗОМ: ${money(estimate.totalCost)}", 2)
-    lines += PdfLine("Ціни зафіксовано на момент створення кошторису.", 3)
+    lines += PdfLine(
+        if (versionNumber == 1L) "Ціни зафіксовано на момент створення кошторису."
+        else "Ціни зафіксовано для цієї збереженої версії кошторису.",
+        3
+    )
     lines += PdfLine("Документ сформовано застосунком Andrey Ceilings.", 3)
 
     val linesPerPage = 35

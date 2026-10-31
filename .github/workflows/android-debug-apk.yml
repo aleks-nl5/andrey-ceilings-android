@@ -85,14 +85,44 @@ jobs:
           test -r /dev/kvm && test -w /dev/kvm
           ls -l /dev/kvm
 
+      # The encrypted instrumentation suite is mandatory. Reuse only a CLEAN
+      # Android emulator boot snapshot: no application database or test state
+      # is ever cached, because this snapshot is created BEFORE running tests.
+      # The first cache miss initializes a snapshot; subsequent CI runs restore
+      # it and still execute every SQLCipher/WAL instrumentation test.
+      - name: Cache clean Android emulator boot snapshot
+        uses: actions/cache@v5
+        id: avd-cache
+        with:
+          path: |
+            ~/.android/avd/*
+            ~/.android/adb*
+          key: avd-ubuntu-api35-x86_64-pixel6-cleanboot-v1
+
+      - name: Initialize clean Android emulator snapshot
+        if: steps.avd-cache.outputs.cache-hit != 'true'
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          profile: pixel_6
+          force-avd-creation: false
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          disable-animations: false
+          script: echo "Clean AVD boot snapshot created before test execution"
+
       - name: Verify encrypted SQLDelight database on Android emulator
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 35
           arch: x86_64
           profile: pixel_6
+          force-avd-creation: false
+          emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           disable-animations: true
-          script: gradle --no-daemon :app:connectedDebugAndroidTest --stacktrace --warning-mode all
+          # android-emulator-runner invokes each script line as a separate
+          # shell command. Keep multiline logic inside our own Bash process.
+          script: bash ci/run-sqlcipher-instrumentation.sh
 
       - name: Prepare persistent signing
         env:

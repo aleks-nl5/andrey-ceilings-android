@@ -68,5 +68,9 @@ data class EstimateEntity(
     val createdAt: Long = System.currentTimeMillis(),
     val documentNumber: String? = null,
     val originalDocumentName: String? = null,
-    val printableNumber: String? = null
+    val printableNumber: String? = null,
+    /** Only during first INSERT; the exact geometry is frozen in SQLDelight history. */
+    val frozenGeometryInput: com.andreyceilings.shared.calculation.GeometryInput? = null,
+    /** Canonical polygon v2 source; null for pre-v2 historical snapshots. */
+    val frozenPolygon: com.andreyceilings.shared.estimate.FrozenPolygonGeometry? = null
 )

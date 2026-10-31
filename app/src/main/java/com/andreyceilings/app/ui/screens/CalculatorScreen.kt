@@ -38,7 +38,11 @@ import com.andreyceilings.app.ui.theme.CeilingsTheme
 import com.andreyceilings.app.core.CeilingEstimate
 import com.andreyceilings.app.core.CeilingCalculator
 import com.andreyceilings.shared.calculation.EstimateOptionId
+import com.andreyceilings.shared.calculation.CeilingShapeTemplates
+import com.andreyceilings.shared.estimate.FrozenPolygonGeometryContract
 import com.andreyceilings.shared.calculation.MeasurementPrecision
+import com.andreyceilings.shared.estimate.FrozenCeilingShape
+import com.andreyceilings.shared.estimate.VerifiedCeilingGeometry
 import com.andreyceilings.app.core.CalculatorOptions
 import com.andreyceilings.app.data.db.PriceItemEntity
 import com.andreyceilings.app.data.db.ProjectEntity
@@ -49,8 +53,16 @@ import kotlinx.coroutines.flow.flowOf
 @Composable
 internal fun CalculatorScreen(
     database: CeilingsDatabase?,
-    length: String, onLength: (String) -> Unit,
-    width: String, onWidth: (String) -> Unit,
+    length: String,
+    width: String,
+    geometryShape: String, onGeometryShape: (String) -> Unit,
+    shapeMeasurements: Map<String, String>,
+    onShapeMeasurement: (String, String) -> Unit,
+    polygonSides: List<Pair<String, com.andreyceilings.shared.calculation.OrthogonalTurn>>,
+    legacyPolygonSource: com.andreyceilings.shared.estimate.FrozenPolygonGeometry?,
+    onPolygonSide: (Int, Pair<String, com.andreyceilings.shared.calculation.OrthogonalTurn>) -> Unit,
+    onAddPolygonSide: () -> Unit,
+    onRemovePolygonSide: (Int) -> Unit,
     price: String, onPrice: (String) -> Unit,
     profilePrice: String, onProfilePrice: (String) -> Unit,
     material: String, onMaterial: (String) -> Unit,
@@ -77,9 +89,74 @@ internal fun CalculatorScreen(
     var showSaveDialog by remember { mutableStateOf(false) }
     var saveError by remember { mutableStateOf<String?>(null) }
     SectionTitle("Калькулятор стелі", "Попередній кошторис за розмірами приміщення")
-    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        OutlinedTextField(length, onLength, label = { Text("Довжина, м") }, modifier = Modifier.weight(1f), singleLine = true)
-        OutlinedTextField(width, onWidth, label = { Text("Ширина, м") }, modifier = Modifier.weight(1f), singleLine = true)
+    var geometryExpanded by remember { mutableStateOf(false) }
+    val activeTemplate = CeilingShapeTemplates.template(geometryShape)
+    ExposedDropdownMenuBox(
+        expanded = geometryExpanded, onExpandedChange = { geometryExpanded = it }
+    ) {
+        OutlinedTextField(
+            value = activeTemplate?.title ?:
+                if (geometryShape == "polygon") "Багатокутник (прямі кути)"
+                else "Непідтримувана форма",
+            onValueChange = {}, readOnly = true,
+            label = { Text("Форма стелі") },
+            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(geometryExpanded) },
+            modifier = Modifier.menuAnchor(
+                ExposedDropdownMenuAnchorType.PrimaryNotEditable, enabled = true
+            ).fillMaxWidth()
+        )
+        AppExposedDropdownMenu(
+            expanded = geometryExpanded,
+            onDismissRequest = { geometryExpanded = false }
+        ) {
+            CeilingShapeTemplates.templates.forEach { template ->
+                DropdownMenuItem(text = { Text(template.title) }, onClick = {
+                    onGeometryShape(template.shapeType)
+                    geometryExpanded = false
+                })
+            }
+            DropdownMenuItem(text = { Text("Багатокутник (прямі кути)") }, onClick = {
+                onGeometryShape("polygon")
+                geometryExpanded = false
+            })
+        }
+    }
+    if (geometryShape == FrozenCeilingShape.L_SHAPED.wireId) {
+        Text(
+            "Достатньо 4 розмірів. Прямі кути автоматичні: E = A − C, F = B − D.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+    // Every shape uses the same layout. Only template fields and labels vary.
+    activeTemplate?.parameterKeys?.chunked(2)?.forEach { pair ->
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            pair.forEach { key ->
+                OutlinedTextField(
+                    value = shapeMeasurements[key].orEmpty(),
+                    onValueChange = { onShapeMeasurement(key, it) },
+                    label = { Text(activeTemplate.parameterLabels.getValue(key)) },
+                    modifier = Modifier.weight(1f),
+                    singleLine = true
+                )
+            }
+        }
+    }
+    if (geometryShape == "polygon") {
+        if (legacyPolygonSource != null) {
+            Text(
+                "Історичний замір багатокутника: вихідні сторони не були збережені. " +
+                    "Його можна розрахувати без змін; щоб створити новий замір, " +
+                    "виберіть форму повторно й введіть сторони.",
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodySmall
+            )
+        } else OrthogonalSidesEditor(
+            sides = polygonSides,
+            onEdit = onPolygonSide,
+            onAdd = onAddPolygonSide,
+            onRemove = onRemovePolygonSide
+        )
     }
     var precisionExpanded by remember { mutableStateOf(false) }
     ExposedDropdownMenuBox(expanded = precisionExpanded, onExpandedChange = { precisionExpanded = it }) {
@@ -186,15 +263,76 @@ internal fun CalculatorScreen(
             }
         }
     }
-    Button(onClick = { showSaveDialog = true }, modifier = Modifier.fillMaxWidth(), enabled = database != null && projects.isNotEmpty() && estimate != null && estimate.area > 0.0) {
+    // A single geometry contract freezes the template inputs and final
+    // vertices for rectangles, L rooms and future straight-edge shapes.
+    val frozenPolygon = if (estimate != null) runCatching {
+        val numericInputs = shapeMeasurements.mapValues { (_, value) ->
+            value.trim().replace(',', '.').toDoubleOrNull() ?: Double.NaN
+        }
+        if (geometryShape == "polygon") {
+            if (legacyPolygonSource != null) {
+                FrozenPolygonGeometryContract.requireValid(legacyPolygonSource)
+            } else {
+                FrozenPolygonGeometryContract.captureSides(
+                    sidesFromText(polygonSides, measurementPrecision.stepMeters),
+                    measurementPrecision.stepMeters
+                )
+            }
+        } else {
+            val verified = VerifiedCeilingGeometry.capturedTemplate(
+                geometryShape, numericInputs, measurementPrecision.stepMeters
+            )
+            val measurementsMm = numericInputs.mapValues { (_, value) ->
+                kotlin.math.round(measurementPrecision.length(value) * 1000.0).toLong()
+            }
+            FrozenPolygonGeometryContract.capture(
+                geometryShape, verified.verticesMm, measurementsMm,
+                measurementPrecision.stepMeters
+            )
+        }
+    }.getOrNull() else null
+    if (frozenPolygon != null) {
+        MeasurementDrawingPreview(frozenPolygon)
+    }
+    Button(
+        onClick = { showSaveDialog = true },
+        modifier = Modifier.fillMaxWidth(),
+        enabled = database != null && projects.isNotEmpty() &&
+            estimate != null && estimate.area > 0.0 && frozenPolygon != null
+    ) {
         Icon(Icons.Default.Save, null); Spacer(Modifier.width(8.dp)); Text("Зберегти кошторис до об’єкта")
     }
     if (projects.isEmpty()) Text("Щоб зберегти кошторис, спочатку створіть об’єкт у вкладці «Об’єкти».", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     saveError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
     val estimateForSave = estimate
-    if (showSaveDialog && database != null && projects.isNotEmpty() && estimateForSave != null) SaveEstimateDialog(
+    // The exact six captured sides are validated by common KMP BEFORE the
+    // initial SQLDelight insert. Never infer them from area/perimeter.
+    val frozenLShape = if (estimateForSave != null &&
+        geometryShape == FrozenCeilingShape.L_SHAPED.wireId
+    ) {
+        runCatching {
+            VerifiedCeilingGeometry.capturedTemplate(
+                geometryShape,
+                shapeMeasurements.mapValues { (_, value) ->
+                    value.trim().replace(',', '.').toDoubleOrNull() ?: Double.NaN
+                },
+                measurementPrecision.stepMeters
+            ).copy(verticesMm = emptyList())
+        }.getOrNull()
+    } else null
+    val defaultEstimateName = if (geometryShape == "polygon" && frozenPolygon != null) {
+        "Багатокутник · ${frozenPolygon.vertices.size} вершин"
+    } else if (frozenLShape != null) {
+        "L-кімната ${formatMeasuredLength(frozenLShape.sideA, measurementPrecision)} × ${formatMeasuredLength(frozenLShape.sideB, measurementPrecision)} м"
+    } else {
+        "Кімната ${formatMeasuredLength(measurementPrecision.roomDimension(length.toSafeDouble(), 4.0), measurementPrecision)} × ${formatMeasuredLength(measurementPrecision.roomDimension(width.toSafeDouble(), 3.0), measurementPrecision)} м"
+    }
+    if (showSaveDialog && database != null && projects.isNotEmpty() &&
+        estimateForSave != null &&
+        frozenPolygon != null
+    ) SaveEstimateDialog(
         projects = projects,
-        defaultName = "Кімната ${formatMeasuredLength(measurementPrecision.roomDimension(length.toSafeDouble(), 4.0), measurementPrecision)} × ${formatMeasuredLength(measurementPrecision.roomDimension(width.toSafeDouble(), 3.0), measurementPrecision)} м",
+        defaultName = defaultEstimateName,
         onDismiss = { showSaveDialog = false },
         onSave = { projectId, name ->
             val details = org.json.JSONObject()
@@ -212,11 +350,17 @@ internal fun CalculatorScreen(
                 runCatching {
                     val estimateDraft = EstimateEntity(
                         projectId = projectId, name = name.trim(), material = material, profileType = profileType, complexity = complexity,
-                        lengthMeters = measurementPrecision.roomDimension(length.toSafeDouble(), 4.0),
-                        widthMeters = measurementPrecision.roomDimension(width.toSafeDouble(), 3.0),
+                        lengthMeters = checkNotNull(frozenPolygon).vertices.let { points ->
+                            (points.maxOf { it.xMm } - points.minOf { it.xMm }) / 1000.0
+                        },
+                        widthMeters = frozenPolygon.vertices.let { points ->
+                            (points.maxOf { it.yMm } - points.minOf { it.yMm }) / 1000.0
+                        },
                         areaSquareMeters = estimateForSave.area, perimeterMeters = estimateForSave.perimeter,
                         canvasCost = estimateForSave.canvasCost, profileCost = estimateForSave.profileCost, complexityCost = estimateForSave.complexityCost,
-                        optionsCost = estimateForSave.optionsCost, totalCost = estimateForSave.total, detailsJson = details.toString()
+                        optionsCost = estimateForSave.optionsCost, totalCost = estimateForSave.total,
+                        detailsJson = details.toString(),
+                        frozenPolygon = frozenPolygon
                     )
                     val lineItems = com.andreyceilings.app.core.EstimateLineItems.create(estimateDraft, details, priceItems, measurementPrecision)
                     details.put("lineItems", com.andreyceilings.app.core.EstimateLineItems.toJson(lineItems))

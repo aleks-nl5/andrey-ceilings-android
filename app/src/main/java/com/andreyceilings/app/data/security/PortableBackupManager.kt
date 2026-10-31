@@ -13,16 +13,10 @@ import java.io.File
  */
 internal object PortableBackupManager {
     fun create(context: Context, database: CeilingsDatabase, password: CharArray): ByteArray {
-        check(database.checkpoint(CeilingsDatabase.WalMode.FULL).complete) {
-            "База даних зайнята. Не вдалося завершити WAL checkpoint."
-        }
-        val source = File(database.path)
-        check(source.isFile && source.length() > 16L) { "Зашифрована БД відсутня або порожня." }
-        val snapshot = File.createTempFile("sqldelight_backup_", ".db", context.cacheDir)
         val key = DatabaseKeyManager.getOrCreatePassphrase(context)
+        var snapshot: File? = null
         try {
-            source.copyTo(snapshot, overwrite = true)
-            verifyEncryptedSnapshot(context, snapshot, key)
+            snapshot = createVerifiedSnapshot(context, database, key)
             val payload = PortableBackupPayload.encode(snapshot.readBytes(), key)
             try {
                 return PortableBackupEnvelope.seal(payload, password)
@@ -30,8 +24,37 @@ internal object PortableBackupManager {
                 payload.fill(0)
             }
         } finally {
+            snapshot?.delete()
             key.fill(0)
+        }
+    }
+
+    /** Manual encrypted export uses the same consistent image as portable backups. */
+    fun createVerifiedSnapshot(context: Context, database: CeilingsDatabase): File {
+        val key = DatabaseKeyManager.getOrCreatePassphrase(context)
+        try {
+            return createVerifiedSnapshot(context, database, key)
+        } finally {
+            key.fill(0)
+        }
+    }
+
+    private fun createVerifiedSnapshot(
+        context: Context, database: CeilingsDatabase, key: ByteArray
+    ): File {
+        // Must account for both the VACUUM INTO image and the separate
+        // integrity-verification copy, even if the initial UI check passed.
+        StorageSpaceGuard.requireForBackup(context, File(database.path))
+        val snapshot = File.createTempFile("sqldelight_backup_", ".db", context.cacheDir)
+        try {
+            // SQLite VACUUM INTO requires a destination that does not yet exist.
+            check(snapshot.delete()) { "Не вдалося підготувати тимчасовий файл знімка." }
+            database.writeConsistentEncryptedSnapshot(snapshot)
+            verifyEncryptedSnapshot(context, snapshot, key)
+            return snapshot
+        } catch (failure: Throwable) {
             snapshot.delete()
+            throw failure
         }
     }
 
@@ -49,6 +72,7 @@ internal object PortableBackupManager {
             val legacy = context.getDatabasePath(legacyName)
             val converted = context.getDatabasePath(convertedName)
             try {
+                StorageSpaceGuard.requireForImportValidation(context, contents.database.size.toLong())
                 legacy.parentFile?.mkdirs()
                 legacy.writeBytes(contents.database)
                 val alreadySqlDelight = runCatching {
@@ -84,6 +108,11 @@ internal object PortableBackupManager {
      */
     fun verifyEncryptedSnapshot(context: Context, source: File, key: ByteArray) {
         check(source.isFile && source.length() > 16L) { "Резервна копія відсутня або порожня." }
+        val header = ByteArray(16)
+        java.io.DataInputStream(source.inputStream()).use { it.readFully(header) }
+        check(!String(header, Charsets.US_ASCII).startsWith("SQLite format 3")) {
+            "Резервна копія не зашифрована SQLCipher."
+        }
         val testName = "sqlcipher_verify_${System.nanoTime()}.db"
         val staged = context.getDatabasePath(testName)
         try {
@@ -110,6 +139,74 @@ internal object PortableBackupManager {
                             { cursor -> QueryResult.Value(cursor.next().value) }, 0
                         ).value
                     }
+
+                // Do not accept a seemingly valid backup which silently lost
+                // the immutable v1/v2/v3 tables. These tables are essential
+                // for the version timeline and historical PDF output. This is
+                // an image-only preflight: it never edits the live database.
+                val immutableTables = driver.executeQuery(null,
+                    "SELECT count(*) FROM sqlite_master WHERE type = 'table' AND " +
+                        "name IN ('estimate_series', 'estimate_revisions', " +
+                        "'estimate_revision_lines', 'estimate_number_settings')",
+                    { cursor ->
+                        QueryResult.Value(if (cursor.next().value) cursor.getLong(0) else null)
+                    }, 0
+                ).value
+                check(immutableTables == 4L) {
+                    "У резервній копії відсутня схема історії версій кошторисів."
+                }
+
+                // integrity_check does not validate SQLite foreign keys or
+                // semantic invariants across immutable revision rows.
+                val brokenForeignKey = driver.executeQuery(null,
+                    "PRAGMA foreign_key_check",
+                    { cursor -> QueryResult.Value(cursor.next().value) }, 0
+                ).value
+                check(!brokenForeignKey) {
+                    "У резервній копії є порушені зв'язки між записами."
+                }
+                fun invalidRevisionRows(query: String): Long =
+                    driver.executeQuery(null, query, { cursor ->
+                        QueryResult.Value(
+                            if (cursor.next().value) cursor.getLong(0) else null
+                        )
+                    }, 0).value ?: error("Не вдалося перевірити історію кошторисів.")
+
+                // Every document series has a v1; every revision contains
+                // nonempty frozen lines summing to its own recorded total.
+                // Check totals against 1 kopiyka to match immutable drafts.
+                check(invalidRevisionRows(
+                    "SELECT count(*) FROM estimate_series s WHERE NOT EXISTS " +
+                        "(SELECT 1 FROM estimate_revisions r WHERE " +
+                        "r.seriesUuid = s.seriesUuid AND r.versionNumber = 1)"
+                ) == 0L) {
+                    "У резервній копії є кошторис без початкової версії."
+                }
+                check(invalidRevisionRows(
+                    "SELECT count(*) FROM estimate_revisions r LEFT JOIN " +
+                        "(SELECT revisionUuid, count(*) AS lineCount, " +
+                        "sum(lineTotalSnapshot) AS lineTotal " +
+                        "FROM estimate_revision_lines GROUP BY revisionUuid) l " +
+                        "ON l.revisionUuid = r.revisionUuid WHERE " +
+                        "l.lineCount IS NULL OR abs(r.totalCost - l.lineTotal) >= 0.01"
+                ) == 0L) {
+                    "Суми або рядки історичних версій у резервній копії пошкоджені."
+                }
+
+                // A valid FK can still link to a revision in a DIFFERENT
+                // document series. Require a complete parent/version chain,
+                // so exporting a historical PDF cannot switch estimates.
+                check(invalidRevisionRows(
+                    "SELECT count(*) FROM estimate_revisions r WHERE " +
+                        "(r.versionNumber = 1 AND r.parentRevisionUuid IS NOT NULL) " +
+                        "OR (r.versionNumber > 1 AND NOT EXISTS " +
+                        "(SELECT 1 FROM estimate_revisions p WHERE " +
+                        "p.revisionUuid = r.parentRevisionUuid AND " +
+                        "p.seriesUuid = r.seriesUuid AND " +
+                        "p.versionNumber = r.versionNumber - 1))"
+                ) == 0L) {
+                    "Послідовність версій кошторисів у резервній копії пошкоджена."
+                }
             }
         } finally {
             context.deleteDatabase(testName)

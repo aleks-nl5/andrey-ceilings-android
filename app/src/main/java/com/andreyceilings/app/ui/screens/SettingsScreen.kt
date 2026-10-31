@@ -53,6 +53,7 @@ import kotlinx.coroutines.flow.flowOf
 @Composable
 internal fun SettingsScreen(databaseStatus: String, database: CeilingsDatabase?, onDatabaseReplaced: (CeilingsDatabase) -> Unit, themeMode: ThemeMode, onThemeModeChange: (ThemeMode) -> Unit, onOpenPriceList: () -> Unit, measurementPrecision: MeasurementPrecision, onMeasurementPrecision: (MeasurementPrecision) -> Unit) {
     var fileCheck by remember { mutableStateOf("Натисніть кнопку, щоб перевірити записи та файли бази даних.") }
+    var lastWalCheckpoint by remember(database) { mutableStateOf<String?>(null) }
     var exportStatus by remember { mutableStateOf("Експорт створює копію зашифрованого файла БД без ключа.") }
     var pendingExportFile by remember { mutableStateOf<java.io.File?>(null) }
     val scope = rememberCoroutineScope()
@@ -316,8 +317,9 @@ internal fun SettingsScreen(databaseStatus: String, database: CeilingsDatabase?,
                                     }
                                 } else ByteArray(0)
                                 val plainSqlite = header.toString(Charsets.US_ASCII).startsWith("SQLite format 3")
-                                val journalMode = db.queryText("PRAGMA journal_mode") ?: "невідомо"
-                                val pageSize = db.queryLong("PRAGMA page_size") ?: -1L
+                                val wal = db.walDiagnostics()
+                                val journalMode = wal.journalMode
+                                val pageSize = wal.pageSizeBytes
                                 val pageCount = db.queryLong("PRAGMA page_count") ?: -1L
                                 val cipherVersion = runCatching {
                                     db.queryText("PRAGMA cipher_version")?.takeIf { it.isNotBlank() }
@@ -326,7 +328,7 @@ internal fun SettingsScreen(databaseStatus: String, database: CeilingsDatabase?,
                                     db.queryLong("SELECT count(*) FROM sqlite_master") ?: -1L
                                 }
                                 val dbLogicalBytes = if (pageSize > 0 && pageCount >= 0) pageSize * pageCount else -1L
-                                "Записи в БД:\nКлієнти: $clients\nОб’єкти: $projects\nЗаміри: $measurements\nКошториси: $estimates\nПозиції прайсу: $prices\n\nSQLite:\nРежим журналювання: $journalMode\nРозмір сторінки: $pageSize байт\nКількість сторінок: $pageCount\nЛогічний розмір БД: $dbLogicalBytes байт\n\nФайли:\n$fileInfo\n\nПеревірка SQLCipher:\nВерсія cipher: ${cipherVersion ?: "не повернута (це саме по собі не доводить відсутність SQLCipher)"}\nЧитання системної схеми: " + schemaCheck.fold({ count -> if (count >= 0) "успішно (${count} об’єктів)" else "не вдалося" }, { error -> "ПОМИЛКА — ${error.message ?: "невідома помилка"}" }) + "\n\nВідкритий заголовок SQLite: " +
+                                "Записи в БД:\nКлієнти: $clients\nОб’єкти: $projects\nЗаміри: $measurements\nКошториси: $estimates\nПозиції прайсу: $prices\n\nSQLite:\nРежим журналювання: $journalMode\nРозмір сторінки: $pageSize байт\nКількість сторінок: $pageCount\nЛогічний розмір БД: $dbLogicalBytes байт\n\nWAL (фактичні параметри, лише читання):\nОчікування блокування: ${wal.busyTimeoutMs} мс\nАвтоматичний checkpoint: ${wal.autoCheckpointPages} сторінок (${wal.autoCheckpointApproxBytes?.let { "$it байт" } ?: "вимкнено або невідомо"})\nСинхронізація: ${when (wal.synchronousMode) { 0L -> "OFF"; 1L -> "NORMAL"; 2L -> "FULL"; 3L -> "EXTRA"; else -> "невідомо (${wal.synchronousMode})" }}\nРозміри: БД ${wal.databaseBytes} байт; WAL ${wal.walBytes} байт; SHM ${wal.shmBytes} байт\nОстанній ручний PASSIVE checkpoint (ця сесія): ${lastWalCheckpoint ?: "ще не запускався"}\n\nФайли:\n$fileInfo\n\nПеревірка SQLCipher:\nВерсія cipher: ${cipherVersion ?: "не повернута (це саме по собі не доводить відсутність SQLCipher)"}\nЧитання системної схеми: " + schemaCheck.fold({ count -> if (count >= 0) "успішно (${count} об’єктів)" else "не вдалося" }, { error -> "ПОМИЛКА — ${error.message ?: "невідома помилка"}" }) + "\n\nВідкритий заголовок SQLite: " +
                                     if (plainSqlite) "ТАК — перевірте конфігурацію шифрування." else "не виявлено (узгоджується із SQLCipher, але не є самостійним доказом шифрування)."
                             }.getOrElse { "Перевірка не вдалася: ${it.message ?: "невідома помилка"}" }
                         }
@@ -338,13 +340,21 @@ internal fun SettingsScreen(databaseStatus: String, database: CeilingsDatabase?,
             OutlinedButton(
                 onClick = {
                     scope.launch {
-                        fileCheck = withContext(Dispatchers.IO) {
+                        val result = withContext(Dispatchers.IO) {
                             runCatching {
                                 val db = database ?: error("База даних ще не готова.")
-                                val status = db.checkpoint(CeilingsDatabase.WalMode.PASSIVE)
-                                "Результат WAL checkpoint (PASSIVE):\nЗайнятий: ${status.busy}\nКадрів у WAL: ${status.frames}\nПеренесено кадрів: ${status.checkpointed}\n\nЦе не видаляє файли вручну. Повторіть звичайну діагностику, щоб порівняти розміри."
-                            }.getOrElse { "Checkpoint не виконано: ${it.message ?: "невідома помилка"}" }
+                                db.checkpoint(CeilingsDatabase.WalMode.PASSIVE)
+                            }
                         }
+                        lastWalCheckpoint = result.getOrNull()?.let { status ->
+                            "зайнятий=${status.busy}, кадри=${status.frames}, перенесено=${status.checkpointed}"
+                        }
+                        fileCheck = result.fold(
+                            onSuccess = { status ->
+                                "Результат WAL checkpoint (PASSIVE):\nЗайнятий: ${status.busy}\nКадрів у WAL: ${status.frames}\nПеренесено кадрів: ${status.checkpointed}\n\nЦе не видаляє файли вручну. Повторіть звичайну діагностику, щоб порівняти розміри."
+                            },
+                            onFailure = { "Checkpoint не виконано: ${it.message ?: "невідома помилка"}" }
+                        )
                     }
                 },
                 modifier = Modifier.fillMaxWidth(),
@@ -395,40 +405,13 @@ internal fun SettingsScreen(databaseStatus: String, database: CeilingsDatabase?,
                             backupStatus = "Відновлюю переносну копію…"
                             val result = withContext(Dispatchers.IO) { runCatching {
                                 val contents = payload ?: error("Спочатку перевірте файл .stpb.")
-                                val appContext = context.applicationContext
-                                val live = appContext.getDatabasePath(CeilingsDatabase.DATABASE_NAME)
-                                val oldDb = java.io.File.createTempFile("ceilings_before_restore_", ".db", context.cacheDir)
-                                val oldKey = com.andreyceilings.app.data.security.DatabaseKeyManager.getOrCreatePassphrase(context)
-                                val wal = java.io.File("${live.absolutePath}-wal")
-                                val shm = java.io.File("${live.absolutePath}-shm")
-                                var oldSaved = false
-                                var keyChanged = false
                                 try {
-                                    database?.let { current ->
-                                        check(current.checkpoint(CeilingsDatabase.WalMode.FULL).complete) {
-                                            "Не вдалося завершити запис поточної БД."
-                                        }
-                                    }
-                                    CeilingsDatabase.closeAndReset()
-                                    wal.delete(); shm.delete()
-                                    if (live.exists()) { live.copyTo(oldDb, overwrite = true); oldSaved = true }
-                                    live.writeBytes(contents.database)
-                                    com.andreyceilings.app.data.security.DatabaseKeyManager.replacePassphrase(context, contents.passphrase)
-                                    keyChanged = true
-                                    val reopened = CeilingsDatabase.get(appContext)
-                                    check(reopened.checkIntegrity()) {
-                                        "Перевірка цілісності після відновлення не пройдена."
-                                    }
-                                    reopened
-                                } catch (failure: Exception) {
-                                    CeilingsDatabase.closeAndReset()
-                                    wal.delete(); shm.delete()
-                                    if (oldSaved && oldDb.exists()) oldDb.copyTo(live, overwrite = true)
-                                    if (keyChanged) com.andreyceilings.app.data.security.DatabaseKeyManager.replacePassphrase(context, oldKey)
-                                    throw failure
+                                    com.andreyceilings.app.data.security.SqlCipherRestoreManager.restore(
+                                        context.applicationContext, contents
+                                    )
                                 } finally {
-                                    wal.delete(); shm.delete(); oldDb.delete(); oldKey.fill(0)
-                                    contents.database.fill(0); contents.passphrase.fill(0)
+                                    contents.database.fill(0)
+                                    contents.passphrase.fill(0)
                                 }
                             } }
                             result.onSuccess { restored ->
@@ -446,7 +429,11 @@ internal fun SettingsScreen(databaseStatus: String, database: CeilingsDatabase?,
                                     "Виміри: ${counts[2]}\n" +
                                     "Кошториси: ${counts[3]}\n" +
                                     "Позиції прайсу: ${counts[4]}"
-                            }.onFailure { backupStatus = "Відновлення не виконано: ${it.message ?: "невідома помилка"}. Перевірте базу перед подальшою роботою." }
+                            }.onFailure { error ->
+                                runCatching { CeilingsDatabase.get(context.applicationContext) }
+                                    .onSuccess(onDatabaseReplaced)
+                                backupStatus = "Відновлення не виконано: ${error.message ?: "невідома помилка"}. Початкову БД збережено для відкату."
+                            }
                         }
                     }) { Text("Відновити") } },
                     dismissButton = { TextButton(onClick = { showRestoreConfirmation = false; pendingRestoreContents?.let { it.database.fill(0); it.passphrase.fill(0) }; pendingRestoreContents = null }) { Text("Скасувати") } }
@@ -694,23 +681,11 @@ internal fun SettingsScreen(databaseStatus: String, database: CeilingsDatabase?,
                     exportStatus = withContext(Dispatchers.IO) {
                         runCatching {
                             val db = database ?: error("База даних ще не готова.")
-                            val sourcePath = db.path
-                            val source = java.io.File(sourcePath)
-                            check(source.isFile) { "Файл БД не знайдено." }
-                            check(db.checkpoint(CeilingsDatabase.WalMode.FULL).complete) {
-                                "WAL checkpoint не завершився повністю. Повторіть, коли БД не використовується."
-                            }
-                            val snapshot = java.io.File(context.cacheDir, "andrey_ceilings_secure_export.tmp")
-                            source.inputStream().use { input -> snapshot.outputStream().use { output -> input.copyTo(output) } }
-                            check(snapshot.length() > 0L) { "Створена копія порожня." }
-                            // Verify snapshot using the SQLDelight/SQLCipher driver, not Room.
-                            val passphrase = com.andreyceilings.app.data.security.DatabaseKeyManager.getOrCreatePassphrase(context.applicationContext)
+                            // Use the same verified, point-in-time encrypted snapshot
+                            // as automatic/portable backup, even when WAL is active.
+                            val snapshot = com.andreyceilings.app.data.security.PortableBackupManager
+                                .createVerifiedSnapshot(context.applicationContext, db)
                             try {
-                                com.andreyceilings.app.data.security.PortableBackupManager.verifyEncryptedSnapshot(context.applicationContext, snapshot, passphrase)
-                            } finally {
-                                passphrase.fill(0)
-                            }
-
                             // A plain Android SQLite connection must not be able to read the
                             // encrypted snapshot without the SQLCipher key.
                             var plainDb: android.database.sqlite.SQLiteDatabase? = null
@@ -735,6 +710,10 @@ internal fun SettingsScreen(databaseStatus: String, database: CeilingsDatabase?,
                             }
                             pendingExportFile = snapshot
                             "Перевірено: SQLCipher відкрив копію, integrity_check = ok, схема доступна з ключем, звичайний SQLite без ключа не прочитав схему. Ключ не експортується. Виберіть папку для збереження."
+                            } catch (failure: Throwable) {
+                                snapshot.delete()
+                                throw failure
+                            }
                         }.getOrElse { "Не вдалося підготувати копію: " + (it.message ?: "невідома помилка") }
                     }
                     if (pendingExportFile != null) exportDocumentLauncher.launch("andrey_ceilings_sqldelight_test.db")

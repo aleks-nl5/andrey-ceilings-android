@@ -1,0 +1,346 @@
+package com.andreyceilings.shared.estimate
+
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
+import kotlin.test.assertTrue
+
+class EstimateRevisionCandidateTest {
+    private fun frozenLines() = listOf(
+        ImmutableEstimateLine("canvas.pvc", "PVC canvas", "м²", 6.0, 10.0, 60.0, "canvas-uuid"),
+        ImmutableEstimateLine("profile.standard", "Aluminium", "м.п.", 10.0, 5.0, 50.0, "profile-uuid")
+    )
+
+    private fun source(lines: List<ImmutableEstimateLine> = frozenLines()) =
+        ImmutableEstimateDraft(
+            sourceMeasurementJson = """{"lengthMeters":2.0,"widthMeters":3.0}""",
+            detailsJson = """{"measurementPrecisionMeters":0.01}""",
+            measurementPrecisionMeters = 0.01,
+            calculationRuleVersion = "kmp-v1",
+            totalCost = lines.sumOf { it.lineTotal },
+            lines = lines
+        )
+
+    private fun measurement() = VerifiedRectangleInputs(
+        lengthMeters = 2.0, widthMeters = 3.0,
+        storedAreaSquareMeters = 6.0, storedPerimeterMeters = 10.0,
+        precisionStepMeters = 0.01
+    )
+
+    private fun preview(src: ImmutableEstimateDraft) = EstimateRecalculation.preview(
+        baseRevisionUuid = "original-v1",
+        baseVersionNumber = 1L,
+        originalTotal = src.totalCost,
+        frozenLines = src.lines,
+        prices = listOf(
+            CurrentEstimatePrice("canvas.pvc", "canvas-uuid", "Updated canvas",
+                "м²", 20.0, 111L),
+            CurrentEstimatePrice("profile.standard", "profile-uuid", "Updated profile",
+                "м.п.", 6.0, 112L)
+        )
+    )
+
+    @Test fun reproducibleRectangleProducesWriteFreeImmutableLineCandidate() {
+        val saved = source()
+        val result = EstimateRevisionCandidates.prepareSimpleRectangle(
+            saved, measurement(), preview(saved)
+        )
+        assertEquals("original-v1", result.baseRevisionUuid)
+        assertEquals(2L, result.proposedVersionNumber)
+        assertEquals(6.0, result.geometry.area)
+        assertEquals(10.0, result.geometry.perimeter)
+        assertEquals(180.0, result.totalCost)
+        assertEquals(listOf(120.0, 60.0), result.lines.map { it.lineTotal })
+        assertEquals("Updated canvas", result.lines.first().title)
+        assertEquals(110.0, saved.totalCost)
+        assertEquals("PVC canvas", saved.lines.first().title)
+        assertTrue(result.lines !== saved.lines)
+    }
+
+    @Test fun inconsistentGeometryAndFrozenQuantitiesFailClosed() {
+        val saved = source()
+        val proposed = preview(saved)
+        assertFailsWith<IllegalStateException> {
+            EstimateRevisionCandidates.prepareSimpleRectangle(
+                saved, measurement().copy(storedAreaSquareMeters = 7.0), proposed
+            )
+        }
+        assertFailsWith<IllegalStateException> {
+            EstimateRevisionCandidates.prepareSimpleRectangle(
+                saved, measurement().copy(lengthMeters = 4.0), proposed
+            )
+        }
+        val wrongQuantity = saved.copy(lines = saved.lines.mapIndexed { i, line ->
+            if (i == 0) line.copy(quantity = 5.0) else line
+        })
+        assertFailsWith<IllegalStateException> {
+            EstimateRevisionCandidates.prepareSimpleRectangle(
+                wrongQuantity, measurement(), preview(wrongQuantity)
+            )
+        }
+    }
+
+    @Test fun optionsLegacyAndUnsupportedRulesAreNotGuessed() {
+        val saved = source()
+        val proposed = preview(saved)
+        assertFailsWith<IllegalStateException> {
+            EstimateRevisionCandidates.prepareSimpleRectangle(
+                saved.copy(calculationRuleVersion = "legacy-v0"), measurement(), proposed
+            )
+        }
+        val extra = saved.copy(
+            lines = saved.lines + ImmutableEstimateLine(
+                "option.spot", "Spot", "шт.", 1.0, 100.0, 100.0
+            ),
+            totalCost = 210.0
+        )
+        assertFailsWith<IllegalStateException> {
+            EstimateRevisionCandidates.prepareSimpleRectangle(
+                extra, measurement(), preview(extra)
+            )
+        }
+        assertFailsWith<IllegalStateException> {
+            EstimateRevisionCandidates.prepareSimpleRectangle(
+                saved, measurement().copy(precisionStepMeters = 0.005), proposed
+            )
+        }
+    }
+
+    @Test fun blockedPreviewCannotBeConvertedIntoCandidate() {
+        val saved = source()
+        val proposed = preview(saved)
+        val blocked = proposed.copy(problems = setOf(RecalculationProblem.CHANGED_CODE),
+            proposedTotal = null)
+        assertFailsWith<IllegalStateException> {
+            EstimateRevisionCandidates.prepareSimpleRectangle(saved, measurement(), blocked)
+        }
+        assertFailsWith<IllegalStateException> {
+            EstimateRevisionCandidates.prepareSimpleRectangle(saved,
+                measurement(), proposed.copy(proposedTotal = 999.0))
+        }
+    }
+
+    @Test fun canonicalOptionsProduceConsistentKmpRectangleRepricing() {
+        val option = ImmutableEstimateLine(
+            "light.spot", "Old spotlight", "шт.", 2.0, 11.0, 22.0, "spot-uuid"
+        )
+        val frozen = listOf(
+            ImmutableEstimateLine(
+                "canvas.pvc_matte", "Old canvas", "м²", 6.0, 10.0, 60.0, "canvas-uuid"
+            ),
+            ImmutableEstimateLine(
+                "profile.standard_alu", "Old profile", "м.п.", 10.0, 5.0, 50.0, "profile-uuid"
+            ),
+            option
+        )
+        val saved = source(frozen)
+        val prices = listOf(
+            CurrentEstimatePrice(
+                "canvas.pvc_matte", "canvas-uuid", "New canvas", "м²", 20.0, 100L
+            ),
+            CurrentEstimatePrice(
+                "profile.standard_alu", "profile-uuid", "New profile", "м.п.", 6.0, 100L
+            ),
+            CurrentEstimatePrice(
+                "light.spot", "spot-uuid", "New spotlight", "шт.", 25.0, 100L
+            )
+        )
+        val comparison = EstimateRecalculation.preview(
+            "old-v1", 1L, saved.totalCost, saved.lines, prices
+        )
+        val options = com.andreyceilings.shared.calculation.EstimateOptionId.entries
+            .associate { it.code to (if (it.code == "light.spot") 2.0 else 0.0) }
+        val result = EstimateRevisionCandidates.prepareRectangleWithOptions(
+            saved, measurement(), comparison, options
+        )
+        assertEquals(230.0, result.totalCost)
+        assertEquals(listOf(120.0, 60.0, 50.0),
+            result.lines.map { it.lineTotal })
+
+        // Lost options, mismatched units or quantities, and extra hidden
+        // lines must stop before any future v2/v3 INSERT.
+        assertFailsWith<IllegalStateException> {
+            EstimateRevisionCandidates.prepareRectangleWithOptions(
+                saved, measurement(), comparison, options + ("light.spot" to 0.0)
+            )
+        }
+        assertFailsWith<IllegalStateException> {
+            EstimateRevisionCandidates.prepareRectangleWithOptions(
+                saved, measurement(), comparison, options - "light.spot"
+            )
+        }
+        val altered = saved.copy(lines = frozen.map {
+            if (it.stableCode == "light.spot") it.copy(quantity = 3.0) else it
+        })
+        val alteredPreview = EstimateRecalculation.preview(
+            "old-v1", 1L, altered.totalCost, altered.lines, prices
+        )
+        assertFailsWith<IllegalStateException> {
+            EstimateRevisionCandidates.prepareRectangleWithOptions(
+                altered, measurement(), alteredPreview, options
+            )
+        }
+    }
+
+    @Test fun multilevelAndCurvedRectangleWorkRepricedThroughSharedKmp() {
+        val options = com.andreyceilings.shared.calculation.EstimateOptionId.entries
+            .associate { it.code to (if (it.code == "light.spot") 2.0 else 0.0) }
+        for ((complexity, length, newPrice) in listOf(
+            Triple("multilevel", 3.5, 200.0),
+            Triple("curved", 2.5, 100.0)
+        )) {
+            val code = "work.$complexity"
+            val lines = listOf(
+                ImmutableEstimateLine(
+                    "canvas.pvc_matte", "Canvas", "м²", 6.0, 10.0, 60.0, "canvas"
+                ),
+                ImmutableEstimateLine(
+                    "profile.standard_alu", "Profile", "м.п.", 10.0, 5.0, 50.0, "profile"
+                ),
+                ImmutableEstimateLine(
+                    code, "Construction", "м.п.", length, 50.0, length * 50.0,
+                    "construction"
+                ),
+                ImmutableEstimateLine("light.spot", "Spot", "шт.", 2.0, 11.0, 22.0, "spot")
+            )
+            val saved = source(lines)
+            val prices = listOf(
+                CurrentEstimatePrice(
+                    "canvas.pvc_matte", "canvas", "New canvas", "м²", 20.0, 100L
+                ),
+                CurrentEstimatePrice(
+                    "profile.standard_alu", "profile", "New profile", "м.п.", 6.0, 100L
+                ),
+                CurrentEstimatePrice(
+                    code, "construction", "New work", "м.п.", newPrice, 100L
+                ),
+                CurrentEstimatePrice(
+                    "light.spot", "spot", "Spot", "шт.", 25.0, 100L
+                )
+            )
+            val preview = EstimateRecalculation.preview(
+                "base-v1", 1L, saved.totalCost, saved.lines, prices
+            )
+            val candidate = EstimateRevisionCandidates.prepareRectangleWithOptions(
+                saved, measurement().copy(complexity = complexity), preview, options
+            )
+            assertEquals(180.0 + length * newPrice + 50.0, candidate.totalCost)
+            assertEquals(length * newPrice, candidate.lines[2].lineTotal)
+            assertFailsWith<IllegalStateException> {
+                EstimateRevisionCandidates.prepareRectangleWithOptions(
+                    saved, measurement().copy(complexity = "straight"), preview, options
+                )
+            }
+            assertFailsWith<IllegalStateException> {
+                EstimateRevisionCandidates.prepareRectangleWithOptions(
+                    saved, measurement().copy(complexity = "unknown"), preview, options
+                )
+            }
+            val wrong = saved.copy(lines = lines.map {
+                if (it.stableCode == code) it.copy(quantity = length + 0.5) else it
+            })
+            val wrongPreview = EstimateRecalculation.preview(
+                "base-v1", 1L, wrong.totalCost, wrong.lines, prices
+            )
+            assertFailsWith<IllegalStateException> {
+                EstimateRevisionCandidates.prepareRectangleWithOptions(
+                    wrong, measurement().copy(complexity = complexity),
+                    wrongPreview, options
+                )
+            }
+        }
+    }
+    @Test fun completeLShapedSixSidesReplayInKmpWithoutWritingHistory() {
+        val oldLines = listOf(
+            ImmutableEstimateLine("canvas.pvc_matte", "Old canvas",
+                "м²", 14.0, 10.0, 140.0, "canvas"),
+            ImmutableEstimateLine("profile.standard_alu", "Old profile",
+                "м.п.", 18.0, 5.0, 90.0, "profile")
+        )
+        val saved = source(oldLines).copy(sourceMeasurementJson =
+            """{"shape":"l_shaped","sideA":5.0,"sideB":4.0,"sideC":2.0,"sideD":2.0,"sideE":3.0,"sideF":2.0,"areaSquareMeters":14.0,"perimeterMeters":18.0}"""
+        )
+        val newPrices = listOf(
+            CurrentEstimatePrice("canvas.pvc_matte", "canvas",
+                "Canvas", "м²", 20.0, 111L),
+            CurrentEstimatePrice("profile.standard_alu", "profile",
+                "Profile", "м.п.", 6.0, 112L)
+        )
+        val preview = EstimateRecalculation.preview(
+            "l-shaped-v1", 1L, saved.totalCost, saved.lines, newPrices
+        )
+        val options = com.andreyceilings.shared.calculation.EstimateOptionId.entries
+            .associate { it.code to 0.0 }
+        val sides = VerifiedLShapedInputs(
+            sideA = 5.0, sideB = 4.0, sideC = 2.0,
+            sideD = 2.0, sideE = 3.0, sideF = 2.0,
+            storedAreaSquareMeters = 14.0,
+            storedPerimeterMeters = 18.0,
+            precisionStepMeters = 0.01
+        )
+        val proposal = EstimateRevisionCandidates.prepareLShapedWithOptions(
+            saved, sides, preview, options
+        )
+        assertEquals(14.0, proposal.geometry.area)
+        assertEquals(18.0, proposal.geometry.perimeter)
+        assertEquals(6, proposal.geometry.cornersCount)
+        assertEquals(2L, proposal.proposedVersionNumber)
+        assertEquals(388.0, proposal.totalCost)
+        assertEquals(listOf(280.0, 108.0), proposal.lines.map { it.lineTotal })
+        assertEquals(230.0, saved.totalCost) // Frozen source remains untouched.
+        assertEquals("Old canvas", saved.lines.first().title)
+
+        // Loss of any one side, incorrect closure, changed stored geometry,
+        // rounding/default fallback and a falsified historical line all fail.
+        assertFailsWith<IllegalArgumentException> {
+            EstimateRevisionCandidates.prepareLShapedWithOptions(
+                saved, sides.copy(sideF = 0.0), preview, options
+            )
+        }
+        assertFailsWith<IllegalStateException> {
+            EstimateRevisionCandidates.prepareLShapedWithOptions(
+                saved, sides.copy(sideF = 2.5), preview, options
+            )
+        }
+        assertFailsWith<IllegalStateException> {
+            EstimateRevisionCandidates.prepareLShapedWithOptions(
+                saved, sides.copy(storedAreaSquareMeters = 15.0), preview, options
+            )
+        }
+        assertFailsWith<IllegalStateException> {
+            EstimateRevisionCandidates.prepareLShapedWithOptions(
+                saved, sides.copy(sideA = 5.001), preview, options
+            )
+        }
+        val falsified = saved.copy(lines = oldLines.mapIndexed { index, line ->
+            if (index == 0) line.copy(quantity = 13.0) else line
+        })
+        val falsifiedPreview = EstimateRecalculation.preview(
+            "l-shaped-v1", 1L, falsified.totalCost, falsified.lines, newPrices
+        )
+        assertFailsWith<IllegalStateException> {
+            EstimateRevisionCandidates.prepareLShapedWithOptions(
+                falsified, sides, falsifiedPreview, options
+            )
+        }
+        assertFailsWith<IllegalStateException> {
+            EstimateRevisionCandidates.prepareLShapedWithOptions(
+                saved, sides, preview, options - "light.spot"
+            )
+        }
+        assertFailsWith<IllegalStateException> {
+            EstimateRevisionCandidates.prepareLShapedWithOptions(
+                saved,
+                VerifiedLShapedInputs(
+                    sideA = 1.0, sideB = 1.0, sideC = 0.5,
+                    sideD = 0.5, sideE = 0.5, sideF = 0.5,
+                    storedAreaSquareMeters = 1.0,
+                    storedPerimeterMeters = 4.0,
+                    precisionStepMeters = 0.01
+                ),
+                preview, options
+            )
+        }
+    }
+
+}

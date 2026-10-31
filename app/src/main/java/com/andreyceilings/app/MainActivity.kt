@@ -7,6 +7,10 @@ import androidx.activity.compose.setContent
 import androidx.core.view.WindowCompat
 import androidx.lifecycle.lifecycleScope
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import com.andreyceilings.app.data.security.StorageSpaceGuard
 import com.andreyceilings.app.data.PerformanceDiagnosticsLog
 import com.andreyceilings.app.data.db.CeilingsDatabase
 import com.andreyceilings.app.data.backup.BackupPasswordStore
@@ -21,6 +25,7 @@ import kotlinx.coroutines.withContext
 class MainActivity : ComponentActivity() {
     private val databaseStatus = mutableStateOf("Перевірка зашифрованої бази…")
     private val databaseState = mutableStateOf<CeilingsDatabase?>(null)
+    private val storageWarning = mutableStateOf<String?>(null)
     private val themeMode = mutableStateOf(ThemeMode.SYSTEM)
 
     private fun saveThemeMode(mode: ThemeMode) {
@@ -49,7 +54,10 @@ class MainActivity : ComponentActivity() {
         val activityStartedAt = SystemClock.elapsedRealtime()
         lifecycleScope.launch {
             try {
-                val db = withContext(Dispatchers.IO) {
+                val (db, warning) = withContext(Dispatchers.IO) {
+                    // Non-blocking internal-storage preflight BEFORE opening
+                    // SQLCipher. It is only advisory; normal reads stay usable.
+                    val warning = StorageSpaceGuard.startupWarning(applicationContext)
                     val databaseOpenStartedAt = SystemClock.elapsedRealtime()
                     val database = CeilingsDatabase.get(applicationContext)
                     val databaseOpenedAt = SystemClock.elapsedRealtime()
@@ -61,9 +69,10 @@ class MainActivity : ComponentActivity() {
                             "demo_seed_ms=${initializationFinishedAt - databaseOpenedAt} " +
                             "activity_to_database_ready_ms=${initializationFinishedAt - activityStartedAt}"
                     )
-                    database
+                    database to warning
                 }
                 databaseState.value = db
+                storageWarning.value = warning
                 databaseStatus.value = "Зашифрована база даних активна"
             } catch (_: Exception) {
                 databaseStatus.value = "Помилка відкриття захищеної бази. Дані не завантажено."
@@ -81,6 +90,18 @@ class MainActivity : ComponentActivity() {
                         databaseStatus.value = "Зашифрована база даних активна"
                     }
                 )
+                storageWarning.value?.let { warning ->
+                    AlertDialog(
+                        onDismissRequest = { storageWarning.value = null },
+                        title = { Text("Мало вільного місця") },
+                        text = { Text(warning) },
+                        confirmButton = {
+                            TextButton(onClick = { storageWarning.value = null }) {
+                                Text("Зрозуміло")
+                            }
+                        }
+                    )
+                }
             }
         }
     }

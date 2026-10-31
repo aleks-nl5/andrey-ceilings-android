@@ -48,6 +48,36 @@ internal class CeilingsDatabase private constructor(
 
     internal fun execute(sql: String) { driver.execute(null, sql, 0) }
 
+    /**
+     * Consistent SQLCipher snapshot across concurrent commits, including WAL pages.
+     * Never copy the live .db file or delete its -wal/-shm files to make a backup.
+     * Caller must verify the resulting SQLCipher file and remove it when finished.
+     */
+    internal fun writeConsistentEncryptedSnapshot(destination: File) {
+        val source = File(path)
+        check(source.isFile && source.length() > 16L) {
+            "Зашифрована БД відсутня або порожня."
+        }
+        check(source.canonicalFile != destination.canonicalFile) {
+            "Не можна перезаписати робочу БД резервною копією."
+        }
+        check(destination.parentFile?.isDirectory == true && !destination.exists()) {
+            "Для знімка потрібен новий файл у наявній папці."
+        }
+        try {
+            // VACUUM INTO uses SQLCipher's live connection and creates a coherent
+            // database image. Never run it inside a write transaction.
+            val escaped = destination.absolutePath.replace("'", "''")
+            execute("VACUUM INTO '$escaped'")
+            check(destination.isFile && destination.length() > 16L) {
+                "Не вдалося створити консистентний знімок БД."
+            }
+        } catch (failure: Throwable) {
+            destination.delete()
+            throw failure
+        }
+    }
+
     fun queryLong(sql: String): Long? = driver.executeQuery(null, sql, { cursor ->
         QueryResult.Value(if (cursor.next().value) cursor.getLong(0) else null)
     }, 0).value
@@ -61,6 +91,44 @@ internal class CeilingsDatabase private constructor(
     }
 
     enum class WalMode { PASSIVE, FULL }
+
+    /**
+     * Read-only diagnostics of this connection's effective SQLite/SQLCipher
+     * settings and on-disk files. Do not change any PRAGMA here: Android's
+     * WAL-aware helper owns connection initialization and checkpoint policy.
+     */
+    data class WalDiagnostics(
+        val journalMode: String,
+        val busyTimeoutMs: Long,
+        val autoCheckpointPages: Long,
+        val synchronousMode: Long,
+        val pageSizeBytes: Long,
+        val databaseBytes: Long,
+        val walBytes: Long,
+        val shmBytes: Long
+    ) {
+        val autoCheckpointApproxBytes: Long?
+            get() = if (autoCheckpointPages > 0L && pageSizeBytes > 0L &&
+                autoCheckpointPages <= Long.MAX_VALUE / pageSizeBytes) {
+                autoCheckpointPages * pageSizeBytes
+            } else null
+    }
+
+    fun walDiagnostics(): WalDiagnostics {
+        val file = File(path)
+        fun physicalBytes(path: File): Long =
+            if (path.isFile) path.length().coerceAtLeast(0L) else 0L
+        return WalDiagnostics(
+            journalMode = queryText("PRAGMA journal_mode") ?: "невідомо",
+            busyTimeoutMs = queryLong("PRAGMA busy_timeout") ?: -1L,
+            autoCheckpointPages = queryLong("PRAGMA wal_autocheckpoint") ?: -1L,
+            synchronousMode = queryLong("PRAGMA synchronous") ?: -1L,
+            pageSizeBytes = queryLong("PRAGMA page_size") ?: -1L,
+            databaseBytes = physicalBytes(file),
+            walBytes = physicalBytes(File("$path-wal")),
+            shmBytes = physicalBytes(File("$path-shm"))
+        )
+    }
 
     fun checkpoint(mode: WalMode): WalCheckpoint = driver.executeQuery(
         null, "PRAGMA wal_checkpoint(${mode.name})", { cursor ->
@@ -82,37 +150,68 @@ internal class CeilingsDatabase private constructor(
 
         @Volatile private var INSTANCE: CeilingsDatabase? = null
 
-        fun get(context: Context): CeilingsDatabase = INSTANCE ?: synchronized(this) {
-            INSTANCE ?: build(context.applicationContext).also { INSTANCE = it }
+        fun get(context: Context): CeilingsDatabase = ProductionDatabaseGate.read {
+            synchronized(this) {
+                INSTANCE ?: build(context.applicationContext).also { INSTANCE = it }
+            }
         }
+
+        /**
+         * Quiesce the production driver before replacing DB/WAL/SHM files.
+         * Acquire the gate BEFORE the singleton monitor in every path, so
+         * readers cannot deadlock an import while opening the database.
+         */
+        internal fun <T> withExclusiveRestoreLock(action: () -> T): T =
+            ProductionDatabaseGate.restore { synchronized(this) { action() } }
 
         /**
          * Only for instrumentation tests. Does not open the user's live database.
          * The caller must delete the isolated file after the session is closed.
          */
         internal fun openIsolatedForTesting(
-            context: Context, filename: String, key: ByteArray
+            context: Context, filename: String, key: ByteArray,
+            enableWalForTesting: Boolean = false
         ): CeilingsDatabase {
             require(filename.startsWith("sqldelight_test_") && filename.endsWith(".db"))
-            val driver = createEncryptedPrototypeDriver(context, key, filename)
+            val driver = createEncryptedPrototypeDriver(context, key, filename, enableWalForTesting)
             return CeilingsDatabase(driver, context.getDatabasePath(filename).absolutePath)
         }
 
-        fun closeAndReset() = synchronized(this) {
-            INSTANCE?.close()
-            INSTANCE = null
+        fun closeAndReset() = ProductionDatabaseGate.restore {
+            synchronized(this) {
+                INSTANCE?.close()
+                INSTANCE = null
+            }
         }
 
         private fun build(context: Context): CeilingsDatabase {
+            // On an interrupted restore, never open or create an empty live DB.
+            if (!com.andreyceilings.app.data.security.SqlCipherRestoreManager.installing) {
+                com.andreyceilings.app.data.security.SqlCipherRestoreManager.recoverIfNeeded(context)
+            }
             val live = context.getDatabasePath(DATABASE_NAME)
             val key = DatabaseKeyManager.getOrCreatePassphrase(context)
             try {
-                // No migration of disposable test data in PR #22.
-                // A new filename creates a clean encrypted database, leaving earlier files intact.
-                val driver = createEncryptedPrototypeDriver(context, key, DATABASE_NAME)
+                // PR #29: switch only the Android production SQLCipher
+                // opening boundary from DELETE to WAL; the helper configures
+                // WAL-aware connections and verifies journal_mode=wal before
+                // returning. Existing encrypted DELETE databases switch in
+                // place without copying, rekeying or changing SQLDelight schema.
+                // The 'ForTesting' option name is historical; the same verified
+                // helper now powers WAL in this production entry point.
+                val driver = ProductionDatabaseGate.wrap(
+                    createEncryptedPrototypeDriver(
+                        context, key, DATABASE_NAME, enableWalForTesting = true
+                    )
+                )
                 return try {
                     val result = CeilingsDatabase(driver, live.absolutePath)
-                    // Force an encrypted-schema read before returning to the UI.
+                    // Never silently fall back to DELETE after a restore or
+                    // cold start. The shared open helper performs the same
+                    // check before this production wrapper is constructed.
+                    check(result.queryText("PRAGMA journal_mode")?.lowercase() == "wal") {
+                        "Робоча SQLCipher БД не перейшла у WAL."
+                    }
                     check((result.queryLong("SELECT count(*) FROM sqlite_master") ?: 0L) > 0L)
                     result
                 } catch (failure: Throwable) {

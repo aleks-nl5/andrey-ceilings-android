@@ -30,6 +30,10 @@ import com.andreyceilings.app.core.EstimateLineItems
 import com.andreyceilings.shared.calculation.MeasurementPrecision
 import com.andreyceilings.shared.calculation.KmpCeilingCalculator
 import com.andreyceilings.shared.calculation.GeometryInput
+import com.andreyceilings.shared.calculation.CeilingShapeTemplates
+import com.andreyceilings.shared.estimate.FrozenPolygonGeometry
+import com.andreyceilings.shared.estimate.FrozenPolygonGeometryContract
+import com.andreyceilings.shared.estimate.VerifiedCeilingGeometry
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
@@ -108,7 +112,12 @@ internal fun ObjectsScreen(database: CeilingsDatabase?) {
 }
 
 @Composable
-internal fun MeasurementsScreen(database: CeilingsDatabase?, precision: MeasurementPrecision, onOpenEstimates: () -> Unit) {
+internal fun MeasurementsScreen(
+ database: CeilingsDatabase?,
+ precision: MeasurementPrecision,
+ onOpenEstimates: () -> Unit,
+ onUseMeasurement: (RoomMeasurementEntity) -> Unit
+) {
  val measurementsFlow = remember(database) { database?.measurements()?.observeAll() ?: flowOf<List<RoomMeasurementEntity>>(emptyList()) }
  val projectsFlow = remember(database) { database?.projects()?.observeAll() ?: flowOf<List<ProjectEntity>>(emptyList()) }
  val measurements by measurementsFlow.collectAsState(initial = emptyList())
@@ -116,6 +125,7 @@ internal fun MeasurementsScreen(database: CeilingsDatabase?, precision: Measurem
  val projectsById = remember(projects) { projects.associateBy { it.id } }
  val scope = rememberCoroutineScope()
  var showDialog by remember { mutableStateOf(false) }
+ var editingMeasurement by remember { mutableStateOf<RoomMeasurementEntity?>(null) }
  var error by remember { mutableStateOf<String?>(null) }
  LazyColumn(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(12.dp), contentPadding = PaddingValues(
   top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 64.dp + 16.dp,
@@ -128,21 +138,98 @@ internal fun MeasurementsScreen(database: CeilingsDatabase?, precision: Measurem
   }
   if (database == null) item { LinearProgressIndicator(Modifier.fillMaxWidth()); Text("Захищена база ще відкривається або недоступна.") }
   else {
-   item { Button(onClick = { showDialog = true }, modifier = Modifier.fillMaxWidth(), enabled = projects.isNotEmpty()) { Icon(Icons.Default.Add, null); Spacer(Modifier.width(8.dp)); Text("Створити замір") }; if (projects.isEmpty()) EmptyDataCard("Спочатку створіть об’єкт у вкладці «Об’єкти»."); if (measurements.isEmpty() && projects.isNotEmpty()) EmptyDataCard("Заміри ще не додані.") }
+   item { Button(onClick = { editingMeasurement = null; showDialog = true }, modifier = Modifier.fillMaxWidth(), enabled = projects.isNotEmpty()) { Icon(Icons.Default.Add, null); Spacer(Modifier.width(8.dp)); Text("Створити замір") }; if (projects.isEmpty()) EmptyDataCard("Спочатку створіть об’єкт у вкладці «Об’єкти»."); if (measurements.isEmpty() && projects.isNotEmpty()) EmptyDataCard("Заміри ще не додані.") }
    items(measurements, key = { it.id }) { measurement ->
     val project = projectsById[measurement.projectId]
-    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) { Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
+     Column {
+      Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
      Icon(Icons.Default.Straighten, null, tint = MaterialTheme.colorScheme.primary); Spacer(Modifier.width(10.dp))
-     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) { Text(measurement.name, fontWeight = FontWeight.SemiBold); Text(project?.title ?: "Об’єкт #${measurement.projectId}", style = MaterialTheme.typography.bodySmall); Text("${formatStoredMeters(measurement.lengthMeters)} × ${formatStoredMeters(measurement.widthMeters)} м · ${formatStoredSquareMeters(measurement.areaSquareMeters)} м² · периметр ${formatStoredMeters(measurement.perimeterMeters)} м", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) { Text(measurement.name, fontWeight = FontWeight.SemiBold); Text(project?.title ?: "Об’єкт #${measurement.projectId}", style = MaterialTheme.typography.bodySmall); Text(
+         "${when (measurement.shape) {
+             "polygon" -> "Багатокутник"
+             "l_shaped" -> "L-подібна"
+             "rectangle" -> "Прямокутник"
+             else -> measurement.shape
+         }} · ${formatStoredSquareMeters(measurement.areaSquareMeters)} м² · периметр ${formatStoredMeters(measurement.perimeterMeters)} м",
+         style = MaterialTheme.typography.bodySmall,
+         color = MaterialTheme.colorScheme.onSurfaceVariant
+     ) }
+     TextButton(onClick = {
+      runCatching { onUseMeasurement(measurement) }
+       .onFailure { error = it.message ?: "Не вдалося відкрити замір у калькуляторі" }
+     }) { Text("Розрахувати") }
+     IconButton(onClick = {
+      editingMeasurement = measurement
+      showDialog = true
+     }) { Icon(Icons.Default.Edit, contentDescription = "Редагувати замір") }
      IconButton(onClick = { scope.launch { runCatching { database.measurements().deleteById(measurement.id) }.onFailure { error = it.message ?: "Не вдалося видалити замір" } } }) { Icon(Icons.Default.Delete, contentDescription = "Видалити замір") }
-    } }
+      }
+      val drawing = remember(measurement.drawingJson) {
+       runCatching {
+        FrozenPolygonGeometryJson.readMeasurement(measurement.drawingJson)
+       }.getOrNull()
+      }
+      if (drawing != null) {
+       MeasurementDrawingPreview(drawing, Modifier.fillMaxWidth().padding(12.dp), compact = true)
+      } else if (measurement.shape == "rectangle" &&
+          measurement.lengthMeters > 0.0 && measurement.widthMeters > 0.0) {
+       val legacyDrawing = runCatching {
+        val input = VerifiedCeilingGeometry.capturedRectangle(
+         measurement.lengthMeters, measurement.widthMeters, precision.stepMeters
+        )
+        FrozenPolygonGeometryContract.capture(
+         "rectangle", input.verticesMm,
+         mapOf("length" to kotlin.math.round(input.length * 1000.0).toLong(),
+               "width" to kotlin.math.round(input.width * 1000.0).toLong()),
+         precision.stepMeters
+        )
+       }.getOrNull()
+       if (legacyDrawing != null) {
+        MeasurementDrawingPreview(legacyDrawing, Modifier.fillMaxWidth().padding(12.dp), compact = true)
+       }
+      }
+     }
+    }
    }
   }
   item { error?.let { Text(it, color = MaterialTheme.colorScheme.error) } }
  }
- if (showDialog && database != null && projects.isNotEmpty()) AddMeasurementDialog(projects = projects, precision = precision, onDismiss = { showDialog = false }, onSave = { projectId, name, length, width ->
-  scope.launch { val geometry = KmpCeilingCalculator.geometry(GeometryInput(length = length, width = width, precisionStepMeters = precision.stepMeters)); runCatching { database.measurements().insert(RoomMeasurementEntity(projectId = projectId, name = name.trim(), lengthMeters = precision.roomDimension(length, 4.0), widthMeters = precision.roomDimension(width, 3.0), areaSquareMeters = geometry.area, perimeterMeters = geometry.perimeter)) }.onFailure { error = it.message ?: "Не вдалося зберегти замір" }; showDialog = false }
- })
+ if (showDialog && database != null && projects.isNotEmpty()) {
+  AddMeasurementDialog(
+   projects = projects, precision = precision,
+   existing = editingMeasurement,
+   onDismiss = { showDialog = false; editingMeasurement = null },
+   onSave = { projectId, name, geometry ->
+    scope.launch {
+     runCatching {
+      val xs = geometry.vertices.map { it.xMm }
+      val ys = geometry.vertices.map { it.yMm }
+      val length = (xs.maxOrNull()!! - xs.minOrNull()!!) / 1000.0
+      val width = (ys.maxOrNull()!! - ys.minOrNull()!!) / 1000.0
+      val value = RoomMeasurementEntity(
+       id = editingMeasurement?.id ?: 0L,
+       projectId = editingMeasurement?.projectId ?: projectId,
+       name = name.trim(),
+       shape = geometry.shapeType,
+       lengthMeters = length, widthMeters = width,
+       areaSquareMeters = geometry.areaSquareMeters,
+       perimeterMeters = geometry.perimeterMeters,
+       drawingJson = FrozenPolygonGeometryJson.writeMeasurement(geometry),
+       notes = editingMeasurement?.notes.orEmpty(),
+       createdAt = editingMeasurement?.createdAt ?: System.currentTimeMillis()
+      )
+      if (editingMeasurement == null) database.measurements().insert(value)
+      else database.measurements().update(value)
+     }.onSuccess {
+      showDialog = false; editingMeasurement = null; error = null
+     }.onFailure {
+      error = it.message ?: "Не вдалося зберегти замір"
+     }
+    }
+   }
+  )
+ }
 }
 
 @Composable
@@ -182,32 +269,263 @@ private fun AddProjectDialog(onDismiss: () -> Unit, onSave: (String, String, Str
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun AddMeasurementDialog(projects: List<ProjectEntity>, precision: MeasurementPrecision, onDismiss: () -> Unit, onSave: (Long, String, Double, Double) -> Unit) {
-    var selectedProjectId by remember(projects) { mutableLongStateOf(projects.first().id) }
-    var name by remember { mutableStateOf("") }
-    var length by remember { mutableStateOf("5.0") }
-    var width by remember { mutableStateOf("4.0") }
-    var expanded by remember { mutableStateOf(false) }
-    val parsedLength = length.replace(',', '.').toDoubleOrNull()
-    val parsedWidth = width.replace(',', '.').toDoubleOrNull()
-    AppAlertDialog(onDismissRequest = onDismiss, title = { Text("Новий замір") }, text = {
-        Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = it }) {
-                OutlinedTextField(value = projects.firstOrNull { it.id == selectedProjectId }?.title ?: "Оберіть об’єкт", onValueChange = {}, readOnly = true, label = { Text("Об’єкт") }, trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) }, modifier = Modifier.menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable, enabled = true).fillMaxWidth())
-                AppExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-                    projects.forEach { project -> DropdownMenuItem(text = { Text(project.title) }, onClick = { selectedProjectId = project.id; expanded = false }) }
+private fun AddMeasurementDialog(
+    projects: List<ProjectEntity>,
+    precision: MeasurementPrecision,
+    existing: RoomMeasurementEntity?,
+    onDismiss: () -> Unit,
+    onSave: (Long, String, FrozenPolygonGeometry) -> Unit
+) {
+    val previous = remember(existing?.id) {
+        existing?.let { record ->
+            runCatching {
+                FrozenPolygonGeometryJson.readMeasurement(record.drawingJson)
+            }.getOrNull()
+        }
+    }
+    var selectedProjectId by remember(existing?.id, projects) {
+        mutableLongStateOf(existing?.projectId ?: projects.first().id)
+    }
+    var name by remember(existing?.id) {
+        mutableStateOf(existing?.name.orEmpty())
+    }
+    var shape by remember(existing?.id) {
+        mutableStateOf(previous?.shapeType ?: existing?.shape ?: "rectangle")
+    }
+    var selectedPrecision by remember(existing?.id, precision) {
+        mutableStateOf(
+            previous?.precisionStepMeters?.let { MeasurementPrecision.fromStep(it) }
+                ?: precision
+        )
+    }
+    val fields = remember(existing?.id) {
+        mutableStateMapOf<String, String>().apply {
+            put("rectangle.length", existing?.lengthMeters?.toString() ?: "5.0")
+            put("rectangle.width", existing?.widthMeters?.toString() ?: "4.0")
+            put("l_shaped.A", "5")
+            put("l_shaped.B", "4")
+            put("l_shaped.C", "2")
+            put("l_shaped.D", "2")
+            previous?.let { saved ->
+                saved.measurementsMm.forEach { (key, mm) ->
+                    put("${saved.shapeType}.$key", (mm / 1000.0).toString())
                 }
             }
-            OutlinedTextField(name, { name = it }, label = { Text("Назва кімнати *") }, singleLine = true)
-            OutlinedTextField(length, { length = it }, label = { Text("Довжина, м") }, singleLine = true)
-            OutlinedTextField(width, { width = it }, label = { Text("Ширина, м") }, singleLine = true)
-            if (parsedLength != null && parsedWidth != null && parsedLength > 0 && parsedWidth > 0) {
-                val geometry = KmpCeilingCalculator.geometry(GeometryInput(
-                    length = parsedLength, width = parsedWidth, precisionStepMeters = precision.stepMeters
-                ))
-                Text("Площа: ${formatMeasuredArea(geometry.area, precision)} м² · периметр: ${formatMeasuredLength(geometry.perimeter, precision)} м")
-            }
         }
-    }, confirmButton = { Button(onClick = { if (name.isNotBlank() && parsedLength != null && parsedWidth != null && parsedLength > 0 && parsedWidth > 0) onSave(selectedProjectId, name, parsedLength, parsedWidth) }, enabled = name.isNotBlank() && parsedLength != null && parsedWidth != null && parsedLength > 0 && parsedWidth > 0) { Text("Зберегти") } }, dismissButton = { TextButton(onClick = onDismiss) { Text("Скасувати") } })
+    }
+    val sides = remember(existing?.id) {
+        mutableStateListOf<Pair<String, com.andreyceilings.shared.calculation.OrthogonalTurn>>()
+            .apply {
+                addAll(
+                    previous?.sides?.takeIf { it.isNotEmpty() }?.map { wall ->
+                        (wall.lengthMm / 1000.0).toString() to wall.turnAfter
+                    } ?: defaultPolygonSides()
+                )
+            }
+    }
+    val historicalPolygon = previous?.takeIf {
+        it.shapeType == "polygon" && it.sides.isEmpty()
+    }
+    var projectExpanded by remember { mutableStateOf(false) }
+    var shapeExpanded by remember { mutableStateOf(false) }
+    var precisionExpanded by remember { mutableStateOf(false) }
+    val activeTemplate = CeilingShapeTemplates.template(shape)
+    val validation = runCatching {
+        if (shape == "polygon") {
+            if (historicalPolygon != null) {
+                require(historicalPolygon.precisionStepMeters == selectedPrecision.stepMeters) {
+                    "Точність історичного заміру не можна змінювати"
+                }
+                FrozenPolygonGeometryContract.requireValid(historicalPolygon)
+            } else {
+                FrozenPolygonGeometryContract.captureSides(
+                    sidesFromText(sides.toList(), selectedPrecision.stepMeters),
+                    selectedPrecision.stepMeters
+                )
+            }
+        } else {
+            val template = requireNotNull(activeTemplate) { "Невідома форма стелі" }
+            val input = VerifiedCeilingGeometry.capturedTemplate(
+                shape, template.parameterKeys.associateWith { key ->
+                    fields["$shape.$key"]?.trim()?.replace(',', '.')?.toDoubleOrNull()
+                        ?: Double.NaN
+                }, selectedPrecision.stepMeters
+            )
+            val measurementsMm = template.parameterKeys.associateWith { key ->
+                val value = checkNotNull(fields["$shape.$key"]
+                    ?.replace(',', '.')?.toDoubleOrNull())
+                kotlin.math.round(selectedPrecision.length(value) * 1000.0).toLong()
+            }
+            FrozenPolygonGeometryContract.capture(
+                shape, input.verticesMm, measurementsMm, selectedPrecision.stepMeters
+            )
+        }
+    }
+    val geometry = validation.getOrNull()
+    AppAlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(if (existing == null) "Новий замір" else "Редагування заміру") },
+        text = {
+            Column(
+                Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                ExposedDropdownMenuBox(
+                    expanded = projectExpanded,
+                    onExpandedChange = { if (existing == null) projectExpanded = it }
+                ) {
+                    OutlinedTextField(
+                        value = projects.firstOrNull { it.id == selectedProjectId }?.title
+                            ?: "Оберіть об’єкт",
+                        onValueChange = {},
+                        readOnly = true,
+                        enabled = existing == null,
+                        label = { Text("Об’єкт") },
+                        trailingIcon = {
+                            ExposedDropdownMenuDefaults.TrailingIcon(projectExpanded)
+                        },
+                        modifier = Modifier.menuAnchor(
+                            ExposedDropdownMenuAnchorType.PrimaryNotEditable,
+                            enabled = existing == null
+                        ).fillMaxWidth()
+                    )
+                    AppExposedDropdownMenu(
+                        expanded = projectExpanded,
+                        onDismissRequest = { projectExpanded = false }
+                    ) {
+                        projects.forEach { project ->
+                            DropdownMenuItem(
+                                text = { Text(project.title) },
+                                onClick = {
+                                    selectedProjectId = project.id
+                                    projectExpanded = false
+                                }
+                            )
+                        }
+                    }
+                }
+                OutlinedTextField(
+                    name, { name = it }, label = { Text("Назва кімнати *") },
+                    modifier = Modifier.fillMaxWidth(), singleLine = true
+                )
+                ExposedDropdownMenuBox(
+                    expanded = shapeExpanded,
+                    onExpandedChange = { shapeExpanded = it }
+                ) {
+                    OutlinedTextField(
+                        value = activeTemplate?.title ?:
+                            if (shape == "polygon") "Багатокутник (прямі кути)" else shape,
+                        onValueChange = {}, readOnly = true,
+                        label = { Text("Форма стелі") },
+                        trailingIcon = {
+                            ExposedDropdownMenuDefaults.TrailingIcon(shapeExpanded)
+                        },
+                        modifier = Modifier.menuAnchor(
+                            ExposedDropdownMenuAnchorType.PrimaryNotEditable, true
+                        ).fillMaxWidth()
+                    )
+                    AppExposedDropdownMenu(
+                        expanded = shapeExpanded,
+                        onDismissRequest = { shapeExpanded = false }
+                    ) {
+                        (CeilingShapeTemplates.templates.map {
+                            it.shapeType to it.title
+                        } + ("polygon" to "Багатокутник (прямі кути)")).forEach { (id, title) ->
+                            DropdownMenuItem(text = { Text(title) }, onClick = {
+                                shape = id; shapeExpanded = false
+                            })
+                        }
+                    }
+                }
+                ExposedDropdownMenuBox(
+                    expanded = precisionExpanded,
+                    onExpandedChange = { precisionExpanded = it }
+                ) {
+                    OutlinedTextField(
+                        value = selectedPrecision.label,
+                        onValueChange = {}, readOnly = true,
+                        label = { Text("Точність вимірювань") },
+                        trailingIcon = {
+                            ExposedDropdownMenuDefaults.TrailingIcon(precisionExpanded)
+                        },
+                        modifier = Modifier.menuAnchor(
+                            ExposedDropdownMenuAnchorType.PrimaryNotEditable, true
+                        ).fillMaxWidth()
+                    )
+                    AppExposedDropdownMenu(
+                        expanded = precisionExpanded,
+                        onDismissRequest = { precisionExpanded = false }
+                    ) {
+                        MeasurementPrecision.entries.forEach { entry ->
+                            DropdownMenuItem(text = { Text(entry.label) }, onClick = {
+                                selectedPrecision = entry
+                                precisionExpanded = false
+                            })
+                        }
+                    }
+                }
+                if (shape == "polygon") {
+                    if (historicalPolygon != null) {
+                        Text(
+                            "Цей замір створено в попередньому форматі. " +
+                                "Початкові довжини стін не зберігалися. " +
+                                "Можна переглянути креслення, але не змінювати " +
+                                "його геометрію без нових вимірів.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    } else OrthogonalSidesEditor(
+                        sides = sides.toList(),
+                        onEdit = { i, wall -> sides[i] = wall },
+                        onAdd = {
+                            sides.add("" to
+                                com.andreyceilings.shared.calculation.OrthogonalTurn.RIGHT)
+                        },
+                        onRemove = { i ->
+                            if (sides.size > 4) sides.removeAt(i)
+                        }
+                    )
+                } else {
+                    if (shape == "l_shaped") {
+                        Text(
+                            "Прямі кути: E = A − C, F = B − D.",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                    activeTemplate?.parameterKeys?.forEach { key ->
+                        OutlinedTextField(
+                            value = fields["$shape.$key"].orEmpty(),
+                            onValueChange = { fields["$shape.$key"] = it },
+                            label = { Text(activeTemplate.parameterLabels.getValue(key)) },
+                            modifier = Modifier.fillMaxWidth(), singleLine = true
+                        )
+                    }
+                }
+                if (geometry != null) {
+                    MeasurementDrawingPreview(geometry)
+                    Text(
+                        "Площа: ${formatMeasuredArea(geometry.areaSquareMeters, selectedPrecision)} м²" +
+                            " · Периметр: ${formatMeasuredLength(geometry.perimeterMeters, selectedPrecision)} м",
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                } else {
+                    Text(
+                        validation.exceptionOrNull()?.message
+                            ?: "Перевірте довжини сторін і повороти.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = { geometry?.let { onSave(selectedProjectId, name, it) } },
+                enabled = name.isNotBlank() && geometry != null
+            ) { Text("Зберегти") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Скасувати") }
+        }
+    )
 }
-

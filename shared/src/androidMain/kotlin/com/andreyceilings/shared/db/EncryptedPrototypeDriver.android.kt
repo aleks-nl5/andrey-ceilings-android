@@ -7,16 +7,18 @@ import app.cash.sqldelight.driver.android.AndroidSqliteDriver
 import net.zetetic.database.sqlcipher.SupportOpenHelperFactory
 
 /**
- * Android SQLDelight + SQLCipher driver for disposable migration-stage databases.
+ * SQLDelight + SQLCipher driver shared by Android production and isolated
+ * instrumentation databases. Production deliberately enables WAL at its
+ * single opening boundary; old DELETE-mode databases upgrade on next open.
  *
- * The caller supplies the passphrase. Never generates a replacement key or falls
- * back to plaintext on a wrong key. Production Room remains unchanged until the
- * backup/restore and key-manager integration gates are complete.
+ * The caller supplies the passphrase; never fall back to plaintext or invent
+ * a replacement key on a wrong passphrase. WAL is always verified at open.
  */
 fun createEncryptedPrototypeDriver(
     context: Context,
     passphrase: ByteArray,
-    databaseName: String = "andrey_ceilings_sqldelight_prototype.db"
+    databaseName: String = "andrey_ceilings_sqldelight_prototype.db",
+    enableWalForTesting: Boolean = false
 ): SqlDriver {
     require(passphrase.size == 32) { "Expected a 256-bit database passphrase" }
     require(databaseName.isNotBlank() && '/' !in databaseName && '\\' !in databaseName) {
@@ -25,7 +27,11 @@ fun createEncryptedPrototypeDriver(
     System.loadLibrary("sqlcipher")
     val driver = AndroidSqliteDriver(
         schema = PrototypeDatabase.Schema,
-        factory = SupportOpenHelperFactory(passphrase.copyOf()),
+        // The fourth argument enables SQLCipher's WAL-aware OPEN HELPER,
+        // including the correct connection-pool behavior. PRAGMA alone
+        // does not activate that pool. Production explicitly opts into WAL
+        // at CeilingsDatabase.build; some disposable tests still use DELETE.
+        factory = SupportOpenHelperFactory(passphrase.copyOf(), null, enableWalForTesting),
         context = context.applicationContext,
         name = databaseName
     )
@@ -42,6 +48,21 @@ fun createEncryptedPrototypeDriver(
             { cursor -> QueryResult.Value(if (cursor.next().value) cursor.getLong(0) else null) },
             0
         ).value
+        if (enableWalForTesting) {
+            // A manual PRAGMA journal_mode=WAL does not enable SQLCipher's
+            // WAL-aware open-helper pool. The mode MUST already be WAL on
+            // every open, including production, or fail closed without
+            // returning a DB handle to the app.
+            val journalMode = driver.executeQuery(null, "PRAGMA journal_mode",
+                { cursor -> QueryResult.Value(
+                    if (cursor.next().value) cursor.getString(0) else null
+                ) },
+                0
+            ).value?.lowercase()
+            check(journalMode == "wal") {
+                "SQLCipher WAL helper failed to enable WAL (journal_mode=$journalMode)"
+            }
+        }
         return driver
     } catch (failure: Throwable) {
         try {

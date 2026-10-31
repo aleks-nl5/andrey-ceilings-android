@@ -6,6 +6,7 @@ import com.andreyceilings.shared.calculation.CostInput
 import com.andreyceilings.shared.calculation.GeometryInput
 import com.andreyceilings.shared.calculation.KmpCeilingCalculator
 import com.andreyceilings.shared.calculation.RoomOptions
+import com.andreyceilings.shared.estimate.VerifiedCeilingGeometry
 
 /** The Android UI contract for the shared Kotlin Multiplatform calculation engine. */
 data class CeilingEstimate(
@@ -47,7 +48,8 @@ object CeilingCalculator {
         materialType: String,
         profileType: String,
         precisionStepMeters: Double = 0.01,
-        onTimings: ((List<Pair<String, Long>>) -> Unit)? = null
+        onTimings: ((List<Pair<String, Long>>) -> Unit)? = null,
+        geometryInput: GeometryInput? = null
     ): CeilingEstimate {
         val totalStartedAt = if (onTimings != null) SystemClock.elapsedRealtimeNanos() else 0L
         val phaseTimings = mutableListOf<Pair<String, Long>>()
@@ -90,12 +92,25 @@ object CeilingCalculator {
             }
             val result = measure("kmp_calculate") {
                 KmpCeilingCalculator.estimate(
-                    geometryInput = GeometryInput(
-                        shape = "rectangle",
-                        length = length.coerceAtLeast(0.0),
-                        width = width.coerceAtLeast(0.0),
-                        precisionStepMeters = precisionStepMeters
-                    ),
+                    geometryInput = when (geometryInput?.shape) {
+                        "l_shaped" -> {
+                            val exact = checkNotNull(geometryInput)
+                            val canonical = VerifiedCeilingGeometry.polygonForCalculation(
+                                exact.copy(verticesMm = emptyList())
+                            )
+                            check(exact.verticesMm.isEmpty() ||
+                                exact.verticesMm == canonical.verticesMm) {
+                                "L-shaped template vertices disagree with saved sides"
+                            }
+                            canonical
+                        }
+                        else -> geometryInput ?: GeometryInput(
+                            shape = "rectangle",
+                            length = length.coerceAtLeast(0.0),
+                            width = width.coerceAtLeast(0.0),
+                            precisionStepMeters = precisionStepMeters
+                        )
+                    },
                     costInput = CostInput(
                         area = 0.0,
                         perimeter = 0.0,

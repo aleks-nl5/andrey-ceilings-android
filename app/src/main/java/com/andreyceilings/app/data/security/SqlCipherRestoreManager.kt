@@ -1,0 +1,214 @@
+package com.andreyceilings.app.data.security
+
+import android.content.Context
+import com.andreyceilings.app.data.db.CeilingsDatabase
+import java.io.File
+import java.io.FileOutputStream
+
+/**
+ * Staged SQLCipher restore with a durable encrypted rollback snapshot.
+ * Keeps prior passphrase only as a Keystore-wrapped recovery marker.
+ *
+ * The live DB and its WAL/SHM are removed ONLY after closing the sole driver.
+ * An interrupted restore is rolled back before any subsequent DB open.
+ */
+internal object SqlCipherRestoreManager {
+    private const val ROLLBACK_NAME = ".ceilings_restore_rollback.db"
+    @Volatile internal var installing = false
+        private set
+
+    private fun rollbackFile(context: Context) =
+        File(context.getDatabasePath(CeilingsDatabase.DATABASE_NAME).parentFile, ROLLBACK_NAME)
+
+    /** Fail closed rather than create an empty DB if crash recovery fails. */
+    @Synchronized
+    fun recoverIfNeeded(context: Context) {
+        val app = context.applicationContext
+        val rollback = rollbackFile(app)
+        val priorKey = DatabaseKeyManager.pendingRestoreOriginalPassphrase(app)
+        if (priorKey == null) {
+            // A crash before the durable marker cannot have changed the live DB.
+            if (rollback.exists()) rollback.delete()
+            return
+        }
+        try {
+            check(rollback.isFile) {
+                "Немає резервного стану для перерваного імпорту."
+            }
+            PortableBackupManager.verifyEncryptedSnapshot(app, rollback, priorKey)
+            val live = app.getDatabasePath(CeilingsDatabase.DATABASE_NAME)
+            val staged = File.createTempFile("restore_recovery_", ".db", live.parentFile)
+            try {
+                copyAndSync(rollback, staged)
+                // Only called before an initial DB open, or after closeAndReset.
+                removeClosedDatabaseFiles(live)
+                check(staged.renameTo(live)) {
+                    "Не вдалося повернути початкову базу після збою."
+                }
+                DatabaseKeyManager.rollbackPendingRestoreKey(app)
+                rollback.delete()
+            } finally {
+                staged.delete()
+            }
+        } finally {
+            priorKey.fill(0)
+        }
+    }
+
+    /** Fault points are opt-in and supplied only by instrumentation tests. */
+    internal enum class RestoreCheckpoint {
+        // Deterministic mid-stream I/O failures before any live DB mutation.
+        DURING_INCOMING_FILE_WRITE,
+        DURING_ROLLBACK_DRAFT_COPY,
+        AFTER_MARKER,
+        AFTER_OLD_FILES_REMOVED,
+        AFTER_IMPORTED_FILE_INSTALLED,
+        AFTER_KEY_REPLACED
+    }
+
+    fun restore(
+        context: Context,
+        contents: PortableBackupPayload.Contents,
+        onCheckpoint: ((RestoreCheckpoint) -> Unit)? = null
+    ): CeilingsDatabase =
+        CeilingsDatabase.withExclusiveRestoreLock {
+            synchronized(this) {
+                restoreLocked(context.applicationContext, contents, onCheckpoint)
+            }
+        }
+
+    /**
+     * Instrumentation-only I/O seam: direct the incoming staging stream at
+     * Android's /dev/full to produce a real kernel ENOSPC after the StatFs
+     * preflight. Do not expose this route through the application UI.
+     * Production restore always writes to its actual staging File.
+     */
+    internal fun restoreWithStageOutputForTesting(
+        context: Context,
+        contents: PortableBackupPayload.Contents,
+        stageOutput: (File) -> FileOutputStream
+    ): CeilingsDatabase =
+        CeilingsDatabase.withExclusiveRestoreLock {
+            synchronized(this) {
+                restoreLocked(context.applicationContext, contents, null, stageOutput)
+            }
+        }
+
+    private fun restoreLocked(
+        context: Context,
+        contents: PortableBackupPayload.Contents,
+        onCheckpoint: ((RestoreCheckpoint) -> Unit)?,
+        stageOutput: (File) -> FileOutputStream = { FileOutputStream(it) }
+    ): CeilingsDatabase {
+        recoverIfNeeded(context)
+        val live = context.getDatabasePath(CeilingsDatabase.DATABASE_NAME)
+        val parent = checkNotNull(live.parentFile)
+        check(parent.isDirectory || parent.mkdirs()) { "Каталог бази даних недоступний." }
+        // Do not create an incoming stage or a durable restore marker unless
+        // internal storage can hold all transient encrypted copies.
+        StorageSpaceGuard.requireForRestore(context, contents.database.size.toLong(), live)
+        val rollback = rollbackFile(context)
+        var incoming: File? = null
+        var originalSnapshot: File? = null
+        var rollbackDraft: File? = null
+        var pending = false
+        try {
+            // Validate new file and key BEFORE closing any production DB handle.
+            val stage = File.createTempFile("restore_incoming_", ".db", parent)
+            incoming = stage
+            stageOutput(stage).use { out ->
+                // Test hook fires after some bytes are written, before the
+                // full encrypted incoming image is durable. An IOException
+                // here simulates ENOSPC; the partial stage is removed below.
+                val firstChunk = minOf(contents.database.size, 8 * 1024)
+                out.write(contents.database, 0, firstChunk)
+                onCheckpoint?.invoke(RestoreCheckpoint.DURING_INCOMING_FILE_WRITE)
+                out.write(contents.database, firstChunk, contents.database.size - firstChunk)
+                out.fd.sync()
+            }
+            PortableBackupManager.verifyEncryptedSnapshot(context, stage, contents.passphrase)
+
+            val current = CeilingsDatabase.get(context)
+            val snapshot = PortableBackupManager.createVerifiedSnapshot(context, current)
+            originalSnapshot = snapshot
+            check(!rollback.exists()) { "Залишився невиконаний резервний відкат." }
+            val draft = File.createTempFile("restore_prepared_", ".db", parent)
+            rollbackDraft = draft
+            copyAndSync(snapshot, draft) {
+                onCheckpoint?.invoke(RestoreCheckpoint.DURING_ROLLBACK_DRAFT_COPY)
+            }
+            check(draft.renameTo(rollback)) { "Не вдалося зберегти резерв для відкату." }
+            rollbackDraft = null
+
+            DatabaseKeyManager.beginPendingRestore(context)
+            pending = true
+            onCheckpoint?.invoke(RestoreCheckpoint.AFTER_MARKER)
+            CeilingsDatabase.closeAndReset()
+            // The rollback snapshot already includes every committed WAL frame.
+            // After closure, old sidecars must not accompany the imported DB.
+            removeClosedDatabaseFiles(live)
+            onCheckpoint?.invoke(RestoreCheckpoint.AFTER_OLD_FILES_REMOVED)
+            check(stage.renameTo(live)) { "Не вдалося встановити імпортовану БД." }
+            incoming = null
+            onCheckpoint?.invoke(RestoreCheckpoint.AFTER_IMPORTED_FILE_INSTALLED)
+            DatabaseKeyManager.replacePassphrase(context, contents.passphrase)
+            onCheckpoint?.invoke(RestoreCheckpoint.AFTER_KEY_REPLACED)
+            installing = true
+            val restored = CeilingsDatabase.get(context)
+            check(restored.checkIntegrity()) { "Імпортована БД не пройшла integrity_check." }
+            DatabaseKeyManager.finishPendingRestore(context)
+            pending = false
+            rollback.delete()
+            return restored
+        } catch (failure: Throwable) {
+            if (pending) {
+                try {
+                    CeilingsDatabase.closeAndReset()
+                    recoverIfNeeded(context)
+                    pending = false
+                } catch (recoverError: Throwable) {
+                    // Leave rollback + key marker intact for next cold start.
+                    failure.addSuppressed(recoverError)
+                }
+            }
+            throw failure
+        } finally {
+            installing = false
+            incoming?.delete()
+            originalSnapshot?.delete()
+            rollbackDraft?.delete()
+        }
+    }
+
+    private fun copyAndSync(
+        source: File,
+        destination: File,
+        afterFirstChunk: (() -> Unit)? = null
+    ) {
+        source.inputStream().use { input ->
+            FileOutputStream(destination).use { output ->
+                if (afterFirstChunk != null) {
+                    // Only the testable restore-draft path uses this hook.
+                    // A partial rollback draft is never published as the
+                    // durable recovery file, nor does it change the live DB.
+                    val chunk = ByteArray(DEFAULT_BUFFER_SIZE)
+                    val count = input.read(chunk)
+                    if (count > 0) output.write(chunk, 0, count)
+                    afterFirstChunk()
+                }
+                input.copyTo(output)
+                output.fd.sync()
+            }
+        }
+    }
+
+    /** MUST only be called when no live driver is open. */
+    private fun removeClosedDatabaseFiles(live: File) {
+        listOf(File(live.absolutePath + "-wal"), File(live.absolutePath + "-shm"), live)
+            .forEach { file ->
+                if (file.exists()) check(file.delete()) {
+                    "Не вдалося прибрати закритий файл БД: ${file.name}"
+                }
+            }
+    }
+}

@@ -20,6 +20,7 @@ internal object DatabaseKeyManager {
     private const val WRAPPING_KEY_ALIAS = "andrey_ceilings_db_wrapping_key_v1"
     private const val PREFS_NAME = "secure_db_key_v1"
     private const val PREF_WRAPPED_KEY = "wrapped_passphrase"
+    private const val PREF_RESTORE_ORIGINAL_KEY = "restore_pending_original_passphrase"
     private const val GCM_TAG_BITS = 128
 
     @Synchronized
@@ -47,6 +48,52 @@ internal object DatabaseKeyManager {
         val wrapped = wrap(passphrase)
         check(prefs.edit().putString(PREF_WRAPPED_KEY, wrapped).commit()) {
             "Не вдалося зберегти новий захищений ключ бази даних."
+        }
+    }
+
+    /**
+     * Original key is persisted only as an already Keystore-wrapped value.
+     * Its durable presence marks a recoverable, not-yet-committed restore.
+     */
+    @Synchronized
+    fun beginPendingRestore(context: Context) {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        check(!prefs.contains(PREF_RESTORE_ORIGINAL_KEY)) {
+            "Попереднє відновлення ще не завершене."
+        }
+        val prior = checkNotNull(prefs.getString(PREF_WRAPPED_KEY, null)) {
+            "Не знайдено поточний ключ БД."
+        }
+        check(prefs.edit().putString(PREF_RESTORE_ORIGINAL_KEY, prior).commit()) {
+            "Не вдалося зберегти маркер відновлення."
+        }
+    }
+
+    @Synchronized
+    fun pendingRestoreOriginalPassphrase(context: Context): ByteArray? =
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getString(PREF_RESTORE_ORIGINAL_KEY, null)?.let(::unwrap)
+
+    @Synchronized
+    fun rollbackPendingRestoreKey(context: Context) {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val prior = checkNotNull(prefs.getString(PREF_RESTORE_ORIGINAL_KEY, null)) {
+            "Попередній ключ для відкату відсутній."
+        }
+        check(prefs.edit().putString(PREF_WRAPPED_KEY, prior)
+            .remove(PREF_RESTORE_ORIGINAL_KEY).commit()) {
+            "Не вдалося відновити ключ БД."
+        }
+    }
+
+    @Synchronized
+    fun finishPendingRestore(context: Context) {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        check(prefs.contains(PREF_RESTORE_ORIGINAL_KEY)) {
+            "Маркер відновлення відсутній."
+        }
+        check(prefs.edit().remove(PREF_RESTORE_ORIGINAL_KEY).commit()) {
+            "Не вдалося завершити відновлення."
         }
     }
 

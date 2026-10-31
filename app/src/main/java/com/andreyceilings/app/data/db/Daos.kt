@@ -7,6 +7,9 @@ import com.andreyceilings.shared.db.PriceRepository
 import com.andreyceilings.shared.db.EstimateRepository
 import com.andreyceilings.app.core.EstimateLineItems
 import com.andreyceilings.shared.calculation.MeasurementPrecision
+import com.andreyceilings.shared.estimate.FrozenCeilingShape
+import com.andreyceilings.shared.estimate.FrozenGeometrySnapshotSchema
+import com.andreyceilings.shared.estimate.VerifiedCeilingGeometry
 import com.andreyceilings.shared.estimate.ImmutableEstimateDraft
 import com.andreyceilings.shared.estimate.ImmutableEstimateLine
 import org.json.JSONObject
@@ -108,7 +111,29 @@ internal class EstimateDao(private val repo: EstimateRepository) {
             repo.documentNumberForId(it.id),
             repo.originalRevisionInputForId(it.id)?.let { source ->
                 runCatching { JSONObject(source).optString("name").takeIf { it.isNotBlank() } }.getOrNull()
-            }, repo.printableNumberForId(it.id)) }
+            }, repo.printableNumberForId(it.id),
+            repo.originalRevisionInputForId(it.id)?.let { source ->
+                if (JSONObject(source).has("shape") &&
+                    !FrozenPolygonGeometryJson.isVersioned(JSONObject(source))) {
+                    frozenLShapedGeometryFromSource(
+                        source,
+                        checkNotNull(MeasurementPrecision.fromStep(
+                            JSONObject(it.detailsJson).getDouble("measurementPrecisionMeters")
+                        )).stepMeters
+                    )
+                } else null
+            },
+            repo.originalRevisionInputForId(it.id)?.let { source ->
+                val json = JSONObject(source)
+                if (FrozenPolygonGeometryJson.isVersioned(json)) {
+                    FrozenPolygonGeometryJson.read(
+                        json,
+                        checkNotNull(MeasurementPrecision.fromStep(
+                            JSONObject(it.detailsJson).getDouble("measurementPrecisionMeters")
+                        )).stepMeters
+                    )
+                } else null
+            }) }
     }
     fun observeForProject(projectId: Long): Flow<List<EstimateEntity>> =
         repo.observeForProject(projectId).map { rows ->
@@ -119,7 +144,29 @@ internal class EstimateDao(private val repo: EstimateRepository) {
                 repo.documentNumberForId(it.id),
             repo.originalRevisionInputForId(it.id)?.let { source ->
                 runCatching { JSONObject(source).optString("name").takeIf { it.isNotBlank() } }.getOrNull()
-            }, repo.printableNumberForId(it.id)) }
+            }, repo.printableNumberForId(it.id),
+            repo.originalRevisionInputForId(it.id)?.let { source ->
+                if (JSONObject(source).has("shape") &&
+                    !FrozenPolygonGeometryJson.isVersioned(JSONObject(source))) {
+                    frozenLShapedGeometryFromSource(
+                        source,
+                        checkNotNull(MeasurementPrecision.fromStep(
+                            JSONObject(it.detailsJson).getDouble("measurementPrecisionMeters")
+                        )).stepMeters
+                    )
+                } else null
+            },
+            repo.originalRevisionInputForId(it.id)?.let { source ->
+                val json = JSONObject(source)
+                if (FrozenPolygonGeometryJson.isVersioned(json)) {
+                    FrozenPolygonGeometryJson.read(
+                        json,
+                        checkNotNull(MeasurementPrecision.fromStep(
+                            JSONObject(it.detailsJson).getDouble("measurementPrecisionMeters")
+                        )).stepMeters
+                    )
+                } else null
+            }) }
         }
     suspend fun count() = withContext(Dispatchers.IO) { repo.count().toInt() }
     suspend fun insert(item: EstimateEntity) = withContext(Dispatchers.IO) {
@@ -148,15 +195,82 @@ private fun snapshotForNumberedEstimate(item: EstimateEntity): ImmutableEstimate
     val details = JSONObject(item.detailsJson)
     val precision = MeasurementPrecision.fromStep(details.optDouble("measurementPrecisionMeters", 0.01))
         ?: MeasurementPrecision.ONE_CENTIMETER
-    val measurement = JSONObject()
+    val polygonV2 = item.frozenPolygon?.let { geometry ->
+        val frozen = com.andreyceilings.shared.estimate.FrozenPolygonGeometryContract
+            .requireValid(geometry)
+        check(details.has("measurementPrecisionMeters") &&
+            frozen.precisionStepMeters == precision.stepMeters &&
+            kotlin.math.abs(frozen.areaSquareMeters - item.areaSquareMeters) < 0.000001 &&
+            kotlin.math.abs(frozen.perimeterMeters - item.perimeterMeters) < 0.000001 &&
+            item.frozenGeometryInput == null) {
+            "Polygon geometry disagrees with the saved estimate or precision"
+        }
+        val boundsX = frozen.vertices.maxOf { it.xMm } - frozen.vertices.minOf { it.xMm }
+        val boundsY = frozen.vertices.maxOf { it.yMm } - frozen.vertices.minOf { it.yMm }
+        check(kotlin.math.abs(boundsX / 1000.0 - item.lengthMeters) < 0.000001 &&
+            kotlin.math.abs(boundsY / 1000.0 - item.widthMeters) < 0.000001) {
+            "Compatibility dimensions differ from polygon bounding rectangle"
+        }
+        frozen
+    }
+    // Freeze only actual user-supplied, validated geometry at first INSERT.
+    // The estimate compatibility row still stores rectangular bounding dimensions;
+    // the immutable source snapshot owns the complete L-shaped measurement.
+    val sourceGeometry = item.frozenGeometryInput
+    val frozenLShape = sourceGeometry?.let {
+        VerifiedCeilingGeometry.requireFrozenLShaped(it)
+    }
+    if (frozenLShape != null) {
+        check(details.has("measurementPrecisionMeters") &&
+            frozenLShape.precisionStepMeters == precision.stepMeters) {
+            "Frozen L-shaped precision differs from estimate details"
+        }
+        val (area, perimeter) =
+            VerifiedCeilingGeometry.checkedFrozenLShapedAreaAndPerimeter(frozenLShape)
+        check(kotlin.math.abs(area - item.areaSquareMeters) < 0.000001 &&
+            kotlin.math.abs(perimeter - item.perimeterMeters) < 0.000001 &&
+            item.lengthMeters == frozenLShape.sideA &&
+            item.widthMeters == frozenLShape.sideB) {
+            "New L-shaped estimate differs from the validated KMP measurement"
+        }
+    }
+    val measurement = if (polygonV2 != null) {
+        FrozenPolygonGeometryJson.write(
+            item.name, item.material, item.profileType, item.complexity, polygonV2
+        )
+    } else JSONObject()
+        .put("shape", if (frozenLShape == null) {
+            FrozenCeilingShape.RECTANGLE.wireId
+        } else FrozenCeilingShape.L_SHAPED.wireId)
+        .put("geometrySchemaVersion", FrozenGeometrySnapshotSchema.CURRENT_VERSION)
         .put("name", item.name)
         .put("material", item.material)
         .put("profileType", item.profileType)
         .put("complexity", item.complexity)
-        .put("lengthMeters", item.lengthMeters)
-        .put("widthMeters", item.widthMeters)
         .put("areaSquareMeters", item.areaSquareMeters)
         .put("perimeterMeters", item.perimeterMeters)
+    if (polygonV2 != null) {
+        // Already contains the complete v2 contour and input measurements.
+    } else if (frozenLShape == null) {
+        measurement.put("lengthMeters", item.lengthMeters)
+            .put("widthMeters", item.widthMeters)
+    } else {
+        measurement.put("sideA", frozenLShape.sideA)
+            .put("sideB", frozenLShape.sideB)
+            .put("sideC", frozenLShape.sideC)
+            .put("sideD", frozenLShape.sideD)
+            .put("sideE", frozenLShape.sideE)
+            .put("sideF", frozenLShape.sideF)
+    }
+    if (polygonV2 == null) {
+        FrozenGeometrySnapshotSchema.requireShape(
+            measurement.keys().asSequence().toSet(),
+            measurement.getString("shape"),
+            measurement.getLong("geometrySchemaVersion")
+        )
+    } else {
+        FrozenPolygonGeometryJson.read(measurement, precision.stepMeters)
+    }
     val saved = EstimateLineItems.fromJson(item.detailsJson)
     val lines = if (saved.isNotEmpty()) {
         saved.map {
@@ -187,7 +301,8 @@ private fun snapshotForNumberedEstimate(item: EstimateEntity): ImmutableEstimate
         sourceMeasurementJson = measurement.toString(),
         detailsJson = item.detailsJson,
         measurementPrecisionMeters = precision.stepMeters,
-        calculationRuleVersion = "kmp-v1",
+        calculationRuleVersion = if (polygonV2 == null) "kmp-v1"
+            else com.andreyceilings.shared.estimate.FrozenPolygonGeometryContract.CALCULATION_RULE_VERSION,
         totalCost = item.totalCost,
         lines = frozenLines
     )

@@ -1,0 +1,67 @@
+# Заміри за сторонами та креслення — погоджене UX-рішення
+
+## Verified v3 schema fix and regression checkpoint (30 Oct 2026)
+
+The `geometrySchemaVersion=3` reader bug in `FrozenPolygonGeometryJson.readGeometryFields` was fixed at `75778c42` by accepting **only** supported v2/v3 schemas instead of the stale v2-only test. The owner reports the APK works; CI for that SHA was successful across Android [#41128915568](https://github.com/aleks-nl5/andrey-ceilings-android/actions/runs/41128915568) and Windows/iOS [#41128915482](https://github.com/aleks-nl5/andrey-ceilings-android/actions/runs/41128915482).
+
+A subsequent Android instrumentation regression, `MeasuredSidesV3EstimateRegressionTest`, protects the end-to-end encrypted WAL v3 path: measured polygon initial estimate, duplicate, later price revisions, historical PDFs across cold reopen, immutable side/turn fidelity and tamper rejection. This new test is committed but needs **fresh CI acceptance**. The owner did not separately report all these v3-specific PDF/revision/backup operations on a device. The interactive free-drawing editor and T/U/trapezoid templates remain separate future PR work.
+
+## Implementation checkpoint — side-first entry and drawing (30 Oct 2026)
+
+The first code increment replaces the X/Y entry control with `OrthogonalSidesEditor` on Measurement and Calculator screens. Users provide all side lengths and each 90° turn. The shared `OrthogonalSideContour` builder verifies both endpoint/heading closure, then the common polygon engine validates the resulting geometry. An unclosed shape cannot be saved or priced. A shared read-only Compose `MeasurementDrawingPreview` presents the true contour and wall-length labels on new and saved measurements.
+
+For **new orthogonal side-based polygon measurements/estimates only**, `geometrySchemaVersion=3` persists ordered `sides` with integer `lengthMm` and `turnAfter` alongside the derived `vertices`. The v2 JSON contract remains unchanged for earlier polygons and existing rectangle/L templates. Historical v2 records do not gain inferred side measurements and remain readable; new v3 PDF shows side lengths and turns rather than technical vertices. This is a versioned extension, not a migration of immutable history. Manual APK and latest all-platform CI approval still required; this is NOT a claim that drawing mode or other templates have been delivered.
+
+**Рішення погоджене 30.10.2026 для Andrey Ceilings.** Це специфікація подальшої реалізації, а не опис уже готового UI. У PR #29 уже є технічний редактор координат X/Y; за рішенням власника його потрібно **прибрати з користувацького інтерфейсу** й замінити введенням виміряних сторін. Існуючий код, що працює з вершинами, не видаляти з KMP-геометрії чи сховища.
+
+## 1. Основний принцип
+
+**Майстер вводить те, що реально вимірює на об'єкті: довжини стін, напрямки поворотів, а в наступних етапах — діагоналі та кути.** Вершини X/Y залишаються **внутрішньою** моделлю для обчислень, масштабування/відображення контуру, зберігання, кошторисів і PDF. Показувати X/Y як основний спосіб заміру не потрібно.
+
+Не створювати окремих калькуляторів і таблиць для кожної форми. Різні способи введення перетворюються на один перевірений контур; площу та периметр обчислює вже наявний `CeilingPolygonCalculator` в `shared/commonMain`.
+
+## 2. Обсяг поточного PR #29: сторони замість вершин
+
+У формі **«Багатокутник»** наразі підтримувати **ортогональний багатокутник**: прямі сторони й повороти на 90°. Не називати це повною підтримкою довільних непрямих кутів: одних довжин сторін для загального багатокутника недостатньо.
+
+**Елементи інтерфейсу:**
+- послідовний перелік «Сторона 1», «Сторона 2», … у порядку обходу кімнати;
+- для кожної сторони — її **довжина в метрах** та **поворот після сторони** («ліворуч 90°» / «праворуч 90°»);
+- додати/видалити сторону, змінити значення; підказка про порядок обходу й останню сторону;
+- точність вимірювання береться з чинних налаштувань;
+- **жодних полів X/Y у користувацькому інтерфейсі**;
+- креслення-прев'ю оновлюється за валідними даними; при помилці показуємо її причину та забороняємо збереження/розрахунок, а не домальовуємо вигадану геометрію.
+
+**Побудова:** KMP приймає впорядковані записи `(lengthMm, turnAfter: LEFT | RIGHT)`. Першу сторону умовно спрямовує по осі +X — це лише внутрішня система координат, яка не впливає на площу чи периметр. Далі послідовно обчислює напрямок і вершини. Користувач вимірює **всі сторони, включно з останньою**; кінцева точка повинна точно повернутися в початкову, а поворот після останньої сторони має повернути напрямок до початкового. **Не підміняти відсутню/помилкову сторону автоматично обчисленою** й не виправляти виміри непомітно. Можна показувати очікувану величину замикання лише як підказку.
+
+**Перевірки:** щонайменше 4 сторони для простого ортогонального контуру, не більше 128; додатні скінченні довжини, точність/одиниці, замикання координат і напрямку, повтори/нульові ребра, самоперетин та самодотик, ненульова площа і допустимий діапазон координат. Після побудови обов'язково повторно виконувати перевірки загального KMP-рушія. Невалідні форми не зберігати.
+
+**Інші шаблони:** прямокутна та L-подібна стелі **вже реалізовані** і залишаються доступними. T-/U-подібні стелі, трапеції та інші готові шаблони — **наступні етапи й окремі PR** за рішенням власника; не додавати їх у цей PR. Діагоналі, непрямі кути й криві — також окремі майбутні геометричні контракти.
+
+## 3. Креслення — дві функції, один геометричний рушій
+
+### A. Креслення як наочне представлення **кожного заміру**
+
+У PR #29 передбачити **автоматичне read-only прев'ю** за валідними вимірами для прямокутника, L-форми та ортогонального багатокутника. Відображати контур із пропорційним масштабуванням, підписи сторін із їхніми довжинами, напрямок обходу (за потреби), площу й периметр. Підписувати реальні сторони, **не** габаритну рамку як форму приміщення. Креслення формуємо **з розрахованої геометрії**, не з приблизного малюнка. Воно служить для перевірки заміру, перегляду збереженого запису і подальшого друку/PDF із тієї самої перевіреної історичної геометрії.
+
+### B. Окремий режим **«Накреслити кімнату»** — наступний PR
+
+Майстер створює приблизний контур візуально (наприклад, пальцем), позначає сторони та вводить реальні довжини; система реконструює точну форму й перевіряє достатність вимірів. Ескіз **не є геометричною істиною** і сам по собі не дає точну площу. Для непрямих кутів згодом потрібно вимагати додаткові діагоналі/кути. Цей режим не включати в обсяг PR #29, але передбачити повторне використання того самого креслярського компонента й геометричного ядра.
+
+## 4. KMP, SQLDelight та незмінність історії
+
+`OrthogonalSideContourBuilder` (робоча назва) у `shared/commonMain` трансформує сторони+повороти на цілі `CeilingPointMm` та викликає єдиний `CeilingPolygonCalculator`. UI не рахує геометрію власними формулами.
+
+**Важливо для формату даних:** чинний `geometrySchemaVersion=2` зберігає `vertices` і `measurementsMm`, але для `shape=polygon` чинний `FrozenPolygonGeometryContract` вимагає **порожній** `measurementsMm`. Тому **не записувати** в нього нові ключі сторін/поворотів без зміни контракту. Перед комерційним збереженням нового способу введення потрібно затвердити явний типізований і версійний формат джерела (`sides` із `lengthMm` та `turnAfter` разом із похідними `vertices`; за потреби новий `geometrySchemaVersion=3`) і тестувати точне відновлення. Для вже існуючих v1/v2 знімків читачі залишаються окремими.
+
+Збережені заміри `drawingJson` та нові кошториси `sourceMeasurementJson` повинні містити **і вихідні виміряні сторони/повороти, і похідний контур** для перевірки походження геометрії; не відтворювати вихідні виміри з однієї площі/периметра. Ревізії кошторисів, дублікат, PDF і переносний бекап `.stpb` мають зберігати оригінальний стан. Вже створені immutable v1/v2/v3 ніколи не переписувати чи тихо перераховувати. SQLCipher WAL і спільна SQLDelight-архітектура зберігаються.
+
+## 5. Приймання PR #29 перед наступними формами
+
+1. Ручний замір ортогональної кімнати **за довжинами та поворотами**, жодних X/Y; видалення, додавання й корекція сторони.
+2. Креслення-прев'ю **усіх підтриманих замірів** і повторний перегляд після закриття/відкриття застосунку; підписи й масштаб відповідають вимірам.
+3. KMP unit-тести: прямокутний, опуклий/увігнутий ортогональний контур, різний порядок обходу, незамкнений контур/напрям, недостатні сторони, неправильна точність, самоперетин, нульова площа; округлення й периметр.
+4. SQLCipher/WAL Android instrumentation: замір → збереження → «Розрахувати» → кошторис → дублювання/ревізії → PDF → `.stpb` → відновлення/повторне відкриття; незмінність раніше збережених документів і первинних сторін.
+5. Успішні Android, Windows і iOS CI + ручне приймання Release APK власником. Не вважати цей новий UX завершеним до тестування.
+
+**Управління роботою:** усі зміни тільки в Draft PR #29 (`feature/wal-and-estimate-revisions`); `main` і merge тільки за окремим погодженням власника.
