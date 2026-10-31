@@ -65,6 +65,49 @@ class PriceCatalogRulesTest {
         assertEquals(units.size, units.distinct().size)
     }
 
+    @Test fun closingUnchangedEditorNeedsNoConfirmation() {
+        val original = catalog.first()
+        assertEquals(false, PriceCatalogRules.hasUnsavedEdits(
+            original, false, original.title, original.category, original.unit, "290,00"
+        ))
+        // Format-only edits preserve the same monetary amount.
+        assertEquals(false, PriceCatalogRules.hasUnsavedEdits(
+            original, true, original.title, original.category, original.unit, "290"
+        ))
+        // Focus/selection is not a change to the TextFieldValue.text.
+        assertEquals(false, PriceCatalogRules.hasUnsavedEdits(
+            null, false, "", "Додаткові роботи", "шт.", ""
+        ))
+    }
+
+    @Test fun editsToPriceNameCategoryOrUnitRequireDiscardConfirmation() {
+        val initial = catalog.first()
+        assertEquals(true, PriceCatalogRules.hasUnsavedEdits(
+            initial, true, initial.title, initial.category, initial.unit, "310,00"
+        ))
+        assertEquals(true, PriceCatalogRules.hasUnsavedEdits(
+            initial, true, initial.title, initial.category, initial.unit, "не число"
+        ))
+        assertEquals(true, PriceCatalogRules.hasUnsavedEdits(
+            initial, false, "Нова назва", initial.category, initial.unit, "290,00"
+        ))
+        assertEquals(true, PriceCatalogRules.hasUnsavedEdits(
+            initial, false, initial.title, "Профілі", initial.unit, "290,00"
+        ))
+        assertEquals(true, PriceCatalogRules.hasUnsavedEdits(
+            initial, false, initial.title, initial.category, "шт.", "290,00"
+        ))
+        assertEquals(false, PriceCatalogRules.hasUnsavedEdits(
+            initial, true, "Нова назва", "Профілі", "шт.", "290,00"
+        ))
+        assertEquals(true, PriceCatalogRules.hasUnsavedEdits(
+            null, false, "", "Полотна", "шт.", ""
+        ))
+        assertEquals(true, PriceCatalogRules.hasUnsavedEdits(
+            null, false, "", "Додаткові роботи", "шт.", "0"
+        ))
+    }
+
     @Test fun categoryNamesAndDisplayDoNotChangePrices() {
         assertEquals(listOf("Освітлення", "Полотна", "Профілі"),
             PriceCatalogRules.categories(catalog))
