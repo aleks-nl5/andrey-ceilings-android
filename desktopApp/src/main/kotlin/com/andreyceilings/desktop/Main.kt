@@ -27,6 +27,13 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.key
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import com.andreyceilings.shared.dashboard.CurrencyRatesStore
+import kotlinx.coroutines.delay
+import java.awt.Desktop
+import java.net.URI
+import java.text.SimpleDateFormat
+import java.util.Date
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -101,6 +108,20 @@ private fun DesktopPriceHost() {
         val items by store.items.collectAsState(initial = emptyList())
         val summaryFlow: Flow<DashboardSummary?> = remember(database) { database.dashboard.summary }
         val summary by summaryFlow.collectAsState(initial = null)
+        val currencyStore = remember(database) {
+            CurrencyRatesStore(DesktopCurrencyRatesGateway(), System::currentTimeMillis)
+        }
+        val currencyState by currencyStore.state.collectAsState()
+        val currencyDateFormatter = remember {
+            SimpleDateFormat("dd.MM, HH:mm", Locale.forLanguageTag("uk-UA"))
+        }
+        LaunchedEffect(currencyStore) { currencyStore.start() }
+        LaunchedEffect(currencyStore) {
+            while (true) {
+                delay(30_000L)
+                currencyStore.tick()
+            }
+        }
         var selectedTab by remember(database) { mutableStateOf(DesktopTab.HOME) }
         // Same commonMain navigation chrome as Android. Windows exposes only
         // the destinations implemented by its present encrypted desktop host.
@@ -136,7 +157,19 @@ private fun DesktopPriceHost() {
                             todayLabel = LocalDate.now().format(
                                 DateTimeFormatter.ofPattern("d MMMM yyyy", Locale.forLanguageTag("uk"))
                             ),
-                            nowMillis = System.currentTimeMillis()
+                            nowMillis = System.currentTimeMillis(),
+                            currencyRates = currencyState,
+                            onCurrencyRefresh = { scope.launch { currencyStore.refresh() } },
+                            onMonobank = {
+                                runCatching {
+                                    if (Desktop.isDesktopSupported() &&
+                                        Desktop.getDesktop().isSupported(Desktop.Action.BROWSE)
+                                    ) {
+                                        Desktop.getDesktop().browse(URI("https://monobank.ua/"))
+                                    }
+                                }
+                            },
+                            formatCurrencyDate = { millis -> currencyDateFormatter.format(Date(millis)) }
                         )
                     }
                 }
