@@ -17,6 +17,9 @@ import com.andreyceilings.shared.dashboard.DashboardScreen as SharedDashboardScr
 import com.andreyceilings.shared.dashboard.DashboardStore
 import com.andreyceilings.shared.dashboard.DashboardSummary
 import kotlinx.coroutines.flow.flowOf
+import java.time.LocalDate
+import java.time.format.DateTimeFormatter
+import java.util.Locale
 
 /** Android-only compatibility helper still used by Calculator/Settings. */
 @Composable
@@ -51,7 +54,13 @@ internal fun DashboardScreen(
             onCalculator = onCalculator,
             onObjects = onObjects,
             onSettings = onSettings,
-            onCalendar = onCalendar
+            onCalendar = onCalendar,
+            todayLabel = LocalDate.now().format(
+                DateTimeFormatter.ofPattern("d MMMM yyyy", Locale.forLanguageTag("uk"))
+            ),
+            nowMillis = System.currentTimeMillis()
+            // Scheduling fields do not exist in SQLDelight yet. The empty
+            // state is real; creation dates must never become fake appointments.
         )
         // Monobank's Android HTTP/SharedPreferences/Intent integration is retained intact.
         // Shared UI + KMP cache/network adaptation is independent follow-up work.
