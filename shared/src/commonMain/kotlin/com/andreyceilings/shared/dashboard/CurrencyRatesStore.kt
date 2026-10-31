@@ -3,6 +3,7 @@ package com.andreyceilings.shared.dashboard
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.*
@@ -24,7 +25,9 @@ data class CurrencyRatesUiState(
     val snapshot: CurrencySnapshot? = null,
     val nowMillis: Long = 0L,
     val loading: Boolean = false,
-    val message: String? = null
+    val message: String? = null,
+    /** Incremented for every notification, including repeated identical text. */
+    val messageVersion: Long = 0L
 ) {
     val remainingMillis: Long get() = currencyRefreshRemainingMillis(snapshot, nowMillis)
     val canRefresh: Boolean get() = !loading && remainingMillis == 0L
@@ -163,6 +166,14 @@ class CurrencyRatesStore(
         mutableState.value = mutableState.value.copy(nowMillis = nowMillis())
     }
 
+    /** Avoid clearing a newer message when an older five-second timer expires. */
+    fun dismissMessage(version: Long) {
+        mutableState.update { current ->
+            if (current.message != null && current.messageVersion == version) current.copy(message = null)
+            else current
+        }
+    }
+
     suspend fun refresh() = refresh(automatic = false)
 
     private suspend fun refresh(automatic: Boolean) {
@@ -175,7 +186,8 @@ class CurrencyRatesStore(
                 val result = parseMonobankRates(gateway.fetchRatesJson(), current.snapshot, nowMillis())
                 if (result == null) {
                     mutableState.value = mutableState.value.copy(
-                        message = "Не вдалося отримати курси. Показано збережені дані."
+                        message = "Не вдалося отримати курси. Показано збережені дані.",
+                        messageVersion = current.messageVersion + 1L
                     )
                 } else {
                     val saved = runCatching { gateway.saveCache(encodeCurrencyCache(result)) }.isSuccess
@@ -187,14 +199,16 @@ class CurrencyRatesStore(
                             automatic -> null
                             changed -> "Курси оновлено."
                             else -> "Банк не змінив встановлені курси."
-                        }
+                        },
+                        messageVersion = current.messageVersion + 1L
                     )
                 }
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (_: Exception) {
                 mutableState.value = mutableState.value.copy(
-                    message = "Не вдалося отримати курси. Показано збережені дані."
+                    message = "Не вдалося отримати курси. Показано збережені дані.",
+                        messageVersion = current.messageVersion + 1L
                 )
             } finally {
                 mutableState.value = mutableState.value.copy(loading = false, nowMillis = nowMillis())
