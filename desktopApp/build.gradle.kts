@@ -14,6 +14,7 @@ dependencies {
     // Desktop now consumes the encrypted SQLDelight driver and its reactive repository.
     implementation("app.cash.sqldelight:runtime:2.4.1")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.2")
+    testImplementation(kotlin("test"))
 }
 
 compose.desktop {
