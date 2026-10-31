@@ -483,10 +483,12 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
                 ) {
                     when (tab) {
                         AppTab.DASHBOARD -> DashboardScreen(
+                            database = database,
                             onNewMeasurement = { navigateTo(AppTab.MEASUREMENTS) },
                             onCalculator = { navigateTo(AppTab.CALCULATOR) },
                             onObjects = { navigateTo(AppTab.OBJECTS) },
-                            onSettings = { navigateTo(AppTab.SETTINGS) }
+                            onSettings = { navigateTo(AppTab.SETTINGS) },
+                            onCalendar = { navigateTo(AppTab.CALENDAR) }
                         )
                         AppTab.CALCULATOR -> CalculatorScreen(
                             database = database,
