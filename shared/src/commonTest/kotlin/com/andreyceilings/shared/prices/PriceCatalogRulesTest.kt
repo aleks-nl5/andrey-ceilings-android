@@ -42,6 +42,20 @@ class PriceCatalogRulesTest {
     }
 
 
+    @Test fun categoryDropdownContainsStandardAndExistingCustomCategories() {
+        val entries = catalog + PriceCatalogItem(
+            4, "custom.4", "Тестова послуга", "Особливі роботи", "шт.", 75.0
+        )
+        val options = PriceCatalogRules.categoryOptions(entries)
+        assertEquals(PriceCatalogRules.standardCategories,
+            options.take(PriceCatalogRules.standardCategories.size))
+        assertTrue("Особливі роботи" in options)
+        assertEquals(options.size, options.distinct().size)
+        // Merely reading the dropdown must not change a category or a price.
+        assertEquals("Особливі роботи", entries.last().category)
+        assertEquals(75.0, entries.last().price)
+    }
+
     @Test fun unitDropdownIncludesStandardAndPersistedCustomUnits() {
         val units = PriceCatalogRules.unitOptions(catalog + PriceCatalogItem(
             4, "custom.4", "Послуга за годину", "Роботи", "год.", 180.0
