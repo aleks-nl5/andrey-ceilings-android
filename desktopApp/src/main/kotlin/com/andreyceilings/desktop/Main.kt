@@ -55,11 +55,11 @@ private fun DesktopPriceHost() {
     var unlockError by remember { mutableStateOf<String?>(null) }
     var unlocking by remember { mutableStateOf(false) }
 
-    DisposableEffect(session) {
-        onDispose { session?.close() }
-    }
-
+    // Close the exact previous session, never a newly assigned replacement.
     val database = session
+    DisposableEffect(database) {
+        onDispose { database?.close() }
+    }
     if (database != null) {
         val priceFlow = remember(database) { database.prices.observeAll() }
         val prices by priceFlow.collectAsState(initial = emptyList())
