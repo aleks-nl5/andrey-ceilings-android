@@ -1,13 +1,9 @@
 package com.andreyceilings.shared.dashboard
 
 import io.ktor.client.HttpClient
-import io.ktor.client.call.body
 import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.request.get
 import io.ktor.client.statement.bodyAsText
-import io.ktor.http.ContentType
-import io.ktor.http.HttpHeaders
-import io.ktor.http.contentType
 
 /** Public cache storage: only OS-specific persistence is supplied by hosts. */
 interface CurrencyRatesCache {
@@ -23,7 +19,7 @@ interface CurrencyRatesCache {
 class MonobankCurrencyGateway(
     private val cache: CurrencyRatesCache,
     private val httpClient: HttpClient = monobankHttpClient()
-) : CurrencyRatesGateway, AutoCloseable {
+) : CurrencyRatesGateway {
     override fun readCache(): String? = cache.read()
 
     override fun saveCache(value: String) = cache.write(value)
@@ -31,7 +27,7 @@ class MonobankCurrencyGateway(
     override suspend fun fetchRatesJson(): String =
         httpClient.get("https://api.monobank.ua/bank/currency").bodyAsText()
 
-    override fun close() {
+    fun close() {
         httpClient.close()
     }
 }
