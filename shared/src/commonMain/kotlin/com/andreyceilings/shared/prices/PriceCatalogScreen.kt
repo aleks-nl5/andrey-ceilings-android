@@ -165,7 +165,7 @@ fun PriceCatalogScreen(
                                     TextButton(onClick = { openEditor(item, PriceEditorMode.FULL) }) {
                                         Text("Змінити")
                                     }
-                                    TextButton(onClick = { deleting = item }) { Text("Видалити") }
+                                    TextButton(onClick = { editorError = null; deleting = item }) { Text("Видалити") }
                                 }
                             } else {
                                 Column(Modifier.fillMaxWidth().padding(12.dp)) {
@@ -183,10 +183,14 @@ fun PriceCatalogScreen(
                                         TextButton(onClick = { openEditor(item, PriceEditorMode.QUICK) }) {
                                             Text("${PriceCatalogRules.formatSalePrice(item.price)} ₴")
                                         }
+                                    }
+                                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                                         TextButton(onClick = { openEditor(item, PriceEditorMode.FULL) }) {
                                             Text("Змінити")
                                         }
-                                        TextButton(onClick = { deleting = item }) { Text("Видалити") }
+                                        TextButton(onClick = { editorError = null; deleting = item }) {
+                                            Text("Видалити")
+                                        }
                                     }
                                 }
                             }
@@ -336,6 +340,10 @@ private fun PriceEditorDialog(
                 Text("Зміни прайсу не змінюють історичні кошториси.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
+                errorMessage?.let {
+                    Text(it, style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error)
+                }
                 error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
             }
         },
