@@ -26,6 +26,12 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import kotlinx.coroutines.delay
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -48,10 +54,22 @@ fun DashboardScreen(
     onOpenProject: ((String) -> Unit)? = null,
     currencyRates: CurrencyRatesUiState? = null,
     onCurrencyRefresh: (() -> Unit)? = null,
+    onCurrencyMessageDismiss: ((Long) -> Unit)? = null,
     onMonobank: (() -> Unit)? = null,
     formatCurrencyDate: ((Long) -> String)? = null,
     modifier: Modifier = Modifier
 ) {
+    // Opening SQLCipher and loading its repositories can briefly expose a null
+    // database handle. Do not flash a false alarm during a normal startup.
+    var showDatabaseUnavailable by remember { mutableStateOf(false) }
+    LaunchedEffect(databaseAvailable) {
+        showDatabaseUnavailable = false
+        if (!databaseAvailable) {
+            delay(2_000L)
+            showDatabaseUnavailable = true
+        }
+    }
+
     Column(
         modifier = modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(16.dp)
@@ -92,7 +110,7 @@ fun DashboardScreen(
             CompactMetric("Заміри", summary?.measurementCount?.toString() ?: "—", Icons.Default.Straighten, Modifier.weight(1f))
             CompactMetric("Площа", summary?.areaLabel() ?: "—", Icons.Default.SquareFoot, Modifier.weight(1f))
         }
-        if (!databaseAvailable || summary == null) {
+        if ((!databaseAvailable && showDatabaseUnavailable) || (databaseAvailable && summary == null)) {
             Text(
                 if (databaseAvailable) "Завантаження статистики…" else "Захищена база даних недоступна. Статистику не завантажено.",
                 style = MaterialTheme.typography.bodySmall,
@@ -106,6 +124,7 @@ fun DashboardScreen(
                 state = currencyRates,
                 onRefresh = onCurrencyRefresh,
                 onMonobank = onMonobank,
+                onMessageTimeout = onCurrencyMessageDismiss,
                 formatDate = formatCurrencyDate
             )
         }
