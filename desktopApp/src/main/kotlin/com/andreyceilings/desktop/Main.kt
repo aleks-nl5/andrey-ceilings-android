@@ -32,6 +32,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
 import com.andreyceilings.shared.dashboard.DashboardScreen
+import com.andreyceilings.shared.dashboard.DashboardSummary
+import kotlinx.coroutines.flow.Flow
 import com.andreyceilings.shared.prices.PriceCatalogScreen
 import com.andreyceilings.shared.prices.PriceCatalogStore
 import com.andreyceilings.shared.prices.PriceCatalogTheme
@@ -79,7 +81,8 @@ private fun DesktopPriceHost() {
             PriceCatalogStore(database.prices, nowMillis = System::currentTimeMillis)
         }
         val items by store.items.collectAsState(initial = emptyList())
-        val summary by database.dashboard.summary.collectAsState(initial = null)
+        val summaryFlow: Flow<DashboardSummary?> = remember(database) { database.dashboard.summary }
+        val summary by summaryFlow.collectAsState(initial = null)
         var selectedTab by remember(database) { mutableStateOf(DesktopTab.HOME) }
         Column(Modifier.fillMaxSize()) {
             Row(
