@@ -61,12 +61,6 @@ fun DashboardScreen(
             onOpenProject = onOpenProject
         )
 
-        Text(
-            "ШВИДКІ ІНСТРУМЕНТИ МАЙСТРА",
-            style = MaterialTheme.typography.titleSmall,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
         BoxWithConstraints(Modifier.fillMaxWidth()) {
             if (maxWidth >= 900.dp) {
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -89,10 +83,6 @@ fun DashboardScreen(
             }
         }
 
-        Text(
-            "КОРОТКО ПРО РОБОТУ", style = MaterialTheme.typography.titleSmall,
-            fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             CompactMetric("Об’єкти", summary?.projectCount?.toString() ?: "—", Icons.Default.Business, Modifier.weight(1f))
             CompactMetric("Заміри", summary?.measurementCount?.toString() ?: "—", Icons.Default.Straighten, Modifier.weight(1f))
@@ -101,12 +91,6 @@ fun DashboardScreen(
         if (!databaseAvailable || summary == null) {
             Text(
                 if (databaseAvailable) "Завантаження статистики…" else "Захищена база даних недоступна. Статистику не завантажено.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        } else {
-            Text(
-                "За активними об’єктами та їхніми замірами в локальній базі.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
