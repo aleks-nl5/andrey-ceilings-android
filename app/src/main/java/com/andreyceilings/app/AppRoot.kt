@@ -99,7 +99,14 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
         ThemeMode.SYSTEM -> systemDarkTheme
     }
 
-    val topAppBarScrollBehavior = TopAppBarDefaults.enterAlwaysScrollBehavior()
+    // Each tab opens with the app header visible. Previously the same TopAppBar
+    // scroll state survived tab changes, so opening Price List after scrolling
+    // another tab could leave the СтеляПро header collapsed until the next swipe.
+    // Keying only the scroll behavior (not the app state) preserves per-screen
+    // scrolling while resetting the header on navigation.
+    val topAppBarScrollBehavior = key(tab) {
+        TopAppBarDefaults.enterAlwaysScrollBehavior()
+    }
     val isScrolling = remember { mutableStateOf(false) }
     // Keep app chrome transparent so the window background is visible behind the system bars.
     val appBarColor = androidx.compose.ui.graphics.Color.Transparent
@@ -456,7 +463,7 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
                             }
                         )
                         AppTab.ESTIMATES -> EstimatesScreen(database)
-                        AppTab.PRICES -> PriceListScreen(database)
+                        AppTab.PRICES -> PriceListScreen(database, darkTheme = useDarkTheme)
                         AppTab.CALENDAR -> CalendarScreen(database)
                         else -> Unit
                     }
