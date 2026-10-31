@@ -88,6 +88,7 @@ internal fun DashboardScreen(
             nowMillis = System.currentTimeMillis(),
             currencyRates = currencyState,
             onCurrencyRefresh = { scope.launch { currencyStore.refresh() } },
+            onCurrencyMessageDismiss = currencyStore::dismissMessage,
             onMonobank = {
                 runCatching {
                     context.startActivity(
