@@ -1,5 +1,6 @@
 package com.andreyceilings.desktop
 
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -28,6 +29,7 @@ import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
 import com.andreyceilings.shared.prices.PriceCatalogItem
 import com.andreyceilings.shared.prices.PriceCatalogScreen
+import com.andreyceilings.shared.prices.PriceCatalogTheme
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -36,8 +38,10 @@ import java.util.UUID
 
 fun main() = application {
     Window(onCloseRequest = ::exitApplication, title = "СтеляПро — Прайс") {
-        MaterialTheme {
-            Surface(Modifier.fillMaxSize()) { DesktopPriceHost() }
+        PriceCatalogTheme(darkTheme = isSystemInDarkTheme()) {
+            Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                DesktopPriceHost()
+            }
         }
     }
 }
