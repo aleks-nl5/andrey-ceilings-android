@@ -52,24 +52,23 @@ class PriceCatalogStore(
                 kotlin.math.abs(cents - kotlin.math.round(cents)) < 0.0001
         ) { "Неприпустима ціна продажу." }
 
-        val code = if (original == null) {
-            "custom.${newRecordUuid()}"
-        } else {
-            require(original.id > 0L && original.updatedAt > 0L) {
-                "Для збереження потрібен актуальний запис прайсу."
-            }
-            val current = checkNotNull(repository.find(original.id)) {
-                "Позицію прайсу видалено. Оновіть перелік."
-            }
-            check(current.code == original.code &&
-                current.updatedAt == original.updatedAt) {
-                "Позицію вже змінено. Оновіть перелік перед редагуванням."
-            }
-            original.code
+        if (original == null) {
+            return repository.upsertReturningId(
+                code = "custom.${newRecordUuid()}",
+                title = title,
+                category = category,
+                unit = unit,
+                price = draft.price,
+                updatedAt = nowMillis()
+            )
         }
-        return repository.upsertReturningId(
-            id = original?.id ?: 0L,
-            code = code,
+        require(original.id > 0L && original.updatedAt > 0L) {
+            "Для збереження потрібен актуальний запис прайсу."
+        }
+        return repository.updateIfUnchanged(
+            id = original.id,
+            expectedCode = original.code,
+            expectedUpdatedAt = original.updatedAt,
             title = title,
             category = category,
             unit = unit,
@@ -83,13 +82,10 @@ class PriceCatalogStore(
         require(original.id > 0L && original.updatedAt > 0L) {
             "Для видалення потрібен актуальний запис прайсу."
         }
-        val current = checkNotNull(repository.find(original.id)) {
-            "Позицію вже видалено."
-        }
-        check(current.code == original.code &&
-            current.updatedAt == original.updatedAt) {
-            "Позицію вже змінено. Оновіть перелік перед видаленням."
-        }
-        repository.delete(original.id)
+        repository.deleteIfUnchanged(
+            id = original.id,
+            expectedCode = original.code,
+            expectedUpdatedAt = original.updatedAt
+        )
     }
 }
