@@ -5,6 +5,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.indication
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -26,6 +27,7 @@ import androidx.compose.material.icons.filled.Straighten
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.ripple
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
@@ -123,8 +125,9 @@ private fun FloatingNavigationItem(
     modifier: Modifier = Modifier
 ) {
     val view = LocalView.current
-    // combinedClickable otherwise retains Material's animated ripple on every tap;
-    // the previous color animation was already removed, but that press animation remained.
+    // One interaction source drives the native Material 3 ripple INSIDE the icon pill.
+    // The full-height combinedClickable handles both taps and long presses, but does
+    // not draw a second ripple over the entire tab. No selection color animation.
     val interactionSource = remember { MutableInteractionSource() }
     val colors = MaterialTheme.colorScheme
     val indicatorTarget = if (selected) lerp(colors.primaryContainer, colors.primary, 0.18f)
@@ -165,7 +168,10 @@ private fun FloatingNavigationItem(
         Box(
             Modifier.fillMaxWidth(0.86f).height(32.dp)
                 .clip(RoundedCornerShape(18.dp))
-                .background(indicatorColor),
+                .background(indicatorColor)
+                // Restore the original theme-driven Material 3 touch wave, not the
+                // extra full-item effect or the removed color-change animation.
+                .indication(interactionSource, ripple(bounded = false)),
             contentAlignment = Alignment.Center
         ) {
             Icon(icon, contentDescription = null, modifier = Modifier.widthIn(min = 22.dp).height(22.dp),
