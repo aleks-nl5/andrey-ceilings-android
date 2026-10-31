@@ -41,6 +41,38 @@ object PriceCatalogRules {
             .filter { it.isNotEmpty() && it !in standardUnits }
             .distinct().sortedBy { it.lowercase() }
 
+    /**
+     * Compare the unsaved editor against the state shown when it was opened.
+     * Cursor/selection changes are not edits; changing from 290,00 to 290 is
+     * not a monetary change either. Invalid typed text is always a draft.
+     * For a new row, category and unit start with the same UI defaults.
+     */
+    fun hasUnsavedEdits(
+        initial: PriceCatalogItem?,
+        quickPriceOnly: Boolean,
+        title: String,
+        category: String,
+        unit: String,
+        salePriceText: String
+    ): Boolean {
+        val initialText = initial?.price?.let(::formatSalePrice).orEmpty()
+        val initialNumber = parseSalePrice(initialText)
+        val draftNumber = parseSalePrice(salePriceText)
+        val priceChanged = if (salePriceText.trim() == initialText) {
+            false
+        } else if (initialNumber != null && draftNumber != null) {
+            draftNumber != initialNumber
+        } else {
+            salePriceText.isNotBlank() || initialText.isNotBlank()
+        }
+        if (quickPriceOnly) return priceChanged
+
+        return title != initial?.title.orEmpty() ||
+            category != (initial?.category ?: "Додаткові роботи") ||
+            unit != (initial?.unit ?: "шт.") ||
+            priceChanged
+    }
+
     private val pricePattern = Regex("""^\d{1,9}(?:[.,]\d{1,2})?$""")
 
     fun parseSalePrice(input: String): Double? {
