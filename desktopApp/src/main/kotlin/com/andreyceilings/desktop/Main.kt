@@ -27,14 +27,13 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
-import com.andreyceilings.shared.prices.PriceCatalogItem
 import com.andreyceilings.shared.prices.PriceCatalogScreen
+import com.andreyceilings.shared.prices.PriceCatalogStore
 import com.andreyceilings.shared.prices.PriceCatalogTheme
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.util.UUID
 
 fun main() = application {
     Window(onCloseRequest = ::exitApplication, title = "СтеляПро — Прайс") {
@@ -65,32 +64,19 @@ private fun DesktopPriceHost() {
         onDispose { database?.close() }
     }
     if (database != null) {
-        val priceFlow = remember(database) { database.prices.observeAll() }
-        val prices by priceFlow.collectAsState(initial = emptyList())
-        val items = remember(prices) {
-            prices.map { row ->
-                PriceCatalogItem(row.id, row.code, row.title, row.category, row.unit, row.price)
-            }
+        val store = remember(database) {
+            PriceCatalogStore(database.prices, nowMillis = System::currentTimeMillis)
         }
+        val items by store.items.collectAsState(initial = emptyList())
         PriceCatalogScreen(
             items = items,
             databaseAvailable = true,
             contentPadding = PaddingValues(horizontal = 24.dp, vertical = 24.dp),
             onSave = { original, draft ->
-                withContext(Dispatchers.IO) {
-                    database.prices.upsertReturningId(
-                        id = original?.id ?: 0L,
-                        code = original?.code ?: "custom.${UUID.randomUUID()}",
-                        title = draft.title,
-                        category = draft.category,
-                        unit = draft.unit,
-                        price = draft.price,
-                        updatedAt = System.currentTimeMillis()
-                    )
-                }
+                withContext(Dispatchers.IO) { store.save(original, draft) }
             },
             onDelete = { item ->
-                withContext(Dispatchers.IO) { database.prices.delete(item.id) }
+                withContext(Dispatchers.IO) { store.delete(item) }
             }
         )
     } else {
