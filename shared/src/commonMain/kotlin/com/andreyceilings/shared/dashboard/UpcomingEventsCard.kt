@@ -13,8 +13,9 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -100,11 +101,13 @@ fun UpcomingEventsCard(
         )
     ) {
         if (upcoming.isEmpty()) {
+            // 58 -> 44dp (~24% shorter) while Compose's clickable touch
+            // expansion still allows a >=48dp hit area for the calendar link.
             Row(
-                Modifier.fillMaxWidth().heightIn(min = 58.dp)
-                    .padding(start = 14.dp, end = 8.dp, top = 4.dp, bottom = 4.dp),
+                Modifier.fillMaxWidth().height(44.dp)
+                    .padding(start = 12.dp, end = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(9.dp)
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Icon(
                     Icons.Default.CalendarMonth,
@@ -122,9 +125,27 @@ fun UpcomingEventsCard(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
-                TextButton(onClick = { onCalendar?.invoke() }, enabled = onCalendar != null) {
-                    Text("Календар", maxLines = 1)
-                    Icon(Icons.Default.ChevronRight, contentDescription = null)
+                Row(
+                    modifier = Modifier
+                        .height(44.dp)
+                        .clickable(enabled = onCalendar != null) { onCalendar?.invoke() }
+                        .padding(horizontal = 5.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(2.dp)
+                ) {
+                    val linkColor = if (onCalendar != null) theme.primary else theme.onSurfaceVariant
+                    Text(
+                        "Календар",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = linkColor,
+                        maxLines = 1
+                    )
+                    Icon(
+                        Icons.Default.ChevronRight,
+                        contentDescription = null,
+                        tint = linkColor,
+                        modifier = Modifier.size(18.dp)
+                    )
                 }
             }
         } else {
