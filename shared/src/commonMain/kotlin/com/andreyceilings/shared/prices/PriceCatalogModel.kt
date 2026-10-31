@@ -23,6 +23,14 @@ data class PriceCatalogDraft(
 
 /** Only the sale price is required; extended cost components belong to issue #37. */
 object PriceCatalogRules {
+    /** Common ceiling-work units; existing custom units remain available in the dropdown. */
+    val standardUnits: List<String> = listOf("м²", "м.п.", "шт.", "компл.", "послуга")
+
+    fun unitOptions(items: List<PriceCatalogItem>): List<String> =
+        standardUnits + items.map { it.unit.trim() }
+            .filter { it.isNotEmpty() && it !in standardUnits }
+            .distinct().sortedBy { it.lowercase() }
+
     private val pricePattern = Regex("""^\d{1,9}(?:[.,]\d{1,2})?$""")
 
     fun parseSalePrice(input: String): Double? {
