@@ -1,5 +1,7 @@
 # CMP Price List — UX, архітектура та поетапна реалізація
-**Рішення власника: 31.10.2026 · статус: погоджена специфікація для планування, не реалізовано.**
+**Рішення власника: 31.10.2026 · актуальний стан: часткова реалізація у Draft PR #43, CI/APK приймання ще не підтверджені.**
+
+> **Реалізований перший зріз:** `shared/prices/PriceCatalogModel.kt` та `PriceCatalogScreen.kt` (ціна продажу, пошук/категорії, адаптивна таблиця/картки, редактори й soft-delete); Android `PriceListScreen.kt` тепер thin adapter SQLCipher DAO; Windows Desktop host підключений до реального локального SQLCipher через парольний PBKDF2-ключ без збереження ключа на диск, із окремим Windows round-trip/wrong-password тестом. **Це ще не перевірений production-реліз:** спільні теми/Inter desktop, iOS host, Windows OS Credential storage/backup та весь CI/ручне приймання попереду. Нижче збережено первинний стан після PR #29 як історичну вихідну точку.
 
 ## 1. Мета і продуктове рішення
 Перенести реальний прайс із Android `app/.../PriceListScreen.kt` у спільний Compose Multiplatform UI (`:shared`), не переписуючи чинний спільний KMP `PriceRepository`, SQLDelight чи розрахункове ядро. UI має бути **один**, із адаптивним компонуванням для Android/iOS touch та Windows keyboard/mouse. Реальний Android — збережений візуальний та поведінковий еталон.
