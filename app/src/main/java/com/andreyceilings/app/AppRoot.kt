@@ -34,6 +34,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -590,11 +591,19 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
             }
         }
 
+        // This overlay must follow the same scroll offset as the TopAppBar.
+        // A fixed Box left a permanent dark band when the toolbar was hidden.
+        // Fade it away at full collapse, including the status-bar portion.
         Box(
             modifier = Modifier
                 .align(Alignment.TopCenter)
                 .fillMaxWidth()
-                 .height(statusBarInset + 56.dp + systemPanelGradientHeight)
+                .height(statusBarInset + 56.dp + systemPanelGradientHeight)
+                .graphicsLayer {
+                    translationY = topAppBarScrollBehavior.state.heightOffset
+                    alpha = (1f - topAppBarScrollBehavior.state.collapsedFraction)
+                        .coerceIn(0f, 1f)
+                }
                 .background(
                     Brush.verticalGradient(
                         colors = listOf(
