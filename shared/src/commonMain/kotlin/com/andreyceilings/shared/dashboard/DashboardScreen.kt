@@ -14,7 +14,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Business
 import androidx.compose.material.icons.filled.Calculate
-import androidx.compose.material.icons.filled.Event
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.SquareFoot
 import androidx.compose.material.icons.filled.Straighten
@@ -43,50 +42,24 @@ fun DashboardScreen(
     onObjects: (() -> Unit)?,
     onSettings: (() -> Unit)?,
     onCalendar: (() -> Unit)?,
+    todayLabel: String,
+    nowMillis: Long,
+    upcomingEvents: List<UpcomingWorkEvent> = emptyList(),
+    onOpenProject: ((String) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     Column(
         modifier = modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(22.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
-        ) {
-            Column(
-                Modifier.fillMaxWidth().padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Icon(Icons.Default.Event, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                    Text(
-                        "НАЙБЛИЖЧА ПОДІЯ", style = MaterialTheme.typography.labelLarge,
-                        fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimaryContainer
-                    )
-                }
-                Text(
-                    "Запланованих подій поки немає",
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer
-                )
-                Text(
-                    "У поточній базі ще немає дат запланованих робіт. Календар показує дати створення об’єктів і кошторисів.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.82f)
-                )
-                OutlinedButton(
-                    onClick = { onCalendar?.invoke() },
-                    enabled = onCalendar != null,
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(14.dp),
-                    colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.onPrimaryContainer)
-                ) {
-                    Text("Відкрити календар")
-                }
-            }
-        }
+        UpcomingEventsCard(
+            events = upcomingEvents,
+            todayLabel = todayLabel,
+            nowMillis = nowMillis,
+            databaseAvailable = databaseAvailable,
+            onCalendar = onCalendar,
+            onOpenProject = onOpenProject
+        )
 
         Text(
             "ШВИДКІ ІНСТРУМЕНТИ МАЙСТРА",
