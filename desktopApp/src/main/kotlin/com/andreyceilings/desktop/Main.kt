@@ -131,7 +131,7 @@ private fun DesktopPriceHost() {
                             onNewMeasurement = null,
                             onCalculator = null,
                             onObjects = null,
-                            onSettings = null,
+                            onEstimates = null,
                             onCalendar = null,
                             todayLabel = LocalDate.now().format(
                                 DateTimeFormatter.ofPattern("d MMMM yyyy", Locale.forLanguageTag("uk"))
