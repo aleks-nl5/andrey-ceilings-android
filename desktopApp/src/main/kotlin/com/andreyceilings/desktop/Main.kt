@@ -56,6 +56,9 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.time.LocalDate
+import java.time.format.DateTimeFormatter
+import java.util.Locale
 
 private enum class DesktopTab { HOME, PRICES }
 
@@ -129,7 +132,11 @@ private fun DesktopPriceHost() {
                             onCalculator = null,
                             onObjects = null,
                             onSettings = null,
-                            onCalendar = null
+                            onCalendar = null,
+                            todayLabel = LocalDate.now().format(
+                                DateTimeFormatter.ofPattern("d MMMM yyyy", Locale.forLanguageTag("uk"))
+                            ),
+                            nowMillis = System.currentTimeMillis()
                         )
                     }
                 }
