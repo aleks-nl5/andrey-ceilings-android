@@ -53,6 +53,7 @@ import kotlinx.coroutines.flow.flowOf
 @Composable
 internal fun SettingsScreen(databaseStatus: String, database: CeilingsDatabase?, onDatabaseReplaced: (CeilingsDatabase) -> Unit, themeMode: ThemeMode, onThemeModeChange: (ThemeMode) -> Unit, onOpenPriceList: () -> Unit, measurementPrecision: MeasurementPrecision, onMeasurementPrecision: (MeasurementPrecision) -> Unit) {
     var fileCheck by remember { mutableStateOf("Натисніть кнопку, щоб перевірити записи та файли бази даних.") }
+    var lastWalCheckpoint by remember(database) { mutableStateOf<String?>(null) }
     var exportStatus by remember { mutableStateOf("Експорт створює копію зашифрованого файла БД без ключа.") }
     var pendingExportFile by remember { mutableStateOf<java.io.File?>(null) }
     val scope = rememberCoroutineScope()
@@ -316,8 +317,9 @@ internal fun SettingsScreen(databaseStatus: String, database: CeilingsDatabase?,
                                     }
                                 } else ByteArray(0)
                                 val plainSqlite = header.toString(Charsets.US_ASCII).startsWith("SQLite format 3")
-                                val journalMode = db.queryText("PRAGMA journal_mode") ?: "невідомо"
-                                val pageSize = db.queryLong("PRAGMA page_size") ?: -1L
+                                val wal = db.walDiagnostics()
+                                val journalMode = wal.journalMode
+                                val pageSize = wal.pageSizeBytes
                                 val pageCount = db.queryLong("PRAGMA page_count") ?: -1L
                                 val cipherVersion = runCatching {
                                     db.queryText("PRAGMA cipher_version")?.takeIf { it.isNotBlank() }
@@ -326,7 +328,7 @@ internal fun SettingsScreen(databaseStatus: String, database: CeilingsDatabase?,
                                     db.queryLong("SELECT count(*) FROM sqlite_master") ?: -1L
                                 }
                                 val dbLogicalBytes = if (pageSize > 0 && pageCount >= 0) pageSize * pageCount else -1L
-                                "Записи в БД:\nКлієнти: $clients\nОб’єкти: $projects\nЗаміри: $measurements\nКошториси: $estimates\nПозиції прайсу: $prices\n\nSQLite:\nРежим журналювання: $journalMode\nРозмір сторінки: $pageSize байт\nКількість сторінок: $pageCount\nЛогічний розмір БД: $dbLogicalBytes байт\n\nФайли:\n$fileInfo\n\nПеревірка SQLCipher:\nВерсія cipher: ${cipherVersion ?: "не повернута (це саме по собі не доводить відсутність SQLCipher)"}\nЧитання системної схеми: " + schemaCheck.fold({ count -> if (count >= 0) "успішно (${count} об’єктів)" else "не вдалося" }, { error -> "ПОМИЛКА — ${error.message ?: "невідома помилка"}" }) + "\n\nВідкритий заголовок SQLite: " +
+                                "Записи в БД:\nКлієнти: $clients\nОб’єкти: $projects\nЗаміри: $measurements\nКошториси: $estimates\nПозиції прайсу: $prices\n\nSQLite:\nРежим журналювання: $journalMode\nРозмір сторінки: $pageSize байт\nКількість сторінок: $pageCount\nЛогічний розмір БД: $dbLogicalBytes байт\n\nWAL (фактичні параметри, лише читання):\nОчікування блокування: ${wal.busyTimeoutMs} мс\nАвтоматичний checkpoint: ${wal.autoCheckpointPages} сторінок (${wal.autoCheckpointApproxBytes?.let { "$it байт" } ?: "вимкнено або невідомо"})\nСинхронізація: ${when (wal.synchronousMode) { 0L -> "OFF"; 1L -> "NORMAL"; 2L -> "FULL"; 3L -> "EXTRA"; else -> "невідомо (${wal.synchronousMode})" }}\nРозміри: БД ${wal.databaseBytes} байт; WAL ${wal.walBytes} байт; SHM ${wal.shmBytes} байт\nОстанній ручний PASSIVE checkpoint (ця сесія): ${lastWalCheckpoint ?: "ще не запускався"}\n\nФайли:\n$fileInfo\n\nПеревірка SQLCipher:\nВерсія cipher: ${cipherVersion ?: "не повернута (це саме по собі не доводить відсутність SQLCipher)"}\nЧитання системної схеми: " + schemaCheck.fold({ count -> if (count >= 0) "успішно (${count} об’єктів)" else "не вдалося" }, { error -> "ПОМИЛКА — ${error.message ?: "невідома помилка"}" }) + "\n\nВідкритий заголовок SQLite: " +
                                     if (plainSqlite) "ТАК — перевірте конфігурацію шифрування." else "не виявлено (узгоджується із SQLCipher, але не є самостійним доказом шифрування)."
                             }.getOrElse { "Перевірка не вдалася: ${it.message ?: "невідома помилка"}" }
                         }
@@ -338,13 +340,21 @@ internal fun SettingsScreen(databaseStatus: String, database: CeilingsDatabase?,
             OutlinedButton(
                 onClick = {
                     scope.launch {
-                        fileCheck = withContext(Dispatchers.IO) {
+                        val result = withContext(Dispatchers.IO) {
                             runCatching {
                                 val db = database ?: error("База даних ще не готова.")
-                                val status = db.checkpoint(CeilingsDatabase.WalMode.PASSIVE)
-                                "Результат WAL checkpoint (PASSIVE):\nЗайнятий: ${status.busy}\nКадрів у WAL: ${status.frames}\nПеренесено кадрів: ${status.checkpointed}\n\nЦе не видаляє файли вручну. Повторіть звичайну діагностику, щоб порівняти розміри."
-                            }.getOrElse { "Checkpoint не виконано: ${it.message ?: "невідома помилка"}" }
+                                db.checkpoint(CeilingsDatabase.WalMode.PASSIVE)
+                            }
                         }
+                        lastWalCheckpoint = result.getOrNull()?.let { status ->
+                            "зайнятий=${status.busy}, кадри=${status.frames}, перенесено=${status.checkpointed}"
+                        }
+                        fileCheck = result.fold(
+                            onSuccess = { status ->
+                                "Результат WAL checkpoint (PASSIVE):\nЗайнятий: ${status.busy}\nКадрів у WAL: ${status.frames}\nПеренесено кадрів: ${status.checkpointed}\n\nЦе не видаляє файли вручну. Повторіть звичайну діагностику, щоб порівняти розміри."
+                            },
+                            onFailure = { "Checkpoint не виконано: ${it.message ?: "невідома помилка"}" }
+                        )
                     }
                 },
                 modifier = Modifier.fillMaxWidth(),
