@@ -3,6 +3,7 @@ package com.andreyceilings.shared.prices
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Shapes
+import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
@@ -73,11 +74,15 @@ private val PriceShapes = Shapes(
 )
 
 @Composable
-fun PriceCatalogTheme(darkTheme: Boolean, content: @Composable () -> Unit) {
+fun PriceCatalogTheme(
+    darkTheme: Boolean,
+    typography: Typography? = null,
+    content: @Composable () -> Unit
+) {
     MaterialTheme(
         colorScheme = if (darkTheme) PriceDarkColors else PriceLightColors,
-        // Reuse typography from the parent, including Inter on Android.
-        typography = MaterialTheme.typography,
+        // Android inherits the actual Inter family; desktop has the shared text scale.
+        typography = typography ?: MaterialTheme.typography,
         shapes = PriceShapes,
         content = content
     )
