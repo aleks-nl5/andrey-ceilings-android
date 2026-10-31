@@ -14,7 +14,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Business
 import androidx.compose.material.icons.filled.Calculate
-import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.ReceiptLong
 import androidx.compose.material.icons.filled.SquareFoot
 import androidx.compose.material.icons.filled.Straighten
 import androidx.compose.material3.ButtonDefaults
@@ -40,7 +40,7 @@ fun DashboardScreen(
     onNewMeasurement: (() -> Unit)?,
     onCalculator: (() -> Unit)?,
     onObjects: (() -> Unit)?,
-    onSettings: (() -> Unit)?,
+    onEstimates: (() -> Unit)?,
     onCalendar: (() -> Unit)?,
     todayLabel: String,
     nowMillis: Long,
@@ -70,20 +70,20 @@ fun DashboardScreen(
         BoxWithConstraints(Modifier.fillMaxWidth()) {
             if (maxWidth >= 900.dp) {
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    DashboardActionTile("Швидкий замір", Icons.Default.Straighten, onNewMeasurement, Modifier.weight(1f), "+ новий")
+                    DashboardActionTile("Заміри", Icons.Default.Straighten, onNewMeasurement, Modifier.weight(1f))
                     DashboardActionTile("Калькулятор", Icons.Default.Calculate, onCalculator, Modifier.weight(1f))
-                    DashboardActionTile("Об’єкти та клієнти", Icons.Default.Business, onObjects, Modifier.weight(1f))
-                    DashboardActionTile("Налаштування", Icons.Default.Settings, onSettings, Modifier.weight(1f))
+                    DashboardActionTile("Об’єкти", Icons.Default.Business, onObjects, Modifier.weight(1f))
+                    DashboardActionTile("Кошториси", Icons.Default.ReceiptLong, onEstimates, Modifier.weight(1f))
                 }
             } else {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        DashboardActionTile("Швидкий замір", Icons.Default.Straighten, onNewMeasurement, Modifier.weight(1f), "+ новий")
+                        DashboardActionTile("Заміри", Icons.Default.Straighten, onNewMeasurement, Modifier.weight(1f))
                         DashboardActionTile("Калькулятор", Icons.Default.Calculate, onCalculator, Modifier.weight(1f))
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        DashboardActionTile("Об’єкти та клієнти", Icons.Default.Business, onObjects, Modifier.weight(1f))
-                        DashboardActionTile("Налаштування", Icons.Default.Settings, onSettings, Modifier.weight(1f))
+                        DashboardActionTile("Об’єкти", Icons.Default.Business, onObjects, Modifier.weight(1f))
+                        DashboardActionTile("Кошториси", Icons.Default.ReceiptLong, onEstimates, Modifier.weight(1f))
                     }
                 }
             }
@@ -119,8 +119,7 @@ private fun DashboardActionTile(
     title: String,
     icon: ImageVector,
     onClick: (() -> Unit)?,
-    modifier: Modifier = Modifier,
-    badge: String? = null
+    modifier: Modifier = Modifier
 ) {
     Card(
         onClick = { onClick?.invoke() },
@@ -139,14 +138,20 @@ private fun DashboardActionTile(
                     Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.padding(10.dp).size(24.dp))
                 }
-                val label = if (onClick == null) "Пізніше" else badge
+                val label = if (onClick == null) "Пізніше" else null
                 if (label != null) Text(
                     label, style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(top = 4.dp)
                 )
             }
             Spacer(Modifier.height(18.dp))
-            Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            Text(
+                title,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                softWrap = false
+            )
         }
     }
 }
