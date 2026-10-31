@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.text.KeyboardOptions
@@ -461,78 +462,91 @@ private fun PriceEditorDialog(
                             }
                         }
                     }
-                    Text("Одиниця вимірювання *", style = MaterialTheme.typography.labelMedium)
-                    if (customUnit) {
-                        OutlinedTextField(
-                            value = unit, onValueChange = { unit = it },
-                            label = { Text("Власна одиниця") },
-                            singleLine = true, enabled = !pending,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        TextButton(onClick = { customUnit = false; unit = "" }, enabled = !pending) {
-                            Text("Обрати зі списку")
-                        }
-                    } else {
-                        androidx.compose.foundation.layout.Box(Modifier.fillMaxWidth()) {
-                            OutlinedButton(
-                                onClick = { showUnits = true },
-                                enabled = !pending,
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Row(
-                                    Modifier.fillMaxWidth(),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Text(unit.ifBlank { "Оберіть одиницю" }, modifier = Modifier.weight(1f))
-                                    Text("▾")
-                                }
-                            }
-                            DropdownMenu(
-                                expanded = showUnits,
-                                onDismissRequest = { showUnits = false }
-                            ) {
-                                unitOptions.forEach { option ->
-                                    DropdownMenuItem(text = { Text(option) }, onClick = {
-                                        unit = option
-                                        showUnits = false
-                                    })
-                                }
-                                DropdownMenuItem(text = { Text("Інша одиниця…") }, onClick = {
-                                    showUnits = false
-                                    customUnit = true
-                                    unit = ""
-                                })
-                            }
-                        }
-                    }
                 } else {
                     Text(initial?.title.orEmpty())
                 }
-                OutlinedTextField(
-                    value = price, onValueChange = { price = it },
-                    label = { Text("Ціна продажу, ₴ *") },
-                    modifier = Modifier.fillMaxWidth()
-                        .onFocusChanged { focus ->
-                            if (focus.isFocused) priceTapRequests++
-                        }
-                        .pointerInput(initial?.id, mode) {
-                            // Observe touch/mouse release without consuming it: TextField
-                            // still opens the keyboard and handles normal input itself.
-                            awaitEachGesture {
-                                awaitFirstDown(
-                                    requireUnconsumed = false,
-                                    pass = PointerEventPass.Initial
+                if (mode == PriceEditorMode.FULL) {
+                    Text("Одиниця вимірювання *", style = MaterialTheme.typography.labelMedium)
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.Top
+                ) {
+                    if (mode == PriceEditorMode.FULL) {
+                        Column(modifier = Modifier.weight(0.42f)) {
+                            if (customUnit) {
+                                OutlinedTextField(
+                                    value = unit, onValueChange = { unit = it },
+                                    label = { Text("Одиниця *") },
+                                    singleLine = true, enabled = !pending,
+                                    modifier = Modifier.fillMaxWidth()
                                 )
-                                do {
-                                    val event = awaitPointerEvent(pass = PointerEventPass.Final)
-                                    val pressed = event.changes.any { it.pressed }
-                                } while (pressed)
-                                priceTapRequests++
+                                TextButton(onClick = { customUnit = false; unit = "" }, enabled = !pending) {
+                                    Text("Обрати зі списку")
+                                }
+                            } else {
+                                androidx.compose.foundation.layout.Box(Modifier.fillMaxWidth()) {
+                                    OutlinedButton(
+                                        onClick = { showUnits = true },
+                                        enabled = !pending,
+                                        modifier = Modifier.fillMaxWidth().height(56.dp),
+                                        contentPadding = PaddingValues(horizontal = 8.dp),
+                                    ) {
+                                        Row(
+                                            Modifier.fillMaxWidth(),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text(unit.ifBlank { "Оберіть" }, modifier = Modifier.weight(1f), maxLines = 1)
+                                            Text("▾")
+                                        }
+                                    }
+                                    DropdownMenu(
+                                        expanded = showUnits,
+                                        onDismissRequest = { showUnits = false }
+                                    ) {
+                                        unitOptions.forEach { option ->
+                                            DropdownMenuItem(text = { Text(option) }, onClick = {
+                                                unit = option
+                                                showUnits = false
+                                            })
+                                        }
+                                        DropdownMenuItem(text = { Text("Інша одиниця…") }, onClick = {
+                                            showUnits = false
+                                            customUnit = true
+                                            unit = ""
+                                        })
+                                    }
+                                }
                             }
-                        },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                    singleLine = true, enabled = !pending
-                )
+                        }
+                    }
+                    OutlinedTextField(
+                        value = price, onValueChange = { price = it },
+                        label = { Text(if (mode == PriceEditorMode.FULL) "Ціна, ₴ *" else "Ціна продажу, ₴ *") },
+                        modifier = (if (mode == PriceEditorMode.FULL) Modifier.weight(0.58f) else Modifier.fillMaxWidth())
+                            .onFocusChanged { focus ->
+                                if (focus.isFocused) priceTapRequests++
+                            }
+                            .pointerInput(initial?.id, mode) {
+                                // Observe touch/mouse release without consuming it: TextField
+                                // still opens the keyboard and handles normal input itself.
+                                awaitEachGesture {
+                                    awaitFirstDown(
+                                        requireUnconsumed = false,
+                                        pass = PointerEventPass.Initial
+                                    )
+                                    do {
+                                        val event = awaitPointerEvent(pass = PointerEventPass.Final)
+                                        val pressed = event.changes.any { it.pressed }
+                                    } while (pressed)
+                                    priceTapRequests++
+                                }
+                            },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        singleLine = true, enabled = !pending
+                    )
+                }
                 Text("Зміни прайсу не змінюють історичні кошториси.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
