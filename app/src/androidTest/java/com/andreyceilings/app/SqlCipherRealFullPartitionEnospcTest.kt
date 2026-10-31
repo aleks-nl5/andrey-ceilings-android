@@ -168,6 +168,66 @@ class SqlCipherRealFullPartitionEnospcTest {
             assertTrue("Cold reopened SQLCipher WAL is invalid", reopened.checkIntegrity())
             assertEquals(expectedProjects,
                 ProjectRepository(reopened.database).all().map { it.title }.sorted())
+
+            // A separate full-disk proof for SQLCipher's *own WAL write path*.
+            // The restore-stage ENOSPC above does not, by itself, test
+            // SQLite's transaction rollback after a failing WAL append.
+            val oversizeTitle = "Forbidden WAL row on full disk: " +
+                "X".repeat(4 * 1024 * 1024)
+            val beforeFailedWrite = ProjectRepository(reopened.database)
+                .all().map { it.title }.sorted()
+            try {
+                exhaustDataBlocksOnDisposableEmulator(context, filler)
+                assertTrue("WAL write test did not actually fill /data",
+                    StatFs(diskPath).availableBytes < 8192L)
+                val writeFailure = runCatching {
+                    ProjectRepository(reopened.database).createReturningId(
+                        clientId = null, title = oversizeTitle,
+                        createdAt = 1770000000001L
+                    )
+                }.exceptionOrNull()
+                assertNotNull("SQLCipher committed a 4 MiB WAL write on full /data",
+                    writeFailure)
+                assertTrue(
+                    "Expected genuine SQLite FULL while /data blocks are depleted: " +
+                        writeFailure, isSqliteFull(writeFailure)
+                )
+            } finally {
+                filler.delete()
+            }
+
+            // The failed WAL transaction must not publish the new row; prior
+            // committed data must survive checkpoint and fresh driver reopen.
+            assertTrue("WAL full-disk failure corrupted live SQLCipher",
+                reopened.checkIntegrity())
+            assertEquals("SQLCipher accepted a partially committed WAL transaction",
+                beforeFailedWrite,
+                ProjectRepository(reopened.database).all().map { it.title }.sorted())
+            assertEquals("wal", reopened.queryText("PRAGMA journal_mode")?.lowercase())
+            val checkpoint = reopened.checkpoint(CeilingsDatabase.WalMode.FULL)
+            assertTrue("WAL checkpoint remains busy after disk space recovery",
+                checkpoint.complete)
+            CeilingsDatabase.closeAndReset()
+            val afterWalFailure = CeilingsDatabase.get(context)
+            assertEquals("wal", afterWalFailure.queryText("PRAGMA journal_mode")?.lowercase())
+            assertTrue("SQLCipher WAL failed integrity after cold reopen",
+                afterWalFailure.checkIntegrity())
+            assertEquals(beforeFailedWrite,
+                ProjectRepository(afterWalFailure.database).all().map { it.title }.sorted())
+            val newRow = "Committed after ENOSPC was cleared"
+            ProjectRepository(afterWalFailure.database).createReturningId(
+                clientId = null, title = newRow, createdAt = 1770000000002L
+            )
+            assertTrue("WAL writes did not recover when storage was freed",
+                ProjectRepository(afterWalFailure.database)
+                    .all().any { it.title == newRow })
+            val keyAfterWal = DatabaseKeyManager.getOrCreatePassphrase(context)
+            try {
+                assertArrayEquals("Full-disk WAL failure changed the Keystore key",
+                    key, keyAfterWal)
+            } finally {
+                keyAfterWal.fill(0)
+            }
         } finally {
             originalSnapshot.delete()
             importedImage.fill(0)
@@ -212,6 +272,16 @@ class SqlCipherRealFullPartitionEnospcTest {
             assertTrue("Kernel reserve did not actually consume blocks", allocated > 64L * MIB)
         }
     }
+
+    /** SQLite maps the same kernel out-of-blocks condition to SQLITE_FULL. */
+    private fun isSqliteFull(error: Throwable?): Boolean =
+        generateSequence(error) { it.cause }.any { failure ->
+            val name = failure::class.simpleName.orEmpty()
+            val message = failure.message.orEmpty()
+            name.contains("SQLiteFull", ignoreCase = true) ||
+                message.contains("SQLITE_FULL", ignoreCase = true) ||
+                message.contains("database or disk is full", ignoreCase = true)
+        }
 
     private fun isRealEnospc(error: Throwable?): Boolean {
         return generateSequence(error) { it.cause }.any { failure ->
