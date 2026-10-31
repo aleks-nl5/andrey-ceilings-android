@@ -46,6 +46,10 @@ fun DashboardScreen(
     nowMillis: Long,
     upcomingEvents: List<UpcomingWorkEvent> = emptyList(),
     onOpenProject: ((String) -> Unit)? = null,
+    currencyRates: CurrencyRatesUiState? = null,
+    onCurrencyRefresh: (() -> Unit)? = null,
+    onMonobank: (() -> Unit)? = null,
+    formatCurrencyDate: ((Long) -> String)? = null,
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -93,6 +97,16 @@ fun DashboardScreen(
                 if (databaseAvailable) "Завантаження статистики…" else "Захищена база даних недоступна. Статистику не завантажено.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        // The currency block is public market data and remains usable offline,
+        // independently of the encrypted business database.
+        if (currencyRates != null && formatCurrencyDate != null) {
+            CurrencyRatesCard(
+                state = currencyRates,
+                onRefresh = onCurrencyRefresh,
+                onMonobank = onMonobank,
+                formatDate = formatCurrencyDate
             )
         }
     }
