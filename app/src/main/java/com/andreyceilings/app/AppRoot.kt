@@ -34,7 +34,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.lerp
-import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -591,27 +592,37 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
             }
         }
 
-        // This overlay must follow the same scroll offset as the TopAppBar.
-        // A fixed Box left a permanent dark band when the toolbar was hidden.
-        // Fade it away at full collapse, including the status-bar portion.
+        // Keep the top of the fade anchored at the physical screen edge.
+        // As the toolbar slides up, contract the *bottom* of the gradient with
+        // collapsedFraction, but never let it cross the status bar's lower edge.
+        // drawBehind changes only painted pixels, not screen layout/touch targets.
+        val topFadeColor = MaterialTheme.colorScheme.background
         Box(
             modifier = Modifier
                 .align(Alignment.TopCenter)
                 .fillMaxWidth()
                 .height(statusBarInset + 56.dp + systemPanelGradientHeight)
-                .graphicsLayer {
-                    translationY = topAppBarScrollBehavior.state.heightOffset
-                    alpha = (1f - topAppBarScrollBehavior.state.collapsedFraction)
+                .drawBehind {
+                    val statusBarBottom = statusBarInset.toPx().coerceIn(0f, size.height)
+                    val expandedPart = size.height - statusBarBottom
+                    val visiblePart = 1f - topAppBarScrollBehavior.state.collapsedFraction
                         .coerceIn(0f, 1f)
-                }
-                .background(
-                    Brush.verticalGradient(
-                        colors = listOf(
-                            MaterialTheme.colorScheme.background.copy(alpha = headerShadeOpacity),
-                            MaterialTheme.colorScheme.background.copy(alpha = 0.025f)
+                    val gradientBottom = (statusBarBottom + expandedPart * visiblePart)
+                        .coerceIn(statusBarBottom, size.height)
+                    if (gradientBottom > 0f) {
+                        drawRect(
+                            brush = Brush.verticalGradient(
+                                colors = listOf(
+                                    topFadeColor.copy(alpha = headerShadeOpacity),
+                                    topFadeColor.copy(alpha = 0.025f)
+                                ),
+                                startY = 0f,
+                                endY = gradientBottom
+                            ),
+                            size = Size(size.width, gradientBottom)
                         )
-                    )
-                )
+                    }
+                }
         )
 
         Box(
