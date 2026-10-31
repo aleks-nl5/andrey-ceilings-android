@@ -4,14 +4,14 @@
 
 ## Найближчий етап — CMP прайс (issue #36)
 
-**План підготовлений у `feature/cmp-price-list`; виробничої реалізації цього етапу ще немає.** Специфікація UX, архітектури, інваріантів і тестів: [CMP_PRICE_LIST_DESIGN.md](architecture/CMP_PRICE_LIST_DESIGN.md). Стан загальної міграції: [CMP_KMP_MIGRATION.md](architecture/CMP_KMP_MIGRATION.md).
+**Реалізація розпочата в Draft PR #43 у гілці `feature/cmp-price-list`; CI та ручне приймання ще не підтверджені.** Специфікація UX, архітектури, інваріантів і тестів: [CMP_PRICE_LIST_DESIGN.md](architecture/CMP_PRICE_LIST_DESIGN.md). Стан загальної міграції: [CMP_KMP_MIGRATION.md](architecture/CMP_KMP_MIGRATION.md).
 
-- [ ] Зробити **єдиний адаптивний CMP UI** прайсу в `:shared` з чинною темою Material 3, Inter, світлим/темним/системним режимом.
-- [ ] Зберегти користувацький функціонал CRUD, додати пошук за назвою/службовим кодом, фільтри за категоріями, швидке редагування продажної ціни з кнопкою «Зберегти», повний редактор, soft-delete із підтвердженням, розрізнення loading/empty/error.
-- [ ] Мобільні пристрої: зручні компактні картки/рядки; Windows: таблиця з клавіатурною/мишачою навігацією; **одна KMP/SQLDelight бізнес-логіка** без Android API в `commonMain`.
-- [ ] Реальний Android cutover без порушення калькулятора, PDF, ревізій, backup, SQLCipher WAL; Windows має використовувати спільний екран з реальними зашифрованими даними, а не demo scaffold. iOS framework/Compose компіляція і тести, runnable host — наступний окремий етап.
+- [x] Базовий **єдиний адаптивний CMP UI** прайсу додано в `:shared`. [ ] Спільна тема/Inter/режими Android+Windows+iOS ще потребують завершення й перевірок.
+- [x] У CMP-коді реалізовано користувацький CRUD, пошук за назвою/службовим кодом, фільтри за категоріями, швидке редагування продажної ціни з кнопкою «Зберегти», повний редактор, soft-delete із підтвердженням, розрізнення loading/empty/error.
+- [x] CMP-код має мобільні компактні картки/рядки; Windows: таблиця з клавіатурною/мишачою навігацією; **одна KMP/SQLDelight бізнес-логіка** без Android API в `commonMain`.
+- [x] Код Android переключено на CMP-каталог через чинний SQLCipher DAO, Windows використовує той самий CMP із шифрованою SQLDelight БД та явним локальним паролем; додано Windows перевірку wrong-key та encrypted reopen. [ ] Довести фактичну роботу і відсутність регресій Android калькулятора/PDF/revisions/backup/WAL через CI/APK; [ ] OS-key-store/пакування Windows й iOS runnable host — окремі подальші задачі.
 - [ ] KMP common, Android CI/instrumentation, Windows desktop/JVM та iOS Simulator CI + ручний Release APK. Один Draft PR, `main` не змінювати до рішення власника.
-- [ ] **Не змінювати фінансову схему в першому CMP PR.** Чинне поле `price` = ціна продажу, єдина необхідна ціна в кошторисі.
+- [x] **Фінансову схему в першому CMP PR не змінено.** Чинне поле `price` = ціна продажу, єдина необхідна ціна в кошторисі.
 
 ## Погоджена цільова модель прайсу — розширена, але тільки одна обов'язкова ціна
 
