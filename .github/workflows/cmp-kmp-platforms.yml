@@ -78,5 +78,5 @@ jobs:
       - name: Compile Compose Desktop host on Windows
         run: gradle --no-daemon :desktopApp:compileKotlin --stacktrace --warning-mode all
 
-      - name: Run shared JVM tests on Windows
-        run: gradle --no-daemon :shared:jvmTest --stacktrace --warning-mode all
+      - name: Run shared JVM and encrypted desktop CRUD tests on Windows
+        run: gradle --no-daemon :shared:jvmTest :desktopApp:test --stacktrace --warning-mode all
