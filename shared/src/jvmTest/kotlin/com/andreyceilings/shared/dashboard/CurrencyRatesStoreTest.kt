@@ -78,4 +78,27 @@ class CurrencyRatesStoreTest {
         assertNotNull(fake.cached)
         assertEquals(before, decodeCurrencyCache(fake.cached))
     }
+
+    @Test
+    fun dismissesOnlyMatchingNotificationVersion() = runBlocking {
+        var current = 1_000_000L
+        val fake = FakeGateway(goodReply)
+        val store = CurrencyRatesStore(fake) { current }
+        store.start()
+
+        current += CURRENCY_CACHE_MS
+        fake.fail = true
+        store.refresh()
+        val olderVersion = store.state.value.messageVersion
+        assertNotNull(store.state.value.message)
+        // A subsequent request may return the exact same error text.
+        store.refresh()
+        val newerVersion = store.state.value.messageVersion
+        assertTrue(newerVersion > olderVersion)
+        store.dismissMessage(olderVersion)
+        assertNotNull(store.state.value.message) // A previous timer must not dismiss it.
+        store.dismissMessage(newerVersion)
+        assertEquals(null, store.state.value.message)
+        assertEquals(3, fake.requests)
+    }
 }
