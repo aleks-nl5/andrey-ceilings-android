@@ -160,6 +160,7 @@ private fun DesktopPriceHost() {
                             nowMillis = System.currentTimeMillis(),
                             currencyRates = currencyState,
                             onCurrencyRefresh = { scope.launch { currencyStore.refresh() } },
+                            onCurrencyMessageDismiss = currencyStore::dismissMessage,
                             onMonobank = {
                                 runCatching {
                                     if (Desktop.isDesktopSupported() &&
