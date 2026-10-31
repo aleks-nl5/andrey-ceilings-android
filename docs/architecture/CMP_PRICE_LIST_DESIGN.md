@@ -1,7 +1,16 @@
 # CMP Price List — UX, архітектура та поетапна реалізація
-**Рішення власника: 31.10.2026 · поточний стан: функціональний CMP-прайс реалізовано у Draft PR #43; Android APK прийнято власником, останні Android/Windows/iOS CI успішні. Повні Windows/iOS product-host можливості залишаються окремою #42.**
+**Рішення власника: 31.10.2026 · перший CMP-прайс реалізовано в PR #43, issue #36 закрито як Completed, PR готується до злиття. Android APK прийнято власником, CI на функціональному коді Android/Windows/iOS успішні. Windows/iOS product-host parity — #42, необов'язковий формальний UI-state/presenter — #45.**
 
 > **Завершений функціональний зріз у PR #43:** один `PriceCatalogScreen` у `commonMain`, один `PriceCatalogStore` / SQLDelight repository для Android та Windows, атомарне редагування/soft-delete із перевіркою версій, каталог/пошук/категорії/одиниці/ціни/редактори/захист від втрати змін, компактний Android UI і Windows таблиця. Android використовує SQLCipher/WAL і має підтверджений власником APK. Windows використовує реальний зашифрований локальний каталог із паролем: compile та CRUD/wrong-key тести пройдені, але **немає ручного GUI smoke, Windows OS vault/інсталятора й повного backup**. iOS `commonMain` збирається і проходить Simulator SQLCipher тести; **реального runnable iOS host/Keychain поки немає**. Всі CI на кодовому HEAD `afd64322` зелені: [Android](https://github.com/aleks-nl5/andrey-ceilings-android/actions/runs/41217205314), [Windows/iOS](https://github.com/aleks-nl5/andrey-ceilings-android/actions/runs/41217205280). Немає нових полів цін у БД, немає повного зв'язку прайсу з новими кошторисами — це [#37](https://github.com/aleks-nl5/andrey-ceilings-android/issues/37) та [#44](https://github.com/aleks-nl5/andrey-ceilings-android/issues/44) відповідно. Розділ «Фактичний стан після PR #29» нижче — **історична вихідна точка, не сучасний runtime**.
+
+
+## Залишки першого CMP зрізу та перехід до наступних PR (31.10.2026)
+
+Перший CMP прайс #36 закрито після підтвердження Android UX/CRUD і Windows/iOS CI, **не після повної продуктово-функціональної рівності трьох платформ**. Фінальний вигляд редактора: категорія (60%) / оригінальний селектор одиниці (40%) в одному рядку; інформація про незмінність історичних кошторисів (65%) / ціна продажу (35%) в наступному; швидке редагування — окремо. Android сторінка має 16dp зовнішнього горизонтального відступу, як налаштування.
+
+- [#42](https://github.com/aleks-nl5/andrey-ceilings-android/issues/42): Windows GUI smoke/installer/vault/Inter; runnable iOS host/Keychain/Inter/UI smoke/PDF/backup.
+- [#45](https://github.com/aleks-nl5/andrey-ceilings-android/issues/45): опціональний shared typed UI-state/intent/presenter після стабілізації, не відкладений функціональний CRUD.
+- [#44](https://github.com/aleks-nl5/andrey-ceilings-android/issues/44): реальний зв'язок із цінами нових кошторисів, frozen snapshots; [#37](https://github.com/aleks-nl5/andrey-ceilings-android/issues/37): необов'язкові фінансові компоненти. Також #38–#41 — окремі майбутні функції.
 
 ## 1. Мета і продуктове рішення
 Перенести реальний прайс із Android `app/.../PriceListScreen.kt` у спільний Compose Multiplatform UI (`:shared`), не переписуючи чинний спільний KMP `PriceRepository`, SQLDelight чи розрахункове ядро. UI має бути **один**, із адаптивним компонуванням для Android/iOS touch та Windows keyboard/mouse. Реальний Android — збережений візуальний та поведінковий еталон.
