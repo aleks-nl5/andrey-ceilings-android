@@ -46,8 +46,8 @@ internal fun PriceListScreen(database: CeilingsDatabase?, darkTheme: Boolean) {
             contentPadding = PaddingValues(
                 start = 0.dp,
                 end = 0.dp,
-                top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 80.dp,
-                bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 100.dp
+                top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 72.dp,
+                bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 84.dp
             ),
             onSave = { original, draft ->
                 withContext(Dispatchers.IO) {
