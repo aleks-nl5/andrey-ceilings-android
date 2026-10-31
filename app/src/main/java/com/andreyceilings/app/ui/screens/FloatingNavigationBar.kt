@@ -1,7 +1,5 @@
 package com.andreyceilings.app.ui.screens
 
-import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -29,7 +27,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -37,8 +34,8 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.platform.LocalHapticFeedback
+import android.view.HapticFeedbackConstants
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
@@ -48,8 +45,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.layout.WindowInsets
 import com.andreyceilings.app.AppTab
-
-private const val SWITCH_ANIMATION_MS = 180
 
 /**
  * The established floating oval: 64dp high, edge-to-edge content still scrolls behind it.
@@ -125,17 +120,14 @@ private fun FloatingNavigationItem(
     onLongClick: (() -> Unit)?,
     modifier: Modifier = Modifier
 ) {
-    val haptics = LocalHapticFeedback.current
+    val view = LocalView.current
     val colors = MaterialTheme.colorScheme
     val indicatorTarget = if (selected) lerp(colors.primaryContainer, colors.primary, 0.18f)
         else Color.Transparent
-    val indicatorColor by animateColorAsState(
-        indicatorTarget, tween(SWITCH_ANIMATION_MS), label = "Навігаційна капсула"
-    )
-    val foreground by animateColorAsState(
-        if (selected) colors.primary else colors.onSurfaceVariant,
-        tween(SWITCH_ANIMATION_MS), label = "Колір навігації"
-    )
+    // Change selection immediately: the floating capsule and typography stay
+    // steady while taps still receive native Android haptic confirmation.
+    val indicatorColor = indicatorTarget
+    val foreground = if (selected) colors.primary else colors.onSurfaceVariant
     val quickCreateDescription = when (tab) {
         AppTab.OBJECTS -> "Створити новий об’єкт"
         AppTab.MEASUREMENTS -> "Створити новий замір"
@@ -150,9 +142,15 @@ private fun FloatingNavigationItem(
                 onClickLabel = "Перейти: ${tab.title}",
                 onLongClickLabel = quickCreateDescription,
                 onLongClick = onLongClick?.let { action ->
-                    { haptics.performHapticFeedback(HapticFeedbackType.LongPress); action() }
+                    {
+                        view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+                        action()
+                    }
                 },
-                onClick = onClick
+                onClick = {
+                    view.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+                    onClick()
+                }
             ),
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally
