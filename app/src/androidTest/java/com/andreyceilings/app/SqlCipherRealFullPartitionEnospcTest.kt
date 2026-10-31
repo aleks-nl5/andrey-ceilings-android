@@ -276,7 +276,7 @@ class SqlCipherRealFullPartitionEnospcTest {
     /** SQLite maps the same kernel out-of-blocks condition to SQLITE_FULL. */
     private fun isSqliteFull(error: Throwable?): Boolean =
         generateSequence(error) { it.cause }.any { failure ->
-            val name = failure::class.simpleName.orEmpty()
+            val name = failure.javaClass.simpleName
             val message = failure.message.orEmpty()
             name.contains("SQLiteFull", ignoreCase = true) ||
                 message.contains("SQLITE_FULL", ignoreCase = true) ||
