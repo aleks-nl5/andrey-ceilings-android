@@ -9,6 +9,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import kotlinx.coroutines.delay
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -26,9 +28,18 @@ fun CurrencyRatesCard(
     state: CurrencyRatesUiState,
     onRefresh: (() -> Unit)?,
     onMonobank: (() -> Unit)?,
+    onMessageTimeout: ((Long) -> Unit)?,
     formatDate: (Long) -> String,
     modifier: Modifier = Modifier
 ) {
+    // Restart the timer for each notification, even when the wording repeats.
+    // Compose cancels this effect if the card leaves the screen or message changes.
+    LaunchedEffect(state.message, state.messageVersion, onMessageTimeout != null) {
+        if (state.message != null && onMessageTimeout != null) {
+            delay(5_000L)
+            onMessageTimeout(state.messageVersion)
+        }
+    }
     val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
     val refreshEnabled = onRefresh != null && state.canRefresh
     val refreshLabel = when {
