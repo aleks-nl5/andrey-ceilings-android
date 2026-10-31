@@ -4,6 +4,7 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -27,6 +28,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -121,6 +123,9 @@ private fun FloatingNavigationItem(
     modifier: Modifier = Modifier
 ) {
     val view = LocalView.current
+    // combinedClickable otherwise retains Material's animated ripple on every tap;
+    // the previous color animation was already removed, but that press animation remained.
+    val interactionSource = remember { MutableInteractionSource() }
     val colors = MaterialTheme.colorScheme
     val indicatorTarget = if (selected) lerp(colors.primaryContainer, colors.primary, 0.18f)
         else Color.Transparent
@@ -138,6 +143,8 @@ private fun FloatingNavigationItem(
         modifier = modifier.fillMaxHeight()
             .semantics { this.selected = selected }
             .combinedClickable(
+                interactionSource = interactionSource,
+                indication = null,
                 role = Role.Tab,
                 onClickLabel = "Перейти: ${tab.title}",
                 onLongClickLabel = quickCreateDescription,
