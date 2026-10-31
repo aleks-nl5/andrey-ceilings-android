@@ -9,9 +9,9 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -20,6 +20,10 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -33,6 +37,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -63,6 +71,7 @@ fun PriceCatalogScreen(
     var pending by remember { mutableStateOf(false) }
     var editorError by remember { mutableStateOf<String?>(null) }
     val categories = remember(items) { PriceCatalogRules.categories(items) }
+    val unitOptions = remember(items) { PriceCatalogRules.unitOptions(items) }
     val visible = remember(items, search, selectedCategory) {
         PriceCatalogRules.filter(items, search, selectedCategory)
     }
@@ -80,14 +89,15 @@ fun PriceCatalogScreen(
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             contentPadding = contentPadding,
-            verticalArrangement = Arrangement.spacedBy(if (desktopLayout) 8.dp else 12.dp)
+            verticalArrangement = Arrangement.spacedBy(if (desktopLayout) 6.dp else 7.dp)
         ) {
             item(key = "heading") {
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                     Column(Modifier.weight(1f)) {
-                        Text("Прайс-лист", style = MaterialTheme.typography.headlineSmall,
-                            fontWeight = FontWeight.Bold)
-                        Text("Ціна продажу використовується в нових кошторисах.",
+                        Text("Прайс-лист", style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface)
+                        Text("Ціни для нових кошторисів",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
@@ -146,7 +156,11 @@ fun PriceCatalogScreen(
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     else -> items(visible, key = { "price-${it.id}" }) { item ->
-                        Card(Modifier.fillMaxWidth()) {
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                            elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+                        ) {
                             if (desktopLayout) {
                                 Row(Modifier.fillMaxWidth().padding(8.dp),
                                     verticalAlignment = Alignment.CenterVertically) {
@@ -168,28 +182,55 @@ fun PriceCatalogScreen(
                                     TextButton(onClick = { editorError = null; deleting = item }) { Text("Видалити") }
                                 }
                             } else {
-                                Column(Modifier.fillMaxWidth().padding(12.dp)) {
-                                    Text(item.title, style = MaterialTheme.typography.bodyLarge,
-                                        fontWeight = FontWeight.Medium,
-                                        modifier = Modifier.fillMaxWidth().clickable {
-                                            openEditor(item, PriceEditorMode.FULL)
-                                        })
-                                    Text(item.category, style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                    Row(Modifier.fillMaxWidth(),
-                                        verticalAlignment = Alignment.CenterVertically) {
-                                        Text(item.unit, style = MaterialTheme.typography.bodySmall,
-                                            modifier = Modifier.weight(1f))
-                                        TextButton(onClick = { openEditor(item, PriceEditorMode.QUICK) }) {
-                                            Text("${PriceCatalogRules.formatSalePrice(item.price)} ₴")
-                                        }
+                                var actionsExpanded by remember(item.id) { mutableStateOf(false) }
+                                Row(
+                                    Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    Column(
+                                        Modifier.weight(1f).clickable { openEditor(item, PriceEditorMode.FULL) },
+                                        verticalArrangement = Arrangement.spacedBy(2.dp)
+                                    ) {
+                                        Text(
+                                            item.title,
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            fontWeight = FontWeight.Medium,
+                                            color = MaterialTheme.colorScheme.onSurface
+                                        )
+                                        Text(
+                                            "${item.category} · ${item.unit}",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            maxLines = 1
+                                        )
                                     }
-                                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                                        TextButton(onClick = { openEditor(item, PriceEditorMode.FULL) }) {
-                                            Text("Змінити")
+                                    TextButton(onClick = { openEditor(item, PriceEditorMode.QUICK) }) {
+                                        Text("${PriceCatalogRules.formatSalePrice(item.price)} ₴")
+                                    }
+                                    androidx.compose.foundation.layout.Box {
+                                        TextButton(onClick = { actionsExpanded = true }) {
+                                            Text("⋮", style = MaterialTheme.typography.titleMedium)
                                         }
-                                        TextButton(onClick = { editorError = null; deleting = item }) {
-                                            Text("Видалити")
+                                        DropdownMenu(
+                                            expanded = actionsExpanded,
+                                            onDismissRequest = { actionsExpanded = false }
+                                        ) {
+                                            DropdownMenuItem(
+                                                text = { Text("Редагувати") },
+                                                onClick = {
+                                                    actionsExpanded = false
+                                                    openEditor(item, PriceEditorMode.FULL)
+                                                }
+                                            )
+                                            DropdownMenuItem(
+                                                text = { Text("Видалити") },
+                                                onClick = {
+                                                    actionsExpanded = false
+                                                    editorError = null
+                                                    deleting = item
+                                                }
+                                            )
                                         }
                                     }
                                 }
@@ -208,6 +249,7 @@ fun PriceCatalogScreen(
                 initial = editing,
                 mode = mode,
                 categories = categories,
+                unitOptions = unitOptions,
                 pending = pending,
                 error = editorError,
                 onDismiss = { if (!pending) editorMode = null },
@@ -277,6 +319,7 @@ private fun PriceEditorDialog(
     initial: PriceCatalogItem?,
     mode: PriceEditorMode,
     categories: List<String>,
+    unitOptions: List<String>,
     pending: Boolean,
     error: String?,
     onDismiss: () -> Unit,
@@ -285,12 +328,16 @@ private fun PriceEditorDialog(
     var title by remember { mutableStateOf(initial?.title.orEmpty()) }
     var category by remember { mutableStateOf(initial?.category ?: "Додаткові роботи") }
     var unit by remember { mutableStateOf(initial?.unit ?: "шт.") }
-    var price by remember { mutableStateOf(initial?.price?.let(PriceCatalogRules::formatSalePrice) ?: "") }
+    var price by remember {
+        mutableStateOf(TextFieldValue(initial?.price?.let(PriceCatalogRules::formatSalePrice) ?: ""))
+    }
     var showCategories by remember { mutableStateOf(false) }
+    var showUnits by remember { mutableStateOf(false) }
+    var customUnit by remember { mutableStateOf(initial?.unit?.let { it !in unitOptions } == true) }
     var confirmUnitChange by remember { mutableStateOf(false) }
     val errorMessage = if (mode == PriceEditorMode.QUICK) {
-        if (PriceCatalogRules.parseSalePrice(price) == null) "Перевірте ціну продажу." else null
-    } else PriceCatalogRules.validate(title, category, unit, price)
+        if (PriceCatalogRules.parseSalePrice(price.text) == null) "Перевірте ціну продажу." else null
+    } else PriceCatalogRules.validate(title, category, unit, price.text)
 
     val submit = {
         val parsed = PriceCatalogRules.parseSalePrice(price)
@@ -328,15 +375,64 @@ private fun PriceEditorDialog(
                             }
                         }
                     }
-                    OutlinedTextField(value = unit, onValueChange = { unit = it },
-                        label = { Text("Одиниця вимірювання *") },
-                        singleLine = true, enabled = !pending)
+                    Text("Одиниця вимірювання *", style = MaterialTheme.typography.labelMedium)
+                    if (customUnit) {
+                        OutlinedTextField(
+                            value = unit, onValueChange = { unit = it },
+                            label = { Text("Власна одиниця") },
+                            singleLine = true, enabled = !pending,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        TextButton(onClick = { customUnit = false; unit = "" }, enabled = !pending) {
+                            Text("Обрати зі списку")
+                        }
+                    } else {
+                        androidx.compose.foundation.layout.Box(Modifier.fillMaxWidth()) {
+                            OutlinedButton(
+                                onClick = { showUnits = true },
+                                enabled = !pending,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(unit.ifBlank { "Оберіть одиницю" }, modifier = Modifier.weight(1f))
+                                    Text("▾")
+                                }
+                            }
+                            DropdownMenu(
+                                expanded = showUnits,
+                                onDismissRequest = { showUnits = false }
+                            ) {
+                                unitOptions.forEach { option ->
+                                    DropdownMenuItem(text = { Text(option) }, onClick = {
+                                        unit = option
+                                        showUnits = false
+                                    })
+                                }
+                                DropdownMenuItem(text = { Text("Інша одиниця…") }, onClick = {
+                                    showUnits = false
+                                    customUnit = true
+                                    unit = ""
+                                })
+                            }
+                        }
+                    }
                 } else {
                     Text(initial?.title.orEmpty())
                 }
-                OutlinedTextField(value = price, onValueChange = { price = it },
+                OutlinedTextField(
+                    value = price, onValueChange = { price = it },
                     label = { Text("Ціна продажу, ₴ *") },
-                    singleLine = true, enabled = !pending)
+                    modifier = Modifier.fillMaxWidth().onFocusChanged { focus ->
+                        if (focus.isFocused) {
+                            price = price.copy(selection = TextRange(0, price.text.length))
+                        }
+                    },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    singleLine = true, enabled = !pending
+                )
                 Text("Зміни прайсу не змінюють історичні кошториси.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
