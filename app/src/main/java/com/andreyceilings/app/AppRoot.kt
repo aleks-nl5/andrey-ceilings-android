@@ -171,7 +171,7 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
                 lastScrollAtNs.set(SystemClock.elapsedRealtimeNanos())
                 isScrolling.value = true
                 contentScrolledPx.floatValue =
-                    (contentScrolledPx.floatValue - consumed.y).coerceIn(0f, 240f)
+                    (contentScrolledPx.floatValue - consumed.y).coerceAtLeast(0f)
                 return Offset.Zero
             }
         }
