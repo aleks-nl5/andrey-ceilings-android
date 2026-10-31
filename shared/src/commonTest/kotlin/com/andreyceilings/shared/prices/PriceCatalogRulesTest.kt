@@ -41,6 +41,16 @@ class PriceCatalogRulesTest {
         assertTrue(PriceCatalogRules.filter(catalog, "профіль", "Полотна").isEmpty())
     }
 
+
+    @Test fun unitDropdownIncludesStandardAndPersistedCustomUnits() {
+        val units = PriceCatalogRules.unitOptions(catalog + PriceCatalogItem(
+            4, "custom.4", "Послуга за годину", "Роботи", "год.", 180.0
+        ))
+        assertEquals(PriceCatalogRules.standardUnits, units.take(PriceCatalogRules.standardUnits.size))
+        assertTrue("год." in units)
+        assertEquals(units.size, units.distinct().size)
+    }
+
     @Test fun categoryNamesAndDisplayDoNotChangePrices() {
         assertEquals(listOf("Освітлення", "Полотна", "Профілі"),
             PriceCatalogRules.categories(catalog))
