@@ -2,13 +2,16 @@
 
 > **Актуалізовано 31.10.2026 після merge PR #29.** Це поточний план; попередній опис PR #22/#23 нижче лишається як історична довідка. Затверджений пріоритет власника: **спочатку завершити KMP + CMP для Android, Windows і iOS, діагностика #30–#34 пізніше.** Android є production-подібним функціональним еталоном, його UI ще платформний. Go/AAR видалені, KMP-розрахунки та SQLDelight працюють; SQLCipher WAL + immutable revisions + .stpb hardening з PR #29 вже в `main`.
 
-## Активний CMP інкремент — Draft PR #43 (31.10.2026)
+## Перший CMP прайс завершено — issue #36 закрито, PR #43 готується до злиття (31.10.2026)
 
-- **Android:** `PriceCatalogScreen` і `PriceCatalogStore` підключено до SQLDelight/SQLCipher; KMP пошук, валідація та атомарне збереження/soft-delete. WAL, backup і immutable snapshots залишилися в Android host. CI та фізичний APK — **підтверджені**.
-- **Windows:** той самий CMP-каталог і реальний `PriceRepository` із SQLCipher file, явним паролем і per-installation PBKDF2 salt. Ключ на диск не зберігаємо, але **немає системного Windows credential-vault, installer, автоматичного backup і recovery UX**; поки лише прототип, не готова production-збірка.
-- **iOS:** CMP commonMain/UI компіляція та iOS Simulator тести — обов'язкові; runnable Xcode host і Keychain пізніше через #42.
-- **Схему цін не змінено:** `price` залишається єдиною обов'язковою ціною продажу; опціональні закупівля, монтаж, витрати, націнка — #37.
-- [x] CI на перевіреному функціональному коміті `afd64322`: [Android APK, JVM, instrumentation](https://github.com/aleks-nl5/andrey-ceilings-android/actions/runs/41217205314) і [Windows desktop/JVM, iOS Simulator framework/SQLCipher tests](https://github.com/aleks-nl5/andrey-ceilings-android/actions/runs/41217205280) — успішні. Власник перевірив Android APK (CRUD, збереження після перезапуску, остаточний вигляд прайсу). [ ] Окремо: Windows GUI smoke, системне сховище Windows і runnable iOS host (#42).
+**[Issue #36](https://github.com/aleks-nl5/andrey-ceilings-android/issues/36) — Completed.** У [PR #43](https://github.com/aleks-nl5/andrey-ceilings-android/pull/43) завершені shared CMP екран, KMP price store/Flow/validation/version-checked CRUD, адаптивні mobile/desktop екрани й виправлення за ручним Android тестуванням. Власник вручну прийняв Android APK (CRUD, перезапуск, остаточний UX). `main` не змінюємо до окремого merge власником.
+
+- **Android:** реальний CMP прайс через SQLCipher/SQLDelight, існуючий WAL, backup, PDF та immutable estimates не змінені; Android відступи узгоджені з налаштуваннями, категорія/одиниця в одному рядку 60/40, підказка/ціна в рядку 65/35.
+- **Windows:** той самий CMP UI зі справжньою зашифрованою SQLCipher БД і password unlock. Windows CI build/SQLCipher reopen/wrong-password успішні, але ручний **Windows GUI smoke**, OS credential storage, installer/packaging, system Inter і backup UX перенесені до [#42](https://github.com/aleks-nl5/andrey-ceilings-android/issues/42).
+- **iOS:** спільний commonMain CMP/KMP і SQLCipher Simulator/framework тести проходять у CI, але **runnable iOS Xcode host/Keychain/UI smoke та Inter** — наступний етап [#42](https://github.com/aleks-nl5/andrey-ceilings-android/issues/42), не позначені як реалізовані.
+- **Розрахунки:** повний зв'язок позицій прайсу з новими кошторисами — [#44](https://github.com/aleks-nl5/andrey-ceilings-android/issues/44); одна обов'язкова продажна ціна + опціональні витрати/націнки — [#37](https://github.com/aleks-nl5/andrey-ceilings-android/issues/37).
+- **Рефакторинг:** окреме типізоване `PriceCatalogUiState/Intent/Presenter` залишається низькопріоритетним вдосконаленням у [#45](https://github.com/aleks-nl5/andrey-ceilings-android/issues/45), не blocker першого працездатного зрізу.
+- [x] Контрольний **функціональний** commit `afd64322`: [Android/інструментальні тести #41217205314](https://github.com/aleks-nl5/andrey-ceilings-android/actions/runs/41217205314) та [Windows/iOS #41217205280](https://github.com/aleks-nl5/andrey-ceilings-android/actions/runs/41217205280) — success. Після нього документаційні commits мають окремі CI; зелений фінальний HEAD — критерій Ready.
 
 ## Оновлена цільова архітектура
 - **Один спільний `:shared` KMP domain + repository + SQLDelight schema**, логіка розрахунків та immutable кошторисів не дублюється.
