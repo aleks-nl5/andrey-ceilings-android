@@ -4,13 +4,22 @@
 
 - Після об'єднання [PR #47](https://github.com/aleks-nl5/andrey-ceilings-android/pull/47) завершено CMP-контент головної «Панелі»: курси monobank (USD/UAH, EUR/UAH, EUR/USD) перенесено з Android-only CurrencyRatesCard.kt у shared/commonMain/dashboard. Попередній Android-only компонент видалено.
 - Єдині CMP UI, парсер ISO-4217 пар, сумісний із попереднім Android JSON-кешем формат, 30-хвилинне обмеження оновлення, повідомлення про збої та offline fallback; фіктивні курси/дати не використовуються.
-- Android адаптер зберігає попередні SharedPreferences("currency_rates") / monobank_currency_cache, мережевий виклик у Dispatchers.IO і посилання на monobank. Windows адаптер має власне OS user preferences і HTTPS-запит; публічні курси не зберігаються в SQLCipher БД. Спільний код доступний для компіляції iOS, runnable iOS host — #42.
+- **Мережа в commonMain:** один Ktor Client 3.6.1 через `ktor-client-engine-defaults`, HTTPS monobank, однакові таймаути та HTTP-обробка для Android / Windows / iOS. У платформах більше немає копій HTTP-запиту; спільний `MonobankCurrencyGateway` делегує тільки фізичний запис кешу.
+- **Кеш у commonMain:** формат старого Android JSON, 30-хвилинний cooldown, fallback, часткове об'єднання курсів та повідомлення — спільні. Android зберігає чинні `SharedPreferences("currency_rates") / monobank_currency_cache` без міграції, Windows — OS user preferences, iOS — NSUserDefaults (адаптер для майбутнього runnable host #42). Публічні курси окремі від SQLCipher.
+- **Дата/час у commonMain:** `kotlinx-datetime` і `kotlin.time.Clock`; спільні українські назви місяців, дата головного екрана, місцевий часовий пояс і формат курсу `dd.MM, HH:mm`. Android і Windows більше не викликають свої SimpleDateFormat / java.time для панелі.
+- Додатково: Ktor MockEngine JVM тести HTTPS/HTTP failure, commonTest часових поясів та локальних дат.
 - Додано common/JVM тести: валідні, часткові й пошкоджені відповіді API, кеш, throttle, offline, повторний запуск, захист від застарілих таймерів повідомлень.
 - Після ручного оновлення курсів коротке повідомлення про успіх/відсутність змін/помилку автоматично прибирається через 5 секунд. Нове повідомлення має окремий ідентифікатор, тому таймер попереднього не сховає наступне.
 - Щоб уникнути миготіння на старті SQLCipher, повідомлення «Захищена база даних недоступна» з'являється лише якщо стан недоступності триває 2 секунди; реальна довготривала проблема не замовчується.
 - До злиття: зелений Android APK CI + Windows desktop + iOS Simulator framework; ручна перевірка Android у двох темах (у тому числі без мережі, стара кешована версія, таймер, ручне оновлення). Злиття з main лише після приймання власником.
 - Незмінні SQLDelight, SQLCipher WAL, резервне копіювання, кошториси та PDF. Навігація #48 і планові події #49 — окремі роботи.
 
+
+## Заплановано: CMP координатор ініціалізації SQLCipher — issue #54 (01.11.2026)
+
+- **[Issue #54](https://github.com/aleks-nl5/andrey-ceilings-android/issues/54)**: винести у `shared/commonMain` *логіку* відкриття / закриття / відмови / readiness стану зашифрованої БД, узгодити конкурентний доступ, повторне відкриття після restore, життєвий цикл сесії, тести. Не переносити секрети у UI/логи.
+- Платформне шифрування й робота з ключами **залишаються нативними**: Android Keystore + SQLCipher, Windows JDBC + захищений механізм ключів, iOS Keychain + Native SQLCipher (пов'язано з #42).
+- Незмінні SQLDelight схема, SQLCipher WAL/backup/restore/надійність відновлення, immutable revisions і PDF. Не переписувати чинну стабільну ініціалізацію у PR #52; етап виконати окремо із Android instrumentation, Windows та iOS runtime tests.
 
 ## PR #47 — фінальне спрощення CMP-панелі і стан перед злиттям (31.10.2026)
 
