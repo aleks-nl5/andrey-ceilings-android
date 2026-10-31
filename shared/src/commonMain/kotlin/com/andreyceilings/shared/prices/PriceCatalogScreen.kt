@@ -17,6 +17,8 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -31,14 +33,19 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.TextFieldValue
@@ -74,6 +81,7 @@ fun PriceCatalogScreen(
     var pending by remember { mutableStateOf(false) }
     var editorError by remember { mutableStateOf<String?>(null) }
     val categories = remember(items) { PriceCatalogRules.categories(items) }
+    val categoryOptions = remember(items) { PriceCatalogRules.categoryOptions(items) }
     val unitOptions = remember(items) { PriceCatalogRules.unitOptions(items) }
     val visible = remember(items, search, selectedCategory) {
         PriceCatalogRules.filter(items, search, selectedCategory)
@@ -256,7 +264,7 @@ fun PriceCatalogScreen(
             PriceEditorDialog(
                 initial = editing,
                 mode = mode,
-                categories = categories,
+                categoryOptions = categoryOptions,
                 unitOptions = unitOptions,
                 pending = pending,
                 error = editorError,
@@ -326,7 +334,7 @@ fun PriceCatalogScreen(
 private fun PriceEditorDialog(
     initial: PriceCatalogItem?,
     mode: PriceEditorMode,
-    categories: List<String>,
+    categoryOptions: List<String>,
     unitOptions: List<String>,
     pending: Boolean,
     error: String?,
@@ -340,9 +348,22 @@ private fun PriceEditorDialog(
         mutableStateOf(TextFieldValue(initial?.price?.let(PriceCatalogRules::formatSalePrice) ?: ""))
     }
     var showCategories by remember { mutableStateOf(false) }
+    var customCategory by remember {
+        mutableStateOf(initial?.category?.let { it !in categoryOptions } == true)
+    }
     var showUnits by remember { mutableStateOf(false) }
     var customUnit by remember { mutableStateOf(initial?.unit?.let { it !in unitOptions } == true) }
     var confirmUnitChange by remember { mutableStateOf(false) }
+    var priceTapRequests by remember { mutableIntStateOf(0) }
+    LaunchedEffect(priceTapRequests) {
+        if (priceTapRequests > 0) {
+            // TextField's tap handler can position the cursor AFTER onFocusChanged.
+            // Reselect once the tap has been fully processed, including repeated taps
+            // while the field already has focus. Don't disturb typing/IME edits.
+            withFrameNanos { }
+            price = price.copy(selection = TextRange(0, price.text.length))
+        }
+    }
     val errorMessage = if (mode == PriceEditorMode.QUICK) {
         if (PriceCatalogRules.parseSalePrice(price.text) == null) "Перевірте ціну продажу." else null
     } else PriceCatalogRules.validate(title, category, unit, price.text)
@@ -369,17 +390,55 @@ private fun PriceEditorDialog(
                 if (mode == PriceEditorMode.FULL) {
                     OutlinedTextField(value = title, onValueChange = { title = it },
                         label = { Text("Назва *") }, singleLine = true, enabled = !pending)
-                    OutlinedTextField(value = category, onValueChange = { category = it },
-                        label = { Text("Категорія *") }, singleLine = true, enabled = !pending)
-                    if (categories.isNotEmpty()) {
-                        TextButton(onClick = { showCategories = !showCategories }, enabled = !pending) {
-                            Text("Вибрати наявну категорію")
+                    Text("Категорія *", style = MaterialTheme.typography.labelMedium)
+                    if (customCategory) {
+                        OutlinedTextField(
+                            value = category,
+                            onValueChange = { category = it },
+                            label = { Text("Власна категорія") },
+                            singleLine = true,
+                            enabled = !pending,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        TextButton(onClick = {
+                            customCategory = false
+                            category = ""
+                        }, enabled = !pending) {
+                            Text("Обрати зі списку")
                         }
-                        if (showCategories) {
-                            categories.forEach { existing ->
-                                TextButton(onClick = { category = existing; showCategories = false }) {
-                                    Text(existing)
+                    } else {
+                        androidx.compose.foundation.layout.Box(Modifier.fillMaxWidth()) {
+                            OutlinedButton(
+                                onClick = { showCategories = true },
+                                enabled = !pending,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        category.ifBlank { "Оберіть категорію" },
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    Text("▾")
                                 }
+                            }
+                            DropdownMenu(
+                                expanded = showCategories,
+                                onDismissRequest = { showCategories = false }
+                            ) {
+                                categoryOptions.forEach { option ->
+                                    DropdownMenuItem(text = { Text(option) }, onClick = {
+                                        category = option
+                                        showCategories = false
+                                    })
+                                }
+                                DropdownMenuItem(text = { Text("Інша категорія…") }, onClick = {
+                                    showCategories = false
+                                    customCategory = true
+                                    category = ""
+                                })
                             }
                         }
                     }
@@ -433,11 +492,25 @@ private fun PriceEditorDialog(
                 OutlinedTextField(
                     value = price, onValueChange = { price = it },
                     label = { Text("Ціна продажу, ₴ *") },
-                    modifier = Modifier.fillMaxWidth().onFocusChanged { focus ->
-                        if (focus.isFocused) {
-                            price = price.copy(selection = TextRange(0, price.text.length))
+                    modifier = Modifier.fillMaxWidth()
+                        .onFocusChanged { focus ->
+                            if (focus.isFocused) priceTapRequests++
                         }
-                    },
+                        .pointerInput(initial?.id, mode) {
+                            // Observe touch/mouse release without consuming it: TextField
+                            // still opens the keyboard and handles normal input itself.
+                            awaitEachGesture {
+                                awaitFirstDown(
+                                    requireUnconsumed = false,
+                                    pass = PointerEventPass.Initial
+                                )
+                                do {
+                                    val event = awaitPointerEvent(pass = PointerEventPass.Final)
+                                    val pressed = event.changes.any { it.pressed }
+                                } while (pressed)
+                                priceTapRequests++
+                            }
+                        },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     singleLine = true, enabled = !pending
                 )
