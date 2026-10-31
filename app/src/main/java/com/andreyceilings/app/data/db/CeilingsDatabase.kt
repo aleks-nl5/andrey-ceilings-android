@@ -92,6 +92,44 @@ internal class CeilingsDatabase private constructor(
 
     enum class WalMode { PASSIVE, FULL }
 
+    /**
+     * Read-only diagnostics of this connection's effective SQLite/SQLCipher
+     * settings and on-disk files. Do not change any PRAGMA here: Android's
+     * WAL-aware helper owns connection initialization and checkpoint policy.
+     */
+    data class WalDiagnostics(
+        val journalMode: String,
+        val busyTimeoutMs: Long,
+        val autoCheckpointPages: Long,
+        val synchronousMode: Long,
+        val pageSizeBytes: Long,
+        val databaseBytes: Long,
+        val walBytes: Long,
+        val shmBytes: Long
+    ) {
+        val autoCheckpointApproxBytes: Long?
+            get() = if (autoCheckpointPages > 0L && pageSizeBytes > 0L &&
+                autoCheckpointPages <= Long.MAX_VALUE / pageSizeBytes) {
+                autoCheckpointPages * pageSizeBytes
+            } else null
+    }
+
+    fun walDiagnostics(): WalDiagnostics {
+        val file = File(path)
+        fun physicalBytes(path: File): Long =
+            if (path.isFile) path.length().coerceAtLeast(0L) else 0L
+        return WalDiagnostics(
+            journalMode = queryText("PRAGMA journal_mode") ?: "невідомо",
+            busyTimeoutMs = queryLong("PRAGMA busy_timeout") ?: -1L,
+            autoCheckpointPages = queryLong("PRAGMA wal_autocheckpoint") ?: -1L,
+            synchronousMode = queryLong("PRAGMA synchronous") ?: -1L,
+            pageSizeBytes = queryLong("PRAGMA page_size") ?: -1L,
+            databaseBytes = physicalBytes(file),
+            walBytes = physicalBytes(File("$path-wal")),
+            shmBytes = physicalBytes(File("$path-shm"))
+        )
+    }
+
     fun checkpoint(mode: WalMode): WalCheckpoint = driver.executeQuery(
         null, "PRAGMA wal_checkpoint(${mode.name})", { cursor ->
             check(cursor.next().value) { "SQLite did not return a WAL checkpoint result" }
