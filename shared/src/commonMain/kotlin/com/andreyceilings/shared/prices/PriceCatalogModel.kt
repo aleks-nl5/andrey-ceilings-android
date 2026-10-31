@@ -23,6 +23,16 @@ data class PriceCatalogDraft(
 
 /** Only the sale price is required; extended cost components belong to issue #37. */
 object PriceCatalogRules {
+    /** Suggested categories; the SQLDelight price rows remain the source of truth. */
+    val standardCategories: List<String> = listOf(
+        "Полотна", "Профілі", "Освітлення", "Роботи", "Додаткові роботи"
+    )
+
+    /** Include user-created categories without requiring a new database table. */
+    fun categoryOptions(items: List<PriceCatalogItem>): List<String> =
+        standardCategories + categories(items)
+            .filter { it !in standardCategories }
+
     /** Common ceiling-work units; existing custom units remain available in the dropdown. */
     val standardUnits: List<String> = listOf("м²", "м.п.", "шт.", "компл.", "послуга")
 
