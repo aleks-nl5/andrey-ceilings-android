@@ -2,16 +2,20 @@
 
 > **Поточний пріоритет власника: завершити KMP + CMP на Android, Windows та iOS.** Розробку системної діагностики [#30–#34](https://github.com/aleks-nl5/andrey-ceilings-android/issues/30) відкладено до наступних етапів; ці issues залишаються відкритими. **PR #29 успішно об'єднаний із `main` 31.10.2026** (merge `6f901eca648be2ab3a5254875998a00fe9fd180f`); попередні «PR #29 Draft/чекаємо CI» нижче — історичні записи, **не актуальні blockers**. Issues #24–#26 закриті після merge.
 
-## Найближчий етап — CMP прайс (issue #36)
+## Завершений перший CMP-етап — прайс (#36 / PR #43, 31.10.2026)
 
-**Перший робочий CMP-зріз прайсу реалізовано в Draft PR #43 (`feature/cmp-price-list`). На останньому HEAD `afd64322` зелений Android CI [#41217205314](https://github.com/aleks-nl5/andrey-ceilings-android/actions/runs/41217205314) та Windows/iOS CI [#41217205280](https://github.com/aleks-nl5/andrey-ceilings-android/actions/runs/41217205280); власник підтвердив APK на телефоні та фінальне компонування редактора. Windows GUI smoke окремо не підтверджено, iOS runnable host ще не створено.** Специфікація UX, архітектури, інваріантів і тестів: [CMP_PRICE_LIST_DESIGN.md](architecture/CMP_PRICE_LIST_DESIGN.md). Стан загальної міграції: [CMP_KMP_MIGRATION.md](architecture/CMP_KMP_MIGRATION.md).
+**[Issue #36](https://github.com/aleks-nl5/andrey-ceilings-android/issues/36) закрите як Completed за рішенням власника. [PR #43](https://github.com/aleks-nl5/andrey-ceilings-android/pull/43) підготовлено до злиття; `main` поки не змінювали, merge робить власник окремо.**
 
-- [x] Базовий **єдиний адаптивний CMP UI** прайсу додано в `:shared`. [ ] Спільна тема/Inter/режими Android+Windows+iOS ще потребують завершення й перевірок.
-- [x] У CMP-коді реалізовано користувацький CRUD, пошук за назвою/службовим кодом, фільтри за категоріями, швидке редагування продажної ціни з кнопкою «Зберегти», повний редактор, soft-delete із підтвердженням, розрізнення loading/empty/error.
-- [x] CMP-код має мобільні компактні картки/рядки; Windows: таблиця з клавіатурною/мишачою навігацією; **одна KMP/SQLDelight бізнес-логіка** без Android API в `commonMain`.
-- [x] Код Android переключено на CMP-каталог через чинний SQLCipher DAO, Windows використовує той самий CMP із шифрованою SQLDelight БД та явним локальним паролем; додано Windows перевірку wrong-key та encrypted reopen. [ ] Довести фактичну роботу і відсутність регресій Android калькулятора/PDF/revisions/backup/WAL через CI/APK; [ ] OS-key-store/пакування Windows й iOS runnable host — окремі подальші задачі.
-- [ ] KMP common, Android CI/instrumentation, Windows desktop/JVM та iOS Simulator CI + ручний Release APK. Один Draft PR, `main` не змінювати до рішення власника.
-- [x] **Фінансову схему в першому CMP PR не змінено.** Чинне поле `price` = ціна продажу, єдина необхідна ціна в кошторисі.
+- [x] Один адаптивний CMP `PriceCatalogScreen` і один KMP `PriceCatalogStore` у `commonMain` для Android, Windows та майбутнього iOS host. Пошук/категорії/одиниці, custom values, full/quick редактор, явне збереження, soft-delete та захист незбережених даних.
+- [x] Android замість старого екрана використовує спільний CMP UI з SQLCipher/SQLDelight; власник успішно перевірив фізичний APK, CRUD, перезапуск, фінальне компонування (60/40 категорія/одиниця; 65/35 повідомлення/ціна), відступи, тему й заголовок.
+- [x] Windows — той самий CMP екран із реальною шифрованою SQLCipher БД і password unlock; CI CRUD/wrong-password/reopen. **Windows GUI smoke / installer ще не завершені**, перенесені до #42.
+- [x] iOS commonMain/Simulator framework та SQLCipher CI; **runnable iOS host/Keychain/UI smoke не реалізовані**, перенесені до #42.
+- [x] KMP/SQLDelight CRUD із Flow, UUID і атомарним version-checked update/delete; вихідна схема `price`, Android WAL, backup, immutable revisions і PDF не змінені.
+- [x] Контрольний функціональний коміт `afd643226944b9537fdb16e52b3c783fc64b9017` пройшов [Android CI #41217205314](https://github.com/aleks-nl5/andrey-ceilings-android/actions/runs/41217205314) та [Windows/iOS CI #41217205280](https://github.com/aleks-nl5/andrey-ceilings-android/actions/runs/41217205280). Пізніші зміни документаційні; остаточна перевірка CI — умова Ready/merge.
+
+**Незавершене винесено в окремі issues:** [#42 — Windows/iOS hosts, Inter та GUI smoke](https://github.com/aleks-nl5/andrey-ceilings-android/issues/42), [#45 — опціональний UiState/Intent/Presenter](https://github.com/aleks-nl5/andrey-ceilings-android/issues/45), [#44 — ціни прайсу в нових кошторисах](https://github.com/aleks-nl5/andrey-ceilings-android/issues/44), [#37 — розширені фінансові поля](https://github.com/aleks-nl5/andrey-ceilings-android/issues/37); категорії/масові операції/CSV/історія — #38–#41. **Наступні екрани CMP:** клієнти й об'єкти → заміри/креслення → калькулятор/кошториси/PDF → налаштування/навігація.
+
+Специфікація першого етапу: [CMP_PRICE_LIST_DESIGN.md](architecture/CMP_PRICE_LIST_DESIGN.md), загальний план: [CMP_KMP_MIGRATION.md](architecture/CMP_KMP_MIGRATION.md).
 
 ## Після ручного приймання CMP-прайсу — розмежування етапів (31.10.2026)
 
