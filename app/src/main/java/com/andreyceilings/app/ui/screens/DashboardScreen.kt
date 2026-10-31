@@ -1,24 +1,27 @@
 package com.andreyceilings.app.ui.screens
 
-import com.andreyceilings.app.*
-
-import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Business
-import androidx.compose.material.icons.filled.Calculate
-import androidx.compose.material.icons.filled.Event
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.SquareFoot
-import androidx.compose.material.icons.filled.Straighten
-import androidx.compose.material3.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.andreyceilings.app.data.db.CeilingsDatabase
+import com.andreyceilings.shared.dashboard.DashboardScreen as SharedDashboardScreen
+import com.andreyceilings.shared.dashboard.DashboardStore
+import com.andreyceilings.shared.dashboard.DashboardSummary
+import kotlinx.coroutines.flow.flowOf
+import java.time.LocalDate
+import java.time.format.DateTimeFormatter
+import java.util.Locale
 
+/** Android-only compatibility helper still used by Calculator/Settings. */
 @Composable
 internal fun SectionTitle(title: String, subtitle: String? = null) {
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -29,171 +32,38 @@ internal fun SectionTitle(title: String, subtitle: String? = null) {
     }
 }
 
-@Composable
-private fun DashboardActionTile(
-    title: String,
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-    badge: String? = null
-) {
-    Card(
-        onClick = onClick,
-        modifier = modifier.heightIn(min = 132.dp),
-        shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
-    ) {
-        Column(
-            modifier = Modifier.fillMaxWidth().padding(14.dp),
-            verticalArrangement = Arrangement.SpaceBetween
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.Top
-            ) {
-                Surface(
-                    shape = RoundedCornerShape(12.dp),
-                    color = MaterialTheme.colorScheme.primaryContainer
-                ) {
-                    Icon(
-                        icon,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.padding(10.dp).size(24.dp)
-                    )
-                }
-                if (badge != null) {
-                    Text(
-                        badge,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.padding(top = 4.dp)
-                    )
-                }
-            }
-            Spacer(Modifier.height(18.dp))
-            Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-        }
-    }
-}
-
-@Composable
-private fun CompactMetric(
-    label: String,
-    value: String,
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    modifier: Modifier = Modifier
-) {
-    Card(
-        modifier = modifier,
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
-    ) {
-        Column(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 10.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(3.dp)
-        ) {
-            Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(19.dp))
-            Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
-            Text(value, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, maxLines = 1)
-        }
-    }
-}
-
+/** Thin Android host: the actual dashboard is shared CMP UI and SQLDelight state. */
 @Composable
 internal fun DashboardScreen(
+    database: CeilingsDatabase?,
     onNewMeasurement: () -> Unit,
     onCalculator: () -> Unit,
     onObjects: () -> Unit,
-    onSettings: () -> Unit
+    onEstimates: () -> Unit,
+    onCalendar: () -> Unit
 ) {
-    Column(
-        modifier = Modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
-    ) {
-        // Keep the most urgent item at the top, before tools and summary statistics.
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(22.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
-        ) {
-            Column(
-                modifier = Modifier.fillMaxWidth().padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Icon(Icons.Default.Event, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                    Text(
-                        "НАЙБЛИЖЧА ПОДІЯ",
-                        style = MaterialTheme.typography.labelLarge,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer
-                    )
-                }
-                Text(
-                    "Монтаж натяжної стелі",
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer
-                )
-                Text(
-                    "Квартира · Київ · 22 жовтня",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.82f)
-                )
-                OutlinedButton(
-                    onClick = onObjects,
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(14.dp),
-                    colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.onPrimaryContainer)
-                ) {
-                    Text("Перейти до об’єктів")
-                }
-            }
-        }
+    val store = remember(database) { database?.let { DashboardStore(it.database) } }
+    val summaryFlow = remember(store) { store?.summary ?: flowOf<DashboardSummary?>(null) }
+    val summary by summaryFlow.collectAsState(initial = null)
 
-        Text(
-            "ШВИДКІ ІНСТРУМЕНТИ МАЙСТРА",
-            style = MaterialTheme.typography.titleSmall,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        SharedDashboardScreen(
+            summary = summary,
+            databaseAvailable = database != null,
+            onNewMeasurement = onNewMeasurement,
+            onCalculator = onCalculator,
+            onObjects = onObjects,
+            onEstimates = onEstimates,
+            onCalendar = onCalendar,
+            todayLabel = LocalDate.now().format(
+                DateTimeFormatter.ofPattern("d MMMM yyyy", Locale.forLanguageTag("uk"))
+            ),
+            nowMillis = System.currentTimeMillis()
+            // Scheduling fields do not exist in SQLDelight yet. The empty
+            // state is real; creation dates must never become fake appointments.
         )
-        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                DashboardActionTile(
-                    "Швидкий замір", Icons.Default.Straighten, onNewMeasurement,
-                    modifier = Modifier.weight(1f), badge = "+ новий"
-                )
-                DashboardActionTile("Калькулятор", Icons.Default.Calculate, onCalculator, Modifier.weight(1f))
-            }
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                DashboardActionTile("Об’єкти та клієнти", Icons.Default.Business, onObjects, Modifier.weight(1f))
-                DashboardActionTile("Налаштування", Icons.Default.Settings, onSettings, Modifier.weight(1f))
-            }
-        }
-
-        Text(
-            "КОРОТКО ПРО РОБОТУ",
-            style = MaterialTheme.typography.titleSmall,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            CompactMetric("Об’єкти", "3", Icons.Default.Business, Modifier.weight(1f))
-            CompactMetric("Заміри", "5", Icons.Default.Straighten, Modifier.weight(1f))
-            CompactMetric("Площа", "86,4 м²", Icons.Default.SquareFoot, Modifier.weight(1f))
-        }
-
-        Text(
-            "Показані демонстраційні дані. Підключення реальної статистики буде окремим етапом.",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-
+        // Monobank's Android HTTP/SharedPreferences/Intent integration is retained intact.
+        // Shared UI + KMP cache/network adaptation is independent follow-up work.
         CurrencyRatesCard()
     }
 }

@@ -35,6 +35,7 @@ import com.andreyceilings.shared.estimate.FrozenPolygonGeometry
 import com.andreyceilings.shared.estimate.FrozenPolygonGeometryContract
 import com.andreyceilings.shared.estimate.VerifiedCeilingGeometry
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -48,7 +49,11 @@ import android.graphics.pdf.PdfDocument
 import com.andreyceilings.app.*
 
 @Composable
-internal fun ObjectsScreen(database: CeilingsDatabase?) {
+internal fun ObjectsScreen(
+ database: CeilingsDatabase?,
+ openCreateProject: Boolean = false,
+ onCreateProjectConsumed: () -> Unit = {}
+) {
  val clientsFlow = remember(database) { database?.clients()?.observeAll() ?: flowOf<List<ClientEntity>>(emptyList()) }
  val projectsFlow = remember(database) { database?.projects()?.observeAll() ?: flowOf<List<ProjectEntity>>(emptyList()) }
  val clients by clientsFlow.collectAsState(initial = emptyList())
@@ -63,9 +68,16 @@ internal fun ObjectsScreen(database: CeilingsDatabase?) {
  var showClientDialog by remember { mutableStateOf(false) }
  var showProjectDialog by remember { mutableStateOf(false) }
  var dbError by remember { mutableStateOf<String?>(null) }
+ // Navigation quick action reuses the same real create dialog as the screen button.
+ LaunchedEffect(openCreateProject, database) {
+  if (openCreateProject && database != null) {
+   showProjectDialog = true
+   onCreateProjectConsumed()
+  }
+ }
  LazyColumn(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(12.dp), contentPadding = PaddingValues(
-  top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 64.dp + 16.dp,
-  bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 80.dp + 16.dp
+  top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 56.dp + 16.dp,
+  bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 64.dp + 16.dp
  )) {
   item {
    Text("Об’єкти та клієнти", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
@@ -116,7 +128,10 @@ internal fun MeasurementsScreen(
  database: CeilingsDatabase?,
  precision: MeasurementPrecision,
  onOpenEstimates: () -> Unit,
- onUseMeasurement: (RoomMeasurementEntity) -> Unit
+ onUseMeasurement: (RoomMeasurementEntity) -> Unit,
+ openCreateMeasurement: Boolean = false,
+ onCreateMeasurementConsumed: () -> Unit = {},
+ onMissingProject: () -> Unit = {}
 ) {
  val measurementsFlow = remember(database) { database?.measurements()?.observeAll() ?: flowOf<List<RoomMeasurementEntity>>(emptyList()) }
  val projectsFlow = remember(database) { database?.projects()?.observeAll() ?: flowOf<List<ProjectEntity>>(emptyList()) }
@@ -127,9 +142,24 @@ internal fun MeasurementsScreen(
  var showDialog by remember { mutableStateOf(false) }
  var editingMeasurement by remember { mutableStateOf<RoomMeasurementEntity?>(null) }
  var error by remember { mutableStateOf<String?>(null) }
+ // Use an actual SQLDelight snapshot rather than the initially empty Compose Flow state.
+ LaunchedEffect(openCreateMeasurement, database) {
+  if (openCreateMeasurement && database != null) {
+   val hasProjects = withContext(Dispatchers.IO) {
+    database.projects().observeAll().first().isNotEmpty()
+   }
+   onCreateMeasurementConsumed()
+   if (hasProjects) {
+    editingMeasurement = null
+    showDialog = true
+   } else {
+    onMissingProject()
+   }
+  }
+ }
  LazyColumn(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(12.dp), contentPadding = PaddingValues(
-  top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 64.dp + 16.dp,
-  bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 80.dp + 16.dp
+  top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 56.dp + 16.dp,
+  bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 64.dp + 16.dp
  )) {
   item {
    Text("Заміри", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)

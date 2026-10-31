@@ -28,7 +28,10 @@ kotlin {
         commonMain.dependencies {
             implementation(compose.runtime)
             implementation(compose.foundation)
+            // Slow, localized urgency pulse for upcoming scheduled-work badges.
+            implementation(compose.animation)
             implementation(compose.material3)
+            implementation(compose.materialIconsExtended)
             implementation(compose.ui)
             implementation("app.cash.sqldelight:runtime:2.4.1")
             implementation("app.cash.sqldelight:coroutines-extensions:2.4.1")

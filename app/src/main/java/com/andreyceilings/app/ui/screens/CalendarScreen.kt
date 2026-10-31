@@ -72,8 +72,8 @@ internal fun CalendarScreen(database: CeilingsDatabase?) {
         Modifier.fillMaxSize()
             .verticalScroll(rememberScrollState())
             .padding(
-                top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 64.dp + 16.dp,
-                bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 80.dp + 16.dp
+                top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 56.dp + 16.dp,
+                bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 64.dp + 16.dp
             ),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
