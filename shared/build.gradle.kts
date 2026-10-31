@@ -35,6 +35,8 @@ kotlin {
             implementation(compose.ui)
             implementation("app.cash.sqldelight:runtime:2.4.1")
             implementation("app.cash.sqldelight:coroutines-extensions:2.4.1")
+            // Portable, strict JSON handling for the public monobank API/cache.
+            implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.9.0")
         }
 
         androidMain.dependencies {
