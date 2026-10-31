@@ -1,5 +1,42 @@
 # Compose Multiplatform / Kotlin Multiplatform — план і фактичний стан
 
+> **Актуалізовано 31.10.2026 після merge PR #29.** Це поточний план; попередній опис PR #22/#23 нижче лишається як історична довідка. Затверджений пріоритет власника: **спочатку завершити KMP + CMP для Android, Windows і iOS, діагностика #30–#34 пізніше.** Android є production-подібним функціональним еталоном, його UI ще платформний. Go/AAR видалені, KMP-розрахунки та SQLDelight працюють; SQLCipher WAL + immutable revisions + .stpb hardening з PR #29 вже в `main`.
+
+## Перший CMP прайс завершено — issue #36 закрито, PR #43 готується до злиття (31.10.2026)
+
+**[Issue #36](https://github.com/aleks-nl5/andrey-ceilings-android/issues/36) — Completed.** У [PR #43](https://github.com/aleks-nl5/andrey-ceilings-android/pull/43) завершені shared CMP екран, KMP price store/Flow/validation/version-checked CRUD, адаптивні mobile/desktop екрани й виправлення за ручним Android тестуванням. Власник вручну прийняв Android APK (CRUD, перезапуск, остаточний UX). `main` не змінюємо до окремого merge власником.
+
+- **Android:** реальний CMP прайс через SQLCipher/SQLDelight, існуючий WAL, backup, PDF та immutable estimates не змінені; Android відступи узгоджені з налаштуваннями, категорія/одиниця в одному рядку 60/40, підказка/ціна в рядку 65/35.
+- **Windows:** той самий CMP UI зі справжньою зашифрованою SQLCipher БД і password unlock. Windows CI build/SQLCipher reopen/wrong-password успішні, але ручний **Windows GUI smoke**, OS credential storage, installer/packaging, system Inter і backup UX перенесені до [#42](https://github.com/aleks-nl5/andrey-ceilings-android/issues/42).
+- **iOS:** спільний commonMain CMP/KMP і SQLCipher Simulator/framework тести проходять у CI, але **runnable iOS Xcode host/Keychain/UI smoke та Inter** — наступний етап [#42](https://github.com/aleks-nl5/andrey-ceilings-android/issues/42), не позначені як реалізовані.
+- **Розрахунки:** повний зв'язок позицій прайсу з новими кошторисами — [#44](https://github.com/aleks-nl5/andrey-ceilings-android/issues/44); одна обов'язкова продажна ціна + опціональні витрати/націнки — [#37](https://github.com/aleks-nl5/andrey-ceilings-android/issues/37).
+- **Рефакторинг:** окреме типізоване `PriceCatalogUiState/Intent/Presenter` залишається низькопріоритетним вдосконаленням у [#45](https://github.com/aleks-nl5/andrey-ceilings-android/issues/45), не blocker першого працездатного зрізу.
+- [x] Контрольний **функціональний** commit `afd64322`: [Android/інструментальні тести #41217205314](https://github.com/aleks-nl5/andrey-ceilings-android/actions/runs/41217205314) та [Windows/iOS #41217205280](https://github.com/aleks-nl5/andrey-ceilings-android/actions/runs/41217205280) — success. Після нього документаційні commits мають окремі CI; зелений фінальний HEAD — критерій Ready.
+
+## Оновлена цільова архітектура
+- **Один спільний `:shared` KMP domain + repository + SQLDelight schema**, логіка розрахунків та immutable кошторисів не дублюється.
+- **Один адаптивний CMP UI** із Material 3, погодженими кольорами, Inter, темами (light/dark/system). Відмінність між мобільними й desktop — **layout і OS interactions**, не business-logic копії.
+- **Тонкі platform hosts** `:app` Android, `:desktopApp` Windows та майбутній runnable `iosApp`, відповідальні за вікно, системні inset, permission, доступ до файлів/SAF, PDF/друк, безпечні SQLCipher ключі, резервування та platform lifecycle.
+- **Вимога шифрування:** Android SQLCipher WAL готовий. Працюючі KMP/SQLCipher тести Windows/iOS не доводять production key storage, packaging, реальний iOS host чи parity; кожну платформу вводити контрольованими перевірками.
+- **Без синхронізації**, інтернет необов'язковий. UUID, timestamps і tombstones лише закладають можливість майбутнього sync; клієнтські PDF окремо не шифруємо за погодженою політикою.
+
+## Черга робіт
+1. **Перший робочий CMP slice: прайс** — [issue #36](https://github.com/aleks-nl5/andrey-ceilings-android/issues/36) / [повна специфікація](CMP_PRICE_LIST_DESIGN.md). Спільна тема та design primitives; adaptive search/filter/list; швидка/повна правка ціни, категорія, додавання/видалення; підтвердження кожного запису; Android cutover; Windows реальний зашифрований CRUD; iOS compile/tests. Один Draft PR без зміни ціноутворення.
+2. **Windows/iOS host hardening** — [issue #42](https://github.com/aleks-nl5/andrey-ceilings-android/issues/42): Xcode host, Keychain, Windows key store/packaging, platform file/backup/PDF adapters, smoke тести запуску. Не називати scaffold повноцінним додатком.
+3. **Поекранне CMP перенесення:** клієнти й об'єкти; заміри/геометрія/креслення/календар; калькулятор/незмінні кошториси та PDF; налаштування/навігація. Кожен cutover проходить Android APK acceptance + Windows/iOS CI; старий Android екран прибирати лише після parity.
+4. **Розширена модель прайсу після базового CMP прайсу** — [issue #37](https://github.com/aleks-nl5/andrey-ceilings-android/issues/37): **одна обов'язкова ціна продажу**, опціональні закупівля/монтаж/інші прямі витрати/націнка; не підміняти невідоме нулем. У першому UI PR чинне `price` залишається єдиною ціною.
+5. **Пізніше окремими PR:** [категорії #38](https://github.com/aleks-nl5/andrey-ceilings-android/issues/38), [масові операції #39](https://github.com/aleks-nl5/andrey-ceilings-android/issues/39), [CSV #40](https://github.com/aleks-nl5/andrey-ceilings-android/issues/40), [історія цін #41](https://github.com/aleks-nl5/andrey-ceilings-android/issues/41), [ручні конфлікти прайсу #35](https://github.com/aleks-nl5/andrey-ceilings-android/issues/35); системна діагностика #30–#34 після пріоритетної міграції.
+
+## Інваріанти переходу
+- Не змінювати наявні SQLCipher WAL, .stpb, механізм restore/rollback, алгоритми KMP геометрії/округлення, UUID/коди та історичні immutable v1/v2/v3 кошториси/PDF лише заради UI перенесення.
+- Не втрачати Android UI еталон (теми, Inter, картки, календар, навігація, edge-to-edge, масштабування, accessibility). Не використовувати заглушки на місці робочих функцій.
+- У кожному PR тести common/KMP, Android CI/instrumentation та фізичний APK, Windows JVM/desktop, iOS Simulator build/tests. Не вважати iOS продукт готовим за фактом compile framework.
+- Не змінювати `main` або зливати Draft без окремого рішення власника.
+
+---
+
+## Історичний план попередніх PR (архів; не поточний статус)
+
 **Стан на 29 жовтня 2026 року:** PR #22 об'єднано з `main`, етап 1 завершено. У Draft PR #23 на прохання власника переведено Android-калькулятор на shared Kotlin KMP та видалено Go/AAR; KMP-only кодовий HEAD `ae326a73` пройшов Android та Windows/iOS CI, власник підтвердив на телефоні роботу нового KMP APK (розрахунки, кошториси, PDF); PR #23 підготовлено до огляду, але **у `main` не об'єднано**. Наведені нижче початкові рішення PR #22 — **історичний стан**, а не опис актуального runtime. Деталі: [GO_TO_KMP_PARITY.md](GO_TO_KMP_PARITY.md).
 
 ## Актуальна архітектура PR #23 (KMP-only калькулятор)

@@ -126,6 +126,31 @@ class PriceRepository(private val database: PrototypeDatabase) {
         }
     }
     fun find(id: Long) = queries.selectPriceItemById(id).executeAsOneOrNull()
+
+    /**
+     * Atomic optimistic update used by the shared CMP catalog on all platforms.
+     * An unchanged version and stable code must match the live row in the same
+     * SQL statement. Never use a read-then-write check for concurrent edits.
+     */
+    fun updateIfUnchanged(
+        id: Long, expectedCode: String, expectedUpdatedAt: Long,
+        title: String, category: String, unit: String, price: Double, updatedAt: Long
+    ): Long {
+        return checkNotNull(
+            queries.updatePriceItemIfVersion(
+                title, category, unit, price, updatedAt, id, expectedCode, expectedUpdatedAt
+            ).executeAsOneOrNull()
+        ) { "Price item changed or deleted; reload before saving." }
+    }
+
+    fun deleteIfUnchanged(
+        id: Long, expectedCode: String, expectedUpdatedAt: Long
+    ): Long {
+        return checkNotNull(
+            queries.deletePriceItemIfVersion(id, expectedCode, expectedUpdatedAt).executeAsOneOrNull()
+        ) { "Price item changed or deleted; reload before removing." }
+    }
+
     fun create(code: String, title: String, category: String, unit: String, price: Double, updatedAt: Long) =
         queries.insertPriceItem(code, title, category, unit, price, updatedAt, newRecordUuid())
     fun update(id: Long, code: String, title: String, category: String, unit: String, price: Double, updatedAt: Long) =
