@@ -115,6 +115,9 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
         TopAppBarDefaults.enterAlwaysScrollBehavior()
     }
     val isScrolling = remember { mutableStateOf(false) }
+    // Track actual content displacement, not just toolbar collapse, so the shade
+    // remains legible after the finger stops and goes away near the top again.
+    val contentScrolledPx = remember { mutableFloatStateOf(0f) }
     // Keep app chrome transparent so the window background is visible behind the system bars.
     val appBarColor = androidx.compose.ui.graphics.Color.Transparent
     SideEffect {
@@ -145,6 +148,7 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
     }
 
     LaunchedEffect(tab) {
+        contentScrolledPx.floatValue = 0f
         val requestedAt = tabChangedAt
         withFrameNanos { }
         PerformanceDiagnosticsLog.record(
@@ -166,6 +170,8 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
             override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset {
                 lastScrollAtNs.set(SystemClock.elapsedRealtimeNanos())
                 isScrolling.value = true
+                contentScrolledPx.floatValue =
+                    (contentScrolledPx.floatValue - consumed.y).coerceIn(0f, 240f)
                 return Offset.Zero
             }
         }
@@ -405,8 +411,10 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
     // The header keeps sliding in/out as before. Only its background becomes denser
     // as it collapses; the shade starts at the physical screen edge and fades to zero.
     val headerShadeOpacity by animateFloatAsState(
-        targetValue = 0.50f + 0.43f *
+        targetValue = 0.50f + 0.43f * maxOf(
             topAppBarScrollBehavior.state.collapsedFraction.coerceIn(0f, 1f),
+            (contentScrolledPx.floatValue / 160f).coerceIn(0f, 1f)
+        ),
         animationSpec = tween(durationMillis = 180),
         label = "Top app bar gradient opacity"
     )
