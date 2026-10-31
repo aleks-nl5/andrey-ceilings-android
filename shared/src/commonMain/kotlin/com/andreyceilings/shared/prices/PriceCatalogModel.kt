@@ -11,7 +11,9 @@ data class PriceCatalogItem(
     val title: String,
     val category: String,
     val unit: String,
-    val price: Double
+    val price: Double,
+    /** SQLite modification token; allows the shared editor to reject stale writes. */
+    val updatedAt: Long = 0L
 )
 
 data class PriceCatalogDraft(
