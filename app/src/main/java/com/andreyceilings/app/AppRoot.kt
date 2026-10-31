@@ -62,6 +62,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.andreyceilings.shared.navigation.AppHeader
 import com.andreyceilings.app.ui.theme.CeilingsTheme
 import com.andreyceilings.app.ui.theme.ThemeMode
 import com.andreyceilings.app.ui.theme.ThemeModeSelector
@@ -592,39 +593,20 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
             }
         }
 
-        // Keep the top of the fade anchored at the physical screen edge.
-        // As the toolbar slides up, contract the *bottom* of the gradient with
-        // collapsedFraction, but never let it cross the status bar's lower edge.
-        // drawBehind changes only painted pixels, not screen layout/touch targets.
-        val topFadeColor = MaterialTheme.colorScheme.background
-        Box(
-            modifier = Modifier
-                .align(Alignment.TopCenter)
-                .fillMaxWidth()
-                .height(statusBarInset + 56.dp + systemPanelGradientHeight)
-                .drawBehind {
-                    val statusBarBottom = statusBarInset.toPx().coerceIn(0f, size.height)
-                    val expandedPart = size.height - statusBarBottom
-                    val visiblePart = 1f - topAppBarScrollBehavior.state.collapsedFraction
-                        .coerceIn(0f, 1f)
-                    val gradientBottom = (statusBarBottom + expandedPart * visiblePart)
-                        .coerceIn(statusBarBottom, size.height)
-                    if (gradientBottom > 0f) {
-                        drawRect(
-                            brush = Brush.verticalGradient(
-                                colors = listOf(
-                                    topFadeColor.copy(alpha = headerShadeOpacity),
-                                    topFadeColor.copy(alpha = 0.025f)
-                                ),
-                                startY = 0f,
-                                endY = gradientBottom
-                            ),
-                            size = Size(size.width, gradientBottom)
-                        )
-                    }
-                }
+        // The shared CMP header retains the Android enter-always scroll behavior.
+        // Only window insets and platform theme actions remain in this host.
+        AppHeader(
+            collapsedFraction = topAppBarScrollBehavior.state.collapsedFraction,
+            shadeOpacity = headerShadeOpacity,
+            statusBarHeight = statusBarInset,
+            windowInsets = WindowInsets.statusBars,
+            scrollBehavior = topAppBarScrollBehavior,
+            onSettings = { navigateTo(AppTab.SETTINGS) },
+            extraActions = {
+                ThemeModeSelector(mode = themeMode, onModeChange = onThemeModeChange, compact = true)
+            },
+            modifier = Modifier.align(Alignment.TopCenter)
         )
-
         Box(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
@@ -637,29 +619,6 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
                 )
         )
 
-        TopAppBar(
-            modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth(),
-            expandedHeight = 56.dp,
-            windowInsets = WindowInsets.statusBars,
-            scrollBehavior = topAppBarScrollBehavior,
-            colors = TopAppBarDefaults.topAppBarColors(
-                containerColor = appBarColor,
-                scrolledContainerColor = appBarColor,
-                titleContentColor = MaterialTheme.colorScheme.onBackground,
-                navigationIconContentColor = MaterialTheme.colorScheme.onBackground,
-                actionIconContentColor = MaterialTheme.colorScheme.onBackground
-            ),
-            title = {
-                Column {
-                    Text("СтеляПро", fontWeight = FontWeight.Bold)
-                    Text("Майстер натяжних стель", style = MaterialTheme.typography.labelSmall)
-                }
-            },
-            actions = {
-                ThemeModeSelector(mode = themeMode, onModeChange = onThemeModeChange, compact = true)
-                IconButton(onClick = { navigateTo(AppTab.SETTINGS) }) { Icon(Icons.Default.Settings, "Налаштування") }
-            }
-        )
         FloatingNavigationBar(
             selectedTab = tab,
             darkTheme = useDarkTheme,
