@@ -9,7 +9,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.text.KeyboardOptions
@@ -465,42 +464,56 @@ private fun PriceEditorDialog(
                 } else {
                     Text(initial?.title.orEmpty())
                 }
-                if (mode == PriceEditorMode.FULL) {
-                    Text("Одиниця вимірювання *", style = MaterialTheme.typography.labelMedium)
-                }
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
                     verticalAlignment = Alignment.Top
                 ) {
                     if (mode == PriceEditorMode.FULL) {
-                        Column(modifier = Modifier.weight(0.42f)) {
+                        Column(modifier = Modifier.weight(0.45f)) {
                             if (customUnit) {
                                 OutlinedTextField(
-                                    value = unit, onValueChange = { unit = it },
-                                    label = { Text("Одиниця *") },
-                                    singleLine = true, enabled = !pending,
+                                    value = unit,
+                                    onValueChange = { unit = it },
+                                    label = { Text("Одиниця") },
+                                    trailingIcon = {
+                                        IconButton(
+                                            onClick = {
+                                                customUnit = false
+                                                showUnits = true
+                                            },
+                                            enabled = !pending
+                                        ) { Text("▾") }
+                                    },
+                                    singleLine = true,
+                                    enabled = !pending,
                                     modifier = Modifier.fillMaxWidth()
                                 )
-                                TextButton(onClick = { customUnit = false; unit = "" }, enabled = !pending) {
-                                    Text("Обрати зі списку")
-                                }
                             } else {
                                 androidx.compose.foundation.layout.Box(Modifier.fillMaxWidth()) {
-                                    OutlinedButton(
-                                        onClick = { showUnits = true },
+                                    // Same Material3 outline, floating label and
+                                    // height as the price text field beside it.
+                                    OutlinedTextField(
+                                        value = unit,
+                                        onValueChange = {},
+                                        readOnly = true,
+                                        label = { Text("Одиниця") },
+                                        trailingIcon = { Text("▾") },
+                                        singleLine = true,
                                         enabled = !pending,
-                                        modifier = Modifier.fillMaxWidth().height(56.dp),
-                                        contentPadding = PaddingValues(horizontal = 8.dp),
-                                    ) {
-                                        Row(
-                                            Modifier.fillMaxWidth(),
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            Text(unit.ifBlank { "Оберіть" }, modifier = Modifier.weight(1f), maxLines = 1)
-                                            Text("▾")
-                                        }
-                                    }
+                                        modifier = Modifier.fillMaxWidth()
+                                    )
+                                    // Let the entire field open the dropdown without
+                                    // giving focus to a read-only keyboard control.
+                                    androidx.compose.foundation.layout.Box(
+                                        Modifier.matchParentSize()
+                                            .semantics {
+                                                contentDescription = "Обрати одиницю вимірювання"
+                                            }
+                                            .clickable(enabled = !pending) {
+                                                showUnits = true
+                                            }
+                                    )
                                     DropdownMenu(
                                         expanded = showUnits,
                                         onDismissRequest = { showUnits = false }
@@ -524,7 +537,7 @@ private fun PriceEditorDialog(
                     OutlinedTextField(
                         value = price, onValueChange = { price = it },
                         label = { Text(if (mode == PriceEditorMode.FULL) "Ціна, ₴ *" else "Ціна продажу, ₴ *") },
-                        modifier = (if (mode == PriceEditorMode.FULL) Modifier.weight(0.58f) else Modifier.fillMaxWidth())
+                        modifier = (if (mode == PriceEditorMode.FULL) Modifier.weight(0.55f) else Modifier.fillMaxWidth())
                             .onFocusChanged { focus ->
                                 if (focus.isFocused) priceTapRequests++
                             }
