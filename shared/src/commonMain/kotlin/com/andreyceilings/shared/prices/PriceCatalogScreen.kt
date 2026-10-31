@@ -25,6 +25,7 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -41,6 +42,8 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -209,7 +212,12 @@ fun PriceCatalogScreen(
                                         Text("${PriceCatalogRules.formatSalePrice(item.price)} ₴")
                                     }
                                     androidx.compose.foundation.layout.Box {
-                                        TextButton(onClick = { actionsExpanded = true }) {
+                                        IconButton(
+                                            onClick = { actionsExpanded = true },
+                                            modifier = Modifier.semantics {
+                                                contentDescription = "Дії з позицією ${item.title}"
+                                            }
+                                        ) {
                                             Text("⋮", style = MaterialTheme.typography.titleMedium)
                                         }
                                         DropdownMenu(
@@ -340,7 +348,7 @@ private fun PriceEditorDialog(
     } else PriceCatalogRules.validate(title, category, unit, price.text)
 
     val submit = {
-        val parsed = PriceCatalogRules.parseSalePrice(price)
+        val parsed = PriceCatalogRules.parseSalePrice(price.text)
         if (parsed != null && errorMessage == null) {
             onSubmit(PriceCatalogDraft(title.trim(), category.trim(), unit.trim(), parsed))
         }
