@@ -11,62 +11,53 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.unit.dp
 import com.andreyceilings.app.data.db.CeilingsDatabase
-import com.andreyceilings.app.data.db.PriceItemEntity
+import com.andreyceilings.shared.db.PriceRepository
 import com.andreyceilings.shared.prices.PriceCatalogItem
 import com.andreyceilings.shared.prices.PriceCatalogScreen
+import com.andreyceilings.shared.prices.PriceCatalogStore
 import com.andreyceilings.shared.prices.PriceCatalogTheme
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.flowOf
-import java.util.UUID
+import kotlinx.coroutines.withContext
 
 /**
- * Temporary Android host adapter for the single shared CMP price-list screen.
- * Existing SQLCipher/WAL open, restore, backup and DAO compatibility remain unchanged.
+ * Android-only platform boundary (insets, secure driver lifecycle and dispatcher).
+ * The same KMP catalog/store is used by Windows; no duplicate Android DAO mapping,
+ * price validation, identity logic or CRUD rules remain in this screen.
  */
 @Composable
 internal fun PriceListScreen(database: CeilingsDatabase?, darkTheme: Boolean) {
-    val priceFlow = remember(database) {
-        database?.priceItems()?.observeAll() ?: flowOf<List<PriceItemEntity>>(emptyList())
-    }
-    val rows by priceFlow.collectAsState(initial = emptyList())
-    val catalog = remember(rows) {
-        rows.map { row ->
-            PriceCatalogItem(
-                id = row.id,
-                code = row.code,
-                title = row.title,
-                category = row.category,
-                unit = row.unit,
-                price = row.price
-            )
+    val store = remember(database) {
+        database?.let {
+            PriceCatalogStore(PriceRepository(it.database), nowMillis = System::currentTimeMillis)
         }
     }
-    val priceDao = database?.priceItems()
+    val priceFlow = remember(store) {
+        store?.items ?: flowOf<List<PriceCatalogItem>>(emptyList())
+    }
+    val catalog by priceFlow.collectAsState(initial = emptyList())
+
     PriceCatalogTheme(darkTheme) {
         PriceCatalogScreen(
-        items = catalog,
-        databaseAvailable = database != null,
-        contentPadding = PaddingValues(
-            start = 16.dp,
-            end = 16.dp,
-            top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 80.dp,
-            bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 100.dp
-        ),
-        onSave = { original, draft ->
-            val dao = checkNotNull(priceDao) { "SQLCipher price repository unavailable" }
-            dao.upsert(
-                PriceItemEntity(
-                    id = original?.id ?: 0L,
-                    code = original?.code ?: "custom.${UUID.randomUUID()}",
-                    title = draft.title,
-                    category = draft.category,
-                    unit = draft.unit,
-                    price = draft.price
-                )
-            )
-        },
-        onDelete = { item ->
-            checkNotNull(priceDao) { "SQLCipher price repository unavailable" }.deleteById(item.id)
-        }
+            items = catalog,
+            databaseAvailable = store != null,
+            contentPadding = PaddingValues(
+                start = 16.dp,
+                end = 16.dp,
+                top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 80.dp,
+                bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 100.dp
+            ),
+            onSave = { original, draft ->
+                withContext(Dispatchers.IO) {
+                    checkNotNull(store) { "SQLCipher price repository unavailable" }
+                        .save(original, draft)
+                }
+            },
+            onDelete = { item ->
+                withContext(Dispatchers.IO) {
+                    checkNotNull(store) { "SQLCipher price repository unavailable" }.delete(item)
+                }
+            }
         )
     }
 }
