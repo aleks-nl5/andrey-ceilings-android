@@ -30,6 +30,7 @@ import androidx.compose.ui.window.application
 import com.andreyceilings.shared.prices.PriceCatalogScreen
 import com.andreyceilings.shared.prices.PriceCatalogStore
 import com.andreyceilings.shared.prices.PriceCatalogTheme
+import com.andreyceilings.shared.prices.ceilingsTypography
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -37,7 +38,10 @@ import kotlinx.coroutines.withContext
 
 fun main() = application {
     Window(onCloseRequest = ::exitApplication, title = "СтеляПро — Прайс") {
-        PriceCatalogTheme(darkTheme = isSystemInDarkTheme()) {
+        PriceCatalogTheme(
+            darkTheme = isSystemInDarkTheme(),
+            typography = remember { ceilingsTypography() }
+        ) {
             Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
                 DesktopPriceHost()
             }
