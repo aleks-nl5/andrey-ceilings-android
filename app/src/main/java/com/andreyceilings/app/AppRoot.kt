@@ -29,11 +29,14 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.sp
 import androidx.compose.material.icons.Icons
@@ -603,6 +606,17 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
                 IconButton(onClick = { navigateTo(AppTab.SETTINGS) }) { Icon(Icons.Default.Settings, "Налаштування") }
             }
         )
+        // Keep the existing floating pill, but separate its entire oval silhouette
+        // from the content behind it (not a straight divider across the screen).
+        val navigationBarShape = RoundedCornerShape(32.dp)
+        val navigationBarSurface = if (useDarkTheme) {
+            lerp(MaterialTheme.colorScheme.surface, MaterialTheme.colorScheme.surfaceVariant, 0.45f)
+        } else {
+            MaterialTheme.colorScheme.surface
+        }
+        val navigationBarOutline = MaterialTheme.colorScheme.outline.copy(
+            alpha = if (useDarkTheme) 0.46f else 0.27f
+        )
         NavigationBar(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
@@ -610,8 +624,14 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
                 .padding(horizontal = 16.dp)
                 .navigationBarsPadding()
                 .height(68.dp)
-                .clip(RoundedCornerShape(32.dp))
-                .background(MaterialTheme.colorScheme.surface),
+                .shadow(
+                    elevation = if (useDarkTheme) 8.dp else 6.dp,
+                    shape = navigationBarShape,
+                    clip = false
+                )
+                .clip(navigationBarShape)
+                .background(navigationBarSurface)
+                .border(1.dp, navigationBarOutline, navigationBarShape),
             windowInsets = WindowInsets(0, 0, 0, 0),
             containerColor = navigationBarColor,
             contentColor = MaterialTheme.colorScheme.onSurface,
