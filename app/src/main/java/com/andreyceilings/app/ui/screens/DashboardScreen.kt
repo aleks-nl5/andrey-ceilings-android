@@ -93,7 +93,7 @@ internal fun DashboardScreen(
                     )
                 }
             },
-            formatCurrencyDate = ::currencyLocalDateTimeLabel
+            formatCurrencyDate = { millis -> currencyLocalDateTimeLabel(millis) }
             // Scheduling fields do not exist in SQLDelight yet. The empty
             // state is real; creation dates must never become fake appointments.
         )
