@@ -28,6 +28,8 @@ import com.andreyceilings.app.data.backup.BackupSchedule
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.*
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.ui.graphics.Brush
@@ -92,6 +94,8 @@ internal enum class AppTab(val title: String) {
 @Composable
 internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, onDatabaseReplaced: (CeilingsDatabase) -> Unit, themeMode: ThemeMode, onThemeModeChange: (ThemeMode) -> Unit) {
     var tab by remember { mutableStateOf(AppTab.DASHBOARD) }
+    // One-shot request consumed by the already implemented create dialogs in the destination tab.
+    var pendingQuickCreate by remember { mutableStateOf<AppTab?>(null) }
     var tabChangedAt by remember { mutableLongStateOf(SystemClock.elapsedRealtime()) }
     var lastBackPressTime by remember { mutableStateOf(0L) }
     val context = LocalContext.current
@@ -113,7 +117,6 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
     val isScrolling = remember { mutableStateOf(false) }
     // Keep app chrome transparent so the window background is visible behind the system bars.
     val appBarColor = androidx.compose.ui.graphics.Color.Transparent
-    val navigationBarColor = androidx.compose.ui.graphics.Color.Transparent
     SideEffect {
         context.findActivity()?.window?.let { window ->
             // Keep content edge-to-edge explicitly; transparent system bars must not
@@ -389,8 +392,8 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
         error.message?.takeIf { it.isNotBlank() } ?: "Невідома помилка KMP-рушія"
     }
 
-    val topContentPadding = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 64.dp + 16.dp
-    val bottomContentPadding = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 80.dp + 16.dp
+    val topContentPadding = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 56.dp + 16.dp
+    val bottomContentPadding = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 64.dp + 16.dp
 
     // 50% transparent at the screen edges, fading smoothly to fully transparent
     // over the app content. Android's own system bars remain truly transparent.
@@ -399,6 +402,14 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
     val systemPanelGradientHeight = 36.dp
     val statusBarInset = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     val navigationBarInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+    // The header keeps sliding in/out as before. Only its background becomes denser
+    // as it collapses; the shade starts at the physical screen edge and fades to zero.
+    val headerShadeOpacity by animateFloatAsState(
+        targetValue = 0.50f + 0.43f *
+            topAppBarScrollBehavior.state.collapsedFraction.coerceIn(0f, 1f),
+        animationSpec = tween(durationMillis = 180),
+        label = "Top app bar gradient opacity"
+    )
 
     // Overlay the app bars on a full-screen content layer. The screen can scroll
     // underneath the transparent bars, while its initial content respects their insets.
@@ -414,7 +425,11 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
                     Modifier.fillMaxSize().nestedScroll(screenScrollConnection).padding(horizontal = 16.dp)
                 ) {
                     when (tab) {
-                        AppTab.OBJECTS -> ObjectsScreen(database)
+                        AppTab.OBJECTS -> ObjectsScreen(
+                            database = database,
+                            openCreateProject = pendingQuickCreate == AppTab.OBJECTS,
+                            onCreateProjectConsumed = { pendingQuickCreate = null }
+                        )
                         AppTab.MEASUREMENTS -> MeasurementsScreen(
                             database = database,
                             precision = measurementPrecision,
@@ -463,6 +478,13 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
                                     }
                                 }
                                 navigateTo(AppTab.CALCULATOR)
+                            },
+                            openCreateMeasurement = pendingQuickCreate == AppTab.MEASUREMENTS,
+                            onCreateMeasurementConsumed = { pendingQuickCreate = null },
+                            onMissingProject = {
+                                pendingQuickCreate = AppTab.OBJECTS
+                                navigateTo(AppTab.OBJECTS)
+                                Toast.makeText(context, "Спочатку створіть об’єкт для заміру", Toast.LENGTH_LONG).show()
                             }
                         )
                         AppTab.ESTIMATES -> EstimatesScreen(database)
@@ -564,10 +586,13 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
             modifier = Modifier
                 .align(Alignment.TopCenter)
                 .fillMaxWidth()
-                .height(statusBarInset + systemPanelGradientHeight)
+                 .height(statusBarInset + 56.dp + systemPanelGradientHeight)
                 .background(
                     Brush.verticalGradient(
-                        colors = listOf(systemPanelTint, transparentSystemPanel)
+                        colors = listOf(
+                            MaterialTheme.colorScheme.background.copy(alpha = headerShadeOpacity),
+                            MaterialTheme.colorScheme.background.copy(alpha = 0.025f)
+                        )
                     )
                 )
         )
@@ -586,6 +611,7 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
 
         TopAppBar(
             modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth(),
+            expandedHeight = 56.dp,
             windowInsets = WindowInsets.statusBars,
             scrollBehavior = topAppBarScrollBehavior,
             colors = TopAppBarDefaults.topAppBarColors(
@@ -606,68 +632,19 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
                 IconButton(onClick = { navigateTo(AppTab.SETTINGS) }) { Icon(Icons.Default.Settings, "Налаштування") }
             }
         )
-        // Keep the existing floating pill, but separate its entire oval silhouette
-        // from the content behind it (not a straight divider across the screen).
-        val navigationBarShape = RoundedCornerShape(32.dp)
-        val navigationBarSurface = if (useDarkTheme) {
-            lerp(MaterialTheme.colorScheme.surface, MaterialTheme.colorScheme.surfaceVariant, 0.45f)
-        } else {
-            MaterialTheme.colorScheme.surface
-        }
-        val navigationBarOutline = MaterialTheme.colorScheme.outline.copy(
-            alpha = if (useDarkTheme) 0.46f else 0.27f
+        FloatingNavigationBar(
+            selectedTab = tab,
+            darkTheme = useDarkTheme,
+            onSelect = ::navigateTo,
+            onQuickCreate = { target ->
+                if (database == null) {
+                    Toast.makeText(context, "Захищена база зараз недоступна", Toast.LENGTH_SHORT).show()
+                } else {
+                    pendingQuickCreate = target
+                    navigateTo(target)
+                }
+            },
+            modifier = Modifier.align(Alignment.BottomCenter)
         )
-        NavigationBar(
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp)
-                .navigationBarsPadding()
-                .height(68.dp)
-                .shadow(
-                    elevation = if (useDarkTheme) 8.dp else 6.dp,
-                    shape = navigationBarShape,
-                    clip = false
-                )
-                .clip(navigationBarShape)
-                .background(navigationBarSurface)
-                .border(1.dp, navigationBarOutline, navigationBarShape),
-            windowInsets = WindowInsets(0, 0, 0, 0),
-            containerColor = navigationBarColor,
-            contentColor = MaterialTheme.colorScheme.onSurface,
-            tonalElevation = 0.dp
-        ) {
-            val navigationItemColors = NavigationBarItemDefaults.colors(
-                selectedIconColor = MaterialTheme.colorScheme.primary,
-                selectedTextColor = MaterialTheme.colorScheme.primary,
-                indicatorColor = MaterialTheme.colorScheme.primaryContainer,
-                unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            val items = listOf(
-                AppTab.DASHBOARD to Icons.Default.Dashboard,
-                AppTab.OBJECTS to Icons.Default.Business,
-                AppTab.MEASUREMENTS to Icons.Default.Straighten,
-                AppTab.CALCULATOR to Icons.Default.Calculate,
-                AppTab.CALENDAR to Icons.Default.CalendarMonth
-            )
-            items.forEach { (item, icon) ->
-                NavigationBarItem(
-                    selected = tab == item,
-                    onClick = { navigateTo(item) },
-                    icon = { Icon(icon, contentDescription = item.title) },
-                    label = {
-                        Text(
-                            item.title,
-                            maxLines = 1,
-                            style = MaterialTheme.typography.labelSmall.copy(letterSpacing = (-0.25).sp),
-                            modifier = Modifier.offset(y = (-2).dp),
-                            textAlign = TextAlign.Center
-                        )
-                    },
-                    colors = navigationItemColors
-                )
-            }
-        }
     }
 }
