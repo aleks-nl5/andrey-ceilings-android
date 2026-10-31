@@ -354,6 +354,7 @@ private fun PriceEditorDialog(
     var showUnits by remember { mutableStateOf(false) }
     var customUnit by remember { mutableStateOf(initial?.unit?.let { it !in unitOptions } == true) }
     var confirmUnitChange by remember { mutableStateOf(false) }
+    var confirmDiscard by remember { mutableStateOf(false) }
     var priceTapRequests by remember { mutableIntStateOf(0) }
     LaunchedEffect(priceTapRequests) {
         if (priceTapRequests > 0) {
@@ -368,6 +369,24 @@ private fun PriceEditorDialog(
         if (PriceCatalogRules.parseSalePrice(price.text) == null) "Перевірте ціну продажу." else null
     } else PriceCatalogRules.validate(title, category, unit, price.text)
 
+    val hasUnsavedEdits = PriceCatalogRules.hasUnsavedEdits(
+        initial = initial,
+        quickPriceOnly = mode == PriceEditorMode.QUICK,
+        title = title,
+        category = category,
+        unit = unit,
+        salePriceText = price.text
+    )
+    val requestDismiss: () -> Unit = {
+        if (!pending) {
+            if (hasUnsavedEdits) {
+                confirmUnitChange = false
+                confirmDiscard = true
+            } else {
+                onDismiss()
+            }
+        }
+    }
     val submit = {
         val parsed = PriceCatalogRules.parseSalePrice(price.text)
         if (parsed != null && errorMessage == null) {
@@ -376,7 +395,7 @@ private fun PriceEditorDialog(
     }
 
     AlertDialog(
-        onDismissRequest = { if (!pending) onDismiss() },
+        onDismissRequest = requestDismiss,
         title = { Text(when {
             mode == PriceEditorMode.QUICK -> "Змінити ціну продажу"
             initial == null -> "Нова позиція прайсу"
@@ -535,7 +554,7 @@ private fun PriceEditorDialog(
             ) { Text(if (pending) "Збереження…" else "Зберегти") }
         },
         dismissButton = {
-            TextButton(enabled = !pending, onClick = onDismiss) { Text("Скасувати") }
+            TextButton(enabled = !pending, onClick = requestDismiss) { Text("Скасувати") }
         }
     )
     if (confirmUnitChange) {
@@ -548,6 +567,25 @@ private fun PriceEditorDialog(
             },
             dismissButton = {
                 TextButton(onClick = { confirmUnitChange = false }) { Text("Повернутися") }
+            }
+        )
+    }
+    if (confirmDiscard) {
+        AlertDialog(
+            onDismissRequest = { confirmDiscard = false },
+            title = { Text("Відкинути зміни?") },
+            text = {
+                Text("Введені зміни цієї позиції ще не збережено. Повернутися до редагування чи відкинути їх?")
+            },
+            confirmButton = {
+                TextButton(onClick = { confirmDiscard = false; onDismiss() }) {
+                    Text("Відкинути")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmDiscard = false }) {
+                    Text("Продовжити редагування")
+                }
             }
         )
     }
