@@ -76,8 +76,8 @@ internal fun ObjectsScreen(
   }
  }
  LazyColumn(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(12.dp), contentPadding = PaddingValues(
-  top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 64.dp + 16.dp,
-  bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 80.dp + 16.dp
+  top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 56.dp + 16.dp,
+  bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 64.dp + 16.dp
  )) {
   item {
    Text("Об’єкти та клієнти", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
@@ -158,8 +158,8 @@ internal fun MeasurementsScreen(
   }
  }
  LazyColumn(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(12.dp), contentPadding = PaddingValues(
-  top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 64.dp + 16.dp,
-  bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 80.dp + 16.dp
+  top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 56.dp + 16.dp,
+  bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 64.dp + 16.dp
  )) {
   item {
    Text("Заміри", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
