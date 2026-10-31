@@ -1,37 +1,25 @@
 package com.andreyceilings.app.ui.screens
 
 import android.content.Context
-import com.andreyceilings.shared.dashboard.CurrencyRatesGateway
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
-import java.net.HttpURLConnection
-import java.net.URL
+import com.andreyceilings.shared.dashboard.CurrencyRatesCache
 
 /**
- * Keeps the legacy preference file and key: upgrading to CMP does not wipe
- * existing offline rates. These public rates are separate from SQLCipher.
+ * The only Android-specific code: durable storage in the original preferences.
+ * Existing installations keep their saved offline rates without migration.
+ * HTTP, validation and refresh policy run in shared/commonMain.
  */
-internal class AndroidCurrencyRatesGateway(context: Context) : CurrencyRatesGateway {
+internal class AndroidCurrencyRatesCache(context: Context) : CurrencyRatesCache {
     private val preferences = context.applicationContext.getSharedPreferences(
         "currency_rates", Context.MODE_PRIVATE
     )
 
-    override fun readCache(): String? =
+    override fun read(): String? =
         preferences.getString("monobank_currency_cache", null)
 
-    override fun saveCache(value: String) {
-        preferences.edit().putString("monobank_currency_cache", value).apply()
-    }
-
-    override suspend fun fetchRatesJson(): String = withContext(Dispatchers.IO) {
-        val connection = URL("https://api.monobank.ua/bank/currency")
-            .openConnection() as HttpURLConnection
-        connection.connectTimeout = 8_000
-        connection.readTimeout = 8_000
-        try {
-            connection.inputStream.bufferedReader().use { it.readText() }
-        } finally {
-            connection.disconnect()
+    override fun write(raw: String) {
+        // Commit is synchronous: the offline cache must be durable after success.
+        check(preferences.edit().putString("monobank_currency_cache", raw).commit()) {
+            "Could not persist currency cache"
         }
     }
 }
