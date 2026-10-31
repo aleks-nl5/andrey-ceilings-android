@@ -1,6 +1,7 @@
 package com.andreyceilings.desktop
 
 import app.cash.sqldelight.db.SqlDriver
+import com.andreyceilings.shared.dashboard.DashboardStore
 import com.andreyceilings.shared.db.PriceRepository
 import com.andreyceilings.shared.db.PrototypeDatabase
 import com.andreyceilings.shared.db.SqlCipherWindowsDriverFactory
@@ -20,6 +21,7 @@ import javax.crypto.spec.PBEKeySpec
  */
 internal class DesktopPriceDatabase private constructor(
     val prices: PriceRepository,
+    val dashboard: DashboardStore,
     private val driver: SqlDriver
 ) : AutoCloseable {
     override fun close() = driver.close()
@@ -68,7 +70,7 @@ internal class DesktopPriceDatabase private constructor(
                     val database = PrototypeDatabase(driver)
                     // Query the *actual* encrypted schema before considering login successful.
                     PriceRepository(database).all()
-                    DesktopPriceDatabase(PriceRepository(database), driver)
+                    DesktopPriceDatabase(PriceRepository(database), DashboardStore(database), driver)
                 } catch (error: Throwable) {
                     driver.close()
                     throw error
