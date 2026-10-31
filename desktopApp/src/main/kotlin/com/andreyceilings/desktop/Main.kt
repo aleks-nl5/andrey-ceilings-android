@@ -8,10 +8,15 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.weight
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -27,6 +32,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
+import com.andreyceilings.shared.dashboard.DashboardScreen
 import com.andreyceilings.shared.prices.PriceCatalogScreen
 import com.andreyceilings.shared.prices.PriceCatalogStore
 import com.andreyceilings.shared.prices.PriceCatalogTheme
@@ -36,8 +42,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+private enum class DesktopTab { HOME, PRICES }
+
 fun main() = application {
-    Window(onCloseRequest = ::exitApplication, title = "СтеляПро — Прайс") {
+    Window(onCloseRequest = ::exitApplication, title = "СтеляПро") {
         PriceCatalogTheme(
             darkTheme = isSystemInDarkTheme(),
             typography = remember { ceilingsTypography() }
@@ -72,17 +80,48 @@ private fun DesktopPriceHost() {
             PriceCatalogStore(database.prices, nowMillis = System::currentTimeMillis)
         }
         val items by store.items.collectAsState(initial = emptyList())
-        PriceCatalogScreen(
-            items = items,
-            databaseAvailable = true,
-            contentPadding = PaddingValues(horizontal = 24.dp, vertical = 24.dp),
-            onSave = { original, draft ->
-                withContext(Dispatchers.IO) { store.save(original, draft) }
-            },
-            onDelete = { item ->
-                withContext(Dispatchers.IO) { store.delete(item) }
+        val summary by database.dashboard.summary.collectAsState(initial = null)
+        var selectedTab by remember(database) { mutableStateOf(DesktopTab.HOME) }
+        Column(Modifier.fillMaxSize()) {
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                TextButton(onClick = { selectedTab = DesktopTab.HOME }) { Text("Головна") }
+                TextButton(onClick = { selectedTab = DesktopTab.PRICES }) { Text("Прайс") }
             }
-        )
+            when (selectedTab) {
+                DesktopTab.HOME -> {
+                    Column(
+                        Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState())
+                            .padding(horizontal = 24.dp, vertical = 12.dp)
+                    ) {
+                        // Only the real price catalog is available on the desktop host so far.
+                        // The remaining shortcuts stay visibly disabled, never mock-open.
+                        DashboardScreen(
+                            summary = summary,
+                            databaseAvailable = true,
+                            onNewMeasurement = null,
+                            onCalculator = null,
+                            onObjects = null,
+                            onSettings = null,
+                            onCalendar = null
+                        )
+                    }
+                }
+                DesktopTab.PRICES -> PriceCatalogScreen(
+                    items = items,
+                    databaseAvailable = true,
+                    contentPadding = PaddingValues(horizontal = 24.dp, vertical = 24.dp),
+                    onSave = { original, draft ->
+                        withContext(Dispatchers.IO) { store.save(original, draft) }
+                    },
+                    onDelete = { item ->
+                        withContext(Dispatchers.IO) { store.delete(item) }
+                    }
+                )
+            }
+        }
     } else {
         Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
             Column(
