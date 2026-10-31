@@ -29,11 +29,13 @@ import androidx.compose.runtime.key
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import com.andreyceilings.shared.dashboard.CurrencyRatesStore
+import com.andreyceilings.shared.dashboard.MonobankCurrencyGateway
+import com.andreyceilings.shared.dashboard.dashboardClockMillis
+import com.andreyceilings.shared.dashboard.dashboardTodayLabel
+import com.andreyceilings.shared.dashboard.currencyLocalDateTimeLabel
 import kotlinx.coroutines.delay
 import java.awt.Desktop
 import java.net.URI
-import java.text.SimpleDateFormat
-import java.util.Date
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -63,9 +65,6 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.time.LocalDate
-import java.time.format.DateTimeFormatter
-import java.util.Locale
 
 private enum class DesktopTab { HOME, PRICES }
 
@@ -108,13 +107,14 @@ private fun DesktopPriceHost() {
         val items by store.items.collectAsState(initial = emptyList())
         val summaryFlow: Flow<DashboardSummary?> = remember(database) { database.dashboard.summary }
         val summary by summaryFlow.collectAsState(initial = null)
-        val currencyStore = remember(database) {
-            CurrencyRatesStore(DesktopCurrencyRatesGateway(), System::currentTimeMillis)
+        val currencyGateway = remember(database) {
+            MonobankCurrencyGateway(DesktopCurrencyRatesCache())
+        }
+        DisposableEffect(currencyGateway) { onDispose { currencyGateway.close() } }
+        val currencyStore = remember(currencyGateway) {
+            CurrencyRatesStore(currencyGateway, ::dashboardClockMillis)
         }
         val currencyState by currencyStore.state.collectAsState()
-        val currencyDateFormatter = remember {
-            SimpleDateFormat("dd.MM, HH:mm", Locale.forLanguageTag("uk-UA"))
-        }
         LaunchedEffect(currencyStore) { currencyStore.start() }
         LaunchedEffect(currencyStore) {
             while (true) {
@@ -154,10 +154,8 @@ private fun DesktopPriceHost() {
                             onObjects = null,
                             onEstimates = null,
                             onCalendar = null,
-                            todayLabel = LocalDate.now().format(
-                                DateTimeFormatter.ofPattern("d MMMM yyyy", Locale.forLanguageTag("uk"))
-                            ),
-                            nowMillis = System.currentTimeMillis(),
+                            todayLabel = dashboardTodayLabel(currencyState.nowMillis),
+                            nowMillis = currencyState.nowMillis,
                             currencyRates = currencyState,
                             onCurrencyRefresh = { scope.launch { currencyStore.refresh() } },
                             onCurrencyMessageDismiss = currencyStore::dismissMessage,
@@ -170,7 +168,7 @@ private fun DesktopPriceHost() {
                                     }
                                 }
                             },
-                            formatCurrencyDate = { millis -> currencyDateFormatter.format(Date(millis)) }
+                            formatCurrencyDate = { millis -> currencyLocalDateTimeLabel(millis) }
                         )
                     }
                 }
