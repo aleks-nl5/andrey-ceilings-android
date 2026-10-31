@@ -43,10 +43,13 @@ class PriceCatalogStore(
         require(title.isNotBlank() && category.isNotBlank() && unit.isNotBlank()) {
             "Потрібно заповнити назву, категорію та одиницю."
         }
+        // Check numeric cents without Double.toString(): high valid prices can be
+        // rendered in scientific notation even though the input was ordinary decimal.
+        val cents = draft.price * 100.0
         require(
             draft.price.isFinite() &&
                 draft.price >= 0.0 && draft.price <= 999_999_999.99 &&
-                PriceCatalogRules.parseSalePrice(draft.price.toString()) != null
+                kotlin.math.abs(cents - kotlin.math.round(cents)) < 0.0001
         ) { "Неприпустима ціна продажу." }
 
         val code = if (original == null) {
