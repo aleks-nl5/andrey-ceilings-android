@@ -14,6 +14,7 @@ import com.andreyceilings.app.data.db.CeilingsDatabase
 import com.andreyceilings.app.data.db.PriceItemEntity
 import com.andreyceilings.shared.prices.PriceCatalogItem
 import com.andreyceilings.shared.prices.PriceCatalogScreen
+import com.andreyceilings.shared.prices.PriceCatalogTheme
 import kotlinx.coroutines.flow.flowOf
 import java.util.UUID
 
@@ -22,7 +23,7 @@ import java.util.UUID
  * Existing SQLCipher/WAL open, restore, backup and DAO compatibility remain unchanged.
  */
 @Composable
-internal fun PriceListScreen(database: CeilingsDatabase?) {
+internal fun PriceListScreen(database: CeilingsDatabase?, darkTheme: Boolean) {
     val priceFlow = remember(database) {
         database?.priceItems()?.observeAll() ?: flowOf<List<PriceItemEntity>>(emptyList())
     }
@@ -40,7 +41,8 @@ internal fun PriceListScreen(database: CeilingsDatabase?) {
         }
     }
     val priceDao = database?.priceItems()
-    PriceCatalogScreen(
+    PriceCatalogTheme(darkTheme) {
+        PriceCatalogScreen(
         items = catalog,
         databaseAvailable = database != null,
         contentPadding = PaddingValues(
@@ -65,5 +67,6 @@ internal fun PriceListScreen(database: CeilingsDatabase?) {
         onDelete = { item ->
             checkNotNull(priceDao) { "SQLCipher price repository unavailable" }.deleteById(item.id)
         }
-    )
+        )
+    }
 }
