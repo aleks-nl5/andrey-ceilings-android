@@ -39,7 +39,7 @@ internal fun DashboardScreen(
     onNewMeasurement: () -> Unit,
     onCalculator: () -> Unit,
     onObjects: () -> Unit,
-    onSettings: () -> Unit,
+    onEstimates: () -> Unit,
     onCalendar: () -> Unit
 ) {
     val store = remember(database) { database?.let { DashboardStore(it.database) } }
@@ -53,7 +53,7 @@ internal fun DashboardScreen(
             onNewMeasurement = onNewMeasurement,
             onCalculator = onCalculator,
             onObjects = onObjects,
-            onSettings = onSettings,
+            onEstimates = onEstimates,
             onCalendar = onCalendar,
             todayLabel = LocalDate.now().format(
                 DateTimeFormatter.ofPattern("d MMMM yyyy", Locale.forLanguageTag("uk"))
