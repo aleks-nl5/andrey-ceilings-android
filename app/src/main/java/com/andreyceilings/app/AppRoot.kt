@@ -456,7 +456,7 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
                             }
                         )
                         AppTab.ESTIMATES -> EstimatesScreen(database)
-                        AppTab.PRICES -> PriceListScreen(database)
+                        AppTab.PRICES -> PriceListScreen(database, darkTheme = useDarkTheme)
                         AppTab.CALENDAR -> CalendarScreen(database)
                         else -> Unit
                     }
