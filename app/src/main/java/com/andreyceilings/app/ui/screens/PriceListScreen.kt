@@ -41,9 +41,11 @@ internal fun PriceListScreen(database: CeilingsDatabase?, darkTheme: Boolean) {
         PriceCatalogScreen(
             items = catalog,
             databaseAvailable = store != null,
+            // AppRoot already applies 16.dp on each side, just like Settings.
+            // Avoid another nested 16.dp that made Price List appear too narrow.
             contentPadding = PaddingValues(
-                start = 16.dp,
-                end = 16.dp,
+                start = 0.dp,
+                end = 0.dp,
                 top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 80.dp,
                 bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 100.dp
             ),
