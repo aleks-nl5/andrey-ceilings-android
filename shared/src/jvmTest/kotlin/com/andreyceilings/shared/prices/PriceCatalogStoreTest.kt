@@ -71,6 +71,46 @@ class PriceCatalogStoreTest {
     }
 
     @Test
+    fun sqlCompareAndSwapRequiresExactCodeVersionAndActiveRow() = runBlocking {
+        JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).use { driver ->
+            PrototypeDatabase.Schema.create(driver)
+            val repository = PriceRepository(PrototypeDatabase(driver))
+            val store = PriceCatalogStore(repository) { 100L }
+            val id = store.save(null, PriceCatalogDraft("Профіль", "Профілі", "м.п.", 120.0))
+            val original = store.items.first().single()
+            // These checks happen inside the SQL UPDATE/DELETE statement, not
+            // in a separate SELECT that could race a different writer.
+            assertFailsWith<IllegalStateException> {
+                repository.updateIfUnchanged(
+                    id, "wrong.code", original.updatedAt,
+                    "Підміна", "Профілі", "м.п.", 0.0, 200L
+                )
+            }
+            assertFailsWith<IllegalStateException> {
+                repository.deleteIfUnchanged(id, original.code, original.updatedAt + 1)
+            }
+            assertEquals(120.0, repository.find(id)?.price)
+            assertEquals(1L, repository.count())
+
+            store.save(original, PriceCatalogDraft("Профіль", "Профілі", "м.п.", 140.0))
+            assertFailsWith<IllegalStateException> {
+                repository.updateIfUnchanged(
+                    id, original.code, original.updatedAt,
+                    "Застаріла правка", "Профілі", "м.п.", 10.0, 300L
+                )
+            }
+            assertEquals(140.0, repository.find(id)?.price)
+            val latest = store.items.first().single()
+            assertTrue(latest.updatedAt > original.updatedAt)
+            store.delete(latest)
+            assertFailsWith<IllegalStateException> {
+                repository.deleteIfUnchanged(id, latest.code, latest.updatedAt)
+            }
+            assertEquals(0L, repository.count())
+        }
+    }
+
+    @Test
     fun inputValidationAndNewRecordCodesAreSharedAcrossHosts() = runBlocking {
         JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).use { driver ->
             PrototypeDatabase.Schema.create(driver)
