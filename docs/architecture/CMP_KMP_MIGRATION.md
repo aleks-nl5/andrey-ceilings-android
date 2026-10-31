@@ -4,11 +4,11 @@
 
 ## Активний CMP інкремент — Draft PR #43 (31.10.2026)
 
-- **Android:** спільний `PriceCatalogScreen` із KMP-пошуком/валідацією й реактивним SQLDelight підключено замість старої платфорно-залежної верстки прайсу; існуючий SQLCipher WAL, backup і immutable snapshots залишилися в Android host. Далі — CI та APK приймання.
+- **Android:** `PriceCatalogScreen` і `PriceCatalogStore` підключено до SQLDelight/SQLCipher; KMP пошук, валідація та атомарне збереження/soft-delete. WAL, backup і immutable snapshots залишилися в Android host. CI та фізичний APK — **підтверджені**.
 - **Windows:** той самий CMP-каталог і реальний `PriceRepository` із SQLCipher file, явним паролем і per-installation PBKDF2 salt. Ключ на диск не зберігаємо, але **немає системного Windows credential-vault, installer, автоматичного backup і recovery UX**; поки лише прототип, не готова production-збірка.
 - **iOS:** CMP commonMain/UI компіляція та iOS Simulator тести — обов'язкові; runnable Xcode host і Keychain пізніше через #42.
 - **Схему цін не змінено:** `price` залишається єдиною обов'язковою ціною продажу; опціональні закупівля, монтаж, витрати, націнка — #37.
-- [ ] Підтвердження Android/Windows/iOS CI останнього HEAD, Android Release APK і ручна перевірка; **не заявляти green до фактичного результату**.
+- [x] CI на перевіреному функціональному коміті `afd64322`: [Android APK, JVM, instrumentation](https://github.com/aleks-nl5/andrey-ceilings-android/actions/runs/41217205314) і [Windows desktop/JVM, iOS Simulator framework/SQLCipher tests](https://github.com/aleks-nl5/andrey-ceilings-android/actions/runs/41217205280) — успішні. Власник перевірив Android APK (CRUD, збереження після перезапуску, остаточний вигляд прайсу). [ ] Окремо: Windows GUI smoke, системне сховище Windows і runnable iOS host (#42).
 
 ## Оновлена цільова архітектура
 - **Один спільний `:shared` KMP domain + repository + SQLDelight schema**, логіка розрахунків та immutable кошторисів не дублюється.
