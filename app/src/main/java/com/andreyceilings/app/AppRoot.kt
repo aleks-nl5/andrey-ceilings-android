@@ -523,7 +523,7 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
                             onNewMeasurement = { navigateTo(AppTab.MEASUREMENTS) },
                             onCalculator = { navigateTo(AppTab.CALCULATOR) },
                             onObjects = { navigateTo(AppTab.OBJECTS) },
-                            onSettings = { navigateTo(AppTab.SETTINGS) },
+                            onEstimates = { navigateTo(AppTab.ESTIMATES) },
                             onCalendar = { navigateTo(AppTab.CALENDAR) }
                         )
                         AppTab.CALCULATOR -> CalculatorScreen(
