@@ -1,5 +1,15 @@
 # Актуальна дорожня карта — після об'єднання PR #29 (31.10.2026)
 
+## Наступний крок після PR #47 — CMP курси валют (issue #51, 31.10.2026)
+
+- Після об'єднання [PR #47](https://github.com/aleks-nl5/andrey-ceilings-android/pull/47) завершено CMP-контент головної «Панелі»: курси monobank (USD/UAH, EUR/UAH, EUR/USD) перенесено з Android-only CurrencyRatesCard.kt у shared/commonMain/dashboard. Попередній Android-only компонент видалено.
+- Єдині CMP UI, парсер ISO-4217 пар, сумісний із попереднім Android JSON-кешем формат, 30-хвилинне обмеження оновлення, повідомлення про збої та offline fallback; фіктивні курси/дати не використовуються.
+- Android адаптер зберігає попередні SharedPreferences("currency_rates") / monobank_currency_cache, мережевий виклик у Dispatchers.IO і посилання на monobank. Windows адаптер має власне OS user preferences і HTTPS-запит; публічні курси не зберігаються в SQLCipher БД. Спільний код доступний для компіляції iOS, runnable iOS host — #42.
+- Додано common/JVM тести: валідні, часткові й пошкоджені відповіді API, кеш, throttle, offline, повторний запуск.
+- До злиття: зелений Android APK CI + Windows desktop + iOS Simulator framework; ручна перевірка Android у двох темах (у тому числі без мережі, стара кешована версія, таймер, ручне оновлення). Злиття з main лише після приймання власником.
+- Незмінні SQLDelight, SQLCipher WAL, резервне копіювання, кошториси та PDF. Навігація #48 і планові події #49 — окремі роботи.
+
+
 ## PR #47 — фінальне спрощення CMP-панелі і стан перед злиттям (31.10.2026)
 
 - Із `shared/commonMain/dashboard/DashboardScreen.kt` прибрано декоративні заголовки **«ШВИДКІ ІНСТРУМЕНТИ МАЙСТРА»** та **«КОРОТКО ПРО РОБОТУ»**, а також зайвий текст «За активними об’єктами та їхніми замірами в локальній базі.»
