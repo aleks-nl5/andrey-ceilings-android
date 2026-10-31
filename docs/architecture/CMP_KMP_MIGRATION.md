@@ -2,6 +2,14 @@
 
 > **Актуалізовано 31.10.2026 після merge PR #29.** Це поточний план; попередній опис PR #22/#23 нижче лишається як історична довідка. Затверджений пріоритет власника: **спочатку завершити KMP + CMP для Android, Windows і iOS, діагностика #30–#34 пізніше.** Android є production-подібним функціональним еталоном, його UI ще платформний. Go/AAR видалені, KMP-розрахунки та SQLDelight працюють; SQLCipher WAL + immutable revisions + .stpb hardening з PR #29 вже в `main`.
 
+## Активний CMP інкремент — Draft PR #43 (31.10.2026)
+
+- **Android:** спільний `PriceCatalogScreen` із KMP-пошуком/валідацією й реактивним SQLDelight підключено замість старої платфорно-залежної верстки прайсу; існуючий SQLCipher WAL, backup і immutable snapshots залишилися в Android host. Далі — CI та APK приймання.
+- **Windows:** той самий CMP-каталог і реальний `PriceRepository` із SQLCipher file, явним паролем і per-installation PBKDF2 salt. Ключ на диск не зберігаємо, але **немає системного Windows credential-vault, installer, автоматичного backup і recovery UX**; поки лише прототип, не готова production-збірка.
+- **iOS:** CMP commonMain/UI компіляція та iOS Simulator тести — обов'язкові; runnable Xcode host і Keychain пізніше через #42.
+- **Схему цін не змінено:** `price` залишається єдиною обов'язковою ціною продажу; опціональні закупівля, монтаж, витрати, націнка — #37.
+- [ ] Підтвердження Android/Windows/iOS CI останнього HEAD, Android Release APK і ручна перевірка; **не заявляти green до фактичного результату**.
+
 ## Оновлена цільова архітектура
 - **Один спільний `:shared` KMP domain + repository + SQLDelight schema**, логіка розрахунків та immutable кошторисів не дублюється.
 - **Один адаптивний CMP UI** із Material 3, погодженими кольорами, Inter, темами (light/dark/system). Відмінність між мобільними й desktop — **layout і OS interactions**, не business-logic копії.
