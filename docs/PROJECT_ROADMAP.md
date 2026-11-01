@@ -1,4 +1,31 @@
-# Актуальна дорожня карта — після об'єднання PR #52 (01.11.2026)
+# Чинна дорожня карта — після злиття PR #55 (01.11.2026)
+
+**Єдиний актуальний план — цей розділ; нижче збережені історичні зрізи попередніх PR.**
+
+## Завершено: KMP/CMP навігація — PR #55 / issue #48
+
+- [PR #55](https://github.com/aleks-nl5/andrey-ceilings-android/pull/55) **об'єднаний з `main` 01.11.2026**. [Issue #48](https://github.com/aleks-nl5/andrey-ceilings-android/issues/48) закрито: спільний `AppNavigationState` / `AppRoute`, Android + Windows host navigation, quick-create/Back/Escape, Android `rememberSaveable`.
+- Початкова CMP-поверхня Predictive Back і Android gesture bridge впроваджені, але **не** підтверджені візуальним Android 14+/15+ smoke; завершення справжнього preview після міграції CMP екранів — [#56](https://github.com/aleks-nl5/andrey-ceilings-android/issues/56).
+- На фінальному SHA PR #55 зелені Android APK/JVM/SQLCipher instrumentation і Windows/iOS KMP CI; iOS framework/simulator tests не рівнозначні runnable iOS застосунку.
+
+## Поточна робота: CMP «Об'єкти та клієнти» — issue #58
+
+- Від `main` після PR #55 відкрита гілка `feature/cmp-objects-clients`. Детальний план — [docs/CMP_OBJECTS_STAGE.md](CMP_OBJECTS_STAGE.md), issue [#58](https://github.com/aleks-nl5/andrey-ceilings-android/issues/58).
+- **Спершу погодити побажані власником зміни дизайну і бізнес-сценаріїв**, потім фіналізувати CMP UI; не переносити старий Android екран механічно й не робити незатверджені нові функції.
+- Перенести справжні списки/погоджені дії клієнтів та об'єктів до `shared/commonMain` на базі **існуючих** `ClientRepository`, `ProjectRepository`, SQLDelight Flow. Android стає тонким адаптером, Windows використовує real encrypted store, iOS спільні тести/компіляція до запускного host за #42.
+- Типізовані ID вкладених маршрутів додавати **лише для реально затверджених і реалізованих екранів** через [#57](https://github.com/aleks-nl5/andrey-ceilings-android/issues/57); safe restore після unlock. Повний live Predictive Back — окремий [#56](https://github.com/aleks-nl5/andrey-ceilings-android/issues/56).
+- Приймання: common/JVM і Android/Windows/iOS CI, Android APK + ручне тестування, Windows GUI за доступності; ніяких mock-екранів, автоматичного merge чи заяв про production-ready iOS. SQLCipher/WAL, backup/restore, immutable revisions, PDF та калькулятор не змінювати.
+
+## Після об'єктів
+
+1. CMP «Заміри» та креслення — спільна геометрія, навігація #57.
+2. Реальні робочі події з SQLDelight і CMP календарем — [#49](https://github.com/aleks-nl5/andrey-ceilings-android/issues/49).
+3. CMP калькулятор/кошториси та актуальна ціна прайсу для **нових** кошторисів — [#44](https://github.com/aleks-nl5/andrey-ceilings-android/issues/44), не змінюючи історичні ревізії.
+4. Паралельно розвивати Windows та runnable iOS host — [#42](https://github.com/aleks-nl5/andrey-ceilings-android/issues/42). Lifecycle SQLCipher аудит [#54](https://github.com/aleks-nl5/andrey-ceilings-android/issues/54) лише за наявності реальної потреби, не повторна міграція.
+
+---
+
+# Історичний зріз — дорожня карта після PR #52 (01.11.2026)
 
 ## Поточний етап: KMP/CMP спільна навігація — issue #48
 
@@ -8,7 +35,7 @@
 - Продовження: Windows Escape/keyboard, покриття Android Back/predictive back, перевірки обох тем, ротації та quick-create; runnable iOS host залишається окремою задачею #42.
 - Приймання: commonTest, Android/Windows/iOS CI, Android APK smoke та ручне схвалення власника. SQLCipher WAL, backup/restore, immutable кошториси й PDF не змінювати.
 
-# Актуальна дорожня карта — після об'єднання PR #29 (31.10.2026)
+# Історичний зріз — дорожня карта після PR #29 (31.10.2026)
 
 ## Наступний крок після PR #47 — CMP курси валют (issue #51, 31.10.2026)
 
