@@ -28,12 +28,28 @@ object ClientAlphabetIndex {
         return if (index < 0) ALPHABET.length else index
     }
 
+    // Compare every character, not just the first one: the natural Unicode
+    // order would incorrectly put "Марко" before "Марія" (І precedes К in
+    // Ukrainian). Unrecognized punctuation sorts after recognized letters.
+    private fun compareNames(left: String, right: String): Int {
+        val a = left.trim().uppercase()
+        val b = right.trim().uppercase()
+        for (i in 0 until minOf(a.length, b.length)) {
+            val rankA = order(a[i])
+            val rankB = order(b[i])
+            if (rankA != rankB) return rankA.compareTo(rankB)
+            if (rankA == ALPHABET.length && a[i] != b[i]) {
+                return a[i].compareTo(b[i])
+            }
+        }
+        return a.length.compareTo(b.length)
+    }
+
     fun sorted(clients: List<ClientListEntry>): List<ClientListEntry> =
-        clients.sortedWith(compareBy<ClientListEntry>(
-            { order(initial(it.name)) },
-            { it.name.trim().lowercase() },
-            { it.id }
-        ))
+        clients.sortedWith(Comparator { a, b ->
+            val order = compareNames(a.name, b.name)
+            if (order != 0) order else a.id.compareTo(b.id)
+        })
 
     /** The input is the exact sorted, filtered list rendered by the CMP screen. */
     fun markers(visibleClients: List<ClientListEntry>): List<ClientLetterJump> {
