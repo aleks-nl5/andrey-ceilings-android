@@ -107,4 +107,35 @@ class ObjectsClientsStoreTest {
             assertEquals(1, clients.tombstones().size)
         }
     }
+
+    @Test
+    fun projectWithMeasurementsCannotBeDeletedUntilTheyAreHandled() {
+        JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).use { driver ->
+            PrototypeDatabase.Schema.create(driver)
+            val db = PrototypeDatabase(driver)
+            val store = ObjectsClientsStore(db) { 300L }
+            val projects = ProjectRepository(db)
+            val measurements = MeasurementRepository(db)
+            val project = store.saveProject(null, ProjectDraft("Харків, Сумська 12"))
+            val measurement = measurements.createReturningId(
+                projectId = project,
+                name = "Кухня",
+                createdAt = 301L
+            )
+
+            val error = assertFailsWith<IllegalStateException> {
+                store.deleteProject(project)
+            }
+            assertEquals("Спочатку перенесіть або видаліть заміри цього об'єкта.", error.message)
+            assertNotNull(projects.find(project))
+            assertEquals(1, measurements.forProject(project).size)
+            assertEquals(0, projects.tombstones().size)
+
+            measurements.delete(measurement)
+            store.deleteProject(project)
+            assertNull(projects.find(project))
+            assertEquals(1, projects.tombstones().size)
+        }
+    }
+
 }
