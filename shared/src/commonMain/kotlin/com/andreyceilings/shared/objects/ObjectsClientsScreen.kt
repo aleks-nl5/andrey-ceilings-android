@@ -709,10 +709,11 @@ private fun SwipeActionsSurface(
     val leftWidth = (actions.size * 64).dp
     val leftPx = with(density) { leftWidth.toPx() }
     val rightPx = with(density) { 76.dp.toPx() }
-    val target = if (openSwipe?.id == id) when (openSwipe.side) {
-        SwipeSide.LEFT -> -leftPx
-        SwipeSide.RIGHT -> rightPx
-    } else 0f
+    val target = when {
+        openSwipe?.id != id -> 0f
+        openSwipe.side == SwipeSide.LEFT -> -leftPx
+        else -> rightPx
+    }
     var dragging by remember(id) { mutableStateOf(false) }
     var dragged by remember(id) { mutableFloatStateOf(0f) }
     val displayed by animateFloatAsState(
