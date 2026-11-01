@@ -9,6 +9,9 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.draggable
@@ -17,6 +20,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -73,6 +78,13 @@ import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.IntOffset
@@ -131,6 +143,16 @@ fun ObjectsClientsScreen(
 ) {
     val scope = rememberCoroutineScope()
     val listState = rememberLazyListState()
+    val focusManager = LocalFocusManager.current
+    val keyboardController = LocalSoftwareKeyboardController.current
+    var searchFocused by remember { mutableStateOf(false) }
+    fun dismissSearchFocus() {
+        if (searchFocused) {
+            focusManager.clearFocus(force = true)
+            keyboardController?.hide()
+            searchFocused = false
+        }
+    }
     var selectedTab by remember { mutableStateOf(ObjectsClientsTab.PROJECTS) }
     var search by remember { mutableStateOf("") }
     var selectedWork by remember { mutableStateOf<String?>(null) }
@@ -163,6 +185,7 @@ fun ObjectsClientsScreen(
                 if (source == NestedScrollSource.UserInput &&
                     kotlin.math.abs(available.y) > 0.5f) {
                     fabVisible = false
+                    dismissSearchFocus()
                 }
                 return Offset.Zero // Do not consume list / app bar gestures.
             }
@@ -175,6 +198,7 @@ fun ObjectsClientsScreen(
                 if (source == NestedScrollSource.UserInput &&
                     kotlin.math.abs(consumed.y + available.y) > 0.5f) {
                     fabVisible = false
+                    dismissSearchFocus()
                 }
                 return Offset.Zero
             }
@@ -194,6 +218,7 @@ fun ObjectsClientsScreen(
         }.collect { scrolling ->
             if (scrolling) {
                 openSwipe = null
+                dismissSearchFocus()
             } else {
                 // Restore the full-size FAB after a drag/fling is over.
                 fabVisible = true
@@ -202,6 +227,7 @@ fun ObjectsClientsScreen(
     }
     LaunchedEffect(requestCreateProject, databaseAvailable) {
         if (requestCreateProject && databaseAvailable) {
+            dismissSearchFocus()
             selectedTab = ObjectsClientsTab.PROJECTS
             editor = EditorTarget.Project(null)
             onCreateProjectConsumed()
@@ -236,11 +262,13 @@ fun ObjectsClientsScreen(
                 ) {
                     ObjectsTabButton("Об'єкти", selectedTab == ObjectsClientsTab.PROJECTS,
                         Modifier.weight(1f)) {
+                        dismissSearchFocus()
                         selectedTab = ObjectsClientsTab.PROJECTS
                         openSwipe = null
                     }
                     ObjectsTabButton("Клієнти", selectedTab == ObjectsClientsTab.CLIENTS,
                         Modifier.weight(1f)) {
+                        dismissSearchFocus()
                         selectedTab = ObjectsClientsTab.CLIENTS
                         openSwipe = null
                     }
@@ -248,12 +276,20 @@ fun ObjectsClientsScreen(
                 CompactObjectsSearchField(
                     value = search,
                     onChange = { search = it; openSwipe = null },
-                    onClear = { search = ""; openSwipe = null }
+                    onClear = { search = ""; openSwipe = null },
+                    onFocusChange = { searchFocused = it }
                 )
         }
-        Box(Modifier.weight(1f)) {
+        BoxWithConstraints(Modifier.weight(1f)) {
+            val suggestionsMaxHeight = maxHeight.coerceAtMost(320.dp)
             LazyColumn(
-                modifier = Modifier.nestedScroll(fabGestureConnection),
+                modifier = Modifier
+                    .nestedScroll(fabGestureConnection)
+                    .pointerInput(Unit) {
+                        // A tap on unused list space dismisses the keyboard;
+                        // children with their own clickable actions do likewise.
+                        detectTapGestures(onTap = { dismissSearchFocus() })
+                    },
                 state = listState,
                 contentPadding = listPadding,
                 verticalArrangement = Arrangement.spacedBy(7.dp)
@@ -264,54 +300,20 @@ fun ObjectsClientsScreen(
                         color = MaterialTheme.colorScheme.error)
                 }
             } else {
-                if (search.isNotBlank() && !results.isEmpty) {
-                    item(key = "suggestions") {
-                        Card(colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
-                            Column(Modifier.fillMaxWidth().padding(12.dp),
-                                verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                if (results.projects.isNotEmpty()) {
-                                    Text("Об'єкти", style = MaterialTheme.typography.labelMedium)
-                                    results.projects.forEach { row ->
-                                        TextButton(onClick = {
-                                            selectedTab = ObjectsClientsTab.PROJECTS
-                                            openSwipe = null
-                                            editor = EditorTarget.Project(row)
-                                        }, modifier = Modifier.fillMaxWidth()) {
-                                            Text(displayProjectAddress(row),
-                                                maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                        }
-                                    }
-                                }
-                                if (results.clients.isNotEmpty()) {
-                                    Text("Клієнти", style = MaterialTheme.typography.labelMedium)
-                                    results.clients.forEach { row ->
-                                        TextButton(onClick = {
-                                            selectedTab = ObjectsClientsTab.CLIENTS
-                                            openSwipe = null
-                                            editor = EditorTarget.Client(row)
-                                        }, modifier = Modifier.fillMaxWidth()) {
-                                            Text(row.name, maxLines = 1,
-                                                overflow = TextOverflow.Ellipsis)
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
                 if (selectedTab == ObjectsClientsTab.PROJECTS) {
                     item(key = "filters") {
                         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                             LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                 item {
                                     CompactObjectsChip("Усі", selectedWork == null) {
+                                        dismissSearchFocus()
                                         selectedWork = null
                                         openSwipe = null
                                     }
                                 }
                                 items(ProjectWorkStage.entries, key = { it.wireId }) { stage ->
                                     CompactObjectsChip(stage.label, selectedWork == stage.wireId) {
+                                        dismissSearchFocus()
                                         selectedWork = stage.wireId.takeIf { selectedWork != it }
                                         openSwipe = null
                                     }
@@ -320,6 +322,7 @@ fun ObjectsClientsScreen(
                             LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                 items(ProjectPaymentStatus.entries, key = { it.wireId }) { payment ->
                                     CompactObjectsChip(payment.label, selectedPayment == payment.wireId) {
+                                        dismissSearchFocus()
                                         selectedPayment = payment.wireId.takeIf { selectedPayment != it }
                                         openSwipe = null
                                     }
@@ -335,9 +338,12 @@ fun ObjectsClientsScreen(
                         }
                     } else items(projects, key = { "p-${it.id}" }) { row ->
                         ProjectCard(row,
-                            onEdit = { openSwipe = null; editor = EditorTarget.Project(row) },
-                            onDelete = { openSwipe = null; deleting = DeletionTarget.Project(row) },
-                            onExternalAction = onExternalAction,
+                            onEdit = { dismissSearchFocus(); openSwipe = null; editor = EditorTarget.Project(row) },
+                            onDelete = { dismissSearchFocus(); openSwipe = null; deleting = DeletionTarget.Project(row) },
+                            onExternalAction = { action, value ->
+                                dismissSearchFocus()
+                                onExternalAction(action, value)
+                            },
                             openSwipe = openSwipe,
                             onSwipeOpen = { openSwipe = it },
                             onSwipeClose = { openSwipe = null })
@@ -351,10 +357,13 @@ fun ObjectsClientsScreen(
                         }
                     } else items(clients, key = { "c-${it.id}" }) { row ->
                         ClientCard(row,
-                            onEdit = { openSwipe = null; editor = EditorTarget.Client(row) },
-                            onDelete = { openSwipe = null; deleting = DeletionTarget.Client(row) },
-                            onDial = onDial,
-                            onExternalAction = onExternalAction,
+                            onEdit = { dismissSearchFocus(); openSwipe = null; editor = EditorTarget.Client(row) },
+                            onDelete = { dismissSearchFocus(); openSwipe = null; deleting = DeletionTarget.Client(row) },
+                            onDial = { phone -> dismissSearchFocus(); onDial(phone) },
+                            onExternalAction = { action, value ->
+                                dismissSearchFocus()
+                                onExternalAction(action, value)
+                            },
                             openSwipe = openSwipe,
                             onSwipeOpen = { openSwipe = it },
                             onSwipeClose = { openSwipe = null })
@@ -365,7 +374,31 @@ fun ObjectsClientsScreen(
                 }
             }
         }
-        val showFab = databaseAvailable && !busy && fabVisible && editor == null
+        // Results overlay is attached to the *pinned* search bar, not to the
+        // LazyColumn. It remains immediately below the field no matter how far
+        // the projects/clients list was scrolled. Keyboard resize limits height.
+        if (databaseAvailable && searchFocused && search.isNotBlank() &&
+            editor == null && deleting == null) {
+            ObjectsSearchSuggestions(
+                results = results,
+                maxPanelHeight = suggestionsMaxHeight,
+                onProject = { project ->
+                    dismissSearchFocus()
+                    selectedTab = ObjectsClientsTab.PROJECTS
+                    openSwipe = null
+                    editor = EditorTarget.Project(project)
+                },
+                onClient = { client ->
+                    dismissSearchFocus()
+                    selectedTab = ObjectsClientsTab.CLIENTS
+                    openSwipe = null
+                    editor = EditorTarget.Client(client)
+                },
+                onDismiss = { dismissSearchFocus() },
+                modifier = Modifier.align(Alignment.TopCenter).zIndex(2f)
+            )
+        }
+        val showFab = databaseAvailable && !busy && fabVisible && editor == null && !searchFocused
         // Always keep the FAB's layout space. Animating AnimatedVisibility's
         // size clipped the floating button against a straight parent boundary.
         // graphicsLayer changes only paint alpha / scale / vertical translation.
@@ -398,6 +431,7 @@ fun ObjectsClientsScreen(
                     containerColor = MaterialTheme.colorScheme.primaryContainer,
                     onClick = {
                         if (showFab) {
+                            dismissSearchFocus()
                             message = null
                             openSwipe = null
                             editor = if (selectedTab == ObjectsClientsTab.PROJECTS)
@@ -531,7 +565,8 @@ private fun ObjectsTabButton(
 private fun CompactObjectsSearchField(
     value: String,
     onChange: (String) -> Unit,
-    onClear: () -> Unit
+    onClear: () -> Unit,
+    onFocusChange: (Boolean) -> Unit
 ) {
     val colors = MaterialTheme.colorScheme
     val shape = RoundedCornerShape(15.dp)
@@ -551,7 +586,8 @@ private fun CompactObjectsSearchField(
             singleLine = true,
             textStyle = MaterialTheme.typography.bodyMedium.copy(color = colors.onSurface),
             cursorBrush = androidx.compose.ui.graphics.SolidColor(colors.primary),
-            modifier = Modifier.weight(1f),
+            modifier = Modifier.weight(1f)
+                .onFocusChanged { onFocusChange(it.isFocused) },
             decorationBox = { inner ->
                 Box {
                     if (value.isEmpty()) {
