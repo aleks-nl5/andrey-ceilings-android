@@ -553,10 +553,11 @@ private fun WorkStatusMark(status: String) {
         "measurement" -> Icons.Default.Straighten
         "calculation" -> Icons.Default.Calculate
         "approved" -> Icons.Default.CheckCircle
-        "in_progress" -> Icons.Default.Construction
+        "in_progress" -> Icons.Default.BuildCircle
+        "paused" -> Icons.Default.PauseCircle
         "rework" -> Icons.Default.Build
         "completed" -> Icons.Default.TaskAlt
-        "cancelled" -> Icons.Default.Cancel
+        "cancelled" -> Icons.Default.HighlightOff
         else -> Icons.Default.HelpOutline
     }
     val color = when (status) {
@@ -564,13 +565,18 @@ private fun WorkStatusMark(status: String) {
         "cancelled" -> MaterialTheme.colorScheme.error
         "rework" -> Color(0xFFBD8A43)
         "in_progress" -> MaterialTheme.colorScheme.primary
+        "paused" -> Color(0xFFAB7C30)
         "approved" -> Color(0xFF36866A)
         else -> MaterialTheme.colorScheme.onSurfaceVariant
     }
-    Icon(symbol,
-        contentDescription = ProjectStatusRules.workLabel(status),
-        modifier = Modifier.size(24.dp),
-        tint = color)
+    if (status in setOf("in_progress", "paused", "approved", "cancelled", "rework")) {
+        RequestedWorkArtwork(status, color)
+    } else {
+        Icon(symbol,
+            contentDescription = ProjectStatusRules.workLabel(status),
+            modifier = Modifier.size(24.dp),
+            tint = color)
+    }
 }
 
 @Composable
@@ -616,7 +622,7 @@ private fun ClientExperienceMark(count: Int) {
     val symbol = when {
         count <= 1 -> Icons.Default.Person
         count <= 5 -> Icons.Default.Group
-        else -> Icons.Default.WorkspacePremium
+        else -> Icons.Default.Groups
     }
     val label = when {
         count <= 1 -> "Клієнт"
@@ -624,8 +630,7 @@ private fun ClientExperienceMark(count: Int) {
         else -> "Клієнт з багатьма об'єктами"
     }
     Icon(symbol, contentDescription = label, modifier = Modifier.size(24.dp),
-        tint = if (count <= 1) MaterialTheme.colorScheme.onSurfaceVariant
-               else MaterialTheme.colorScheme.primary)
+        tint = MaterialTheme.colorScheme.primary)
 }
 
 @Composable
@@ -898,13 +903,6 @@ private fun SwipeExternalButton(
     onClick: () -> Unit
 ) {
     val colors = MaterialTheme.colorScheme
-    val graphic = when (action) {
-        ContactAction.GOOGLE_MAPS -> Icons.Default.Place
-        ContactAction.WAZE -> Icons.Default.DirectionsCar
-        ContactAction.WHATSAPP -> Icons.Default.Chat
-        ContactAction.TELEGRAM -> Icons.Default.Send
-        ContactAction.VIBER -> Icons.Default.Call
-    }
     val shortLabel = when (action) {
         ContactAction.GOOGLE_MAPS -> "Maps"
         ContactAction.WAZE -> "Waze"
@@ -927,8 +925,7 @@ private fun SwipeExternalButton(
                 .background(colors.primaryContainer, CircleShape),
             contentAlignment = Alignment.Center
         ) {
-            Icon(graphic, contentDescription = null,
-                tint = colors.primary, modifier = Modifier.size(19.dp))
+            ExternalBrandArtwork(action, modifier = Modifier.size(21.dp))
         }
         Spacer(Modifier.height(3.dp))
         Text(shortLabel, style = MaterialTheme.typography.labelSmall,
