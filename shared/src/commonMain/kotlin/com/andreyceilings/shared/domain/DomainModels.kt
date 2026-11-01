@@ -24,7 +24,8 @@ data class Project(
     val status: String = "measurement",
     val notes: String = "",
     val createdAtEpochMillis: Long,
-    val updatedAtEpochMillis: Long
+    val updatedAtEpochMillis: Long,
+    val paymentStatus: String = ProjectPaymentStatus.UNPAID.wireId
 )
 
 /**
