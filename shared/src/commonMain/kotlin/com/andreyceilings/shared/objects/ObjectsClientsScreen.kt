@@ -792,53 +792,56 @@ private fun SwipeActionsSurface(
     content: @Composable () -> Unit
 ) {
     val density = LocalDensity.current
-    val leftWidth = (actions.size * 64).dp
+    val leftWidth = (actions.size * 72 + 8).dp
     val leftPx = with(density) { leftWidth.toPx() }
     val rightPx = with(density) { 76.dp.toPx() }
+    val reversalTolerancePx = with(density) { 14.dp.toPx() }
     val target = when {
         openSwipe?.id != id -> 0f
-        openSwipe?.side == SwipeSide.LEFT -> -leftPx
+        openSwipe.side == SwipeSide.LEFT -> -leftPx
         else -> rightPx
     }
     var dragging by remember(id) { mutableStateOf(false) }
     var dragged by remember(id) { mutableFloatStateOf(0f) }
+    var startOfDrag by remember(id) { mutableFloatStateOf(0f) }
+    var farthestPoint by remember(id) { mutableFloatStateOf(0f) }
     val displayed by animateFloatAsState(
         targetValue = if (dragging) dragged else target,
-        animationSpec = tween(durationMillis = 170),
+        animationSpec = tween(durationMillis = 190),
         label = "Swipe actions offset"
     )
     val dragState = rememberDraggableState { delta ->
         dragged = (dragged + delta).coerceIn(-leftPx, rightPx)
+        if (kotlin.math.abs(dragged) > kotlin.math.abs(farthestPoint)) {
+            farthestPoint = dragged
+        }
     }
 
     Box(Modifier.fillMaxWidth()) {
+        // Keep action buttons mounted behind the card while the tray is opening.
+        // Slight spacing and compact themed pictograms distinguish each destination.
         if (actions.isNotEmpty() && (displayed < 0f || target < 0f)) {
             Row(
                 Modifier.align(Alignment.CenterEnd)
-                    .width(leftWidth).height(72.dp)
+                    .width(leftWidth)
+                    .height(86.dp)
                     .background(MaterialTheme.colorScheme.primaryContainer,
-                        RoundedCornerShape(18.dp)),
-                horizontalArrangement = Arrangement.SpaceEvenly,
+                        RoundedCornerShape(18.dp))
+                    .padding(horizontal = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 actions.forEach { (label, action) ->
-                    TextButton(
-                        onClick = { onAction(action) },
-                        modifier = Modifier.width(64.dp).height(56.dp)
-                    ) {
-                        Text(label, style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer,
-                            maxLines = 1)
-                    }
+                    SwipeExternalButton(label, action) { onAction(action) }
                 }
             }
         }
         if (displayed > 0f || target > 0f) {
             Box(
                 Modifier.align(Alignment.CenterStart)
-                    .width(76.dp).height(72.dp)
-                    .background(MaterialTheme.colorScheme.errorContainer,
-                        RoundedCornerShape(18.dp))
+                    .width(76.dp).height(80.dp)
+                    .clip(RoundedCornerShape(18.dp))
+                    .background(MaterialTheme.colorScheme.errorContainer)
                     .clickable { onSwipeClose(); onDelete() },
                 contentAlignment = Alignment.Center
             ) {
@@ -853,21 +856,82 @@ private fun SwipeActionsSurface(
                     state = dragState,
                     orientation = Orientation.Horizontal,
                     onDragStarted = {
+                        startOfDrag = displayed
                         dragged = displayed
+                        farthestPoint = displayed
                         dragging = true
                     },
                     onDragStopped = {
                         dragging = false
+                        // A short/unfinished swipe snaps shut. Dragging back towards
+                        // the origin by 14dp also cancels opening, even if it
+                        // briefly crossed the reveal threshold.
+                        val pulledBack =
+                            kotlin.math.abs(farthestPoint) - kotlin.math.abs(dragged) >=
+                                reversalTolerancePx
+                        val closingExisting = when {
+                            startOfDrag < 0f ->
+                                dragged > startOfDrag + leftPx * 0.30f
+                            startOfDrag > 0f ->
+                                dragged < startOfDrag - rightPx * 0.30f
+                            else -> false
+                        }
                         when {
-                            leftPx > 0f && dragged < -leftPx * 0.30f ->
+                            pulledBack || closingExisting -> onSwipeClose()
+                            leftPx > 0f && dragged <= -leftPx * 0.56f ->
                                 onSwipeOpen(OpenSwipe(id, SwipeSide.LEFT))
-                            dragged > rightPx * 0.30f ->
+                            dragged >= rightPx * 0.56f ->
                                 onSwipeOpen(OpenSwipe(id, SwipeSide.RIGHT))
                             else -> onSwipeClose()
                         }
                     }
                 )
         ) { content() }
+    }
+}
+
+@Composable
+private fun SwipeExternalButton(
+    label: String,
+    action: ContactAction,
+    onClick: () -> Unit
+) {
+    val colors = MaterialTheme.colorScheme
+    val graphic = when (action) {
+        ContactAction.GOOGLE_MAPS -> Icons.Default.Place
+        ContactAction.WAZE -> Icons.Default.DirectionsCar
+        ContactAction.WHATSAPP -> Icons.Default.Chat
+        ContactAction.TELEGRAM -> Icons.Default.Send
+        ContactAction.VIBER -> Icons.Default.Call
+    }
+    val shortLabel = when (action) {
+        ContactAction.GOOGLE_MAPS -> "Maps"
+        ContactAction.WAZE -> "Waze"
+        ContactAction.WHATSAPP -> "WA"
+        ContactAction.TELEGRAM -> "TG"
+        ContactAction.VIBER -> "Viber"
+    }
+    Column(
+        Modifier.width(66.dp)
+            .height(70.dp)
+            .clip(RoundedCornerShape(15.dp))
+            .background(colors.surface)
+            .border(1.dp, colors.outlineVariant, RoundedCornerShape(15.dp))
+            .clickable(onClick = onClick),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Box(
+            Modifier.size(29.dp)
+                .background(colors.primaryContainer, CircleShape),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(graphic, contentDescription = null,
+                tint = colors.primary, modifier = Modifier.size(19.dp))
+        }
+        Spacer(Modifier.height(3.dp))
+        Text(shortLabel, style = MaterialTheme.typography.labelSmall,
+            color = colors.onSurface, maxLines = 1)
     }
 }
 
