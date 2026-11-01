@@ -1,6 +1,7 @@
 package com.andreyceilings.shared.objects
 
 import com.andreyceilings.shared.db.ClientRepository
+import com.andreyceilings.shared.db.MeasurementRepository
 import com.andreyceilings.shared.db.ProjectRepository
 import com.andreyceilings.shared.db.PrototypeDatabase
 import com.andreyceilings.shared.domain.ClientListEntry
@@ -42,6 +43,7 @@ class ObjectsClientsStore(
 ) {
     private val clients = ClientRepository(database)
     private val projects = ProjectRepository(database)
+    private val measurements = MeasurementRepository(database)
 
     val rows: Flow<ObjectsClientsRows> = combine(
         clients.observeAll(), projects.observeAll()
@@ -130,8 +132,12 @@ class ObjectsClientsStore(
 
     fun deleteProject(id: Long) {
         checkNotNull(projects.find(id)) { "Об'єкт уже видалено." }
-        // ProjectRepository owns legacy estimate + immutable-series soft-deletion.
-        // Existing measurements are deliberately not cascaded by that repository.
+        // Removing a project currently hides estimates, but does NOT cascade
+        // room measurements. Reject the operation rather than leaving orphan
+        // measurements behind; explicit reassignment is planned in #60.
+        check(measurements.forProject(id).isEmpty()) {
+            "Спочатку перенесіть або видаліть заміри цього об'єкта."
+        }
         projects.delete(id)
     }
 }
