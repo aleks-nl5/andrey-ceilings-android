@@ -72,6 +72,22 @@ class ObjectsClientsStoreTest {
     }
 
     @Test
+    fun legacyProjectsRetainOriginalTitleUntilAnAddressEdit() {
+        JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).use { driver ->
+            PrototypeDatabase.Schema.create(driver)
+            val db = PrototypeDatabase(driver)
+            val repository = ProjectRepository(db)
+            val store = ObjectsClientsStore(db) { 200L }
+            val id = repository.createReturningId(null, "Історична назва", createdAt = 100L)
+            assertEquals("Історична назва", repository.find(id)?.title)
+            assertEquals("", repository.find(id)?.address)
+            store.saveProject(id, ProjectDraft("Вінниця, Соборна 14"))
+            assertEquals("Вінниця, Соборна 14", repository.find(id)?.address)
+            assertEquals("Вінниця, Соборна 14", repository.find(id)?.title)
+        }
+    }
+
+    @Test
     fun linkedClientCannotBeDeletedAndProjectDeletionKeepsTombstone() {
         JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).use { driver ->
             PrototypeDatabase.Schema.create(driver)
