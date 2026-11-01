@@ -708,41 +708,56 @@ private fun ProjectCard(
             shape = ProjectCardShape,
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
         ) {
-            Row(
-                Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 11.dp),
-                verticalAlignment = Alignment.CenterVertically
+            Column(
+                Modifier.fillMaxWidth()
+                    .padding(start = 12.dp, end = 3.dp, top = 9.dp, bottom = 11.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
-                WorkStatusMark(item.workStatus)
-                Spacer(Modifier.width(10.dp))
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(5.dp)
-                    ) {
-                        Text(item.title, modifier = Modifier.weight(1f),
-                            fontWeight = FontWeight.SemiBold, maxLines = 1,
-                            overflow = TextOverflow.Ellipsis)
-                        PaymentStateTag(item.paymentStatus)
-                    }
-                    if (item.address.isNotBlank()) Text(item.address,
-                        style = MaterialTheme.typography.bodySmall, maxLines = 1,
-                        overflow = TextOverflow.Ellipsis)
-                    if (item.clientName.isNotBlank()) Text(item.clientName,
+                // Status glyph sits with the name; payment and menu are both
+                // on the right, never occupying the address/client column.
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(5.dp)
+                ) {
+                    WorkStatusMark(item.workStatus)
+                    Spacer(Modifier.width(5.dp))
+                    Text(
+                        item.title,
+                        modifier = Modifier.weight(1f),
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    PaymentStateTag(item.paymentStatus)
+                    OverflowActions(
+                        onDelete = { onSwipeClose(); onDelete() },
+                        actions = actions,
+                        onAction = { action ->
+                            onSwipeClose()
+                            onExternalAction(action, item.address)
+                        }
+                    )
+                }
+                // Unlike the title row, these two lines use the card's left
+                // padding without an icon-sized indent.
+                if (item.address.isNotBlank()) {
+                    Text(
+                        item.address,
+                        style = MaterialTheme.typography.bodySmall,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+                if (item.clientName.isNotBlank()) {
+                    Text(
+                        item.clientName,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Text(ProjectStatusRules.workLabel(item.workStatus),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
                 }
-                OverflowActions(
-                    onDelete = { onSwipeClose(); onDelete() },
-                    actions = actions,
-                    onAction = { action ->
-                        onSwipeClose()
-                        onExternalAction(action, item.address)
-                    }
-                )
             }
         }
     }
@@ -846,7 +861,7 @@ private fun SwipeActionsSurface(
     content: @Composable () -> Unit
 ) {
     val density = LocalDensity.current
-    val leftWidth = (actions.size * 72 + 8).dp
+    val leftWidth = (actions.size * 58 + (actions.size - 1).coerceAtLeast(0) * 6 + 8).dp
     val leftPx = if (actions.isEmpty()) 0f else with(density) { leftWidth.toPx() }
     val rightPx = with(density) { 76.dp.toPx() }
     val reversalTolerancePx = with(density) { 14.dp.toPx() }
@@ -973,33 +988,22 @@ private fun SwipeExternalButton(
     onClick: () -> Unit
 ) {
     val colors = MaterialTheme.colorScheme
-    val shortLabel = when (action) {
-        ContactAction.GOOGLE_MAPS -> "Maps"
-        ContactAction.WAZE -> "Waze"
-        ContactAction.WHATSAPP -> "WA"
-        ContactAction.TELEGRAM -> "TG"
-        ContactAction.VIBER -> "Viber"
-    }
-    Column(
-        Modifier.width(66.dp)
-            .height(70.dp)
+    // Recognizable brand artwork is the label visually; the full app name
+    // remains available to accessibility services and click semantics.
+    Box(
+        modifier = Modifier.size(58.dp)
             .clip(RoundedCornerShape(15.dp))
             .background(colors.surface)
             .border(1.dp, colors.outlineVariant, RoundedCornerShape(15.dp))
-            .clickable(onClick = onClick),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
+            .clickable(onClickLabel = label, onClick = onClick),
+        contentAlignment = Alignment.Center
     ) {
         Box(
-            Modifier.size(29.dp)
-                .background(colors.primaryContainer, CircleShape),
+            Modifier.size(39.dp).background(colors.primaryContainer, CircleShape),
             contentAlignment = Alignment.Center
         ) {
-            ExternalBrandArtwork(action, modifier = Modifier.size(21.dp))
+            ExternalBrandArtwork(action, modifier = Modifier.size(30.dp))
         }
-        Spacer(Modifier.height(3.dp))
-        Text(shortLabel, style = MaterialTheme.typography.labelSmall,
-            color = colors.onSurface, maxLines = 1)
     }
 }
 
