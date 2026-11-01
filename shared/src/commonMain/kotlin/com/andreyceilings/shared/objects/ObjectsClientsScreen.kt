@@ -174,6 +174,7 @@ fun ObjectsClientsScreen(
     var selectedPayment by remember { mutableStateOf<String?>(null) }
     var editor by remember { mutableStateOf<EditorTarget?>(null) }
     var deleting by remember { mutableStateOf<DeletionTarget?>(null) }
+    var deletionError by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
     var fabVisible by remember { mutableStateOf(true) }
@@ -188,6 +189,7 @@ fun ObjectsClientsScreen(
     val clients = remember(rows.clients, search) {
         ObjectsClientsSearch.clients(rows.clients, search)
     }
+    LaunchedEffect(deleting) { deletionError = null }
     val clientLetters = remember(clients) { ClientAlphabetIndex.markers(clients) }
     // Do not overlap the global search suggestions with a redundant letter rail.
     val showClientLetters = databaseAvailable && selectedTab == ObjectsClientsTab.CLIENTS &&
@@ -534,11 +536,16 @@ fun ObjectsClientsScreen(
             onDismissRequest = { if (!busy) deleting = null },
             title = { Text("Видалити ${if (isClient) "клієнта" else "об'єкт"}?") },
             text = {
-                Text(if (isClient)
-                    "«$name». Клієнта з активними об'єктами видалити не можна."
-                else "«$name». Об'єкт із замірами видалити не можна: спочатку " +
-                    "перенесіть або видаліть заміри. Якщо їх немає, пов'язані " +
-                    "кошториси та історичні ревізії будуть приховані в списках.")
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(if (isClient)
+                        "«$name». Клієнта з активними об'єктами видалити не можна."
+                    else "«$name». Об'єкт із замірами видалити не можна: спочатку " +
+                        "перенесіть або видаліть заміри. Якщо їх немає, пов'язані " +
+                        "кошториси та історичні ревізії будуть приховані в списках.")
+                    // A failed delete must be visible here; a list-bottom
+                    // message could be far offscreen after a long scroll.
+                    deletionError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                }
             },
             confirmButton = {
                 TextButton(enabled = !busy, onClick = {
@@ -551,12 +558,13 @@ fun ObjectsClientsScreen(
                                 is DeletionTarget.Project -> onDeleteProject(target.item.id)
                             }
                             message = null
+                            deletionError = null
                             deleting = null
                         } catch (cancelled: CancellationException) {
                             throw cancelled
                         } catch (failure: Exception) {
-                            message = failure.message ?: "Не вдалося видалити запис."
-                            deleting = null
+                            deletionError = failure.message ?: "Не вдалося видалити запис."
+                            // Keep the dialog open so the user sees the reason.
                         } finally { busy = false }
                     }
                 }) { Text("Видалити", color = MaterialTheme.colorScheme.error) }
