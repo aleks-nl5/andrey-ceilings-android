@@ -793,12 +793,12 @@ private fun SwipeActionsSurface(
 ) {
     val density = LocalDensity.current
     val leftWidth = (actions.size * 72 + 8).dp
-    val leftPx = with(density) { leftWidth.toPx() }
+    val leftPx = if (actions.isEmpty()) 0f else with(density) { leftWidth.toPx() }
     val rightPx = with(density) { 76.dp.toPx() }
     val reversalTolerancePx = with(density) { 14.dp.toPx() }
     val target = when {
         openSwipe?.id != id -> 0f
-        openSwipe.side == SwipeSide.LEFT -> -leftPx
+        openSwipe?.side == SwipeSide.LEFT -> -leftPx
         else -> rightPx
     }
     var dragging by remember(id) { mutableStateOf(false) }
