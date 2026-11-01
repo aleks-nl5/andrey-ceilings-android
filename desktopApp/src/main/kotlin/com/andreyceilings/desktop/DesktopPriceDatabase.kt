@@ -1,6 +1,8 @@
 package com.andreyceilings.desktop
 
 import app.cash.sqldelight.db.SqlDriver
+import app.cash.sqldelight.db.QueryResult
+import com.andreyceilings.shared.objects.ObjectsClientsStore
 import com.andreyceilings.shared.dashboard.DashboardStore
 import com.andreyceilings.shared.db.PriceRepository
 import com.andreyceilings.shared.db.PrototypeDatabase
@@ -22,6 +24,7 @@ import javax.crypto.spec.PBEKeySpec
 internal class DesktopPriceDatabase private constructor(
     val prices: PriceRepository,
     val dashboard: DashboardStore,
+    val objects: ObjectsClientsStore,
     private val driver: SqlDriver
 ) : AutoCloseable {
     override fun close() = driver.close()
@@ -66,11 +69,39 @@ internal class DesktopPriceDatabase private constructor(
 
                 val driver = SqlCipherWindowsDriverFactory.open(file, derivedKey)
                 return try {
-                    if (!previouslyExisting) PrototypeDatabase.Schema.create(driver)
+                    if (!previouslyExisting) {
+                        PrototypeDatabase.Schema.create(driver)
+                    } else {
+                        // Older Windows installations were built with schema v3.
+                        // The prototype didn't persist SQLDelight's user_version;
+                        // determine whether the one additive v4 migration is needed
+                        // by examining the encrypted schema itself. No plaintext
+                        // fallback and no empty database is created over old data.
+                        val columns = driver.executeQuery(null, "PRAGMA table_info(projects)",
+                            { cursor ->
+                                val names = mutableSetOf<String>()
+                                while (cursor.next().value) {
+                                    cursor.getString(1)?.let(names::add)
+                                }
+                                QueryResult.Value(names)
+                            }, 0).value
+                        check("status" in columns) { "Існуюча SQLCipher БД має непідтримувану схему." }
+                        if ("paymentStatus" !in columns) {
+                            // Fail closed on pre-v3 estimate schemas; the
+                            // v4 migration is intentionally narrow.
+                            driver.executeQuery(null,
+                                "SELECT seriesUuid FROM estimates LIMIT 0",
+                                { cursor -> QueryResult.Value(cursor.next().value) }, 0)
+                            PrototypeDatabase.Schema.migrate(driver, 3L, 4L)
+                        }
+                    }
                     val database = PrototypeDatabase(driver)
-                    // Query the *actual* encrypted schema before considering login successful.
+                    // Verify real encrypted tables before accepting password.
                     PriceRepository(database).all()
-                    DesktopPriceDatabase(PriceRepository(database), DashboardStore(database), driver)
+                    val objects = ObjectsClientsStore(database, System::currentTimeMillis)
+                    com.andreyceilings.shared.db.ProjectRepository(database).all()
+                    DesktopPriceDatabase(PriceRepository(database), DashboardStore(database),
+                        objects, driver)
                 } catch (error: Throwable) {
                     driver.close()
                     throw error
