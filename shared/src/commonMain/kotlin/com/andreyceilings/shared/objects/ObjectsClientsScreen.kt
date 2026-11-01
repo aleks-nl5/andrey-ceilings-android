@@ -5,6 +5,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -35,6 +36,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
@@ -44,6 +46,9 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
+import androidx.compose.material3.SwipeToDismissBox
+import androidx.compose.material3.SwipeToDismissBoxValue
+import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
 import androidx.compose.runtime.Composable
@@ -402,6 +407,11 @@ private fun ProjectCard(
     onDelete: () -> Unit,
     onExternalAction: (ContactAction, String) -> Unit
 ) {
+    var showQuickActions by remember(item.id) { mutableStateOf(false) }
+    SwipeActionsSurface(
+        onSwipeLeft = { if (item.address.isNotBlank()) showQuickActions = true },
+        onSwipeRight = onDelete
+    ) {
     Card(Modifier.fillMaxWidth().clickable(onClick = onEdit),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
         Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -440,6 +450,17 @@ private fun ProjectCard(
             )
         }
     }
+    }
+    if (showQuickActions) QuickActionsDialog(
+        title = "Маршрут до об'єкта",
+        actions = listOf("Google Maps" to ContactAction.GOOGLE_MAPS,
+            "Waze" to ContactAction.WAZE),
+        onDismiss = { showQuickActions = false },
+        onAction = { action ->
+            showQuickActions = false
+            onExternalAction(action, item.address)
+        }
+    )
 }
 
 @Composable
@@ -450,6 +471,11 @@ private fun ClientCard(
     onDial: (String) -> Unit,
     onExternalAction: (ContactAction, String) -> Unit
 ) {
+    var showQuickActions by remember(item.id) { mutableStateOf(false) }
+    SwipeActionsSurface(
+        onSwipeLeft = { if (item.phone.isNotBlank()) showQuickActions = true },
+        onSwipeRight = onDelete
+    ) {
     Card(Modifier.fillMaxWidth().clickable(onClick = onEdit),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
         Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -474,6 +500,77 @@ private fun ClientCard(
                 onAction = { action -> onExternalAction(action, item.phone) })
         }
     }
+    }
+    if (showQuickActions) QuickActionsDialog(
+        title = "Зв'язатися з клієнтом",
+        actions = listOf("WhatsApp" to ContactAction.WHATSAPP,
+            "Telegram" to ContactAction.TELEGRAM, "Viber" to ContactAction.VIBER),
+        onDismiss = { showQuickActions = false },
+        onAction = { action ->
+            showQuickActions = false
+            onExternalAction(action, item.phone)
+        }
+    )
+}
+
+/** Left swipe only reveals choices; right swipe only opens a delete confirmation.
+ * Neither direction directly executes an external or destructive operation.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SwipeActionsSurface(
+    onSwipeLeft: () -> Unit,
+    onSwipeRight: () -> Unit,
+    content: @Composable () -> Unit
+) {
+    val state = rememberSwipeToDismissBoxState(confirmValueChange = { destination ->
+        when (destination) {
+            SwipeToDismissBoxValue.EndToStart -> onSwipeLeft()
+            SwipeToDismissBoxValue.StartToEnd -> onSwipeRight()
+            SwipeToDismissBoxValue.Settled -> Unit
+        }
+        false // Never dismiss rows without confirmation.
+    })
+    SwipeToDismissBox(
+        state = state,
+        backgroundContent = {
+            Row(
+                Modifier.fillMaxSize().background(
+                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
+                ).padding(horizontal = 22.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(Icons.Default.Delete, contentDescription = "Видалити з підтвердженням",
+                    tint = MaterialTheme.colorScheme.error)
+                Icon(Icons.Default.MoreVert, contentDescription = "Швидкі дії",
+                    tint = MaterialTheme.colorScheme.primary)
+            }
+        },
+        content = { content() }
+    )
+}
+
+@Composable
+private fun QuickActionsDialog(
+    title: String,
+    actions: List<Pair<String, ContactAction>>,
+    onDismiss: () -> Unit,
+    onAction: (ContactAction) -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                actions.forEach { (label, action) ->
+                    TextButton(onClick = { onAction(action) },
+                        modifier = Modifier.fillMaxWidth()) { Text(label) }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Закрити") } }
+    )
 }
 
 @Composable
