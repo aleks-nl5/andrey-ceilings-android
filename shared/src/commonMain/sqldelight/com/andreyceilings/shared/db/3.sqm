@@ -1,0 +1,11 @@
+-- Project execution stage and payment state are independent.
+-- Keep historic workflow codes, especially 'paid': it has never proved
+-- that the actual work reached 'completed'.
+ALTER TABLE projects ADD COLUMN paymentStatus TEXT NOT NULL DEFAULT 'unpaid';
+
+-- On legacy rows payment was not tracked. Never assume that payment is due
+-- or complete merely because the row existed before this migration.
+UPDATE projects
+SET paymentStatus = CASE WHEN status = 'paid' THEN 'paid' ELSE 'unknown' END;
+
+CREATE INDEX index_projects_paymentStatus ON projects(paymentStatus);

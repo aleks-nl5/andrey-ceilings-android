@@ -494,8 +494,9 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
                     Modifier.fillMaxSize().nestedScroll(screenScrollConnection).padding(horizontal = 16.dp)
                 ) {
                     when (tab) {
-                        AppTab.OBJECTS -> ObjectsScreen(
+                        AppTab.OBJECTS -> ObjectsClientsHost(
                             database = database,
+                            headerVisibleFraction = 1f - topAppBarScrollBehavior.state.collapsedFraction,
                             openCreateProject = navigation.pendingQuickCreate == AppQuickCreate.OBJECT,
                             onCreateProjectConsumed = { navigation = navigation.consumeQuickCreate(AppQuickCreate.OBJECT) }
                         )

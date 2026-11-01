@@ -41,6 +41,12 @@ class ProjectRepository(private val database: PrototypeDatabase) {
     fun count() = queries.countProjects().executeAsOne()
     fun updateStatus(id: Long, status: String, updatedAt: Long) =
         queries.updateProjectStatus(status, updatedAt, id)
+    fun updatePaymentStatus(id: Long, paymentStatus: String, updatedAt: Long) {
+        require(com.andreyceilings.shared.domain.ProjectStatusRules.isKnownPaymentStatus(paymentStatus)) {
+            "Unknown payment status"
+        }
+        queries.updateProjectPaymentStatus(paymentStatus, updatedAt, id)
+    }
     fun createReturningId(
         clientId: Long?, title: String, address: String = "", status: String = "measurement",
         notes: String = "", createdAt: Long, updatedAt: Long = createdAt

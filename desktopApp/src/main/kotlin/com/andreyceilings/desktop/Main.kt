@@ -19,6 +19,7 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Dashboard
 import androidx.compose.material.icons.filled.ReceiptLong
+import androidx.compose.material.icons.filled.Business
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
@@ -36,6 +37,7 @@ import com.andreyceilings.shared.dashboard.currencyLocalDateTimeLabel
 import kotlinx.coroutines.delay
 import java.awt.Desktop
 import java.net.URI
+import java.net.URLEncoder
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -63,6 +65,9 @@ import com.andreyceilings.shared.navigation.FloatingBarHeight
 import com.andreyceilings.shared.dashboard.DashboardScreen
 import com.andreyceilings.shared.dashboard.DashboardSummary
 import kotlinx.coroutines.flow.Flow
+import com.andreyceilings.shared.objects.ObjectsClientsScreen
+import com.andreyceilings.shared.objects.ObjectsClientsRows
+import com.andreyceilings.shared.objects.ContactAction
 import com.andreyceilings.shared.prices.PriceCatalogScreen
 import com.andreyceilings.shared.prices.PriceCatalogStore
 import com.andreyceilings.shared.prices.PriceCatalogTheme
@@ -74,7 +79,7 @@ import kotlinx.coroutines.withContext
 
 fun main() = application {
     var navigation by remember { mutableStateOf(AppNavigationState()) }
-    val availableRoutes = remember { setOf(AppRoute.DASHBOARD, AppRoute.PRICES) }
+    val availableRoutes = remember { setOf(AppRoute.DASHBOARD, AppRoute.PRICES, AppRoute.OBJECTS) }
     Window(
         onCloseRequest = ::exitApplication,
         title = "СтеляПро",
@@ -132,6 +137,19 @@ private fun DesktopPriceHost(
             PriceCatalogStore(database.prices, nowMillis = System::currentTimeMillis)
         }
         val items by store.items.collectAsState(initial = emptyList())
+        val objectsStore = remember(database) { database.objects }
+        val objectRows by objectsStore.rows.collectAsState(initial =
+            ObjectsClientsRows(emptyList(), emptyList()))
+        var externalError by remember { mutableStateOf<String?>(null) }
+        fun openExternal(url: String) {
+            runCatching {
+                check(Desktop.isDesktopSupported() &&
+                    Desktop.getDesktop().isSupported(Desktop.Action.BROWSE)) {
+                    "Немає застосунку для зовнішнього посилання."
+                }
+                Desktop.getDesktop().browse(URI(url))
+            }.onFailure { externalError = it.message ?: "Не вдалося відкрити посилання." }
+        }
         val summaryFlow: Flow<DashboardSummary?> = remember(database) { database.dashboard.summary }
         val summary by summaryFlow.collectAsState(initial = null)
         val currencyGateway = remember(database) {
@@ -155,7 +173,8 @@ private fun DesktopPriceHost(
         val navItems = remember {
             listOf(
                 AppDestination(AppRoute.DASHBOARD.name, "Панель", "Панель", Icons.Default.Dashboard),
-                AppDestination(AppRoute.PRICES.name, "Прайс", "Прайс", Icons.Default.ReceiptLong)
+                AppDestination(AppRoute.PRICES.name, "Прайс", "Прайс", Icons.Default.ReceiptLong),
+                AppDestination(AppRoute.OBJECTS.name, "Об'єкти", "Об'єкти", Icons.Default.Business)
             )
         }
         val topScrollBehavior = key(selectedTab) {
@@ -178,7 +197,7 @@ private fun DesktopPriceHost(
                             databaseAvailable = true,
                             onNewMeasurement = null,
                             onCalculator = null,
-                            onObjects = null,
+                            onObjects = { onNavigate(navigation.selectTab(AppRoute.OBJECTS, availableRoutes)) },
                             onEstimates = null,
                             onCalendar = null,
                             todayLabel = dashboardTodayLabel(currencyState.nowMillis),
@@ -199,6 +218,50 @@ private fun DesktopPriceHost(
                         )
                     }
                 }
+                AppRoute.OBJECTS -> ObjectsClientsScreen(
+                    rows = objectRows,
+                    headerVisibleFraction = 1f - topScrollBehavior.state.collapsedFraction,
+                    databaseAvailable = true,
+                    contentPadding = PaddingValues(
+                        start = 24.dp, end = 24.dp,
+                        top = AppHeaderHeight + 16.dp,
+                        bottom = FloatingBarHeight + 16.dp
+                    ),
+                    onSaveClient = { id, draft ->
+                        withContext(Dispatchers.IO) { objectsStore.saveClient(id, draft) }
+                    },
+                    onSaveProject = { id, draft ->
+                        withContext(Dispatchers.IO) { objectsStore.saveProject(id, draft) }
+                    },
+                    onDeleteClient = { id ->
+                        withContext(Dispatchers.IO) { objectsStore.deleteClient(id) }
+                    },
+                    onDeleteProject = { id ->
+                        withContext(Dispatchers.IO) { objectsStore.deleteProject(id) }
+                    },
+                    onDial = { phone ->
+                        openExternal("tel:" + phone.filter { it.isDigit() || it == '+' })
+                    },
+                    onExternalAction = { action, raw ->
+                        val encoded = URLEncoder.encode(raw, "UTF-8")
+                        val digits = raw.filter(Char::isDigit)
+                        val international = raw.trim().startsWith("+") && digits.length in 8..15
+                        val url = when (action) {
+                            ContactAction.GOOGLE_MAPS ->
+                                "https://www.google.com/maps/search/?api=1&query=$encoded"
+                            ContactAction.WAZE ->
+                                "https://waze.com/ul?q=$encoded&navigate=yes"
+                            ContactAction.WHATSAPP -> if (international)
+                                "https://wa.me/$digits" else null
+                            ContactAction.TELEGRAM -> if (international)
+                                "tg://resolve?phone=$digits" else null
+                            ContactAction.VIBER -> if (international)
+                                "viber://chat?number=" + URLEncoder.encode(raw.trim(), "UTF-8") else null
+                        }
+                        if (url != null) openExternal(url)
+                        else externalError = "Вкажіть телефон із міжнародним кодом країни."
+                    }
+                )
                 AppRoute.PRICES -> PriceCatalogScreen(
                     items = items,
                     databaseAvailable = true,
@@ -215,6 +278,12 @@ private fun DesktopPriceHost(
                     }
                 )
                 else -> Unit // Only actually implemented desktop routes are exposed.
+            }
+            if (externalError != null) {
+                TextButton(onClick = { externalError = null },
+                    modifier = Modifier.align(Alignment.TopEnd).padding(top = AppHeaderHeight)) {
+                    Text(externalError.orEmpty(), color = MaterialTheme.colorScheme.error)
+                }
             }
             AppHeader(
                 collapsedFraction = topScrollBehavior.state.collapsedFraction,
