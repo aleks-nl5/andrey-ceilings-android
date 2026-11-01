@@ -96,7 +96,9 @@ import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.Dp
 import com.andreyceilings.shared.domain.ClientListEntry
+import com.andreyceilings.shared.domain.GlobalSearchResults
 import com.andreyceilings.shared.domain.ObjectsClientsSearch
 import com.andreyceilings.shared.domain.ProjectListEntry
 import com.andreyceilings.shared.domain.ProjectPaymentStatus
@@ -607,6 +609,137 @@ private fun CompactObjectsSearchField(
                     tint = colors.onSurfaceVariant, modifier = Modifier.size(20.dp))
             }
         }
+    }
+}
+
+/**
+ * Compact, scrollable cross-entity suggestions. The host places this in the
+ * content overlay below the pinned search field. It is not a list item and
+ * must not push the project/status list or drift when that list is scrolled.
+ */
+@Composable
+private fun ObjectsSearchSuggestions(
+    results: GlobalSearchResults,
+    maxPanelHeight: Dp,
+    onProject: (ProjectListEntry) -> Unit,
+    onClient: (ClientListEntry) -> Unit,
+    onDismiss: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val colors = MaterialTheme.colorScheme
+    Card(
+        modifier = modifier.fillMaxWidth()
+            .padding(top = 3.dp)
+            .heightIn(max = maxPanelHeight),
+        shape = RoundedCornerShape(17.dp),
+        colors = CardDefaults.cardColors(containerColor = colors.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 6.dp),
+        border = androidx.compose.foundation.BorderStroke(
+            1.dp, colors.outlineVariant
+        )
+    ) {
+        Column(
+            Modifier.fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 8.dp, vertical = 7.dp),
+            verticalArrangement = Arrangement.spacedBy(2.dp)
+        ) {
+            if (results.isEmpty) {
+                Text(
+                    "Нічого не знайдено",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = colors.onSurfaceVariant,
+                    modifier = Modifier.padding(12.dp)
+                )
+            } else {
+                if (results.projects.isNotEmpty()) {
+                    Text(
+                        "Об'єкти",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = colors.onSurfaceVariant,
+                        modifier = Modifier.padding(start = 9.dp, top = 4.dp, bottom = 2.dp)
+                    )
+                    results.projects.forEach { project ->
+                        SearchResultRow(
+                            icon = Icons.Default.Business,
+                            title = displayProjectAddress(project),
+                            detail = project.clientName.takeIf { it.isNotBlank() },
+                            onClick = { onProject(project) }
+                        )
+                    }
+                }
+                if (results.projects.isNotEmpty() && results.clients.isNotEmpty()) {
+                    androidx.compose.material3.HorizontalDivider(
+                        color = colors.outlineVariant.copy(alpha = 0.55f),
+                        modifier = Modifier.padding(vertical = 3.dp, horizontal = 8.dp)
+                    )
+                }
+                if (results.clients.isNotEmpty()) {
+                    Text(
+                        "Клієнти",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = colors.onSurfaceVariant,
+                        modifier = Modifier.padding(start = 9.dp, top = 4.dp, bottom = 2.dp)
+                    )
+                    results.clients.forEach { client ->
+                        SearchResultRow(
+                            icon = Icons.Default.Person,
+                            title = client.name,
+                            detail = client.phone.takeIf { it.isNotBlank() },
+                            onClick = { onClient(client) }
+                        )
+                    }
+                }
+                TextButton(
+                    onClick = onDismiss,
+                    modifier = Modifier.align(Alignment.End)
+                ) {
+                    Text("Переглянути список", style = MaterialTheme.typography.labelMedium)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SearchResultRow(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    title: String,
+    detail: String?,
+    onClick: () -> Unit
+) {
+    Row(
+        Modifier.fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 10.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        Icon(
+            icon,
+            contentDescription = null,
+            modifier = Modifier.size(18.dp),
+            tint = MaterialTheme.colorScheme.primary
+        )
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
+            Text(
+                title, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                style = MaterialTheme.typography.bodyMedium
+            )
+            if (detail != null) {
+                Text(
+                    detail, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+        Icon(
+            Icons.Default.ChevronRight, contentDescription = null,
+            modifier = Modifier.size(16.dp),
+            tint = MaterialTheme.colorScheme.onSurfaceVariant
+        )
     }
 }
 
