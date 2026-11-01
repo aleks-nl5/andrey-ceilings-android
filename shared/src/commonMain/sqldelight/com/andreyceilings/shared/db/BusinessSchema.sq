@@ -21,6 +21,7 @@ CREATE TABLE projects (
     title TEXT NOT NULL,
     address TEXT NOT NULL DEFAULT '',
     status TEXT NOT NULL DEFAULT 'measurement',
+    paymentStatus TEXT NOT NULL DEFAULT 'unpaid',
     notes TEXT NOT NULL DEFAULT '',
     createdAt INTEGER NOT NULL,
     updatedAt INTEGER NOT NULL,
@@ -29,6 +30,7 @@ CREATE TABLE projects (
 );
 CREATE INDEX index_projects_clientId ON projects(clientId);
 CREATE INDEX index_projects_status ON projects(status);
+CREATE INDEX index_projects_paymentStatus ON projects(paymentStatus);
 
 CREATE TABLE room_measurements (
     id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
@@ -221,6 +223,10 @@ SELECT COUNT(*) FROM projects WHERE deletedAt IS NULL;
 
 updateProjectStatus:
 UPDATE projects SET status = ?, updatedAt = max(?, updatedAt + 1) WHERE id = ? AND deletedAt IS NULL;
+
+-- Payment is independent of the actual stage of work. Do not overwrite status.
+updateProjectPaymentStatus:
+UPDATE projects SET paymentStatus = ?, updatedAt = max(?, updatedAt + 1) WHERE id = ? AND deletedAt IS NULL;
 
 countMeasurements:
 SELECT COUNT(*) FROM room_measurements WHERE deletedAt IS NULL;
