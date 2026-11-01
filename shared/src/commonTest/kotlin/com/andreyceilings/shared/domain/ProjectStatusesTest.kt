@@ -11,6 +11,9 @@ class ProjectStatusesTest {
         assertEquals("Монтаж", ProjectStatusRules.workLabel("in_progress"))
         assertEquals("Оплачено", ProjectStatusRules.paymentLabel("paid"))
         assertEquals("Доопрацювання", ProjectStatusRules.workLabel("rework"))
+        assertEquals("Призупинено", ProjectStatusRules.workLabel("paused"))
+        assertEquals(ProjectWorkStage.PAUSED, ProjectWorkStage.fromWireId("paused"))
+        assertTrue(ProjectStatusRules.isKnownWorkStage("paused"))
         assertEquals("Частково оплачено", ProjectStatusRules.paymentLabel("partial"))
     }
 
