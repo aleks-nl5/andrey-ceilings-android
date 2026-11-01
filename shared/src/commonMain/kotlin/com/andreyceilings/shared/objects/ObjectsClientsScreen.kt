@@ -33,13 +33,7 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Call
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Directions
-import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -550,6 +544,89 @@ private fun CompactObjectsChip(
     }
 }
 
+private val ProjectCardShape = RoundedCornerShape(21.dp)
+
+@Composable
+private fun WorkStatusMark(status: String) {
+    val symbol = when (status) {
+        "measurement" -> Icons.Default.Straighten
+        "calculation" -> Icons.Default.Calculate
+        "approved" -> Icons.Default.CheckCircle
+        "in_progress" -> Icons.Default.Construction
+        "rework" -> Icons.Default.Build
+        "completed" -> Icons.Default.TaskAlt
+        "cancelled" -> Icons.Default.Cancel
+        else -> Icons.Default.HelpOutline
+    }
+    val color = when (status) {
+        "completed" -> Color(0xFF29876B)
+        "cancelled" -> MaterialTheme.colorScheme.error
+        "rework" -> Color(0xFFBD8A43)
+        "in_progress" -> MaterialTheme.colorScheme.primary
+        "approved" -> Color(0xFF36866A)
+        else -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
+    Icon(symbol,
+        contentDescription = ProjectStatusRules.workLabel(status),
+        modifier = Modifier.size(24.dp),
+        tint = color)
+}
+
+@Composable
+private fun PaymentStateTag(status: String) {
+    val colors = MaterialTheme.colorScheme
+    val fullLabel = ProjectStatusRules.paymentLabel(status)
+    val shortLabel = when (status) {
+        "unknown" -> "Невизначено"
+        "partial" -> "Часткова"
+        else -> fullLabel
+    }
+    val tint = when (status) {
+        "paid" -> Color(0xFF238369)
+        "partial" -> Color(0xFFAC7D35)
+        "unpaid" -> colors.error
+        else -> colors.onSurfaceVariant
+    }
+    val shape = CircleShape
+    Box(
+        Modifier.background(tint.copy(alpha = 0.11f), shape)
+            .border(1.dp, tint.copy(alpha = 0.36f), shape)
+            .padding(horizontal = 9.dp, vertical = 4.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(shortLabel, color = tint, style = MaterialTheme.typography.labelSmall,
+            maxLines = 1, overflow = TextOverflow.Ellipsis)
+    }
+}
+
+private fun projectCountText(count: Int): String {
+    val last100 = count % 100
+    val suffix = when {
+        last100 in 11..14 -> "об'єктів"
+        count % 10 == 1 -> "об'єкт"
+        count % 10 in 2..4 -> "об'єкти"
+        else -> "об'єктів"
+    }
+    return "$count $suffix"
+}
+
+@Composable
+private fun ClientExperienceMark(count: Int) {
+    val symbol = when {
+        count <= 1 -> Icons.Default.Person
+        count <= 5 -> Icons.Default.Group
+        else -> Icons.Default.WorkspacePremium
+    }
+    val label = when {
+        count <= 1 -> "Клієнт"
+        count <= 5 -> "Постійний клієнт"
+        else -> "Клієнт з багатьма об'єктами"
+    }
+    Icon(symbol, contentDescription = label, modifier = Modifier.size(24.dp),
+        tint = if (count <= 1) MaterialTheme.colorScheme.onSurfaceVariant
+               else MaterialTheme.colorScheme.primary)
+}
+
 @Composable
 private fun ProjectCard(
     item: ProjectListEntry,
@@ -562,50 +639,47 @@ private fun ProjectCard(
 ) {
     val id = "p-" + item.id
     val actions = if (item.address.isBlank()) emptyList() else listOf(
-        "Maps" to ContactAction.GOOGLE_MAPS,
-        "Waze" to ContactAction.WAZE
+        "Maps" to ContactAction.GOOGLE_MAPS, "Waze" to ContactAction.WAZE
     )
-    SwipeActionsSurface(id, actions,
-        openSwipe = openSwipe,
-        onSwipeOpen = onSwipeOpen,
-        onSwipeClose = onSwipeClose,
+    SwipeActionsSurface(id, actions, openSwipe, onSwipeOpen, onSwipeClose,
         onDelete = onDelete,
-        onAction = { action ->
-            onSwipeClose()
-            onExternalAction(action, item.address)
-        }
+        onAction = { action -> onSwipeClose(); onExternalAction(action, item.address) }
     ) {
         Card(
-            modifier = Modifier.fillMaxWidth().clickable {
-                if (openSwipe?.id == id) onSwipeClose() else onEdit()
-            },
+            modifier = Modifier.fillMaxWidth()
+                .clip(ProjectCardShape)
+                .clickable {
+                    if (openSwipe?.id == id) onSwipeClose() else onEdit()
+                },
+            shape = ProjectCardShape,
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
         ) {
-            Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                val statusColor = when (item.workStatus) {
-                    "completed" -> Color(0xFF36886B)
-                    "cancelled" -> MaterialTheme.colorScheme.error
-                    "in_progress" -> Color(0xFF3D82BE)
-                    "rework" -> Color(0xFFB07325)
-                    else -> MaterialTheme.colorScheme.primary
-                }
-                Icon(Icons.Default.Directions, null, tint = statusColor, modifier = Modifier.size(22.dp))
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 11.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                WorkStatusMark(item.workStatus)
                 Spacer(Modifier.width(10.dp))
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                    Text(item.title, fontWeight = FontWeight.SemiBold, maxLines = 1,
-                        overflow = TextOverflow.Ellipsis)
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(5.dp)
+                    ) {
+                        Text(item.title, modifier = Modifier.weight(1f),
+                            fontWeight = FontWeight.SemiBold, maxLines = 1,
+                            overflow = TextOverflow.Ellipsis)
+                        PaymentStateTag(item.paymentStatus)
+                    }
                     if (item.address.isNotBlank()) Text(item.address,
                         style = MaterialTheme.typography.bodySmall, maxLines = 1,
                         overflow = TextOverflow.Ellipsis)
                     if (item.clientName.isNotBlank()) Text(item.clientName,
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text(
-                        ProjectStatusRules.workLabel(item.workStatus) + " · " +
-                            ProjectStatusRules.paymentLabel(item.paymentStatus),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(ProjectStatusRules.workLabel(item.workStatus),
                         style = MaterialTheme.typography.labelSmall,
-                        color = statusColor
-                    )
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 OverflowActions(
                     onDelete = { onSwipeClose(); onDelete() },
@@ -633,37 +707,58 @@ private fun ClientCard(
 ) {
     val id = "c-" + item.id
     val actions = if (item.phone.isBlank()) emptyList() else listOf(
-        "WA" to ContactAction.WHATSAPP,
-        "TG" to ContactAction.TELEGRAM,
+        "WhatsApp" to ContactAction.WHATSAPP,
+        "Telegram" to ContactAction.TELEGRAM,
         "Viber" to ContactAction.VIBER
     )
-    SwipeActionsSurface(id, actions,
-        openSwipe = openSwipe,
-        onSwipeOpen = onSwipeOpen,
-        onSwipeClose = onSwipeClose,
+    SwipeActionsSurface(id, actions, openSwipe, onSwipeOpen, onSwipeClose,
         onDelete = onDelete,
-        onAction = { action ->
-            onSwipeClose()
-            onExternalAction(action, item.phone)
-        }
+        onAction = { action -> onSwipeClose(); onExternalAction(action, item.phone) }
     ) {
         Card(
-            modifier = Modifier.fillMaxWidth().clickable {
-                if (openSwipe?.id == id) onSwipeClose() else onEdit()
-            },
+            modifier = Modifier.fillMaxWidth()
+                .clip(ProjectCardShape)
+                .clickable {
+                    if (openSwipe?.id == id) onSwipeClose() else onEdit()
+                },
+            shape = ProjectCardShape,
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
         ) {
-            Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text(item.name, fontWeight = FontWeight.SemiBold, maxLines = 1,
-                        overflow = TextOverflow.Ellipsis)
-                    Text("Об'єктів: " + item.activeProjectCount,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    if (item.phone.isNotBlank()) TextButton(onClick = { onSwipeClose(); onDial(item.phone) }) {
-                        Icon(Icons.Default.Call, null, modifier = Modifier.size(16.dp))
-                        Spacer(Modifier.width(4.dp))
-                        Text(item.phone, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 11.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                ClientExperienceMark(item.activeProjectCount)
+                Spacer(Modifier.width(10.dp))
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(5.dp)
+                    ) {
+                        Text(item.name, modifier = Modifier.weight(1f),
+                            fontWeight = FontWeight.SemiBold, maxLines = 1,
+                            overflow = TextOverflow.Ellipsis)
+                        Box(
+                            Modifier.background(MaterialTheme.colorScheme.primaryContainer,
+                                CircleShape)
+                                .padding(horizontal = 9.dp, vertical = 4.dp)
+                        ) {
+                            Text(projectCountText(item.activeProjectCount),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                maxLines = 1)
+                        }
+                    }
+                    if (item.phone.isNotBlank()) {
+                        TextButton(
+                            onClick = { onSwipeClose(); onDial(item.phone) },
+                            contentPadding = PaddingValues(0.dp)
+                        ) {
+                            Icon(Icons.Default.Call, contentDescription = null,
+                                modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text(item.phone, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
                     }
                 }
                 OverflowActions(
