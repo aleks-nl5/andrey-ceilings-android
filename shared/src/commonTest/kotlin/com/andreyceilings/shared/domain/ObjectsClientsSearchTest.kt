@@ -28,6 +28,12 @@ class ObjectsClientsSearchTest {
     fun wordsCanMatchDifferentProjectFields() {
         assertEquals(listOf(10L), ObjectsClientsSearch.projects(projects, "Київ Коваль").map { it.id })
         assertEquals(listOf(10L), ObjectsClientsSearch.projects(projects, "оплачено").map { it.id })
+        assertEquals(listOf(11L), ObjectsClientsSearch.projects(projects, "частково оплачено").map { it.id })
+        assertEquals(listOf(11L), ObjectsClientsSearch.projects(projects, "частково").map { it.id })
+        assertTrue(ObjectsClientsSearch.projects(projects, "не оплачено").isEmpty())
+        val unpaid = projects + ProjectListEntry(12, "Офіс", "Одеса", null, "", "approved", "unpaid", "")
+        assertEquals(listOf(12L), ObjectsClientsSearch.projects(unpaid, "не оплачено").map { it.id })
+        assertEquals(listOf(10L), ObjectsClientsSearch.projects(unpaid, "оплачено").map { it.id })
         assertEquals(emptyList(), ObjectsClientsSearch.projects(projects, "Київ Марія"))
     }
 
