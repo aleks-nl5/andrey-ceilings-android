@@ -110,9 +110,13 @@ fun DashboardScreen(
             CompactMetric("Заміри", summary?.measurementCount?.toString() ?: "—", Icons.Default.Straighten, Modifier.weight(1f))
             CompactMetric("Площа", summary?.areaLabel() ?: "—", Icons.Default.SquareFoot, Modifier.weight(1f))
         }
-        if ((!databaseAvailable && showDatabaseUnavailable) || (databaseAvailable && summary == null)) {
+        // The metric cards already show "—" while their SQLDelight summary loads.
+        // Avoid inserting/removing an extra line during normal startup, which
+        // would shift the currency card vertically. Only show a persistent DB
+        // failure after the existing two-second grace period.
+        if (!databaseAvailable && showDatabaseUnavailable) {
             Text(
-                if (databaseAvailable) "Завантаження статистики…" else "Захищена база даних недоступна. Статистику не завантажено.",
+                "Захищена база даних недоступна. Статистику не завантажено.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
