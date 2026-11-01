@@ -36,7 +36,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.AlertDialog
@@ -149,7 +149,6 @@ fun ObjectsClientsScreen(
     onCreateProjectConsumed: () -> Unit = {}
 ) {
     val scope = rememberCoroutineScope()
-    val listState = rememberLazyListState()
     val focusManager = LocalFocusManager.current
     val keyboardController = LocalSoftwareKeyboardController.current
     var searchFocused by remember { mutableStateOf(false) }
@@ -161,6 +160,10 @@ fun ObjectsClientsScreen(
         }
     }
     var selectedTab by remember { mutableStateOf(ObjectsClientsTab.PROJECTS) }
+    // Each tab mounts a fresh scroll state when selected. The top position is
+    // visible immediately (before side effects), and neither tab inherits the
+    // other tab's list index, offset or ongoing fling on re-entry.
+    val listState = remember(selectedTab) { LazyListState() }
     var search by remember { mutableStateOf("") }
     var selectedWork by remember { mutableStateOf<String?>(null) }
     var selectedPayment by remember { mutableStateOf<String?>(null) }
