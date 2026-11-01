@@ -385,6 +385,7 @@ fun ObjectsClientsScreen(
             editor == null && deleting == null) {
             ObjectsSearchSuggestions(
                 results = results,
+                activeTab = selectedTab,
                 maxPanelHeight = suggestionsMaxHeight,
                 onProject = { project ->
                     dismissSearchFocus()
@@ -622,6 +623,7 @@ private fun CompactObjectsSearchField(
 @Composable
 private fun ObjectsSearchSuggestions(
     results: GlobalSearchResults,
+    activeTab: ObjectsClientsTab,
     maxPanelHeight: Dp,
     onProject: (ProjectListEntry) -> Unit,
     onClient: (ClientListEntry) -> Unit,
@@ -654,43 +656,18 @@ private fun ObjectsSearchSuggestions(
                     modifier = Modifier.padding(12.dp)
                 )
             } else {
-                if (results.projects.isNotEmpty()) {
-                    Text(
-                        "Об'єкти",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = colors.onSurfaceVariant,
-                        modifier = Modifier.padding(start = 9.dp, top = 4.dp, bottom = 2.dp)
-                    )
-                    results.projects.forEach { project ->
-                        SearchResultRow(
-                            icon = Icons.Default.Business,
-                            title = displayProjectAddress(project),
-                            detail = project.clientName.takeIf { it.isNotBlank() },
-                            onClick = { onProject(project) }
-                        )
+                if (activeTab == ObjectsClientsTab.CLIENTS) {
+                    ClientSuggestionsGroup(results.clients, onClient)
+                    if (results.clients.isNotEmpty() && results.projects.isNotEmpty()) {
+                        SuggestionsDivider()
                     }
-                }
-                if (results.projects.isNotEmpty() && results.clients.isNotEmpty()) {
-                    androidx.compose.material3.HorizontalDivider(
-                        color = colors.outlineVariant.copy(alpha = 0.55f),
-                        modifier = Modifier.padding(vertical = 3.dp, horizontal = 8.dp)
-                    )
-                }
-                if (results.clients.isNotEmpty()) {
-                    Text(
-                        "Клієнти",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = colors.onSurfaceVariant,
-                        modifier = Modifier.padding(start = 9.dp, top = 4.dp, bottom = 2.dp)
-                    )
-                    results.clients.forEach { client ->
-                        SearchResultRow(
-                            icon = Icons.Default.Person,
-                            title = client.name,
-                            detail = client.phone.takeIf { it.isNotBlank() },
-                            onClick = { onClient(client) }
-                        )
+                    ProjectSuggestionsGroup(results.projects, onProject)
+                } else {
+                    ProjectSuggestionsGroup(results.projects, onProject)
+                    if (results.projects.isNotEmpty() && results.clients.isNotEmpty()) {
+                        SuggestionsDivider()
                     }
+                    ClientSuggestionsGroup(results.clients, onClient)
                 }
                 TextButton(
                     onClick = onDismiss,
@@ -701,6 +678,58 @@ private fun ObjectsSearchSuggestions(
             }
         }
     }
+}
+
+@Composable
+private fun ProjectSuggestionsGroup(
+    projects: List<ProjectListEntry>,
+    onProject: (ProjectListEntry) -> Unit
+) {
+    if (projects.isEmpty()) return
+    Text(
+        "Об'єкти",
+        style = MaterialTheme.typography.labelSmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(start = 9.dp, top = 4.dp, bottom = 2.dp)
+    )
+    projects.forEach { project ->
+        SearchResultRow(
+            icon = Icons.Default.Business,
+            title = displayProjectAddress(project),
+            detail = project.clientName.takeIf { it.isNotBlank() },
+            onClick = { onProject(project) }
+        )
+    }
+}
+
+@Composable
+private fun ClientSuggestionsGroup(
+    clients: List<ClientListEntry>,
+    onClient: (ClientListEntry) -> Unit
+) {
+    if (clients.isEmpty()) return
+    Text(
+        "Клієнти",
+        style = MaterialTheme.typography.labelSmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(start = 9.dp, top = 4.dp, bottom = 2.dp)
+    )
+    clients.forEach { client ->
+        SearchResultRow(
+            icon = Icons.Default.Person,
+            title = client.name,
+            detail = client.phone.takeIf { it.isNotBlank() },
+            onClick = { onClient(client) }
+        )
+    }
+}
+
+@Composable
+private fun SuggestionsDivider() {
+    androidx.compose.material3.HorizontalDivider(
+        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f),
+        modifier = Modifier.padding(vertical = 3.dp, horizontal = 8.dp)
+    )
 }
 
 @Composable
