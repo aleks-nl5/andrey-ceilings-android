@@ -554,29 +554,52 @@ private fun ObjectsClientsCreateFab(
     val colors = MaterialTheme.colorScheme
     // Explicit, cross-platform shadow tint: this Material3 ColorScheme has no shadow slot.
     val shadowColor = Color.Black
-    // The shadow is painted in Compose itself, not in a native elevation layer.
-    // Its radial gradient stays wholly inside the outer 76dp draw area.
+    // The navigation bar's stationary elevation casts most of its shadow
+    // below the surface. Reproduce that perspective with two bounded CMP
+    // gradients instead of animating platform shadow/elevation (which caused
+    // polygon artifacts on the light-theme Android renderer).
+    //
+    // Both gradients fade to transparent *inside* the fixed 76dp drawing area.
+    // The 56dp FAB, its hit target and its position are unchanged.
     Box(
         modifier = modifier
             .size(76.dp)
             .drawBehind {
                 if (progress > 0f) {
-                    val radius = size.minDimension / 2f - 2.dp.toPx()
-                    val center = Offset(
-                        x = size.width / 2f,
-                        y = size.height / 2f + 1.dp.toPx()
+                    val middle = Offset(size.width / 2f, size.height / 2f)
+                    val ambientCenter = Offset(middle.x, middle.y + 1.dp.toPx())
+                    val ambientRadius = 34.dp.toPx()
+                    drawCircle(
+                        brush = Brush.radialGradient(
+                            0f to shadowColor.copy(alpha = 0.07f * progress),
+                            0.72f to shadowColor.copy(alpha = 0.07f * progress),
+                            0.84f to shadowColor.copy(alpha = 0.035f * progress),
+                            1f to shadowColor.copy(alpha = 0f),
+                            center = ambientCenter,
+                            radius = ambientRadius
+                        ),
+                        radius = ambientRadius,
+                        center = ambientCenter
                     )
+
+                    // Slightly lower and rightward, as on the floating bottom
+                    // navigation bar. Keep the entire penumbra within bounds.
+                    val directionalCenter = Offset(
+                        middle.x + 1.dp.toPx(),
+                        middle.y + 4.dp.toPx()
+                    )
+                    val directionalRadius = 33.dp.toPx()
                     drawCircle(
                         brush = Brush.radialGradient(
                             0f to shadowColor.copy(alpha = 0.14f * progress),
-                            0.70f to shadowColor.copy(alpha = 0.14f * progress),
+                            0.68f to shadowColor.copy(alpha = 0.14f * progress),
                             0.80f to shadowColor.copy(alpha = 0.09f * progress),
                             1f to shadowColor.copy(alpha = 0f),
-                            center = center,
-                            radius = radius
+                            center = directionalCenter,
+                            radius = directionalRadius
                         ),
-                        radius = radius,
-                        center = center
+                        radius = directionalRadius,
+                        center = directionalCenter
                     )
                 }
             },
