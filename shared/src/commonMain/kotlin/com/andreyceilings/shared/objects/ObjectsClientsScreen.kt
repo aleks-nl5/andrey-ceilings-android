@@ -546,62 +546,69 @@ private fun ProjectCard(
     item: ProjectListEntry,
     onEdit: () -> Unit,
     onDelete: () -> Unit,
-    onExternalAction: (ContactAction, String) -> Unit
+    onExternalAction: (ContactAction, String) -> Unit,
+    openSwipe: OpenSwipe?,
+    onSwipeOpen: (OpenSwipe) -> Unit,
+    onSwipeClose: () -> Unit
 ) {
-    var showQuickActions by remember(item.id) { mutableStateOf(false) }
-    SwipeActionsSurface(
-        onSwipeLeft = { if (item.address.isNotBlank()) showQuickActions = true },
-        onSwipeRight = onDelete
-    ) {
-    Card(Modifier.fillMaxWidth().clickable(onClick = onEdit),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
-        Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-            val statusColor = when (item.workStatus) {
-                "completed" -> Color(0xFF36886B)
-                "cancelled" -> MaterialTheme.colorScheme.error
-                "in_progress" -> Color(0xFF3D82BE)
-                "rework" -> Color(0xFFB07325)
-                else -> MaterialTheme.colorScheme.primary
-            }
-            Icon(Icons.Default.Directions, null, tint = statusColor, modifier = Modifier.size(22.dp))
-            Spacer(Modifier.width(10.dp))
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                Text(item.title, fontWeight = FontWeight.SemiBold, maxLines = 1,
-                    overflow = TextOverflow.Ellipsis)
-                if (item.address.isNotBlank()) Text(item.address,
-                    style = MaterialTheme.typography.bodySmall, maxLines = 1,
-                    overflow = TextOverflow.Ellipsis)
-                if (item.clientName.isNotBlank()) Text(item.clientName,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text(
-                    ProjectStatusRules.workLabel(item.workStatus) + " · " +
-                        ProjectStatusRules.paymentLabel(item.paymentStatus),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = statusColor
-                )
-            }
-            OverflowActions(
-                onDelete = onDelete,
-                actions = if (item.address.isBlank()) emptyList() else listOf(
-                    "Google Maps" to ContactAction.GOOGLE_MAPS,
-                    "Waze" to ContactAction.WAZE
-                ),
-                onAction = { action -> onExternalAction(action, item.address) }
-            )
-        }
-    }
-    }
-    if (showQuickActions) QuickActionsDialog(
-        title = "Маршрут до об'єкта",
-        actions = listOf("Google Maps" to ContactAction.GOOGLE_MAPS,
-            "Waze" to ContactAction.WAZE),
-        onDismiss = { showQuickActions = false },
+    val id = "p-" + item.id
+    val actions = if (item.address.isBlank()) emptyList() else listOf(
+        "Maps" to ContactAction.GOOGLE_MAPS,
+        "Waze" to ContactAction.WAZE
+    )
+    SwipeActionsSurface(id, actions,
+        openSwipe = openSwipe,
+        onSwipeOpen = onSwipeOpen,
+        onSwipeClose = onSwipeClose,
+        onDelete = onDelete,
         onAction = { action ->
-            showQuickActions = false
+            onSwipeClose()
             onExternalAction(action, item.address)
         }
-    )
+    ) {
+        Card(
+            modifier = Modifier.fillMaxWidth().clickable {
+                if (openSwipe?.id == id) onSwipeClose() else onEdit()
+            },
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+        ) {
+            Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                val statusColor = when (item.workStatus) {
+                    "completed" -> Color(0xFF36886B)
+                    "cancelled" -> MaterialTheme.colorScheme.error
+                    "in_progress" -> Color(0xFF3D82BE)
+                    "rework" -> Color(0xFFB07325)
+                    else -> MaterialTheme.colorScheme.primary
+                }
+                Icon(Icons.Default.Directions, null, tint = statusColor, modifier = Modifier.size(22.dp))
+                Spacer(Modifier.width(10.dp))
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                    Text(item.title, fontWeight = FontWeight.SemiBold, maxLines = 1,
+                        overflow = TextOverflow.Ellipsis)
+                    if (item.address.isNotBlank()) Text(item.address,
+                        style = MaterialTheme.typography.bodySmall, maxLines = 1,
+                        overflow = TextOverflow.Ellipsis)
+                    if (item.clientName.isNotBlank()) Text(item.clientName,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(
+                        ProjectStatusRules.workLabel(item.workStatus) + " · " +
+                            ProjectStatusRules.paymentLabel(item.paymentStatus),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = statusColor
+                    )
+                }
+                OverflowActions(
+                    onDelete = { onSwipeClose(); onDelete() },
+                    actions = actions,
+                    onAction = { action ->
+                        onSwipeClose()
+                        onExternalAction(action, item.address)
+                    }
+                )
+            }
+        }
+    }
 }
 
 @Composable
@@ -610,108 +617,153 @@ private fun ClientCard(
     onEdit: () -> Unit,
     onDelete: () -> Unit,
     onDial: (String) -> Unit,
-    onExternalAction: (ContactAction, String) -> Unit
+    onExternalAction: (ContactAction, String) -> Unit,
+    openSwipe: OpenSwipe?,
+    onSwipeOpen: (OpenSwipe) -> Unit,
+    onSwipeClose: () -> Unit
 ) {
-    var showQuickActions by remember(item.id) { mutableStateOf(false) }
-    SwipeActionsSurface(
-        onSwipeLeft = { if (item.phone.isNotBlank()) showQuickActions = true },
-        onSwipeRight = onDelete
-    ) {
-    Card(Modifier.fillMaxWidth().clickable(onClick = onEdit),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
-        Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Text(item.name, fontWeight = FontWeight.SemiBold, maxLines = 1,
-                    overflow = TextOverflow.Ellipsis)
-                Text("Об'єктів: ${item.activeProjectCount}",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant)
-                if (item.phone.isNotBlank()) TextButton(onClick = { onDial(item.phone) }) {
-                    Icon(Icons.Default.Call, null, modifier = Modifier.size(16.dp))
-                    Spacer(Modifier.width(4.dp))
-                    Text(item.phone, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                }
-            }
-            OverflowActions(onDelete = onDelete,
-                actions = if (item.phone.isBlank()) emptyList() else listOf(
-                    "WhatsApp" to ContactAction.WHATSAPP,
-                    "Telegram" to ContactAction.TELEGRAM,
-                    "Viber" to ContactAction.VIBER
-                ),
-                onAction = { action -> onExternalAction(action, item.phone) })
-        }
-    }
-    }
-    if (showQuickActions) QuickActionsDialog(
-        title = "Зв'язатися з клієнтом",
-        actions = listOf("WhatsApp" to ContactAction.WHATSAPP,
-            "Telegram" to ContactAction.TELEGRAM, "Viber" to ContactAction.VIBER),
-        onDismiss = { showQuickActions = false },
+    val id = "c-" + item.id
+    val actions = if (item.phone.isBlank()) emptyList() else listOf(
+        "WA" to ContactAction.WHATSAPP,
+        "TG" to ContactAction.TELEGRAM,
+        "Viber" to ContactAction.VIBER
+    )
+    SwipeActionsSurface(id, actions,
+        openSwipe = openSwipe,
+        onSwipeOpen = onSwipeOpen,
+        onSwipeClose = onSwipeClose,
+        onDelete = onDelete,
         onAction = { action ->
-            showQuickActions = false
+            onSwipeClose()
             onExternalAction(action, item.phone)
         }
-    )
+    ) {
+        Card(
+            modifier = Modifier.fillMaxWidth().clickable {
+                if (openSwipe?.id == id) onSwipeClose() else onEdit()
+            },
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+        ) {
+            Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(item.name, fontWeight = FontWeight.SemiBold, maxLines = 1,
+                        overflow = TextOverflow.Ellipsis)
+                    Text("Об'єктів: " + item.activeProjectCount,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    if (item.phone.isNotBlank()) TextButton(onClick = { onSwipeClose(); onDial(item.phone) }) {
+                        Icon(Icons.Default.Call, null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text(item.phone, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                }
+                OverflowActions(
+                    onDelete = { onSwipeClose(); onDelete() },
+                    actions = actions,
+                    onAction = { action ->
+                        onSwipeClose()
+                        onExternalAction(action, item.phone)
+                    }
+                )
+            }
+        }
+    }
 }
 
-/** Left swipe only reveals choices; right swipe only opens a delete confirmation.
- * Neither direction directly executes an external or destructive operation.
+/**
+ * Hold a row at a fixed, partially revealed offset after release.
+ * Swipe left exposes external actions, swipe right exposes ONLY a delete button;
+ * delete still requires the separate confirmation dialog.
+ * Another row's swipe, list scrolling or any other action clears the opened row.
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun SwipeActionsSurface(
-    onSwipeLeft: () -> Unit,
-    onSwipeRight: () -> Unit,
+    id: String,
+    actions: List<Pair<String, ContactAction>>,
+    openSwipe: OpenSwipe?,
+    onSwipeOpen: (OpenSwipe) -> Unit,
+    onSwipeClose: () -> Unit,
+    onDelete: () -> Unit,
+    onAction: (ContactAction) -> Unit,
     content: @Composable () -> Unit
 ) {
-    val state = rememberSwipeToDismissBoxState(confirmValueChange = { destination ->
-        when (destination) {
-            SwipeToDismissBoxValue.EndToStart -> onSwipeLeft()
-            SwipeToDismissBoxValue.StartToEnd -> onSwipeRight()
-            SwipeToDismissBoxValue.Settled -> Unit
-        }
-        false // Never dismiss rows without confirmation.
-    })
-    SwipeToDismissBox(
-        state = state,
-        backgroundContent = {
+    val density = LocalDensity.current
+    val leftWidth = (actions.size * 64).dp
+    val leftPx = with(density) { leftWidth.toPx() }
+    val rightPx = with(density) { 76.dp.toPx() }
+    val target = if (openSwipe?.id == id) when (openSwipe.side) {
+        SwipeSide.LEFT -> -leftPx
+        SwipeSide.RIGHT -> rightPx
+    } else 0f
+    var dragging by remember(id) { mutableStateOf(false) }
+    var dragged by remember(id) { mutableFloatStateOf(0f) }
+    val displayed by animateFloatAsState(
+        targetValue = if (dragging) dragged else target,
+        animationSpec = tween(durationMillis = 170),
+        label = "Swipe actions offset"
+    )
+    val dragState = rememberDraggableState { delta ->
+        dragged = (dragged + delta).coerceIn(-leftPx, rightPx)
+    }
+
+    Box(Modifier.fillMaxWidth()) {
+        if (actions.isNotEmpty() && (displayed < 0f || target < 0f)) {
             Row(
-                Modifier.fillMaxSize().background(
-                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
-                ).padding(horizontal = 22.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
+                Modifier.align(Alignment.CenterEnd)
+                    .width(leftWidth).height(72.dp)
+                    .background(MaterialTheme.colorScheme.primaryContainer,
+                        RoundedCornerShape(18.dp)),
+                horizontalArrangement = Arrangement.SpaceEvenly,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Icon(Icons.Default.Delete, contentDescription = "Видалити з підтвердженням",
-                    tint = MaterialTheme.colorScheme.error)
-                Icon(Icons.Default.MoreVert, contentDescription = "Швидкі дії",
-                    tint = MaterialTheme.colorScheme.primary)
-            }
-        },
-        content = { content() }
-    )
-}
-
-@Composable
-private fun QuickActionsDialog(
-    title: String,
-    actions: List<Pair<String, ContactAction>>,
-    onDismiss: () -> Unit,
-    onAction: (ContactAction) -> Unit
-) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(title) },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 actions.forEach { (label, action) ->
-                    TextButton(onClick = { onAction(action) },
-                        modifier = Modifier.fillMaxWidth()) { Text(label) }
+                    TextButton(
+                        onClick = { onAction(action) },
+                        modifier = Modifier.width(64.dp).height(56.dp)
+                    ) {
+                        Text(label, style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            maxLines = 1)
+                    }
                 }
             }
-        },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("Закрити") } }
-    )
+        }
+        if (displayed > 0f || target > 0f) {
+            Box(
+                Modifier.align(Alignment.CenterStart)
+                    .width(76.dp).height(72.dp)
+                    .background(MaterialTheme.colorScheme.errorContainer,
+                        RoundedCornerShape(18.dp))
+                    .clickable { onSwipeClose(); onDelete() },
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(Icons.Default.Delete, contentDescription = "Видалити з підтвердженням",
+                    tint = MaterialTheme.colorScheme.onErrorContainer)
+            }
+        }
+        Box(
+            Modifier.fillMaxWidth()
+                .offset { IntOffset(displayed.roundToInt(), 0) }
+                .draggable(
+                    state = dragState,
+                    orientation = Orientation.Horizontal,
+                    onDragStarted = {
+                        dragged = displayed
+                        dragging = true
+                    },
+                    onDragStopped = {
+                        dragging = false
+                        when {
+                            leftPx > 0f && dragged < -leftPx * 0.30f ->
+                                onSwipeOpen(OpenSwipe(id, SwipeSide.LEFT))
+                            dragged > rightPx * 0.30f ->
+                                onSwipeOpen(OpenSwipe(id, SwipeSide.RIGHT))
+                            else -> onSwipeClose()
+                        }
+                    }
+                )
+        ) { content() }
+    }
 }
 
 @Composable
