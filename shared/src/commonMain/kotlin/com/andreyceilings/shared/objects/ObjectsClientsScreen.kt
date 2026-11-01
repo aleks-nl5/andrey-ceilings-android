@@ -64,6 +64,10 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
@@ -142,24 +146,35 @@ fun ObjectsClientsScreen(
         ObjectsClientsSearch.clients(rows.clients, search)
     }
 
-    // Gesture/scroll direction is shared, not driven by an Android callback.
-    LaunchedEffect(listState) {
-        var index = listState.firstVisibleItemIndex
-        var offset = listState.firstVisibleItemScrollOffset
-        snapshotFlow {
-            Triple(listState.firstVisibleItemIndex, listState.firstVisibleItemScrollOffset,
-                listState.isScrollInProgress)
-        }.collect { (nextIndex, nextOffset, scrolling) ->
-            // Closing an open action tray on scrolling must not hide the pinned controls.
-            if (scrolling) openSwipe = null
-            fabVisible = when {
-                !scrolling -> true
-                nextIndex < index || (nextIndex == index && nextOffset < offset) -> true
-                nextIndex > index || (nextIndex == index && nextOffset > offset) -> false
-                else -> fabVisible
+    // Observe the finger's direction BEFORE the app header consumes the scroll.
+    // List-position deltas alone miss downward drags while the collapsing
+    // TopAppBar is moving (this is why FAB previously hid only on upward scroll).
+    val fabGestureConnection = remember {
+        object : NestedScrollConnection {
+            override fun onPreScroll(
+                available: Offset,
+                source: NestedScrollSource
+            ): Offset {
+                if (source == NestedScrollSource.UserInput) {
+                    when {
+                        available.y < -2f -> fabVisible = false // finger up, list down
+                        available.y > 2f -> fabVisible = true  // finger down, list up
+                    }
+                }
+                return Offset.Zero // do not consume the app bar or list scrolling
             }
-            index = nextIndex
-            offset = nextOffset
+        }
+    }
+    LaunchedEffect(listState) {
+        snapshotFlow {
+            listState.isScrollInProgress
+        }.collect { scrolling ->
+            if (scrolling) {
+                openSwipe = null
+            } else {
+                // Restore the full-size FAB after a drag/fling is over.
+                fabVisible = true
+            }
         }
     }
     LaunchedEffect(requestCreateProject, databaseAvailable) {
@@ -215,6 +230,7 @@ fun ObjectsClientsScreen(
         }
         Box(Modifier.weight(1f)) {
             LazyColumn(
+                modifier = Modifier.nestedScroll(fabGestureConnection),
                 state = listState,
                 contentPadding = listPadding,
                 verticalArrangement = Arrangement.spacedBy(7.dp)
