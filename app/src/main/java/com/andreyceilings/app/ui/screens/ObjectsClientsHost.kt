@@ -31,6 +31,7 @@ import kotlinx.coroutines.withContext
 internal fun ObjectsClientsHost(
     database: CeilingsDatabase?,
     openCreateProject: Boolean,
+    headerVisibleFraction: Float,
     onCreateProjectConsumed: () -> Unit
 ) {
     val context = LocalContext.current
@@ -57,6 +58,7 @@ internal fun ObjectsClientsHost(
         rows = rows,
         databaseAvailable = store != null,
         requestCreateProject = openCreateProject,
+        headerVisibleFraction = headerVisibleFraction,
         onCreateProjectConsumed = onCreateProjectConsumed,
         contentPadding = PaddingValues(
             start = 0.dp, end = 0.dp,
