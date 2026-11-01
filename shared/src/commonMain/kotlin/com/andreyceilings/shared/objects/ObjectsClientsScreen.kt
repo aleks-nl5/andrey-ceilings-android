@@ -552,7 +552,8 @@ private fun ObjectsClientsCreateFab(
         label = "Create FAB fade"
     )
     val colors = MaterialTheme.colorScheme
-    val shadowColor = colors.shadow
+    // Explicit, cross-platform shadow tint: this Material3 ColorScheme has no shadow slot.
+    val shadowColor = Color.Black
     // The shadow is painted in Compose itself, not in a native elevation layer.
     // Its radial gradient stays wholly inside the outer 76dp draw area.
     Box(
