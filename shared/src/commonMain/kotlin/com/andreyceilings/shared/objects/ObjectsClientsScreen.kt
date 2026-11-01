@@ -54,7 +54,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.foundation.text.BasicTextFieldDefaults
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.material3.Text
@@ -188,8 +187,8 @@ fun ObjectsClientsScreen(
         56.dp * headerVisibleFraction.coerceIn(0f, 1f)
     val layoutDirection = LocalLayoutDirection.current
     val listPadding = PaddingValues(
-        start = contentPadding.calculateStartPadding(layoutDirection),
-        end = contentPadding.calculateEndPadding(layoutDirection),
+        start = contentPadding.calculateLeftPadding(layoutDirection),
+        end = contentPadding.calculateRightPadding(layoutDirection),
         bottom = contentPadding.calculateBottomPadding()
     )
 
@@ -341,7 +340,7 @@ fun ObjectsClientsScreen(
                 }
             }
         }
-        AnimatedVisibility(
+        androidx.compose.animation.AnimatedVisibility(
             visible = databaseAvailable && !busy && fabVisible && editor == null,
             enter = fadeIn() + scaleIn(),
             exit = fadeOut() + scaleOut(),
