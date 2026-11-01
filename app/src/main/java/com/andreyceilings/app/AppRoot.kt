@@ -10,11 +10,15 @@ import android.os.SystemClock
 import android.view.FrameMetrics
 import android.net.Uri
 import android.widget.Toast
+import androidx.activity.BackEventCompat
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.PredictiveBackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import com.andreyceilings.app.data.PerformanceDiagnosticsLog
@@ -30,6 +34,7 @@ import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.*
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.Animatable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.ui.graphics.Brush
@@ -63,6 +68,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.andreyceilings.shared.navigation.AppHeader
+import com.andreyceilings.shared.navigation.AppNavigationState
+import com.andreyceilings.shared.navigation.AppPredictiveBackSurface
+import com.andreyceilings.shared.navigation.AppQuickCreate
+import com.andreyceilings.shared.navigation.AppRoute
+import androidx.compose.runtime.saveable.Saver
+import androidx.compose.runtime.saveable.rememberSaveable
 import com.andreyceilings.app.ui.theme.CeilingsTheme
 import com.andreyceilings.app.ui.theme.ThemeMode
 import com.andreyceilings.app.ui.theme.ThemeModeSelector
@@ -80,6 +91,7 @@ import com.andreyceilings.app.data.db.ProjectEntity
 import com.andreyceilings.app.data.db.EstimateEntity
 import com.andreyceilings.app.ui.screens.*
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.collect
 import java.util.concurrent.atomic.AtomicLong
 
 private tailrec fun Context.findActivity(): Activity? = when (this) {
@@ -88,19 +100,25 @@ private tailrec fun Context.findActivity(): Activity? = when (this) {
     else -> null
 }
 
-internal enum class AppTab(val title: String) {
-    DASHBOARD("Панель"), OBJECTS("Об’єкти"), MEASUREMENTS("Заміри"),
-    CALCULATOR("Калькулятор"), ESTIMATES("Кошториси"), PRICES("Прайс"), SETTINGS("Налаштування"), CALENDAR("Календар")
-}
+// Android UI remains a thin adapter over the single commonMain route enum.
+internal typealias AppTab = AppRoute
+
+private val navigationStateSaver = Saver<AppNavigationState, ArrayList<String>>(
+    save = { ArrayList(it.snapshot()) },
+    restore = { AppNavigationState.restore(it) }
+)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, onDatabaseReplaced: (CeilingsDatabase) -> Unit, themeMode: ThemeMode, onThemeModeChange: (ThemeMode) -> Unit) {
-    var tab by remember { mutableStateOf(AppTab.DASHBOARD) }
-    // One-shot request consumed by the already implemented create dialogs in the destination tab.
-    var pendingQuickCreate by remember { mutableStateOf<AppTab?>(null) }
+    var navigation by rememberSaveable(stateSaver = navigationStateSaver) {
+        mutableStateOf(AppNavigationState())
+    }
+    val tab = navigation.current
     var tabChangedAt by remember { mutableLongStateOf(SystemClock.elapsedRealtime()) }
     var lastBackPressTime by remember { mutableStateOf(0L) }
+    val predictiveBackProgress = remember { Animatable(0f) }
+    val predictiveBackFromLeft = remember { mutableStateOf(true) }
     val context = LocalContext.current
     val systemDarkTheme = isSystemInDarkTheme()
     val useDarkTheme = when (themeMode) {
@@ -144,10 +162,21 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
     }
 
     fun navigateTo(target: AppTab) {
-        if (tab != target) {
-            tabChangedAt = SystemClock.elapsedRealtime()
-            tab = target
-        }
+        val next = navigation.selectTab(target)
+        if (next.current != tab) tabChangedAt = SystemClock.elapsedRealtime()
+        navigation = next
+    }
+
+    fun openNested(target: AppTab) {
+        val next = navigation.navigate(target)
+        if (next.current != tab) tabChangedAt = SystemClock.elapsedRealtime()
+        navigation = next
+    }
+
+    fun startQuickCreate(action: AppQuickCreate) {
+        val next = navigation.requestQuickCreate(action)
+        if (next.current != tab) tabChangedAt = SystemClock.elapsedRealtime()
+        navigation = next
     }
 
     LaunchedEffect(tab) {
@@ -255,18 +284,41 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
         }
     }
 
-    BackHandler {
-        if (tab != AppTab.DASHBOARD) {
-            navigateTo(AppTab.DASHBOARD)
-            lastBackPressTime = 0L
-        } else {
-            val now = SystemClock.elapsedRealtime()
-            if (lastBackPressTime != 0L && now - lastBackPressTime <= 2_000L) {
-                context.findActivity()?.finish()
-            } else {
-                lastBackPressTime = now
-                Toast.makeText(context, "Натисніть «Назад» ще раз, щоб вийти", Toast.LENGTH_SHORT).show()
+    // Android only provides gesture progress. KMP owns the destination and CMP the preview.
+    // Keep the callback composed unconditionally; dialogs may take Back precedence.
+    PredictiveBackHandler(enabled = tab != AppTab.DASHBOARD) { events ->
+        var completed = false
+        try {
+            events.collect { event ->
+                predictiveBackFromLeft.value = event.swipeEdge == BackEventCompat.EDGE_LEFT
+                predictiveBackProgress.snapTo(event.progress.coerceIn(0f, 1f))
             }
+            // Commit only after a fully completed gesture (never during a swipe).
+            completed = true
+            predictiveBackProgress.snapTo(0f)
+            val next = navigation.back()
+            if (next.current != navigation.current) tabChangedAt = SystemClock.elapsedRealtime()
+            navigation = next
+            lastBackPressTime = 0L
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } finally {
+            if (!completed) {
+                // Cancelled swipes never mutate navigation. Smoothly return to full size.
+                withContext(NonCancellable) {
+                    predictiveBackProgress.animateTo(0f, tween(durationMillis = 160))
+                }
+            }
+        }
+    }
+    // Dashboard retains its familiar two-step Back-to-exit behavior.
+    BackHandler(enabled = tab == AppTab.DASHBOARD) {
+        val now = SystemClock.elapsedRealtime()
+        if (lastBackPressTime != 0L && now - lastBackPressTime <= 2_000L) {
+            context.findActivity()?.finish()
+        } else {
+            lastBackPressTime = now
+            Toast.makeText(context, "Натисніть «Назад» ще раз, щоб вийти", Toast.LENGTH_SHORT).show()
         }
     }
     val precisionPreferences = remember(context) {
@@ -424,12 +476,18 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
 
     // Overlay the app bars on a full-screen content layer. The screen can scroll
     // underneath the transparent bars, while its initial content respects their insets.
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
-            .nestedScroll(topAppBarScrollBehavior.nestedScrollConnection)
+    AppPredictiveBackSurface(
+        progress = predictiveBackProgress.asState(),
+        fromLeftEdge = predictiveBackFromLeft,
+        destinationTitle = navigation.back().current.title,
+        modifier = Modifier.fillMaxSize()
     ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(MaterialTheme.colorScheme.background)
+                .nestedScroll(topAppBarScrollBehavior.nestedScrollConnection)
+        ) {
         key(tab) {
             if (tab == AppTab.OBJECTS || tab == AppTab.MEASUREMENTS || tab == AppTab.ESTIMATES || tab == AppTab.PRICES || tab == AppTab.CALENDAR) {
                 Box(
@@ -438,8 +496,8 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
                     when (tab) {
                         AppTab.OBJECTS -> ObjectsScreen(
                             database = database,
-                            openCreateProject = pendingQuickCreate == AppTab.OBJECTS,
-                            onCreateProjectConsumed = { pendingQuickCreate = null }
+                            openCreateProject = navigation.pendingQuickCreate == AppQuickCreate.OBJECT,
+                            onCreateProjectConsumed = { navigation = navigation.consumeQuickCreate(AppQuickCreate.OBJECT) }
                         )
                         AppTab.MEASUREMENTS -> MeasurementsScreen(
                             database = database,
@@ -490,11 +548,10 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
                                 }
                                 navigateTo(AppTab.CALCULATOR)
                             },
-                            openCreateMeasurement = pendingQuickCreate == AppTab.MEASUREMENTS,
-                            onCreateMeasurementConsumed = { pendingQuickCreate = null },
+                            openCreateMeasurement = navigation.pendingQuickCreate == AppQuickCreate.MEASUREMENT,
+                            onCreateMeasurementConsumed = { navigation = navigation.consumeQuickCreate(AppQuickCreate.MEASUREMENT) },
                             onMissingProject = {
-                                pendingQuickCreate = AppTab.OBJECTS
-                                navigateTo(AppTab.OBJECTS)
+                                startQuickCreate(AppQuickCreate.OBJECT)
                                 Toast.makeText(context, "Спочатку створіть об’єкт для заміру", Toast.LENGTH_LONG).show()
                             }
                         )
@@ -580,7 +637,7 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
                         )
                         AppTab.SETTINGS -> SettingsScreen(
                             databaseStatus, database, onDatabaseReplaced, themeMode, onThemeModeChange,
-                            onOpenPriceList = { navigateTo(AppTab.PRICES) },
+                            onOpenPriceList = { openNested(AppTab.PRICES) },
                             measurementPrecision = measurementPrecision,
                             onMeasurementPrecision = { selected ->
                                 measurementPrecision = selected
@@ -601,7 +658,7 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
             statusBarHeight = statusBarInset,
             windowInsets = WindowInsets.statusBars,
             scrollBehavior = topAppBarScrollBehavior,
-            onSettings = { navigateTo(AppTab.SETTINGS) },
+            onSettings = { openNested(AppTab.SETTINGS) },
             extraActions = {
                 ThemeModeSelector(mode = themeMode, onModeChange = onThemeModeChange, compact = true)
             },
@@ -627,11 +684,15 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
                 if (database == null) {
                     Toast.makeText(context, "Захищена база зараз недоступна", Toast.LENGTH_SHORT).show()
                 } else {
-                    pendingQuickCreate = target
-                    navigateTo(target)
+                    when (target) {
+                        AppTab.OBJECTS -> startQuickCreate(AppQuickCreate.OBJECT)
+                        AppTab.MEASUREMENTS -> startQuickCreate(AppQuickCreate.MEASUREMENT)
+                        else -> navigateTo(target)
+                    }
                 }
             },
             modifier = Modifier.align(Alignment.BottomCenter)
         )
+    }
     }
 }

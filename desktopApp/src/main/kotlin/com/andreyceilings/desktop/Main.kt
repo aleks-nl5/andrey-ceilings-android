@@ -43,6 +43,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -50,6 +54,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
 import com.andreyceilings.shared.navigation.AppDestination
+import com.andreyceilings.shared.navigation.AppRoute
+import com.andreyceilings.shared.navigation.AppNavigationState
 import com.andreyceilings.shared.navigation.AppFloatingNavigation
 import com.andreyceilings.shared.navigation.AppHeader
 import com.andreyceilings.shared.navigation.AppHeaderHeight
@@ -66,16 +72,33 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-private enum class DesktopTab { HOME, PRICES }
-
 fun main() = application {
-    Window(onCloseRequest = ::exitApplication, title = "СтеляПро") {
+    var navigation by remember { mutableStateOf(AppNavigationState()) }
+    val availableRoutes = remember { setOf(AppRoute.DASHBOARD, AppRoute.PRICES) }
+    Window(
+        onCloseRequest = ::exitApplication,
+        title = "СтеляПро",
+        // Bubble after editor/dialog handlers so Escape closes an active modal first.
+        onKeyEvent = { event ->
+            if (event.key == Key.Escape && event.type == KeyEventType.KeyDown) {
+                val next = navigation.back(availableRoutes)
+                if (next != navigation) {
+                    navigation = next
+                    true
+                } else false
+            } else false
+        }
+    ) {
         PriceCatalogTheme(
             darkTheme = isSystemInDarkTheme(),
             typography = remember { ceilingsTypography() }
         ) {
             Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-                DesktopPriceHost()
+                DesktopPriceHost(
+                    navigation = navigation,
+                    availableRoutes = availableRoutes,
+                    onNavigate = { navigation = it }
+                )
             }
         }
     }
@@ -88,7 +111,11 @@ fun main() = application {
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun DesktopPriceHost() {
+private fun DesktopPriceHost(
+    navigation: AppNavigationState,
+    availableRoutes: Set<AppRoute>,
+    onNavigate: (AppNavigationState) -> Unit
+) {
     val scope = rememberCoroutineScope()
     var session by remember { mutableStateOf<DesktopPriceDatabase?>(null) }
     var password by remember { mutableStateOf("") }
@@ -122,13 +149,13 @@ private fun DesktopPriceHost() {
                 currencyStore.tick()
             }
         }
-        var selectedTab by remember(database) { mutableStateOf(DesktopTab.HOME) }
+        val selectedTab = navigation.current
         // Same commonMain navigation chrome as Android. Windows exposes only
         // the destinations implemented by its present encrypted desktop host.
         val navItems = remember {
             listOf(
-                AppDestination("HOME", "Панель", "Панель", Icons.Default.Dashboard),
-                AppDestination("PRICES", "Прайс", "Прайс", Icons.Default.ReceiptLong)
+                AppDestination(AppRoute.DASHBOARD.name, "Панель", "Панель", Icons.Default.Dashboard),
+                AppDestination(AppRoute.PRICES.name, "Прайс", "Прайс", Icons.Default.ReceiptLong)
             )
         }
         val topScrollBehavior = key(selectedTab) {
@@ -136,7 +163,7 @@ private fun DesktopPriceHost() {
         }
         Box(Modifier.fillMaxSize().nestedScroll(topScrollBehavior.nestedScrollConnection)) {
             when (selectedTab) {
-                DesktopTab.HOME -> {
+                AppRoute.DASHBOARD -> {
                     Column(
                         Modifier.fillMaxSize().verticalScroll(rememberScrollState())
                             .padding(
@@ -172,7 +199,7 @@ private fun DesktopPriceHost() {
                         )
                     }
                 }
-                DesktopTab.PRICES -> PriceCatalogScreen(
+                AppRoute.PRICES -> PriceCatalogScreen(
                     items = items,
                     databaseAvailable = true,
                     contentPadding = PaddingValues(
@@ -187,6 +214,7 @@ private fun DesktopPriceHost() {
                         withContext(Dispatchers.IO) { store.delete(item) }
                     }
                 )
+                else -> Unit // Only actually implemented desktop routes are exposed.
             }
             AppHeader(
                 collapsedFraction = topScrollBehavior.state.collapsedFraction,
@@ -200,7 +228,11 @@ private fun DesktopPriceHost() {
                 selectedId = selectedTab.name,
                 destinations = navItems,
                 darkTheme = isSystemInDarkTheme(),
-                onSelect = { selectedTab = DesktopTab.valueOf(it) },
+                onSelect = { id ->
+                    AppRoute.fromId(id)?.let { route ->
+                        onNavigate(navigation.selectTab(route, availableRoutes))
+                    }
+                },
                 onQuickCreate = {},
                 modifier = Modifier.align(Alignment.BottomCenter).widthIn(max = 520.dp)
             )
