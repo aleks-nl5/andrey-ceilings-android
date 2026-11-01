@@ -35,7 +35,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.ExtendedFloatingActionButton
+import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -293,15 +293,17 @@ fun ObjectsClientsScreen(
             modifier = Modifier.align(Alignment.BottomEnd)
                 .padding(end = 16.dp, bottom = 88.dp)
         ) {
-            ExtendedFloatingActionButton(
+            FloatingActionButton(
                 onClick = {
                     message = null
                     editor = if (selectedTab == ObjectsClientsTab.PROJECTS)
                         EditorTarget.Project(null) else EditorTarget.Client(null)
-                },
-                icon = { Icon(Icons.Default.Add, contentDescription = null) },
-                text = { Text(if (selectedTab == ObjectsClientsTab.PROJECTS) "Об'єкт" else "Клієнт") }
-            )
+                }
+            ) {
+                Icon(Icons.Default.Add,
+                    contentDescription = if (selectedTab == ObjectsClientsTab.PROJECTS)
+                        "Створити об'єкт" else "Створити клієнта")
+            }
         }
     }
 
