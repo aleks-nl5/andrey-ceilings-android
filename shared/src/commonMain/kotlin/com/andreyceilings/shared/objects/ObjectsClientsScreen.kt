@@ -347,8 +347,9 @@ fun ObjectsClientsScreen(
                                 onExternalAction(action, value)
                             },
                             openSwipe = openSwipe,
-                            onSwipeOpen = { openSwipe = it },
-                            onSwipeClose = { openSwipe = null })
+                            onSwipeOpen = { dismissSearchFocus(); openSwipe = it },
+                            onSwipeClose = { openSwipe = null },
+                            onAnyInteraction = { dismissSearchFocus() })
                     }
                 } else {
                     if (clients.isEmpty()) {
@@ -367,8 +368,9 @@ fun ObjectsClientsScreen(
                                 onExternalAction(action, value)
                             },
                             openSwipe = openSwipe,
-                            onSwipeOpen = { openSwipe = it },
-                            onSwipeClose = { openSwipe = null })
+                            onSwipeOpen = { dismissSearchFocus(); openSwipe = it },
+                            onSwipeClose = { openSwipe = null },
+                            onAnyInteraction = { dismissSearchFocus() })
                     }
                 }
                 if (message != null) item(key = "message") {
@@ -872,7 +874,8 @@ private fun ProjectCard(
     onExternalAction: (ContactAction, String) -> Unit,
     openSwipe: OpenSwipe?,
     onSwipeOpen: (OpenSwipe) -> Unit,
-    onSwipeClose: () -> Unit
+    onSwipeClose: () -> Unit,
+    onAnyInteraction: () -> Unit
 ) {
     val id = "p-" + item.id
     val actions = if (item.address.isBlank()) emptyList() else listOf(
@@ -914,6 +917,7 @@ private fun ProjectCard(
                     )
                     PaymentStateTag(item.paymentStatus)
                     OverflowActions(
+                        onMenuOpened = onAnyInteraction,
                         onDelete = { onSwipeClose(); onDelete() },
                         actions = actions,
                         onAction = { action ->
@@ -948,7 +952,8 @@ private fun ClientCard(
     onExternalAction: (ContactAction, String) -> Unit,
     openSwipe: OpenSwipe?,
     onSwipeOpen: (OpenSwipe) -> Unit,
-    onSwipeClose: () -> Unit
+    onSwipeClose: () -> Unit,
+    onAnyInteraction: () -> Unit
 ) {
     val id = "c-" + item.id
     val actions = if (item.phone.isBlank()) emptyList() else listOf(
@@ -1007,6 +1012,7 @@ private fun ClientCard(
                     }
                 }
                 OverflowActions(
+                    onMenuOpened = onAnyInteraction,
                     onDelete = { onSwipeClose(); onDelete() },
                     actions = actions,
                     onAction = { action ->
@@ -1187,11 +1193,12 @@ private fun SwipeExternalButton(
 private fun OverflowActions(
     onDelete: () -> Unit,
     actions: List<Pair<String, ContactAction>>,
-    onAction: (ContactAction) -> Unit
+    onAction: (ContactAction) -> Unit,
+    onMenuOpened: () -> Unit = {}
 ) {
     var expanded by remember { mutableStateOf(false) }
     Box {
-        IconButton(onClick = { expanded = true }) {
+        IconButton(onClick = { onMenuOpened(); expanded = true }) {
             Icon(Icons.Default.MoreVert, contentDescription = "Дії із записом")
         }
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false },
