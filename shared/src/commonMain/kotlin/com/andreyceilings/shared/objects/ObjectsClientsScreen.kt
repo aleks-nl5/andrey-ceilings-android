@@ -48,7 +48,9 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -822,11 +824,20 @@ private fun SwipeActionsSurface(
     var dragged by remember(id) { mutableFloatStateOf(0f) }
     var startOfDrag by remember(id) { mutableFloatStateOf(0f) }
     var farthestPoint by remember(id) { mutableFloatStateOf(0f) }
-    val displayed by animateFloatAsState(
-        targetValue = if (dragging) dragged else target,
-        animationSpec = tween(durationMillis = 190),
-        label = "Swipe actions offset"
+
+    // The previous animateFloatAsState animated every finger delta, creating
+    // visible lag and a bounce on release. While dragging, draw the exact
+    // gesture position. Animate ONLY the final snap to the chosen anchor.
+    val settleAnimation = remember(id) { Animatable(0f) }
+    val displayed = if (dragging) dragged else settleAnimation.value
+    val settleSpec = spring<Float>(
+        dampingRatio = Spring.DampingRatioNoBouncy,
+        stiffness = Spring.StiffnessMedium
     )
+    LaunchedEffect(target) {
+        if (!dragging) settleAnimation.animateTo(target, animationSpec = settleSpec)
+    }
+
     val dragState = rememberDraggableState { delta ->
         dragged = (dragged + delta).coerceIn(-leftPx, rightPx)
         if (kotlin.math.abs(dragged) > kotlin.math.abs(farthestPoint)) {
@@ -873,16 +884,18 @@ private fun SwipeActionsSurface(
                     state = dragState,
                     orientation = Orientation.Horizontal,
                     onDragStarted = {
-                        startOfDrag = displayed
-                        dragged = displayed
-                        farthestPoint = displayed
+                        settleAnimation.stop()
+                        dragged = settleAnimation.value
+                        startOfDrag = dragged
+                        farthestPoint = dragged
                         dragging = true
                     },
                     onDragStopped = {
+                        // Start exactly at the finger's release position.
+                        // The anchored settle uses a critically-damped spring,
+                        // without a frame snapping back to the previous anchor.
+                        settleAnimation.snapTo(dragged)
                         dragging = false
-                        // A short/unfinished swipe snaps shut. Dragging back towards
-                        // the origin by 14dp also cancels opening, even if it
-                        // briefly crossed the reveal threshold.
                         val pulledBack =
                             kotlin.math.abs(farthestPoint) - kotlin.math.abs(dragged) >=
                                 reversalTolerancePx
@@ -893,14 +906,25 @@ private fun SwipeActionsSurface(
                                 dragged < startOfDrag - rightPx * 0.30f
                             else -> false
                         }
-                        when {
-                            pulledBack || closingExisting -> onSwipeClose()
-                            leftPx > 0f && dragged <= -leftPx * 0.56f ->
+                        val settleTo = when {
+                            pulledBack || closingExisting -> {
+                                onSwipeClose()
+                                0f
+                            }
+                            leftPx > 0f && dragged <= -leftPx * 0.56f -> {
                                 onSwipeOpen(OpenSwipe(id, SwipeSide.LEFT))
-                            dragged >= rightPx * 0.56f ->
+                                -leftPx
+                            }
+                            dragged >= rightPx * 0.56f -> {
                                 onSwipeOpen(OpenSwipe(id, SwipeSide.RIGHT))
-                            else -> onSwipeClose()
+                                rightPx
+                            }
+                            else -> {
+                                onSwipeClose()
+                                0f
+                            }
                         }
+                        settleAnimation.animateTo(settleTo, animationSpec = settleSpec)
                     }
                 )
         ) { content() }
