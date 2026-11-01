@@ -928,8 +928,8 @@ private fun ProjectCard(
                     .padding(start = 12.dp, end = 3.dp, top = 9.dp, bottom = 11.dp),
                 verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
-                // Status glyph sits with the name; payment and menu are both
-                // on the right, never occupying the address/client column.
+                // The workflow icon and address share the header; address
+                // may wrap to two lines. The action menu stays at the top right.
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
@@ -941,10 +941,9 @@ private fun ProjectCard(
                         displayProjectAddress(item),
                         modifier = Modifier.weight(1f),
                         fontWeight = FontWeight.SemiBold,
-                        maxLines = 1,
+                        maxLines = 2,
                         overflow = TextOverflow.Ellipsis
                     )
-                    PaymentStateTag(item.paymentStatus)
                     OverflowActions(
                         onMenuOpened = onAnyInteraction,
                         onDelete = { onSwipeClose(); onDelete() },
@@ -955,17 +954,26 @@ private fun ProjectCard(
                         }
                     )
                 }
-                // Unlike the title row, these two lines use the card's left
-                // padding without an icon-sized indent.
-                // Address is the card title. Do not duplicate it below.
-                if (item.clientName.isNotBlank()) {
-                    Text(
-                        item.clientName,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
+                // Keep the client's name at the left edge, and the separate
+                // payment indicator on the lower right regardless of name.
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(end = 9.dp),
+                    verticalAlignment = Alignment.Bottom,
+                    horizontalArrangement = Arrangement.spacedBy(7.dp)
+                ) {
+                    if (item.clientName.isNotBlank()) {
+                        Text(
+                            item.clientName,
+                            modifier = Modifier.weight(1f),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    } else {
+                        Spacer(Modifier.weight(1f))
+                    }
+                    PaymentStateTag(item.paymentStatus)
                 }
             }
         }
