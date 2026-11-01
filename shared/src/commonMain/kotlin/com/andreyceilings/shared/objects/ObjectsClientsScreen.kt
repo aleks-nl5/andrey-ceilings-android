@@ -711,7 +711,7 @@ private fun SwipeActionsSurface(
     val rightPx = with(density) { 76.dp.toPx() }
     val target = when {
         openSwipe?.id != id -> 0f
-        openSwipe.side == SwipeSide.LEFT -> -leftPx
+        openSwipe?.side == SwipeSide.LEFT -> -leftPx
         else -> rightPx
     }
     var dragging by remember(id) { mutableStateOf(false) }
