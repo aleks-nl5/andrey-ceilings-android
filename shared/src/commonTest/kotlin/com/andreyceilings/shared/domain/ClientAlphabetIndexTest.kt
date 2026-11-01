@@ -54,7 +54,7 @@ class ClientAlphabetIndexTest {
         val source = listOf(client(1, "Марія"), client(2, "Марко"),
             client(3, "Катерина"), client(4, "Андрій"))
         val filtered = ObjectsClientsSearch.clients(source, "мар")
-        assertEquals(listOf("Марко", "Марія"), filtered.map { it.name })
+        assertEquals(listOf("Марія", "Марко"), filtered.map { it.name })
         assertEquals(listOf(ClientLetterJump('М', 0)), ClientAlphabetIndex.markers(filtered))
         assertTrue(ClientAlphabetIndex.markers(emptyList()).isEmpty())
         assertTrue(ClientAlphabetIndex.markers(ObjectsClientsSearch.clients(source, "неіснує")).isEmpty())
