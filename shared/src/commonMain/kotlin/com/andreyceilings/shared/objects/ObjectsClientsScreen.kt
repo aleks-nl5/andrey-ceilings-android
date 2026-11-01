@@ -77,7 +77,7 @@ import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -89,6 +89,7 @@ import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.IntOffset
 import kotlin.math.roundToInt
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.semantics.Role
@@ -423,8 +424,10 @@ fun ObjectsClientsScreen(
             visible = showFab,
             actionLabel = if (selectedTab == ObjectsClientsTab.PROJECTS)
                 "Створити об'єкт" else "Створити клієнта",
+            // The 76dp drawing area reserves 10dp around the 56dp circle,
+            // including its painted shadow. Preserve the original FAB center.
             modifier = Modifier.align(Alignment.BottomEnd)
-                .padding(end = 16.dp, bottom = 152.dp),
+                .padding(end = 6.dp, bottom = 142.dp),
             onClick = {
                 dismissSearchFocus()
                 message = null
@@ -528,10 +531,13 @@ fun ObjectsClientsScreen(
 }
 
 /**
- * Fixed-size, layer-free FAB. Fade the actual circle, outline and icon while
- * reducing its elevation. Never fade/scale a parent graphicsLayer containing a
- * Material3 elevation shadow: that clips its blur and exposes white polygons on
- * some Android light-theme GPU drivers.
+ * Stable CMP FAB. Its 76dp draw area contains a 56dp tappable circle plus
+ * 10dp transparent space for a soft, fully-contained shadow. Native
+ * Modifier.shadow/elevation is deliberately avoided: animating its outline
+ * revealed polygonal tessellation artifacts on some Android light themes.
+ *
+ * Only colors fade, with no graphicsLayer, offscreen buffer, changing shadow
+ * elevation, parent clipping, resizing, or translation.
  */
 @Composable
 private fun ObjectsClientsCreateFab(
@@ -546,31 +552,56 @@ private fun ObjectsClientsCreateFab(
         label = "Create FAB fade"
     )
     val colors = MaterialTheme.colorScheme
-    // The outer 56dp box is never resized, clipped or translated. A hidden FAB
-    // leaves no click target or accessibility node behind.
-    Box(modifier.size(56.dp)) {
-        if (progress > 0.001f) {
-            Box(
-                modifier = Modifier.fillMaxSize()
-                    .shadow(elevation = 6.dp * progress, shape = CircleShape, clip = false)
-                    .background(colors.primaryContainer.copy(alpha = progress), CircleShape)
-                    .border(1.dp, colors.outline.copy(alpha = 0.45f * progress), CircleShape)
-                    .clip(CircleShape)
-                    .then(
-                        if (visible) Modifier.clickable(
-                            role = Role.Button,
-                            onClickLabel = actionLabel,
-                            onClick = onClick
-                        ) else Modifier
-                    ),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    Icons.Default.Add,
-                    contentDescription = actionLabel,
-                    tint = colors.onPrimaryContainer.copy(alpha = progress)
-                )
-            }
+    val shadowColor = colors.shadow
+    // The shadow is painted in Compose itself, not in a native elevation layer.
+    // Its radial gradient stays wholly inside the outer 76dp draw area.
+    Box(
+        modifier = modifier
+            .size(76.dp)
+            .drawBehind {
+                if (progress > 0f) {
+                    val radius = size.minDimension / 2f - 2.dp.toPx()
+                    val center = Offset(
+                        x = size.width / 2f,
+                        y = size.height / 2f + 1.dp.toPx()
+                    )
+                    drawCircle(
+                        brush = Brush.radialGradient(
+                            0f to shadowColor.copy(alpha = 0.14f * progress),
+                            0.70f to shadowColor.copy(alpha = 0.14f * progress),
+                            0.80f to shadowColor.copy(alpha = 0.09f * progress),
+                            1f to shadowColor.copy(alpha = 0f),
+                            center = center,
+                            radius = radius
+                        ),
+                        radius = radius,
+                        center = center
+                    )
+                }
+            },
+        contentAlignment = Alignment.Center
+    ) {
+        // 56dp hit target, a stable clipped circle. The accessibility and
+        // click target disappear immediately when scrolling starts.
+        Box(
+            modifier = Modifier.size(56.dp)
+                .background(colors.primaryContainer.copy(alpha = progress), CircleShape)
+                .border(1.dp, colors.outline.copy(alpha = 0.45f * progress), CircleShape)
+                .clip(CircleShape)
+                .then(
+                    if (visible) Modifier.clickable(
+                        role = Role.Button,
+                        onClickLabel = actionLabel,
+                        onClick = onClick
+                    ) else Modifier
+                ),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                Icons.Default.Add,
+                contentDescription = actionLabel,
+                tint = colors.onPrimaryContainer.copy(alpha = progress)
+            )
         }
     }
 }
