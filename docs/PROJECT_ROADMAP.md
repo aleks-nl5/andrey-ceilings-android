@@ -8,17 +8,18 @@
 - Початкова CMP-поверхня Predictive Back і Android gesture bridge впроваджені, але **не** підтверджені візуальним Android 14+/15+ smoke; завершення справжнього preview після міграції CMP екранів — [#56](https://github.com/aleks-nl5/andrey-ceilings-android/issues/56).
 - На фінальному SHA PR #55 зелені Android APK/JVM/SQLCipher instrumentation і Windows/iOS KMP CI; iOS framework/simulator tests не рівнозначні runnable iOS застосунку.
 
-## Поточна робота: CMP «Об'єкти та клієнти» — issue #58
+## Поточна робота: завершення CMP «Об'єкти та клієнти» — issue #58 / PR #59 (02.11.2026)
 
-- Від `main` після PR #55 відкрита гілка `feature/cmp-objects-clients` і [Draft PR #59](https://github.com/aleks-nl5/andrey-ceilings-android/pull/59). Детальний план — [docs/CMP_OBJECTS_STAGE.md](CMP_OBJECTS_STAGE.md), issue [#58](https://github.com/aleks-nl5/andrey-ceilings-android/issues/58).
-- **Спершу погодити побажані власником зміни дизайну і бізнес-сценаріїв**, потім фіналізувати CMP UI; не переносити старий Android екран механічно й не робити незатверджені нові функції.
-- Перенести справжні списки/погоджені дії клієнтів та об'єктів до `shared/commonMain` на базі **існуючих** `ClientRepository`, `ProjectRepository`, SQLDelight Flow. Android стає тонким адаптером, Windows використовує real encrypted store, iOS спільні тести/компіляція до запускного host за #42.
-- Типізовані ID вкладених маршрутів додавати **лише для реально затверджених і реалізованих екранів** через [#57](https://github.com/aleks-nl5/andrey-ceilings-android/issues/57); safe restore після unlock. Повний live Predictive Back — окремий [#56](https://github.com/aleks-nl5/andrey-ceilings-android/issues/56).
-- Приймання: common/JVM і Android/Windows/iOS CI, Android APK + ручне тестування, Windows GUI за доступності; ніяких mock-екранів, автоматичного merge чи заяв про production-ready iOS. SQLCipher/WAL, backup/restore, immutable revisions, PDF та калькулятор не змінювати.
+- [Draft PR #59](https://github.com/aleks-nl5/andrey-ceilings-android/pull/59), гілка `feature/cmp-objects-clients`: спільний CMP екран та KMP CRUD **реалізовані** на справжніх SQLDelight/SQLCipher Flow. Android — тонкий host; Windows використовує реальну зашифровану БД; iOS — спільна компіляція/тести (runnable host за #42). Детальна історія — [docs/CMP_OBJECTS_STAGE.md](CMP_OBJECTS_STAGE.md), [#58](https://github.com/aleks-nl5/andrey-ceilings-android/issues/58).
+- Затверджені UX-функції: роздільні «Об'єкти» / «Клієнти», спільний локальний пошук і підказки, статус робіт та незалежний статус оплати (адитивна SQLDelight міграція `3.sqm`), компактні картки, діалоги, безпечні свайпи, зовнішні дії, кругла FAB без артефактів тіні.
+- **Останні уточнення:** кожне перемикання вкладок відкриває список зверху, стан прокрутки іншої вкладки не використовується; «Клієнти» мають український алфавітний індекс із тапом/проведенням, коректне сортування і KMP-тести. Додано запобіжник видаленню об'єкта з активними замірами, щоби не залишати прихованих «сиріт».
+- Власник підтвердив відмінну поведінку FAB на Android у світлій темі після CMP-градієнтної тіні; **фінальний APK smoke потрібен на останньому SHA**, включно з перемиканням вкладок, алфавітним покажчиком, видаленням і двома темами.
+- **Перед merge:** зелені Android та Windows/iOS CI на фінальному HEAD, новий APK smoke, ручне рішення власника. Windows GUI — за доступності; runnable iOS host окремо #42. Не змінювати SQLCipher WAL, ключі, backup/restore, immutable revisions, PDF та калькулятор.
+- Типізовані вкладені маршрути відкласти до реального CMP-екрана деталей [#57](https://github.com/aleks-nl5/andrey-ceilings-android/issues/57) / [#60](https://github.com/aleks-nl5/andrey-ceilings-android/issues/60). Повний live Predictive Back — [#56](https://github.com/aleks-nl5/andrey-ceilings-android/issues/56).
 
 ## Після об'єктів
 
-1. CMP «Заміри» та креслення — спільна геометрія, навігація #57.
+1. **CMP сторінка об'єкта зі списком прив'язаних замірів 1:N** — [#60](https://github.com/aleks-nl5/andrey-ceilings-android/issues/60), типізований Back/маршрути — #57; далі міграція спільного редактора форм/креслень замірів.
 2. Реальні робочі події з SQLDelight і CMP календарем — [#49](https://github.com/aleks-nl5/andrey-ceilings-android/issues/49).
 3. CMP калькулятор/кошториси та актуальна ціна прайсу для **нових** кошторисів — [#44](https://github.com/aleks-nl5/andrey-ceilings-android/issues/44), не змінюючи історичні ревізії.
 4. Паралельно розвивати Windows та runnable iOS host — [#42](https://github.com/aleks-nl5/andrey-ceilings-android/issues/42). Lifecycle SQLCipher аудит [#54](https://github.com/aleks-nl5/andrey-ceilings-android/issues/54) лише за наявності реальної потреби, не повторна міграція.
