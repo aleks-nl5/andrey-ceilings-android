@@ -552,12 +552,7 @@ private fun WorkStatusMark(status: String) {
     val symbol = when (status) {
         "measurement" -> Icons.Default.Straighten
         "calculation" -> Icons.Default.Calculate
-        "approved" -> Icons.Default.CheckCircle
-        "in_progress" -> Icons.Default.BuildCircle
-        "paused" -> Icons.Default.PauseCircle
-        "rework" -> Icons.Default.Build
         "completed" -> Icons.Default.TaskAlt
-        "cancelled" -> Icons.Default.HighlightOff
         else -> Icons.Default.HelpOutline
     }
     val color = when (status) {
