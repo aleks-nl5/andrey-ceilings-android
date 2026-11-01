@@ -63,6 +63,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.andreyceilings.shared.navigation.AppHeader
+import com.andreyceilings.shared.navigation.AppNavigationState
+import com.andreyceilings.shared.navigation.AppQuickCreate
+import com.andreyceilings.shared.navigation.AppRoute
+import androidx.compose.runtime.saveable.Saver
+import androidx.compose.runtime.saveable.rememberSaveable
 import com.andreyceilings.app.ui.theme.CeilingsTheme
 import com.andreyceilings.app.ui.theme.ThemeMode
 import com.andreyceilings.app.ui.theme.ThemeModeSelector
@@ -88,17 +93,21 @@ private tailrec fun Context.findActivity(): Activity? = when (this) {
     else -> null
 }
 
-internal enum class AppTab(val title: String) {
-    DASHBOARD("Панель"), OBJECTS("Об’єкти"), MEASUREMENTS("Заміри"),
-    CALCULATOR("Калькулятор"), ESTIMATES("Кошториси"), PRICES("Прайс"), SETTINGS("Налаштування"), CALENDAR("Календар")
-}
+// Android UI remains a thin adapter over the single commonMain route enum.
+internal typealias AppTab = AppRoute
+
+private val navigationStateSaver = Saver<AppNavigationState, ArrayList<String>>(
+    save = { ArrayList(it.snapshot()) },
+    restore = { AppNavigationState.restore(it) }
+)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, onDatabaseReplaced: (CeilingsDatabase) -> Unit, themeMode: ThemeMode, onThemeModeChange: (ThemeMode) -> Unit) {
-    var tab by remember { mutableStateOf(AppTab.DASHBOARD) }
-    // One-shot request consumed by the already implemented create dialogs in the destination tab.
-    var pendingQuickCreate by remember { mutableStateOf<AppTab?>(null) }
+    var navigation by rememberSaveable(stateSaver = navigationStateSaver) {
+        mutableStateOf(AppNavigationState())
+    }
+    val tab = navigation.current
     var tabChangedAt by remember { mutableLongStateOf(SystemClock.elapsedRealtime()) }
     var lastBackPressTime by remember { mutableStateOf(0L) }
     val context = LocalContext.current
@@ -144,10 +153,21 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
     }
 
     fun navigateTo(target: AppTab) {
-        if (tab != target) {
-            tabChangedAt = SystemClock.elapsedRealtime()
-            tab = target
-        }
+        val next = navigation.selectTab(target)
+        if (next.current != tab) tabChangedAt = SystemClock.elapsedRealtime()
+        navigation = next
+    }
+
+    fun openNested(target: AppTab) {
+        val next = navigation.navigate(target)
+        if (next.current != tab) tabChangedAt = SystemClock.elapsedRealtime()
+        navigation = next
+    }
+
+    fun startQuickCreate(action: AppQuickCreate) {
+        val next = navigation.requestQuickCreate(action)
+        if (next.current != tab) tabChangedAt = SystemClock.elapsedRealtime()
+        navigation = next
     }
 
     LaunchedEffect(tab) {
@@ -257,7 +277,9 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
 
     BackHandler {
         if (tab != AppTab.DASHBOARD) {
-            navigateTo(AppTab.DASHBOARD)
+            val next = navigation.back()
+            if (next.current != tab) tabChangedAt = SystemClock.elapsedRealtime()
+            navigation = next
             lastBackPressTime = 0L
         } else {
             val now = SystemClock.elapsedRealtime()
@@ -438,8 +460,8 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
                     when (tab) {
                         AppTab.OBJECTS -> ObjectsScreen(
                             database = database,
-                            openCreateProject = pendingQuickCreate == AppTab.OBJECTS,
-                            onCreateProjectConsumed = { pendingQuickCreate = null }
+                            openCreateProject = navigation.pendingQuickCreate == AppQuickCreate.OBJECT,
+                            onCreateProjectConsumed = { navigation = navigation.consumeQuickCreate(AppQuickCreate.OBJECT) }
                         )
                         AppTab.MEASUREMENTS -> MeasurementsScreen(
                             database = database,
@@ -490,11 +512,10 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
                                 }
                                 navigateTo(AppTab.CALCULATOR)
                             },
-                            openCreateMeasurement = pendingQuickCreate == AppTab.MEASUREMENTS,
-                            onCreateMeasurementConsumed = { pendingQuickCreate = null },
+                            openCreateMeasurement = navigation.pendingQuickCreate == AppQuickCreate.MEASUREMENT,
+                            onCreateMeasurementConsumed = { navigation = navigation.consumeQuickCreate(AppQuickCreate.MEASUREMENT) },
                             onMissingProject = {
-                                pendingQuickCreate = AppTab.OBJECTS
-                                navigateTo(AppTab.OBJECTS)
+                                startQuickCreate(AppQuickCreate.OBJECT)
                                 Toast.makeText(context, "Спочатку створіть об’єкт для заміру", Toast.LENGTH_LONG).show()
                             }
                         )
@@ -580,7 +601,7 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
                         )
                         AppTab.SETTINGS -> SettingsScreen(
                             databaseStatus, database, onDatabaseReplaced, themeMode, onThemeModeChange,
-                            onOpenPriceList = { navigateTo(AppTab.PRICES) },
+                            onOpenPriceList = { openNested(AppTab.PRICES) },
                             measurementPrecision = measurementPrecision,
                             onMeasurementPrecision = { selected ->
                                 measurementPrecision = selected
@@ -601,7 +622,7 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
             statusBarHeight = statusBarInset,
             windowInsets = WindowInsets.statusBars,
             scrollBehavior = topAppBarScrollBehavior,
-            onSettings = { navigateTo(AppTab.SETTINGS) },
+            onSettings = { openNested(AppTab.SETTINGS) },
             extraActions = {
                 ThemeModeSelector(mode = themeMode, onModeChange = onThemeModeChange, compact = true)
             },
@@ -627,8 +648,11 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
                 if (database == null) {
                     Toast.makeText(context, "Захищена база зараз недоступна", Toast.LENGTH_SHORT).show()
                 } else {
-                    pendingQuickCreate = target
-                    navigateTo(target)
+                    when (target) {
+                        AppTab.OBJECTS -> startQuickCreate(AppQuickCreate.OBJECT)
+                        AppTab.MEASUREMENTS -> startQuickCreate(AppQuickCreate.MEASUREMENT)
+                        else -> navigateTo(target)
+                    }
                 }
             },
             modifier = Modifier.align(Alignment.BottomCenter)

@@ -1,3 +1,13 @@
+# Актуальна дорожня карта — після об'єднання PR #52 (01.11.2026)
+
+## Поточний етап: KMP/CMP спільна навігація — issue #48
+
+- Окремий PR із гілки `feature/kmp-shared-navigation` від main після PR #52: типізовані маршрути, back stack та одноразові quick-create дії в shared/commonMain.
+- Android і Windows використовують єдиний контракт. Windows має лише реальні Панель/Прайс; Android root-tab Back повертає на Панель, а вкладені маршрути мають історію.
+- Compose rememberSaveable Android зберігає лише публічні ID маршрутів, без ключів, приватних даних або повторного запуску quick-create після відновлення стану.
+- Продовження: Windows Escape/keyboard, покриття Android Back/predictive back, перевірки обох тем, ротації та quick-create; runnable iOS host залишається окремою задачею #42.
+- Приймання: commonTest, Android/Windows/iOS CI, Android APK smoke та ручне схвалення власника. SQLCipher WAL, backup/restore, immutable кошториси й PDF не змінювати.
+
 # Актуальна дорожня карта — після об'єднання PR #29 (31.10.2026)
 
 ## Наступний крок після PR #47 — CMP курси валют (issue #51, 31.10.2026)

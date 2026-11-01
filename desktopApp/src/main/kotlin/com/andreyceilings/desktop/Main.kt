@@ -50,6 +50,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
 import com.andreyceilings.shared.navigation.AppDestination
+import com.andreyceilings.shared.navigation.AppRoute
+import com.andreyceilings.shared.navigation.AppNavigationState
 import com.andreyceilings.shared.navigation.AppFloatingNavigation
 import com.andreyceilings.shared.navigation.AppHeader
 import com.andreyceilings.shared.navigation.AppHeaderHeight
@@ -65,8 +67,6 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-
-private enum class DesktopTab { HOME, PRICES }
 
 fun main() = application {
     Window(onCloseRequest = ::exitApplication, title = "СтеляПро") {
@@ -122,13 +122,15 @@ private fun DesktopPriceHost() {
                 currencyStore.tick()
             }
         }
-        var selectedTab by remember(database) { mutableStateOf(DesktopTab.HOME) }
+        var navigation by remember(database) { mutableStateOf(AppNavigationState()) }
+        val selectedTab = navigation.current
+        val availableRoutes = remember { setOf(AppRoute.DASHBOARD, AppRoute.PRICES) }
         // Same commonMain navigation chrome as Android. Windows exposes only
         // the destinations implemented by its present encrypted desktop host.
         val navItems = remember {
             listOf(
-                AppDestination("HOME", "Панель", "Панель", Icons.Default.Dashboard),
-                AppDestination("PRICES", "Прайс", "Прайс", Icons.Default.ReceiptLong)
+                AppDestination(AppRoute.DASHBOARD.name, "Панель", "Панель", Icons.Default.Dashboard),
+                AppDestination(AppRoute.PRICES.name, "Прайс", "Прайс", Icons.Default.ReceiptLong)
             )
         }
         val topScrollBehavior = key(selectedTab) {
@@ -136,7 +138,7 @@ private fun DesktopPriceHost() {
         }
         Box(Modifier.fillMaxSize().nestedScroll(topScrollBehavior.nestedScrollConnection)) {
             when (selectedTab) {
-                DesktopTab.HOME -> {
+                AppRoute.DASHBOARD -> {
                     Column(
                         Modifier.fillMaxSize().verticalScroll(rememberScrollState())
                             .padding(
@@ -172,7 +174,7 @@ private fun DesktopPriceHost() {
                         )
                     }
                 }
-                DesktopTab.PRICES -> PriceCatalogScreen(
+                AppRoute.PRICES -> PriceCatalogScreen(
                     items = items,
                     databaseAvailable = true,
                     contentPadding = PaddingValues(
@@ -187,6 +189,7 @@ private fun DesktopPriceHost() {
                         withContext(Dispatchers.IO) { store.delete(item) }
                     }
                 )
+                else -> Unit // Only actually implemented desktop routes are exposed.
             }
             AppHeader(
                 collapsedFraction = topScrollBehavior.state.collapsedFraction,
@@ -200,7 +203,11 @@ private fun DesktopPriceHost() {
                 selectedId = selectedTab.name,
                 destinations = navItems,
                 darkTheme = isSystemInDarkTheme(),
-                onSelect = { selectedTab = DesktopTab.valueOf(it) },
+                onSelect = { id ->
+                    AppRoute.fromId(id)?.let { route ->
+                        navigation = navigation.selectTab(route, availableRoutes)
+                    }
+                },
                 onQuickCreate = {},
                 modifier = Modifier.align(Alignment.BottomCenter).widthIn(max = 520.dp)
             )
