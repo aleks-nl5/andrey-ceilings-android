@@ -220,6 +220,7 @@ private fun DesktopPriceHost(
                 }
                 AppRoute.OBJECTS -> ObjectsClientsScreen(
                     rows = objectRows,
+                    headerVisibleFraction = 1f - topScrollBehavior.state.collapsedFraction,
                     databaseAvailable = true,
                     contentPadding = PaddingValues(
                         start = 24.dp, end = 24.dp,
