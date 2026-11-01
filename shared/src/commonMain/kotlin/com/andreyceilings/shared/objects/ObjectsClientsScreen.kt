@@ -15,6 +15,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.draggable
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -96,7 +97,10 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.Dp
+import com.andreyceilings.shared.domain.ClientAlphabetIndex
+import com.andreyceilings.shared.domain.ClientLetterJump
 import com.andreyceilings.shared.domain.ClientListEntry
 import com.andreyceilings.shared.domain.GlobalSearchResults
 import com.andreyceilings.shared.domain.ObjectsClientsSearch
@@ -183,6 +187,10 @@ fun ObjectsClientsScreen(
     val clients = remember(rows.clients, search) {
         ObjectsClientsSearch.clients(rows.clients, search)
     }
+    val clientLetters = remember(clients) { ClientAlphabetIndex.markers(clients) }
+    // Do not overlap the global search suggestions with a redundant letter rail.
+    val showClientLetters = databaseAvailable && selectedTab == ObjectsClientsTab.CLIENTS &&
+        search.isBlank() && clientLetters.isNotEmpty() && !searchFocused
 
     // Keep the on-scroll focus action fresh inside the remembered connection.
     val dismissSearchOnScroll = rememberUpdatedState(newValue = { dismissSearchFocus() })
@@ -305,6 +313,7 @@ fun ObjectsClientsScreen(
             val suggestionsMaxHeight = maxHeight.coerceAtMost(320.dp)
             LazyColumn(
                 modifier = Modifier
+                    .padding(end = if (showClientLetters) 16.dp else 0.dp)
                     .nestedScroll(fabGestureConnection)
                     .pointerInput(Unit) {
                         // A tap on unused list space dismisses the keyboard;
@@ -395,6 +404,30 @@ fun ObjectsClientsScreen(
                 if (message != null) item(key = "message") {
                     Text(message.orEmpty(), color = MaterialTheme.colorScheme.error)
                 }
+            }
+        }
+        // A phonebook rail exists only for the clients tab. Labels correspond
+        // to real first-letter groups in the *rendered* alphabetically sorted
+        // list. Leave the lower corner clear for the animated create FAB.
+        if (showClientLetters) {
+            BoxWithConstraints(
+                modifier = Modifier.align(Alignment.CenterEnd)
+                    .fillMaxHeight()
+                    .padding(top = 8.dp, bottom = 226.dp)
+                    .width(24.dp)
+                    .zIndex(1f)
+            ) {
+                val letterHeight = (maxHeight / clientLetters.size).coerceAtMost(18.dp)
+                ClientsAlphabetRail(
+                    markers = clientLetters,
+                    letterHeight = letterHeight,
+                    modifier = Modifier.align(Alignment.Center),
+                    onSelect = { marker ->
+                        dismissSearchFocus()
+                        openSwipe = null
+                        scope.launch { listState.scrollToItem(marker.listIndex) }
+                    }
+                )
             }
         }
         // Results overlay is attached to the *pinned* search bar, not to the
@@ -629,6 +662,68 @@ private fun ObjectsClientsCreateFab(
                 contentDescription = actionLabel,
                 tint = colors.onPrimaryContainer.copy(alpha = progress)
             )
+        }
+    }
+}
+
+/**
+ * Tappable and draggable alphabet strip, similar to a contacts app.
+ * Touch and drag only in the narrow strip; client cards retain their existing
+ * horizontal swipe actions, and the list itself retains vertical scroll.
+ */
+@Composable
+private fun ClientsAlphabetRail(
+    markers: List<ClientLetterJump>,
+    letterHeight: Dp,
+    modifier: Modifier = Modifier,
+    onSelect: (ClientLetterJump) -> Unit
+) {
+    if (markers.isEmpty() || letterHeight <= 0.dp) return
+    val currentSelect by rememberUpdatedState(onSelect)
+    val slotHeightPx = with(LocalDensity.current) { letterHeight.toPx() }
+    Column(
+        modifier = modifier
+            .width(24.dp)
+            .pointerInput(markers, slotHeightPx) {
+                var previousIndex = -1
+                fun selectAt(y: Float) {
+                    val index = (y / slotHeightPx).toInt().coerceIn(0, markers.lastIndex)
+                    if (index != previousIndex) {
+                        previousIndex = index
+                        currentSelect(markers[index])
+                    }
+                }
+                detectDragGestures(
+                    onDragStart = { selectAt(it.y) },
+                    onDrag = { change, _ ->
+                        selectAt(change.position.y)
+                        change.consume()
+                    },
+                    onDragEnd = { previousIndex = -1 },
+                    onDragCancel = { previousIndex = -1 }
+                )
+            },
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        markers.forEach { marker ->
+            Box(
+                modifier = Modifier.fillMaxWidth().height(letterHeight)
+                    .clickable(
+                        role = Role.Button,
+                        onClickLabel = "Перейти до літери ${marker.letter}",
+                        onClick = { currentSelect(marker) }
+                    ),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = marker.letter.toString(),
+                    color = MaterialTheme.colorScheme.primary,
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        fontSize = if (letterHeight < 13.dp) 9.sp else 11.sp
+                    ),
+                    maxLines = 1
+                )
+            }
         }
     }
 }
