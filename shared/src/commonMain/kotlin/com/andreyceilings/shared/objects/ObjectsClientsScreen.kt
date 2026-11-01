@@ -67,6 +67,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.unit.Velocity
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
@@ -148,22 +150,39 @@ fun ObjectsClientsScreen(
         ObjectsClientsSearch.clients(rows.clients, search)
     }
 
-    // Observe the finger's direction BEFORE the app header consumes the scroll.
-    // List-position deltas alone miss downward drags while the collapsing
-    // TopAppBar is moving (this is why FAB previously hid only on upward scroll).
+    // Hide on *either* direction of vertical movement, including before
+    // the app header finishes collapsing. Show only after scrolling stops.
     val fabGestureConnection = remember {
         object : NestedScrollConnection {
             override fun onPreScroll(
                 available: Offset,
                 source: NestedScrollSource
             ): Offset {
-                if (source == NestedScrollSource.UserInput) {
-                    when {
-                        available.y < -2f -> fabVisible = false // finger up, list down
-                        available.y > 2f -> fabVisible = true  // finger down, list up
-                    }
+                if (source == NestedScrollSource.UserInput &&
+                    kotlin.math.abs(available.y) > 0.5f) {
+                    fabVisible = false
                 }
-                return Offset.Zero // do not consume the app bar or list scrolling
+                return Offset.Zero // Do not consume list / app bar gestures.
+            }
+
+            override fun onPostScroll(
+                consumed: Offset,
+                available: Offset,
+                source: NestedScrollSource
+            ): Offset {
+                if (source == NestedScrollSource.UserInput &&
+                    kotlin.math.abs(consumed.y + available.y) > 0.5f) {
+                    fabVisible = false
+                }
+                return Offset.Zero
+            }
+
+            override suspend fun onPostFling(
+                consumed: Velocity,
+                available: Velocity
+            ): Velocity {
+                fabVisible = true
+                return Velocity.Zero
             }
         }
     }
@@ -344,29 +363,45 @@ fun ObjectsClientsScreen(
                 }
             }
         }
-        androidx.compose.animation.AnimatedVisibility(
-            visible = databaseAvailable && !busy && fabVisible && editor == null,
-            enter = fadeIn() + scaleIn(),
-            exit = fadeOut() + scaleOut(),
+        val showFab = databaseAvailable && !busy && fabVisible && editor == null
+        // Always keep the FAB's layout space. Animating AnimatedVisibility's
+        // size clipped the floating button against a straight parent boundary.
+        // graphicsLayer changes only paint alpha / scale / vertical translation.
+        val fabFraction by androidx.compose.animation.core.animateFloatAsState(
+            targetValue = if (showFab) 1f else 0f,
+            animationSpec = tween(durationMillis = 190),
+            label = "FAB opacity"
+        )
+        Box(
             modifier = Modifier.align(Alignment.BottomEnd)
                 .padding(end = 16.dp, bottom = 152.dp)
-        ) {
-            FloatingActionButton(
-                shape = CircleShape,
-                modifier = Modifier.border(
-                    1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.45f), CircleShape
-                ),
-                containerColor = MaterialTheme.colorScheme.primaryContainer,
-                onClick = {
-                    message = null
-                    openSwipe = null
-                    editor = if (selectedTab == ObjectsClientsTab.PROJECTS)
-                        EditorTarget.Project(null) else EditorTarget.Client(null)
+                .graphicsLayer {
+                    alpha = fabFraction
+                    scaleX = 0.86f + 0.14f * fabFraction
+                    scaleY = 0.86f + 0.14f * fabFraction
+                    translationY = (1f - fabFraction) * 14.dp.toPx()
                 }
-            ) {
-                Icon(Icons.Default.Add,
-                    contentDescription = if (selectedTab == ObjectsClientsTab.PROJECTS)
-                        "Створити об'єкт" else "Створити клієнта")
+        ) {
+            if (fabFraction > 0.001f && databaseAvailable && editor == null) {
+                FloatingActionButton(
+                    shape = CircleShape,
+                    modifier = Modifier.border(
+                        1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.45f), CircleShape
+                    ),
+                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                    onClick = {
+                        if (showFab) {
+                            message = null
+                            openSwipe = null
+                            editor = if (selectedTab == ObjectsClientsTab.PROJECTS)
+                                EditorTarget.Project(null) else EditorTarget.Client(null)
+                        }
+                    }
+                ) {
+                    Icon(Icons.Default.Add,
+                        contentDescription = if (selectedTab == ObjectsClientsTab.PROJECTS)
+                            "Створити об'єкт" else "Створити клієнта")
+                }
             }
         }
         }
