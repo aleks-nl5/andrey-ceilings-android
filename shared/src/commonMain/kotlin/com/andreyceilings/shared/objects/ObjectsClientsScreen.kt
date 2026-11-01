@@ -79,6 +79,8 @@ import androidx.compose.ui.unit.IntOffset
 import kotlin.math.roundToInt
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -376,6 +378,11 @@ fun ObjectsClientsScreen(
             modifier = Modifier.align(Alignment.BottomEnd)
                 .padding(end = 16.dp, bottom = 152.dp)
                 .graphicsLayer {
+                    // Modulate per-draw alpha rather than offscreen-compositing
+                    // the whole 56dp FAB layer: an offscreen buffer clipped
+                    // Material3's drop shadow at its straight lower edge.
+                    compositingStrategy = CompositingStrategy.ModulateAlpha
+                    clip = false
                     alpha = fabFraction
                     scaleX = 0.86f + 0.14f * fabFraction
                     scaleY = 0.86f + 0.14f * fabFraction
@@ -614,7 +621,8 @@ private fun WorkStatusMark(status: String) {
         "rework" -> Color(0xFFBD8A43)
         "in_progress" -> MaterialTheme.colorScheme.primary
         "paused" -> Color(0xFFAB7C30)
-        "approved" -> Color(0xFF36866A)
+        "approved" -> if (MaterialTheme.colorScheme.background.luminance() > 0.5f)
+            Color(0xFF82B862) else Color(0xFFB3D78C)
         else -> MaterialTheme.colorScheme.onSurfaceVariant
     }
     if (status in setOf("in_progress", "paused", "approved", "cancelled", "rework")) {
@@ -1020,8 +1028,17 @@ private fun OverflowActions(
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false },
             containerColor = MaterialTheme.colorScheme.surface) {
             actions.forEach { (label, action) ->
-                DropdownMenuItem(text = { Text(label) },
-                    onClick = { expanded = false; onAction(action) })
+                DropdownMenuItem(
+                    text = { Text(label) },
+                    leadingIcon = {
+                        ExternalBrandArtwork(
+                            action = action,
+                            modifier = Modifier.size(22.dp),
+                            monochromeTint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    },
+                    onClick = { expanded = false; onAction(action) }
+                )
             }
             DropdownMenuItem(text = { Text("Видалити") }, leadingIcon = {
                 Icon(Icons.Default.Delete, null)
