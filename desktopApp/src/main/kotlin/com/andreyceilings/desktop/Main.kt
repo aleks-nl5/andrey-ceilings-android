@@ -43,6 +43,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -69,13 +73,32 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 fun main() = application {
-    Window(onCloseRequest = ::exitApplication, title = "СтеляПро") {
+    var navigation by remember { mutableStateOf(AppNavigationState()) }
+    val availableRoutes = remember { setOf(AppRoute.DASHBOARD, AppRoute.PRICES) }
+    Window(
+        onCloseRequest = ::exitApplication,
+        title = "СтеляПро",
+        // Bubble after editor/dialog handlers so Escape closes an active modal first.
+        onKeyEvent = { event ->
+            if (event.key == Key.Escape && event.type == KeyEventType.KeyDown) {
+                val next = navigation.back(availableRoutes)
+                if (next != navigation) {
+                    navigation = next
+                    true
+                } else false
+            } else false
+        }
+    ) {
         PriceCatalogTheme(
             darkTheme = isSystemInDarkTheme(),
             typography = remember { ceilingsTypography() }
         ) {
             Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-                DesktopPriceHost()
+                DesktopPriceHost(
+                    navigation = navigation,
+                    availableRoutes = availableRoutes,
+                    onNavigate = { navigation = it }
+                )
             }
         }
     }
@@ -88,7 +111,11 @@ fun main() = application {
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun DesktopPriceHost() {
+private fun DesktopPriceHost(
+    navigation: AppNavigationState,
+    availableRoutes: Set<AppRoute>,
+    onNavigate: (AppNavigationState) -> Unit
+) {
     val scope = rememberCoroutineScope()
     var session by remember { mutableStateOf<DesktopPriceDatabase?>(null) }
     var password by remember { mutableStateOf("") }
@@ -122,9 +149,7 @@ private fun DesktopPriceHost() {
                 currencyStore.tick()
             }
         }
-        var navigation by remember(database) { mutableStateOf(AppNavigationState()) }
         val selectedTab = navigation.current
-        val availableRoutes = remember { setOf(AppRoute.DASHBOARD, AppRoute.PRICES) }
         // Same commonMain navigation chrome as Android. Windows exposes only
         // the destinations implemented by its present encrypted desktop host.
         val navItems = remember {
@@ -205,7 +230,7 @@ private fun DesktopPriceHost() {
                 darkTheme = isSystemInDarkTheme(),
                 onSelect = { id ->
                     AppRoute.fromId(id)?.let { route ->
-                        navigation = navigation.selectTab(route, availableRoutes)
+                        onNavigate(navigation.selectTab(route, availableRoutes))
                     }
                 },
                 onQuickCreate = {},
