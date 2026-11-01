@@ -1,5 +1,19 @@
 package com.andreyceilings.app.ui.screens
 
+import android.content.Intent
+import android.net.Uri
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.platform.LocalContext
+import com.andreyceilings.shared.dashboard.CurrencyRatesStore
+import com.andreyceilings.shared.dashboard.MonobankCurrencyGateway
+import com.andreyceilings.shared.dashboard.dashboardClockMillis
+import com.andreyceilings.shared.dashboard.dashboardTodayLabel
+import com.andreyceilings.shared.dashboard.currencyLocalDateTimeLabel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -17,9 +31,6 @@ import com.andreyceilings.shared.dashboard.DashboardScreen as SharedDashboardScr
 import com.andreyceilings.shared.dashboard.DashboardStore
 import com.andreyceilings.shared.dashboard.DashboardSummary
 import kotlinx.coroutines.flow.flowOf
-import java.time.LocalDate
-import java.time.format.DateTimeFormatter
-import java.util.Locale
 
 /** Android-only compatibility helper still used by Calculator/Settings. */
 @Composable
@@ -45,6 +56,21 @@ internal fun DashboardScreen(
     val store = remember(database) { database?.let { DashboardStore(it.database) } }
     val summaryFlow = remember(store) { store?.summary ?: flowOf<DashboardSummary?>(null) }
     val summary by summaryFlow.collectAsState(initial = null)
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val gateway = remember(context) { MonobankCurrencyGateway(AndroidCurrencyRatesCache(context)) }
+    DisposableEffect(gateway) { onDispose { gateway.close() } }
+    val currencyStore = remember(gateway) {
+        CurrencyRatesStore(gateway, ::dashboardClockMillis)
+    }
+    val currencyState by currencyStore.state.collectAsState()
+    LaunchedEffect(currencyStore) { currencyStore.start() }
+    LaunchedEffect(currencyStore) {
+        while (true) {
+            delay(30_000L)
+            currencyStore.tick()
+        }
+    }
 
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         SharedDashboardScreen(
@@ -55,15 +81,21 @@ internal fun DashboardScreen(
             onObjects = onObjects,
             onEstimates = onEstimates,
             onCalendar = onCalendar,
-            todayLabel = LocalDate.now().format(
-                DateTimeFormatter.ofPattern("d MMMM yyyy", Locale.forLanguageTag("uk"))
-            ),
-            nowMillis = System.currentTimeMillis()
+            todayLabel = dashboardTodayLabel(currencyState.nowMillis),
+            nowMillis = currencyState.nowMillis,
+            currencyRates = currencyState,
+            onCurrencyRefresh = { scope.launch { currencyStore.refresh() } },
+            onCurrencyMessageDismiss = currencyStore::dismissMessage,
+            onMonobank = {
+                runCatching {
+                    context.startActivity(
+                        Intent(Intent.ACTION_VIEW, Uri.parse("https://monobank.ua/"))
+                    )
+                }
+            },
+            formatCurrencyDate = { millis -> currencyLocalDateTimeLabel(millis) }
             // Scheduling fields do not exist in SQLDelight yet. The empty
             // state is real; creation dates must never become fake appointments.
         )
-        // Monobank's Android HTTP/SharedPreferences/Intent integration is retained intact.
-        // Shared UI + KMP cache/network adaptation is independent follow-up work.
-        CurrencyRatesCard()
     }
 }

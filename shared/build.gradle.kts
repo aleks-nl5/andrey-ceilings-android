@@ -35,6 +35,13 @@ kotlin {
             implementation(compose.ui)
             implementation("app.cash.sqldelight:runtime:2.4.1")
             implementation("app.cash.sqldelight:coroutines-extensions:2.4.1")
+            // Portable, strict JSON handling for the public monobank API/cache.
+            implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.9.0")
+            // Shared monobank HTTPS request; curated native engine on each target.
+            implementation("io.ktor:ktor-client-core:3.6.1")
+            implementation("io.ktor:ktor-client-engine-defaults:3.6.1")
+            // Shared local dates and correct device time-zone conversion.
+            implementation("org.jetbrains.kotlinx:kotlinx-datetime:0.8.0")
         }
 
         androidMain.dependencies {
@@ -51,6 +58,7 @@ kotlin {
 
         jvmTest.dependencies {
             implementation("app.cash.sqldelight:sqlite-driver:2.4.1")
+            implementation("io.ktor:ktor-client-mock:3.6.1")
         }
 
         commonTest.dependencies {
