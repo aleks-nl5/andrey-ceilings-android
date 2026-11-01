@@ -424,6 +424,9 @@ fun ObjectsClientsScreen(
             is DeletionTarget.Project -> target.item.title
         }
         AlertDialog(
+            containerColor = MaterialTheme.colorScheme.surface,
+            titleContentColor = MaterialTheme.colorScheme.onSurface,
+            textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
             onDismissRequest = { if (!busy) deleting = null },
             title = { Text("Видалити ${if (isClient) "клієнта" else "об'єкт"}?") },
             text = {
@@ -459,6 +462,84 @@ fun ObjectsClientsScreen(
         )
     }
 }
+
+@Composable
+private fun ObjectsTabButton(
+    title: String,
+    selected: Boolean,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
+) {
+    val colors = MaterialTheme.colorScheme
+    val shape = RoundedCornerShape(50)
+    Box(
+        modifier.height(38.dp)
+            .background(if (selected) colors.primaryContainer else colors.surfaceVariant, shape)
+            .border(1.dp, if (selected) colors.primary.copy(alpha = 0.55f) else
+                colors.outlineVariant, shape)
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(title, style = MaterialTheme.typography.labelLarge,
+            color = if (selected) colors.onPrimaryContainer else colors.onSurfaceVariant)
+    }
+}
+
+@Composable
+private fun CompactObjectsSearchField(
+    value: String,
+    onChange: (String) -> Unit,
+    onClear: () -> Unit
+) {
+    val colors = MaterialTheme.colorScheme
+    val shape = RoundedCornerShape(15.dp)
+    Row(
+        Modifier.fillMaxWidth().height(47.dp)
+            .background(colors.surface, shape)
+            .border(1.dp, colors.outline.copy(alpha = 0.7f), shape)
+            .padding(start = 12.dp, end = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(Icons.Default.Search, contentDescription = null,
+            tint = colors.onSurfaceVariant, modifier = Modifier.size(20.dp))
+        Spacer(Modifier.width(10.dp))
+        BasicTextField(
+            value = value,
+            onValueChange = onChange,
+            singleLine = true,
+            textStyle = MaterialTheme.typography.bodyMedium.copy(color = colors.onSurface),
+            cursorBrush = androidx.compose.ui.graphics.SolidColor(colors.primary),
+            modifier = Modifier.weight(1f),
+            decorationBox = { inner ->
+                Box {
+                    if (value.isEmpty()) {
+                        Text("Пошук об'єктів та клієнтів",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = colors.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis)
+                    }
+                    inner()
+                }
+            }
+        )
+        if (value.isNotEmpty()) {
+            IconButton(onClick = onClear, modifier = Modifier.size(36.dp)) {
+                Icon(Icons.Default.Close, contentDescription = "Очистити пошук",
+                    tint = colors.onSurfaceVariant, modifier = Modifier.size(20.dp))
+            }
+        }
+    }
+}
+
+@Composable
+private fun compactFilterColors() = androidx.compose.material3.FilterChipDefaults.filterChipColors(
+    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.32f),
+    labelColor = MaterialTheme.colorScheme.onSurfaceVariant,
+    selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+    selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
+    selectedLeadingIconColor = MaterialTheme.colorScheme.primary
+)
 
 @Composable
 private fun ProjectCard(
@@ -644,7 +725,8 @@ private fun OverflowActions(
         IconButton(onClick = { expanded = true }) {
             Icon(Icons.Default.MoreVert, contentDescription = "Дії із записом")
         }
-        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false },
+            containerColor = MaterialTheme.colorScheme.surface) {
             actions.forEach { (label, action) ->
                 DropdownMenuItem(text = { Text(label) },
                     onClick = { expanded = false; onAction(action) })
@@ -669,6 +751,9 @@ private fun ClientEditor(
     var email by remember(initial?.id) { mutableStateOf(initial?.email.orEmpty()) }
     var notes by remember(initial?.id) { mutableStateOf(initial?.notes.orEmpty()) }
     AlertDialog(onDismissRequest = onDismiss,
+        containerColor = MaterialTheme.colorScheme.surface,
+        titleContentColor = MaterialTheme.colorScheme.onSurface,
+        textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
         title = { Text(if (initial == null) "Новий клієнт" else "Редагувати клієнта") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -716,6 +801,9 @@ private fun ProjectEditor(
     var showWorkMenu by remember { mutableStateOf(false) }
     var showPaymentMenu by remember { mutableStateOf(false) }
     AlertDialog(onDismissRequest = onDismiss,
+        containerColor = MaterialTheme.colorScheme.surface,
+        titleContentColor = MaterialTheme.colorScheme.onSurface,
+        textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
         title = { Text(if (initial == null) "Новий об'єкт" else "Редагувати об'єкт") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -728,7 +816,8 @@ private fun ProjectEditor(
                         Text("Клієнт: " + (clients.firstOrNull { it.id == clientId }?.name ?: "Не вказаний"))
                     }
                     DropdownMenu(expanded = showClientMenu,
-                        onDismissRequest = { showClientMenu = false }) {
+                        onDismissRequest = { showClientMenu = false },
+                        containerColor = MaterialTheme.colorScheme.surface) {
                         DropdownMenuItem(text = { Text("Без клієнта") },
                             onClick = { clientId = null; showClientMenu = false })
                         clients.forEach { client ->
@@ -743,7 +832,8 @@ private fun ProjectEditor(
                             ProjectStatusRules.workLabel(work))
                     }
                     DropdownMenu(expanded = showWorkMenu,
-                        onDismissRequest = { showWorkMenu = false }) {
+                        onDismissRequest = { showWorkMenu = false },
+                        containerColor = MaterialTheme.colorScheme.surface) {
                         ProjectWorkStage.entries.forEach { stage ->
                             DropdownMenuItem(text = { Text(stage.label) },
                                 onClick = { work = stage.wireId; showWorkMenu = false })
@@ -755,7 +845,8 @@ private fun ProjectEditor(
                         Text("Оплата: " + ProjectStatusRules.paymentLabel(payment))
                     }
                     DropdownMenu(expanded = showPaymentMenu,
-                        onDismissRequest = { showPaymentMenu = false }) {
+                        onDismissRequest = { showPaymentMenu = false },
+                        containerColor = MaterialTheme.colorScheme.surface) {
                         ProjectPaymentStatus.entries.forEach { status ->
                             DropdownMenuItem(text = { Text(status.label) },
                                 onClick = { payment = status.wireId; showPaymentMenu = false })
