@@ -9,13 +9,13 @@ import kotlin.test.assertNotNull
 
 class ProjectPaymentMigrationTest {
     private fun status(driver: JdbcSqliteDriver, id: Long): Pair<String?, String?> =
-        driver.executeQuery(null, "SELECT status, paymentStatus FROM projects WHERE id = ?",
+        driver.executeQuery(null, "SELECT status, paymentStatus FROM projects WHERE id = $id",
             { cursor ->
                 QueryResult.Value(
                     if (cursor.next().value) cursor.getString(0) to cursor.getString(1)
                     else null to null
                 )
-            }, 1, binders = { bindLong(0, id) }).value
+            }, 0).value
 
     @Test
     fun existingPaymentWasUnknownUnlessLegacyStatusSaidPaid() {
