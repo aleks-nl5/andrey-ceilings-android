@@ -276,7 +276,7 @@ fun ObjectsClientsScreen(
                                             openSwipe = null
                                             editor = EditorTarget.Project(row)
                                         }, modifier = Modifier.fillMaxWidth()) {
-                                            Text(row.title + " · " + row.address,
+                                            Text(displayProjectAddress(row),
                                                 maxLines = 1, overflow = TextOverflow.Ellipsis)
                                         }
                                     }
@@ -681,6 +681,12 @@ private fun ClientExperienceMark(count: Int) {
         tint = MaterialTheme.colorScheme.primary)
 }
 
+/** Display only the address. Historical objects without an address fall back
+ * to their old title until their address is provided in the editor.
+ */
+private fun displayProjectAddress(item: ProjectListEntry): String =
+    item.address.ifBlank { item.title.ifBlank { "Адреса не вказана" } }
+
 @Composable
 private fun ProjectCard(
     item: ProjectListEntry,
@@ -723,7 +729,7 @@ private fun ProjectCard(
                     WorkStatusMark(item.workStatus)
                     Spacer(Modifier.width(5.dp))
                     Text(
-                        item.title,
+                        displayProjectAddress(item),
                         modifier = Modifier.weight(1f),
                         fontWeight = FontWeight.SemiBold,
                         maxLines = 1,
@@ -741,14 +747,7 @@ private fun ProjectCard(
                 }
                 // Unlike the title row, these two lines use the card's left
                 // padding without an icon-sized indent.
-                if (item.address.isNotBlank()) {
-                    Text(
-                        item.address,
-                        style = MaterialTheme.typography.bodySmall,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
+                // Address is the card title. Do not duplicate it below.
                 if (item.clientName.isNotBlank()) {
                     Text(
                         item.clientName,
@@ -1078,7 +1077,6 @@ private fun ProjectEditor(
     onDismiss: () -> Unit,
     onSave: (ProjectDraft) -> Unit
 ) {
-    var title by remember(initial?.id) { mutableStateOf(initial?.title.orEmpty()) }
     var address by remember(initial?.id) { mutableStateOf(initial?.address.orEmpty()) }
     var notes by remember(initial?.id) { mutableStateOf(initial?.notes.orEmpty()) }
     // Legacy 'paid' was only a billing signal. Require a real work stage on edit.
@@ -1100,10 +1098,8 @@ private fun ProjectEditor(
         title = { Text(if (initial == null) "Новий об'єкт" else "Редагувати об'єкт") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(value = title, onValueChange = { title = it },
-                    label = { Text("Назва об'єкта *") }, singleLine = true)
                 OutlinedTextField(value = address, onValueChange = { address = it },
-                    label = { Text("Адреса") })
+                    label = { Text("Адреса об'єкта *") }, singleLine = true)
                 Box {
                     TextButton(onClick = { showClientMenu = true }) {
                         Text("Клієнт: " + (clients.firstOrNull { it.id == clientId }?.name ?: "Не вказаний"))
@@ -1153,9 +1149,9 @@ private fun ProjectEditor(
         },
         confirmButton = {
             TextButton(
-                enabled = !busy && title.isNotBlank() && ProjectStatusRules.isKnownWorkStage(work),
+                enabled = !busy && address.isNotBlank() && ProjectStatusRules.isKnownWorkStage(work),
                 onClick = {
-                    onSave(ProjectDraft(title, address, clientId, work, payment, notes))
+                    onSave(ProjectDraft(address, clientId, work, payment, notes))
                 }
             ) { Text("Зберегти") }
         },
