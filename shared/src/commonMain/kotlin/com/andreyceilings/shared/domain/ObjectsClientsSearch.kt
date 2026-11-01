@@ -54,9 +54,9 @@ object ObjectsClientsSearch {
     }
 
     fun clients(source: List<ClientListEntry>, query: String): List<ClientListEntry> =
-        source.filter { row ->
+        ClientAlphabetIndex.sorted(source.filter { row ->
             matches(query, row.name, row.phone, row.email, row.notes)
-        }
+        })
 
     fun suggestions(
         projectEntries: List<ProjectListEntry>,
