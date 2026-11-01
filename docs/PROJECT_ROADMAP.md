@@ -10,7 +10,7 @@
 
 ## Поточна робота: CMP «Об'єкти та клієнти» — issue #58
 
-- Від `main` після PR #55 відкрита гілка `feature/cmp-objects-clients`. Детальний план — [docs/CMP_OBJECTS_STAGE.md](CMP_OBJECTS_STAGE.md), issue [#58](https://github.com/aleks-nl5/andrey-ceilings-android/issues/58).
+- Від `main` після PR #55 відкрита гілка `feature/cmp-objects-clients` і [Draft PR #59](https://github.com/aleks-nl5/andrey-ceilings-android/pull/59). Детальний план — [docs/CMP_OBJECTS_STAGE.md](CMP_OBJECTS_STAGE.md), issue [#58](https://github.com/aleks-nl5/andrey-ceilings-android/issues/58).
 - **Спершу погодити побажані власником зміни дизайну і бізнес-сценаріїв**, потім фіналізувати CMP UI; не переносити старий Android екран механічно й не робити незатверджені нові функції.
 - Перенести справжні списки/погоджені дії клієнтів та об'єктів до `shared/commonMain` на базі **існуючих** `ClientRepository`, `ProjectRepository`, SQLDelight Flow. Android стає тонким адаптером, Windows використовує real encrypted store, iOS спільні тести/компіляція до запускного host за #42.
 - Типізовані ID вкладених маршрутів додавати **лише для реально затверджених і реалізованих екранів** через [#57](https://github.com/aleks-nl5/andrey-ceilings-android/issues/57); safe restore після unlock. Повний live Predictive Back — окремий [#56](https://github.com/aleks-nl5/andrey-ceilings-android/issues/56).
