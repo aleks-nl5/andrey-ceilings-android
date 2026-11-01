@@ -29,6 +29,11 @@ class ObjectsClientsStoreTest {
             assertEquals("in_progress", original.status)
             assertEquals("paid", original.paymentStatus)
             assertEquals(client, original.clientId)
+            // A paused project can stay fully paid; independent statuses never overwrite each other.
+            store.saveProject(project, ProjectDraft("Квартира", "Київ", client,
+                "paused", "paid", "Затримка постачання"))
+            assertEquals("paused", projects.find(project)?.status)
+            assertEquals("paid", projects.find(project)?.paymentStatus)
             val same = store.saveProject(project, ProjectDraft("Квартира 2", "Київ", client,
                 "rework", "partial", "Підпис"))
             assertEquals(project, same)
