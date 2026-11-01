@@ -278,31 +278,27 @@ fun ObjectsClientsScreen(
                 }
                 if (selectedTab == ObjectsClientsTab.PROJECTS) {
                     item(key = "filters") {
-                        Column(verticalArrangement = Arrangement.spacedBy(0.dp)) {
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                             LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                 item {
-                                    FilterChip(modifier = Modifier.height(34.dp), selected = selectedWork == null,
-                                        onClick = { selectedWork = null; openSwipe = null },
-                                        label = { Text("Усі", style = MaterialTheme.typography.labelMedium) },
-                                        colors = compactFilterColors())
+                                    CompactObjectsChip("Усі", selectedWork == null) {
+                                        selectedWork = null
+                                        openSwipe = null
+                                    }
                                 }
                                 items(ProjectWorkStage.entries, key = { it.wireId }) { stage ->
-                                    FilterChip(modifier = Modifier.height(34.dp), selected = selectedWork == stage.wireId,
-                                        onClick = {
-                                            selectedWork = stage.wireId.takeIf { selectedWork != it }; openSwipe = null
-                                        },
-                                        label = { Text(stage.label, style = MaterialTheme.typography.labelMedium) },
-                                        colors = compactFilterColors())
+                                    CompactObjectsChip(stage.label, selectedWork == stage.wireId) {
+                                        selectedWork = stage.wireId.takeIf { selectedWork != it }
+                                        openSwipe = null
+                                    }
                                 }
                             }
                             LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                 items(ProjectPaymentStatus.entries, key = { it.wireId }) { payment ->
-                                    FilterChip(modifier = Modifier.height(34.dp), selected = selectedPayment == payment.wireId,
-                                        onClick = {
-                                            selectedPayment = payment.wireId
-                                                .takeIf { selectedPayment != it }; openSwipe = null
-                                        }, label = { Text(payment.label, style = MaterialTheme.typography.labelMedium) },
-                                        colors = compactFilterColors())
+                                    CompactObjectsChip(payment.label, selectedPayment == payment.wireId) {
+                                        selectedPayment = payment.wireId.takeIf { selectedPayment != it }
+                                        openSwipe = null
+                                    }
                                 }
                             }
                         }
@@ -353,6 +349,7 @@ fun ObjectsClientsScreen(
                 .padding(end = 16.dp, bottom = 152.dp)
         ) {
             FloatingActionButton(
+                shape = CircleShape,
                 modifier = Modifier.border(
                     1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.45f), CircleShape
                 ),
@@ -532,14 +529,35 @@ private fun CompactObjectsSearchField(
     }
 }
 
+/** Real 32dp chips, independent of Material3's 48dp minimum touch layout. */
 @Composable
-private fun compactFilterColors() = androidx.compose.material3.FilterChipDefaults.filterChipColors(
-    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.32f),
-    labelColor = MaterialTheme.colorScheme.onSurfaceVariant,
-    selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-    selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
-    selectedLeadingIconColor = MaterialTheme.colorScheme.primary
-)
+private fun CompactObjectsChip(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit
+) {
+    val scheme = MaterialTheme.colorScheme
+    Box(
+        Modifier.height(32.dp)
+            .background(
+                if (selected) scheme.primaryContainer else scheme.surfaceVariant.copy(alpha = 0.22f),
+                CircleShape
+            )
+            .border(
+                1.dp,
+                if (selected) scheme.primary.copy(alpha = 0.48f)
+                else scheme.outlineVariant,
+                CircleShape
+            )
+            .clickable(onClick = onClick)
+            .padding(horizontal = 13.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(label, style = MaterialTheme.typography.labelMedium,
+            maxLines = 1,
+            color = if (selected) scheme.onPrimaryContainer else scheme.onSurfaceVariant)
+    }
+}
 
 @Composable
 private fun ProjectCard(
