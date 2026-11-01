@@ -46,7 +46,6 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -67,13 +66,13 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.unit.Velocity
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
@@ -91,8 +90,8 @@ import androidx.compose.ui.unit.IntOffset
 import kotlin.math.roundToInt
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -105,6 +104,11 @@ import com.andreyceilings.shared.domain.ProjectPaymentStatus
 import com.andreyceilings.shared.domain.ProjectStatusRules
 import com.andreyceilings.shared.domain.ProjectWorkStage
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
 
 enum class ObjectsClientsTab { PROJECTS, CLIENTS }
@@ -176,8 +180,12 @@ fun ObjectsClientsScreen(
         ObjectsClientsSearch.clients(rows.clients, search)
     }
 
-    // Hide on *either* direction of vertical movement, including before
-    // the app header finishes collapsing. Show only after scrolling stops.
+    // Keep the on-scroll focus action fresh inside the remembered connection.
+    val dismissSearchOnScroll = rememberUpdatedState(newValue = { dismissSearchFocus() })
+    // Conflated events do not invalidate Compose on every pointer delta.
+    // A single collector owns the reveal; fling and list-idle callbacks must
+    // never compete to flip fabVisible back and forth.
+    val fabScrollEvents = remember { Channel<Unit>(Channel.CONFLATED) }
     val fabGestureConnection = remember {
         object : NestedScrollConnection {
             override fun onPreScroll(
@@ -187,9 +195,10 @@ fun ObjectsClientsScreen(
                 if (source == NestedScrollSource.UserInput &&
                     kotlin.math.abs(available.y) > 0.5f) {
                     fabVisible = false
-                    dismissSearchFocus()
+                    fabScrollEvents.trySend(Unit)
+                    dismissSearchOnScroll.value()
                 }
-                return Offset.Zero // Do not consume list / app bar gestures.
+                return Offset.Zero // Never consume list / app bar gestures.
             }
 
             override fun onPostScroll(
@@ -197,10 +206,11 @@ fun ObjectsClientsScreen(
                 available: Offset,
                 source: NestedScrollSource
             ): Offset {
-                if (source == NestedScrollSource.UserInput &&
-                    kotlin.math.abs(consumed.y + available.y) > 0.5f) {
+                if (kotlin.math.abs(consumed.y + available.y) > 0.5f) {
+                    // Include fling/parent-header movement, not only touch input.
                     fabVisible = false
-                    dismissSearchFocus()
+                    fabScrollEvents.trySend(Unit)
+                    if (source == NestedScrollSource.UserInput) dismissSearchOnScroll.value()
                 }
                 return Offset.Zero
             }
@@ -209,21 +219,26 @@ fun ObjectsClientsScreen(
                 consumed: Velocity,
                 available: Velocity
             ): Velocity {
-                fabVisible = true
+                // Queue a reveal, never show during a still-running list fling.
+                fabScrollEvents.trySend(Unit)
                 return Velocity.Zero
             }
         }
     }
+    LaunchedEffect(fabScrollEvents, listState) {
+        fabScrollEvents.receiveAsFlow().collectLatest {
+            delay(120L) // Wait for a quiet moment after the final scroll delta.
+            snapshotFlow { listState.isScrollInProgress }.first { !it }
+            fabVisible = true
+        }
+    }
     LaunchedEffect(listState) {
-        snapshotFlow {
-            listState.isScrollInProgress
-        }.collect { scrolling ->
+        snapshotFlow { listState.isScrollInProgress }.collect { scrolling ->
             if (scrolling) {
+                fabVisible = false
+                fabScrollEvents.trySend(Unit)
                 openSwipe = null
-                dismissSearchFocus()
-            } else {
-                // Restore the full-size FAB after a drag/fling is over.
-                fabVisible = true
+                dismissSearchOnScroll.value()
             }
         }
     }
@@ -404,52 +419,20 @@ fun ObjectsClientsScreen(
             )
         }
         val showFab = databaseAvailable && !busy && fabVisible && editor == null && !searchFocused
-        // Always keep the FAB's layout space. Animating AnimatedVisibility's
-        // size clipped the floating button against a straight parent boundary.
-        // graphicsLayer animates only opacity, never size or position.
-        val fabFraction by androidx.compose.animation.core.animateFloatAsState(
-            targetValue = if (showFab) 1f else 0f,
-            animationSpec = tween(durationMillis = 190),
-            label = "FAB opacity"
-        )
-        Box(
+        ObjectsClientsCreateFab(
+            visible = showFab,
+            actionLabel = if (selectedTab == ObjectsClientsTab.PROJECTS)
+                "Створити об'єкт" else "Створити клієнта",
             modifier = Modifier.align(Alignment.BottomEnd)
-                .padding(end = 16.dp, bottom = 152.dp)
-                .graphicsLayer {
-                    // Modulate per-draw alpha rather than offscreen-compositing
-                    // the whole 56dp FAB layer: an offscreen buffer clipped
-                    // Material3's drop shadow at its straight lower edge.
-                    compositingStrategy = CompositingStrategy.ModulateAlpha
-                    clip = false
-                    // Never scale / translate the native Material3 FAB shadow.
-                    // On Android light theme that transform caused a polygonal
-                    // white shadow artifact. Fade a fixed-size circle instead.
-                    alpha = fabFraction
-                }
-        ) {
-            if (fabFraction > 0.001f && databaseAvailable && editor == null) {
-                FloatingActionButton(
-                    shape = CircleShape,
-                    modifier = Modifier.border(
-                        1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.45f), CircleShape
-                    ),
-                    containerColor = MaterialTheme.colorScheme.primaryContainer,
-                    onClick = {
-                        if (showFab) {
-                            dismissSearchFocus()
-                            message = null
-                            openSwipe = null
-                            editor = if (selectedTab == ObjectsClientsTab.PROJECTS)
-                                EditorTarget.Project(null) else EditorTarget.Client(null)
-                        }
-                    }
-                ) {
-                    Icon(Icons.Default.Add,
-                        contentDescription = if (selectedTab == ObjectsClientsTab.PROJECTS)
-                            "Створити об'єкт" else "Створити клієнта")
-                }
+                .padding(end = 16.dp, bottom = 152.dp),
+            onClick = {
+                dismissSearchFocus()
+                message = null
+                openSwipe = null
+                editor = if (selectedTab == ObjectsClientsTab.PROJECTS)
+                    EditorTarget.Project(null) else EditorTarget.Client(null)
             }
-        }
+        )
         }
     }
 
@@ -541,6 +524,54 @@ fun ObjectsClientsScreen(
                 Text("Скасувати")
             } }
         )
+    }
+}
+
+/**
+ * Fixed-size, layer-free FAB. Fade the actual circle, outline and icon while
+ * reducing its elevation. Never fade/scale a parent graphicsLayer containing a
+ * Material3 elevation shadow: that clips its blur and exposes white polygons on
+ * some Android light-theme GPU drivers.
+ */
+@Composable
+private fun ObjectsClientsCreateFab(
+    visible: Boolean,
+    actionLabel: String,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
+) {
+    val progress by androidx.compose.animation.core.animateFloatAsState(
+        targetValue = if (visible) 1f else 0f,
+        animationSpec = tween(durationMillis = 190),
+        label = "Create FAB fade"
+    )
+    val colors = MaterialTheme.colorScheme
+    // The outer 56dp box is never resized, clipped or translated. A hidden FAB
+    // leaves no click target or accessibility node behind.
+    Box(modifier.size(56.dp)) {
+        if (progress > 0.001f) {
+            Box(
+                modifier = Modifier.fillMaxSize()
+                    .shadow(elevation = 6.dp * progress, shape = CircleShape, clip = false)
+                    .background(colors.primaryContainer.copy(alpha = progress), CircleShape)
+                    .border(1.dp, colors.outline.copy(alpha = 0.45f * progress), CircleShape)
+                    .clip(CircleShape)
+                    .then(
+                        if (visible) Modifier.clickable(
+                            role = Role.Button,
+                            onClickLabel = actionLabel,
+                            onClick = onClick
+                        ) else Modifier
+                    ),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    Icons.Default.Add,
+                    contentDescription = actionLabel,
+                    tint = colors.onPrimaryContainer.copy(alpha = progress)
+                )
+            }
+        }
     }
 }
 
