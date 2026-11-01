@@ -135,7 +135,6 @@ fun ObjectsClientsScreen(
     var busy by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
     var fabVisible by remember { mutableStateOf(true) }
-    var controlsVisible by remember { mutableStateOf(true) }
     var openSwipe by remember { mutableStateOf<OpenSwipe?>(null) }
 
     val results = remember(rows, search) {
@@ -156,12 +155,8 @@ fun ObjectsClientsScreen(
             Triple(listState.firstVisibleItemIndex, listState.firstVisibleItemScrollOffset,
                 listState.isScrollInProgress)
         }.collect { (nextIndex, nextOffset, scrolling) ->
-            if (scrolling) {
-                openSwipe = null
-                if (nextIndex < index || (nextIndex == index && nextOffset < offset)) controlsVisible = true
-                else if (nextIndex > index || (nextIndex == index && nextOffset > offset)) controlsVisible = false
-            }
-            if (nextIndex == 0 && nextOffset == 0) controlsVisible = true
+            // Closing an open action tray on scrolling must not hide the pinned controls.
+            if (scrolling) openSwipe = null
             fabVisible = when {
                 !scrolling -> true
                 nextIndex < index || (nextIndex == index && nextOffset < offset) -> true
@@ -181,8 +176,9 @@ fun ObjectsClientsScreen(
     }
 
 
-    // Keep the tab/search controls pinned while visible. On downward scroll they
-    // retract with the application's enterAlways header; upward scroll restores both.
+    // Tabs and search stay mounted and sticky below the status bar at all scroll
+    // positions. Only the app's main header slides out; the pinned controls
+    // shift up to meet the system bar as it collapses.
     val headerSpace = (contentPadding.calculateTopPadding() - 56.dp).coerceAtLeast(0.dp) +
         56.dp * headerVisibleFraction.coerceIn(0f, 1f)
     val layoutDirection = LocalLayoutDirection.current
@@ -194,12 +190,8 @@ fun ObjectsClientsScreen(
 
     Column(modifier.fillMaxSize()) {
         Spacer(Modifier.height(headerSpace))
-        AnimatedVisibility(
-            visible = controlsVisible,
-            enter = expandVertically(expandFrom = Alignment.Top) + fadeIn(),
-            exit = shrinkVertically(shrinkTowards = Alignment.Top) + fadeOut()
-        ) {
-            Column(
+        // This is intentionally NOT inside LazyColumn and never scrolls away.
+        Column(
                 Modifier.fillMaxWidth()
                     .background(MaterialTheme.colorScheme.background)
                     .padding(bottom = 5.dp),
@@ -225,7 +217,6 @@ fun ObjectsClientsScreen(
                     onChange = { search = it; openSwipe = null },
                     onClear = { search = ""; openSwipe = null }
                 )
-            }
         }
         Box(Modifier.weight(1f)) {
             LazyColumn(
@@ -470,14 +461,14 @@ private fun ObjectsTabButton(
     val shape = RoundedCornerShape(50)
     Box(
         modifier.height(38.dp)
-            .background(if (selected) colors.primaryContainer else colors.surfaceVariant, shape)
-            .border(1.dp, if (selected) colors.primary.copy(alpha = 0.55f) else
-                colors.outlineVariant, shape)
+            .background(if (selected) colors.primary else colors.surfaceVariant, shape)
+            .border(1.dp, if (selected) colors.primary else colors.outlineVariant, shape)
+            .clip(shape)
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
         Text(title, style = MaterialTheme.typography.labelLarge,
-            color = if (selected) colors.onPrimaryContainer else colors.onSurfaceVariant)
+            color = if (selected) colors.onPrimary else colors.onSurfaceVariant)
     }
 }
 
@@ -548,6 +539,7 @@ private fun CompactObjectsChip(
                 else scheme.outlineVariant,
                 CircleShape
             )
+            .clip(CircleShape)
             .clickable(onClick = onClick)
             .padding(horizontal = 13.dp),
         contentAlignment = Alignment.Center
