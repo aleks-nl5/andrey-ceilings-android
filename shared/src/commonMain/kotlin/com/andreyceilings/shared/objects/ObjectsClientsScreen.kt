@@ -5,8 +5,16 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.border
+import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.draggable
+import androidx.compose.foundation.gestures.rememberDraggableState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -14,6 +22,8 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -43,12 +53,11 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Tab
-import androidx.compose.material3.TabRow
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.BasicTextFieldDefaults
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.material3.Text
-import androidx.compose.material3.SwipeToDismissBox
-import androidx.compose.material3.SwipeToDismissBoxValue
-import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
 import androidx.compose.runtime.Composable
@@ -56,11 +65,16 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.unit.IntOffset
+import kotlin.math.roundToInt
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
@@ -77,6 +91,9 @@ import kotlinx.coroutines.launch
 
 enum class ObjectsClientsTab { PROJECTS, CLIENTS }
 enum class ContactAction { GOOGLE_MAPS, WAZE, WHATSAPP, TELEGRAM, VIBER }
+
+private enum class SwipeSide { LEFT, RIGHT }
+private data class OpenSwipe(val id: String, val side: SwipeSide)
 
 private sealed interface EditorTarget {
     data class Client(val item: ClientListEntry?) : EditorTarget
@@ -105,6 +122,7 @@ fun ObjectsClientsScreen(
     modifier: Modifier = Modifier,
     contentPadding: PaddingValues = PaddingValues(16.dp),
     requestCreateProject: Boolean = false,
+    headerVisibleFraction: Float = 1f,
     onCreateProjectConsumed: () -> Unit = {}
 ) {
     val scope = rememberCoroutineScope()
@@ -118,6 +136,8 @@ fun ObjectsClientsScreen(
     var busy by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
     var fabVisible by remember { mutableStateOf(true) }
+    var controlsVisible by remember { mutableStateOf(true) }
+    var openSwipe by remember { mutableStateOf<OpenSwipe?>(null) }
 
     val results = remember(rows, search) {
         ObjectsClientsSearch.suggestions(rows.projects, rows.clients, search)
@@ -137,6 +157,12 @@ fun ObjectsClientsScreen(
             Triple(listState.firstVisibleItemIndex, listState.firstVisibleItemScrollOffset,
                 listState.isScrollInProgress)
         }.collect { (nextIndex, nextOffset, scrolling) ->
+            if (scrolling) {
+                openSwipe = null
+                if (nextIndex < index || (nextIndex == index && nextOffset < offset)) controlsVisible = true
+                else if (nextIndex > index || (nextIndex == index && nextOffset > offset)) controlsVisible = false
+            }
+            if (nextIndex == 0 && nextOffset == 0) controlsVisible = true
             fabVisible = when {
                 !scrolling -> true
                 nextIndex < index || (nextIndex == index && nextOffset < offset) -> true
@@ -155,42 +181,59 @@ fun ObjectsClientsScreen(
         }
     }
 
-    Box(modifier.fillMaxSize()) {
-        LazyColumn(
-            state = listState,
-            contentPadding = contentPadding,
-            verticalArrangement = Arrangement.spacedBy(10.dp)
+
+    // Keep the tab/search controls pinned while visible. On downward scroll they
+    // retract with the application's enterAlways header; upward scroll restores both.
+    val headerSpace = (contentPadding.calculateTopPadding() - 56.dp).coerceAtLeast(0.dp) +
+        56.dp * headerVisibleFraction.coerceIn(0f, 1f)
+    val layoutDirection = LocalLayoutDirection.current
+    val listPadding = PaddingValues(
+        start = contentPadding.calculateStartPadding(layoutDirection),
+        end = contentPadding.calculateEndPadding(layoutDirection),
+        bottom = contentPadding.calculateBottomPadding()
+    )
+
+    Column(modifier.fillMaxSize()) {
+        Spacer(Modifier.height(headerSpace))
+        AnimatedVisibility(
+            visible = controlsVisible,
+            enter = expandVertically(expandFrom = Alignment.Top) + fadeIn(),
+            exit = shrinkVertically(shrinkTowards = Alignment.Top) + fadeOut()
         ) {
-            item(key = "header") {
-                Text("Об'єкти та клієнти",
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.SemiBold)
-            }
-            item(key = "tabs") {
-                TabRow(selectedTabIndex = selectedTab.ordinal) {
-                    Tab(selected = selectedTab == ObjectsClientsTab.PROJECTS,
-                        onClick = { selectedTab = ObjectsClientsTab.PROJECTS },
-                        text = { Text("Об'єкти") })
-                    Tab(selected = selectedTab == ObjectsClientsTab.CLIENTS,
-                        onClick = { selectedTab = ObjectsClientsTab.CLIENTS },
-                        text = { Text("Клієнти") })
+            Column(
+                Modifier.fillMaxWidth()
+                    .background(MaterialTheme.colorScheme.background)
+                    .padding(bottom = 5.dp),
+                verticalArrangement = Arrangement.spacedBy(7.dp)
+            ) {
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(9.dp)
+                ) {
+                    ObjectsTabButton("Об'єкти", selectedTab == ObjectsClientsTab.PROJECTS,
+                        Modifier.weight(1f)) {
+                        selectedTab = ObjectsClientsTab.PROJECTS
+                        openSwipe = null
+                    }
+                    ObjectsTabButton("Клієнти", selectedTab == ObjectsClientsTab.CLIENTS,
+                        Modifier.weight(1f)) {
+                        selectedTab = ObjectsClientsTab.CLIENTS
+                        openSwipe = null
+                    }
                 }
-            }
-            item(key = "search") {
-                OutlinedTextField(
+                CompactObjectsSearchField(
                     value = search,
-                    onValueChange = { search = it },
-                    label = { Text("Пошук об'єктів та клієнтів") },
-                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
-                    trailingIcon = {
-                        if (search.isNotEmpty()) IconButton(onClick = { search = "" }) {
-                            Icon(Icons.Default.Close, contentDescription = "Очистити пошук")
-                        }
-                    },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
+                    onChange = { search = it; openSwipe = null },
+                    onClear = { search = ""; openSwipe = null }
                 )
             }
+        }
+        Box(Modifier.weight(1f)) {
+            LazyColumn(
+                state = listState,
+                contentPadding = listPadding,
+                verticalArrangement = Arrangement.spacedBy(7.dp)
+            ) {
             if (!databaseAvailable) {
                 item(key = "unavailable") {
                     Text("Захищена база ще відкривається або недоступна.",
@@ -208,6 +251,7 @@ fun ObjectsClientsScreen(
                                     results.projects.forEach { row ->
                                         TextButton(onClick = {
                                             selectedTab = ObjectsClientsTab.PROJECTS
+                                            openSwipe = null
                                             editor = EditorTarget.Project(row)
                                         }, modifier = Modifier.fillMaxWidth()) {
                                             Text(row.title + " · " + row.address,
@@ -220,6 +264,7 @@ fun ObjectsClientsScreen(
                                     results.clients.forEach { row ->
                                         TextButton(onClick = {
                                             selectedTab = ObjectsClientsTab.CLIENTS
+                                            openSwipe = null
                                             editor = EditorTarget.Client(row)
                                         }, modifier = Modifier.fillMaxWidth()) {
                                             Text(row.name, maxLines = 1,
@@ -233,28 +278,31 @@ fun ObjectsClientsScreen(
                 }
                 if (selectedTab == ObjectsClientsTab.PROJECTS) {
                     item(key = "filters") {
-                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            LazyRow(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                        Column(verticalArrangement = Arrangement.spacedBy(0.dp)) {
+                            LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                 item {
-                                    FilterChip(selected = selectedWork == null,
-                                        onClick = { selectedWork = null },
-                                        label = { Text("Усі") })
+                                    FilterChip(modifier = Modifier.height(34.dp), selected = selectedWork == null,
+                                        onClick = { selectedWork = null; openSwipe = null },
+                                        label = { Text("Усі", style = MaterialTheme.typography.labelMedium) },
+                                        colors = compactFilterColors())
                                 }
                                 items(ProjectWorkStage.entries, key = { it.wireId }) { stage ->
-                                    FilterChip(selected = selectedWork == stage.wireId,
+                                    FilterChip(modifier = Modifier.height(34.dp), selected = selectedWork == stage.wireId,
                                         onClick = {
-                                            selectedWork = stage.wireId.takeIf { selectedWork != it }
+                                            selectedWork = stage.wireId.takeIf { selectedWork != it }; openSwipe = null
                                         },
-                                        label = { Text(stage.label) })
+                                        label = { Text(stage.label, style = MaterialTheme.typography.labelMedium) },
+                                        colors = compactFilterColors())
                                 }
                             }
-                            LazyRow(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                            LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                 items(ProjectPaymentStatus.entries, key = { it.wireId }) { payment ->
-                                    FilterChip(selected = selectedPayment == payment.wireId,
+                                    FilterChip(modifier = Modifier.height(34.dp), selected = selectedPayment == payment.wireId,
                                         onClick = {
                                             selectedPayment = payment.wireId
-                                                .takeIf { selectedPayment != it }
-                                        }, label = { Text(payment.label) })
+                                                .takeIf { selectedPayment != it }; openSwipe = null
+                                        }, label = { Text(payment.label, style = MaterialTheme.typography.labelMedium) },
+                                        colors = compactFilterColors())
                                 }
                             }
                         }
@@ -267,9 +315,12 @@ fun ObjectsClientsScreen(
                         }
                     } else items(projects, key = { "p-${it.id}" }) { row ->
                         ProjectCard(row,
-                            onEdit = { editor = EditorTarget.Project(row) },
-                            onDelete = { deleting = DeletionTarget.Project(row) },
-                            onExternalAction = onExternalAction)
+                            onEdit = { openSwipe = null; editor = EditorTarget.Project(row) },
+                            onDelete = { openSwipe = null; deleting = DeletionTarget.Project(row) },
+                            onExternalAction = onExternalAction,
+                            openSwipe = openSwipe,
+                            onSwipeOpen = { openSwipe = it },
+                            onSwipeClose = { openSwipe = null })
                     }
                 } else {
                     if (clients.isEmpty()) {
@@ -280,10 +331,13 @@ fun ObjectsClientsScreen(
                         }
                     } else items(clients, key = { "c-${it.id}" }) { row ->
                         ClientCard(row,
-                            onEdit = { editor = EditorTarget.Client(row) },
-                            onDelete = { deleting = DeletionTarget.Client(row) },
+                            onEdit = { openSwipe = null; editor = EditorTarget.Client(row) },
+                            onDelete = { openSwipe = null; deleting = DeletionTarget.Client(row) },
                             onDial = onDial,
-                            onExternalAction = onExternalAction)
+                            onExternalAction = onExternalAction,
+                            openSwipe = openSwipe,
+                            onSwipeOpen = { openSwipe = it },
+                            onSwipeClose = { openSwipe = null })
                     }
                 }
                 if (message != null) item(key = "message") {
@@ -296,11 +350,16 @@ fun ObjectsClientsScreen(
             enter = fadeIn() + scaleIn(),
             exit = fadeOut() + scaleOut(),
             modifier = Modifier.align(Alignment.BottomEnd)
-                .padding(end = 16.dp, bottom = 88.dp)
+                .padding(end = 16.dp, bottom = 152.dp)
         ) {
             FloatingActionButton(
+                modifier = Modifier.border(
+                    1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.45f), CircleShape
+                ),
+                containerColor = MaterialTheme.colorScheme.primaryContainer,
                 onClick = {
                     message = null
+                    openSwipe = null
                     editor = if (selectedTab == ObjectsClientsTab.PROJECTS)
                         EditorTarget.Project(null) else EditorTarget.Client(null)
                 }
@@ -309,6 +368,7 @@ fun ObjectsClientsScreen(
                     contentDescription = if (selectedTab == ObjectsClientsTab.PROJECTS)
                         "Створити об'єкт" else "Створити клієнта")
             }
+        }
         }
     }
 
