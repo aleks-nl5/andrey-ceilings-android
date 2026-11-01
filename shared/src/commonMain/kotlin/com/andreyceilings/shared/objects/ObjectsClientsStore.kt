@@ -24,8 +24,7 @@ data class ClientDraft(
 )
 
 data class ProjectDraft(
-    val title: String,
-    val address: String = "",
+    val address: String,
     val clientId: Long? = null,
     val workStatus: String = ProjectWorkStage.MEASUREMENT.wireId,
     val paymentStatus: String = ProjectPaymentStatus.UNPAID.wireId,
@@ -89,8 +88,12 @@ class ObjectsClientsStore(
     }
 
     fun saveProject(id: Long?, draft: ProjectDraft): Long {
-        val title = draft.title.trim()
-        require(title.isNotBlank()) { "Введіть назву об'єкта." }
+        val address = draft.address.trim()
+        require(address.isNotBlank()) { "Введіть адресу об'єкта." }
+        // Keep the existing SQLDelight 'title' column for estimates, backups,
+        // cross-platform compatibility and old revisions. New/edited CMP objects
+        // derive it from their address; there is no user-editable title anymore.
+        val title = address
         require(ProjectStatusRules.isKnownWorkStage(draft.workStatus)) {
             "Оберіть актуальний етап робіт."
         }
@@ -103,11 +106,11 @@ class ObjectsClientsStore(
             }
             val time = nowMillis()
             val projectId = if (id == null) {
-                projects.createReturningId(clientId, title, draft.address.trim(),
+                projects.createReturningId(clientId, title, address,
                     draft.workStatus, draft.notes.trim(), createdAt = time)
             } else {
                 checkNotNull(projects.find(id)) { "Об'єкт не знайдено або його видалено." }
-                projects.update(id, clientId, title, draft.address.trim(),
+                projects.update(id, clientId, title, address,
                     draft.workStatus, draft.notes.trim(), time)
                 id
             }
