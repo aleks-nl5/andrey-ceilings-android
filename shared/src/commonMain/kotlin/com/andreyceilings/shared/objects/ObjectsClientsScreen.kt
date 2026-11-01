@@ -406,7 +406,7 @@ fun ObjectsClientsScreen(
         val showFab = databaseAvailable && !busy && fabVisible && editor == null && !searchFocused
         // Always keep the FAB's layout space. Animating AnimatedVisibility's
         // size clipped the floating button against a straight parent boundary.
-        // graphicsLayer changes only paint alpha / scale / vertical translation.
+        // graphicsLayer animates only opacity, never size or position.
         val fabFraction by androidx.compose.animation.core.animateFloatAsState(
             targetValue = if (showFab) 1f else 0f,
             animationSpec = tween(durationMillis = 190),
@@ -421,10 +421,10 @@ fun ObjectsClientsScreen(
                     // Material3's drop shadow at its straight lower edge.
                     compositingStrategy = CompositingStrategy.ModulateAlpha
                     clip = false
+                    // Never scale / translate the native Material3 FAB shadow.
+                    // On Android light theme that transform caused a polygonal
+                    // white shadow artifact. Fade a fixed-size circle instead.
                     alpha = fabFraction
-                    scaleX = 0.86f + 0.14f * fabFraction
-                    scaleY = 0.86f + 0.14f * fabFraction
-                    translationY = (1f - fabFraction) * 14.dp.toPx()
                 }
         ) {
             if (fabFraction > 0.001f && databaseAvailable && editor == null) {
