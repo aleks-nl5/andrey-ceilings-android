@@ -22,23 +22,26 @@ class ObjectsClientsStoreTest {
             val projects = ProjectRepository(db)
             val client = store.saveClient(null, ClientDraft(" Олена ", "+380671112233", "", "Примітка"))
             assertEquals("Олена", clients.find(client)?.name)
-            val project = store.saveProject(null, ProjectDraft(" Квартира ", " Київ ", client,
+            val project = store.saveProject(null, ProjectDraft(" Київ, Хрещатик 1 ", client,
                 "in_progress", "paid", "Тест"))
             val original = assertNotNull(projects.find(project))
-            assertEquals("Квартира", original.title)
+            assertEquals("Київ, Хрещатик 1", original.title)
+            assertEquals(original.title, original.address)
             assertEquals("in_progress", original.status)
             assertEquals("paid", original.paymentStatus)
             assertEquals(client, original.clientId)
             // A paused project can stay fully paid; independent statuses never overwrite each other.
-            store.saveProject(project, ProjectDraft("Квартира", "Київ", client,
+            store.saveProject(project, ProjectDraft("Київ, Хрещатик 1", client,
                 "paused", "paid", "Затримка постачання"))
             assertEquals("paused", projects.find(project)?.status)
             assertEquals("paid", projects.find(project)?.paymentStatus)
-            val same = store.saveProject(project, ProjectDraft("Квартира 2", "Київ", client,
+            val same = store.saveProject(project, ProjectDraft("Київ, Хрещатик 2", client,
                 "rework", "partial", "Підпис"))
             assertEquals(project, same)
             val changed = assertNotNull(projects.find(project))
             assertEquals("rework", changed.status)
+            assertEquals("Київ, Хрещатик 2", changed.address)
+            assertEquals(changed.address, changed.title)
             assertEquals("partial", changed.paymentStatus)
             assertEquals(original.uuid, changed.uuid)
             assertEquals("Підпис", changed.notes)
@@ -53,17 +56,17 @@ class ObjectsClientsStoreTest {
             PrototypeDatabase.Schema.create(driver)
             val db = PrototypeDatabase(driver)
             val store = ObjectsClientsStore(db) { 100L }
-            val id = store.saveProject(null, ProjectDraft("Зал"))
+            val id = store.saveProject(null, ProjectDraft("Львів, Центральна 1"))
             assertFailsWith<IllegalArgumentException> {
                 store.saveProject(id, ProjectDraft(" ", workStatus = "in_progress"))
             }
             assertFailsWith<IllegalArgumentException> {
-                store.saveProject(id, ProjectDraft("Зал", workStatus = "paid"))
+                store.saveProject(id, ProjectDraft("Львів, Центральна 1", workStatus = "paid"))
             }
             assertFailsWith<IllegalStateException> {
-                store.saveProject(id, ProjectDraft("Зал", clientId = 9999))
+                store.saveProject(id, ProjectDraft("Львів, Центральна 1", clientId = 9999))
             }
-            assertEquals("Зал", ProjectRepository(db).find(id)?.title)
+            assertEquals("Львів, Центральна 1", ProjectRepository(db).find(id)?.title)
             assertEquals("measurement", ProjectRepository(db).find(id)?.status)
         }
     }
@@ -77,7 +80,7 @@ class ObjectsClientsStoreTest {
             val clients = ClientRepository(db)
             val projects = ProjectRepository(db)
             val client = store.saveClient(null, ClientDraft("Андрій"))
-            val project = store.saveProject(null, ProjectDraft("Об'єкт", clientId = client))
+            val project = store.saveProject(null, ProjectDraft("Чернівці, Головна 12", clientId = client))
             assertFailsWith<IllegalStateException> { store.deleteClient(client) }
             assertNotNull(clients.find(client))
             store.deleteProject(project)
