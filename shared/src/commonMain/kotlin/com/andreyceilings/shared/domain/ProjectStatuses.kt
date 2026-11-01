@@ -9,6 +9,7 @@ enum class ProjectWorkStage(val wireId: String, val label: String) {
     CALCULATION("calculation", "Розрахунок"),
     APPROVED("approved", "Погоджено"),
     IN_PROGRESS("in_progress", "Монтаж"),
+    PAUSED("paused", "Призупинено"),
     REWORK("rework", "Доопрацювання"),
     COMPLETED("completed", "Здано"),
     CANCELLED("cancelled", "Скасовано");
