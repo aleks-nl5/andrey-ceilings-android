@@ -2,7 +2,6 @@ package com.andreyceilings.shared.dashboard
 
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
-import io.ktor.client.engine.mock.MockEngineConfig
 import io.ktor.client.engine.mock.respond
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
@@ -21,7 +20,7 @@ class MonobankCurrencyGatewayTest {
     }
 
     @Test
-    fun httpUsesSharedHttpsEndpointAndCacheDelegatesToStorage() = runBlocking {
+    fun httpUsesSharedHttpsEndpointAndCacheDelegatesToStorage(): Unit = runBlocking {
         var requests = 0
         val client = HttpClient(MockEngine { request ->
             requests += 1
@@ -47,7 +46,7 @@ class MonobankCurrencyGatewayTest {
     }
 
     @Test
-    fun rejectsHttpFailuresInsteadOfTryingToParseTheErrorPage() = runBlocking {
+    fun rejectsHttpFailuresInsteadOfTryingToParseTheErrorPage(): Unit = runBlocking {
         val client = HttpClient(MockEngine {
             respond("upstream unavailable", HttpStatusCode.ServiceUnavailable)
         }) { expectSuccess = true }
