@@ -44,7 +44,11 @@ private data class Artwork(val path: String, val viewport: Float, val topOffset:
 
 /** Brand logos use their recognizable official brand color; surrounding buttons stay themed. */
 @Composable
-internal fun ExternalBrandArtwork(action: ContactAction, modifier: Modifier = Modifier.size(23.dp)) {
+internal fun ExternalBrandArtwork(
+    action: ContactAction,
+    modifier: Modifier = Modifier.size(23.dp),
+    monochromeTint: Color? = null
+) {
     val artwork = when (action) {
         ContactAction.GOOGLE_MAPS -> Artwork(ExternalArtworkPaths.Googlemaps, 24f)
         ContactAction.WAZE -> Artwork(ExternalArtworkPaths.Waze, 24f)
@@ -59,7 +63,7 @@ internal fun ExternalBrandArtwork(action: ContactAction, modifier: Modifier = Mo
         ContactAction.TELEGRAM -> Color(0xFF26A5E4)
         ContactAction.VIBER -> Color(0xFF7360F2)
     }
-    ArtworkCanvas(artwork, color, modifier)
+    ArtworkCanvas(artwork, monochromeTint ?: color, modifier)
 }
 
 /** Exact requested outlined Material Symbols Rounded, with independently themed status tint. */
