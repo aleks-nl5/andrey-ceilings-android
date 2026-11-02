@@ -13,6 +13,15 @@
 
 **Єдиний актуальний план — цей розділ; нижче збережені історичні зрізи попередніх PR.**
 
+## Наступний окремий етап: CMP UI Foundation — issue #63 (02.11.2026)
+
+- **[Issue #63](https://github.com/aleks-nl5/andrey-ceilings-android/issues/63)** — створити єдиний стандарт верхнього/нижнього edge-to-edge градієнта, накладання прокрученого вмісту, закріплених заголовків/пошуку/вкладок та оформлення FAB у `shared/commonMain`. Робочі компоненти: `CeilingsScreenScaffold`, `CeilingsEdgeGradient`, `CeilingsPinnedContent`.
+- **Порядок:** лише після успішних CI, ручного APK smoke й рішення власника щодо завершення [PR #62](https://github.com/aleks-nl5/andrey-ceilings-android/pull/62). Окрема гілка та Draft PR; **не розширювати PR #62** великим UI-refactor.
+- **Суть стандарту:** верхній gradient від краю 50% → 0%, нижній 0% → 50%; content scrolls underneath foreground, початкові safe/content insets і sticky bounds без зайвих порожніх плашок. Touch-shield діє тільки в реальній області закріплених елементів; один стиль тіні/outline/ripple і hit targets для FAB.
+- **Впровадження:** спочатку спільні primitive + API й тести, потім контрольовано перевести «Об'єкти/Клієнти» та «Деталі об'єкта» без візуальних регресій. **Нові CMP-екрани — тільки через стандарт; існуючі — поступово при плановій міграції**, не в одному масовому PR.
+- **Приймання:** Android light/dark/System, короткий і довгий список, Scroll/Back/Edit, 2-рядкова адреса, пошук/вкладки/алфавітний індекс, IME/resize, без click-through чи зайвого перехоплення; Android APK/SQLCipher + Windows JVM/CRUD + iOS framework/Simulator CI на фінальному SHA. Windows/iOS host-ready UI smoke — за доступності; runnable iOS окремо #42.
+- Без змін SQLDelight/SQLCipher/WAL, backup/restore, PDF, кошторисів, бізнес-логіки або секретів.
+
 ## Завершено: KMP/CMP навігація — PR #55 / issue #48
 
 - [PR #55](https://github.com/aleks-nl5/andrey-ceilings-android/pull/55) **об'єднаний з `main` 01.11.2026**. [Issue #48](https://github.com/aleks-nl5/andrey-ceilings-android/issues/48) закрито: спільний `AppNavigationState` / `AppRoute`, Android + Windows host navigation, quick-create/Back/Escape, Android `rememberSaveable`.
