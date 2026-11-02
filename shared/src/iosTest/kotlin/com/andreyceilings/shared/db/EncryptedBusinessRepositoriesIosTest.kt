@@ -10,6 +10,9 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFails
 import kotlin.test.assertNull
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.flow.first
+import com.andreyceilings.shared.measurement.*
+import kotlin.test.assertIs
 
 /** Real generated SQLDelight business schema over an encrypted iOS simulator database. */
 class EncryptedBusinessRepositoriesIosTest {
@@ -66,4 +69,31 @@ class EncryptedBusinessRepositoriesIosTest {
         }
         Unit
     }
+    @Test fun ownedMeasurementDetailsReadVersionedGeometryAndReactToDeletion(): Unit = runBlocking {
+        val name = "andrey-ios-measurement-${Random.nextLong().toString(16)}.db"
+        try {
+            val driver = factory.create(PrototypeDatabase.Schema, config(name, 47))
+            try {
+                val db = PrototypeDatabase(driver)
+                val project = ProjectRepository(db).createReturningId(null, "iOS measurement project", createdAt = 1)
+                val measurements = MeasurementRepository(db)
+                val id = measurements.createReturningId(project, "iOS L room", shape = "polygon",
+                    lengthMeters = 5.0, widthMeters = 4.0, areaSquareMeters = 14.0, perimeterMeters = 18.0,
+                    drawingJson = AndroidMeasurementFixtures.sidesV3, createdAt = 2)
+                val store = MeasurementDetailsStore(db)
+                val loaded = assertIs<MeasurementDetailsState.Loaded>(store.observe(project, id)
+                    .first { it !is MeasurementDetailsState.Loading })
+                val geometry = assertIs<MeasurementGeometryView.Captured>(loaded.data.geometry).geometry
+                assertEquals(6, geometry.sides.size)
+                assertEquals(AndroidMeasurementFixtures.sidesV3, measurements.find(id)?.drawingJson)
+                assertEquals(MeasurementDetailsState.Missing, store.observe(project + 999, id)
+                    .first { it !is MeasurementDetailsState.Loading })
+                measurements.delete(id)
+                assertEquals(MeasurementDetailsState.Missing, store.observe(project, id)
+                    .first { it !is MeasurementDetailsState.Loading })
+            } finally { driver.close() }
+        } finally { factory.deleteDatabase(name) }
+        Unit
+    }
+
 }

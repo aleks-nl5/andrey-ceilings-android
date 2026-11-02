@@ -159,6 +159,14 @@ class MeasurementPolygonPersistenceTest {
                 assertEquals(6, source.getJSONArray("sides").length())
                 assertEquals(frozen,
                     FrozenPolygonGeometryJson.readMeasurement(stored.drawingJson))
+                val details = com.andreyceilings.shared.measurement.MeasurementDetailsStore(PrototypeDatabase(driver))
+                val loaded = details.observe(stored.projectId, stored.id)
+                    .first { it !is com.andreyceilings.shared.measurement.MeasurementDetailsState.Loading }
+                assertTrue(loaded is com.andreyceilings.shared.measurement.MeasurementDetailsState.Loaded)
+                assertEquals(com.andreyceilings.shared.measurement.MeasurementDetailsState.Missing,
+                    details.observe(stored.projectId + 999, stored.id)
+                        .first { it !is com.andreyceilings.shared.measurement.MeasurementDetailsState.Loading })
+
                 source.getJSONArray("sides").getJSONObject(0)
                     .put("lengthMm", 5100L)
                 assertTrue(runCatching {
@@ -173,6 +181,30 @@ class MeasurementPolygonPersistenceTest {
         } finally {
             context.deleteDatabase(dbName)
             key.fill(0)
+        }
+    }
+
+    @Test fun sharedMeasurementCodecMatchesThePreviousOrgJsonGeometryPath() {
+        val examples = listOf(
+            "rectangle" to mapOf("length" to 5000L, "width" to 4000L),
+            "l_shaped" to mapOf("A" to 5000L, "B" to 4000L, "C" to 2000L, "D" to 2000L)
+        ).map { (shape, dimensions) -> FrozenPolygonGeometryContract.capture(shape,
+            CeilingShapeTemplates.fromMeasurements(shape, dimensions).vertices, dimensions, 0.01)
+        } + FrozenPolygonGeometryContract.captureSides(listOf(5000L, 3000L, 5000L, 3000L)
+            .map { MeasuredOrthogonalSide(it, OrthogonalTurn.RIGHT) }, 0.001)
+        for (geometry in examples) {
+            // This snapshot writer still uses the ORIGINAL JSONObject geometryFields;
+            // removing its metadata recreates the previous measurement writer exactly.
+            val previous = FrozenPolygonGeometryJson.write("", "", "", "", geometry).apply {
+                listOf("name", "material", "profileType", "complexity").forEach { remove(it) }
+                put("precisionStepMeters", geometry.precisionStepMeters)
+            }.toString()
+            assertEquals(geometry, com.andreyceilings.shared.measurement.MeasurementGeometryCodec.read(previous))
+            val shared = JSONObject(com.andreyceilings.shared.measurement.MeasurementGeometryCodec.write(geometry)).apply {
+                remove("precisionStepMeters")
+                put("name", ""); put("material", ""); put("profileType", ""); put("complexity", "")
+            }
+            assertEquals(geometry, FrozenPolygonGeometryJson.read(shared, geometry.precisionStepMeters))
         }
     }
 

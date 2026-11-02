@@ -73,7 +73,7 @@ class MeasurementGeometryCodecTest {
         val view = measurementGeometryForViewing("rectangle", "{ }", 3.12345, 2.0)
         assertIs<MeasurementGeometryView.HistoricalRectangle>(view)
         val drawing = assertNotNull(measurementDrawingContour(view))
-        assertEquals(3123.45, drawing.points[1].x)
+        assertEquals(3123.45, drawing.points[1].x, 0.00000001)
         assertTrue(drawing.historical)
         assertEquals("3.12345 м", drawing.sideLabels[0])
         assertEquals(MeasurementGeometryView.Unavailable, measurementGeometryForViewing("rectangle", "broken", 3.0, 2.0))
