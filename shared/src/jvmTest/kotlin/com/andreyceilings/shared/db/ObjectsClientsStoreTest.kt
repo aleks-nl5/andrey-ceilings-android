@@ -35,6 +35,16 @@ class ObjectsClientsStoreTest {
                     next
                 }
             assertEquals(0, await { it.project != null }.measurements.size)
+            store.updateProjectWorkStage(project, "completed")
+            assertEquals(
+                "completed",
+                await { it.project?.workStatus == "completed" }.project?.workStatus
+            )
+            store.updateProjectPaymentStatus(project, "paid")
+            assertEquals(
+                "paid",
+                await { it.project?.paymentStatus == "paid" }.project?.paymentStatus
+            )
             val first = measurements.createReturningId(project, "Кухня", areaSquareMeters = 12.0, createdAt = 1)
             measurements.createReturningId(other, "Інший", createdAt = 2)
             assertEquals(listOf("Кухня"), await { it.measurements.size == 1 }.measurements.map { it.name })
