@@ -1,5 +1,6 @@
 package com.andreyceilings.shared.measurement
 
+import com.andreyceilings.shared.calculation.CeilingPolygonCalculator
 import com.andreyceilings.shared.estimate.FrozenPolygonGeometry
 import com.andreyceilings.shared.estimate.FrozenPolygonGeometryContract
 import kotlin.math.hypot
@@ -52,7 +53,8 @@ fun measurementDrawingContour(view: MeasurementGeometryView): MeasurementDrawing
         }
         is MeasurementGeometryView.HistoricalRectangle -> {
             val a = view.lengthMeters; val b = view.widthMeters
-            require(a.isFinite() && b.isFinite() && a > 0 && b > 0 && a <= 1000 && b <= 1000)
+            val maxMeters = CeilingPolygonCalculator.MAX_COORDINATE_MM / 1000.0
+            require(a.isFinite() && b.isFinite() && a > 0 && b > 0 && a <= maxMeters && b <= maxMeters)
             MeasurementDrawingContour(listOf(DrawingPoint(0.0, 0.0), DrawingPoint(a * 1000, 0.0),
                 DrawingPoint(a * 1000, b * 1000), DrawingPoint(0.0, b * 1000)),
                 listOf("$a м", "$b м", "$a м", "$b м"), historical = true, measuredSides = false)
@@ -78,7 +80,7 @@ fun layoutMeasurementDrawing(
         contour.points.any { !it.x.isFinite() || !it.y.isFinite() }) return null
     val left = contour.points.minOf { it.x }; val top = contour.points.minOf { it.y }
     val dx = contour.points.maxOf { it.x } - left; val dy = contour.points.maxOf { it.y } - top
-    if (dx <= 0 || dy <= 0) return null
+    if (!dx.isFinite() || !dy.isFinite() || dx <= 0 || dy <= 0) return null
     val margin = minOf(36f * density, width * 0.22f, height * 0.22f)
     val scale = minOf((width - margin * 2) / dx, (height - margin * 2) / dy)
     val ox = (width - dx * scale) / 2; val oy = (height - dy * scale) / 2

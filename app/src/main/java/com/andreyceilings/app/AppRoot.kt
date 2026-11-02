@@ -202,6 +202,7 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
 
     // Track nested scroll activity separately from screen-opening work on every tab.
     val lastScrollAtNs = remember { AtomicLong(0L) }
+    val measurementRouteVisible = rememberUpdatedState(isMeasurementDetailsOpen)
     val screenScrollConnection = remember {
         object : NestedScrollConnection {
             override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
@@ -213,7 +214,7 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
             override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset {
                 lastScrollAtNs.set(SystemClock.elapsedRealtimeNanos())
                 isScrolling.value = true
-                contentScrolledPx.floatValue =
+                if (!measurementRouteVisible.value) contentScrolledPx.floatValue =
                     (contentScrolledPx.floatValue - consumed.y).coerceAtLeast(0f)
                 return Offset.Zero
             }

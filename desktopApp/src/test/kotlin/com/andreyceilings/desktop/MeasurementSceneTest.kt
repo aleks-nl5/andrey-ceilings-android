@@ -2,6 +2,9 @@ package com.andreyceilings.desktop
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.saveable.LocalSaveableStateRegistry
+import androidx.compose.runtime.saveable.SaveableStateRegistry
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.ui.ImageComposeScene
@@ -10,6 +13,13 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.PointerType
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.text.AnnotatedString
+import com.andreyceilings.shared.navigation.AppNavigationState
+import com.andreyceilings.shared.navigation.AppRoute
+import com.andreyceilings.shared.objects.*
+import com.andreyceilings.shared.domain.ProjectListEntry
+import com.andreyceilings.shared.domain.ClientListEntry
 import androidx.compose.ui.semantics.SemanticsNode
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
@@ -115,6 +125,88 @@ class MeasurementSceneTest {
                 assertFalse(scene.textContent().contains("Збережена адреса"))
             }
         } finally { scene.close() }
+    }
+
+    @Test fun nestedRestoreAndBackRetainSearchAndScrollWhileTabSwitchStillStartsAtTop() {
+        val rows = ObjectsClientsRows((1..40).map {
+            ProjectListEntry(it.toLong(), "Адреса $it", "Адреса $it", null, "", "measurement", "unpaid", "")
+        }, (1..40).map { ClientListEntry(it.toLong(), "Адреса $it", "", "", "", 0) })
+        val navigation = mutableStateOf(AppNavigationState().selectTab(AppRoute.OBJECTS))
+        val switches = mutableListOf<ObjectsClientsTab>()
+        fun makeScene(registry: SaveableStateRegistry) = ImageComposeScene(360, 700) {
+            CompositionLocalProvider(LocalSaveableStateRegistry provides registry) {
+                CeilingsTheme(false) {
+                    ObjectsClientsScreen(rows, navigation.value.projectDetails?.projectId, null,
+                        onOpenProject = { navigation.value = navigation.value.openProject(it) },
+                        onCloseProject = { navigation.value = navigation.value.back() }, databaseAvailable = true,
+                        onSaveClient = { _, _ -> }, onSaveProject = { _, _ -> },
+                        onDeleteClient = {}, onDeleteProject = {}, onDial = {}, onExternalAction = { _, _ -> },
+                        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 72.dp, bottom = 84.dp),
+                        horizontalOverlayInset = 16.dp, measurementDetails = navigation.value.measurementDetails,
+                        onListTabChanged = { switches += it },
+                        onOpenMeasurement = { p, m -> navigation.value = navigation.value.openMeasurement(p, m) })
+                }
+            }
+        }
+        fun visibleAddresses(scene: ImageComposeScene): List<String> = scene.nodes()
+            .filter { it.boundsInRoot.top >= 170 && it.boundsInRoot.bottom <= 700 }
+            .flatMap { it.config.getOrNull(SemanticsProperties.Text).orEmpty().map { value -> value.text } }
+            .filter { Regex("Адреса [0-9]+").matches(it) }
+        val firstRegistry = SaveableStateRegistry(null) { true }
+        val first = makeScene(firstRegistry)
+        val saved: Map<String, List<Any?>>
+        val before: List<String>
+        val routeSnapshot: List<String>
+        try {
+            first.render().close()
+            val search = first.nodes().first { it.config.getOrNull(SemanticsActions.SetText) != null }
+            assertTrue(search.config.getOrNull(SemanticsActions.SetText)?.action?.invoke(AnnotatedString("Адреса")) == true)
+            Snapshot.sendApplyNotifications()
+            first.render(16_000_000).close()
+            first.sendPointerEvent(PointerEventType.Press, Offset(140f, 550f), timeMillis = 1000, type = PointerType.Touch)
+            first.sendPointerEvent(PointerEventType.Move, Offset(140f, 250f), timeMillis = 1050, type = PointerType.Touch)
+            // Pause before release so this restore test saves an idle position,
+            // rather than creating a second tap that would open a project card.
+            first.sendPointerEvent(PointerEventType.Release, Offset(140f, 250f), timeMillis = 1600, type = PointerType.Touch)
+            first.render(616_000_000).close()
+            before = visibleAddresses(first)
+            assertTrue(before.isNotEmpty(), first.textContent())
+            assertFalse(before.contains("Адреса 1"))
+            navigation.value = navigation.value.openProject(7).openMeasurement(7, 12)
+            Snapshot.sendApplyNotifications()
+            first.render(632_000_000).close()
+            saved = firstRegistry.performSave()
+            routeSnapshot = navigation.value.snapshot()
+        } finally { first.close() }
+        navigation.value = AppNavigationState.restore(routeSnapshot)
+        val restored = makeScene(SaveableStateRegistry(saved) { true })
+        try {
+            restored.render().close()
+            assertTrue(restored.textContent().contains("база недоступна"))
+            restored.sendPointerEvent(PointerEventType.Press, Offset(44f, 36f), type = PointerType.Touch)
+            restored.sendPointerEvent(PointerEventType.Release, Offset(44f, 36f), type = PointerType.Touch)
+            restored.render(16_000_000).close()
+            assertNull(navigation.value.measurementDetails)
+            assertEquals(7L, navigation.value.projectDetails?.projectId)
+            navigation.value = navigation.value.back()
+            Snapshot.sendApplyNotifications()
+            restored.render(32_000_000).close()
+            assertTrue(restored.textContent().contains("Адреса"))
+            assertEquals(before, visibleAddresses(restored))
+            restored.sendPointerEvent(PointerEventType.Press, Offset(260f, 90f), type = PointerType.Touch)
+            restored.sendPointerEvent(PointerEventType.Release, Offset(260f, 90f), type = PointerType.Touch)
+            restored.render(48_000_000).close()
+            assertEquals(ObjectsClientsTab.CLIENTS, switches.lastOrNull())
+            val firstClient = restored.nodes().first { node ->
+                node.config.getOrNull(SemanticsProperties.Text).orEmpty().any { it.text == "Адреса 1" }
+            }
+            assertEquals(169f, firstClient.boundsInRoot.top, "Fresh client tab begins immediately below measured controls")
+        } finally { restored.close() }
+    }
+
+    private fun ImageComposeScene.nodes(): List<SemanticsNode> {
+        fun flatten(node: SemanticsNode): List<SemanticsNode> = listOf(node) + node.children.flatMap(::flatten)
+        return semanticsOwners.flatMap { flatten(it.rootSemanticsNode) }
     }
 
     private fun ImageComposeScene.textContent(): String {
