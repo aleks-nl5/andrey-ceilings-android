@@ -68,6 +68,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.andreyceilings.shared.theme.CeilingsEdge
+import com.andreyceilings.shared.theme.CeilingsEdgeDefaults
 import com.andreyceilings.shared.theme.CeilingsEdgeGradient
 import com.andreyceilings.shared.navigation.AppHeader
 import com.andreyceilings.shared.navigation.AppNavigationState
@@ -467,7 +468,7 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
 
     // 50% transparent at the screen edges, fading smoothly to fully transparent
     // over the app content. Android's own system bars remain truly transparent.
-    val systemPanelGradientHeight = 36.dp
+    val systemPanelGradientHeight = CeilingsEdgeDefaults.FadeHeight
     val statusBarInset = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     val navigationBarInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     // The header keeps sliding in/out as before. Only its background becomes denser

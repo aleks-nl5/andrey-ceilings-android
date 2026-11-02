@@ -37,6 +37,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import com.andreyceilings.shared.theme.CeilingsEdge
+import com.andreyceilings.shared.theme.CeilingsEdgeDefaults
 import com.andreyceilings.shared.theme.CeilingsEdgeGradient
 import com.andreyceilings.shared.ui.ceilingsFloatingOutlineAlpha
 import androidx.compose.ui.graphics.Color
@@ -221,7 +222,7 @@ fun AppHeader(
         if (drawGradient) CeilingsEdgeGradient(
             edge = CeilingsEdge.TOP,
             modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth()
-                .height(statusBarHeight + AppHeaderHeight + 36.dp),
+                .height(statusBarHeight + AppHeaderHeight + CeilingsEdgeDefaults.FadeHeight),
             color = fadeColor,
             edgeAlpha = shadeOpacity,
             collapse = collapsedFraction,
