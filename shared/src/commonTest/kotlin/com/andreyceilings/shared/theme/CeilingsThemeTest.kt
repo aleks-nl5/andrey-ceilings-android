@@ -60,6 +60,21 @@ class CeilingsThemeTest {
         }
     }
 
+    @Test fun projectCardSurfacesRemainVisibleAgainstScreenBackground() {
+        for (dark in listOf(false, true)) {
+            val scheme = ceilingsColorScheme(dark)
+            // Project details and measurement cards use these neutral surface roles.
+            // A matching canvas color makes the entire card hierarchy disappear.
+            assertTrue(
+                abs(scheme.surfaceContainerLow.luminance() - scheme.background.luminance()) > 0.018f,
+                "Card surface must remain distinct from the screen in ${if (dark) "dark" else "light"} mode"
+            )
+            assertTrue(
+                abs(scheme.surface.luminance() - scheme.background.luminance()) > 0.018f
+            )
+        }
+    }
+
     private fun contrast(a: Color, b: Color): Float =
         (max(a.luminance(), b.luminance()) + 0.05f) / (min(a.luminance(), b.luminance()) + 0.05f)
 }
