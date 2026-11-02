@@ -35,10 +35,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Brush
+import com.andreyceilings.shared.theme.CeilingsEdge
+import com.andreyceilings.shared.theme.CeilingsEdgeGradient
+import com.andreyceilings.shared.ui.ceilingsFloatingOutlineAlpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -94,7 +94,7 @@ fun AppFloatingNavigation(
         MaterialTheme.colorScheme.surface
     }
     val borderColor = MaterialTheme.colorScheme.outline.copy(
-        alpha = if (darkTheme) 0.46f else 0.27f
+        alpha = ceilingsFloatingOutlineAlpha(darkTheme)
     )
 
     NavigationBar(
@@ -213,33 +213,19 @@ fun AppHeader(
     modifier: Modifier = Modifier,
     scrollBehavior: TopAppBarScrollBehavior? = null,
     onSettings: (() -> Unit)? = null,
+    drawGradient: Boolean = true,
     extraActions: @Composable () -> Unit = {}
 ) {
     val fadeColor = MaterialTheme.colorScheme.background
     Box(modifier.fillMaxWidth().height(statusBarHeight + AppHeaderHeight)) {
-        Box(
-            modifier = Modifier
-                .align(Alignment.TopCenter)
-                .fillMaxWidth()
-                .height(statusBarHeight + AppHeaderHeight + 36.dp)
-                .drawBehind {
-                    val boundary = statusBarHeight.toPx().coerceIn(0f, size.height)
-                    val fraction = collapsedFraction.coerceIn(0f, 1f)
-                    val lowerEdge = boundary + (size.height - boundary) * (1f - fraction)
-                    if (lowerEdge > 0f) {
-                        drawRect(
-                            brush = Brush.verticalGradient(
-                                colors = listOf(
-                                    fadeColor.copy(alpha = shadeOpacity.coerceIn(0f, 1f)),
-                                    fadeColor.copy(alpha = 0.025f)
-                                ),
-                                startY = 0f,
-                                endY = lowerEdge
-                            ),
-                            size = Size(size.width, lowerEdge)
-                        )
-                    }
-                }
+        if (drawGradient) CeilingsEdgeGradient(
+            edge = CeilingsEdge.TOP,
+            modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth()
+                .height(statusBarHeight + AppHeaderHeight + 36.dp),
+            color = fadeColor,
+            edgeAlpha = shadeOpacity,
+            collapse = collapsedFraction,
+            safeInset = statusBarHeight
         )
         TopAppBar(
             modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth(),

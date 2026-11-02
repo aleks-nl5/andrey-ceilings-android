@@ -9,7 +9,6 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.border
@@ -58,7 +57,6 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
@@ -80,7 +78,6 @@ import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -92,7 +89,6 @@ import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.IntOffset
 import kotlin.math.roundToInt
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.semantics.Role
@@ -101,6 +97,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.Dp
+import com.andreyceilings.shared.ui.CeilingsScreenScaffold
+import com.andreyceilings.shared.ui.CeilingsFab
+import androidx.compose.foundation.layout.WindowInsets
 import com.andreyceilings.shared.theme.ceilingsStatusColors
 import com.andreyceilings.shared.navigation.AppHeaderHeight
 import com.andreyceilings.shared.domain.ClientAlphabetIndex
@@ -156,6 +155,7 @@ fun ObjectsClientsScreen(
     onExternalAction: (ContactAction, String) -> Unit,
     modifier: Modifier = Modifier,
     contentPadding: PaddingValues = PaddingValues(16.dp),
+    horizontalOverlayInset: Dp = 0.dp,
     requestCreateProject: Boolean = false,
     headerVisibleFraction: Float = 1f,
     onCreateProjectConsumed: () -> Unit = {},
@@ -280,41 +280,131 @@ fun ObjectsClientsScreen(
     // shift up to meet the system bar as it collapses.
     val headerSpace = (contentPadding.calculateTopPadding() - 56.dp).coerceAtLeast(0.dp) +
         56.dp * headerVisibleFraction.coerceIn(0f, 1f)
-    // When СтеляПро collapses, use the same 50%-to-transparent surface fade
-    // as the system panels and the docked project-details header.
-    // The search/tabs themselves keep their existing readable solid surfaces.
-    val pinnedControlsHeight = 97.dp // 38dp tabs + 7dp gap + 47dp search + 5dp bottom
-    val listIsScrolled by remember(listState) {
-        androidx.compose.runtime.derivedStateOf {
-            listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 0
-        }
-    }
-    val pinnedControlsProgress by animateFloatAsState(
-        targetValue = maxOf(
-            (1f - headerVisibleFraction).coerceIn(0f, 1f),
-            if (listIsScrolled) 1f else 0f
-        ),
-        animationSpec = tween(durationMillis = 180),
-        label = "Objects and clients sticky search backdrop"
-    )
-    val pinnedControlsSurface = MaterialTheme.colorScheme.surface
     val layoutDirection = LocalLayoutDirection.current
-    val listPadding = PaddingValues(
+    val baseListPadding = PaddingValues(
         start = contentPadding.calculateLeftPadding(layoutDirection),
         end = contentPadding.calculateRightPadding(layoutDirection),
-        top = headerSpace + pinnedControlsHeight,
         bottom = contentPadding.calculateBottomPadding()
     )
 
     Box(modifier.fillMaxSize()) {
     // Do not leave the background list or its FAB clickable beneath details.
     if (detailsProjectId == null) BoxWithConstraints(Modifier.fillMaxSize()) {
+        val viewportHeight = maxHeight
         // The list fills the full viewport, including behind the status bar
         // and sticky controls. Its top padding preserves the initial card
         // positions while allowing scrolled content to remain translucent
         // all the way to the top edge of the display.
-        val suggestionsMaxHeight = (maxHeight - headerSpace - pinnedControlsHeight)
-            .coerceAtLeast(0.dp).coerceAtMost(320.dp)
+        CeilingsScreenScaffold(
+            windowInsets = WindowInsets(0, 0, 0, 0),
+            contentPadding = baseListPadding,
+            bottomGradient = false, // Host owns navigation and its single fade.
+            header = { Spacer(Modifier.height(headerSpace)) },
+            pinned = {
+                Column(
+                    modifier = Modifier.fillMaxWidth()
+                        .padding(horizontal = horizontalOverlayInset)
+                        .padding(bottom = 5.dp),
+                    verticalArrangement = Arrangement.spacedBy(7.dp)
+                ) {
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(9.dp)
+                    ) {
+                        ObjectsTabButton("Об'єкти", selectedTab == ObjectsClientsTab.PROJECTS,
+                            Modifier.weight(1f)) {
+                            dismissSearchFocus()
+                            selectedTab = ObjectsClientsTab.PROJECTS
+                            openSwipe = null
+                        }
+                        ObjectsTabButton("Клієнти", selectedTab == ObjectsClientsTab.CLIENTS,
+                            Modifier.weight(1f)) {
+                            dismissSearchFocus()
+                            selectedTab = ObjectsClientsTab.CLIENTS
+                            openSwipe = null
+                        }
+                    }
+                    CompactObjectsSearchField(
+                        value = search,
+                        onChange = { search = it; openSwipe = null },
+                        onClear = { search = ""; openSwipe = null },
+                        onFocusChange = { searchFocused = it }
+                    )
+                }
+            },
+            overlay = { measuredPadding ->
+                // A phonebook rail exists only for the clients tab. Labels correspond
+                // to real first-letter groups in the *rendered* alphabetically sorted
+                // list. Leave the lower corner clear for the animated create FAB.
+                if (showClientLetters) {
+                    BoxWithConstraints(
+                        modifier = Modifier.align(Alignment.CenterEnd)
+                            .fillMaxHeight()
+                            .padding(top = measuredPadding.calculateTopPadding() + 8.dp,
+                                bottom = 226.dp, end = horizontalOverlayInset)
+                            .width(24.dp)
+                            .zIndex(1f)
+                    ) {
+                        val letterHeight = (maxHeight / clientLetters.size).coerceAtMost(18.dp)
+                        ClientsAlphabetRail(
+                            markers = clientLetters,
+                            letterHeight = letterHeight,
+                            modifier = Modifier.align(Alignment.Center),
+                            onSelect = { marker ->
+                                dismissSearchFocus()
+                                openSwipe = null
+                                scope.launch { listState.scrollToItem(marker.listIndex) }
+                            }
+                        )
+                    }
+                }
+                // Results overlay is attached to the *pinned* search bar, not to the
+                // LazyColumn. It remains immediately below the field no matter how far
+                // the projects/clients list was scrolled. Keyboard resize limits height.
+                if (databaseAvailable && searchFocused && search.isNotBlank() &&
+                    editor == null && deleting == null) {
+                    ObjectsSearchSuggestions(
+                        results = results,
+                        activeTab = selectedTab,
+                        maxPanelHeight = (viewportHeight - measuredPadding.calculateTopPadding())
+                            .coerceAtLeast(0.dp).coerceAtMost(320.dp),
+                        onProject = { project ->
+                            dismissSearchFocus()
+                            openSwipe = null
+                            onOpenProject(project.id)
+                        },
+                        onClient = { client ->
+                            dismissSearchFocus()
+                            selectedTab = ObjectsClientsTab.CLIENTS
+                            openSwipe = null
+                            editor = EditorTarget.Client(client)
+                        },
+                        onDismiss = { dismissSearchFocus() },
+                        modifier = Modifier.align(Alignment.TopCenter)
+                            .padding(horizontal = horizontalOverlayInset)
+                            .offset(y = measuredPadding.calculateTopPadding())
+                            .zIndex(3f)
+                    )
+                }
+                val showFab = databaseAvailable && !busy && fabVisible && editor == null && !searchFocused
+                ObjectsClientsCreateFab(
+                    visible = showFab,
+                    actionLabel = if (selectedTab == ObjectsClientsTab.PROJECTS)
+                        "Створити об'єкт" else "Створити клієнта",
+                    // The 76dp drawing area reserves 10dp around the 56dp circle,
+                    // including its painted shadow. Preserve the original FAB center.
+                    modifier = Modifier.align(Alignment.BottomEnd)
+                        .padding(end = horizontalOverlayInset + 6.dp, bottom = 142.dp),
+                    onClick = {
+                        dismissSearchFocus()
+                        message = null
+                        openSwipe = null
+                        editor = if (selectedTab == ObjectsClientsTab.PROJECTS)
+                            EditorTarget.Project(null) else EditorTarget.Client(null)
+                    }
+                )
+            }
+        ) { listPadding ->
             LazyColumn(
                 modifier = Modifier
                     .fillMaxSize()
@@ -410,122 +500,8 @@ fun ObjectsClientsScreen(
                     Text(message.orEmpty(), color = MaterialTheme.colorScheme.error)
                 }
             }
-        }
-        // Underlying list content now scrolls behind this fixed foreground.
-        // Match the 50%-to-transparent fade of system bars and detail header.
-        Box(
-            Modifier.align(Alignment.TopCenter)
-                .fillMaxWidth()
-                .height(headerSpace + pinnedControlsHeight + 36.dp)
-                .background(
-                    Brush.verticalGradient(
-                        colors = listOf(
-                            pinnedControlsSurface.copy(alpha = 0.50f * pinnedControlsProgress),
-                            pinnedControlsSurface.copy(alpha = 0f)
-                        )
-                    )
-                )
-                .zIndex(1f)
-        )
-        Column(
-            modifier = Modifier.align(Alignment.TopCenter)
-                .fillMaxWidth()
-                .offset(y = headerSpace)
-                .padding(bottom = 5.dp)
-                .zIndex(2f),
-            verticalArrangement = Arrangement.spacedBy(7.dp)
-        ) {
-            Row(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(9.dp)
-            ) {
-                ObjectsTabButton("Об'єкти", selectedTab == ObjectsClientsTab.PROJECTS,
-                    Modifier.weight(1f)) {
-                    dismissSearchFocus()
-                    selectedTab = ObjectsClientsTab.PROJECTS
-                    openSwipe = null
-                }
-                ObjectsTabButton("Клієнти", selectedTab == ObjectsClientsTab.CLIENTS,
-                    Modifier.weight(1f)) {
-                    dismissSearchFocus()
-                    selectedTab = ObjectsClientsTab.CLIENTS
-                    openSwipe = null
-                }
-            }
-            CompactObjectsSearchField(
-                value = search,
-                onChange = { search = it; openSwipe = null },
-                onClear = { search = ""; openSwipe = null },
-                onFocusChange = { searchFocused = it }
-            )
-        }
-        // A phonebook rail exists only for the clients tab. Labels correspond
-        // to real first-letter groups in the *rendered* alphabetically sorted
-        // list. Leave the lower corner clear for the animated create FAB.
-        if (showClientLetters) {
-            BoxWithConstraints(
-                modifier = Modifier.align(Alignment.CenterEnd)
-                    .fillMaxHeight()
-                    .padding(top = headerSpace + pinnedControlsHeight + 8.dp, bottom = 226.dp)
-                    .width(24.dp)
-                    .zIndex(1f)
-            ) {
-                val letterHeight = (maxHeight / clientLetters.size).coerceAtMost(18.dp)
-                ClientsAlphabetRail(
-                    markers = clientLetters,
-                    letterHeight = letterHeight,
-                    modifier = Modifier.align(Alignment.Center),
-                    onSelect = { marker ->
-                        dismissSearchFocus()
-                        openSwipe = null
-                        scope.launch { listState.scrollToItem(marker.listIndex) }
-                    }
-                )
             }
         }
-        // Results overlay is attached to the *pinned* search bar, not to the
-        // LazyColumn. It remains immediately below the field no matter how far
-        // the projects/clients list was scrolled. Keyboard resize limits height.
-        if (databaseAvailable && searchFocused && search.isNotBlank() &&
-            editor == null && deleting == null) {
-            ObjectsSearchSuggestions(
-                results = results,
-                activeTab = selectedTab,
-                maxPanelHeight = suggestionsMaxHeight,
-                onProject = { project ->
-                    dismissSearchFocus()
-                    openSwipe = null
-                    onOpenProject(project.id)
-                },
-                onClient = { client ->
-                    dismissSearchFocus()
-                    selectedTab = ObjectsClientsTab.CLIENTS
-                    openSwipe = null
-                    editor = EditorTarget.Client(client)
-                },
-                onDismiss = { dismissSearchFocus() },
-                modifier = Modifier.align(Alignment.TopCenter)
-                    .offset(y = headerSpace + pinnedControlsHeight)
-                    .zIndex(3f)
-            )
-        }
-        val showFab = databaseAvailable && !busy && fabVisible && editor == null && !searchFocused
-        ObjectsClientsCreateFab(
-            visible = showFab,
-            actionLabel = if (selectedTab == ObjectsClientsTab.PROJECTS)
-                "Створити об'єкт" else "Створити клієнта",
-            // The 76dp drawing area reserves 10dp around the 56dp circle,
-            // including its painted shadow. Preserve the original FAB center.
-            modifier = Modifier.align(Alignment.BottomEnd)
-                .padding(end = 6.dp, bottom = 142.dp),
-            onClick = {
-                dismissSearchFocus()
-                message = null
-                openSwipe = null
-                editor = if (selectedTab == ObjectsClientsTab.PROJECTS)
-                    EditorTarget.Project(null) else EditorTarget.Client(null)
-            }
-        )
     }
 
     if (detailsProjectId != null) {
@@ -667,81 +643,15 @@ private fun ObjectsClientsCreateFab(
         label = "Create FAB fade"
     )
     val colors = MaterialTheme.colorScheme
-    // Explicit, cross-platform shadow tint: this Material3 ColorScheme has no shadow slot.
-    val shadowColor = Color.Black
-    // The navigation bar's stationary elevation casts most of its shadow
-    // below the surface. Reproduce that perspective with two bounded CMP
-    // gradients instead of animating platform shadow/elevation (which caused
-    // polygon artifacts on the light-theme Android renderer).
-    //
-    // Both gradients fade to transparent *inside* the fixed 76dp drawing area.
-    // The 56dp FAB, its hit target and its position are unchanged.
-    Box(
-        modifier = modifier
-            .size(76.dp)
-            .drawBehind {
-                if (progress > 0f) {
-                    val middle = Offset(size.width / 2f, size.height / 2f)
-                    val ambientCenter = Offset(middle.x, middle.y + 1.dp.toPx())
-                    val ambientRadius = 34.dp.toPx()
-                    drawCircle(
-                        brush = Brush.radialGradient(
-                            0f to shadowColor.copy(alpha = 0.07f * progress),
-                            0.72f to shadowColor.copy(alpha = 0.07f * progress),
-                            0.84f to shadowColor.copy(alpha = 0.035f * progress),
-                            1f to shadowColor.copy(alpha = 0f),
-                            center = ambientCenter,
-                            radius = ambientRadius
-                        ),
-                        radius = ambientRadius,
-                        center = ambientCenter
-                    )
-
-                    // Slightly lower and rightward, as on the floating bottom
-                    // navigation bar. Keep the entire penumbra within bounds.
-                    val directionalCenter = Offset(
-                        middle.x + 1.dp.toPx(),
-                        middle.y + 4.dp.toPx()
-                    )
-                    val directionalRadius = 33.dp.toPx()
-                    drawCircle(
-                        brush = Brush.radialGradient(
-                            0f to shadowColor.copy(alpha = 0.14f * progress),
-                            0.68f to shadowColor.copy(alpha = 0.14f * progress),
-                            0.80f to shadowColor.copy(alpha = 0.09f * progress),
-                            1f to shadowColor.copy(alpha = 0f),
-                            center = directionalCenter,
-                            radius = directionalRadius
-                        ),
-                        radius = directionalRadius,
-                        center = directionalCenter
-                    )
-                }
-            },
-        contentAlignment = Alignment.Center
+    CeilingsFab(
+        onClick = onClick,
+        actionLabel = actionLabel,
+        modifier = modifier,
+        progress = progress,
+        enabled = visible
     ) {
-        // 56dp hit target, a stable clipped circle. The accessibility and
-        // click target disappear immediately when scrolling starts.
-        Box(
-            modifier = Modifier.size(56.dp)
-                .background(colors.primaryContainer.copy(alpha = progress), CircleShape)
-                .border(1.dp, colors.outline.copy(alpha = 0.45f * progress), CircleShape)
-                .clip(CircleShape)
-                .then(
-                    if (visible) Modifier.clickable(
-                        role = Role.Button,
-                        onClickLabel = actionLabel,
-                        onClick = onClick
-                    ) else Modifier
-                ),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(
-                Icons.Default.Add,
-                contentDescription = actionLabel,
-                tint = colors.onPrimaryContainer.copy(alpha = progress)
-            )
-        }
+        Icon(Icons.Default.Add, contentDescription = actionLabel,
+            tint = colors.onPrimaryContainer.copy(alpha = progress))
     }
 }
 

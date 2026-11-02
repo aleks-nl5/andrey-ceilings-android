@@ -309,6 +309,7 @@ private fun DesktopPriceHost(
                 collapsedFraction = if (isProjectDetailsOpen) 0f
                     else topScrollBehavior.state.collapsedFraction,
                 shadeOpacity = 0.50f + 0.43f * topScrollBehavior.state.collapsedFraction,
+                drawGradient = selectedTab != AppRoute.OBJECTS || isProjectDetailsOpen,
                 statusBarHeight = 0.dp,
                 windowInsets = WindowInsets(0, 0, 0, 0),
                 scrollBehavior = if (isProjectDetailsOpen) null else topScrollBehavior,

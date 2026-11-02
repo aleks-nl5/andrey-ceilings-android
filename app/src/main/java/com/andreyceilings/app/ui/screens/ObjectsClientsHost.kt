@@ -69,8 +69,9 @@ internal fun ObjectsClientsHost(
         requestCreateProject = openCreateProject,
         headerVisibleFraction = headerVisibleFraction,
         onCreateProjectConsumed = onCreateProjectConsumed,
+        horizontalOverlayInset = 16.dp,
         contentPadding = PaddingValues(
-            start = 0.dp, end = 0.dp,
+            start = 16.dp, end = 16.dp,
             top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 72.dp,
             bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 84.dp
         ),

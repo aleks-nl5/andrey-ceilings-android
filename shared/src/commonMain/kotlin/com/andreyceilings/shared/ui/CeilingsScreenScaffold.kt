@@ -51,7 +51,7 @@ fun CeilingsScreenScaffold(
     header: @Composable () -> Unit = {},
     pinned: @Composable () -> Unit = {},
     bottomNavigation: @Composable () -> Unit = {},
-    overlay: @Composable BoxScope.() -> Unit = {},
+    overlay: @Composable BoxScope.(PaddingValues) -> Unit = {},
     content: @Composable BoxScope.(PaddingValues) -> Unit
 ) {
     val safe = windowInsets.asPaddingValues()
@@ -89,7 +89,7 @@ fun CeilingsScreenScaffold(
                     .height(safeBottom.toDp() + CeilingsEdgeDefaults.FadeHeight))
             }.single().measure(constraints.copy(minHeight = 0)) else null
             val overlayPlaceable = subcompose(Layer.OVERLAY) {
-                Box(Modifier.fillMaxSize(), content = overlay)
+                Box(Modifier.fillMaxSize()) { overlay(padding) }
             }.single().measure(full)
             layout(width, height) {
                 contentPlaceable.placeRelative(0, 0)
