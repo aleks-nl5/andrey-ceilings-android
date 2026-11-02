@@ -21,6 +21,7 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalDensity
@@ -29,6 +30,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -58,12 +60,12 @@ private enum class InlineStatusKind { WORK, PAYMENT }
 internal fun shouldDockProjectTitle(
     firstVisibleItemIndex: Int,
     titleOffsetPx: Int?,
-    titleSizePx: Int?,
     topEdgePx: Int
 ): Boolean {
     if (firstVisibleItemIndex > 0) return true
-    if (titleOffsetPx == null || titleSizePx == null) return false
-    return titleOffsetPx + titleSizePx <= topEdgePx
+    // Match the source row's *top* to the floating bar's top, not the moment
+    // its bottom first peeks into view on a reverse swipe.
+    return titleOffsetPx != null && titleOffsetPx <= topEdgePx
 }
 
 private sealed interface DetailsState {
@@ -109,7 +111,6 @@ internal fun ProjectDetailsScreen(
             shouldDockProjectTitle(
                 firstVisibleItemIndex = detailsListState.firstVisibleItemIndex,
                 titleOffsetPx = heading?.offset,
-                titleSizePx = heading?.size,
                 topEdgePx = topEdgePx
             )
         }
@@ -164,11 +165,17 @@ internal fun ProjectDetailsScreen(
         ) {
             item(key = "project-heading") {
                 visibleProject?.let { project ->
-                    Column {
+                    // Preserve the row's height/scroll anchor while its docked
+                    // copy is on screen; never draw two FAB pairs at once.
+                    Column(
+                        Modifier
+                            .drawWithContent { if (!isDocked) drawContent() }
+                            .then(if (isDocked) Modifier.clearAndSetSemantics {} else Modifier)
+                    ) {
                         ProjectDetailsTitleRow(
                             project = project,
-                            onBack = onBack,
-                            onEdit = { onEdit(project) }
+                            onBack = { if (!isDocked) onBack() },
+                            onEdit = { if (!isDocked) onEdit(project) }
                         )
                         if (project.title.isNotBlank() && project.address.isNotBlank() &&
                             project.title != project.address
