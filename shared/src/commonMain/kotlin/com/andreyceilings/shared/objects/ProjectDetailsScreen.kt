@@ -238,7 +238,7 @@ internal fun ProjectDetailsScreen(
     CeilingsScreenScaffold(
         contentPadding = contentPadding,
         windowInsets = WindowInsets(0, 0, 0, 0),
-        topGradient = false, // Moving title owns its fade; host owns the at-rest header.
+        topGradient = {}, // Moving title owns its fade; host owns the at-rest header.
         bottomGradient = false,
         overlay = {
             if (visibleProject != null) ProjectDetailsMovingTitle(

@@ -46,8 +46,9 @@ Durations below are job wall time; runner queue is excluded.
 | Windows | 41518604824 | 3m25s | Desktop + JVM/encrypted CRUD 1m48s |
 | iOS/macOS | 41518604824 | 9m48s | framework link 7m13s (Simulator 1m00s, JVM/Desktop 41s) |
 
-The Android clean AVD cache hit (initialization skipped); Gradle cache outcomes
-must be checked in logs for the final comparison. Existing workflows already
+The Android clean AVD cache hit (initialization skipped). All three baseline
+jobs restored Gradle home via a fallback restore key, with build/dependency/
+transform cache hits. Final branch cache outcomes must also be checked in logs. Existing workflows already
 combine Windows JVM invocations and retain build caching/cancel-in-progress.
 No new Gradle invocation, SDK download, dependency, tool version or workflow
 change is needed for the foundation. Final branch CI timing belongs in the PR.

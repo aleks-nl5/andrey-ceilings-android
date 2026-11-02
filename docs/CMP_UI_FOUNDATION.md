@@ -30,7 +30,14 @@ The pre-change inventory and CI baseline are in
 ```kotlin
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun NewScreen(darkTheme: Boolean, rows: List<String>) {
+fun NewScreen(
+    darkTheme: Boolean,
+    rows: List<String>,
+    destinations: List<AppDestination>,
+    selectedId: String,
+    onSelect: (String) -> Unit,
+    onQuickCreate: (String) -> Unit
+) {
     val listState = rememberLazyListState()
     CeilingsScreenScaffold(
         contentPadding = PaddingValues(16.dp),
@@ -49,7 +56,7 @@ fun NewScreen(darkTheme: Boolean, rows: List<String>) {
         },
         bottomNavigation = {
             AppFloatingNavigation(
-                selectedId = "objects", destinations = destinations,
+                selectedId = selectedId, destinations = destinations,
                 darkTheme = darkTheme, onSelect = onSelect,
                 onQuickCreate = onQuickCreate,
                 navigationInset = 0.dp // Scaffold owns safe/IME insets.
@@ -63,7 +70,7 @@ fun NewScreen(darkTheme: Boolean, rows: List<String>) {
 }
 ```
 
-The example's `destinations`, `onSelect` and `onQuickCreate` come from the host's
+The example's navigation arguments come from the host's
 existing navigation contract. Do not add a second outer statusBarsPadding,
 imePadding, nav inset, opaque top strip, or card-local gradient.
 
@@ -73,7 +80,11 @@ imePadding, nav inset, opaque top strip, or card-local gradient.
 fade extent chosen by the owner. TOP goes 50% → 0%, BOTTOM goes 0% → 50% using
 Material 3 surface in light/dark/System. `intensity` is clamped to 0..1;
 `collapse` contracts the top fade to `safeInset`, without moving it offscreen.
-`CeilingsEdgeDefaults.FadeHeight` is 36dp. `edgeAlpha` exists for legacy AppHeader
+`CeilingsEdgeDefaults.FadeHeight` is 36dp. The scaffold's `topGradient` drawing
+slot receives its measured foreground-plus-fade height; normally keep its
+default. Use `{}` when the edge is owned elsewhere. Objects uses the slot to
+retain its original at-rest extent and 180ms fade expansion without a second
+gradient. `edgeAlpha` exists for legacy AppHeader
 chrome with its previously stronger collapsed shade; new screens keep 50%.
 
 A fade has no pointer handler. Its transparent tail must never enlarge a hit
@@ -123,7 +134,8 @@ and `enabled`: Objects retains its 190ms fade and Details its 280ms docking.
 - Common tests cover both fade directions/themes/intensity, measured padding,
   nested inset opt-out and FAB geometry. Existing title/snap tests still run.
   Desktop JVM scene tests exercise actual first-frame/resize layout, short/long
-  lists, safe/IME union, pinned hit bounds, foreground clicks, disabled actions,
+  lists, restored scroll/resize, forward/reverse drag and release, safe/IME union,
+  pinned hit bounds, foreground clicks, disabled actions,
   circular FAB/ripple drawing and gradient pixels, with existing dependencies.
 - Existing CI remains unchanged: Android unit/emulator/Debug/Release, Windows
   JVM/Desktop/encrypted CRUD, iOS framework/Simulator SQLCipher. Timings and

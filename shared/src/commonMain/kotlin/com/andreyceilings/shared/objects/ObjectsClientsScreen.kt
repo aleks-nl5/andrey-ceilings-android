@@ -56,6 +56,7 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -89,6 +90,10 @@ import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.IntOffset
 import kotlin.math.roundToInt
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.lerp
+import com.andreyceilings.shared.theme.CeilingsEdge
+import com.andreyceilings.shared.theme.CeilingsEdgeGradient
+import com.andreyceilings.shared.theme.CeilingsEdgeDefaults
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.semantics.Role
@@ -280,6 +285,23 @@ fun ObjectsClientsScreen(
     // shift up to meet the system bar as it collapses.
     val headerSpace = (contentPadding.calculateTopPadding() - 56.dp).coerceAtLeast(0.dp) +
         56.dp * headerVisibleFraction.coerceIn(0f, 1f)
+    val listIsScrolled by remember(listState) {
+        androidx.compose.runtime.derivedStateOf {
+            listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 0
+        }
+    }
+    val pinnedControlsProgress by animateFloatAsState(
+        targetValue = maxOf(
+            (1f - headerVisibleFraction).coerceIn(0f, 1f),
+            if (listIsScrolled) 1f else 0f
+        ),
+        animationSpec = tween(durationMillis = 180),
+        label = "Objects and clients sticky search backdrop"
+    )
+    val systemTopInset = (contentPadding.calculateTopPadding() - AppHeaderHeight - 16.dp)
+        .coerceAtLeast(0.dp)
+    val atRestFadeHeight = systemTopInset + (AppHeaderHeight + CeilingsEdgeDefaults.FadeHeight) *
+        headerVisibleFraction.coerceIn(0f, 1f)
     val layoutDirection = LocalLayoutDirection.current
     val baseListPadding = PaddingValues(
         start = contentPadding.calculateLeftPadding(layoutDirection),
@@ -298,6 +320,15 @@ fun ObjectsClientsScreen(
         CeilingsScreenScaffold(
             windowInsets = WindowInsets(0, 0, 0, 0),
             contentPadding = baseListPadding,
+            topGradient = { measuredHeight ->
+                // Keep the accepted at-rest extent and 180ms expansion, but
+                // draw ONE 50% fade instead of composing host and screen fades.
+                CeilingsEdgeGradient(CeilingsEdge.TOP,
+                    Modifier.fillMaxWidth().height(atRestFadeHeight +
+                        (measuredHeight - atRestFadeHeight) * pinnedControlsProgress),
+                    color = lerp(MaterialTheme.colorScheme.background,
+                        MaterialTheme.colorScheme.surface, pinnedControlsProgress))
+            },
             bottomGradient = false, // Host owns navigation and its single fade.
             header = { Spacer(Modifier.height(headerSpace)) },
             pinned = {

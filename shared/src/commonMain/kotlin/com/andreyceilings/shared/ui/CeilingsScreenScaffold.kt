@@ -45,8 +45,9 @@ fun CeilingsScreenScaffold(
     modifier: Modifier = Modifier,
     contentPadding: PaddingValues = PaddingValues(0.dp),
     windowInsets: WindowInsets = WindowInsets.safeDrawing.union(WindowInsets.ime),
-    topGradient: Boolean = true,
-    topGradientIntensity: Float = 1f,
+    topGradient: @Composable (Dp) -> Unit = { height ->
+        CeilingsEdgeGradient(CeilingsEdge.TOP, Modifier.fillMaxWidth().height(height))
+    },
     bottomGradient: Boolean = true,
     header: @Composable () -> Unit = {},
     pinned: @Composable () -> Unit = {},
@@ -80,10 +81,9 @@ fun CeilingsScreenScaffold(
                 Box(Modifier.fillMaxSize()) { content(padding) }
             }.single().measure(full)
             val topHeight = (safeTop + headerPlaceable.height + pinnedPlaceable.height).toDp()
-            val topFade = if (topGradient) subcompose(Layer.TOP_FADE) {
-                CeilingsEdgeGradient(CeilingsEdge.TOP, Modifier.fillMaxWidth()
-                    .height(topHeight + CeilingsEdgeDefaults.FadeHeight), intensity = topGradientIntensity)
-            }.single().measure(constraints.copy(minHeight = 0)) else null
+            val topFade = subcompose(Layer.TOP_FADE) {
+                Box { topGradient(topHeight + CeilingsEdgeDefaults.FadeHeight) }
+            }.single().measure(constraints.copy(minHeight = 0))
             val bottomFade = if (bottomGradient) subcompose(Layer.BOTTOM_FADE) {
                 CeilingsEdgeGradient(CeilingsEdge.BOTTOM, Modifier.fillMaxWidth()
                     .height(safeBottom.toDp() + CeilingsEdgeDefaults.FadeHeight))
@@ -93,7 +93,7 @@ fun CeilingsScreenScaffold(
             }.single().measure(full)
             layout(width, height) {
                 contentPlaceable.placeRelative(0, 0)
-                topFade?.placeRelative(0, 0)
+                topFade.placeRelative(0, 0)
                 bottomFade?.placeRelative(0, height - bottomFade.height)
                 headerPlaceable.placeRelative(0, safeTop)
                 pinnedPlaceable.placeRelative(0, safeTop + headerPlaceable.height)

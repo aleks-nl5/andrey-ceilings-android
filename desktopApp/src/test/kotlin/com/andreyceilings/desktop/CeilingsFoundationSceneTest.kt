@@ -77,6 +77,48 @@ class CeilingsFoundationSceneTest {
     }
 
     @Test
+    fun restoredScrollSurvivesResizeAndContentGesturesRemainAvailable() {
+        // Same public list state restored by the screen's existing Saver.
+        val state = LazyListState(firstVisibleItemIndex = 12, firstVisibleItemScrollOffset = 7)
+        val scene = ImageComposeScene(360, 640) {
+            CeilingsTheme(false) {
+                CeilingsScreenScaffold(windowInsets = WindowInsets(0, 0, 0, 0),
+                    pinned = { Spacer(Modifier.height(56.dp)) }) { padding ->
+                    LazyColumn(Modifier.fillMaxSize(), state = state, contentPadding = padding) {
+                        items(80) { Box(Modifier.fillMaxWidth().height(48.dp)) }
+                    }
+                }
+            }
+        }
+        try {
+            scene.render().close()
+            assertEquals(12, state.firstVisibleItemIndex)
+            assertEquals(7, state.firstVisibleItemScrollOffset)
+            scene.constraints = Constraints.fixed(280, 480)
+            scene.render(16_000_000).close()
+            assertEquals(12, state.firstVisibleItemIndex)
+            assertEquals(7, state.firstVisibleItemScrollOffset)
+            val before = state.firstVisibleItemIndex * 48 + state.firstVisibleItemScrollOffset
+            scene.sendPointerEvent(PointerEventType.Press, Offset(140f, 300f),
+                timeMillis = 1000, type = PointerType.Touch)
+            scene.sendPointerEvent(PointerEventType.Move, Offset(140f, 200f),
+                timeMillis = 1050, type = PointerType.Touch)
+            scene.render(66_000_000).close()
+            val forward = state.firstVisibleItemIndex * 48 + state.firstVisibleItemScrollOffset
+            assertTrue(forward > before, "Pinned foreground must not block content scrolling")
+            scene.sendPointerEvent(PointerEventType.Move, Offset(140f, 330f),
+                timeMillis = 1100, type = PointerType.Touch)
+            scene.render(116_000_000).close()
+            val reversed = state.firstVisibleItemIndex * 48 + state.firstVisibleItemScrollOffset
+            assertTrue(reversed < forward)
+            scene.sendPointerEvent(PointerEventType.Release, Offset(140f, 330f),
+                timeMillis = 1150, type = PointerType.Touch)
+            // Drive the release/fling frames without a wall-clock sleep.
+            repeat(8) { scene.render(166_000_000L + it * 50_000_000L).close() }
+        } finally { scene.close() }
+    }
+
+    @Test
     fun imeAndSafeAreaAreUnionedAndInsetsAreConsumedForNestedScreens() {
         var bottom = 0.dp
         var nestedTop = (-1).dp
@@ -153,7 +195,11 @@ class CeilingsFoundationSceneTest {
                 }
             }
             try {
-                scene.render().close()
+                val corner = ((profile.drawSize - profile.circleSize).value / 2 + 1).toInt()
+                val restImage = scene.render()
+                val restBitmap = Bitmap.makeFromImage(restImage)
+                val outsideCircleColor = try { restBitmap.getColor(corner, corner) }
+                    finally { restBitmap.close(); restImage.close() }
                 scene.tap(size / 2, size / 2)
                 assertEquals(1, clicks)
                 scene.tap(1f, 1f)
@@ -164,8 +210,9 @@ class CeilingsFoundationSceneTest {
                 try {
                     val bitmap = Bitmap.makeFromImage(image)
                     try {
-                        // Ripple must not cover the shadow's outer corner.
-                        assertEquals(org.jetbrains.skia.Color.WHITE, bitmap.getColor(1, 1))
+                        // Inside the circle's bounding square but outside its
+                        // circular outline: the shadow pixel must not acquire ripple.
+                        assertEquals(outsideCircleColor, bitmap.getColor(corner, corner))
                     } finally { bitmap.close() }
                 } finally { image.close() }
                 scene.sendPointerEvent(PointerEventType.Release, Offset(size / 2, size / 2), type = PointerType.Touch)
