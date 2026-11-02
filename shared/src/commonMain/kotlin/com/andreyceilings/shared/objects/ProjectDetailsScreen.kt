@@ -7,6 +7,8 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.border
+import androidx.compose.foundation.indication
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -457,15 +459,17 @@ private fun ProjectDetailsMovingTitle(
             (56f + 56f * p).dp).coerceAtLeast(64.dp)
         val addressWidthPx = with(density) { addressWidth.roundToPx() }
         var measuredTitleWidth by remember(project.id) { mutableIntStateOf(0) }
+        val backInteraction = remember(project.id) { MutableInteractionSource() }
+        val editInteraction = remember(project.id) { MutableInteractionSource() }
 
-        // The anchored glass backdrop sits ABOVE LazyColumn but BELOW the
-        // address and buttons. It consumes gestures within its bounds so that
-        // underlying cards/status chips are never activated through the dock.
-        // Keep the original scroll interaction when the title is expanded.
-        if (p > 0.05f) {
+        // Visual fade and pointer shield share exactly the docked header bounds:
+        // status-bar safe area + 8dp offset + 72dp (two-line title). No 36dp
+        // extra hit area over the cards below. The shield only activates once
+        // the pinned title has practically reached its final position.
+        if (p > 0.95f) {
             Box(
                 Modifier.fillMaxWidth()
-                    .height(with(density) { dockY.toDp() } + 72.dp + 36.dp)
+                    .height(with(density) { dockY.toDp() } + 72.dp)
                     .background(
                         Brush.verticalGradient(
                             colors = listOf(
@@ -492,13 +496,21 @@ private fun ProjectDetailsMovingTitle(
                 .size(56.dp)
                 .projectDetailsFabShadow(p)
                 .clip(CircleShape)
-                .clickable(role = Role.Button, onClickLabel = "До списку", onClick = onBack),
+                .clickable(
+                    interactionSource = backInteraction,
+                    indication = null,
+                    role = Role.Button,
+                    onClickLabel = "До списку",
+                    onClick = onBack
+                ),
             contentAlignment = Alignment.Center
         ) {
             Box(
                 Modifier.size(42.dp)
                     .background(fabBackground.copy(alpha = p), CircleShape)
-                    .border(1.dp, fabOutline, CircleShape),
+                    .border(1.dp, fabOutline, CircleShape)
+                    .clip(CircleShape)
+                    .indication(editInteraction, ripple(bounded = true)),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
@@ -544,7 +556,13 @@ private fun ProjectDetailsMovingTitle(
                 .size(56.dp)
                 .projectDetailsFabShadow(p)
                 .clip(CircleShape)
-                .clickable(role = Role.Button, onClickLabel = "Редагувати об'єкт", onClick = onEdit),
+                .clickable(
+                    interactionSource = editInteraction,
+                    indication = null,
+                    role = Role.Button,
+                    onClickLabel = "Редагувати об'єкт",
+                    onClick = onEdit
+                ),
             contentAlignment = Alignment.Center
         ) {
             Box(
