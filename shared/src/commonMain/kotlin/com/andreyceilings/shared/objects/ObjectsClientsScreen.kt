@@ -101,6 +101,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.Dp
+import com.andreyceilings.shared.theme.ceilingsStatusColors
 import com.andreyceilings.shared.domain.ClientAlphabetIndex
 import com.andreyceilings.shared.domain.ClientLetterJump
 import com.andreyceilings.shared.domain.ClientListEntry
@@ -1025,7 +1026,7 @@ private fun CompactObjectsChip(
 private val ProjectCardShape = RoundedCornerShape(21.dp)
 
 @Composable
-private fun WorkStatusMark(status: String) {
+internal fun WorkStatusMark(status: String) {
     val symbol = when (status) {
         "measurement" -> Icons.Default.Straighten
         "calculation" -> Icons.Default.Calculate
@@ -1053,7 +1054,7 @@ private fun WorkStatusMark(status: String) {
 }
 
 @Composable
-private fun PaymentStateTag(status: String) {
+internal fun PaymentStateTag(status: String, prefix: String = "") {
     val colors = MaterialTheme.colorScheme
     val fullLabel = ProjectStatusRules.paymentLabel(status)
     val shortLabel = when (status) {
@@ -1061,9 +1062,10 @@ private fun PaymentStateTag(status: String) {
         "partial" -> "Часткова"
         else -> fullLabel
     }
+    val statusColors = ceilingsStatusColors(colors.background.luminance() < 0.5f)
     val tint = when (status) {
-        "paid" -> Color(0xFF238369)
-        "partial" -> Color(0xFFAC7D35)
+        "paid" -> statusColors.success
+        "partial" -> statusColors.warning
         "unpaid" -> colors.error
         else -> colors.onSurfaceVariant
     }
@@ -1074,7 +1076,7 @@ private fun PaymentStateTag(status: String) {
             .padding(horizontal = 9.dp, vertical = 4.dp),
         contentAlignment = Alignment.Center
     ) {
-        Text(shortLabel, color = tint, style = MaterialTheme.typography.labelSmall,
+        Text(prefix + shortLabel, color = tint, style = MaterialTheme.typography.labelSmall,
             maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }

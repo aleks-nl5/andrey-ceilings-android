@@ -6,6 +6,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Phone
+import androidx.compose.material.icons.filled.Email
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -13,7 +15,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import com.andreyceilings.shared.calculation.CeilingShapeTemplates
 import com.andreyceilings.shared.domain.ClientListEntry
@@ -46,7 +48,7 @@ internal fun ProjectDetailsScreen(
     val state = if (flow == null) DetailsState.Unavailable
         else flow.collectAsState(initial = DetailsState.Loading).value
     val uriHandler = LocalUriHandler.current
-    var contactError by remember(projectId) { mutableStateOf(false) }
+    var contactError by remember(projectId) { mutableStateOf<String?>(null) }
     // Surface supplies LocalContentColor as well as the background. This matters
     // when the host does not provide a themed content color (notably Android).
     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background,
@@ -55,9 +57,39 @@ internal fun ProjectDetailsScreen(
             contentPadding = contentPadding,
             verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
-            item(key = "back") {
-                TextButton(onClick = onBack, contentPadding = PaddingValues(horizontal = 4.dp)) {
-                    Text("← До списку")
+            item(key = "header") {
+                Column {
+                    TextButton(onClick = onBack, contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)) {
+                        Text("← До списку")
+                    }
+                    val project = (state as? DetailsState.Loaded)?.data?.project
+                    if (project != null) {
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                            Text(project.address.ifBlank { project.title.ifBlank { "Адреса не вказана" } },
+                                modifier = Modifier.weight(1f),
+                                style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.SemiBold)
+                            IconButton(onClick = { onEdit(project) }) {
+                                Icon(Icons.Default.Edit, contentDescription = "Редагувати об'єкт",
+                                    tint = MaterialTheme.colorScheme.primary)
+                            }
+                        }
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Surface(shape = MaterialTheme.shapes.small,
+                                color = MaterialTheme.colorScheme.surface,
+                                contentColor = MaterialTheme.colorScheme.onSurface) {
+                                Row(Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                    verticalAlignment = Alignment.CenterVertically) {
+                                    WorkStatusMark(project.workStatus)
+                                    Text("Етап: ${ProjectStatusRules.workLabel(project.workStatus)}",
+                                        style = MaterialTheme.typography.labelMedium)
+                                }
+                            }
+                            PaymentStateTag(project.paymentStatus, prefix = "Оплата: ")
+                        }
+                    }
                 }
             }
             when (state) {
@@ -67,48 +99,30 @@ internal fun ProjectDetailsScreen(
                     val project = state.data.project
                     if (project == null) item { Text("Об'єкт не знайдено або його видалено.") }
                     else {
-                        item(key = "heading") {
-                            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                                Text(project.address.ifBlank { project.title.ifBlank { "Адреса не вказана" } },
-                                    modifier = Modifier.weight(1f),
-                                    style = MaterialTheme.typography.titleLarge,
-                                    fontWeight = FontWeight.SemiBold)
-                                IconButton(onClick = { onEdit(project) }) {
-                                    Icon(Icons.Default.Edit, contentDescription = "Редагувати об'єкт",
-                                        tint = MaterialTheme.colorScheme.primary)
-                                }
-                            }
-                        }
-                        item(key = "information") {
-                            DetailsCard("Інформація про об'єкт") {
-                                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                    verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                    StatusBadge("Етап: ${ProjectStatusRules.workLabel(project.workStatus)}")
-                                    StatusBadge("Оплата: ${ProjectStatusRules.paymentLabel(project.paymentStatus)}")
-                                }
-                            }
-                        }
                         if (project.notes.isNotBlank()) item(key = "notes") {
                             DetailsCard("Примітки") { Text(project.notes, style = MaterialTheme.typography.bodyMedium) }
                         }
                         item(key = "client") {
                             val client = clients.firstOrNull { it.id == project.clientId }
-                            DetailsCard("Клієнт") {
+                            DetailsCard("Клієнт", spacing = 0) {
                                 Text(client?.name ?: project.clientName.ifBlank { "Не вказано" },
                                     style = MaterialTheme.typography.bodyMedium)
                                 client?.phone?.takeIf { it.isNotBlank() }?.let { phone ->
-                                    ContactLink(phone, "Зателефонувати") { onDial(phone) }
-                                }
-                                client?.email?.takeIf { it.isNotBlank() }?.let { email ->
-                                    ContactLink(email, "Написати листа") {
-                                        contactError = runCatching {
-                                            uriHandler.openUri("mailto:${email.trim()}")
-                                        }.isFailure
+                                    ContactLink(phone, "Зателефонувати", Icons.Default.Phone) {
+                                        contactError = if (runCatching { onDial(phone) }.isFailure)
+                                            "Не вдалося відкрити телефонний застосунок." else null
                                     }
                                 }
-                                if (contactError) Text("Не вдалося відкрити поштовий застосунок.",
+                                client?.email?.takeIf { it.isNotBlank() }?.let { email ->
+                                    ContactLink(email, "Написати листа", Icons.Default.Email) {
+                                        contactError = if (runCatching {
+                                            uriHandler.openUri("mailto:${email.trim()}")
+                                        }.isFailure) "Не вдалося відкрити поштовий застосунок." else null
+                                    }
+                                }
+                                contactError?.let { Text(it,
                                     color = MaterialTheme.colorScheme.error,
-                                    style = MaterialTheme.typography.bodySmall)
+                                    style = MaterialTheme.typography.bodySmall) }
                             }
                         }
                         item(key = "measurements-heading") {
@@ -146,10 +160,10 @@ private fun detailsCardColors() = CardDefaults.cardColors(
 )
 
 @Composable
-private fun DetailsCard(title: String, content: @Composable ColumnScope.() -> Unit) {
+private fun DetailsCard(title: String, spacing: Int = 4, content: @Composable ColumnScope.() -> Unit) {
     Card(Modifier.fillMaxWidth(), colors = detailsCardColors()) {
         Column(Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            verticalArrangement = Arrangement.spacedBy(spacing.dp)) {
             Text(title, style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
             content()
@@ -158,22 +172,14 @@ private fun DetailsCard(title: String, content: @Composable ColumnScope.() -> Un
 }
 
 @Composable
-private fun StatusBadge(label: String) {
-    Surface(shape = MaterialTheme.shapes.small,
-        color = MaterialTheme.colorScheme.secondaryContainer,
-        contentColor = MaterialTheme.colorScheme.onSecondaryContainer) {
-        Text(label, modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
-            style = MaterialTheme.typography.labelMedium)
-    }
-}
-
-@Composable
-private fun ContactLink(value: String, actionLabel: String, onClick: () -> Unit) {
-    Box(Modifier.fillMaxWidth().minimumInteractiveComponentSize()
+private fun ContactLink(value: String, actionLabel: String, icon: ImageVector, onClick: () -> Unit) {
+    Row(Modifier.fillMaxWidth().heightIn(min = 48.dp)
         .clickable(role = Role.Button, onClickLabel = actionLabel, onClick = onClick),
-        contentAlignment = Alignment.CenterStart) {
-        Text(value, color = MaterialTheme.colorScheme.primary,
-            style = MaterialTheme.typography.bodyMedium,
-            textDecoration = TextDecoration.Underline)
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically) {
+        Icon(icon, contentDescription = actionLabel, modifier = Modifier.size(20.dp),
+            tint = MaterialTheme.colorScheme.primary)
+        Text(value, modifier = Modifier.weight(1f), color = MaterialTheme.colorScheme.primary,
+            style = MaterialTheme.typography.bodyMedium)
     }
 }

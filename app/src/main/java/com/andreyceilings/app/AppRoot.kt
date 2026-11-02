@@ -121,11 +121,7 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
     val predictiveBackFromLeft = remember { mutableStateOf(true) }
     val context = LocalContext.current
     val systemDarkTheme = isSystemInDarkTheme()
-    val useDarkTheme = when (themeMode) {
-        ThemeMode.LIGHT -> false
-        ThemeMode.DARK -> true
-        ThemeMode.SYSTEM -> systemDarkTheme
-    }
+    val useDarkTheme = themeMode.usesDarkColors(systemDarkTheme)
 
     // Each tab opens with the app header visible. Previously the same TopAppBar
     // scroll state survived tab changes, so opening Price List after scrolling
