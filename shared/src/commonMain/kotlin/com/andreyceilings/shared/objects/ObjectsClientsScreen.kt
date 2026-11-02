@@ -159,7 +159,7 @@ fun ObjectsClientsScreen(
     requestCreateProject: Boolean = false,
     headerVisibleFraction: Float = 1f,
     onCreateProjectConsumed: () -> Unit = {},
-    onProjectHeaderDocked: (Boolean) -> Unit = {}
+    onProjectHeaderProgress: (Float) -> Unit = {}
 ) {
     val scope = rememberCoroutineScope()
     val focusManager = LocalFocusManager.current
@@ -493,14 +493,14 @@ fun ObjectsClientsScreen(
             contentPadding = PaddingValues(
                 start = contentPadding.calculateLeftPadding(layoutDirection),
                 end = contentPadding.calculateRightPadding(layoutDirection),
-                top = (headerSpace - 24.dp).coerceAtLeast(0.dp),
+                top = headerSpace + 24.dp,
                 bottom = contentPadding.calculateBottomPadding()
             ),
             // Actual system top inset, independent of the collapsible app header.
             systemTopInset = (contentPadding.calculateTopPadding() -
                 AppHeaderHeight - 16.dp).coerceAtLeast(0.dp),
             onDial = onDial,
-            onDockedChange = onProjectHeaderDocked,
+            onHeaderProgress = onProjectHeaderProgress,
             onBack = onCloseProject,
             onEdit = { project -> message = null; editor = EditorTarget.Project(project) }
         )
