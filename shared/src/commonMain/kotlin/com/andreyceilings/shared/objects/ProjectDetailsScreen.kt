@@ -84,7 +84,7 @@ internal fun projectTitleDocked(
 /**
  * Only a released downward gesture near the real top can settle the details
  * page. Restored fraction is measured against the header's source-to-dock
- * travel (70% restored means <=30% of that travel still scrolled away).
+ * travel (30% restored means <=70% of that travel still scrolled away).
  */
 internal fun projectDetailsShouldSettleToTop(
     firstVisibleItemIndex: Int,
@@ -92,7 +92,7 @@ internal fun projectDetailsShouldSettleToTop(
     returningDownward: Boolean,
     fingerReleased: Boolean,
     headerTravelPx: Int,
-    restoredFraction: Float = 0.70f
+    restoredFraction: Float = 0.30f
 ): Boolean {
     if (!returningDownward || !fingerReleased || firstVisibleItemIndex != 0 ||
         firstVisibleItemScrollOffsetPx <= 0 || headerTravelPx <= 0) return false
