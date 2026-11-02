@@ -41,6 +41,12 @@ gradle --no-daemon :shared:iosSimulatorArm64Test     # Потрібен macOS/Xc
 
 Окремі загальні KMP-тести мають зафіксовані еталонні розрахунки колишнього Go-рушія; тестові вектори залишаються у Kotlin після видалення Go. Критерії приймання й поточний стан — [дорожня карта](docs/PROJECT_ROADMAP.md), [KMP-калькулятор](docs/architecture/GO_TO_KMP_PARITY.md) і [SQLDelight](docs/architecture/ROOM_TO_SQLDELIGHT_CUTOVER.md).
 
+## Спільний CMP інтерфейс
+
+Нові CMP-екрани будуються на [CMP UI Foundation](docs/CMP_UI_FOUNDATION.md): scaffold,
+єдині edge gradients, вимірювані pinned-області та круглі FAB у `shared/commonMain`.
+Перші інтегровані екрани — «Об’єкти/Клієнти» й «Деталі об’єкта» (#63).
+
 ## Межі
 
 Поточна SQLDelight-БД і дані ще тестові; міграцію старої тестової Room/Go-БД за рішенням власника не виконуємо. Перед використанням реальних даних потрібні відповідні production migration/backup гарантії. Шифрування забезпечує захист локальної БД, але не окремих PDF/фото. Не поєднувати runtime cutover, WAL, серверну синхронізацію та зміни UI в одному PR.

@@ -13,7 +13,12 @@
 
 **Єдиний актуальний план — цей розділ; нижче збережені історичні зрізи попередніх PR.**
 
-## Наступний окремий етап: CMP UI Foundation — issue #63 (02.11.2026)
+## CMP UI Foundation — issue #63 (02.11.2026)
+
+Архітектурна основа та перша інтеграція описані в [CMP UI Foundation](CMP_UI_FOUNDATION.md);
+аудит меж і виміряна база CI — [architecture/CMP_UI_FOUNDATION_AUDIT.md](architecture/CMP_UI_FOUNDATION_AUDIT.md).
+Нові CMP-екрани використовують спільні компоненти; приймання #63 потребує CI на
+фінальному SHA та ручного APK smoke власника. Решта старих екранів — окремі PR.
 
 - **[Issue #63](https://github.com/aleks-nl5/andrey-ceilings-android/issues/63)** — створити єдиний стандарт верхнього/нижнього edge-to-edge градієнта, накладання прокрученого вмісту, закріплених заголовків/пошуку/вкладок та оформлення FAB у `shared/commonMain`. Робочі компоненти: `CeilingsScreenScaffold`, `CeilingsEdgeGradient`, `CeilingsPinnedContent`.
 - **Порядок:** лише після успішних CI, ручного APK smoke й рішення власника щодо завершення [PR #62](https://github.com/aleks-nl5/andrey-ceilings-android/pull/62). Окрема гілка та Draft PR; **не розширювати PR #62** великим UI-refactor.

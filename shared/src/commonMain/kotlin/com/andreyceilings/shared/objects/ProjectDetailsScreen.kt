@@ -7,9 +7,6 @@ import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.border
-import androidx.compose.foundation.indication
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -26,11 +23,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.input.pointer.PointerEventPass
@@ -53,6 +46,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.andreyceilings.shared.ui.CeilingsScreenScaffold
+import com.andreyceilings.shared.ui.CeilingsPinnedContent
+import com.andreyceilings.shared.ui.CeilingsFab
+import com.andreyceilings.shared.ui.CeilingsFabProfile
+import com.andreyceilings.shared.ui.ceilingsFloatingOutlineAlpha
+import com.andreyceilings.shared.theme.CeilingsEdge
+import com.andreyceilings.shared.theme.CeilingsEdgeGradient
 import com.andreyceilings.shared.calculation.CeilingShapeTemplates
 import com.andreyceilings.shared.domain.ClientListEntry
 import com.andreyceilings.shared.domain.ProjectListEntry
@@ -235,11 +235,24 @@ internal fun ProjectDetailsScreen(
             }
         }
     }
-    // Surface supplies LocalContentColor as well as the background. This matters
-    // when the host does not provide a themed content color (notably Android).
-    Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background,
-        contentColor = MaterialTheme.colorScheme.onBackground) {
-        Box(Modifier.fillMaxSize()) {
+    CeilingsScreenScaffold(
+        contentPadding = contentPadding,
+        windowInsets = WindowInsets(0, 0, 0, 0),
+        topGradient = {}, // Moving title owns its fade; host owns the at-rest header.
+        bottomGradient = false,
+        overlay = {
+            if (visibleProject != null) ProjectDetailsMovingTitle(
+                project = visibleProject,
+                motion = motion,
+                pinnedTopPx = pinnedTopPx,
+                startPadding = startPadding,
+                endPadding = endPadding,
+                onBack = onBack,
+                onEdit = { onEdit(visibleProject) },
+                modifier = Modifier.align(Alignment.TopCenter)
+            )
+        }
+    ) { listPadding ->
         LazyColumn(
             modifier = Modifier.pointerInput(
                 projectId, detailsListState, snapTravelPx, statusCardAtRestTopPx
@@ -287,7 +300,7 @@ internal fun ProjectDetailsScreen(
                 }
             },
             state = detailsListState,
-            contentPadding = contentPadding,
+            contentPadding = listPadding,
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             // Retain the original header's geometry for natural scrolling.
@@ -477,59 +490,6 @@ internal fun ProjectDetailsScreen(
                 }
             }
         }
-        if (visibleProject != null) {
-            ProjectDetailsMovingTitle(
-                project = visibleProject,
-                motion = motion,
-                pinnedTopPx = pinnedTopPx,
-                startPadding = startPadding,
-                endPadding = endPadding,
-                onBack = onBack,
-                onEdit = { onEdit(visibleProject) },
-                modifier = Modifier.align(Alignment.TopCenter)
-            )
-        }
-        }
-    }
-}
-
-/**
- * Bounded radial shadow copied from the CMP Objects/Clients create FAB approach.
- * Radii are 27/24dp instead of the larger "+" FAB's 34/33dp. Both gradients
- * fade to transparent inside the fixed 56dp touch target; unlike native
- * shadow/elevation this does not animate a polygonal outline.
- */
-private fun Modifier.projectDetailsFabShadow(progress: Float): Modifier = drawBehind {
-    if (progress > 0f) {
-        val middle = Offset(size.width / 2f, size.height / 2f)
-        val ambientCenter = Offset(middle.x, middle.y + 1.dp.toPx())
-        val ambientRadius = 27.dp.toPx()
-        drawCircle(
-            brush = Brush.radialGradient(
-                0f to Color.Black.copy(alpha = 0.07f * progress),
-                0.72f to Color.Black.copy(alpha = 0.07f * progress),
-                0.84f to Color.Black.copy(alpha = 0.035f * progress),
-                1f to Color.Transparent,
-                center = ambientCenter,
-                radius = ambientRadius
-            ),
-            radius = ambientRadius,
-            center = ambientCenter
-        )
-        val directionalCenter = Offset(middle.x + 1.dp.toPx(), middle.y + 3.dp.toPx())
-        val directionalRadius = 24.dp.toPx()
-        drawCircle(
-            brush = Brush.radialGradient(
-                0f to Color.Black.copy(alpha = 0.14f * progress),
-                0.68f to Color.Black.copy(alpha = 0.14f * progress),
-                0.80f to Color.Black.copy(alpha = 0.09f * progress),
-                1f to Color.Transparent,
-                center = directionalCenter,
-                radius = directionalRadius
-            ),
-            radius = directionalRadius,
-            center = directionalCenter
-        )
     }
 }
 
@@ -558,7 +518,7 @@ private fun ProjectDetailsMovingTitle(
     val darkTheme = scheme.background.luminance() < 0.4f
     val fabBackground = if (darkTheme) scheme.surfaceContainerHigh else Color.White
     // Same outline role and theme-specific opacity as AppFloatingNavigation.
-    val fabOutline = scheme.outline.copy(alpha = (if (darkTheme) 0.46f else 0.27f) * p)
+    val fabOutlineAlpha = ceilingsFloatingOutlineAlpha(darkTheme)
     val actionTint = lerp(scheme.primary, scheme.onSurface, p)
 
     BoxWithConstraints(modifier.fillMaxSize()) {
@@ -576,67 +536,34 @@ private fun ProjectDetailsMovingTitle(
         val fabTouchHeightPx = with(density) { 56.dp.roundToPx() }
         var measuredTitleWidth by remember(project.id) { mutableIntStateOf(0) }
         var measuredTitleHeight by remember(project.id) { mutableIntStateOf(0) }
-        val backInteraction = remember(project.id) { MutableInteractionSource() }
-        val editInteraction = remember(project.id) { MutableInteractionSource() }
 
-        // Visual fade and pointer shield share exactly the docked header bounds:
-        // status-bar safe area + 8dp offset + 72dp (two-line title). No 36dp
-        // extra hit area over the cards below. The shield only activates once
-        // the pinned title has practically reached its final position.
+        // Fade is drawing only. Input protection follows the measured union
+        // of the address and actual 56dp action targets, never the fade tail.
         if (p > 0.95f) {
-            Box(
-                Modifier.fillMaxWidth()
-                    .height(with(density) { dockY.toDp() } + 72.dp)
-                    .background(
-                        Brush.verticalGradient(
-                            colors = listOf(
-                                scheme.surface.copy(alpha = 0.50f * p),
-                                scheme.surface.copy(alpha = 0f)
-                            )
-                        )
-                    )
-                    .pointerInput(Unit) {
-                        awaitEachGesture {
-                            do {
-                                val event = awaitPointerEvent(PointerEventPass.Initial)
-                                event.changes.forEach { it.consume() }
-                            } while (event.changes.any { it.pressed })
-                        }
-                    }
-            )
+            CeilingsEdgeGradient(CeilingsEdge.TOP,
+                Modifier.fillMaxWidth().height(with(density) { dockY.toDp() } + 72.dp),
+                intensity = p)
+            val addressTop = contentY + projectAddressVerticalOffsetPx(
+                p, fabTouchHeightPx, measuredTitleHeight)
+            val occupiedTop = minOf(backY, addressTop)
+            val occupiedBottom = maxOf(backY + fabTouchHeightPx, addressTop + measuredTitleHeight)
+            CeilingsPinnedContent(Modifier.fillMaxWidth()
+                .offset { IntOffset(0, occupiedTop) }) {
+                Spacer(Modifier.height(with(density) { (occupiedBottom - occupiedTop).toDp() }))
+            }
         }
 
-        // 56dp hit target, 42dp painted circle when docked. At rest the
-        // button is only an arrow; edit is aligned with it on the same row.
-        Box(
-            Modifier.offset { IntOffset(startPx, backY) }
-                .size(56.dp)
-                .projectDetailsFabShadow(p)
-                .clip(CircleShape)
-                .clickable(
-                    interactionSource = backInteraction,
-                    indication = null,
-                    role = Role.Button,
-                    onClickLabel = "До списку",
-                    onClick = onBack
-                ),
-            contentAlignment = Alignment.Center
+        CeilingsFab(
+            onClick = onBack,
+            actionLabel = "До списку",
+            modifier = Modifier.offset { IntOffset(startPx, backY) },
+            profile = CeilingsFabProfile.COMPACT,
+            progress = p,
+            containerColor = fabBackground,
+            outlineAlpha = fabOutlineAlpha
         ) {
-            Box(
-                Modifier.size(42.dp)
-                    .background(fabBackground.copy(alpha = p), CircleShape)
-                    .border(1.dp, fabOutline, CircleShape)
-                    .clip(CircleShape)
-                    .indication(backInteraction, ripple(bounded = true)),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    Icons.Default.ArrowBack,
-                    contentDescription = null,
-                    tint = actionTint,
-                    modifier = Modifier.size(23.dp)
-                )
-            }
+            Icon(Icons.Default.ArrowBack, contentDescription = null,
+                tint = actionTint, modifier = Modifier.size(23.dp))
         }
 
         Box(
@@ -676,35 +603,17 @@ private fun ProjectDetailsMovingTitle(
             )
         }
 
-        Box(
-            Modifier.offset { IntOffset(editX, backY) }
-                .size(56.dp)
-                .projectDetailsFabShadow(p)
-                .clip(CircleShape)
-                .clickable(
-                    interactionSource = editInteraction,
-                    indication = null,
-                    role = Role.Button,
-                    onClickLabel = "Редагувати об'єкт",
-                    onClick = onEdit
-                ),
-            contentAlignment = Alignment.Center
+        CeilingsFab(
+            onClick = onEdit,
+            actionLabel = "Редагувати об'єкт",
+            modifier = Modifier.offset { IntOffset(editX, backY) },
+            profile = CeilingsFabProfile.COMPACT,
+            progress = p,
+            containerColor = fabBackground,
+            outlineAlpha = fabOutlineAlpha
         ) {
-            Box(
-                Modifier.size(42.dp)
-                    .background(fabBackground.copy(alpha = p), CircleShape)
-                    .border(1.dp, fabOutline, CircleShape)
-                    .clip(CircleShape)
-                    .indication(editInteraction, ripple(bounded = true)),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    Icons.Default.Edit,
-                    contentDescription = null,
-                    tint = actionTint,
-                    modifier = Modifier.size(23.dp)
-                )
-            }
+            Icon(Icons.Default.Edit, contentDescription = null,
+                tint = actionTint, modifier = Modifier.size(23.dp))
         }
     }
 }

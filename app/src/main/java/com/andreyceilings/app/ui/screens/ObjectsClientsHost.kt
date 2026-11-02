@@ -18,6 +18,7 @@ import com.andreyceilings.app.data.db.CeilingsDatabase
 import com.andreyceilings.shared.objects.ContactAction
 import com.andreyceilings.shared.objects.ObjectsClientsRows
 import com.andreyceilings.shared.objects.ObjectsClientsScreen
+import com.andreyceilings.shared.objects.ObjectsClientsTab
 import com.andreyceilings.shared.objects.ObjectsClientsStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.flowOf
@@ -34,6 +35,7 @@ internal fun ObjectsClientsHost(
     onOpenProject: (Long) -> Unit,
     onCloseProject: () -> Unit,
     onProjectHeaderProgress: (Float) -> Unit = {},
+    onListTabChanged: (ObjectsClientsTab) -> Unit = {},
     openCreateProject: Boolean,
     headerVisibleFraction: Float,
     onCreateProjectConsumed: () -> Unit
@@ -65,12 +67,14 @@ internal fun ObjectsClientsHost(
         onOpenProject = onOpenProject,
         onCloseProject = onCloseProject,
         onProjectHeaderProgress = onProjectHeaderProgress,
+        onListTabChanged = onListTabChanged,
         databaseAvailable = store != null,
         requestCreateProject = openCreateProject,
         headerVisibleFraction = headerVisibleFraction,
         onCreateProjectConsumed = onCreateProjectConsumed,
+        horizontalOverlayInset = 16.dp,
         contentPadding = PaddingValues(
-            start = 0.dp, end = 0.dp,
+            start = 16.dp, end = 16.dp,
             top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 72.dp,
             bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 84.dp
         ),

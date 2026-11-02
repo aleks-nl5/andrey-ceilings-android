@@ -239,6 +239,11 @@ private fun DesktopPriceHost(
                     onOpenProject = { onNavigate(navigation.openProject(it)) },
                     onCloseProject = { onNavigate(navigation.back(availableRoutes)) },
                     onProjectHeaderProgress = { projectTitleProgress = it.coerceIn(0f, 1f) },
+                    onListTabChanged = {
+                        // Keep the desktop app bar in sync with each fresh CMP list.
+                        topScrollBehavior.state.heightOffset = 0f
+                        topScrollBehavior.state.contentOffset = 0f
+                    },
                     headerVisibleFraction = if (isProjectDetailsOpen) 1f
                         else 1f - topScrollBehavior.state.collapsedFraction,
                     databaseAvailable = true,
@@ -309,6 +314,7 @@ private fun DesktopPriceHost(
                 collapsedFraction = if (isProjectDetailsOpen) 0f
                     else topScrollBehavior.state.collapsedFraction,
                 shadeOpacity = 0.50f + 0.43f * topScrollBehavior.state.collapsedFraction,
+                drawGradient = selectedTab != AppRoute.OBJECTS || isProjectDetailsOpen,
                 statusBarHeight = 0.dp,
                 windowInsets = WindowInsets(0, 0, 0, 0),
                 scrollBehavior = if (isProjectDetailsOpen) null else topScrollBehavior,

@@ -37,7 +37,6 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.Animatable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Size
@@ -68,6 +67,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.andreyceilings.shared.theme.CeilingsEdge
+import com.andreyceilings.shared.theme.CeilingsEdgeDefaults
+import com.andreyceilings.shared.theme.CeilingsEdgeGradient
 import com.andreyceilings.shared.navigation.AppHeader
 import com.andreyceilings.shared.navigation.AppNavigationState
 import com.andreyceilings.shared.navigation.AppPredictiveBackSurface
@@ -466,9 +468,7 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
 
     // 50% transparent at the screen edges, fading smoothly to fully transparent
     // over the app content. Android's own system bars remain truly transparent.
-    val systemPanelTint = MaterialTheme.colorScheme.surface.copy(alpha = 0.50f)
-    val transparentSystemPanel = systemPanelTint.copy(alpha = 0f)
-    val systemPanelGradientHeight = 36.dp
+    val systemPanelGradientHeight = CeilingsEdgeDefaults.FadeHeight
     val statusBarInset = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     val navigationBarInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     // The header keeps sliding in/out as before. Only its background becomes denser
@@ -500,7 +500,8 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
         key(tab) {
             if (tab == AppTab.OBJECTS || tab == AppTab.MEASUREMENTS || tab == AppTab.ESTIMATES || tab == AppTab.PRICES || tab == AppTab.CALENDAR) {
                 Box(
-                    Modifier.fillMaxSize().nestedScroll(screenScrollConnection).padding(horizontal = 16.dp)
+                    Modifier.fillMaxSize().nestedScroll(screenScrollConnection)
+                        .padding(horizontal = if (tab == AppTab.OBJECTS) 0.dp else 16.dp)
                 ) {
                     when (tab) {
                         AppTab.OBJECTS -> ObjectsClientsHost(
@@ -509,6 +510,13 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
                             onOpenProject = { navigation = navigation.openProject(it) },
                             onCloseProject = { navigation = navigation.back() },
                             onProjectHeaderProgress = { projectTitleProgress = it.coerceIn(0f, 1f) },
+                            onListTabChanged = {
+                                // The CMP list resets on tab change; reset the parent
+                                // enterAlways header and scroll-based shading too.
+                                topAppBarScrollBehavior.state.heightOffset = 0f
+                                topAppBarScrollBehavior.state.contentOffset = 0f
+                                contentScrolledPx.floatValue = 0f
+                            },
                             headerVisibleFraction = if (isProjectDetailsOpen) 1f
                                 else 1f - topAppBarScrollBehavior.state.collapsedFraction,
                             openCreateProject = navigation.pendingQuickCreate == AppQuickCreate.OBJECT,
@@ -675,6 +683,7 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
             // rather than covering it with the 93% collapsed-header shade.
             shadeOpacity = if (tab == AppTab.OBJECTS && !isProjectDetailsOpen)
                 0.50f else headerShadeOpacity,
+            drawGradient = tab != AppTab.OBJECTS || isProjectDetailsOpen,
             statusBarHeight = statusBarInset,
             windowInsets = WindowInsets.statusBars,
             scrollBehavior = if (isProjectDetailsOpen) null else topAppBarScrollBehavior,
@@ -687,16 +696,10 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
                     (1f - projectTitleProgress) * (1f - projectTitleProgress)
                 else 1f)
         )
-        Box(
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .fillMaxWidth()
+        CeilingsEdgeGradient(
+            edge = CeilingsEdge.BOTTOM,
+            modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth()
                 .height(navigationBarInset + systemPanelGradientHeight)
-                .background(
-                    Brush.verticalGradient(
-                        colors = listOf(transparentSystemPanel, systemPanelTint)
-                    )
-                )
         )
 
         FloatingNavigationBar(
