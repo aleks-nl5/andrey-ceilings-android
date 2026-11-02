@@ -1,5 +1,7 @@
 package com.andreyceilings.shared.objects
 
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -59,27 +61,15 @@ import kotlinx.coroutines.flow.collect
 private enum class InlineStatusKind { WORK, PAYMENT }
 
 /**
- * Anchor the transition to the LazyListState scroll distance, not to
- * LazyListItemInfo.offset: with contentPadding that item's layout offset
- * is NOT guaranteed to match contentPadding.calculateTopPadding().
- * A newly opened page must always start at progress=0 when scroll=0.
+ * Scroll starts docking; the tween completes even on a short scrollable page.
+ * Only returning all the way to the original top reverses the transition.
  */
-internal data class ProjectTitleMotion(val sourceTopPx: Int, val progress: Float)
-
-internal fun projectTitleMotion(
+internal fun projectTitleDocked(
     firstVisibleItemIndex: Int,
-    firstVisibleItemScrollOffsetPx: Int,
-    initialTopPx: Int,
-    dockedTopPx: Int,
-    addressRowOffsetPx: Int
-): ProjectTitleMotion {
-    val scrollPx = firstVisibleItemScrollOffsetPx.coerceAtLeast(0)
-    val sourceTop = initialTopPx - scrollPx
-    val travel = (initialTopPx + addressRowOffsetPx - dockedTopPx).coerceAtLeast(1)
-    val fraction = if (firstVisibleItemIndex > 0) 1f else
-        (scrollPx.toFloat() / travel).coerceIn(0f, 1f)
-    return ProjectTitleMotion(sourceTop, fraction)
-}
+    firstVisibleItemScrollOffsetPx: Int
+): Boolean = firstVisibleItemIndex > 0 || firstVisibleItemScrollOffsetPx > 0
+
+internal data class ProjectTitleMotion(val sourceTopPx: Int, val progress: Float)
 
 private fun interpolatePx(from: Int, to: Int, progress: Float): Int =
     (from + (to - from) * progress.coerceIn(0f, 1f)).roundToInt()
@@ -119,18 +109,22 @@ internal fun ProjectDetailsScreen(
     val endPadding = contentPadding.calculateRightPadding(layoutDirection)
     val initialTopPx = with(density) { contentPadding.calculateTopPadding().roundToPx() }
     val pinnedTopPx = with(density) { systemTopInset.roundToPx() }
-    val rowOffsetPx = with(density) { 38.dp.roundToPx() }
-    val motion by remember(detailsListState, projectId, initialTopPx, pinnedTopPx, rowOffsetPx) {
+    // The animation deliberately decouples from how far the content can scroll.
+    // A non-zero scroll triggers docking, and 0 returns to the source position.
+    val docked by remember(detailsListState, projectId) {
         derivedStateOf {
-            projectTitleMotion(
+            projectTitleDocked(
                 detailsListState.firstVisibleItemIndex,
-                detailsListState.firstVisibleItemScrollOffset,
-                initialTopPx,
-                pinnedTopPx,
-                rowOffsetPx
+                detailsListState.firstVisibleItemScrollOffset
             )
         }
     }
+    val titleProgress by animateFloatAsState(
+        targetValue = if (docked) 1f else 0f,
+        animationSpec = tween(durationMillis = 280),
+        label = "Project address docking"
+    )
+    val motion = ProjectTitleMotion(initialTopPx, titleProgress)
     val progressCallback by rememberUpdatedState(onHeaderProgress)
     LaunchedEffect(projectId, visibleProject?.id) {
         if (visibleProject == null) {
@@ -191,7 +185,7 @@ internal fun ProjectDetailsScreen(
                     Modifier.fillMaxWidth(),
                     verticalArrangement = Arrangement.spacedBy(2.dp)
                 ) {
-                    Spacer(Modifier.fillMaxWidth().height(40.dp))
+                    Spacer(Modifier.fillMaxWidth().height(56.dp))
                     val project = (state as? DetailsState.Loaded)?.data?.project
                     if (project != null) {
                         Row(
@@ -208,7 +202,7 @@ internal fun ProjectDetailsScreen(
                                 fontWeight = FontWeight.SemiBold,
                                 maxLines = 2
                             )
-                            Spacer(Modifier.size(48.dp))
+                            Spacer(Modifier.size(56.dp))
                         }
                         if (project.title.isNotBlank() &&
                             project.title != project.address &&
@@ -396,16 +390,17 @@ private fun ProjectDetailsMovingTitle(
     val density = LocalDensity.current
     val scheme = MaterialTheme.colorScheme
     val startPx = with(density) { startPadding.roundToPx() }
-    val addressRowPx = with(density) { 38.dp.roundToPx() }
-    val backRowPx = with(density) { 8.dp.roundToPx() }
-    val actionTint = lerp(scheme.primary, Color(0xFF1B252C), p)
+    val addressRowPx = with(density) { 58.dp.roundToPx() }
+    val dockY = pinnedTopPx + with(density) { 8.dp.roundToPx() }
+    val fabBackground = if (scheme.background.luminance() < 0.4f)
+        scheme.surfaceContainerHigh else Color.White
+    val actionTint = lerp(scheme.primary, scheme.onSurface, p)
 
     BoxWithConstraints(modifier.fillMaxSize()) {
         val widthPx = with(density) { maxWidth.roundToPx() }
         val endPx = with(density) { endPadding.roundToPx() }
-        val backWidth = (112f - 56f * p).dp
-        val backY = interpolatePx(motion.sourceTopPx - backRowPx, pinnedTopPx, p)
-        val contentY = interpolatePx(motion.sourceTopPx + addressRowPx, pinnedTopPx, p)
+        val backY = interpolatePx(motion.sourceTopPx, dockY, p)
+        val contentY = interpolatePx(motion.sourceTopPx + addressRowPx, dockY, p)
         val editX = with(density) {
             widthPx - endPx - ((52f + 4f * p).dp).roundToPx()
         }
@@ -431,23 +426,17 @@ private fun ProjectDetailsMovingTitle(
             )
         }
 
+        // 56dp hit target, 42dp painted circle when docked. At rest the
+        // button is only an arrow; edit is aligned with it on the same row.
         Box(
             Modifier.offset { IntOffset(startPx, backY) }
-                .width(backWidth).height(56.dp)
+                .size(56.dp)
                 .clickable(role = Role.Button, onClickLabel = "До списку", onClick = onBack),
-            contentAlignment = Alignment.CenterStart
+            contentAlignment = Alignment.Center
         ) {
-            Text(
-                "← До списку",
-                modifier = Modifier.alpha(1f - p),
-                color = scheme.primary,
-                style = MaterialTheme.typography.labelLarge,
-                maxLines = 1
-            )
             Box(
-                Modifier.align(Alignment.Center)
-                    .size(42.dp)
-                    .background(Color.White.copy(alpha = p), CircleShape)
+                Modifier.size(42.dp)
+                    .background(fabBackground.copy(alpha = p), CircleShape)
                     .border(1.dp, scheme.outlineVariant.copy(alpha = 0.55f * p), CircleShape),
                 contentAlignment = Alignment.Center
             ) {
@@ -455,14 +444,14 @@ private fun ProjectDetailsMovingTitle(
                     Icons.Default.ArrowBack,
                     contentDescription = null,
                     tint = actionTint,
-                    modifier = Modifier.size(23.dp).alpha(p)
+                    modifier = Modifier.size(23.dp)
                 )
             }
         }
 
         Box(
             Modifier.offset { IntOffset(addressX, contentY) }
-                .width(addressWidth).height(56.dp),
+                .width(addressWidth).height(72.dp),
             contentAlignment = Alignment.CenterStart
         ) {
             Text(
@@ -484,19 +473,20 @@ private fun ProjectDetailsMovingTitle(
                 color = scheme.onSurface,
                 textAlign = TextAlign.Center,
                 maxLines = 2,
+                softWrap = true,
                 overflow = TextOverflow.Ellipsis
             )
         }
 
         Box(
-            Modifier.offset { IntOffset(editX, contentY) }
+            Modifier.offset { IntOffset(editX, backY) }
                 .size(56.dp)
                 .clickable(role = Role.Button, onClickLabel = "Редагувати об'єкт", onClick = onEdit),
             contentAlignment = Alignment.Center
         ) {
             Box(
                 Modifier.size(42.dp)
-                    .background(Color.White.copy(alpha = p), CircleShape)
+                    .background(fabBackground.copy(alpha = p), CircleShape)
                     .border(1.dp, scheme.outlineVariant.copy(alpha = 0.55f * p), CircleShape),
                 contentAlignment = Alignment.Center
             ) {
