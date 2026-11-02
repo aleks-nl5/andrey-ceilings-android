@@ -2,6 +2,7 @@ package com.andreyceilings.shared.objects
 
 import kotlin.test.Test
 import kotlin.test.assertFalse
+import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 /**
@@ -30,6 +31,31 @@ class ProjectDetailsTitleDockingTest {
         assertTrue(projectTitleDocked(0, 80))
         assertTrue(projectTitleDocked(0, 1))
         assertFalse(projectTitleDocked(0, 0))
+    }
+
+    @Test
+    fun snapDownwardOnlyAfterFingerReleasedAndSeventyPercentRestored() {
+        // Source to dock travel is 200px; <=60px remaining is 70% restored.
+        assertTrue(projectDetailsShouldSettleToTop(0, 60, true, true, 200))
+        assertTrue(projectDetailsShouldSettleToTop(0, 1, true, true, 200))
+        assertFalse(projectDetailsShouldSettleToTop(0, 61, true, true, 200))
+        assertFalse(projectDetailsShouldSettleToTop(0, 60, false, true, 200))
+        assertFalse(projectDetailsShouldSettleToTop(0, 60, true, false, 200))
+        assertFalse(projectDetailsShouldSettleToTop(1, 0, true, true, 200))
+        assertFalse(projectDetailsShouldSettleToTop(0, 0, true, true, 200))
+        assertFalse(projectDetailsShouldSettleToTop(0, 60, true, true, 0))
+    }
+
+    @Test
+    fun centeredAddressSharesFabVerticalCenterAtDockAndStaysTopAlignedAtRest() {
+        // FAB hit row is 56px: 24px single line needs 16px offset.
+        assertEquals(0, projectAddressVerticalOffsetPx(0f, 56, 24))
+        assertEquals(8, projectAddressVerticalOffsetPx(0.5f, 56, 24))
+        assertEquals(16, projectAddressVerticalOffsetPx(1f, 56, 24))
+        // Two lines of 52px: 2px offset. A 60px address extends 2px above
+        // the 56px FAB hit row, but its center is still exactly aligned.
+        assertEquals(2, projectAddressVerticalOffsetPx(1f, 56, 52))
+        assertEquals(-2, projectAddressVerticalOffsetPx(1f, 56, 60))
     }
 
     @Test
