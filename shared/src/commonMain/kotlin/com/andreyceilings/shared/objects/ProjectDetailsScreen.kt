@@ -1,14 +1,17 @@
 package com.andreyceilings.shared.objects
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Phone
@@ -16,6 +19,12 @@ import androidx.compose.material.icons.filled.Email
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.semantics.Role
@@ -40,6 +49,22 @@ import kotlinx.coroutines.flow.map
 
 private enum class InlineStatusKind { WORK, PAYMENT }
 
+/**
+ * Direction-independent docking rule. Once the original title has passed the
+ * safe top edge, its floating copy stays visible until the *actual* row returns.
+ * A reverse swipe anywhere else in the list does not undock the title.
+ */
+internal fun shouldDockProjectTitle(
+    firstVisibleItemIndex: Int,
+    titleOffsetPx: Int?,
+    titleSizePx: Int?,
+    topEdgePx: Int
+): Boolean {
+    if (firstVisibleItemIndex > 0) return true
+    if (titleOffsetPx == null || titleSizePx == null) return false
+    return titleOffsetPx + titleSizePx <= topEdgePx
+}
+
 private sealed interface DetailsState {
     data object Loading : DetailsState
     data object Unavailable : DetailsState
@@ -53,6 +78,7 @@ internal fun ProjectDetailsScreen(
     store: ObjectsClientsStore?,
     clients: List<ClientListEntry>,
     contentPadding: PaddingValues,
+    systemTopInset: androidx.compose.ui.unit.Dp = 0.dp,
     onBack: () -> Unit,
     onEdit: (ProjectListEntry) -> Unit,
     onDial: (String) -> Unit
@@ -64,6 +90,23 @@ internal fun ProjectDetailsScreen(
     val state = if (flow == null) DetailsState.Unavailable
         else flow.collectAsState(initial = DetailsState.Loading).value
     val uriHandler = LocalUriHandler.current
+    val detailsListState = rememberLazyListState()
+    val direction = LocalLayoutDirection.current
+    val horizontalStart = contentPadding.calculateLeftPadding(direction)
+    val horizontalEnd = contentPadding.calculateRightPadding(direction)
+    val topEdgePx = with(LocalDensity.current) { (systemTopInset + 4.dp).roundToPx() }
+    val isDocked by remember(detailsListState, projectId, topEdgePx) {
+        derivedStateOf {
+            val heading = detailsListState.layoutInfo.visibleItemsInfo
+                .firstOrNull { it.key == "project-heading" }
+            shouldDockProjectTitle(
+                firstVisibleItemIndex = detailsListState.firstVisibleItemIndex,
+                titleOffsetPx = heading?.offset,
+                titleSizePx = heading?.size,
+                topEdgePx = topEdgePx
+            )
+        }
+    }
     var contactError by remember(projectId) { mutableStateOf<String?>(null) }
     var statusError by remember(projectId) { mutableStateOf<String?>(null) }
     var updatingStatus by remember(projectId) { mutableStateOf(false) }
@@ -100,56 +143,20 @@ internal fun ProjectDetailsScreen(
     // when the host does not provide a themed content color (notably Android).
     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background,
         contentColor = MaterialTheme.colorScheme.onBackground) {
+        Box(Modifier.fillMaxSize()) {
+        val visibleProject = (state as? DetailsState.Loaded)?.data?.project
         LazyColumn(
+            state = detailsListState,
             contentPadding = contentPadding,
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            item(key = "header") {
-                Column(
-                    Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(2.dp)
-                ) {
-                    TextButton(
-                        onClick = onBack,
-                        modifier = Modifier.height(40.dp),
-                        contentPadding = PaddingValues(horizontal = 0.dp, vertical = 0.dp)
-                    ) {
-                        Text("← До списку")
-                    }
-                    val project = (state as? DetailsState.Loaded)?.data?.project
-                    if (project != null) {
-                        Row(
-                            Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Text(
-                                project.address.ifBlank {
-                                    project.title.ifBlank { "Адреса не вказана" }
-                                },
-                                modifier = Modifier.weight(1f),
-                                style = MaterialTheme.typography.titleLarge,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                            IconButton(onClick = { onEdit(project) }) {
-                                Icon(
-                                    Icons.Default.Edit,
-                                    contentDescription = "Редагувати об'єкт",
-                                    tint = MaterialTheme.colorScheme.primary
-                                )
-                            }
-                        }
-                        if (project.title.isNotBlank() &&
-                            project.title != project.address &&
-                            project.address.isNotBlank()
-                        ) {
-                            Text(
-                                project.title,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
+            item(key = "project-heading") {
+                visibleProject?.let { project ->
+                    ProjectDetailsTitleRow(
+                        project = project,
+                        onBack = onBack,
+                        onEdit = { onEdit(project) }
+                    )
                 }
             }
             when (state) {
@@ -161,16 +168,19 @@ internal fun ProjectDetailsScreen(
                     else {
                         item(key = "status") {
                             DetailsCard {
-                                FlowRow(
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.Start),
-                                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    WorkStagePicker(
-                                        projectId = projectId,
-                                        status = project.workStatus,
-                                        enabled = !updatingStatus && store != null,
-                                        onSelect = { updateStatus(InlineStatusKind.WORK, it) }
-                                    )
+                                    Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
+                                        WorkStagePicker(
+                                            projectId = projectId,
+                                            status = project.workStatus,
+                                            enabled = !updatingStatus && store != null,
+                                            onSelect = { updateStatus(InlineStatusKind.WORK, it) }
+                                        )
+                                    }
                                     PaymentStatusPicker(
                                         projectId = projectId,
                                         status = project.paymentStatus,
@@ -197,8 +207,8 @@ internal fun ProjectDetailsScreen(
                             DetailsCard("Клієнт") {
                                 Text(
                                     client?.name ?: project.clientName.ifBlank { "Не вказано" },
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    fontWeight = FontWeight.Medium
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold
                                 )
                                 if (phone != null || email != null) {
                                     Row(
@@ -231,7 +241,9 @@ internal fun ProjectDetailsScreen(
                                     Surface(
                                         modifier = Modifier.fillMaxWidth(),
                                         shape = MaterialTheme.shapes.medium,
-                                        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                                        color = if (MaterialTheme.colorScheme.background.luminance() < 0.5f)
+                                            MaterialTheme.colorScheme.surfaceDim
+                                        else MaterialTheme.colorScheme.surfaceContainerHigh,
                                         contentColor = MaterialTheme.colorScheme.onSurface
                                     ) {
                                         Column(
@@ -239,13 +251,13 @@ internal fun ProjectDetailsScreen(
                                             verticalArrangement = Arrangement.spacedBy(3.dp)
                                         ) {
                                             Text(
-                                                "Примітки клієнта",
+                                                "Примітки",
                                                 style = MaterialTheme.typography.labelSmall,
                                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                                             )
                                             Text(
                                                 clientNotes.trim(),
-                                                style = MaterialTheme.typography.bodySmall
+                                                style = MaterialTheme.typography.bodyMedium
                                             )
                                         }
                                     }
@@ -284,6 +296,97 @@ internal fun ProjectDetailsScreen(
                 }
             }
         }
+        if (visibleProject != null && isDocked) {
+            ProjectDetailsDockedHeader(
+                project = visibleProject,
+                topInset = systemTopInset,
+                startPadding = horizontalStart,
+                endPadding = horizontalEnd,
+                onBack = onBack,
+                onEdit = { onEdit(visibleProject) },
+                modifier = Modifier.align(Alignment.TopCenter)
+            )
+        }
+        }
+    }
+}
+
+
+/** One row is used in both positions, so back/edit and the address never drift. */
+@Composable
+private fun ProjectDetailsTitleRow(
+    project: ProjectListEntry,
+    onBack: () -> Unit,
+    onEdit: () -> Unit,
+    compact: Boolean = false,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier.fillMaxWidth().height(76.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        ObjectsClientsCreateFab(
+            visible = true,
+            actionLabel = "До об'єктів",
+            icon = Icons.Default.ArrowBack,
+            onClick = onBack
+        )
+        Text(
+            project.address.ifBlank {
+                project.title.ifBlank { "Адреса не вказана" }
+            },
+            modifier = Modifier.weight(1f),
+            textAlign = TextAlign.Center,
+            style = if (compact) MaterialTheme.typography.titleMedium
+                    else MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.onBackground,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis
+        )
+        ObjectsClientsCreateFab(
+            visible = true,
+            actionLabel = "Редагувати об'єкт",
+            icon = Icons.Default.Edit,
+            onClick = onEdit
+        )
+    }
+}
+
+/** Gradient matches the existing AppHeader's fading background style. */
+@Composable
+private fun ProjectDetailsDockedHeader(
+    project: ProjectListEntry,
+    topInset: androidx.compose.ui.unit.Dp,
+    startPadding: androidx.compose.ui.unit.Dp,
+    endPadding: androidx.compose.ui.unit.Dp,
+    onBack: () -> Unit,
+    onEdit: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val background = MaterialTheme.colorScheme.background
+    Box(
+        modifier = modifier.fillMaxWidth()
+            .height(topInset + 108.dp)
+            .drawBehind {
+                drawRect(
+                    brush = Brush.verticalGradient(
+                        0f to background.copy(alpha = 0.98f),
+                        0.64f to background.copy(alpha = 0.95f),
+                        1f to background.copy(alpha = 0f)
+                    )
+                )
+            }
+    ) {
+        ProjectDetailsTitleRow(
+            project = project,
+            onBack = onBack,
+            onEdit = onEdit,
+            compact = true,
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .padding(top = topInset, start = startPadding, end = endPadding)
+        )
     }
 }
 
@@ -340,13 +443,14 @@ private fun WorkStagePicker(
         Surface(
             onClick = { expanded = true },
             enabled = enabled,
+            modifier = Modifier.height(40.dp),
             shape = CircleShape,
             color = MaterialTheme.colorScheme.surfaceContainerHigh,
             contentColor = MaterialTheme.colorScheme.onSurface,
             border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
         ) {
             Row(
-                Modifier.padding(start = 9.dp, end = 8.dp, top = 5.dp, bottom = 5.dp)
+                Modifier.fillMaxHeight().padding(horizontal = 9.dp)
                     .semantics {
                         contentDescription = "Змінити етап робіт: ${ProjectStatusRules.workLabel(status)}"
                     },
@@ -407,13 +511,14 @@ private fun PaymentStatusPicker(
         Surface(
             onClick = { expanded = true },
             enabled = enabled,
+            modifier = Modifier.height(40.dp),
             shape = CircleShape,
             color = tint.copy(alpha = 0.11f),
             contentColor = tint,
             border = BorderStroke(1.dp, tint.copy(alpha = 0.36f))
         ) {
             Row(
-                Modifier.padding(horizontal = 9.dp, vertical = 7.dp)
+                Modifier.fillMaxHeight().padding(horizontal = 11.dp)
                     .semantics {
                         contentDescription = "Змінити оплату: ${ProjectStatusRules.paymentLabel(status)}"
                     },
@@ -426,7 +531,7 @@ private fun PaymentStatusPicker(
                         "partial" -> "Часткова"
                         else -> ProjectStatusRules.paymentLabel(status)
                     },
-                    style = MaterialTheme.typography.labelSmall,
+                    style = MaterialTheme.typography.labelMedium,
                     maxLines = 1
                 )
                 Icon(
