@@ -22,6 +22,9 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.lerp
@@ -185,7 +188,7 @@ internal fun ProjectDetailsScreen(
                     Modifier.fillMaxWidth(),
                     verticalArrangement = Arrangement.spacedBy(2.dp)
                 ) {
-                    Spacer(Modifier.fillMaxWidth().height(56.dp))
+                    Spacer(Modifier.fillMaxWidth().height(40.dp))
                     val project = (state as? DetailsState.Loaded)?.data?.project
                     if (project != null) {
                         Row(
@@ -371,9 +374,49 @@ internal fun ProjectDetailsScreen(
 }
 
 /**
+ * Bounded radial shadow copied from the CMP Objects/Clients create FAB approach.
+ * Radii are 27/24dp instead of the larger "+" FAB's 34/33dp. Both gradients
+ * fade to transparent inside the fixed 56dp touch target; unlike native
+ * shadow/elevation this does not animate a polygonal outline.
+ */
+private fun Modifier.projectDetailsFabShadow(progress: Float): Modifier = drawBehind {
+    if (progress > 0f) {
+        val middle = Offset(size.width / 2f, size.height / 2f)
+        val ambientCenter = Offset(middle.x, middle.y + 1.dp.toPx())
+        val ambientRadius = 27.dp.toPx()
+        drawCircle(
+            brush = Brush.radialGradient(
+                0f to Color.Black.copy(alpha = 0.07f * progress),
+                0.72f to Color.Black.copy(alpha = 0.07f * progress),
+                0.84f to Color.Black.copy(alpha = 0.035f * progress),
+                1f to Color.Transparent,
+                center = ambientCenter,
+                radius = ambientRadius
+            ),
+            radius = ambientRadius,
+            center = ambientCenter
+        )
+        val directionalCenter = Offset(middle.x + 1.dp.toPx(), middle.y + 3.dp.toPx())
+        val directionalRadius = 24.dp.toPx()
+        drawCircle(
+            brush = Brush.radialGradient(
+                0f to Color.Black.copy(alpha = 0.14f * progress),
+                0.68f to Color.Black.copy(alpha = 0.14f * progress),
+                0.80f to Color.Black.copy(alpha = 0.09f * progress),
+                1f to Color.Transparent,
+                center = directionalCenter,
+                radius = directionalRadius
+            ),
+            radius = directionalRadius,
+            center = directionalCenter
+        )
+    }
+}
+
+/**
  * One CMP foreground layer moves the real address and actions between the
  * original separate rows and the pinned top row, without a sticky duplicate.
- * FABs are plain white circles: intentionally NO shadow or elevation.
+ * FAB shadows share the stable two-gradient CMP technique of the list create FAB.
  */
 @Composable
 private fun ProjectDetailsMovingTitle(
@@ -390,7 +433,7 @@ private fun ProjectDetailsMovingTitle(
     val density = LocalDensity.current
     val scheme = MaterialTheme.colorScheme
     val startPx = with(density) { startPadding.roundToPx() }
-    val addressRowPx = with(density) { 58.dp.roundToPx() }
+    val addressRowPx = with(density) { 42.dp.roundToPx() }
     val dockY = pinnedTopPx + with(density) { 8.dp.roundToPx() }
     val fabBackground = if (scheme.background.luminance() < 0.4f)
         scheme.surfaceContainerHigh else Color.White
@@ -410,17 +453,18 @@ private fun ProjectDetailsMovingTitle(
         val addressWidthPx = with(density) { addressWidth.roundToPx() }
         var measuredTitleWidth by remember(project.id) { mutableIntStateOf(0) }
 
-        // Material-like top fade keeps the docked controls legible over the
-        // scrolled list; this is a flat backdrop, not a FAB shadow.
+        // Match the platform bars' 50%-to-transparent fade. This stays below
+        // the docked controls and is not an opaque sticky toolbar surface.
         if (p > 0f) {
             Box(
                 Modifier.fillMaxWidth()
-                    .height(with(density) { pinnedTopPx.toDp() } + 92.dp)
+                    .height(with(density) { dockY.toDp() } + 72.dp + 36.dp)
                     .background(
                         Brush.verticalGradient(
-                            0f to scheme.background.copy(alpha = 0.97f * p),
-                            0.68f to scheme.background.copy(alpha = 0.9f * p),
-                            1f to Color.Transparent
+                            colors = listOf(
+                                scheme.surface.copy(alpha = 0.50f * p),
+                                scheme.surface.copy(alpha = 0f)
+                            )
                         )
                     )
             )
@@ -431,6 +475,8 @@ private fun ProjectDetailsMovingTitle(
         Box(
             Modifier.offset { IntOffset(startPx, backY) }
                 .size(56.dp)
+                .projectDetailsFabShadow(p)
+                .clip(CircleShape)
                 .clickable(role = Role.Button, onClickLabel = "До списку", onClick = onBack),
             contentAlignment = Alignment.Center
         ) {
@@ -481,6 +527,8 @@ private fun ProjectDetailsMovingTitle(
         Box(
             Modifier.offset { IntOffset(editX, backY) }
                 .size(56.dp)
+                .projectDetailsFabShadow(p)
+                .clip(CircleShape)
                 .clickable(role = Role.Button, onClickLabel = "Редагувати об'єкт", onClick = onEdit),
             contentAlignment = Alignment.Center
         ) {
