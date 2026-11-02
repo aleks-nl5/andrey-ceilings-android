@@ -3,6 +3,7 @@ package com.andreyceilings.shared.objects
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -33,6 +34,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.awaitPointerEvent
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
@@ -59,6 +61,9 @@ import com.andreyceilings.shared.domain.ProjectStatusRules
 import com.andreyceilings.shared.domain.ProjectWorkStage
 import com.andreyceilings.shared.domain.ProjectPaymentStatus
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -76,6 +81,34 @@ internal fun projectTitleDocked(
     firstVisibleItemIndex: Int,
     firstVisibleItemScrollOffsetPx: Int
 ): Boolean = firstVisibleItemIndex > 0 || firstVisibleItemScrollOffsetPx > 0
+
+/**
+ * Only a released downward gesture near the real top can settle the details
+ * page. Restored fraction is measured against the header's source-to-dock
+ * travel (70% restored means <=30% of that travel still scrolled away).
+ */
+internal fun projectDetailsShouldSettleToTop(
+    firstVisibleItemIndex: Int,
+    firstVisibleItemScrollOffsetPx: Int,
+    returningDownward: Boolean,
+    fingerReleased: Boolean,
+    headerTravelPx: Int,
+    restoredFraction: Float = 0.70f
+): Boolean {
+    if (!returningDownward || !fingerReleased || firstVisibleItemIndex != 0 ||
+        firstVisibleItemScrollOffsetPx <= 0 || headerTravelPx <= 0) return false
+    val remainingThresholdPx = (headerTravelPx *
+        (1f - restoredFraction.coerceIn(0f, 1f))).roundToInt()
+    return firstVisibleItemScrollOffsetPx <= remainingThresholdPx
+}
+
+/** In the docked state, center the one/two-line address on the FAB's 56dp touch-row center. */
+internal fun projectAddressVerticalOffsetPx(
+    progress: Float,
+    fabTouchHeightPx: Int,
+    measuredAddressHeightPx: Int
+): Int = ((fabTouchHeightPx - measuredAddressHeightPx) *
+    progress.coerceIn(0f, 1f) / 2f).roundToInt()
 
 internal data class ProjectTitleMotion(val sourceTopPx: Int, val progress: Float)
 
@@ -117,6 +150,13 @@ internal fun ProjectDetailsScreen(
     val endPadding = contentPadding.calculateRightPadding(layoutDirection)
     val initialTopPx = with(density) { contentPadding.calculateTopPadding().roundToPx() }
     val pinnedTopPx = with(density) { systemTopInset.roundToPx() }
+    val snapTravelPx = initialTopPx +
+        with(density) { 42.dp.roundToPx() } -
+        (pinnedTopPx + with(density) { 8.dp.roundToPx() })
+    val settleScope = rememberCoroutineScope()
+    // A pending settle is cancelled as soon as another finger touches the
+    // list. Holding, dragging upward or merely tapping never triggers it.
+    var settleJob by remember(projectId) { mutableStateOf<Job?>(null) }
     // The animation deliberately decouples from how far the content can scroll.
     // A non-zero scroll triggers docking, and 0 returns to the source position.
     val docked by remember(detailsListState, projectId) {
@@ -182,6 +222,45 @@ internal fun ProjectDetailsScreen(
         contentColor = MaterialTheme.colorScheme.onBackground) {
         Box(Modifier.fillMaxSize()) {
         LazyColumn(
+            modifier = Modifier.pointerInput(projectId, detailsListState, snapTravelPx) {
+                awaitEachGesture {
+                    awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                    settleJob?.cancel()
+                    settleJob = null
+                    var returningDownward = false
+                    var fingerIsDown: Boolean
+                    do {
+                        // Inspect physical pointer motion even when LazyColumn
+                        // consumes the delta. This distinguishes a downward
+                        // return from an upward fling or a programmatic scroll.
+                        val event = awaitPointerEvent(PointerEventPass.Final)
+                        event.changes.forEach { change ->
+                            val deltaY = change.position.y - change.previousPosition.y
+                            if (deltaY > 1f) returningDownward = true
+                            else if (deltaY < -1f) returningDownward = false
+                        }
+                        fingerIsDown = event.changes.any { it.pressed }
+                    } while (fingerIsDown)
+                    if (returningDownward) {
+                        settleJob = settleScope.launch {
+                            // Let a real release/fling finish before measuring
+                            // the restored heading position.
+                            delay(100L)
+                            snapshotFlow { detailsListState.isScrollInProgress }
+                                .first { !it }
+                            if (projectDetailsShouldSettleToTop(
+                                firstVisibleItemIndex = detailsListState.firstVisibleItemIndex,
+                                firstVisibleItemScrollOffsetPx = detailsListState.firstVisibleItemScrollOffset,
+                                returningDownward = true,
+                                fingerReleased = true,
+                                headerTravelPx = snapTravelPx
+                            )) {
+                                detailsListState.animateScrollToItem(0)
+                            }
+                        }
+                    }
+                }
+            },
             state = detailsListState,
             contentPadding = contentPadding,
             verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -469,7 +548,7 @@ private fun ProjectDetailsMovingTitle(
         val addressWidth = (maxWidth - startPadding - endPadding -
             (56f + 56f * p).dp).coerceAtLeast(64.dp)
         val addressWidthPx = with(density) { addressWidth.roundToPx() }
-        val addressSlotHeightPx = with(density) { 72.dp.roundToPx() }
+        val fabTouchHeightPx = with(density) { 56.dp.roundToPx() }
         var measuredTitleWidth by remember(project.id) { mutableIntStateOf(0) }
         var measuredTitleHeight by remember(project.id) { mutableIntStateOf(0) }
         val backInteraction = remember(project.id) { MutableInteractionSource() }
@@ -538,8 +617,8 @@ private fun ProjectDetailsMovingTitle(
         Box(
             Modifier.offset { IntOffset(addressX, contentY) }
                 .width(addressWidth).height(72.dp),
-            // Text begins at the left/top at rest. When docked, center it
-            // vertically within the pinned title's 72dp slot.
+            // Left/top at rest; docked address is centered vertically on
+            // the two FABs (56dp touch centers), even with two lines.
             contentAlignment = Alignment.TopStart
         ) {
             Text(
@@ -551,8 +630,9 @@ private fun ProjectDetailsMovingTitle(
                         IntOffset(
                             ((addressWidthPx - measuredTitleWidth).coerceAtLeast(0) * p / 2f)
                                 .roundToInt(),
-                            ((addressSlotHeightPx - measuredTitleHeight).coerceAtLeast(0) * p / 2f)
-                                .roundToInt()
+                            projectAddressVerticalOffsetPx(
+                                p, fabTouchHeightPx, measuredTitleHeight
+                            )
                         )
                     }
                     .onSizeChanged {
