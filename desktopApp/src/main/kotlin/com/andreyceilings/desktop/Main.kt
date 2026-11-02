@@ -50,6 +50,7 @@ import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
@@ -180,7 +181,23 @@ private fun DesktopPriceHost(
         val topScrollBehavior = key(selectedTab) {
             TopAppBarDefaults.enterAlwaysScrollBehavior()
         }
-        Box(Modifier.fillMaxSize().nestedScroll(topScrollBehavior.nestedScrollConnection)) {
+        var projectTitleDocked by remember(database) { mutableStateOf(false) }
+        val detailsChromeDocked = selectedTab == AppRoute.OBJECTS &&
+            navigation.projectDetails != null && projectTitleDocked
+        val passiveChromeConnection = remember { object : NestedScrollConnection {} }
+        var chromeWasDocked by remember { mutableStateOf(false) }
+        LaunchedEffect(detailsChromeDocked) {
+            if (chromeWasDocked && !detailsChromeDocked) {
+                topScrollBehavior.state.heightOffset = 0f
+            }
+            chromeWasDocked = detailsChromeDocked
+        }
+        Box(
+            Modifier.fillMaxSize().nestedScroll(
+                if (detailsChromeDocked) passiveChromeConnection
+                else topScrollBehavior.nestedScrollConnection
+            )
+        ) {
             when (selectedTab) {
                 AppRoute.DASHBOARD -> {
                     Column(
@@ -224,6 +241,7 @@ private fun DesktopPriceHost(
                     detailsStore = objectsStore,
                     onOpenProject = { onNavigate(navigation.openProject(it)) },
                     onCloseProject = { onNavigate(navigation.back(availableRoutes)) },
+                    onProjectHeaderDocked = { projectTitleDocked = it },
                     headerVisibleFraction = 1f - topScrollBehavior.state.collapsedFraction,
                     databaseAvailable = true,
                     contentPadding = PaddingValues(
@@ -289,7 +307,7 @@ private fun DesktopPriceHost(
                     Text(externalError.orEmpty(), color = MaterialTheme.colorScheme.error)
                 }
             }
-            AppHeader(
+            if (!detailsChromeDocked) AppHeader(
                 collapsedFraction = topScrollBehavior.state.collapsedFraction,
                 shadeOpacity = 0.50f + 0.43f * topScrollBehavior.state.collapsedFraction,
                 statusBarHeight = 0.dp,
