@@ -1053,22 +1053,28 @@ internal fun WorkStatusMark(status: String) {
     }
 }
 
+/** The exact same semantic payment tint is used in object cards and details menus. */
+@Composable
+internal fun paymentStateTint(status: String): Color {
+    val colors = MaterialTheme.colorScheme
+    val statusColors = ceilingsStatusColors(colors.background.luminance() < 0.5f)
+    return when (status) {
+        "paid" -> statusColors.success
+        "partial" -> statusColors.warning
+        "unpaid" -> colors.error
+        else -> colors.onSurfaceVariant
+    }
+}
+
 @Composable
 internal fun PaymentStateTag(status: String, prefix: String = "") {
-    val colors = MaterialTheme.colorScheme
     val fullLabel = ProjectStatusRules.paymentLabel(status)
     val shortLabel = when (status) {
         "unknown" -> "Невизначено"
         "partial" -> "Часткова"
         else -> fullLabel
     }
-    val statusColors = ceilingsStatusColors(colors.background.luminance() < 0.5f)
-    val tint = when (status) {
-        "paid" -> statusColors.success
-        "partial" -> statusColors.warning
-        "unpaid" -> colors.error
-        else -> colors.onSurfaceVariant
-    }
+    val tint = paymentStateTint(status)
     val shape = CircleShape
     Box(
         Modifier.background(tint.copy(alpha = 0.11f), shape)
