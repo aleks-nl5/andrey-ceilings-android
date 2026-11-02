@@ -8,7 +8,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.ArrowBack
@@ -93,7 +93,8 @@ internal fun ProjectDetailsScreen(
     val visibleProject = (state as? DetailsState.Loaded)?.data?.project
     val uriHandler = LocalUriHandler.current
     val latestOnDockedChange by rememberUpdatedState(onDockedChange)
-    val detailsListState = rememberLazyListState()
+    // A new object always starts at its own top, never another object’s scroll.
+    val detailsListState = remember(projectId) { LazyListState() }
     val direction = LocalLayoutDirection.current
     val horizontalStart = contentPadding.calculateLeftPadding(direction)
     val horizontalEnd = contentPadding.calculateRightPadding(direction)
@@ -160,11 +161,24 @@ internal fun ProjectDetailsScreen(
         ) {
             item(key = "project-heading") {
                 visibleProject?.let { project ->
-                    ProjectDetailsTitleRow(
-                        project = project,
-                        onBack = onBack,
-                        onEdit = { onEdit(project) }
-                    )
+                    Column {
+                        ProjectDetailsTitleRow(
+                            project = project,
+                            onBack = onBack,
+                            onEdit = { onEdit(project) }
+                        )
+                        if (project.title.isNotBlank() && project.address.isNotBlank() &&
+                            project.title != project.address
+                        ) {
+                            Text(
+                                project.title,
+                                modifier = Modifier.fillMaxWidth(),
+                                textAlign = TextAlign.Center,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
                 }
             }
             when (state) {
