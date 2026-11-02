@@ -159,7 +159,8 @@ fun ObjectsClientsScreen(
     contentPadding: PaddingValues = PaddingValues(16.dp),
     requestCreateProject: Boolean = false,
     headerVisibleFraction: Float = 1f,
-    onCreateProjectConsumed: () -> Unit = {}
+    onCreateProjectConsumed: () -> Unit = {},
+    onProjectHeaderDocked: (Boolean) -> Unit = {}
 ) {
     val scope = rememberCoroutineScope()
     val focusManager = LocalFocusManager.current
@@ -501,6 +502,7 @@ fun ObjectsClientsScreen(
             systemTopInset = (contentPadding.calculateTopPadding() -
                 AppHeaderHeight - 16.dp).coerceAtLeast(0.dp),
             onDial = onDial,
+            onDockedChange = onProjectHeaderDocked,
             onBack = onCloseProject,
             onEdit = { project -> message = null; editor = EditorTarget.Project(project) }
         )
