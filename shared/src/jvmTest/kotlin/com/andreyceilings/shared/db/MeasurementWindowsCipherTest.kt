@@ -18,10 +18,17 @@ class MeasurementWindowsCipherTest {
             SqlCipherWindowsDriverFactory.open(file, key).use { driver ->
                 PrototypeDatabase.Schema.create(driver)
                 val db = PrototypeDatabase(driver)
-                project = ProjectRepository(db).createReturningId(null, "Measured project", createdAt = 1)
-                id = MeasurementRepository(db).createReturningId(project, "L room", shape = "polygon",
+                // The existing JDBC facade rejects INSERT ... RETURNING as
+                // non-query SQL. Seed with its supported insert API: this proof
+                // exercises the new readonly lookup, not a new creation path.
+                val projects = ProjectRepository(db)
+                projects.create(null, "Measured project", createdAt = 1)
+                project = projects.all().single().id
+                val measurements = MeasurementRepository(db)
+                measurements.create(project, "L room", shape = "polygon",
                     lengthMeters = 5.0, widthMeters = 4.0, areaSquareMeters = 14.0, perimeterMeters = 18.0,
                     drawingJson = AndroidMeasurementFixtures.sidesV3, createdAt = 2)
+                id = measurements.all().single().id
             }
             SqlCipherWindowsDriverFactory.open(file, key).use { driver ->
                 val db = PrototypeDatabase(driver)

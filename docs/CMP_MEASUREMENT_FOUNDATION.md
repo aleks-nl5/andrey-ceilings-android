@@ -127,3 +127,18 @@ sides, validation/save via KMP, project-prefilled '+' route, retained global
 Measurements tab, and removal of the legacy editor only after complete parity.
 No forward create/edit route, reparenting, new calculation rule or legacy editor
 rewrite is included here. Issues #60/#57 stay open for that work; #56/#42 are separate.
+
+## Existing JDBC write limitation found during encrypted verification
+
+The Windows SQLCipher JDBC facade currently rejects `INSERT ... RETURNING` in
+executeQuery (`executeQuery cannot be used for non-query SQL`). The new encrypted
+test initially encountered this while seeding its project, before readonly details
+ran. This was reproduced with the same JDBC core and a temporary Linux native
+runtime outside the repository; no production dependency/configuration changed.
+The readonly proof seeds via existing non-returning `create` APIs, then retains
+all encrypted reopen, geometry, ownership and deletion assertions.
+
+This is a pre-existing write-path limitation, including ProjectRepository's
+returning-ID path used by Windows object creation. It needs a separate JDBC/write
+compatibility fix before claiming full Windows creation/editor parity. This PR
+neither hides it nor changes SQLCipher or introduces a new creation mechanism.
