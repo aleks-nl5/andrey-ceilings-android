@@ -5,6 +5,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.TopAppBarState
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.ui.Alignment
@@ -26,6 +28,11 @@ import com.andreyceilings.shared.ui.CeilingsFab
 import com.andreyceilings.shared.ui.CeilingsFabProfile
 import com.andreyceilings.shared.ui.CeilingsPinnedContent
 import com.andreyceilings.shared.ui.CeilingsScreenScaffold
+import com.andreyceilings.shared.objects.ObjectsClientsRows
+import com.andreyceilings.shared.objects.ObjectsClientsScreen
+import com.andreyceilings.shared.objects.ObjectsClientsTab
+import com.andreyceilings.shared.domain.ClientListEntry
+import com.andreyceilings.shared.domain.ProjectListEntry
 import org.jetbrains.skia.Bitmap
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -255,6 +262,80 @@ class CeilingsFoundationSceneTest {
                 } finally { image.close() }
             } finally { scene.close() }
         }
+    }
+
+    @OptIn(ExperimentalMaterial3Api::class)
+    @Test
+    fun switchingObjectsAndClientsResetsCollapsedHostHeader() {
+        // The list already creates a fresh LazyListState per tab. Regression:
+        // the OUTER TopAppBarState also needs resetting for a truly top-open tab.
+        val header = TopAppBarState(-56f, 0f, 0f)
+        val switched = mutableListOf<ObjectsClientsTab>()
+        val rows = ObjectsClientsRows(
+            projects = (1..30).map {
+                ProjectListEntry(it.toLong(), "Об'єкт $it", "Адреса $it",
+                    null, "", "measurement", "unpaid", "")
+            },
+            clients = (1..30).map {
+                ClientListEntry(it.toLong(), "Клієнт $it", "", "", "", 0)
+            }
+        )
+        val scene = ImageComposeScene(360, 640) {
+            CeilingsTheme(false) {
+                ObjectsClientsScreen(
+                    rows = rows,
+                    detailsProjectId = null,
+                    detailsStore = null,
+                    onOpenProject = {},
+                    onCloseProject = {},
+                    databaseAvailable = true,
+                    onSaveClient = { _, _ -> },
+                    onSaveProject = { _, _ -> },
+                    onDeleteClient = {},
+                    onDeleteProject = {},
+                    onDial = {},
+                    onExternalAction = { _, _ -> },
+                    contentPadding = PaddingValues(top = 72.dp, bottom = 84.dp),
+                    headerVisibleFraction = 1f - header.collapsedFraction,
+                    onListTabChanged = {
+                        switched += it
+                        header.heightOffset = 0f
+                        header.contentOffset = 0f
+                    }
+                )
+            }
+        }
+        try {
+            scene.render().close()
+            scene.sendPointerEvent(PointerEventType.Press, Offset(140f, 480f),
+                timeMillis = 1000, type = PointerType.Touch)
+            scene.sendPointerEvent(PointerEventType.Move, Offset(140f, 260f),
+                timeMillis = 1050, type = PointerType.Touch)
+            scene.sendPointerEvent(PointerEventType.Release, Offset(140f, 260f),
+                timeMillis = 1100, type = PointerType.Touch)
+            header.heightOffset = -56f
+            header.contentOffset = -220f
+            Snapshot.sendApplyNotifications()
+            scene.render(120_000_000).close()
+
+            // A collapsed header places the pinned tabs near the top.
+            scene.tap(260f, 30f) // Clients
+            scene.render(150_000_000).close()
+            assertEquals(listOf(ObjectsClientsTab.CLIENTS), switched)
+            assertEquals(0f, header.heightOffset)
+            assertEquals(0f, header.contentOffset)
+
+            // The next switch must not inherit either client scroll or host chrome.
+            header.heightOffset = -56f
+            header.contentOffset = -350f
+            Snapshot.sendApplyNotifications()
+            scene.render(200_000_000).close()
+            scene.tap(85f, 30f) // Projects
+            scene.render(220_000_000).close()
+            assertEquals(listOf(ObjectsClientsTab.CLIENTS, ObjectsClientsTab.PROJECTS), switched)
+            assertEquals(0f, header.heightOffset)
+            assertEquals(0f, header.contentOffset)
+        } finally { scene.close() }
     }
 
     private fun ImageComposeScene.tap(x: Float, y: Float) {
