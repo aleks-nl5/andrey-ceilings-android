@@ -17,6 +17,15 @@ data class ObjectsClientsRows(
     val clients: List<ClientListEntry>
 )
 
+data class ProjectMeasurement(
+    val id: Long, val name: String, val shape: String,
+    val area: Double, val perimeter: Double
+)
+
+data class ProjectDetailsData(
+    val project: ProjectListEntry?, val measurements: List<ProjectMeasurement>
+)
+
 data class ClientDraft(
     val name: String,
     val phone: String = "",
@@ -74,6 +83,14 @@ class ObjectsClientsStore(
                 )
             }
         )
+    }
+
+    fun observeProjectDetails(projectId: Long): Flow<ProjectDetailsData> {
+        require(projectId > 0)
+        return combine(rows, measurements.observeForProject(projectId)) { current, records ->
+            ProjectDetailsData(current.projects.firstOrNull { it.id == projectId },
+                records.map { ProjectMeasurement(it.id, it.name, it.shape, it.areaSquareMeters, it.perimeterMeters) })
+        }
     }
 
     fun saveClient(id: Long?, draft: ClientDraft): Long {

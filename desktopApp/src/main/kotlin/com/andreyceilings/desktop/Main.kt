@@ -220,6 +220,10 @@ private fun DesktopPriceHost(
                 }
                 AppRoute.OBJECTS -> ObjectsClientsScreen(
                     rows = objectRows,
+                    detailsProjectId = navigation.projectDetails?.projectId,
+                    detailsStore = objectsStore,
+                    onOpenProject = { onNavigate(navigation.openProject(it)) },
+                    onCloseProject = { onNavigate(navigation.back(availableRoutes)) },
                     headerVisibleFraction = 1f - topScrollBehavior.state.collapsedFraction,
                     databaseAvailable = true,
                     contentPadding = PaddingValues(

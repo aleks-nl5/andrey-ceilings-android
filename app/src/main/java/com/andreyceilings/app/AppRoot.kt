@@ -496,6 +496,9 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
                     when (tab) {
                         AppTab.OBJECTS -> ObjectsClientsHost(
                             database = database,
+                            detailsProjectId = navigation.projectDetails?.projectId,
+                            onOpenProject = { navigation = navigation.openProject(it) },
+                            onCloseProject = { navigation = navigation.back() },
                             headerVisibleFraction = 1f - topAppBarScrollBehavior.state.collapsedFraction,
                             openCreateProject = navigation.pendingQuickCreate == AppQuickCreate.OBJECT,
                             onCreateProjectConsumed = { navigation = navigation.consumeQuickCreate(AppQuickCreate.OBJECT) }

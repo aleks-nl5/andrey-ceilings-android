@@ -95,6 +95,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -140,6 +141,10 @@ private sealed interface DeletionTarget {
 @Composable
 fun ObjectsClientsScreen(
     rows: ObjectsClientsRows,
+    detailsProjectId: Long?,
+    detailsStore: ObjectsClientsStore?,
+    onOpenProject: (Long) -> Unit,
+    onCloseProject: () -> Unit,
     databaseAvailable: Boolean,
     onSaveClient: suspend (Long?, ClientDraft) -> Unit,
     onSaveProject: suspend (Long?, ProjectDraft) -> Unit,
@@ -279,7 +284,10 @@ fun ObjectsClientsScreen(
         bottom = contentPadding.calculateBottomPadding()
     )
 
-    Column(modifier.fillMaxSize()) {
+    Box(modifier.fillMaxSize()) {
+    Column(Modifier.fillMaxSize().then(
+        if (detailsProjectId != null) Modifier.clearAndSetSemantics { } else Modifier
+    )) {
         Spacer(Modifier.height(headerSpace))
         // This is intentionally NOT inside LazyColumn and never scrolls away.
         Column(
@@ -371,7 +379,7 @@ fun ObjectsClientsScreen(
                         }
                     } else items(projects, key = { "p-${it.id}" }) { row ->
                         ProjectCard(row,
-                            onEdit = { dismissSearchFocus(); openSwipe = null; editor = EditorTarget.Project(row) },
+                            onOpen = { dismissSearchFocus(); openSwipe = null; onOpenProject(row.id) },
                             onDelete = { dismissSearchFocus(); openSwipe = null; deleting = DeletionTarget.Project(row) },
                             onExternalAction = { action, value ->
                                 dismissSearchFocus()
@@ -444,9 +452,8 @@ fun ObjectsClientsScreen(
                 maxPanelHeight = suggestionsMaxHeight,
                 onProject = { project ->
                     dismissSearchFocus()
-                    selectedTab = ObjectsClientsTab.PROJECTS
                     openSwipe = null
-                    editor = EditorTarget.Project(project)
+                    onOpenProject(project.id)
                 },
                 onClient = { client ->
                     dismissSearchFocus()
@@ -476,6 +483,15 @@ fun ObjectsClientsScreen(
             }
         )
         }
+    }
+
+    if (detailsProjectId != null) {
+        ProjectDetailsScreen(
+            projectId = detailsProjectId, store = detailsStore, contentPadding = contentPadding,
+            onBack = onCloseProject,
+            onEdit = { project -> message = null; editor = EditorTarget.Project(project) }
+        )
+    }
     }
 
     when (val target = editor) {
@@ -1092,7 +1108,7 @@ private fun displayProjectAddress(item: ProjectListEntry): String =
 @Composable
 private fun ProjectCard(
     item: ProjectListEntry,
-    onEdit: () -> Unit,
+    onOpen: () -> Unit,
     onDelete: () -> Unit,
     onExternalAction: (ContactAction, String) -> Unit,
     openSwipe: OpenSwipe?,
@@ -1112,7 +1128,7 @@ private fun ProjectCard(
             modifier = Modifier.fillMaxWidth()
                 .clip(ProjectCardShape)
                 .clickable {
-                    if (openSwipe?.id == id) onSwipeClose() else onEdit()
+                    if (openSwipe?.id == id) onSwipeClose() else onOpen()
                 },
             shape = ProjectCardShape,
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
