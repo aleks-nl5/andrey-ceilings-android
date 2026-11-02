@@ -21,6 +21,7 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
@@ -414,6 +415,22 @@ private fun ProjectDetailsMovingTitle(
         val addressWidthPx = with(density) { addressWidth.roundToPx() }
         var measuredTitleWidth by remember(project.id) { mutableIntStateOf(0) }
 
+        // Material-like top fade keeps the docked controls legible over the
+        // scrolled list; this is a flat backdrop, not a FAB shadow.
+        if (p > 0f) {
+            Box(
+                Modifier.fillMaxWidth()
+                    .height(with(density) { pinnedTopPx.toDp() } + 92.dp)
+                    .background(
+                        Brush.verticalGradient(
+                            0f to scheme.background.copy(alpha = 0.97f * p),
+                            0.68f to scheme.background.copy(alpha = 0.9f * p),
+                            1f to Color.Transparent
+                        )
+                    )
+            )
+        }
+
         Box(
             Modifier.offset { IntOffset(startPx, backY) }
                 .width(backWidth).height(56.dp)
@@ -430,7 +447,8 @@ private fun ProjectDetailsMovingTitle(
             Box(
                 Modifier.align(Alignment.Center)
                     .size(42.dp)
-                    .background(Color.White.copy(alpha = p), CircleShape),
+                    .background(Color.White.copy(alpha = p), CircleShape)
+                    .border(1.dp, scheme.outlineVariant.copy(alpha = 0.55f * p), CircleShape),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
@@ -478,7 +496,8 @@ private fun ProjectDetailsMovingTitle(
         ) {
             Box(
                 Modifier.size(42.dp)
-                    .background(Color.White.copy(alpha = p), CircleShape),
+                    .background(Color.White.copy(alpha = p), CircleShape)
+                    .border(1.dp, scheme.outlineVariant.copy(alpha = 0.55f * p), CircleShape),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
