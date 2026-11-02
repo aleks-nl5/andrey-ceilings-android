@@ -2,7 +2,6 @@ package com.andreyceilings.shared.objects
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.layout.*
@@ -11,7 +10,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Phone
@@ -20,19 +18,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.draw.drawWithContent
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.lerp
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.layout.onSizeChanged
-import androidx.compose.ui.unit.IntOffset
-import kotlin.math.roundToInt
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.luminance
-import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalLayoutDirection
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.semantics.Role
@@ -42,7 +28,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.andreyceilings.shared.calculation.CeilingShapeTemplates
 import com.andreyceilings.shared.domain.ClientListEntry
 import com.andreyceilings.shared.domain.ProjectListEntry
@@ -54,36 +39,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.catch
-import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.map
 
 private enum class InlineStatusKind { WORK, PAYMENT }
-
-/**
- * The title itself is rendered once, in the foreground. Its position follows
- * the original LazyColumn slot until it reaches the safe top edge; afterwards
- * it remains there regardless of scroll direction. The 0..1 interpolation
- * drives its background, typography and two small floating buttons.
- */
-internal data class ProjectHeaderMotion(val topPx: Int, val progress: Float)
-
-internal fun projectHeaderMotion(
-    firstVisibleItemIndex: Int,
-    headingOffsetPx: Int?,
-    initialTopPx: Int,
-    dockedTopPx: Int
-): ProjectHeaderMotion {
-    val travel = (initialTopPx - dockedTopPx).coerceAtLeast(1)
-    if (firstVisibleItemIndex > 0) return ProjectHeaderMotion(dockedTopPx, 1f)
-    val source = headingOffsetPx ?: initialTopPx
-    // Keep the title inside its defined travel range even when the list
-    // bounces past the initial position or is restored with an unusual offset.
-    val top = source.coerceIn(dockedTopPx, initialTopPx.coerceAtLeast(dockedTopPx))
-    // Keep the raw source offset for the zero-travel case (equal insets):
-    // progress can still move to docked when the list scrolls below the row.
-    val fraction = ((initialTopPx - source).toFloat() / travel).coerceIn(0f, 1f)
-    return ProjectHeaderMotion(top, fraction)
-}
 
 private sealed interface DetailsState {
     data object Loading : DetailsState
@@ -97,8 +55,6 @@ internal fun ProjectDetailsScreen(
     store: ObjectsClientsStore?,
     clients: List<ClientListEntry>,
     contentPadding: PaddingValues,
-    systemTopInset: androidx.compose.ui.unit.Dp = 0.dp,
-    onHeaderProgress: (Float) -> Unit = {},
     onBack: () -> Unit,
     onEdit: (ProjectListEntry) -> Unit,
     onDial: (String) -> Unit
@@ -109,42 +65,10 @@ internal fun ProjectDetailsScreen(
     }
     val state = if (flow == null) DetailsState.Unavailable
         else flow.collectAsState(initial = DetailsState.Loading).value
-    val visibleProject = (state as? DetailsState.Loaded)?.data?.project
     val uriHandler = LocalUriHandler.current
-    val latestOnHeaderProgress by rememberUpdatedState(onHeaderProgress)
-    // Separate scroll state per project, restored only for this project's ID.
+    // Preserve a separate, saveable scroll position for each object's details.
     val detailsListState = rememberSaveable(projectId, saver = LazyListState.Saver) {
         LazyListState()
-    }
-    val direction = LocalLayoutDirection.current
-    val horizontalStart = contentPadding.calculateLeftPadding(direction)
-    val horizontalEnd = contentPadding.calculateRightPadding(direction)
-    val density = LocalDensity.current
-    val initialTopPx = with(density) { contentPadding.calculateTopPadding().roundToPx() }
-    val dockedTopPx = with(density) { systemTopInset.roundToPx() }
-    val motion by remember(detailsListState, projectId, initialTopPx, dockedTopPx) {
-        derivedStateOf {
-            val heading = detailsListState.layoutInfo.visibleItemsInfo
-                .firstOrNull { it.key == "project-heading" }
-            projectHeaderMotion(
-                firstVisibleItemIndex = detailsListState.firstVisibleItemIndex,
-                headingOffsetPx = heading?.offset,
-                initialTopPx = initialTopPx,
-                dockedTopPx = dockedTopPx
-            )
-        }
-    }
-    // The host fades out its ordinary AppHeader as this shared heading moves
-    // towards the status bar. On reversing, both morph back together.
-    LaunchedEffect(projectId, visibleProject?.id) {
-        if (visibleProject == null) {
-            latestOnHeaderProgress(0f)
-        } else {
-            snapshotFlow { motion.progress }.collect { latestOnHeaderProgress(it) }
-        }
-    }
-    DisposableEffect(projectId) {
-        onDispose { latestOnHeaderProgress(0f) }
     }
     var contactError by remember(projectId) { mutableStateOf<String?>(null) }
     var statusError by remember(projectId) { mutableStateOf<String?>(null) }
@@ -188,11 +112,53 @@ internal fun ProjectDetailsScreen(
             contentPadding = contentPadding,
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            // The original slot stays inside the list as the physical scroll
-            // anchor. Only the foreground header draws text/buttons: no snap,
-            // duplicate toolbar, or two interactive copies during a fling.
-            item(key = "project-heading") {
-                Spacer(Modifier.fillMaxWidth().height(76.dp))
+            item(key = "header") {
+                Column(
+                    Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(2.dp)
+                ) {
+                    TextButton(
+                        onClick = onBack,
+                        modifier = Modifier.height(40.dp),
+                        contentPadding = PaddingValues(horizontal = 0.dp, vertical = 0.dp)
+                    ) {
+                        Text("← До списку")
+                    }
+                    val project = (state as? DetailsState.Loaded)?.data?.project
+                    if (project != null) {
+                        Row(
+                            Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text(
+                                project.address.ifBlank {
+                                    project.title.ifBlank { "Адреса не вказана" }
+                                },
+                                modifier = Modifier.weight(1f),
+                                style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            IconButton(onClick = { onEdit(project) }) {
+                                Icon(
+                                    Icons.Default.Edit,
+                                    contentDescription = "Редагувати об'єкт",
+                                    tint = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                        }
+                        if (project.title.isNotBlank() &&
+                            project.title != project.address &&
+                            project.address.isNotBlank()
+                        ) {
+                            Text(
+                                project.title,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
             }
             when (state) {
                 DetailsState.Loading -> item { Text("Завантаження…") }
@@ -331,184 +297,10 @@ internal fun ProjectDetailsScreen(
                 }
             }
         }
-        if (visibleProject != null) {
-            ProjectDetailsMorphingHeader(
-                project = visibleProject,
-                progress = motion.progress,
-                topPx = motion.topPx,
-                topInset = systemTopInset,
-                startPadding = horizontalStart,
-                endPadding = horizontalEnd,
-                onBack = onBack,
-                onEdit = { onEdit(visibleProject) },
-                modifier = Modifier.align(Alignment.TopCenter)
-            )
-        }
         }
     }
 }
 
-
-/**
- * A single morphing title replaces both the former regular row and the
- * separate sticky duplicate. No layout animation fights the LazyColumn scroll.
- */
-@Composable
-private fun ProjectDetailsMorphingHeader(
-    project: ProjectListEntry,
-    progress: Float,
-    topPx: Int,
-    topInset: androidx.compose.ui.unit.Dp,
-    startPadding: androidx.compose.ui.unit.Dp,
-    endPadding: androidx.compose.ui.unit.Dp,
-    onBack: () -> Unit,
-    onEdit: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    val scheme = MaterialTheme.colorScheme
-    val pinned = progress.coerceIn(0f, 1f)
-    val background = scheme.background
-    Box(modifier.fillMaxSize()) {
-        // The same edge-to-content gradient direction as AppHeader. The
-        // gradient grows as the native top bar fades away, not as a hard cut.
-        if (pinned > 0f) {
-            Box(
-                Modifier.fillMaxWidth()
-                    .height(topInset + 98.dp)
-                    .drawBehind {
-                        drawRect(
-                            brush = Brush.verticalGradient(
-                                0f to background.copy(alpha = pinned * 0.98f),
-                                0.68f to background.copy(alpha = pinned * 0.94f),
-                                1f to background.copy(alpha = 0f)
-                            )
-                        )
-                    }
-            )
-        }
-        Row(
-            modifier = Modifier.fillMaxWidth()
-                .offset { IntOffset(0, topPx) }
-                .padding(start = startPadding, end = endPadding)
-                .height(76.dp)
-                .background(
-                    scheme.surface.copy(alpha = 1f - pinned),
-                    MaterialTheme.shapes.large
-                )
-                .border(
-                    BorderStroke(
-                        1.dp,
-                        scheme.outlineVariant.copy(alpha = (1f - pinned) * 0.65f)
-                    ),
-                    MaterialTheme.shapes.large
-                ),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(3.dp)
-        ) {
-            ProjectMorphAction(
-                icon = Icons.Default.ArrowBack,
-                label = "До об'єктів",
-                progress = pinned,
-                onClick = onBack
-            )
-            BoxWithConstraints(Modifier.weight(1f)) {
-                val maxWidthPx = with(LocalDensity.current) { maxWidth.roundToPx() }
-                var textWidthPx by remember(project.id) { mutableIntStateOf(0) }
-                val centerShiftPx = (
-                    (maxWidthPx - textWidthPx).coerceAtLeast(0) * pinned / 2f
-                ).roundToInt()
-                Text(
-                    project.address.ifBlank {
-                        project.title.ifBlank { "Адреса не вказана" }
-                    },
-                    modifier = Modifier
-                        .offset { IntOffset(centerShiftPx, 0) }
-                        .onSizeChanged { textWidthPx = it.width },
-                    textAlign = TextAlign.Center,
-                    style = MaterialTheme.typography.titleLarge.copy(
-                        fontSize = (22f - 3f * pinned).sp
-                    ),
-                    fontWeight = FontWeight.SemiBold,
-                    color = lerp(scheme.onSurface, scheme.onBackground, pinned),
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
-            ProjectMorphAction(
-                icon = Icons.Default.Edit,
-                label = "Редагувати об'єкт",
-                progress = pinned,
-                onClick = onEdit
-            )
-        }
-    }
-}
-
-/**
- * The familiar '+' FAB shadow, scaled from 56dp to 42dp (25% smaller).
- * 56dp stationary hit area stays accessible. White FAB background appears
- * during docking, while the original icon-only controls remain at the card.
- */
-@Composable
-private fun ProjectMorphAction(
-    icon: ImageVector,
-    label: String,
-    progress: Float,
-    onClick: () -> Unit
-) {
-    val shadow = Color.Black
-    val shade = progress.coerceIn(0f, 1f)
-    val tint = lerp(MaterialTheme.colorScheme.primary, Color(0xFF182328), shade)
-    Box(
-        Modifier.size(56.dp)
-            .drawBehind {
-                if (shade > 0f) {
-                    val center = Offset(size.width / 2f, size.height / 2f)
-                    val ambient = Offset(center.x, center.y + 1.dp.toPx())
-                    val radius = 27.dp.toPx()
-                    drawCircle(
-                        brush = Brush.radialGradient(
-                            0f to shadow.copy(alpha = shade * 0.07f),
-                            0.72f to shadow.copy(alpha = shade * 0.07f),
-                            0.84f to shadow.copy(alpha = shade * 0.035f),
-                            1f to Color.Transparent,
-                            center = ambient,
-                            radius = radius
-                        ),
-                        center = ambient, radius = radius
-                    )
-                    val directional = Offset(center.x + 1.dp.toPx(), center.y + 3.dp.toPx())
-                    val directionalRadius = 26.dp.toPx()
-                    drawCircle(
-                        brush = Brush.radialGradient(
-                            0f to shadow.copy(alpha = shade * 0.14f),
-                            0.68f to shadow.copy(alpha = shade * 0.14f),
-                            0.80f to shadow.copy(alpha = shade * 0.09f),
-                            1f to Color.Transparent,
-                            center = directional,
-                            radius = directionalRadius
-                        ),
-                        center = directional, radius = directionalRadius
-                    )
-                }
-            }
-            .clickable(role = Role.Button, onClickLabel = label, onClick = onClick),
-        contentAlignment = Alignment.Center
-    ) {
-        Box(
-            Modifier.size(42.dp)
-                .background(Color.White.copy(alpha = shade), CircleShape)
-                .border(
-                    1.dp,
-                    MaterialTheme.colorScheme.outline.copy(alpha = 0.3f * shade),
-                    CircleShape
-                ),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(icon, contentDescription = label, tint = tint, modifier = Modifier.size(23.dp))
-        }
-    }
-}
 
 @Composable
 private fun detailsCardColors() = CardDefaults.cardColors(
