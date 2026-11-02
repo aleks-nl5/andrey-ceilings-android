@@ -670,7 +670,11 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
         if (!isProjectDetailsOpen || projectTitleProgress < 0.95f) AppHeader(
             collapsedFraction = if (isProjectDetailsOpen) 0f
                 else topAppBarScrollBehavior.state.collapsedFraction,
-            shadeOpacity = headerShadeOpacity,
+            // The objects/clients sticky glass reaches the screen's top edge.
+            // Keep the Android system-bar fade at the same 50% translucency,
+            // rather than covering it with the 93% collapsed-header shade.
+            shadeOpacity = if (tab == AppTab.OBJECTS && !isProjectDetailsOpen)
+                0.50f else headerShadeOpacity,
             statusBarHeight = statusBarInset,
             windowInsets = WindowInsets.statusBars,
             scrollBehavior = if (isProjectDetailsOpen) null else topAppBarScrollBehavior,
