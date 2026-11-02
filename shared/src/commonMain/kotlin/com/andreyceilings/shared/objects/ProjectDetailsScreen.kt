@@ -76,8 +76,10 @@ internal fun projectHeaderMotion(
     val travel = (initialTopPx - dockedTopPx).coerceAtLeast(1)
     if (firstVisibleItemIndex > 0) return ProjectHeaderMotion(dockedTopPx, 1f)
     val source = headingOffsetPx ?: initialTopPx
-    val top = source.coerceAtLeast(dockedTopPx)
-    val fraction = ((initialTopPx - source).toFloat() / travel).coerceIn(0f, 1f)
+    // Keep the title inside its defined travel range even when the list
+    // bounces past the initial position or is restored with an unusual offset.
+    val top = source.coerceIn(dockedTopPx, initialTopPx.coerceAtLeast(dockedTopPx))
+    val fraction = ((initialTopPx - top).toFloat() / travel).coerceIn(0f, 1f)
     return ProjectHeaderMotion(top, fraction)
 }
 
