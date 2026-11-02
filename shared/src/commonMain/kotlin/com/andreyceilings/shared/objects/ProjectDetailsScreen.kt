@@ -2,6 +2,7 @@ package com.andreyceilings.shared.objects
 
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -29,6 +30,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.awaitPointerEvent
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.style.TextAlign
@@ -435,8 +439,10 @@ private fun ProjectDetailsMovingTitle(
     val startPx = with(density) { startPadding.roundToPx() }
     val addressRowPx = with(density) { 42.dp.roundToPx() }
     val dockY = pinnedTopPx + with(density) { 8.dp.roundToPx() }
-    val fabBackground = if (scheme.background.luminance() < 0.4f)
-        scheme.surfaceContainerHigh else Color.White
+    val darkTheme = scheme.background.luminance() < 0.4f
+    val fabBackground = if (darkTheme) scheme.surfaceContainerHigh else Color.White
+    // Same outline role and theme-specific opacity as AppFloatingNavigation.
+    val fabOutline = scheme.outline.copy(alpha = (if (darkTheme) 0.46f else 0.27f) * p)
     val actionTint = lerp(scheme.primary, scheme.onSurface, p)
 
     BoxWithConstraints(modifier.fillMaxSize()) {
@@ -453,9 +459,11 @@ private fun ProjectDetailsMovingTitle(
         val addressWidthPx = with(density) { addressWidth.roundToPx() }
         var measuredTitleWidth by remember(project.id) { mutableIntStateOf(0) }
 
-        // Match the platform bars' 50%-to-transparent fade. This stays below
-        // the docked controls and is not an opaque sticky toolbar surface.
-        if (p > 0f) {
+        // The anchored glass backdrop sits ABOVE LazyColumn but BELOW the
+        // address and buttons. It consumes gestures within its bounds so that
+        // underlying cards/status chips are never activated through the dock.
+        // Keep the original scroll interaction when the title is expanded.
+        if (p > 0.05f) {
             Box(
                 Modifier.fillMaxWidth()
                     .height(with(density) { dockY.toDp() } + 72.dp + 36.dp)
@@ -467,6 +475,14 @@ private fun ProjectDetailsMovingTitle(
                             )
                         )
                     )
+                    .pointerInput(Unit) {
+                        awaitEachGesture {
+                            do {
+                                val event = awaitPointerEvent(PointerEventPass.Initial)
+                                event.changes.forEach { it.consume() }
+                            } while (event.changes.any { it.pressed })
+                        }
+                    }
             )
         }
 
@@ -483,7 +499,7 @@ private fun ProjectDetailsMovingTitle(
             Box(
                 Modifier.size(42.dp)
                     .background(fabBackground.copy(alpha = p), CircleShape)
-                    .border(1.dp, scheme.outlineVariant.copy(alpha = 0.55f * p), CircleShape),
+                    .border(1.dp, fabOutline, CircleShape),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
@@ -535,7 +551,7 @@ private fun ProjectDetailsMovingTitle(
             Box(
                 Modifier.size(42.dp)
                     .background(fabBackground.copy(alpha = p), CircleShape)
-                    .border(1.dp, scheme.outlineVariant.copy(alpha = 0.55f * p), CircleShape),
+                    .border(1.dp, fabOutline, CircleShape),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
