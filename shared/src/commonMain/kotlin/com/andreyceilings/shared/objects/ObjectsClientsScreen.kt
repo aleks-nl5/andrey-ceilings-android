@@ -96,7 +96,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -289,9 +288,8 @@ fun ObjectsClientsScreen(
     )
 
     Box(modifier.fillMaxSize()) {
-    Column(Modifier.fillMaxSize().then(
-        if (detailsProjectId != null) Modifier.clearAndSetSemantics { } else Modifier
-    )) {
+    // Do not leave the background list or its FAB clickable beneath details.
+    if (detailsProjectId == null) Column(Modifier.fillMaxSize()) {
         Spacer(Modifier.height(headerSpace))
         // This is intentionally NOT inside LazyColumn and never scrolls away.
         Column(
