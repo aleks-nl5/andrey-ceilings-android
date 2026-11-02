@@ -139,6 +139,37 @@ class ObjectsClientsStore(
         }
     }
 
+    /**
+     * Inline Project Details actions update exactly one field, not a reconstructed
+     * ProjectDraft. Other fields (including the independent payment/work state)
+     * stay untouched even if another editor has saved them in the meantime.
+     */
+    fun updateProjectWorkStage(projectId: Long, workStage: String) {
+        require(projectId > 0L)
+        require(ProjectStatusRules.isKnownWorkStage(workStage)) { "Невідомий етап робіт." }
+        database.transaction {
+            val current = checkNotNull(projects.find(projectId)) {
+                "Об'єкт не знайдено або його видалено."
+            }
+            if (current.status != workStage) {
+                projects.updateStatus(projectId, workStage, nowMillis())
+            }
+        }
+    }
+
+    fun updateProjectPaymentStatus(projectId: Long, paymentStatus: String) {
+        require(projectId > 0L)
+        require(ProjectStatusRules.isKnownPaymentStatus(paymentStatus)) { "Невідомий стан оплати." }
+        database.transaction {
+            val current = checkNotNull(projects.find(projectId)) {
+                "Об'єкт не знайдено або його видалено."
+            }
+            if (current.paymentStatus != paymentStatus) {
+                projects.updatePaymentStatus(projectId, paymentStatus, nowMillis())
+            }
+        }
+    }
+
     fun deleteClient(id: Long) {
         checkNotNull(clients.find(id)) { "Клієнта вже немає." }
         check(projects.byClient(id).isEmpty()) {
