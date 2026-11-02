@@ -53,6 +53,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.map
 
 private enum class InlineStatusKind { WORK, PAYMENT }
@@ -362,7 +363,7 @@ private fun ProjectDetailsMorphingHeader(
     val scheme = MaterialTheme.colorScheme
     val pinned = progress.coerceIn(0f, 1f)
     val background = scheme.background
-    Box(modifier.fillMaxWidth()) {
+    Box(modifier.fillMaxSize()) {
         // The same edge-to-content gradient direction as AppHeader. The
         // gradient grows as the native top bar fades away, not as a hard cut.
         if (pinned > 0f) {
@@ -383,8 +384,7 @@ private fun ProjectDetailsMorphingHeader(
         Row(
             modifier = Modifier.fillMaxWidth()
                 .offset { IntOffset(0, topPx) }
-                .padding(horizontal = startPadding, vertical = 0.dp)
-                .padding(end = endPadding - startPadding)
+                .padding(start = startPadding, end = endPadding)
                 .height(76.dp)
                 .background(
                     scheme.surface.copy(alpha = 1f - pinned),
