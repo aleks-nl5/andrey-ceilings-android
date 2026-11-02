@@ -101,6 +101,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.Dp
 import com.andreyceilings.shared.theme.ceilingsStatusColors
+import com.andreyceilings.shared.navigation.AppHeaderHeight
 import com.andreyceilings.shared.domain.ClientAlphabetIndex
 import com.andreyceilings.shared.domain.ClientLetterJump
 import com.andreyceilings.shared.domain.ClientListEntry
@@ -156,7 +157,8 @@ fun ObjectsClientsScreen(
     contentPadding: PaddingValues = PaddingValues(16.dp),
     requestCreateProject: Boolean = false,
     headerVisibleFraction: Float = 1f,
-    onCreateProjectConsumed: () -> Unit = {}
+    onCreateProjectConsumed: () -> Unit = {},
+    onProjectHeaderProgress: (Float) -> Unit = {}
 ) {
     val scope = rememberCoroutineScope()
     val focusManager = LocalFocusManager.current
@@ -493,6 +495,9 @@ fun ObjectsClientsScreen(
                 top = (headerSpace - 24.dp).coerceAtLeast(0.dp),
                 bottom = contentPadding.calculateBottomPadding()
             ),
+            systemTopInset = (contentPadding.calculateTopPadding() -
+                AppHeaderHeight - 16.dp).coerceAtLeast(0.dp),
+            onHeaderProgress = onProjectHeaderProgress,
             onDial = onDial,
             onBack = onCloseProject,
             onEdit = { project -> message = null; editor = EditorTarget.Project(project) }
