@@ -131,6 +131,22 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
     val topAppBarScrollBehavior = key(tab) {
         TopAppBarDefaults.enterAlwaysScrollBehavior()
     }
+    var projectTitleDocked by remember { mutableStateOf(false) }
+    val detailsChromeDocked = tab == AppTab.OBJECTS &&
+        navigation.projectDetails != null && projectTitleDocked
+    // While Project Details is docked, scrolling back up must NOT bring the
+    // generic СтеляПро header over its address or consume the reverse gesture.
+    val passiveChromeConnection = remember { object : NestedScrollConnection {} }
+    val activeChromeConnection = if (detailsChromeDocked) passiveChromeConnection
+        else topAppBarScrollBehavior.nestedScrollConnection
+    var chromeWasDocked by remember { mutableStateOf(false) }
+    LaunchedEffect(detailsChromeDocked) {
+        if (chromeWasDocked && !detailsChromeDocked) {
+            // Restore only when the source header has reached its own position.
+            topAppBarScrollBehavior.state.heightOffset = 0f
+        }
+        chromeWasDocked = detailsChromeDocked
+    }
     val isScrolling = remember { mutableStateOf(false) }
     // Track actual content displacement, not just toolbar collapse, so the shade
     // remains legible after the finger stops and goes away near the top again.
@@ -482,7 +498,7 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
             modifier = Modifier
                 .fillMaxSize()
                 .background(MaterialTheme.colorScheme.background)
-                .nestedScroll(topAppBarScrollBehavior.nestedScrollConnection)
+                .nestedScroll(activeChromeConnection)
         ) {
         key(tab) {
             if (tab == AppTab.OBJECTS || tab == AppTab.MEASUREMENTS || tab == AppTab.ESTIMATES || tab == AppTab.PRICES || tab == AppTab.CALENDAR) {
@@ -495,6 +511,7 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
                             detailsProjectId = navigation.projectDetails?.projectId,
                             onOpenProject = { navigation = navigation.openProject(it) },
                             onCloseProject = { navigation = navigation.back() },
+                            onProjectHeaderDocked = { projectTitleDocked = it },
                             headerVisibleFraction = 1f - topAppBarScrollBehavior.state.collapsedFraction,
                             openCreateProject = navigation.pendingQuickCreate == AppQuickCreate.OBJECT,
                             onCreateProjectConsumed = { navigation = navigation.consumeQuickCreate(AppQuickCreate.OBJECT) }
@@ -650,9 +667,9 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
             }
         }
 
-        // The shared CMP header retains the Android enter-always scroll behavior.
-        // Only window insets and platform theme actions remain in this host.
-        AppHeader(
+        // On a long Project Details scroll the floating CMP address is the only
+        // top chrome. Restore СтеляПро once the original title row returns.
+        if (!detailsChromeDocked) AppHeader(
             collapsedFraction = topAppBarScrollBehavior.state.collapsedFraction,
             shadeOpacity = headerShadeOpacity,
             statusBarHeight = statusBarInset,
