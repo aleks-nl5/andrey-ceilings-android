@@ -283,8 +283,8 @@ fun ObjectsClientsScreen(
     // Tabs and search stay mounted and sticky below the status bar at all scroll
     // positions. Only the app's main header slides out; the pinned controls
     // shift up to meet the system bar as it collapses.
-    val headerSpace = (contentPadding.calculateTopPadding() - 56.dp).coerceAtLeast(0.dp) +
-        56.dp * headerVisibleFraction.coerceIn(0f, 1f)
+    val headerSpace = (contentPadding.calculateTopPadding() - AppHeaderHeight).coerceAtLeast(0.dp) +
+        AppHeaderHeight * headerVisibleFraction.coerceIn(0f, 1f)
     val listIsScrolled by remember(listState) {
         androidx.compose.runtime.derivedStateOf {
             listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 0
@@ -322,7 +322,7 @@ fun ObjectsClientsScreen(
             contentPadding = baseListPadding,
             topGradient = { measuredHeight ->
                 // Keep the accepted at-rest extent and 180ms expansion, but
-                // draw ONE 50% fade instead of composing host and screen fades.
+                // draw a single 50% fade across host and screen content.
                 CeilingsEdgeGradient(CeilingsEdge.TOP,
                     Modifier.fillMaxWidth().height(atRestFadeHeight +
                         (measuredHeight - atRestFadeHeight) * pinnedControlsProgress),
@@ -544,8 +544,7 @@ fun ObjectsClientsScreen(
                 top = (headerSpace - 24.dp).coerceAtLeast(0.dp),
                 bottom = contentPadding.calculateBottomPadding()
             ),
-            systemTopInset = (contentPadding.calculateTopPadding() -
-                AppHeaderHeight - 16.dp).coerceAtLeast(0.dp),
+            systemTopInset = systemTopInset,
             onHeaderProgress = onProjectHeaderProgress,
             onDial = onDial,
             onBack = onCloseProject,
