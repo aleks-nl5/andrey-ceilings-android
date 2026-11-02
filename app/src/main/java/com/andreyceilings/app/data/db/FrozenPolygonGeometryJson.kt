@@ -6,33 +6,17 @@ import com.andreyceilings.shared.calculation.OrthogonalTurn
 import com.andreyceilings.shared.calculation.CeilingPolygonCalculator
 import com.andreyceilings.shared.estimate.FrozenPolygonGeometry
 import com.andreyceilings.shared.estimate.FrozenPolygonGeometryContract
+import com.andreyceilings.shared.measurement.MeasurementGeometryCodec
 import org.json.JSONArray
 import org.json.JSONObject
 
 /** Android JSON adapter; validation and geometry math live in shared KMP. */
 internal object FrozenPolygonGeometryJson {
-    private val measurementFields = setOf(
-        "shape", "geometrySchemaVersion", "vertices", "measurementsMm",
-        "areaSquareMeters", "perimeterMeters", "precisionStepMeters"
-    )
+    // Measurement wire format is shared. Estimate/PDF snapshot adapters below
+    // retain their existing fields and behavior.
+    fun writeMeasurement(frozen: FrozenPolygonGeometry): String = MeasurementGeometryCodec.write(frozen)
 
-    /** Measurement rows use the very same v2 vertex encoding as estimates. */
-    fun writeMeasurement(frozen: FrozenPolygonGeometry): String =
-        geometryFields(frozen)
-            .put("precisionStepMeters", frozen.precisionStepMeters)
-            .toString()
-
-    fun readMeasurement(sourceJson: String): FrozenPolygonGeometry {
-        val source = JSONObject(sourceJson)
-        val expected = if (isVersion3(source)) measurementFields + "sides"
-            else measurementFields
-        require(source.keys().asSequence().toSet() == expected) {
-            "Incomplete or unsupported saved measurement geometry"
-        }
-        return readGeometryFields(
-            source, source.getDouble("precisionStepMeters")
-        )
-    }
+    fun readMeasurement(sourceJson: String): FrozenPolygonGeometry = MeasurementGeometryCodec.read(sourceJson)
 
     fun isVersion2(source: JSONObject): Boolean =
         source.has("geometrySchemaVersion") &&
