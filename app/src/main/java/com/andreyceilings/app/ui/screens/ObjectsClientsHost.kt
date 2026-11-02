@@ -33,6 +33,7 @@ internal fun ObjectsClientsHost(
     detailsProjectId: Long?,
     onOpenProject: (Long) -> Unit,
     onCloseProject: () -> Unit,
+    onProjectHeaderDocked: (Boolean) -> Unit = {},
     openCreateProject: Boolean,
     headerVisibleFraction: Float,
     onCreateProjectConsumed: () -> Unit
@@ -63,6 +64,7 @@ internal fun ObjectsClientsHost(
         detailsStore = store,
         onOpenProject = onOpenProject,
         onCloseProject = onCloseProject,
+        onProjectHeaderDocked = onProjectHeaderDocked,
         databaseAvailable = store != null,
         requestCreateProject = openCreateProject,
         headerVisibleFraction = headerVisibleFraction,
