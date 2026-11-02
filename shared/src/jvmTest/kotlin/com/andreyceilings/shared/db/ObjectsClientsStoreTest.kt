@@ -112,6 +112,66 @@ class ObjectsClientsStoreTest {
     }
 
     @Test
+    fun inlineBadgeUpdatesChangeOnlyTheirOwnFieldAndKeepClientNotes() = runBlocking {
+        JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).use { driver ->
+            PrototypeDatabase.Schema.create(driver)
+            val db = PrototypeDatabase(driver)
+            var now = 1000L
+            val store = ObjectsClientsStore(db) { ++now }
+            val clients = ClientRepository(db)
+            val projects = ProjectRepository(db)
+            val clientId = store.saveClient(null, ClientDraft(
+                "Оксана", "+380501112233", "oksana@example.com", "Дзвонити після 16:00"
+            ))
+            val projectId = store.saveProject(null, ProjectDraft(
+                address = "Львів, Княжа 12", clientId = clientId,
+                workStatus = "measurement", paymentStatus = "unpaid",
+                notes = "Потрібен додатковий матеріал"
+            ))
+            val original = assertNotNull(projects.find(projectId))
+            store.updateProjectWorkStage(projectId, "completed")
+            val afterWork = assertNotNull(projects.find(projectId))
+            assertEquals("completed", afterWork.status)
+            assertEquals("unpaid", afterWork.paymentStatus)
+
+            store.updateProjectPaymentStatus(projectId, "partial")
+            val afterPayment = assertNotNull(projects.find(projectId))
+            assertEquals("completed", afterPayment.status)
+            assertEquals("partial", afterPayment.paymentStatus)
+            assertEquals(original.uuid, afterPayment.uuid)
+            assertEquals(original.title, afterPayment.title)
+            assertEquals(original.address, afterPayment.address)
+            assertEquals(original.clientId, afterPayment.clientId)
+            assertEquals(original.notes, afterPayment.notes)
+            assertEquals("Дзвонити після 16:00", clients.find(clientId)?.notes)
+            assertEquals("partial", store.observeProjectDetails(projectId).first().project?.paymentStatus)
+
+            val beforeNoOp = now
+            store.updateProjectPaymentStatus(projectId, "partial")
+            store.updateProjectWorkStage(projectId, "completed")
+            assertEquals(beforeNoOp, now) // Re-selecting the same status never writes.
+
+            assertFailsWith<IllegalArgumentException> {
+                store.updateProjectWorkStage(projectId, "paid")
+            }
+            assertFailsWith<IllegalArgumentException> {
+                store.updateProjectPaymentStatus(projectId, "n/a")
+            }
+            assertEquals("completed", projects.find(projectId)?.status)
+            assertEquals("partial", projects.find(projectId)?.paymentStatus)
+
+            store.deleteProject(projectId)
+            assertFailsWith<IllegalStateException> {
+                store.updateProjectPaymentStatus(projectId, "paid")
+            }
+            assertFailsWith<IllegalStateException> {
+                store.updateProjectWorkStage(projectId, "measurement")
+            }
+            assertEquals(1, projects.tombstones().size)
+        }
+    }
+
+    @Test
     fun legacyProjectsRetainOriginalTitleUntilAnAddressEdit() {
         JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).use { driver ->
             PrototypeDatabase.Schema.create(driver)
