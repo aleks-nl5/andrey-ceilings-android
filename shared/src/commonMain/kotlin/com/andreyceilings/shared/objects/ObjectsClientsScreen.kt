@@ -164,7 +164,8 @@ fun ObjectsClientsScreen(
     requestCreateProject: Boolean = false,
     headerVisibleFraction: Float = 1f,
     onCreateProjectConsumed: () -> Unit = {},
-    onProjectHeaderProgress: (Float) -> Unit = {}
+    onProjectHeaderProgress: (Float) -> Unit = {},
+    onListTabChanged: (ObjectsClientsTab) -> Unit = {}
 ) {
     val scope = rememberCoroutineScope()
     val focusManager = LocalFocusManager.current
@@ -192,6 +193,17 @@ fun ObjectsClientsScreen(
     var message by remember { mutableStateOf<String?>(null) }
     var fabVisible by remember { mutableStateOf(true) }
     var openSwipe by remember { mutableStateOf<OpenSwipe?>(null) }
+
+    // The list has a tab-keyed scroll state, but the host TopAppBar's scroll
+    // state lives outside this screen. Reset both when switching tabs.
+    fun switchListTab(next: ObjectsClientsTab) {
+        if (selectedTab != next) {
+            onListTabChanged(next)
+            selectedTab = next
+            fabVisible = true
+        }
+        openSwipe = null
+    }
 
     val results = remember(rows, search) {
         ObjectsClientsSearch.suggestions(rows.projects, rows.clients, search)
@@ -273,7 +285,7 @@ fun ObjectsClientsScreen(
     LaunchedEffect(requestCreateProject, databaseAvailable) {
         if (requestCreateProject && databaseAvailable) {
             dismissSearchFocus()
-            selectedTab = ObjectsClientsTab.PROJECTS
+            switchListTab(ObjectsClientsTab.PROJECTS)
             editor = EditorTarget.Project(null)
             onCreateProjectConsumed()
         }
@@ -345,14 +357,12 @@ fun ObjectsClientsScreen(
                         ObjectsTabButton("Об'єкти", selectedTab == ObjectsClientsTab.PROJECTS,
                             Modifier.weight(1f)) {
                             dismissSearchFocus()
-                            selectedTab = ObjectsClientsTab.PROJECTS
-                            openSwipe = null
+                            switchListTab(ObjectsClientsTab.PROJECTS)
                         }
                         ObjectsTabButton("Клієнти", selectedTab == ObjectsClientsTab.CLIENTS,
                             Modifier.weight(1f)) {
                             dismissSearchFocus()
-                            selectedTab = ObjectsClientsTab.CLIENTS
-                            openSwipe = null
+                            switchListTab(ObjectsClientsTab.CLIENTS)
                         }
                     }
                     CompactObjectsSearchField(
@@ -406,8 +416,7 @@ fun ObjectsClientsScreen(
                         },
                         onClient = { client ->
                             dismissSearchFocus()
-                            selectedTab = ObjectsClientsTab.CLIENTS
-                            openSwipe = null
+                            switchListTab(ObjectsClientsTab.CLIENTS)
                             editor = EditorTarget.Client(client)
                         },
                         onDismiss = { dismissSearchFocus() },
