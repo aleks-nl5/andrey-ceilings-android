@@ -59,23 +59,25 @@ import kotlinx.coroutines.flow.collect
 private enum class InlineStatusKind { WORK, PAYMENT }
 
 /**
- * The source header remains in the LazyColumn as a layout anchor; it never
- * draws a second clickable copy. Motion comes from the actual item offset,
- * so reverse gestures do not release the pinned address prematurely.
+ * Anchor the transition to the LazyListState scroll distance, not to
+ * LazyListItemInfo.offset: with contentPadding that item's layout offset
+ * is NOT guaranteed to match contentPadding.calculateTopPadding().
+ * A newly opened page must always start at progress=0 when scroll=0.
  */
 internal data class ProjectTitleMotion(val sourceTopPx: Int, val progress: Float)
 
 internal fun projectTitleMotion(
     firstVisibleItemIndex: Int,
-    sourceOffsetPx: Int?,
+    firstVisibleItemScrollOffsetPx: Int,
     initialTopPx: Int,
     dockedTopPx: Int,
     addressRowOffsetPx: Int
 ): ProjectTitleMotion {
-    val sourceTop = sourceOffsetPx ?: initialTopPx
+    val scrollPx = firstVisibleItemScrollOffsetPx.coerceAtLeast(0)
+    val sourceTop = initialTopPx - scrollPx
     val travel = (initialTopPx + addressRowOffsetPx - dockedTopPx).coerceAtLeast(1)
     val fraction = if (firstVisibleItemIndex > 0) 1f else
-        ((initialTopPx - sourceTop).toFloat() / travel).coerceIn(0f, 1f)
+        (scrollPx.toFloat() / travel).coerceIn(0f, 1f)
     return ProjectTitleMotion(sourceTop, fraction)
 }
 
@@ -120,11 +122,9 @@ internal fun ProjectDetailsScreen(
     val rowOffsetPx = with(density) { 38.dp.roundToPx() }
     val motion by remember(detailsListState, projectId, initialTopPx, pinnedTopPx, rowOffsetPx) {
         derivedStateOf {
-            val item = detailsListState.layoutInfo.visibleItemsInfo
-                .firstOrNull { it.key == "project-heading" }
             projectTitleMotion(
                 detailsListState.firstVisibleItemIndex,
-                item?.offset,
+                detailsListState.firstVisibleItemScrollOffset,
                 initialTopPx,
                 pinnedTopPx,
                 rowOffsetPx
