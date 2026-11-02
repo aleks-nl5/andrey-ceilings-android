@@ -18,6 +18,7 @@ import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material.icons.filled.Email
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Brush
@@ -93,8 +94,10 @@ internal fun ProjectDetailsScreen(
     val visibleProject = (state as? DetailsState.Loaded)?.data?.project
     val uriHandler = LocalUriHandler.current
     val latestOnDockedChange by rememberUpdatedState(onDockedChange)
-    // A new object always starts at its own top, never another object’s scroll.
-    val detailsListState = remember(projectId) { LazyListState() }
+    // Restore scroll only for the same object; never inherit another object's position.
+    val detailsListState = rememberSaveable(projectId, saver = LazyListState.Saver) {
+        LazyListState()
+    }
     val direction = LocalLayoutDirection.current
     val horizontalStart = contentPadding.calculateLeftPadding(direction)
     val horizontalEnd = contentPadding.calculateRightPadding(direction)
