@@ -41,6 +41,7 @@ import java.net.URLEncoder
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -52,6 +53,7 @@ import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Window
@@ -181,20 +183,17 @@ private fun DesktopPriceHost(
         val topScrollBehavior = key(selectedTab) {
             TopAppBarDefaults.enterAlwaysScrollBehavior()
         }
-        var projectTitleDocked by remember(database) { mutableStateOf(false) }
-        val detailsChromeDocked = selectedTab == AppRoute.OBJECTS &&
-            navigation.projectDetails != null && projectTitleDocked
+        val isProjectDetailsOpen = selectedTab == AppRoute.OBJECTS &&
+            navigation.projectDetails != null
+        var projectTitleProgress by remember(database) { mutableFloatStateOf(0f) }
         val passiveChromeConnection = remember { object : NestedScrollConnection {} }
-        var chromeWasDocked by remember { mutableStateOf(false) }
-        LaunchedEffect(detailsChromeDocked) {
-            if (chromeWasDocked && !detailsChromeDocked) {
-                topScrollBehavior.state.heightOffset = 0f
-            }
-            chromeWasDocked = detailsChromeDocked
+        LaunchedEffect(navigation.projectDetails?.projectId) {
+            projectTitleProgress = 0f
+            if (navigation.projectDetails != null) topScrollBehavior.state.heightOffset = 0f
         }
         Box(
             Modifier.fillMaxSize().nestedScroll(
-                if (detailsChromeDocked) passiveChromeConnection
+                if (isProjectDetailsOpen) passiveChromeConnection
                 else topScrollBehavior.nestedScrollConnection
             )
         ) {
@@ -241,8 +240,9 @@ private fun DesktopPriceHost(
                     detailsStore = objectsStore,
                     onOpenProject = { onNavigate(navigation.openProject(it)) },
                     onCloseProject = { onNavigate(navigation.back(availableRoutes)) },
-                    onProjectHeaderDocked = { projectTitleDocked = it },
-                    headerVisibleFraction = 1f - topScrollBehavior.state.collapsedFraction,
+                    onProjectHeaderProgress = { projectTitleProgress = it.coerceIn(0f, 1f) },
+                    headerVisibleFraction = if (isProjectDetailsOpen) 1f
+                        else 1f - topScrollBehavior.state.collapsedFraction,
                     databaseAvailable = true,
                     contentPadding = PaddingValues(
                         start = 24.dp, end = 24.dp,
@@ -307,13 +307,21 @@ private fun DesktopPriceHost(
                     Text(externalError.orEmpty(), color = MaterialTheme.colorScheme.error)
                 }
             }
-            if (!detailsChromeDocked) AppHeader(
-                collapsedFraction = topScrollBehavior.state.collapsedFraction,
+            // Common CMP title and the ordinary desktop app bar morph as one:
+            // the latter fades away when the address reaches the safe top edge.
+            if (!isProjectDetailsOpen || projectTitleProgress < 0.76f) AppHeader(
+                collapsedFraction = if (isProjectDetailsOpen) 0f
+                    else topScrollBehavior.state.collapsedFraction,
                 shadeOpacity = 0.50f + 0.43f * topScrollBehavior.state.collapsedFraction,
                 statusBarHeight = 0.dp,
                 windowInsets = WindowInsets(0, 0, 0, 0),
-                scrollBehavior = topScrollBehavior,
+                scrollBehavior = if (isProjectDetailsOpen) null else topScrollBehavior,
                 modifier = Modifier.align(Alignment.TopCenter)
+                    .alpha(
+                        if (isProjectDetailsOpen) {
+                            (1f - projectTitleProgress) * (1f - projectTitleProgress)
+                        } else 1f
+                    )
             )
             AppFloatingNavigation(
                 selectedId = selectedTab.name,
