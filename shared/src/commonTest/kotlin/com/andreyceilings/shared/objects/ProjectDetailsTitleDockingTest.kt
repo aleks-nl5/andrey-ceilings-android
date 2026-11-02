@@ -34,16 +34,17 @@ class ProjectDetailsTitleDockingTest {
     }
 
     @Test
-    fun snapDownwardOnlyAfterFingerReleasedAndSeventyPercentRestored() {
-        // Source to dock travel is 200px; <=60px remaining is 70% restored.
-        assertTrue(projectDetailsShouldSettleToTop(0, 60, true, true, 200))
+    fun snapDownwardOnlyAfterFingerReleasedAndThirtyPercentRestored() {
+        // Source-to-dock travel 200px: >=30% restored means <=140px remaining.
+        assertTrue(projectDetailsShouldSettleToTop(0, 140, true, true, 200))
+        assertTrue(projectDetailsShouldSettleToTop(0, 100, true, true, 200))
         assertTrue(projectDetailsShouldSettleToTop(0, 1, true, true, 200))
-        assertFalse(projectDetailsShouldSettleToTop(0, 61, true, true, 200))
-        assertFalse(projectDetailsShouldSettleToTop(0, 60, false, true, 200))
-        assertFalse(projectDetailsShouldSettleToTop(0, 60, true, false, 200))
+        assertFalse(projectDetailsShouldSettleToTop(0, 141, true, true, 200))
+        assertFalse(projectDetailsShouldSettleToTop(0, 140, false, true, 200))
+        assertFalse(projectDetailsShouldSettleToTop(0, 140, true, false, 200))
         assertFalse(projectDetailsShouldSettleToTop(1, 0, true, true, 200))
         assertFalse(projectDetailsShouldSettleToTop(0, 0, true, true, 200))
-        assertFalse(projectDetailsShouldSettleToTop(0, 60, true, true, 0))
+        assertFalse(projectDetailsShouldSettleToTop(0, 140, true, true, 0))
     }
 
     @Test
