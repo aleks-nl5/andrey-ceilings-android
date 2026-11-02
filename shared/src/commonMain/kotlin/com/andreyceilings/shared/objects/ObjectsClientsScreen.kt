@@ -93,7 +93,6 @@ import kotlin.math.roundToInt
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
@@ -615,11 +614,10 @@ fun ObjectsClientsScreen(
  * elevation, parent clipping, resizing, or translation.
  */
 @Composable
-internal fun ObjectsClientsCreateFab(
+private fun ObjectsClientsCreateFab(
     visible: Boolean,
     actionLabel: String,
     modifier: Modifier = Modifier,
-    icon: ImageVector = Icons.Default.Add,
     onClick: () -> Unit
 ) {
     val progress by androidx.compose.animation.core.animateFloatAsState(
@@ -698,7 +696,7 @@ internal fun ObjectsClientsCreateFab(
             contentAlignment = Alignment.Center
         ) {
             Icon(
-                icon,
+                Icons.Default.Add,
                 contentDescription = actionLabel,
                 tint = colors.onPrimaryContainer.copy(alpha = progress)
             )
