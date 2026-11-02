@@ -487,7 +487,14 @@ fun ObjectsClientsScreen(
 
     if (detailsProjectId != null) {
         ProjectDetailsScreen(
-            projectId = detailsProjectId, store = detailsStore, contentPadding = contentPadding,
+            projectId = detailsProjectId, store = detailsStore, clients = rows.clients,
+            contentPadding = PaddingValues(
+                start = contentPadding.calculateLeftPadding(layoutDirection),
+                end = contentPadding.calculateRightPadding(layoutDirection),
+                top = (headerSpace - 12.dp).coerceAtLeast(0.dp),
+                bottom = contentPadding.calculateBottomPadding()
+            ),
+            onDial = onDial,
             onBack = onCloseProject,
             onEdit = { project -> message = null; editor = EditorTarget.Project(project) }
         )
