@@ -2,7 +2,6 @@ package com.andreyceilings.shared.measurement
 
 import com.andreyceilings.shared.estimate.FrozenPolygonGeometry
 import com.andreyceilings.shared.estimate.FrozenPolygonGeometryContract
-import kotlin.math.abs
 import kotlin.math.hypot
 import kotlin.math.roundToLong
 
@@ -21,7 +20,7 @@ fun measurementGeometryForViewing(
         val legacy = MeasurementGeometryView.HistoricalRectangle(lengthMeters, widthMeters)
         return if (measurementDrawingContour(legacy) != null) legacy else MeasurementGeometryView.Unavailable
     }
-    return runCatching {
+    return runCatching<MeasurementGeometryView> {
         val geometry = MeasurementGeometryCodec.read(drawingJson)
         require(geometry.shapeType == shape) { "Measurement shape differs from drawing" }
         MeasurementGeometryView.Captured(geometry)

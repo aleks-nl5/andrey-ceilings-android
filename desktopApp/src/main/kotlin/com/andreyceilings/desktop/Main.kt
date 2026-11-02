@@ -185,6 +185,7 @@ private fun DesktopPriceHost(
         }
         val isProjectDetailsOpen = selectedTab == AppRoute.OBJECTS &&
             navigation.projectDetails != null
+        val isMeasurementDetailsOpen = isProjectDetailsOpen && navigation.measurementDetails != null
         var projectTitleProgress by remember { mutableFloatStateOf(0f) }
         val passiveDetailsScroll = remember { object : NestedScrollConnection {} }
         LaunchedEffect(navigation.projectDetails?.projectId) {
@@ -235,6 +236,8 @@ private fun DesktopPriceHost(
                 AppRoute.OBJECTS -> ObjectsClientsScreen(
                     rows = objectRows,
                     detailsProjectId = navigation.projectDetails?.projectId,
+                    measurementDetails = navigation.measurementDetails,
+                    onOpenMeasurement = { projectId, measurementId -> onNavigate(navigation.openMeasurement(projectId, measurementId)) },
                     detailsStore = objectsStore,
                     onOpenProject = { onNavigate(navigation.openProject(it)) },
                     onCloseProject = { onNavigate(navigation.back(availableRoutes)) },
@@ -310,7 +313,7 @@ private fun DesktopPriceHost(
                     Text(externalError.orEmpty(), color = MaterialTheme.colorScheme.error)
                 }
             }
-            if (!isProjectDetailsOpen || projectTitleProgress < 0.95f) AppHeader(
+            if (!isMeasurementDetailsOpen && (!isProjectDetailsOpen || projectTitleProgress < 0.95f)) AppHeader(
                 collapsedFraction = if (isProjectDetailsOpen) 0f
                     else topScrollBehavior.state.collapsedFraction,
                 shadeOpacity = 0.50f + 0.43f * topScrollBehavior.state.collapsedFraction,

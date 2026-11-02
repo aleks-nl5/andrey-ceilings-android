@@ -15,6 +15,10 @@ data class ProjectDetails(val projectId: Long) {
     init { require(projectId > 0) }
 }
 
+data class MeasurementDetails(val projectId: Long, val measurementId: Long) {
+    init { require(projectId > 0 && measurementId > 0) }
+}
+
 enum class AppQuickCreate(val destination: AppRoute) {
     OBJECT(AppRoute.OBJECTS), MEASUREMENT(AppRoute.MEASUREMENTS)
 }
@@ -28,14 +32,15 @@ data class AppNavigationState(
     val current: AppRoute = AppRoute.DASHBOARD,
     val backStack: List<AppRoute> = emptyList(),
     val pendingQuickCreate: AppQuickCreate? = null,
-    val projectDetails: ProjectDetails? = null
+    val projectDetails: ProjectDetails? = null,
+    val measurementDetails: MeasurementDetails? = null
 ) {
     fun selectTab(target: AppRoute, available: Set<AppRoute> = allRoutes): AppNavigationState {
         if (target !in available || current == target) return this
         return copy(
             current = target,
             backStack = if (target == AppRoute.DASHBOARD) emptyList() else listOf(AppRoute.DASHBOARD),
-            pendingQuickCreate = null, projectDetails = null
+            pendingQuickCreate = null, projectDetails = null, measurementDetails = null
         )
     }
 
@@ -44,22 +49,32 @@ data class AppNavigationState(
         return copy(
             current = target,
             backStack = (backStack.filterNot { it == target } + current).takeLast(maxHistory),
-            pendingQuickCreate = null, projectDetails = null
+            pendingQuickCreate = null, projectDetails = null, measurementDetails = null
         )
     }
 
     fun replace(target: AppRoute, available: Set<AppRoute> = allRoutes): AppNavigationState {
         if (target !in available || current == target) return this
-        return copy(current = target, pendingQuickCreate = null, projectDetails = null)
+        return copy(current = target, pendingQuickCreate = null, projectDetails = null, measurementDetails = null)
     }
 
     fun openProject(projectId: Long): AppNavigationState =
         if (current != AppRoute.OBJECTS || projectId <= 0) this
-        else copy(projectDetails = ProjectDetails(projectId), pendingQuickCreate = null)
+        else if (projectDetails?.projectId == projectId && measurementDetails == null) this
+        else copy(projectDetails = ProjectDetails(projectId), measurementDetails = null, pendingQuickCreate = null)
+
+    fun openMeasurement(projectId: Long, measurementId: Long): AppNavigationState {
+        if (current != AppRoute.OBJECTS || projectDetails?.projectId != projectId ||
+            projectId <= 0 || measurementId <= 0) return this
+        val target = MeasurementDetails(projectId, measurementId)
+        return if (measurementDetails == target) this
+            else copy(measurementDetails = target, pendingQuickCreate = null)
+    }
 
     fun back(available: Set<AppRoute> = allRoutes): AppNavigationState {
         if (current !in available) return restore(snapshot(), available)
-        if (projectDetails != null) return copy(projectDetails = null, pendingQuickCreate = null)
+        if (measurementDetails != null) return copy(measurementDetails = null, pendingQuickCreate = null)
+        if (projectDetails != null) return copy(projectDetails = null, measurementDetails = null, pendingQuickCreate = null)
         val index = backStack.indexOfLast { it in available && it != current }
         if (index >= 0) {
             return copy(
@@ -78,7 +93,7 @@ data class AppNavigationState(
         available: Set<AppRoute> = allRoutes
     ): AppNavigationState {
         if (action.destination !in available) return this
-        return selectTab(action.destination, available).copy(pendingQuickCreate = action, projectDetails = null)
+        return selectTab(action.destination, available).copy(pendingQuickCreate = action, projectDetails = null, measurementDetails = null)
     }
 
     fun consumeQuickCreate(action: AppQuickCreate): AppNavigationState =
@@ -87,7 +102,8 @@ data class AppNavigationState(
     /** Save only route IDs. One-shot commands and confidential data are excluded. */
     fun snapshot(): List<String> =
         listOf(current.name) + backStack.takeLast(maxHistory).map { it.name } +
-            (projectDetails?.let { listOf("PROJECT_DETAILS:${it.projectId}") } ?: emptyList())
+            (projectDetails?.let { listOf("PROJECT_DETAILS:${it.projectId}") } ?: emptyList()) +
+            (measurementDetails?.let { listOf("MEASUREMENT_DETAILS:${it.projectId}:${it.measurementId}") } ?: emptyList())
 
     companion object {
         private const val maxHistory = 16
@@ -103,11 +119,19 @@ data class AppNavigationState(
                 ?.takeIf { it in available } ?: fallback
             val history = snapshot.drop(1).mapNotNull(AppRoute::fromId).takeLast(maxHistory)
                 .filter { it in available && it != route }
-            val details = snapshot.lastOrNull()?.removePrefix("PROJECT_DETAILS:")
-                ?.takeIf { snapshot.last().startsWith("PROJECT_DETAILS:") }
-                ?.toLongOrNull()?.takeIf { it > 0 && it.toString() == snapshot.last().substringAfter(":") }
-                ?.takeIf { route == AppRoute.OBJECTS }?.let(::ProjectDetails)
-            return AppNavigationState(route, history, projectDetails = details)
+            fun canonicalId(value: String?): Long? = value?.toLongOrNull()
+                ?.takeIf { it > 0 && it.toString() == value }
+            val hasMeasurementTail = snapshot.lastOrNull()?.startsWith("MEASUREMENT_DETAILS:") == true
+            val projectToken = snapshot.getOrNull(snapshot.lastIndex - if (hasMeasurementTail) 1 else 0)
+            val projectId = projectToken?.takeIf { it.startsWith("PROJECT_DETAILS:") }
+                ?.substringAfter(":")?.let(::canonicalId)
+                ?.takeIf { route == AppRoute.OBJECTS && snapshot.count { it.startsWith("PROJECT_DETAILS:") } == 1 }
+            val details = projectId?.let(::ProjectDetails)
+            val args = if (hasMeasurementTail) snapshot.last().split(":") else emptyList()
+            val measurement = if (details != null && args.size == 3 &&
+                canonicalId(args[1]) == projectId && snapshot.count { it.startsWith("MEASUREMENT_DETAILS:") } == 1
+            ) canonicalId(args[2])?.let { MeasurementDetails(details.projectId, it) } else null
+            return AppNavigationState(route, history, projectDetails = details, measurementDetails = measurement)
         }
     }
 }

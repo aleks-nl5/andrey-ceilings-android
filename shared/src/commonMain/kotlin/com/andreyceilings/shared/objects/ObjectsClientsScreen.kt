@@ -61,6 +61,10 @@ import androidx.compose.animation.core.tween
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.layout.layout
+import com.andreyceilings.shared.navigation.MeasurementDetails
+import com.andreyceilings.shared.measurement.MeasurementDetailsScreen
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -165,7 +169,10 @@ fun ObjectsClientsScreen(
     headerVisibleFraction: Float = 1f,
     onCreateProjectConsumed: () -> Unit = {},
     onProjectHeaderProgress: (Float) -> Unit = {},
-    onListTabChanged: (ObjectsClientsTab) -> Unit = {}
+    onListTabChanged: (ObjectsClientsTab) -> Unit = {},
+    measurementDetails: MeasurementDetails? = null,
+    onOpenMeasurement: (Long, Long) -> Unit = { _, _ -> },
+    onCloseMeasurement: () -> Unit = onCloseProject
 ) {
     val scope = rememberCoroutineScope()
     val focusManager = LocalFocusManager.current
@@ -178,14 +185,14 @@ fun ObjectsClientsScreen(
             searchFocused = false
         }
     }
-    var selectedTab by remember { mutableStateOf(ObjectsClientsTab.PROJECTS) }
+    var selectedTab by rememberSaveable { mutableStateOf(ObjectsClientsTab.PROJECTS) }
     // Each tab mounts a fresh scroll state when selected. The top position is
     // visible immediately (before side effects), and neither tab inherits the
     // other tab's list index, offset or ongoing fling on re-entry.
-    val listState = remember(selectedTab) { LazyListState() }
-    var search by remember { mutableStateOf("") }
-    var selectedWork by remember { mutableStateOf<String?>(null) }
-    var selectedPayment by remember { mutableStateOf<String?>(null) }
+    val listState = rememberSaveable(selectedTab, saver = LazyListState.Saver) { LazyListState() }
+    var search by rememberSaveable { mutableStateOf("") }
+    var selectedWork by rememberSaveable { mutableStateOf<String?>(null) }
+    var selectedPayment by rememberSaveable { mutableStateOf<String?>(null) }
     var editor by remember { mutableStateOf<EditorTarget?>(null) }
     var deleting by remember { mutableStateOf<DeletionTarget?>(null) }
     var deletionError by remember { mutableStateOf<String?>(null) }
@@ -545,6 +552,15 @@ fun ObjectsClientsScreen(
     }
 
     if (detailsProjectId != null) {
+        val measurement = measurementDetails?.takeIf { it.projectId == detailsProjectId }
+        // Retain the real Project Details composition/list state. An unplaced
+        // subtree has no drawing, pointer targets or accessibility nodes.
+        Box(Modifier.fillMaxSize().layout { measurable, constraints ->
+            val placeable = measurable.measure(constraints)
+            layout(placeable.width, placeable.height) {
+                if (measurement == null) placeable.place(0, 0)
+            }
+        }) {
         ProjectDetailsScreen(
             projectId = detailsProjectId, store = detailsStore, clients = rows.clients,
             contentPadding = PaddingValues(
@@ -555,9 +571,18 @@ fun ObjectsClientsScreen(
             ),
             systemTopInset = systemTopInset,
             onHeaderProgress = onProjectHeaderProgress,
+            active = measurement == null,
+            onOpenMeasurement = { onOpenMeasurement(detailsProjectId, it) },
             onDial = onDial,
             onBack = onCloseProject,
             onEdit = { project -> message = null; editor = EditorTarget.Project(project) }
+        )
+        }
+        if (measurement != null) MeasurementDetailsScreen(
+            projectId = measurement.projectId, measurementId = measurement.measurementId,
+            store = detailsStore?.measurementDetails,
+            contentPadding = contentPadding, systemTopInset = systemTopInset,
+            onBack = onCloseMeasurement
         )
     }
     }
