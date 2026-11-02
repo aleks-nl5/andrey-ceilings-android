@@ -58,6 +58,7 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
@@ -100,6 +101,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.Dp
+import com.andreyceilings.shared.theme.ceilingsStatusColors
+import com.andreyceilings.shared.navigation.AppHeaderHeight
 import com.andreyceilings.shared.domain.ClientAlphabetIndex
 import com.andreyceilings.shared.domain.ClientLetterJump
 import com.andreyceilings.shared.domain.ClientListEntry
@@ -140,6 +143,10 @@ private sealed interface DeletionTarget {
 @Composable
 fun ObjectsClientsScreen(
     rows: ObjectsClientsRows,
+    detailsProjectId: Long?,
+    detailsStore: ObjectsClientsStore?,
+    onOpenProject: (Long) -> Unit,
+    onCloseProject: () -> Unit,
     databaseAvailable: Boolean,
     onSaveClient: suspend (Long?, ClientDraft) -> Unit,
     onSaveProject: suspend (Long?, ProjectDraft) -> Unit,
@@ -151,7 +158,8 @@ fun ObjectsClientsScreen(
     contentPadding: PaddingValues = PaddingValues(16.dp),
     requestCreateProject: Boolean = false,
     headerVisibleFraction: Float = 1f,
-    onCreateProjectConsumed: () -> Unit = {}
+    onCreateProjectConsumed: () -> Unit = {},
+    onProjectHeaderProgress: (Float) -> Unit = {}
 ) {
     val scope = rememberCoroutineScope()
     val focusManager = LocalFocusManager.current
@@ -272,50 +280,44 @@ fun ObjectsClientsScreen(
     // shift up to meet the system bar as it collapses.
     val headerSpace = (contentPadding.calculateTopPadding() - 56.dp).coerceAtLeast(0.dp) +
         56.dp * headerVisibleFraction.coerceIn(0f, 1f)
+    // When СтеляПро collapses, use the same 50%-to-transparent surface fade
+    // as the system panels and the docked project-details header.
+    // The search/tabs themselves keep their existing readable solid surfaces.
+    val pinnedControlsHeight = 97.dp // 38dp tabs + 7dp gap + 47dp search + 5dp bottom
+    val listIsScrolled by remember(listState) {
+        androidx.compose.runtime.derivedStateOf {
+            listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 0
+        }
+    }
+    val pinnedControlsProgress by animateFloatAsState(
+        targetValue = maxOf(
+            (1f - headerVisibleFraction).coerceIn(0f, 1f),
+            if (listIsScrolled) 1f else 0f
+        ),
+        animationSpec = tween(durationMillis = 180),
+        label = "Objects and clients sticky search backdrop"
+    )
+    val pinnedControlsSurface = MaterialTheme.colorScheme.surface
     val layoutDirection = LocalLayoutDirection.current
     val listPadding = PaddingValues(
         start = contentPadding.calculateLeftPadding(layoutDirection),
         end = contentPadding.calculateRightPadding(layoutDirection),
+        top = headerSpace + pinnedControlsHeight,
         bottom = contentPadding.calculateBottomPadding()
     )
 
-    Column(modifier.fillMaxSize()) {
-        Spacer(Modifier.height(headerSpace))
-        // This is intentionally NOT inside LazyColumn and never scrolls away.
-        Column(
-                Modifier.fillMaxWidth()
-                    .background(MaterialTheme.colorScheme.background)
-                    .padding(bottom = 5.dp),
-                verticalArrangement = Arrangement.spacedBy(7.dp)
-            ) {
-                Row(
-                    Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(9.dp)
-                ) {
-                    ObjectsTabButton("Об'єкти", selectedTab == ObjectsClientsTab.PROJECTS,
-                        Modifier.weight(1f)) {
-                        dismissSearchFocus()
-                        selectedTab = ObjectsClientsTab.PROJECTS
-                        openSwipe = null
-                    }
-                    ObjectsTabButton("Клієнти", selectedTab == ObjectsClientsTab.CLIENTS,
-                        Modifier.weight(1f)) {
-                        dismissSearchFocus()
-                        selectedTab = ObjectsClientsTab.CLIENTS
-                        openSwipe = null
-                    }
-                }
-                CompactObjectsSearchField(
-                    value = search,
-                    onChange = { search = it; openSwipe = null },
-                    onClear = { search = ""; openSwipe = null },
-                    onFocusChange = { searchFocused = it }
-                )
-        }
-        BoxWithConstraints(Modifier.weight(1f)) {
-            val suggestionsMaxHeight = maxHeight.coerceAtMost(320.dp)
+    Box(modifier.fillMaxSize()) {
+    // Do not leave the background list or its FAB clickable beneath details.
+    if (detailsProjectId == null) BoxWithConstraints(Modifier.fillMaxSize()) {
+        // The list fills the full viewport, including behind the status bar
+        // and sticky controls. Its top padding preserves the initial card
+        // positions while allowing scrolled content to remain translucent
+        // all the way to the top edge of the display.
+        val suggestionsMaxHeight = (maxHeight - headerSpace - pinnedControlsHeight)
+            .coerceAtLeast(0.dp).coerceAtMost(320.dp)
             LazyColumn(
                 modifier = Modifier
+                    .fillMaxSize()
                     .padding(end = if (showClientLetters) 16.dp else 0.dp)
                     .nestedScroll(fabGestureConnection)
                     .pointerInput(Unit) {
@@ -371,7 +373,7 @@ fun ObjectsClientsScreen(
                         }
                     } else items(projects, key = { "p-${it.id}" }) { row ->
                         ProjectCard(row,
-                            onEdit = { dismissSearchFocus(); openSwipe = null; editor = EditorTarget.Project(row) },
+                            onOpen = { dismissSearchFocus(); openSwipe = null; onOpenProject(row.id) },
                             onDelete = { dismissSearchFocus(); openSwipe = null; deleting = DeletionTarget.Project(row) },
                             onExternalAction = { action, value ->
                                 dismissSearchFocus()
@@ -409,6 +411,54 @@ fun ObjectsClientsScreen(
                 }
             }
         }
+        // Underlying list content now scrolls behind this fixed foreground.
+        // Match the 50%-to-transparent fade of system bars and detail header.
+        Box(
+            Modifier.align(Alignment.TopCenter)
+                .fillMaxWidth()
+                .height(headerSpace + pinnedControlsHeight + 36.dp)
+                .background(
+                    Brush.verticalGradient(
+                        colors = listOf(
+                            pinnedControlsSurface.copy(alpha = 0.50f * pinnedControlsProgress),
+                            pinnedControlsSurface.copy(alpha = 0f)
+                        )
+                    )
+                )
+                .zIndex(1f)
+        )
+        Column(
+            modifier = Modifier.align(Alignment.TopCenter)
+                .fillMaxWidth()
+                .offset(y = headerSpace)
+                .padding(bottom = 5.dp)
+                .zIndex(2f),
+            verticalArrangement = Arrangement.spacedBy(7.dp)
+        ) {
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(9.dp)
+            ) {
+                ObjectsTabButton("Об'єкти", selectedTab == ObjectsClientsTab.PROJECTS,
+                    Modifier.weight(1f)) {
+                    dismissSearchFocus()
+                    selectedTab = ObjectsClientsTab.PROJECTS
+                    openSwipe = null
+                }
+                ObjectsTabButton("Клієнти", selectedTab == ObjectsClientsTab.CLIENTS,
+                    Modifier.weight(1f)) {
+                    dismissSearchFocus()
+                    selectedTab = ObjectsClientsTab.CLIENTS
+                    openSwipe = null
+                }
+            }
+            CompactObjectsSearchField(
+                value = search,
+                onChange = { search = it; openSwipe = null },
+                onClear = { search = ""; openSwipe = null },
+                onFocusChange = { searchFocused = it }
+            )
+        }
         // A phonebook rail exists only for the clients tab. Labels correspond
         // to real first-letter groups in the *rendered* alphabetically sorted
         // list. Leave the lower corner clear for the animated create FAB.
@@ -416,7 +466,7 @@ fun ObjectsClientsScreen(
             BoxWithConstraints(
                 modifier = Modifier.align(Alignment.CenterEnd)
                     .fillMaxHeight()
-                    .padding(top = 8.dp, bottom = 226.dp)
+                    .padding(top = headerSpace + pinnedControlsHeight + 8.dp, bottom = 226.dp)
                     .width(24.dp)
                     .zIndex(1f)
             ) {
@@ -444,9 +494,8 @@ fun ObjectsClientsScreen(
                 maxPanelHeight = suggestionsMaxHeight,
                 onProject = { project ->
                     dismissSearchFocus()
-                    selectedTab = ObjectsClientsTab.PROJECTS
                     openSwipe = null
-                    editor = EditorTarget.Project(project)
+                    onOpenProject(project.id)
                 },
                 onClient = { client ->
                     dismissSearchFocus()
@@ -455,7 +504,9 @@ fun ObjectsClientsScreen(
                     editor = EditorTarget.Client(client)
                 },
                 onDismiss = { dismissSearchFocus() },
-                modifier = Modifier.align(Alignment.TopCenter).zIndex(2f)
+                modifier = Modifier.align(Alignment.TopCenter)
+                    .offset(y = headerSpace + pinnedControlsHeight)
+                    .zIndex(3f)
             )
         }
         val showFab = databaseAvailable && !busy && fabVisible && editor == null && !searchFocused
@@ -475,7 +526,25 @@ fun ObjectsClientsScreen(
                     EditorTarget.Project(null) else EditorTarget.Client(null)
             }
         )
-        }
+    }
+
+    if (detailsProjectId != null) {
+        ProjectDetailsScreen(
+            projectId = detailsProjectId, store = detailsStore, clients = rows.clients,
+            contentPadding = PaddingValues(
+                start = contentPadding.calculateLeftPadding(layoutDirection),
+                end = contentPadding.calculateRightPadding(layoutDirection),
+                top = (headerSpace - 24.dp).coerceAtLeast(0.dp),
+                bottom = contentPadding.calculateBottomPadding()
+            ),
+            systemTopInset = (contentPadding.calculateTopPadding() -
+                AppHeaderHeight - 16.dp).coerceAtLeast(0.dp),
+            onHeaderProgress = onProjectHeaderProgress,
+            onDial = onDial,
+            onBack = onCloseProject,
+            onEdit = { project -> message = null; editor = EditorTarget.Project(project) }
+        )
+    }
     }
 
     when (val target = editor) {
@@ -1002,7 +1071,7 @@ private fun CompactObjectsChip(
 private val ProjectCardShape = RoundedCornerShape(21.dp)
 
 @Composable
-private fun WorkStatusMark(status: String) {
+internal fun WorkStatusMark(status: String) {
     val symbol = when (status) {
         "measurement" -> Icons.Default.Straighten
         "calculation" -> Icons.Default.Calculate
@@ -1029,21 +1098,28 @@ private fun WorkStatusMark(status: String) {
     }
 }
 
+/** The exact same semantic payment tint is used in object cards and details menus. */
 @Composable
-private fun PaymentStateTag(status: String) {
+internal fun paymentStateTint(status: String): Color {
     val colors = MaterialTheme.colorScheme
+    val statusColors = ceilingsStatusColors(colors.background.luminance() < 0.5f)
+    return when (status) {
+        "paid" -> statusColors.success
+        "partial" -> statusColors.warning
+        "unpaid" -> colors.error
+        else -> colors.onSurfaceVariant
+    }
+}
+
+@Composable
+internal fun PaymentStateTag(status: String, prefix: String = "") {
     val fullLabel = ProjectStatusRules.paymentLabel(status)
     val shortLabel = when (status) {
         "unknown" -> "Невизначено"
         "partial" -> "Часткова"
         else -> fullLabel
     }
-    val tint = when (status) {
-        "paid" -> Color(0xFF238369)
-        "partial" -> Color(0xFFAC7D35)
-        "unpaid" -> colors.error
-        else -> colors.onSurfaceVariant
-    }
+    val tint = paymentStateTint(status)
     val shape = CircleShape
     Box(
         Modifier.background(tint.copy(alpha = 0.11f), shape)
@@ -1051,7 +1127,7 @@ private fun PaymentStateTag(status: String) {
             .padding(horizontal = 9.dp, vertical = 4.dp),
         contentAlignment = Alignment.Center
     ) {
-        Text(shortLabel, color = tint, style = MaterialTheme.typography.labelSmall,
+        Text(prefix + shortLabel, color = tint, style = MaterialTheme.typography.labelSmall,
             maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
@@ -1092,7 +1168,7 @@ private fun displayProjectAddress(item: ProjectListEntry): String =
 @Composable
 private fun ProjectCard(
     item: ProjectListEntry,
-    onEdit: () -> Unit,
+    onOpen: () -> Unit,
     onDelete: () -> Unit,
     onExternalAction: (ContactAction, String) -> Unit,
     openSwipe: OpenSwipe?,
@@ -1112,7 +1188,7 @@ private fun ProjectCard(
             modifier = Modifier.fillMaxWidth()
                 .clip(ProjectCardShape)
                 .clickable {
-                    if (openSwipe?.id == id) onSwipeClose() else onEdit()
+                    if (openSwipe?.id == id) onSwipeClose() else onOpen()
                 },
             shape = ProjectCardShape,
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)

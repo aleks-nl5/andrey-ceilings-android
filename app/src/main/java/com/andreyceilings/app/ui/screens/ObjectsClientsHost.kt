@@ -30,6 +30,10 @@ import kotlinx.coroutines.withContext
 @Composable
 internal fun ObjectsClientsHost(
     database: CeilingsDatabase?,
+    detailsProjectId: Long?,
+    onOpenProject: (Long) -> Unit,
+    onCloseProject: () -> Unit,
+    onProjectHeaderProgress: (Float) -> Unit = {},
     openCreateProject: Boolean,
     headerVisibleFraction: Float,
     onCreateProjectConsumed: () -> Unit
@@ -56,6 +60,11 @@ internal fun ObjectsClientsHost(
 
     ObjectsClientsScreen(
         rows = rows,
+        detailsProjectId = detailsProjectId,
+        detailsStore = store,
+        onOpenProject = onOpenProject,
+        onCloseProject = onCloseProject,
+        onProjectHeaderProgress = onProjectHeaderProgress,
         databaseAvailable = store != null,
         requestCreateProject = openCreateProject,
         headerVisibleFraction = headerVisibleFraction,

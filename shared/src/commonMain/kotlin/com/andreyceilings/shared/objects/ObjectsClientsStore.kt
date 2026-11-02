@@ -17,6 +17,15 @@ data class ObjectsClientsRows(
     val clients: List<ClientListEntry>
 )
 
+data class ProjectMeasurement(
+    val id: Long, val name: String, val shape: String,
+    val area: Double, val perimeter: Double
+)
+
+data class ProjectDetailsData(
+    val project: ProjectListEntry?, val measurements: List<ProjectMeasurement>
+)
+
 data class ClientDraft(
     val name: String,
     val phone: String = "",
@@ -76,6 +85,14 @@ class ObjectsClientsStore(
         )
     }
 
+    fun observeProjectDetails(projectId: Long): Flow<ProjectDetailsData> {
+        require(projectId > 0)
+        return combine(rows, measurements.observeForProject(projectId)) { current, records ->
+            ProjectDetailsData(current.projects.firstOrNull { it.id == projectId },
+                records.map { ProjectMeasurement(it.id, it.name, it.shape, it.areaSquareMeters, it.perimeterMeters) })
+        }
+    }
+
     fun saveClient(id: Long?, draft: ClientDraft): Long {
         val name = draft.name.trim()
         require(name.isNotBlank()) { "Введіть ім'я клієнта." }
@@ -119,6 +136,37 @@ class ObjectsClientsStore(
             // Same transaction: never leave a half-updated work/payment pair.
             projects.updatePaymentStatus(projectId, draft.paymentStatus, time)
             projectId
+        }
+    }
+
+    /**
+     * Inline Project Details actions update exactly one field, not a reconstructed
+     * ProjectDraft. Other fields (including the independent payment/work state)
+     * stay untouched even if another editor has saved them in the meantime.
+     */
+    fun updateProjectWorkStage(projectId: Long, workStage: String) {
+        require(projectId > 0L)
+        require(ProjectStatusRules.isKnownWorkStage(workStage)) { "Невідомий етап робіт." }
+        database.transaction {
+            val current = checkNotNull(projects.find(projectId)) {
+                "Об'єкт не знайдено або його видалено."
+            }
+            if (current.status != workStage) {
+                projects.updateStatus(projectId, workStage, nowMillis())
+            }
+        }
+    }
+
+    fun updateProjectPaymentStatus(projectId: Long, paymentStatus: String) {
+        require(projectId > 0L)
+        require(ProjectStatusRules.isKnownPaymentStatus(paymentStatus)) { "Невідомий стан оплати." }
+        database.transaction {
+            val current = checkNotNull(projects.find(projectId)) {
+                "Об'єкт не знайдено або його видалено."
+            }
+            if (current.paymentStatus != paymentStatus) {
+                projects.updatePaymentStatus(projectId, paymentStatus, nowMillis())
+            }
         }
     }
 

@@ -36,6 +36,8 @@ jobs:
         uses: gradle/actions/setup-gradle@v6
         with:
           gradle-version: '9.7.0'
+          # Forked PRs may restore caches, but cannot write to the repository cache.
+          cache-read-only: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
 
       - name: Verify Xcode toolchain
         run: xcodebuild -version
@@ -46,11 +48,10 @@ jobs:
       - name: Run isolated SQLCipher tests on iOS Simulator
         run: gradle --no-daemon :shared:iosSimulatorArm64Test --stacktrace --warning-mode all
 
-      - name: Compile Compose Desktop host
-        run: gradle --no-daemon :desktopApp:compileKotlin --stacktrace --warning-mode all
-
-      - name: Run shared JVM tests
-        run: gradle --no-daemon :shared:jvmTest --stacktrace --warning-mode all
+      # Combine two JVM-focused Gradle invocations; keep iOS framework and SQLCipher
+      # tests as separate mandatory checks for actionable failure reporting.
+      - name: Compile Desktop and run shared JVM tests on macOS
+        run: gradle --no-daemon :desktopApp:compileKotlin :shared:jvmTest --stacktrace --warning-mode all
 
   windows-desktop:
     runs-on: windows-latest
@@ -74,9 +75,10 @@ jobs:
         uses: gradle/actions/setup-gradle@v6
         with:
           gradle-version: '9.7.0'
+          # Forked PRs may restore caches, but cannot write to the repository cache.
+          cache-read-only: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
 
-      - name: Compile Compose Desktop host on Windows
-        run: gradle --no-daemon :desktopApp:compileKotlin --stacktrace --warning-mode all
-
-      - name: Run shared JVM and encrypted desktop CRUD tests on Windows
-        run: gradle --no-daemon :shared:jvmTest :desktopApp:test --stacktrace --warning-mode all
+      # All original targets are retained while one Gradle invocation avoids
+      # redundant startup and repeated configuration.
+      - name: Compile Windows Desktop and run shared JVM / SQLCipher CRUD tests
+        run: gradle --no-daemon :desktopApp:compileKotlin :shared:jvmTest :desktopApp:test --stacktrace --warning-mode all

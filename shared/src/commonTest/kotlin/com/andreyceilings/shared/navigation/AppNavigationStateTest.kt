@@ -75,6 +75,21 @@ class AppNavigationStateTest {
         assertNull(AppRoute.fromId("HOME"))
     }
 
+    @Test fun projectDetailsRestoreAndBackSafely() {
+        val list = AppNavigationState().selectTab(AppRoute.OBJECTS)
+        val details = list.openProject(42)
+        assertEquals(ProjectDetails(42), details.projectDetails)
+        assertEquals(details, details.openProject(42))
+        assertEquals(ProjectDetails(43), details.openProject(43).projectDetails)
+        assertEquals(list, details.back())
+        assertEquals(details, AppNavigationState.restore(details.snapshot()))
+        assertEquals(list, list.openProject(0))
+        assertNull(AppNavigationState.restore(listOf("OBJECTS", "PROJECT_DETAILS:-1")).projectDetails)
+        assertNull(AppNavigationState.restore(listOf("OBJECTS", "PROJECT_DETAILS:042")).projectDetails)
+        assertNull(AppNavigationState.restore(listOf("DASHBOARD", "PROJECT_DETAILS:42")).projectDetails)
+        assertNull(details.selectTab(AppRoute.PRICES).projectDetails)
+    }
+
     @Test fun historyCannotGrowWithoutBound() {
         var state = AppNavigationState()
         val routes = listOf(AppRoute.OBJECTS, AppRoute.MEASUREMENTS, AppRoute.PRICES)
