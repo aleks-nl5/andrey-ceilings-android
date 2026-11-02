@@ -18,6 +18,7 @@ import com.andreyceilings.app.data.db.CeilingsDatabase
 import com.andreyceilings.shared.objects.ContactAction
 import com.andreyceilings.shared.objects.ObjectsClientsRows
 import com.andreyceilings.shared.objects.ObjectsClientsScreen
+import com.andreyceilings.shared.objects.ObjectsClientsTab
 import com.andreyceilings.shared.objects.ObjectsClientsStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.flowOf
@@ -34,6 +35,7 @@ internal fun ObjectsClientsHost(
     onOpenProject: (Long) -> Unit,
     onCloseProject: () -> Unit,
     onProjectHeaderProgress: (Float) -> Unit = {},
+    onListTabChanged: (ObjectsClientsTab) -> Unit = {},
     openCreateProject: Boolean,
     headerVisibleFraction: Float,
     onCreateProjectConsumed: () -> Unit
@@ -65,6 +67,7 @@ internal fun ObjectsClientsHost(
         onOpenProject = onOpenProject,
         onCloseProject = onCloseProject,
         onProjectHeaderProgress = onProjectHeaderProgress,
+        onListTabChanged = onListTabChanged,
         databaseAvailable = store != null,
         requestCreateProject = openCreateProject,
         headerVisibleFraction = headerVisibleFraction,
