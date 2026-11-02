@@ -216,7 +216,9 @@ internal fun ProjectDetailsScreen(
                                 softWrap = true,
                                 overflow = TextOverflow.Ellipsis
                             )
-                            Spacer(Modifier.size(56.dp))
+                            // Width only: a 56dp-height spacer would enlarge
+                            // the one-line case and break the equal card gap.
+                            Spacer(Modifier.width(56.dp))
                         }
                         if (project.title.isNotBlank() &&
                             project.title != project.address &&
