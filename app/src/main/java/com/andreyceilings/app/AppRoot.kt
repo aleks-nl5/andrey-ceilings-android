@@ -132,6 +132,17 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
     val topAppBarScrollBehavior = key(tab) {
         TopAppBarDefaults.enterAlwaysScrollBehavior()
     }
+    val isProjectDetailsOpen = tab == AppTab.OBJECTS && navigation.projectDetails != null
+    var projectTitleProgress by remember { mutableFloatStateOf(0f) }
+    // Let the shared title own details scrolling rather than enterAlways showing
+    // the original toolbar during a reverse swipe.
+    val passiveDetailsScroll = remember { object : NestedScrollConnection {} }
+    LaunchedEffect(navigation.projectDetails?.projectId) {
+        projectTitleProgress = 0f
+        if (navigation.projectDetails != null) {
+            topAppBarScrollBehavior.state.heightOffset = 0f
+        }
+    }
     val isScrolling = remember { mutableStateOf(false) }
     // Track actual content displacement, not just toolbar collapse, so the shade
     // remains legible after the finger stops and goes away near the top again.
@@ -483,7 +494,8 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
             modifier = Modifier
                 .fillMaxSize()
                 .background(MaterialTheme.colorScheme.background)
-                .nestedScroll(topAppBarScrollBehavior.nestedScrollConnection)
+                .nestedScroll(if (isProjectDetailsOpen) passiveDetailsScroll
+                    else topAppBarScrollBehavior.nestedScrollConnection)
         ) {
         key(tab) {
             if (tab == AppTab.OBJECTS || tab == AppTab.MEASUREMENTS || tab == AppTab.ESTIMATES || tab == AppTab.PRICES || tab == AppTab.CALENDAR) {
@@ -496,7 +508,9 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
                             detailsProjectId = navigation.projectDetails?.projectId,
                             onOpenProject = { navigation = navigation.openProject(it) },
                             onCloseProject = { navigation = navigation.back() },
-                            headerVisibleFraction = 1f - topAppBarScrollBehavior.state.collapsedFraction,
+                            onProjectHeaderProgress = { projectTitleProgress = it.coerceIn(0f, 1f) },
+                            headerVisibleFraction = if (isProjectDetailsOpen) 1f
+                                else 1f - topAppBarScrollBehavior.state.collapsedFraction,
                             openCreateProject = navigation.pendingQuickCreate == AppQuickCreate.OBJECT,
                             onCreateProjectConsumed = { navigation = navigation.consumeQuickCreate(AppQuickCreate.OBJECT) }
                         )
@@ -651,19 +665,23 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
             }
         }
 
-        // The shared CMP header retains the Android enter-always scroll behavior.
-        // Only window insets and platform theme actions remain in this host.
-        AppHeader(
-            collapsedFraction = topAppBarScrollBehavior.state.collapsedFraction,
+        // As the original address moves into the top safe area, it takes the
+        // place of СтеляПро. On a true return to the top, the chrome reappears.
+        if (!isProjectDetailsOpen || projectTitleProgress < 0.95f) AppHeader(
+            collapsedFraction = if (isProjectDetailsOpen) 0f
+                else topAppBarScrollBehavior.state.collapsedFraction,
             shadeOpacity = headerShadeOpacity,
             statusBarHeight = statusBarInset,
             windowInsets = WindowInsets.statusBars,
-            scrollBehavior = topAppBarScrollBehavior,
+            scrollBehavior = if (isProjectDetailsOpen) null else topAppBarScrollBehavior,
             onSettings = { openNested(AppTab.SETTINGS) },
             extraActions = {
                 ThemeModeSelector(mode = themeMode, onModeChange = onThemeModeChange, compact = true)
             },
             modifier = Modifier.align(Alignment.TopCenter)
+                .alpha(if (isProjectDetailsOpen)
+                    (1f - projectTitleProgress) * (1f - projectTitleProgress)
+                else 1f)
         )
         Box(
             modifier = Modifier
