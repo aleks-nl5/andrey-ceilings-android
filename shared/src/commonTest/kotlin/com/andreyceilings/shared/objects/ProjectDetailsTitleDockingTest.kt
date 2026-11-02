@@ -34,17 +34,26 @@ class ProjectDetailsTitleDockingTest {
     }
 
     @Test
-    fun snapDownwardOnlyAfterFingerReleasedAndThirtyPercentRestored() {
-        // Source-to-dock travel 200px: >=30% restored means <=140px remaining.
-        assertTrue(projectDetailsShouldSettleToTop(0, 140, true, true, 200))
-        assertTrue(projectDetailsShouldSettleToTop(0, 100, true, true, 200))
-        assertTrue(projectDetailsShouldSettleToTop(0, 1, true, true, 200))
-        assertFalse(projectDetailsShouldSettleToTop(0, 141, true, true, 200))
-        assertFalse(projectDetailsShouldSettleToTop(0, 140, false, true, 200))
-        assertFalse(projectDetailsShouldSettleToTop(0, 140, true, false, 200))
-        assertFalse(projectDetailsShouldSettleToTop(1, 0, true, true, 200))
-        assertFalse(projectDetailsShouldSettleToTop(0, 0, true, true, 200))
-        assertFalse(projectDetailsShouldSettleToTop(0, 140, true, true, 0))
+    fun snapDownwardFromStatusCardEvenWhenHeadingIsOffscreen() {
+        // At-rest status top = 260px. With a 200px heading travel,
+        // restored >=30% means current card top >=260-140=120px.
+        // In this state LazyColumn may still report firstVisibleItemIndex=1.
+        assertTrue(projectDetailsShouldSettleFromStatus(120, 260, 200, true, true, false))
+        assertTrue(projectDetailsShouldSettleFromStatus(170, 260, 200, true, true, false))
+        assertTrue(projectDetailsShouldSettleFromStatus(259, 260, 200, true, true, false))
+        assertFalse(projectDetailsShouldSettleFromStatus(119, 260, 200, true, true, false))
+        assertFalse(projectDetailsShouldSettleFromStatus(120, 260, 200, false, true, false))
+        assertFalse(projectDetailsShouldSettleFromStatus(120, 260, 200, true, false, false))
+        assertFalse(projectDetailsShouldSettleFromStatus(260, 260, 200, true, true, true))
+        assertFalse(projectDetailsShouldSettleFromStatus(120, 260, 0, true, true, false))
+    }
+
+    @Test
+    fun snapNeedsMeasuredStatusAnchorAndVisibleCard() {
+        assertFalse(projectDetailsShouldSettleFromStatus(null, 260, 200, true, true, false))
+        assertFalse(projectDetailsShouldSettleFromStatus(120, null, 200, true, true, false))
+        assertFalse(projectDetailsShouldSettleFromStatus(120, 260, 200, true, true, true))
+        assertFalse(projectDetailsShouldSettleFromStatus(261, 260, 200, true, true, false))
     }
 
     @Test
