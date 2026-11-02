@@ -132,19 +132,6 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
     val topAppBarScrollBehavior = key(tab) {
         TopAppBarDefaults.enterAlwaysScrollBehavior()
     }
-    val isProjectDetailsOpen = tab == AppTab.OBJECTS && navigation.projectDetails != null
-    var projectTitleProgress by remember { mutableFloatStateOf(0f) }
-    // The details title owns the scroll transition. Disable enter-always for
-    // this route so a reverse swipe cannot prematurely bring СтеляПро back.
-    val passiveChromeConnection = remember { object : NestedScrollConnection {} }
-    val activeChromeConnection = if (isProjectDetailsOpen) passiveChromeConnection
-        else topAppBarScrollBehavior.nestedScrollConnection
-    LaunchedEffect(navigation.projectDetails?.projectId) {
-        projectTitleProgress = 0f
-        if (navigation.projectDetails != null) {
-            topAppBarScrollBehavior.state.heightOffset = 0f
-        }
-    }
     val isScrolling = remember { mutableStateOf(false) }
     // Track actual content displacement, not just toolbar collapse, so the shade
     // remains legible after the finger stops and goes away near the top again.
@@ -496,7 +483,7 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
             modifier = Modifier
                 .fillMaxSize()
                 .background(MaterialTheme.colorScheme.background)
-                .nestedScroll(activeChromeConnection)
+                .nestedScroll(topAppBarScrollBehavior.nestedScrollConnection)
         ) {
         key(tab) {
             if (tab == AppTab.OBJECTS || tab == AppTab.MEASUREMENTS || tab == AppTab.ESTIMATES || tab == AppTab.PRICES || tab == AppTab.CALENDAR) {
@@ -509,9 +496,7 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
                             detailsProjectId = navigation.projectDetails?.projectId,
                             onOpenProject = { navigation = navigation.openProject(it) },
                             onCloseProject = { navigation = navigation.back() },
-                            onProjectHeaderProgress = { projectTitleProgress = it.coerceIn(0f, 1f) },
-                            headerVisibleFraction = if (isProjectDetailsOpen) 1f
-                                else 1f - topAppBarScrollBehavior.state.collapsedFraction,
+                            headerVisibleFraction = 1f - topAppBarScrollBehavior.state.collapsedFraction,
                             openCreateProject = navigation.pendingQuickCreate == AppQuickCreate.OBJECT,
                             onCreateProjectConsumed = { navigation = navigation.consumeQuickCreate(AppQuickCreate.OBJECT) }
                         )
@@ -666,26 +651,19 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
             }
         }
 
-        // Two chrome layers cross-fade continuously with the single shared
-        // address row. The normal app bar returns only with the source card.
-        // The quadratic fade is nearly invisible when their positions converge.
-        if (!isProjectDetailsOpen || projectTitleProgress < 0.76f) AppHeader(
-            collapsedFraction = if (isProjectDetailsOpen) 0f
-                else topAppBarScrollBehavior.state.collapsedFraction,
+        // The shared CMP header retains the Android enter-always scroll behavior.
+        // Only window insets and platform theme actions remain in this host.
+        AppHeader(
+            collapsedFraction = topAppBarScrollBehavior.state.collapsedFraction,
             shadeOpacity = headerShadeOpacity,
             statusBarHeight = statusBarInset,
             windowInsets = WindowInsets.statusBars,
-            scrollBehavior = if (isProjectDetailsOpen) null else topAppBarScrollBehavior,
+            scrollBehavior = topAppBarScrollBehavior,
             onSettings = { openNested(AppTab.SETTINGS) },
             extraActions = {
                 ThemeModeSelector(mode = themeMode, onModeChange = onThemeModeChange, compact = true)
             },
             modifier = Modifier.align(Alignment.TopCenter)
-                .alpha(
-                    if (isProjectDetailsOpen) {
-                        (1f - projectTitleProgress) * (1f - projectTitleProgress)
-                    } else 1f
-                )
         )
         Box(
             modifier = Modifier
