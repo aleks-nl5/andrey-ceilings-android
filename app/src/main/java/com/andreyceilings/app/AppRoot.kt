@@ -45,6 +45,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.sp
@@ -131,21 +132,18 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
     val topAppBarScrollBehavior = key(tab) {
         TopAppBarDefaults.enterAlwaysScrollBehavior()
     }
-    var projectTitleDocked by remember { mutableStateOf(false) }
-    val detailsChromeDocked = tab == AppTab.OBJECTS &&
-        navigation.projectDetails != null && projectTitleDocked
-    // While Project Details is docked, scrolling back up must NOT bring the
-    // generic СтеляПро header over its address or consume the reverse gesture.
+    val isProjectDetailsOpen = tab == AppTab.OBJECTS && navigation.projectDetails != null
+    var projectTitleProgress by remember { mutableFloatStateOf(0f) }
+    // The details title owns the scroll transition. Disable enter-always for
+    // this route so a reverse swipe cannot prematurely bring СтеляПро back.
     val passiveChromeConnection = remember { object : NestedScrollConnection {} }
-    val activeChromeConnection = if (detailsChromeDocked) passiveChromeConnection
+    val activeChromeConnection = if (isProjectDetailsOpen) passiveChromeConnection
         else topAppBarScrollBehavior.nestedScrollConnection
-    var chromeWasDocked by remember { mutableStateOf(false) }
-    LaunchedEffect(detailsChromeDocked) {
-        if (chromeWasDocked && !detailsChromeDocked) {
-            // Restore only when the source header has reached its own position.
+    LaunchedEffect(navigation.projectDetails?.projectId) {
+        projectTitleProgress = 0f
+        if (navigation.projectDetails != null) {
             topAppBarScrollBehavior.state.heightOffset = 0f
         }
-        chromeWasDocked = detailsChromeDocked
     }
     val isScrolling = remember { mutableStateOf(false) }
     // Track actual content displacement, not just toolbar collapse, so the shade
@@ -511,8 +509,9 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
                             detailsProjectId = navigation.projectDetails?.projectId,
                             onOpenProject = { navigation = navigation.openProject(it) },
                             onCloseProject = { navigation = navigation.back() },
-                            onProjectHeaderDocked = { projectTitleDocked = it },
-                            headerVisibleFraction = 1f - topAppBarScrollBehavior.state.collapsedFraction,
+                            onProjectHeaderProgress = { projectTitleProgress = it.coerceIn(0f, 1f) },
+                            headerVisibleFraction = if (isProjectDetailsOpen) 1f
+                                else 1f - topAppBarScrollBehavior.state.collapsedFraction,
                             openCreateProject = navigation.pendingQuickCreate == AppQuickCreate.OBJECT,
                             onCreateProjectConsumed = { navigation = navigation.consumeQuickCreate(AppQuickCreate.OBJECT) }
                         )
@@ -667,19 +666,26 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
             }
         }
 
-        // On a long Project Details scroll the floating CMP address is the only
-        // top chrome. Restore СтеляПро once the original title row returns.
-        if (!detailsChromeDocked) AppHeader(
-            collapsedFraction = topAppBarScrollBehavior.state.collapsedFraction,
+        // Two chrome layers cross-fade continuously with the single shared
+        // address row. The normal app bar returns only with the source card.
+        // The quadratic fade is nearly invisible when their positions converge.
+        if (!isProjectDetailsOpen || projectTitleProgress < 0.76f) AppHeader(
+            collapsedFraction = if (isProjectDetailsOpen) 0f
+                else topAppBarScrollBehavior.state.collapsedFraction,
             shadeOpacity = headerShadeOpacity,
             statusBarHeight = statusBarInset,
             windowInsets = WindowInsets.statusBars,
-            scrollBehavior = topAppBarScrollBehavior,
+            scrollBehavior = if (isProjectDetailsOpen) null else topAppBarScrollBehavior,
             onSettings = { openNested(AppTab.SETTINGS) },
             extraActions = {
                 ThemeModeSelector(mode = themeMode, onModeChange = onThemeModeChange, compact = true)
             },
             modifier = Modifier.align(Alignment.TopCenter)
+                .alpha(
+                    if (isProjectDetailsOpen) {
+                        (1f - projectTitleProgress) * (1f - projectTitleProgress)
+                    } else 1f
+                )
         )
         Box(
             modifier = Modifier
