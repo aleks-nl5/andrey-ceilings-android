@@ -198,9 +198,12 @@ internal fun ProjectDetailsScreen(
                     if (project != null) {
                         Row(
                             Modifier.fillMaxWidth().clearAndSetSemantics { },
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            verticalAlignment = Alignment.Top,
+                            horizontalArrangement = Arrangement.spacedBy(0.dp)
                         ) {
+                            // Reserve the exact natural one/two-line text height.
+                            // Equal width/typography in the moving overlay prevents
+                            // the first status card from touching a wrapped address.
                             Text(
                                 project.address.ifBlank {
                                     project.title.ifBlank { "Адреса не вказана" }
@@ -208,7 +211,10 @@ internal fun ProjectDetailsScreen(
                                 modifier = Modifier.weight(1f).alpha(0f),
                                 style = MaterialTheme.typography.titleLarge,
                                 fontWeight = FontWeight.SemiBold,
-                                maxLines = 2
+                                textAlign = TextAlign.Start,
+                                maxLines = 2,
+                                softWrap = true,
+                                overflow = TextOverflow.Ellipsis
                             )
                             Spacer(Modifier.size(56.dp))
                         }
@@ -222,6 +228,9 @@ internal fun ProjectDetailsScreen(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
+                        // Fixed visual gap below either one- or two-line address.
+                        // The heading item also has the shared 8dp list gap.
+                        Spacer(Modifier.height(12.dp))
                     }
                 }
             }
@@ -458,7 +467,9 @@ private fun ProjectDetailsMovingTitle(
         val addressWidth = (maxWidth - startPadding - endPadding -
             (56f + 56f * p).dp).coerceAtLeast(64.dp)
         val addressWidthPx = with(density) { addressWidth.roundToPx() }
+        val addressSlotHeightPx = with(density) { 72.dp.roundToPx() }
         var measuredTitleWidth by remember(project.id) { mutableIntStateOf(0) }
+        var measuredTitleHeight by remember(project.id) { mutableIntStateOf(0) }
         val backInteraction = remember(project.id) { MutableInteractionSource() }
         val editInteraction = remember(project.id) { MutableInteractionSource() }
 
@@ -525,7 +536,9 @@ private fun ProjectDetailsMovingTitle(
         Box(
             Modifier.offset { IntOffset(addressX, contentY) }
                 .width(addressWidth).height(72.dp),
-            contentAlignment = Alignment.CenterStart
+            // Text begins at the left/top at rest. When docked, center it
+            // vertically within the pinned title's 72dp slot.
+            contentAlignment = Alignment.TopStart
         ) {
             Text(
                 project.address.ifBlank {
@@ -535,16 +548,21 @@ private fun ProjectDetailsMovingTitle(
                     .offset {
                         IntOffset(
                             ((addressWidthPx - measuredTitleWidth).coerceAtLeast(0) * p / 2f)
-                                .roundToInt(), 0
+                                .roundToInt(),
+                            ((addressSlotHeightPx - measuredTitleHeight).coerceAtLeast(0) * p / 2f)
+                                .roundToInt()
                         )
                     }
-                    .onSizeChanged { measuredTitleWidth = it.width },
+                    .onSizeChanged {
+                        measuredTitleWidth = it.width
+                        measuredTitleHeight = it.height
+                    },
                 style = MaterialTheme.typography.titleLarge.copy(
                     fontSize = (MaterialTheme.typography.titleLarge.fontSize.value - 3f * p).sp
                 ),
                 fontWeight = FontWeight.SemiBold,
                 color = scheme.onSurface,
-                textAlign = TextAlign.Center,
+                textAlign = TextAlign.Start,
                 maxLines = 2,
                 softWrap = true,
                 overflow = TextOverflow.Ellipsis
