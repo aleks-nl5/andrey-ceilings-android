@@ -510,6 +510,13 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
                             onOpenProject = { navigation = navigation.openProject(it) },
                             onCloseProject = { navigation = navigation.back() },
                             onProjectHeaderProgress = { projectTitleProgress = it.coerceIn(0f, 1f) },
+                            onListTabChanged = {
+                                // The CMP list resets on tab change; reset the parent
+                                // enterAlways header and scroll-based shading too.
+                                topAppBarScrollBehavior.state.heightOffset = 0f
+                                topAppBarScrollBehavior.state.contentOffset = 0f
+                                contentScrolledPx.floatValue = 0f
+                            },
                             headerVisibleFraction = if (isProjectDetailsOpen) 1f
                                 else 1f - topAppBarScrollBehavior.state.collapsedFraction,
                             openCreateProject = navigation.pendingQuickCreate == AppQuickCreate.OBJECT,
