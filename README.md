@@ -47,6 +47,10 @@ gradle --no-daemon :shared:iosSimulatorArm64Test     # Потрібен macOS/Xc
 єдині edge gradients, вимірювані pinned-області та круглі FAB у `shared/commonMain`.
 Перші інтегровані екрани — «Об’єкти/Клієнти» й «Деталі об’єкта» (#63).
 
+Спільний read-only перегляд заміру, кодек v2/v3 і Canvas-креслення описані в
+[CMP Measurement Foundation](docs/CMP_MEASUREMENT_FOUNDATION.md). Android-редактор
+та глобальна вкладка «Заміри» зберігаються до окремого етапу CMP Editor (#60/#57).
+
 ## Межі
 
 Поточна SQLDelight-БД і дані ще тестові; міграцію старої тестової Room/Go-БД за рішенням власника не виконуємо. Перед використанням реальних даних потрібні відповідні production migration/backup гарантії. Шифрування забезпечує захист локальної БД, але не окремих PDF/фото. Не поєднувати runtime cutover, WAL, серверну синхронізацію та зміни UI в одному PR.

@@ -23,8 +23,8 @@ ProjectDetailsScreen, AppNavigationState and Android/Desktop hosts before change
   existing kotlinx-serialization-json dependency. All editor/calculator callers
   keep their existing adapter entry points.
 - Android MeasurementDrawingPreview is used by the list, editor and calculator.
-  Introduce and verify a common Canvas component first, then replace only that
-  platform renderer with a thin compatibility wrapper. Keep the editor/forms,
+  Introduce and verify a common Canvas component for new details on both hosts.
+  Keep the actively used Android renderer until owner-verified editor parity. Keep the editor/forms,
   creation/deletion/global Measurements tab and calculator behavior intact.
 - Historical rectangle `{}` rows have saved REAL length/width and totals, but no
   captured precision. Render an explicitly historical dimension-only outline;
@@ -42,10 +42,15 @@ ProjectDetailsScreen, AppNavigationState and Android/Desktop hosts before change
 
 | Platform | Successful run | Job wall time (queue excluded) | Slowest build step |
 | --- | --- | --- | --- |
-| Android | 41533897104 | 11m26s | shared build 2m02s; Release 1m34s (emulator timing audited in PR) |
+| Android | 41533897104 | 11m26s | SQLCipher emulator 4m53s; shared build 2m02s, Release 1m34s |
 | Windows | 41533897297 | 2m59s | Desktop/JVM/CRUD 1m51s |
 | iOS/macOS | 41533897297 | 14m17s | framework 9m17s, Simulator 2m16s, JVM/Desktop 57s |
 
 Final PR compares its own jobs/cache outcomes to this actual final PR #65 base,
 not the earlier cold run at 840d2fb. No extra CI invocation/dependency/toolchain
 or workflow change is planned. All existing platform/encrypted tests remain.
+
+Baseline cache logs: all three jobs restored Gradle home via a fallback key;
+Android clean AVD hit. macOS still downloaded Native/LLVM dependencies, so a Gradle
+hit alone does not prove a warm Kotlin/Native toolchain. Final comparison records
+these states separately.

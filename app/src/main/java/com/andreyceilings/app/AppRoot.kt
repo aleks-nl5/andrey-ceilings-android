@@ -508,8 +508,10 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
                         AppTab.OBJECTS -> ObjectsClientsHost(
                             database = database,
                             detailsProjectId = navigation.projectDetails?.projectId,
-                    measurementDetails = navigation.measurementDetails,
-                    onOpenMeasurement = { projectId, measurementId -> navigation = navigation.openMeasurement(projectId, measurementId) },
+                            measurementDetails = navigation.measurementDetails,
+                            onOpenMeasurement = { projectId, measurementId ->
+                                navigation = navigation.openMeasurement(projectId, measurementId)
+                            },
                             onOpenProject = { navigation = navigation.openProject(it) },
                             onCloseProject = { navigation = navigation.back() },
                             onProjectHeaderProgress = { projectTitleProgress = it.coerceIn(0f, 1f) },
