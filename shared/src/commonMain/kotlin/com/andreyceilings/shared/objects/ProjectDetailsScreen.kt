@@ -510,7 +510,7 @@ private fun ProjectDetailsMovingTitle(
                     .background(fabBackground.copy(alpha = p), CircleShape)
                     .border(1.dp, fabOutline, CircleShape)
                     .clip(CircleShape)
-                    .indication(editInteraction, ripple(bounded = true)),
+                    .indication(backInteraction, ripple(bounded = true)),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
@@ -568,7 +568,9 @@ private fun ProjectDetailsMovingTitle(
             Box(
                 Modifier.size(42.dp)
                     .background(fabBackground.copy(alpha = p), CircleShape)
-                    .border(1.dp, fabOutline, CircleShape),
+                    .border(1.dp, fabOutline, CircleShape)
+                    .clip(CircleShape)
+                    .indication(editInteraction, ripple(bounded = true)),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
