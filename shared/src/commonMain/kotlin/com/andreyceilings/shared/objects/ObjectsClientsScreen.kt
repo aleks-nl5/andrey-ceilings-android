@@ -492,7 +492,7 @@ fun ObjectsClientsScreen(
             contentPadding = PaddingValues(
                 start = contentPadding.calculateLeftPadding(layoutDirection),
                 end = contentPadding.calculateRightPadding(layoutDirection),
-                top = (headerSpace - 12.dp).coerceAtLeast(0.dp),
+                top = (headerSpace - 24.dp).coerceAtLeast(0.dp),
                 bottom = contentPadding.calculateBottomPadding()
             ),
             onDial = onDial,
