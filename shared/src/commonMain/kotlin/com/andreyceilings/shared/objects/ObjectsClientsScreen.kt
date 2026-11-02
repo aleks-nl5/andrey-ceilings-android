@@ -58,6 +58,7 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
@@ -282,12 +283,26 @@ fun ObjectsClientsScreen(
     // When СтеляПро collapses, use the same 50%-to-transparent surface fade
     // as the system panels and the docked project-details header.
     // The search/tabs themselves keep their existing readable solid surfaces.
-    val pinnedControlsProgress = (1f - headerVisibleFraction).coerceIn(0f, 1f)
+    val pinnedControlsHeight = 97.dp // 38dp tabs + 7dp gap + 47dp search + 5dp bottom
+    val listIsScrolled by remember(listState) {
+        androidx.compose.runtime.derivedStateOf {
+            listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 0
+        }
+    }
+    val pinnedControlsProgress by animateFloatAsState(
+        targetValue = maxOf(
+            (1f - headerVisibleFraction).coerceIn(0f, 1f),
+            if (listIsScrolled) 1f else 0f
+        ),
+        animationSpec = tween(durationMillis = 180),
+        label = "Objects and clients sticky search backdrop"
+    )
     val pinnedControlsSurface = MaterialTheme.colorScheme.surface
     val layoutDirection = LocalLayoutDirection.current
     val listPadding = PaddingValues(
         start = contentPadding.calculateLeftPadding(layoutDirection),
         end = contentPadding.calculateRightPadding(layoutDirection),
+        top = pinnedControlsHeight,
         bottom = contentPadding.calculateBottomPadding()
     )
 
@@ -295,50 +310,15 @@ fun ObjectsClientsScreen(
     // Do not leave the background list or its FAB clickable beneath details.
     if (detailsProjectId == null) Column(Modifier.fillMaxSize()) {
         Spacer(Modifier.height(headerSpace))
-        // This is intentionally NOT inside LazyColumn and never scrolls away.
-        // The opaque full-width slab is replaced by the same translucent
-        // pinned-controls fade on BOTH projects and clients.
-        Column(
-                Modifier.fillMaxWidth()
-                    .background(
-                        Brush.verticalGradient(
-                            colors = listOf(
-                                pinnedControlsSurface.copy(alpha = 0.50f * pinnedControlsProgress),
-                                pinnedControlsSurface.copy(alpha = 0f)
-                            )
-                        )
-                    )
-                    .padding(bottom = 5.dp),
-                verticalArrangement = Arrangement.spacedBy(7.dp)
-            ) {
-                Row(
-                    Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(9.dp)
-                ) {
-                    ObjectsTabButton("Об'єкти", selectedTab == ObjectsClientsTab.PROJECTS,
-                        Modifier.weight(1f)) {
-                        dismissSearchFocus()
-                        selectedTab = ObjectsClientsTab.PROJECTS
-                        openSwipe = null
-                    }
-                    ObjectsTabButton("Клієнти", selectedTab == ObjectsClientsTab.CLIENTS,
-                        Modifier.weight(1f)) {
-                        dismissSearchFocus()
-                        selectedTab = ObjectsClientsTab.CLIENTS
-                        openSwipe = null
-                    }
-                }
-                CompactObjectsSearchField(
-                    value = search,
-                    onChange = { search = it; openSwipe = null },
-                    onClear = { search = ""; openSwipe = null },
-                    onFocusChange = { searchFocused = it }
-                )
-        }
+        // Compose the list behind the pinned search and tab controls.
+        // The initial 97dp content padding keeps the first filter/card exactly
+        // where it was, while scrolled rows can now show through the gradient.
         BoxWithConstraints(Modifier.weight(1f)) {
-            val suggestionsMaxHeight = maxHeight.coerceAtMost(320.dp)
+            val suggestionsMaxHeight = (maxHeight - pinnedControlsHeight)
+                .coerceAtLeast(0.dp).coerceAtMost(320.dp)
             LazyColumn(
                 modifier = Modifier
+                    .fillMaxSize()
                     .padding(end = if (showClientLetters) 16.dp else 0.dp)
                     .nestedScroll(fabGestureConnection)
                     .pointerInput(Unit) {
@@ -432,6 +412,53 @@ fun ObjectsClientsScreen(
                 }
             }
         }
+        // Underlying list content now scrolls behind this fixed foreground.
+        // Match the 50%-to-transparent fade of system bars and detail header.
+        Box(
+            Modifier.align(Alignment.TopCenter)
+                .fillMaxWidth()
+                .height(pinnedControlsHeight + 36.dp)
+                .background(
+                    Brush.verticalGradient(
+                        colors = listOf(
+                            pinnedControlsSurface.copy(alpha = 0.50f * pinnedControlsProgress),
+                            pinnedControlsSurface.copy(alpha = 0f)
+                        )
+                    )
+                )
+                .zIndex(1f)
+        )
+        Column(
+            modifier = Modifier.align(Alignment.TopCenter)
+                .fillMaxWidth()
+                .padding(bottom = 5.dp)
+                .zIndex(2f),
+            verticalArrangement = Arrangement.spacedBy(7.dp)
+        ) {
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(9.dp)
+            ) {
+                ObjectsTabButton("Об'єкти", selectedTab == ObjectsClientsTab.PROJECTS,
+                    Modifier.weight(1f)) {
+                    dismissSearchFocus()
+                    selectedTab = ObjectsClientsTab.PROJECTS
+                    openSwipe = null
+                }
+                ObjectsTabButton("Клієнти", selectedTab == ObjectsClientsTab.CLIENTS,
+                    Modifier.weight(1f)) {
+                    dismissSearchFocus()
+                    selectedTab = ObjectsClientsTab.CLIENTS
+                    openSwipe = null
+                }
+            }
+            CompactObjectsSearchField(
+                value = search,
+                onChange = { search = it; openSwipe = null },
+                onClear = { search = ""; openSwipe = null },
+                onFocusChange = { searchFocused = it }
+            )
+        }
         // A phonebook rail exists only for the clients tab. Labels correspond
         // to real first-letter groups in the *rendered* alphabetically sorted
         // list. Leave the lower corner clear for the animated create FAB.
@@ -439,7 +466,7 @@ fun ObjectsClientsScreen(
             BoxWithConstraints(
                 modifier = Modifier.align(Alignment.CenterEnd)
                     .fillMaxHeight()
-                    .padding(top = 8.dp, bottom = 226.dp)
+                    .padding(top = pinnedControlsHeight + 8.dp, bottom = 226.dp)
                     .width(24.dp)
                     .zIndex(1f)
             ) {
@@ -477,7 +504,9 @@ fun ObjectsClientsScreen(
                     editor = EditorTarget.Client(client)
                 },
                 onDismiss = { dismissSearchFocus() },
-                modifier = Modifier.align(Alignment.TopCenter).zIndex(2f)
+                modifier = Modifier.align(Alignment.TopCenter)
+                    .offset(y = pinnedControlsHeight)
+                    .zIndex(3f)
             )
         }
         val showFab = databaseAvailable && !busy && fabVisible && editor == null && !searchFocused
