@@ -1,5 +1,6 @@
 package com.andreyceilings.shared.objects
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -16,6 +17,7 @@ import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.andreyceilings.shared.calculation.CeilingShapeTemplates
 import com.andreyceilings.shared.domain.ClientListEntry
@@ -55,39 +57,52 @@ internal fun ProjectDetailsScreen(
         contentColor = MaterialTheme.colorScheme.onBackground) {
         LazyColumn(
             contentPadding = contentPadding,
-            verticalArrangement = Arrangement.spacedBy(6.dp)
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             item(key = "header") {
-                Column {
-                    TextButton(onClick = onBack, contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)) {
+                Column(
+                    Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(2.dp)
+                ) {
+                    TextButton(
+                        onClick = onBack,
+                        modifier = Modifier.height(40.dp),
+                        contentPadding = PaddingValues(horizontal = 0.dp, vertical = 0.dp)
+                    ) {
                         Text("← До списку")
                     }
                     val project = (state as? DetailsState.Loaded)?.data?.project
                     if (project != null) {
-                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                            Text(project.address.ifBlank { project.title.ifBlank { "Адреса не вказана" } },
+                        Row(
+                            Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text(
+                                project.address.ifBlank {
+                                    project.title.ifBlank { "Адреса не вказана" }
+                                },
                                 modifier = Modifier.weight(1f),
                                 style = MaterialTheme.typography.titleLarge,
-                                fontWeight = FontWeight.SemiBold)
+                                fontWeight = FontWeight.SemiBold
+                            )
                             IconButton(onClick = { onEdit(project) }) {
-                                Icon(Icons.Default.Edit, contentDescription = "Редагувати об'єкт",
-                                    tint = MaterialTheme.colorScheme.primary)
+                                Icon(
+                                    Icons.Default.Edit,
+                                    contentDescription = "Редагувати об'єкт",
+                                    tint = MaterialTheme.colorScheme.primary
+                                )
                             }
                         }
-                        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp),
-                            verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Surface(shape = MaterialTheme.shapes.small,
-                                color = MaterialTheme.colorScheme.surface,
-                                contentColor = MaterialTheme.colorScheme.onSurface) {
-                                Row(Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
-                                    verticalAlignment = Alignment.CenterVertically) {
-                                    WorkStatusMark(project.workStatus)
-                                    Text("Етап: ${ProjectStatusRules.workLabel(project.workStatus)}",
-                                        style = MaterialTheme.typography.labelMedium)
-                                }
-                            }
-                            PaymentStateTag(project.paymentStatus, prefix = "Оплата: ")
+                        if (project.title.isNotBlank() &&
+                            project.title != project.address &&
+                            project.address.isNotBlank()
+                        ) {
+                            Text(
+                                project.title,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
                         }
                     }
                 }
@@ -99,12 +114,33 @@ internal fun ProjectDetailsScreen(
                     val project = state.data.project
                     if (project == null) item { Text("Об'єкт не знайдено або його видалено.") }
                     else {
+                        item(key = "status") {
+                            DetailsCard {
+                                FlowRow(
+                                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(vertical = 2.dp),
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        WorkStatusMark(project.workStatus)
+                                        Text(
+                                            "Етап: ${ProjectStatusRules.workLabel(project.workStatus)}",
+                                            style = MaterialTheme.typography.labelMedium
+                                        )
+                                    }
+                                    PaymentStateTag(project.paymentStatus, prefix = "Оплата: ")
+                                }
+                            }
+                        }
                         if (project.notes.isNotBlank()) item(key = "notes") {
                             DetailsCard("Примітки") { Text(project.notes, style = MaterialTheme.typography.bodyMedium) }
                         }
                         item(key = "client") {
                             val client = clients.firstOrNull { it.id == project.clientId }
-                            DetailsCard("Клієнт", spacing = 0) {
+                            DetailsCard("Клієнт") {
                                 Text(client?.name ?: project.clientName.ifBlank { "Не вказано" },
                                     style = MaterialTheme.typography.bodyMedium)
                                 client?.phone?.takeIf { it.isNotBlank() }?.let { phone ->
@@ -155,31 +191,68 @@ internal fun ProjectDetailsScreen(
 
 @Composable
 private fun detailsCardColors() = CardDefaults.cardColors(
-    containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+    containerColor = MaterialTheme.colorScheme.surface,
     contentColor = MaterialTheme.colorScheme.onSurface
 )
 
+/** Quiet, consistent grouping for project metadata and contacts. */
 @Composable
-private fun DetailsCard(title: String, spacing: Int = 4, content: @Composable ColumnScope.() -> Unit) {
-    Card(Modifier.fillMaxWidth(), colors = detailsCardColors()) {
-        Column(Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
-            verticalArrangement = Arrangement.spacedBy(spacing.dp)) {
-            Text(title, style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant)
+private fun DetailsCard(
+    title: String? = null,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.large,
+        colors = detailsCardColors(),
+        border = BorderStroke(
+            1.dp,
+            MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.60f)
+        )
+    ) {
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 9.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            if (title != null) {
+                Text(
+                    title,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
             content()
         }
     }
 }
 
 @Composable
-private fun ContactLink(value: String, actionLabel: String, icon: ImageVector, onClick: () -> Unit) {
-    Row(Modifier.fillMaxWidth().heightIn(min = 48.dp)
-        .clickable(role = Role.Button, onClickLabel = actionLabel, onClick = onClick),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalAlignment = Alignment.CenterVertically) {
-        Icon(icon, contentDescription = actionLabel, modifier = Modifier.size(20.dp),
-            tint = MaterialTheme.colorScheme.primary)
-        Text(value, modifier = Modifier.weight(1f), color = MaterialTheme.colorScheme.primary,
-            style = MaterialTheme.typography.bodyMedium)
+private fun ContactLink(
+    value: String,
+    actionLabel: String,
+    icon: ImageVector,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth()
+            .heightIn(min = 44.dp)
+            .clickable(role = Role.Button, onClickLabel = actionLabel, onClick = onClick),
+        horizontalArrangement = Arrangement.spacedBy(9.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            icon,
+            contentDescription = null,
+            modifier = Modifier.size(19.dp),
+            tint = MaterialTheme.colorScheme.primary
+        )
+        Text(
+            value,
+            modifier = Modifier.weight(1f),
+            color = MaterialTheme.colorScheme.primary,
+            style = MaterialTheme.typography.bodyMedium,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis
+        )
     }
 }
