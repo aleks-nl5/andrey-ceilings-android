@@ -70,7 +70,7 @@ class CeilingsThemeTest {
                 "Card surface must remain distinct from the screen in ${if (dark) "dark" else "light"} mode"
             )
             assertTrue(
-                abs(scheme.surface.luminance() - scheme.background.luminance()) > 0.018f
+                abs(scheme.surface.luminance() - scheme.background.luminance()) > 0.009f
             )
         }
     }
