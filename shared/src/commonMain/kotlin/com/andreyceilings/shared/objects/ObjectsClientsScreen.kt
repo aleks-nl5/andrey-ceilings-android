@@ -302,20 +302,19 @@ fun ObjectsClientsScreen(
     val listPadding = PaddingValues(
         start = contentPadding.calculateLeftPadding(layoutDirection),
         end = contentPadding.calculateRightPadding(layoutDirection),
-        top = pinnedControlsHeight,
+        top = headerSpace + pinnedControlsHeight,
         bottom = contentPadding.calculateBottomPadding()
     )
 
     Box(modifier.fillMaxSize()) {
     // Do not leave the background list or its FAB clickable beneath details.
-    if (detailsProjectId == null) Column(Modifier.fillMaxSize()) {
-        Spacer(Modifier.height(headerSpace))
-        // Compose the list behind the pinned search and tab controls.
-        // The initial 97dp content padding keeps the first filter/card exactly
-        // where it was, while scrolled rows can now show through the gradient.
-        BoxWithConstraints(Modifier.weight(1f)) {
-            val suggestionsMaxHeight = (maxHeight - pinnedControlsHeight)
-                .coerceAtLeast(0.dp).coerceAtMost(320.dp)
+    if (detailsProjectId == null) BoxWithConstraints(Modifier.fillMaxSize()) {
+        // The list fills the full viewport, including behind the status bar
+        // and sticky controls. Its top padding preserves the initial card
+        // positions while allowing scrolled content to remain translucent
+        // all the way to the top edge of the display.
+        val suggestionsMaxHeight = (maxHeight - headerSpace - pinnedControlsHeight)
+            .coerceAtLeast(0.dp).coerceAtMost(320.dp)
             LazyColumn(
                 modifier = Modifier
                     .fillMaxSize()
@@ -417,7 +416,7 @@ fun ObjectsClientsScreen(
         Box(
             Modifier.align(Alignment.TopCenter)
                 .fillMaxWidth()
-                .height(pinnedControlsHeight + 36.dp)
+                .height(headerSpace + pinnedControlsHeight + 36.dp)
                 .background(
                     Brush.verticalGradient(
                         colors = listOf(
@@ -431,6 +430,7 @@ fun ObjectsClientsScreen(
         Column(
             modifier = Modifier.align(Alignment.TopCenter)
                 .fillMaxWidth()
+                .offset(y = headerSpace)
                 .padding(bottom = 5.dp)
                 .zIndex(2f),
             verticalArrangement = Arrangement.spacedBy(7.dp)
@@ -466,7 +466,7 @@ fun ObjectsClientsScreen(
             BoxWithConstraints(
                 modifier = Modifier.align(Alignment.CenterEnd)
                     .fillMaxHeight()
-                    .padding(top = pinnedControlsHeight + 8.dp, bottom = 226.dp)
+                    .padding(top = headerSpace + pinnedControlsHeight + 8.dp, bottom = 226.dp)
                     .width(24.dp)
                     .zIndex(1f)
             ) {
@@ -505,7 +505,7 @@ fun ObjectsClientsScreen(
                 },
                 onDismiss = { dismissSearchFocus() },
                 modifier = Modifier.align(Alignment.TopCenter)
-                    .offset(y = pinnedControlsHeight)
+                    .offset(y = headerSpace + pinnedControlsHeight)
                     .zIndex(3f)
             )
         }
@@ -526,7 +526,6 @@ fun ObjectsClientsScreen(
                     EditorTarget.Project(null) else EditorTarget.Client(null)
             }
         )
-        }
     }
 
     if (detailsProjectId != null) {
