@@ -82,23 +82,30 @@ internal fun projectTitleDocked(
 ): Boolean = firstVisibleItemIndex > 0 || firstVisibleItemScrollOffsetPx > 0
 
 /**
- * Only a released downward gesture near the real top can settle the details
- * page. Restored fraction is measured against the header's source-to-dock
- * travel (30% restored means <=70% of that travel still scrolled away).
+ * Decide the downward settle from the STATUS CARD's visible position, not
+ * firstVisibleItemIndex: that index can still be 1 (or more) even when the
+ * status card has almost returned to the expanded heading.
+ *
+ * The actual at-rest card offset is captured from LazyList layout (it handles
+ * one- and two-line addresses). Snap once it is within the last 70% of the
+ * heading travel: this corresponds to >=30% of the return already completed.
  */
-internal fun projectDetailsShouldSettleToTop(
-    firstVisibleItemIndex: Int,
-    firstVisibleItemScrollOffsetPx: Int,
+internal fun projectDetailsShouldSettleFromStatus(
+    statusCardTopPx: Int?,
+    statusCardAtRestTopPx: Int?,
+    headerTravelPx: Int,
     returningDownward: Boolean,
     fingerReleased: Boolean,
-    headerTravelPx: Int,
+    listIsAtTop: Boolean,
     restoredFraction: Float = 0.30f
 ): Boolean {
-    if (!returningDownward || !fingerReleased || firstVisibleItemIndex != 0 ||
-        firstVisibleItemScrollOffsetPx <= 0 || headerTravelPx <= 0) return false
+    val current = statusCardTopPx ?: return false
+    val atRest = statusCardAtRestTopPx ?: return false
+    if (!returningDownward || !fingerReleased || listIsAtTop ||
+        headerTravelPx <= 0 || current >= atRest) return false
     val remainingThresholdPx = (headerTravelPx *
         (1f - restoredFraction.coerceIn(0f, 1f))).roundToInt()
-    return firstVisibleItemScrollOffsetPx <= remainingThresholdPx
+    return current >= atRest - remainingThresholdPx
 }
 
 /** In the docked state, center the one/two-line address on the FAB's 56dp touch-row center. */
@@ -156,6 +163,19 @@ internal fun ProjectDetailsScreen(
     // A pending settle is cancelled as soon as another finger touches the
     // list. Holding, dragging upward or merely tapping never triggers it.
     var settleJob by remember(projectId) { mutableStateOf<Job?>(null) }
+    // Record the real unscrolled status-card position once its SQLDelight
+    // data has loaded. It naturally includes the address wrapping height.
+    var statusCardAtRestTopPx by remember(projectId) { mutableStateOf<Int?>(null) }
+    LaunchedEffect(projectId, detailsListState, visibleProject?.id) {
+        snapshotFlow {
+            if (detailsListState.firstVisibleItemIndex != 0 ||
+                detailsListState.firstVisibleItemScrollOffset != 0
+            ) null else detailsListState.layoutInfo.visibleItemsInfo
+                .firstOrNull { it.key == "status" }?.offset
+        }.collect { top ->
+            if (top != null) statusCardAtRestTopPx = top
+        }
+    }
     // The animation deliberately decouples from how far the content can scroll.
     // A non-zero scroll triggers docking, and 0 returns to the source position.
     val docked by remember(detailsListState, projectId) {
@@ -221,7 +241,9 @@ internal fun ProjectDetailsScreen(
         contentColor = MaterialTheme.colorScheme.onBackground) {
         Box(Modifier.fillMaxSize()) {
         LazyColumn(
-            modifier = Modifier.pointerInput(projectId, detailsListState, snapTravelPx) {
+            modifier = Modifier.pointerInput(
+                projectId, detailsListState, snapTravelPx, statusCardAtRestTopPx
+            ) {
                 awaitEachGesture {
                     awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
                     settleJob?.cancel()
@@ -247,12 +269,16 @@ internal fun ProjectDetailsScreen(
                             delay(100L)
                             snapshotFlow { detailsListState.isScrollInProgress }
                                 .first { !it }
-                            if (projectDetailsShouldSettleToTop(
-                                firstVisibleItemIndex = detailsListState.firstVisibleItemIndex,
-                                firstVisibleItemScrollOffsetPx = detailsListState.firstVisibleItemScrollOffset,
+                            val cardTop = detailsListState.layoutInfo.visibleItemsInfo
+                                .firstOrNull { it.key == "status" }?.offset
+                            if (projectDetailsShouldSettleFromStatus(
+                                statusCardTopPx = cardTop,
+                                statusCardAtRestTopPx = statusCardAtRestTopPx,
+                                headerTravelPx = snapTravelPx,
                                 returningDownward = true,
                                 fingerReleased = true,
-                                headerTravelPx = snapTravelPx
+                                listIsAtTop = detailsListState.firstVisibleItemIndex == 0 &&
+                                    detailsListState.firstVisibleItemScrollOffset == 0
                             )) {
                                 detailsListState.animateScrollToItem(0)
                             }
