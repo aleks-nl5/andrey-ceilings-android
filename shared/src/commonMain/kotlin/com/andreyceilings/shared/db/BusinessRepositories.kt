@@ -2,6 +2,7 @@ package com.andreyceilings.shared.db
 
 import app.cash.sqldelight.coroutines.asFlow
 import app.cash.sqldelight.coroutines.mapToList
+import app.cash.sqldelight.coroutines.mapToOneOrNull
 import com.andreyceilings.shared.estimate.ImmutableEstimateDraft
 import com.andreyceilings.shared.estimate.ImmutableEstimateRepository
 import kotlinx.coroutines.Dispatchers
@@ -52,6 +53,7 @@ class ProjectRepository(private val database: PrototypeDatabase) {
         notes: String = "", createdAt: Long, updatedAt: Long = createdAt
     ): Long = queries.insertProjectReturningId(clientId, title, address, status, notes, createdAt, updatedAt, newRecordUuid()).executeAsOne()
     fun find(id: Long) = queries.selectProjectById(id).executeAsOneOrNull()
+    fun observeById(id: Long) = queries.selectProjectById(id).asFlow().mapToOneOrNull(Dispatchers.Default)
     fun byClient(clientId: Long) = queries.selectProjectsByClient(clientId).executeAsList()
     fun create(
         clientId: Long?, title: String, address: String = "", status: String = "measurement",
@@ -90,6 +92,7 @@ class MeasurementRepository(private val database: PrototypeDatabase) {
         drawingJson: String = "{}", notes: String = "", createdAt: Long
     ): Long = queries.insertMeasurementReturningId(projectId, name, shape, lengthMeters, widthMeters,
         areaSquareMeters, perimeterMeters, drawingJson, notes, createdAt, newRecordUuid(), createdAt).executeAsOne()
+    fun observeById(id: Long) = queries.selectMeasurementById(id).asFlow().mapToOneOrNull(Dispatchers.Default)
     fun find(id: Long) = queries.selectMeasurementById(id).executeAsOneOrNull()
     fun create(
         projectId: Long, name: String, shape: String = "rectangle",
