@@ -130,7 +130,7 @@ internal fun ProjectDetailsScreen(
         if (visibleProject == null) {
             progressCallback(0f)
         } else {
-            snapshotFlow { motion.progress }.collect { progressCallback(it) }
+            snapshotFlow { titleProgress }.collect { progressCallback(it) }
         }
     }
     DisposableEffect(projectId) {
