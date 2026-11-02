@@ -485,8 +485,10 @@ private fun WorkStagePicker(
                 WorkStatusMark(status)
                 Text(
                     ProjectStatusRules.workLabel(status),
+                    modifier = Modifier.weight(1f, fill = false),
                     style = MaterialTheme.typography.labelMedium,
-                    maxLines = 1
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
                 Icon(
                     Icons.Default.KeyboardArrowDown,
