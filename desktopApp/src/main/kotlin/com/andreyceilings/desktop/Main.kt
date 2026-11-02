@@ -181,7 +181,6 @@ private fun DesktopPriceHost(
             TopAppBarDefaults.enterAlwaysScrollBehavior()
         }
         Box(Modifier.fillMaxSize().nestedScroll(topScrollBehavior.nestedScrollConnection)) {
-            when (selectedTab)        ) {
             when (selectedTab) {
                 AppRoute.DASHBOARD -> {
                     Column(
