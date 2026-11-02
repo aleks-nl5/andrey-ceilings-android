@@ -19,6 +19,7 @@ enum class ThemeMode(val label: String) {
 
 // Single palette/shape foundation for all hosts; keep established navigation,
 // FAB, surface and accent colors while completing the Material 3 surface roles.
+// SurfaceContainerLow must contrast with background: it is used by CMP cards.
 private val LightColors = lightColorScheme(
     primary = Color(0xFF087E8B),
     onPrimary = Color(0xFFFFFFFF),
@@ -37,7 +38,7 @@ private val LightColors = lightColorScheme(
     surface = Color(0xFFFFFFFF),
     onSurface = Color(0xFF182328),
     surfaceContainerLowest = Color(0xFFFFFFFF),
-    surfaceContainerLow = Color(0xFFF4F7F8),
+    surfaceContainerLow = Color(0xFFFFFFFF),
     surfaceBright = Color(0xFFFFFFFF),
     surfaceDim = Color(0xFFD8E1E4),
     inverseSurface = Color(0xFF29383D),
@@ -89,7 +90,7 @@ private val DarkColors = darkColorScheme(
     surface = Color(0xFF1D282C),
     onSurface = Color(0xFFEAF1F2),
     surfaceContainerLowest = Color(0xFF0E1518),
-    surfaceContainerLow = Color(0xFF182226),
+    surfaceContainerLow = Color(0xFF26363B),
     surfaceBright = Color(0xFF3B4A4F),
     surfaceDim = Color(0xFF121A1D),
     inverseSurface = Color(0xFFE8EFF1),
