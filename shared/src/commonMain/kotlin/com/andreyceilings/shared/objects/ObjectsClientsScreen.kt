@@ -279,6 +279,11 @@ fun ObjectsClientsScreen(
     // shift up to meet the system bar as it collapses.
     val headerSpace = (contentPadding.calculateTopPadding() - 56.dp).coerceAtLeast(0.dp) +
         56.dp * headerVisibleFraction.coerceIn(0f, 1f)
+    // When СтеляПро collapses, use the same 50%-to-transparent surface fade
+    // as the system panels and the docked project-details header.
+    // The search/tabs themselves keep their existing readable solid surfaces.
+    val pinnedControlsProgress = (1f - headerVisibleFraction).coerceIn(0f, 1f)
+    val pinnedControlsSurface = MaterialTheme.colorScheme.surface
     val layoutDirection = LocalLayoutDirection.current
     val listPadding = PaddingValues(
         start = contentPadding.calculateLeftPadding(layoutDirection),
@@ -291,9 +296,18 @@ fun ObjectsClientsScreen(
     if (detailsProjectId == null) Column(Modifier.fillMaxSize()) {
         Spacer(Modifier.height(headerSpace))
         // This is intentionally NOT inside LazyColumn and never scrolls away.
+        // The opaque full-width slab is replaced by the same translucent
+        // pinned-controls fade on BOTH projects and clients.
         Column(
                 Modifier.fillMaxWidth()
-                    .background(MaterialTheme.colorScheme.background)
+                    .background(
+                        Brush.verticalGradient(
+                            colors = listOf(
+                                pinnedControlsSurface.copy(alpha = 0.50f * pinnedControlsProgress),
+                                pinnedControlsSurface.copy(alpha = 0f)
+                            )
+                        )
+                    )
                     .padding(bottom = 5.dp),
                 verticalArrangement = Arrangement.spacedBy(7.dp)
             ) {
