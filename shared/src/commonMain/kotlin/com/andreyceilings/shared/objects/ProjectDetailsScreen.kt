@@ -79,6 +79,7 @@ internal fun ProjectDetailsScreen(
     clients: List<ClientListEntry>,
     contentPadding: PaddingValues,
     systemTopInset: androidx.compose.ui.unit.Dp = 0.dp,
+    onDockedChange: (Boolean) -> Unit = {},
     onBack: () -> Unit,
     onEdit: (ProjectListEntry) -> Unit,
     onDial: (String) -> Unit
@@ -89,7 +90,9 @@ internal fun ProjectDetailsScreen(
     }
     val state = if (flow == null) DetailsState.Unavailable
         else flow.collectAsState(initial = DetailsState.Loading).value
+    val visibleProject = (state as? DetailsState.Loaded)?.data?.project
     val uriHandler = LocalUriHandler.current
+    val latestOnDockedChange by rememberUpdatedState(onDockedChange)
     val detailsListState = rememberLazyListState()
     val direction = LocalLayoutDirection.current
     val horizontalStart = contentPadding.calculateLeftPadding(direction)
@@ -106,6 +109,12 @@ internal fun ProjectDetailsScreen(
                 topEdgePx = topEdgePx
             )
         }
+    }
+    LaunchedEffect(projectId, isDocked, visibleProject?.id) {
+        latestOnDockedChange(visibleProject != null && isDocked)
+    }
+    DisposableEffect(projectId) {
+        onDispose { latestOnDockedChange(false) }
     }
     var contactError by remember(projectId) { mutableStateOf<String?>(null) }
     var statusError by remember(projectId) { mutableStateOf<String?>(null) }
@@ -144,7 +153,6 @@ internal fun ProjectDetailsScreen(
     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background,
         contentColor = MaterialTheme.colorScheme.onBackground) {
         Box(Modifier.fillMaxSize()) {
-        val visibleProject = (state as? DetailsState.Loaded)?.data?.project
         LazyColumn(
             state = detailsListState,
             contentPadding = contentPadding,
