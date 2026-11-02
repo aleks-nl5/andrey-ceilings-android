@@ -79,7 +79,9 @@ internal fun projectHeaderMotion(
     // Keep the title inside its defined travel range even when the list
     // bounces past the initial position or is restored with an unusual offset.
     val top = source.coerceIn(dockedTopPx, initialTopPx.coerceAtLeast(dockedTopPx))
-    val fraction = ((initialTopPx - top).toFloat() / travel).coerceIn(0f, 1f)
+    // Keep the raw source offset for the zero-travel case (equal insets):
+    // progress can still move to docked when the list scrolls below the row.
+    val fraction = ((initialTopPx - source).toFloat() / travel).coerceIn(0f, 1f)
     return ProjectHeaderMotion(top, fraction)
 }
 
