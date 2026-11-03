@@ -27,7 +27,7 @@ object PriceCatalogMigrationProof {
                 detailsJson = "{\"oldPriceUuid\":\"old-uuid\",\"pdf\":\"unchanged\"}", createdAt = 13)
             ImmutableEstimateRepository(db).createSeries(project, 2026, 13,
                 ImmutableEstimateDraft("{\"priceUuid\":\"old-uuid\"}", "{\"frozen\":true}", 0.01, "kmp-1", 9999.0,
-                    listOf(ImmutableEstimateLine("canvas.pvc_matte", "OLD TEST PRICE", "м²", 1.0, 9999.0, 9999.0))))
+                    listOf(ImmutableEstimateLine("canvas.pvc_matte", "OLD TEST PRICE", "м²", 1.0, 9999.0, 9999.0, priceItemUuid = "old-uuid"))))
             driver.execute(null, """INSERT INTO price_items(id, code, title, category, unit, price, updatedAt, uuid)
                 VALUES (900, 'canvas.pvc_matte', 'OLD TEST PRICE', 'OLD CATEGORY', 'м²', 9999, 14, 'old-uuid')""", 0)
             driver.execute(null, """INSERT INTO price_items(code, title, category, unit, price, updatedAt, uuid, deletedAt)
@@ -60,6 +60,10 @@ object PriceCatalogMigrationProof {
         val prices = PriceRepository(database)
         assertTrue(prices.all().none { it.id == 900L || it.uuid == "old-uuid" })
         assertTrue(prices.tombstones().isEmpty())
+        val series = ImmutableEstimateRepository(database).seriesForProject(ProjectRepository(database).all().single().id).single()
+        val preview = EstimateRecalculationRepository(database).previewLatest(series.seriesUuid)
+        assertFalse(preview.canConfirm)
+        assertEquals(setOf(RecalculationProblem.MISSING_PRICE), preview.problems)
         assertEquals("Preserve client", ClientRepository(database).all().single().name)
         assertEquals("Preserve project", ProjectRepository(database).all().single().title)
         assertEquals("{\"frozen\":true}", MeasurementRepository(database).all().single().drawingJson)

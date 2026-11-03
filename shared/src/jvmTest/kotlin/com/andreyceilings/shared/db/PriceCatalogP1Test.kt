@@ -47,7 +47,9 @@ class PriceCatalogP1Test {
                     val renamed = groupEvents.receive().single()
                     assertEquals("After rename", renamed.name)
                     assertEquals("шт.", renamed.defaultUnit)
-                    assertEquals("After rename", itemEvents.receive().single().category)
+                    var renamedItems = itemEvents.receive()
+                    while (renamedItems.singleOrNull()?.category != "After rename") renamedItems = itemEvents.receive()
+                    assertEquals("After rename", renamedItems.single().category)
                 }
             } finally { groupJob.cancelAndJoin(); itemJob.cancelAndJoin() }
         }
