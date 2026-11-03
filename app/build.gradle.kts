@@ -44,7 +44,7 @@ android {
     }
 
     // Reuse the P1 persistence/migration contract across real platform drivers.
-    sourceSets.getByName("androidTest").java.directories.add("../shared/src/commonTest/kotlin/com/andreyceilings/shared/db")
+    sourceSets.getByName("androidTest").kotlin.directories.add("../shared/src/commonTest/kotlin/com/andreyceilings/shared/db")
 
     // AGP 9+ built-in Kotlin uses the Java compile target by default.
     buildFeatures {
