@@ -1,6 +1,7 @@
 # Agent instructions — Andrey Ceilings
 
 ## Current milestone (03.11.2026)
+- **Current P1: price catalog #80 / #78.** The owner's latest issue explicitly supersedes older price migration requirements: discard only the old test `price_items` on v4→v5, seed 5 editable groups / 22 items once through shared KMP + persistent marker. Never reset the DB, reseed an empty initialized catalog, remap old price references, or change historical estimates/PDF. Contract: `docs/PRICE_CATALOG_P1.md`. New CMP group UI is P2; calculator/Canvas integration is outside P1.
 - PR #66 (CMP measurement read-only) and PR #68 (Windows SQLCipher JDBC RETURNING) are merged. Issue #67 is closed. **PR #72 (CMP creation) is merged and owner-tested. Current: PR B1 safe editing/fullscreen (#73); B2 global-tab/cutover follows separately.** See `docs/CMP_MEASUREMENT_EDITOR_PLAN.md` and issues #60/#57.
 - The owner confirmed **all existing database records are test data**. No old drawing/legacy Room/Go DB JSON/archive compatibility requirement for PR A/B; do not add migration shims for old test data. Do not automatically destroy the database or regress new geometry records, encrypted storage, existing estimate/PDF semantics, or approved precision rules.
 - Historical Markdown/old Draft statuses are archival; use current roadmap and current code over historical checkpoints. 

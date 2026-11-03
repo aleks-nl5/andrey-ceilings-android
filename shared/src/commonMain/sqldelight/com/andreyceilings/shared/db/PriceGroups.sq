@@ -1,0 +1,54 @@
+selectGroups:
+SELECT * FROM price_groups WHERE deletedAt IS NULL ORDER BY name;
+
+selectGroup:
+SELECT * FROM price_groups WHERE uuid = ? AND deletedAt IS NULL;
+
+selectGroupByName:
+SELECT * FROM price_groups WHERE name = ? AND deletedAt IS NULL;
+
+insertGroup:
+INSERT INTO price_groups(uuid, name, defaultUnit, defaultQuantityMode, defaultPlacementKind, createdAt, updatedAt)
+VALUES (?, ?, ?, ?, ?, ?, ?)
+RETURNING uuid;
+
+updateGroupIfVersion:
+UPDATE price_groups SET name = ?, defaultUnit = ?, defaultQuantityMode = ?, defaultPlacementKind = ?,
+    updatedAt = max(?, updatedAt + 1)
+WHERE uuid = ? AND updatedAt = ? AND deletedAt IS NULL
+RETURNING uuid;
+
+deleteGroupIfVersion:
+UPDATE price_groups SET updatedAt = max(:now, updatedAt + 1), deletedAt = max(:now, updatedAt + 1)
+WHERE uuid = :uuid AND updatedAt = :expectedUpdatedAt AND deletedAt IS NULL
+    AND NOT EXISTS (SELECT 1 FROM price_items WHERE groupUuid = :uuid AND deletedAt IS NULL)
+RETURNING uuid;
+
+insertConfiguredItem:
+INSERT INTO price_items(code, title, groupUuid, unit, quantityMode, placementKind, price, updatedAt, uuid)
+SELECT :code, :title, :groupUuid, :unit, :quantityMode, :placementKind, :price, :updatedAt, :uuid
+WHERE EXISTS (SELECT 1 FROM price_groups WHERE uuid = :groupUuid AND deletedAt IS NULL)
+RETURNING id;
+
+updateConfiguredItemIfVersion:
+UPDATE price_items SET title = :title, groupUuid = :groupUuid, unit = :unit,
+    quantityMode = :quantityMode, placementKind = :placementKind, price = :price,
+    updatedAt = max(:now, updatedAt + 1)
+WHERE id = :id AND uuid = :uuid AND code = :code AND updatedAt = :expectedUpdatedAt AND deletedAt IS NULL
+    AND EXISTS (SELECT 1 FROM price_groups WHERE uuid = :groupUuid AND deletedAt IS NULL)
+RETURNING id;
+
+moveItemIfVersion:
+UPDATE price_items SET groupUuid = :groupUuid, updatedAt = max(:now, updatedAt + 1)
+WHERE id = :id AND uuid = :uuid AND updatedAt = :expectedUpdatedAt AND deletedAt IS NULL
+    AND EXISTS (SELECT 1 FROM price_groups WHERE uuid = :groupUuid AND deletedAt IS NULL)
+RETURNING id;
+
+claimCatalogInitialization:
+INSERT OR IGNORE INTO price_catalog_state(id, seedVersion) VALUES (1, 0);
+
+selectSeedVersion:
+SELECT seedVersion FROM price_catalog_state WHERE id = 1;
+
+finishCatalogInitialization:
+UPDATE price_catalog_state SET seedVersion = 1 WHERE id = 1 AND seedVersion = 0;

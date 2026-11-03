@@ -5,6 +5,7 @@ import com.andreyceilings.shared.db.PriceRepository
 import com.andreyceilings.shared.db.ProjectRepository
 import com.andreyceilings.shared.db.PrototypeDatabase
 import kotlin.test.Test
+import kotlin.test.assertFailsWith
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
@@ -267,12 +268,17 @@ class EstimateRecalculationRepositoryTest {
             val validPreview = recalculation.previewLatest(series.seriesUuid)
             assertTrue(validPreview.canConfirm)
 
-            // The *same* catalog row/UUID now represents another material.
-            // Even if the numeric price and unit stay equal, v2 is unsafe.
-            prices.upsertReturningId(
-                id = priceId, code = "canvas.fabric", title = "Different fabric",
-                category = "canvas", unit = "m²", price = 100.0, updatedAt = 100L
-            )
+            // P1 makes code immutable through the supported API. Keep the
+            // historical corruption guard proof by injecting invalid raw SQL.
+            assertFailsWith<IllegalArgumentException> {
+                prices.upsertReturningId(
+                    id = priceId, code = "canvas.fabric", title = "Different fabric",
+                    category = "canvas", unit = "m²", price = 100.0, updatedAt = 100L
+                )
+            }
+            driver.execute(null, "UPDATE price_items SET code = 'canvas.fabric' WHERE id = ?", 1) {
+                bindLong(0, priceId)
+            }
             val blocked = recalculation.previewLatest(series.seriesUuid)
             assertFalse(blocked.canConfirm)
             assertEquals(setOf(RecalculationProblem.CHANGED_CODE), blocked.problems)

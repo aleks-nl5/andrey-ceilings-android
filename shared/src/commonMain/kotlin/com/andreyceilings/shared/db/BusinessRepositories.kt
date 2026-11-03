@@ -5,6 +5,9 @@ import app.cash.sqldelight.coroutines.mapToList
 import app.cash.sqldelight.coroutines.mapToOneOrNull
 import com.andreyceilings.shared.estimate.ImmutableEstimateDraft
 import com.andreyceilings.shared.estimate.ImmutableEstimateRepository
+import com.andreyceilings.shared.prices.QuantityMode
+import com.andreyceilings.shared.prices.PlacementKind
+import com.andreyceilings.shared.prices.PriceParameters
 import kotlinx.coroutines.Dispatchers
 
 /**
@@ -122,60 +125,116 @@ class MeasurementRepository(private val database: PrototypeDatabase) {
 
 class PriceRepository(private val database: PrototypeDatabase) {
     private val queries = database.businessSchemaQueries
+    private val groups = PriceGroupRepository(database)
+    private val parameters = database.priceGroupsQueries
 
     fun tombstones() = queries.selectDeletedPriceItems().executeAsList()
     fun all() = queries.selectPriceItems().executeAsList()
     fun observeQuery() = queries.selectPriceItems()
     fun observeAll() = queries.selectPriceItems().asFlow().mapToList(Dispatchers.Default)
     fun count() = queries.countPriceItems().executeAsOne()
+    fun find(id: Long) = queries.selectPriceItemById(id).executeAsOneOrNull()
+
+    /** Copy defaults once, with independent overrides. No automatic quantity/price calculation. */
+    fun createInGroup(
+        code: String, title: String, groupUuid: String, price: Double, updatedAt: Long,
+        unit: String? = null,
+        quantityMode: QuantityMode? = null,
+        placementKind: PlacementKind? = null
+    ): Long = database.transactionWithResult {
+        val group = checkNotNull(groups.find(groupUuid)) { "Групу видалено або не знайдено." }
+        val ownUnit = (unit ?: group.defaultUnit)?.trim()
+        require(!ownUnit.isNullOrBlank()) { "Для групи без типової одиниці вкажіть одиницю позиції." }
+        val mode = quantityMode ?: QuantityMode.entries.single { it.value == group.defaultQuantityMode }
+        val placement = placementKind ?: PlacementKind.entries.single { it.value == group.defaultPlacementKind }
+        validate(code, title, ownUnit, price, mode)
+        checkNotNull(parameters.insertConfiguredItem(code, title.trim(), groupUuid, ownUnit,
+            mode.value, placement.value, price, updatedAt, newRecordUuid()).executeAsOneOrNull()) {
+            "Групу видалено. Оновіть дані."
+        }
+    }
+
+    fun updateConfigured(
+        original: Price_catalog_items, groupUuid: String, title: String, unit: String,
+        quantityMode: QuantityMode,
+        placementKind: PlacementKind, price: Double, now: Long
+    ): Long {
+        validate(original.code, title, unit, price, quantityMode)
+        return checkNotNull(parameters.updateConfiguredItemIfVersion(title.trim(), groupUuid, unit.trim(),
+            quantityMode.value, placementKind.value, price, now, original.id, original.uuid, original.code,
+            original.updatedAt).executeAsOneOrNull()) { "Позицію чи групу змінено або видалено. Оновіть дані." }
+    }
+
+    /** Moving changes membership only; all item parameters and identity survive. */
+    fun move(original: Price_catalog_items, groupUuid: String, now: Long): Long =
+        checkNotNull(parameters.moveItemIfVersion(groupUuid, now, original.id, original.uuid,
+            original.updatedAt).executeAsOneOrNull()) { "Позицію чи групу змінено або видалено. Оновіть дані." }
+
+    // Compatibility boundary for the existing CMP/Android editor. New rows use
+    // group defaults, with the unit explicitly chosen in that editor.
     fun upsertReturningId(
         id: Long = 0, code: String, title: String, category: String,
         unit: String, price: Double, updatedAt: Long
     ): Long {
-        val existingId = if (id > 0L) {
-            checkNotNull(find(id)) { "Cannot update missing or deleted price item: $id" }.id
-        } else {
-            queries.selectActivePriceByKey(category, code).executeAsOneOrNull()?.id
-        }
-        return if (existingId != null) {
-            queries.updatePriceItem(code, title, category, unit, price, updatedAt, existingId)
-            existingId
-        } else {
-            queries.insertPriceItemReturningId(code, title, category, unit, price, updatedAt, newRecordUuid())
-                .executeAsOne()
+        val existing = if (id > 0L) checkNotNull(find(id)) {
+            "Cannot update missing or deleted price item: $id"
+        } else queries.selectActivePriceByKey(category, code).executeAsOneOrNull()
+        return if (existing != null) {
+            require(existing.code == code) { "Price code is immutable" }
+            updateIfUnchanged(existing.id, code, existing.updatedAt, title, category, unit, price, updatedAt)
+        } else database.transactionWithResult {
+            createInGroup(code, title, groups.ensureByName(category, updatedAt), price, updatedAt, unit)
         }
     }
-    fun find(id: Long) = queries.selectPriceItemById(id).executeAsOneOrNull()
 
-    /**
-     * Atomic optimistic update used by the shared CMP catalog on all platforms.
-     * An unchanged version and stable code must match the live row in the same
-     * SQL statement. Never use a read-then-write check for concurrent edits.
-     */
+    /** CAS also protects fields absent from the P1 compatibility UI. */
     fun updateIfUnchanged(
         id: Long, expectedCode: String, expectedUpdatedAt: Long,
-        title: String, category: String, unit: String, price: Double, updatedAt: Long
+        title: String, category: String, unit: String, price: Double, updatedAt: Long,
+        unchangedGroupUuid: String? = null
     ): Long {
-        return checkNotNull(
-            queries.updatePriceItemIfVersion(
-                title, category, unit, price, updatedAt, id, expectedCode, expectedUpdatedAt
-            ).executeAsOneOrNull()
-        ) { "Price item changed or deleted; reload before saving." }
+        // Read outside a deferred write transaction. Concurrent JDBC callers
+        // must reach the atomic UPDATE, rather than fail while upgrading two
+        // shared read locks to writer locks. SQL CAS remains authoritative.
+        val original = checkNotNull(find(id)) { "Price item changed or deleted; reload before saving." }
+        check(original.code == expectedCode && original.updatedAt == expectedUpdatedAt) {
+            "Price item changed or deleted; reload before saving."
+        }
+        fun write(groupUuid: String) = updateConfigured(original, groupUuid, title, unit,
+            QuantityMode.entries.single { it.value == original.quantityMode },
+            PlacementKind.entries.single { it.value == original.placementKind }, price, updatedAt)
+        val target = unchangedGroupUuid ?: groups.findByName(category)?.uuid
+        return if (target != null) write(target) else database.transactionWithResult {
+            // INSERT acquires the writer lock before the CAS. If it loses, the
+            // new category is rolled back along with the failed item edit.
+            write(groups.create(category, updatedAt))
+        }
     }
 
-    fun deleteIfUnchanged(
-        id: Long, expectedCode: String, expectedUpdatedAt: Long
-    ): Long {
-        return checkNotNull(
-            queries.deletePriceItemIfVersion(id, expectedCode, expectedUpdatedAt).executeAsOneOrNull()
-        ) { "Price item changed or deleted; reload before removing." }
-    }
+    fun deleteIfUnchanged(id: Long, expectedCode: String, expectedUpdatedAt: Long): Long =
+        checkNotNull(queries.deletePriceItemIfVersion(id, expectedCode, expectedUpdatedAt).executeAsOneOrNull()) {
+            "Price item changed or deleted; reload before removing."
+        }
 
-    fun create(code: String, title: String, category: String, unit: String, price: Double, updatedAt: Long) =
-        queries.insertPriceItem(code, title, category, unit, price, updatedAt, newRecordUuid())
-    fun update(id: Long, code: String, title: String, category: String, unit: String, price: Double, updatedAt: Long) =
-        queries.updatePriceItem(code, title, category, unit, price, updatedAt, id)
+    fun create(code: String, title: String, category: String, unit: String, price: Double, updatedAt: Long) {
+        database.transaction {
+            // Legacy callers explicitly supply their own unit and manual basis.
+            createInGroup(code, title, groups.ensureByName(category, updatedAt), price, updatedAt,
+                unit, QuantityMode.MANUAL)
+        }
+    }
+    fun update(id: Long, code: String, title: String, category: String, unit: String, price: Double, updatedAt: Long) {
+        val original = checkNotNull(find(id)) { "Price item missing" }
+        updateIfUnchanged(id, code, original.updatedAt, title, category, unit, price, updatedAt)
+    }
     fun delete(id: Long) = queries.deletePriceItem(id)
+
+    private fun validate(code: String, title: String, unit: String, price: Double,
+        mode: QuantityMode) {
+        require(code.isNotBlank() && title.isNotBlank()) { "Вкажіть код і назву позиції." }
+        require(price.isFinite() && price >= 0) { "Неприпустима ціна продажу." }
+        PriceParameters.validate(unit.trim(), mode)
+    }
 }
 
 class EstimateRepository(private val database: PrototypeDatabase) {

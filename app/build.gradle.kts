@@ -43,6 +43,9 @@ android {
         targetCompatibility = JavaVersion.VERSION_21
     }
 
+    // Reuse the P1 persistence/migration contract across real platform drivers.
+    sourceSets.getByName("androidTest").kotlin.directories.add("../shared/src/commonTest/kotlin/com/andreyceilings/shared/db")
+
     // AGP 9+ built-in Kotlin uses the Java compile target by default.
     buildFeatures {
         compose = true
@@ -74,6 +77,8 @@ dependencies {
     debugImplementation("androidx.compose.ui:ui-tooling")
     testImplementation("junit:junit:4.13.2")
     androidTestImplementation(project(":shared"))
+    androidTestImplementation("org.jetbrains.kotlin:kotlin-test:2.4.21")
+    androidTestImplementation("app.cash.sqldelight:android-driver:2.4.1")
     androidTestImplementation("androidx.test:core:1.6.1")
     androidTestImplementation("androidx.test:runner:1.6.2")
     androidTestImplementation("androidx.test:rules:1.6.1")

@@ -76,6 +76,7 @@ internal object RoomToSqlDelightStagingImporter {
                 )
             }
             snapshot.priceItems.forEach {
+                com.andreyceilings.shared.db.PriceGroupRepository(database).ensureByName(it.category, it.updatedAt)
                 queries.importPriceItemWithId(
                     it.id, it.code, it.title, it.category, it.unit, it.price, it.updatedAt,
                     newRecordUuid()

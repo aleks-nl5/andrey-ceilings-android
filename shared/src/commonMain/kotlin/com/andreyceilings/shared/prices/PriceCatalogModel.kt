@@ -13,7 +13,9 @@ data class PriceCatalogItem(
     val unit: String,
     val price: Double,
     /** SQLite modification token; allows the shared editor to reject stale writes. */
-    val updatedAt: Long = 0L
+    val updatedAt: Long = 0L,
+    /** Canonical membership survives a concurrent group rename. */
+    val groupUuid: String = ""
 )
 
 data class PriceCatalogDraft(

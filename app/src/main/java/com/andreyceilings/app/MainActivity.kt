@@ -61,13 +61,10 @@ class MainActivity : ComponentActivity() {
                     val databaseOpenStartedAt = SystemClock.elapsedRealtime()
                     val database = CeilingsDatabase.get(applicationContext)
                     val databaseOpenedAt = SystemClock.elapsedRealtime()
-                    com.andreyceilings.app.data.db.DemoPriceList.seedIfEmpty(database.priceItems())
-                    val initializationFinishedAt = SystemClock.elapsedRealtime()
                     PerformanceDiagnosticsLog.record(
                         applicationContext,
                         "database_open_ms=${databaseOpenedAt - databaseOpenStartedAt} " +
-                            "demo_seed_ms=${initializationFinishedAt - databaseOpenedAt} " +
-                            "activity_to_database_ready_ms=${initializationFinishedAt - activityStartedAt}"
+                            "activity_to_database_ready_ms=${databaseOpenedAt - activityStartedAt}"
                     )
                     database to warning
                 }

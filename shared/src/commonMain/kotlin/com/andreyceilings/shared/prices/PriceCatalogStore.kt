@@ -26,7 +26,8 @@ class PriceCatalogStore(
                 category = row.category,
                 unit = row.unit,
                 price = row.price,
-                updatedAt = row.updatedAt
+                updatedAt = row.updatedAt,
+                groupUuid = row.groupUuid
             )
         }
     }
@@ -73,7 +74,8 @@ class PriceCatalogStore(
             category = category,
             unit = unit,
             price = draft.price,
-            updatedAt = nowMillis()
+            updatedAt = nowMillis(),
+            unchangedGroupUuid = original.groupUuid.takeIf { draft.category.trim() == original.category && it.isNotBlank() }
         )
     }
 

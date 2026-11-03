@@ -1,6 +1,7 @@
 package com.andreyceilings.shared.prices
 
 import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
+import com.andreyceilings.shared.db.PriceGroupRepository
 import com.andreyceilings.shared.db.PriceRepository
 import com.andreyceilings.shared.db.PrototypeDatabase
 import kotlinx.coroutines.flow.first
@@ -130,4 +131,23 @@ class PriceCatalogStoreTest {
             assertEquals(2L, repo.count())
         }
     }
+    @Test fun savingAnOpenEditorPreservesMembershipAfterGroupRename() = runBlocking {
+        JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).use { driver ->
+            PrototypeDatabase.Schema.create(driver)
+            val database = PrototypeDatabase(driver)
+            val repository = PriceRepository(database)
+            val groups = PriceGroupRepository(database)
+            val store = PriceCatalogStore(repository) { 100L }
+            val id = store.save(null, PriceCatalogDraft("Профіль", "Профілі", "м.п.", 120.0))
+            val editor = store.items.first().single()
+            val group = checkNotNull(groups.find(editor.groupUuid))
+            groups.update(group.uuid, group.updatedAt, "Нові профілі", 101)
+            store.save(editor, PriceCatalogDraft(editor.title, editor.category, editor.unit, 140.0))
+            val saved = checkNotNull(repository.find(id))
+            assertEquals(group.uuid, saved.groupUuid)
+            assertEquals("Нові профілі", saved.category)
+            assertEquals(1, groups.all().size)
+        }
+    }
+
 }
