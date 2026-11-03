@@ -70,7 +70,9 @@ object MeasurementEditNavigationProof {
         withTimeout(10_000) { write.join() }
         assertTrue(model.state.value.saved, model.state.value.error)
         assertEquals(route, guard.transition(route, route.back())) // commit -> delivered guard
-        assertEquals(route.measurementSaved(project, id), guard.deliverEditResult(route, project, id))
+        var deliveredRoute: AppNavigationState? = null
+        assertTrue(guard.deliverEditResult(route, project, id) { deliveredRoute = it })
+        assertEquals(route.measurementSaved(project, id), deliveredRoute)
         assertEquals(3L, MeasurementRepository(db).find(id)?.updatedAt)
         model.delivered()
         val processRestored = assertNotNull(MeasurementEditModel.restore(MeasurementEditStore(db) { 99 }, inFlightSnapshot, project, id))
