@@ -8,6 +8,8 @@ import com.andreyceilings.shared.estimate.ImmutableEstimateRepository
 import com.andreyceilings.shared.prices.QuantityMode
 import com.andreyceilings.shared.prices.PlacementKind
 import com.andreyceilings.shared.prices.PriceParameters
+import com.andreyceilings.shared.prices.normalizedNameKey
+import com.andreyceilings.shared.prices.DuplicateItemTitle
 import kotlinx.coroutines.Dispatchers
 
 /**
@@ -142,14 +144,17 @@ class PriceRepository(private val database: PrototypeDatabase) {
         quantityMode: QuantityMode? = null,
         placementKind: PlacementKind? = null
     ): Long = database.transactionWithResult {
+        parameters.claimCatalogWrite()
         val group = checkNotNull(groups.find(groupUuid)) { "Групу видалено або не знайдено." }
         val ownUnit = (unit ?: group.defaultUnit)?.trim()
         require(!ownUnit.isNullOrBlank()) { "Для групи без типової одиниці вкажіть одиницю позиції." }
         val mode = quantityMode ?: QuantityMode.entries.single { it.value == group.defaultQuantityMode }
         val placement = placementKind ?: PlacementKind.entries.single { it.value == group.defaultPlacementKind }
         validate(code, title, ownUnit, price, mode)
-        checkNotNull(parameters.insertConfiguredItem(code, title.trim(), groupUuid, ownUnit,
+        checkNotNull(parameters.insertConfiguredItem(code, title.trim(), normalizedNameKey(title), groupUuid, ownUnit,
             mode.value, placement.value, price, updatedAt, newRecordUuid()).executeAsOneOrNull()) {
+            if (parameters.selectItemByTitleKey(normalizedNameKey(title)).executeAsOneOrNull() != null)
+                throw DuplicateItemTitle()
             "Групу видалено. Оновіть дані."
         }
     }
@@ -160,9 +165,22 @@ class PriceRepository(private val database: PrototypeDatabase) {
         placementKind: PlacementKind, price: Double, now: Long
     ): Long {
         validate(original.code, title, unit, price, quantityMode)
-        return checkNotNull(parameters.updateConfiguredItemIfVersion(title.trim(), groupUuid, unit.trim(),
-            quantityMode.value, placementKind.value, price, now, original.id, original.uuid, original.code,
-            original.updatedAt).executeAsOneOrNull()) { "Позицію чи групу змінено або видалено. Оновіть дані." }
+        return database.transactionWithResult {
+            val written = parameters.updateConfiguredItemIfVersion(title.trim(), normalizedNameKey(title), groupUuid, unit.trim(),
+                quantityMode.value, placementKind.value, price, now, original.id, original.uuid, original.code,
+                original.updatedAt).executeAsOneOrNull()
+            if (written == null) {
+                val current = find(original.id)
+                check(current != null && current.uuid == original.uuid && current.code == original.code &&
+                    current.updatedAt == original.updatedAt && groups.find(groupUuid) != null) {
+                    "Позицію чи групу змінено або видалено. Оновіть дані."
+                }
+                if (parameters.selectItemByTitleKey(normalizedNameKey(title)).executeAsOneOrNull()?.id?.let { it != original.id } == true)
+                    throw DuplicateItemTitle()
+                error("Позицію чи групу змінено або видалено. Оновіть дані.")
+            }
+            written
+        }
     }
 
     /** Moving changes membership only; all item parameters and identity survive. */
@@ -178,7 +196,7 @@ class PriceRepository(private val database: PrototypeDatabase) {
     ): Long {
         val existing = if (id > 0L) checkNotNull(find(id)) {
             "Cannot update missing or deleted price item: $id"
-        } else queries.selectActivePriceByKey(category, code).executeAsOneOrNull()
+        } else queries.selectActivePriceByKey(normalizedNameKey(category), code).executeAsOneOrNull()
         return if (existing != null) {
             require(existing.code == code) { "Price code is immutable" }
             updateIfUnchanged(existing.id, code, existing.updatedAt, title, category, unit, price, updatedAt)
@@ -205,9 +223,13 @@ class PriceRepository(private val database: PrototypeDatabase) {
             PlacementKind.entries.single { it.value == original.placementKind }, price, updatedAt)
         val target = unchangedGroupUuid ?: groups.findByName(category)?.uuid
         return if (target != null) write(target) else database.transactionWithResult {
+            parameters.claimCatalogWrite()
+            check(find(id)?.let { it.uuid == original.uuid && it.updatedAt == expectedUpdatedAt } == true) {
+                "Price item changed or deleted; reload before saving."
+            }
             // INSERT acquires the writer lock before the CAS. If it loses, the
             // new category is rolled back along with the failed item edit.
-            write(groups.create(category, updatedAt))
+            write(groups.ensureByName(category, updatedAt))
         }
     }
 

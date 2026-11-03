@@ -11,7 +11,7 @@ class PriceGroupRepository(private val database: PrototypeDatabase) {
     fun all() = queries.selectGroups().executeAsList()
     fun observeAll() = queries.selectGroups().asFlow().mapToList(Dispatchers.Default)
     fun find(uuid: String) = queries.selectGroup(uuid).executeAsOneOrNull()
-    fun findByName(name: String) = queries.selectGroupByName(name.trim()).executeAsOneOrNull()
+    fun findByName(name: String) = queries.selectGroupByName(normalizedNameKey(name)).executeAsOneOrNull()
 
     fun create(
         name: String, now: Long, defaultUnit: String? = null,
@@ -19,12 +19,14 @@ class PriceGroupRepository(private val database: PrototypeDatabase) {
         defaultPlacementKind: PlacementKind = PlacementKind.NONE
     ): String {
         validate(name, defaultUnit, defaultQuantityMode)
-        return queries.insertGroup(newRecordUuid(), name.trim(), defaultUnit?.trim(),
-            defaultQuantityMode.value, defaultPlacementKind.value, now, now).executeAsOne()
+        return queries.insertGroup(newRecordUuid(), name.trim(), normalizedNameKey(name), defaultUnit?.trim(),
+            defaultQuantityMode.value, defaultPlacementKind.value, now, now).executeAsOneOrNull()
+            ?: throw DuplicateGroupName()
     }
 
     /** For the P1 compatibility editor and the isolated legacy-import proof only. */
     fun ensureByName(name: String, now: Long): String = database.transactionWithResult {
+        queries.claimCatalogWrite()
         findByName(name)?.uuid ?: create(name, now)
     }
 
@@ -32,11 +34,14 @@ class PriceGroupRepository(private val database: PrototypeDatabase) {
         uuid: String, expectedUpdatedAt: Long, name: String, now: Long,
         defaultUnit: String? = null, defaultQuantityMode: QuantityMode = QuantityMode.MANUAL,
         defaultPlacementKind: PlacementKind = PlacementKind.NONE
-    ) {
+    ) = database.transaction {
         validate(name, defaultUnit, defaultQuantityMode)
-        checkNotNull(queries.updateGroupIfVersion(name.trim(), defaultUnit?.trim(), defaultQuantityMode.value,
-            defaultPlacementKind.value, now, uuid, expectedUpdatedAt).executeAsOneOrNull()) {
-            "Групу змінено або видалено. Оновіть дані."
+        val written = queries.updateGroupIfVersion(name.trim(), normalizedNameKey(name), defaultUnit?.trim(),
+            defaultQuantityMode.value, defaultPlacementKind.value, now, uuid, expectedUpdatedAt).executeAsOneOrNull()
+        if (written == null) {
+            check(find(uuid)?.updatedAt == expectedUpdatedAt) { "Групу змінено або видалено. Оновіть дані." }
+            if (findByName(name)?.uuid?.let { it != uuid } == true) throw DuplicateGroupName()
+            error("Групу змінено або видалено. Оновіть дані.")
         }
     }
 

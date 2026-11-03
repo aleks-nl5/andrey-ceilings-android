@@ -14,6 +14,38 @@ import kotlin.test.*
 
 @RunWith(AndroidJUnit4::class)
 class PriceCatalogSqlCipherTest {
+    @Test fun encryptedWalV5UnicodeUpgradeCollisionsAndInterruptedBackfill(): Unit = runBlocking {
+        val context: Context = ApplicationProvider.getApplicationContext()
+        System.loadLibrary("sqlcipher")
+        val key = ByteArray(32) { 55 }
+        try {
+            for (scenario in listOf("ok", "group", "item", "empty", "interrupted")) {
+                val name = "price-names-$scenario-test.db"
+                context.deleteDatabase(name)
+                try {
+                    PriceNameMigrationProof.lifecycle(scenario, PriceCatalogSchema) { schema ->
+                        if (schema === PriceCatalogSchema) {
+                            createEncryptedPrototypeDriver(context, key, name, enableWalForTesting = true, initializePriceCatalog = true)
+                        } else {
+                            val driver = AndroidSqliteDriver(schema, context, name,
+                                factory = SupportOpenHelperFactory(key.copyOf(), null, true))
+                            try {
+                                driver.executeQuery(null, "SELECT count(*) FROM sqlite_master", { cursor ->
+                                    cursor.next(); QueryResult.Value(cursor.getLong(0))
+                                }, 0).value
+                                driver
+                            } catch (failure: Throwable) { driver.close(); throw failure }
+                        }.also { driver ->
+                            assertEquals("wal", driver.executeQuery(null, "PRAGMA journal_mode", { cursor ->
+                                cursor.next(); QueryResult.Value(cursor.getString(0))
+                            }, 0).value)
+                        }
+                    }
+                } finally { context.deleteDatabase(name) }
+            }
+        } finally { key.fill(0) }
+    }
+
     @Test fun productionSchemaMigratesAtomicallyInWalAndNeverReseeds(): Unit = runBlocking {
         val context: Context = ApplicationProvider.getApplicationContext()
         val name = "price-p1-migration-test.db"
@@ -83,6 +115,7 @@ class PriceCatalogSqlCipherTest {
             createEncryptedPrototypeDriver(context, key, name, enableWalForTesting = true,
                 initializePriceCatalog = true).use {
                 PriceCatalogPersistenceProof.starter(PrototypeDatabase(it))
+                PriceNameUniquenessProof.crud(it)
             }
         } finally { context.deleteDatabase(name); key.fill(0) }
     }

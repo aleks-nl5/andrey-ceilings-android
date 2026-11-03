@@ -8,6 +8,17 @@ import kotlin.test.*
 
 /** Isolated Simulator SQLCipher contract; this is not a runnable iOS host. */
 class PriceCatalogIosCipherTest {
+    @Test fun encryptedV5UnicodeUpgradeCollisionsAndInterruptedBackfill(): Unit = runBlocking {
+        val factory = NativeSqlCipherDriverFactory()
+        for (scenario in listOf("ok", "group", "item", "empty", "interrupted")) {
+            val name = "price-names-$scenario-${Random.nextLong()}.db"
+            val config = SqlCipherConfig(name = name, key = SqlCipherKey { ByteArray(32) { 56 } }, recovery = SqlCipherRecovery.Fail)
+            try {
+                PriceNameMigrationProof.lifecycle(scenario, IosPriceCatalogSchema) { factory.create(it, config) }
+            } finally { factory.deleteDatabase(name) }
+        }
+    }
+
     @Test fun encryptedV4MigrationAndDeletedCatalogReopen(): Unit = runBlocking {
         val factory = NativeSqlCipherDriverFactory()
         val name = "price-p1-ios-${Random.nextLong()}.db"
@@ -60,7 +71,10 @@ class PriceCatalogIosCipherTest {
         try {
             val driver = factory.create(IosPriceCatalogSchema, SqlCipherConfig(name = name,
                 key = SqlCipherKey { ByteArray(32) { 60 } }, recovery = SqlCipherRecovery.Fail))
-            try { PriceCatalogPersistenceProof.starter(PrototypeDatabase(driver)) }
+            try {
+                PriceCatalogPersistenceProof.starter(PrototypeDatabase(driver))
+                PriceNameUniquenessProof.crud(driver)
+            }
             finally { driver.close() }
         } finally { factory.deleteDatabase(name) }
     }

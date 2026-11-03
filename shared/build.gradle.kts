@@ -82,6 +82,8 @@ sqldelight {
     databases {
         create("PrototypeDatabase") {
             packageName.set("com.andreyceilings.shared.db")
+            // Check the schema-only v5 snapshot against 5.sqm and fresh v6.
+            verifyMigrations.set(true)
             // INSERT ... RETURNING requires SQLite >= 3.35 on every supported driver.
             dialect("app.cash.sqldelight:sqlite-3-35-dialect:2.4.1")
         }

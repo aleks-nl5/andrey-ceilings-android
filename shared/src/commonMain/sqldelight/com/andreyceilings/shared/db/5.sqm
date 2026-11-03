@@ -1,0 +1,28 @@
+-- Staged inside the production schema transaction. NULL permits structural ALTER
+-- on populated v5; shared Kotlin validates/backfills before the version commits.
+-- Guards make that temporary NULL state impossible for future active writes.
+ALTER TABLE price_groups ADD COLUMN nameKey TEXT;
+ALTER TABLE price_items ADD COLUMN titleKey TEXT;
+DROP INDEX index_price_groups_name;
+CREATE UNIQUE INDEX index_price_groups_name_key ON price_groups(nameKey) WHERE deletedAt IS NULL;
+CREATE UNIQUE INDEX index_price_items_title_key ON price_items(titleKey) WHERE deletedAt IS NULL;
+CREATE TRIGGER price_groups_nameKey_insert BEFORE INSERT ON price_groups
+BEGIN
+    SELECT RAISE(ABORT, 'Active catalog name requires a normalized key')
+    WHERE new.deletedAt IS NULL AND (new.nameKey IS NULL OR length(new.nameKey) = 0);
+END;
+CREATE TRIGGER price_groups_nameKey_update BEFORE UPDATE ON price_groups
+BEGIN
+    SELECT RAISE(ABORT, 'Active catalog name requires a normalized key')
+    WHERE new.deletedAt IS NULL AND (new.nameKey IS NULL OR length(new.nameKey) = 0);
+END;
+CREATE TRIGGER price_items_titleKey_insert BEFORE INSERT ON price_items
+BEGIN
+    SELECT RAISE(ABORT, 'Active catalog name requires a normalized key')
+    WHERE new.deletedAt IS NULL AND (new.titleKey IS NULL OR length(new.titleKey) = 0);
+END;
+CREATE TRIGGER price_items_titleKey_update BEFORE UPDATE ON price_items
+BEGIN
+    SELECT RAISE(ABORT, 'Active catalog name requires a normalized key')
+    WHERE new.deletedAt IS NULL AND (new.titleKey IS NULL OR length(new.titleKey) = 0);
+END;

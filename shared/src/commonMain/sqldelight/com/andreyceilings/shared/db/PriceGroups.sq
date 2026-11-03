@@ -5,17 +5,20 @@ selectGroup:
 SELECT * FROM price_groups WHERE uuid = ? AND deletedAt IS NULL;
 
 selectGroupByName:
-SELECT * FROM price_groups WHERE name = ? AND deletedAt IS NULL;
+SELECT * FROM price_groups WHERE nameKey = ? AND deletedAt IS NULL;
 
 insertGroup:
-INSERT INTO price_groups(uuid, name, defaultUnit, defaultQuantityMode, defaultPlacementKind, createdAt, updatedAt)
-VALUES (?, ?, ?, ?, ?, ?, ?)
+INSERT INTO price_groups(uuid, name, nameKey, defaultUnit, defaultQuantityMode, defaultPlacementKind, createdAt, updatedAt)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT(nameKey) WHERE deletedAt IS NULL DO NOTHING
 RETURNING uuid;
 
 updateGroupIfVersion:
-UPDATE price_groups SET name = ?, defaultUnit = ?, defaultQuantityMode = ?, defaultPlacementKind = ?,
+UPDATE price_groups SET name = :name, nameKey = :nameKey, defaultUnit = ?, defaultQuantityMode = ?, defaultPlacementKind = ?,
     updatedAt = max(?, updatedAt + 1)
-WHERE uuid = ? AND updatedAt = ? AND deletedAt IS NULL
+WHERE uuid = :uuid AND updatedAt = :expectedUpdatedAt AND deletedAt IS NULL
+    AND NOT EXISTS (SELECT 1 FROM price_groups AS other
+        WHERE other.nameKey = :nameKey AND other.uuid != :uuid AND other.deletedAt IS NULL)
 RETURNING uuid;
 
 deleteGroupIfVersion:
@@ -25,17 +28,20 @@ WHERE uuid = :uuid AND updatedAt = :expectedUpdatedAt AND deletedAt IS NULL
 RETURNING uuid;
 
 insertConfiguredItem:
-INSERT INTO price_items(code, title, groupUuid, unit, quantityMode, placementKind, price, updatedAt, uuid)
-SELECT :code, :title, :groupUuid, :unit, :quantityMode, :placementKind, :price, :updatedAt, :uuid
+INSERT INTO price_items(code, title, titleKey, groupUuid, unit, quantityMode, placementKind, price, updatedAt, uuid)
+SELECT :code, :title, :titleKey, :groupUuid, :unit, :quantityMode, :placementKind, :price, :updatedAt, :uuid
 WHERE EXISTS (SELECT 1 FROM price_groups WHERE uuid = :groupUuid AND deletedAt IS NULL)
+ON CONFLICT(titleKey) WHERE deletedAt IS NULL DO NOTHING
 RETURNING id;
 
 updateConfiguredItemIfVersion:
-UPDATE price_items SET title = :title, groupUuid = :groupUuid, unit = :unit,
+UPDATE price_items SET title = :title, titleKey = :titleKey, groupUuid = :groupUuid, unit = :unit,
     quantityMode = :quantityMode, placementKind = :placementKind, price = :price,
     updatedAt = max(:now, updatedAt + 1)
 WHERE id = :id AND uuid = :uuid AND code = :code AND updatedAt = :expectedUpdatedAt AND deletedAt IS NULL
     AND EXISTS (SELECT 1 FROM price_groups WHERE uuid = :groupUuid AND deletedAt IS NULL)
+    AND NOT EXISTS (SELECT 1 FROM price_items AS other
+        WHERE other.titleKey = :titleKey AND other.id != :id AND other.deletedAt IS NULL)
 RETURNING id;
 
 moveItemIfVersion:
@@ -52,3 +58,10 @@ SELECT seedVersion FROM price_catalog_state WHERE id = 1;
 
 finishCatalogInitialization:
 UPDATE price_catalog_state SET seedVersion = 1 WHERE id = 1 AND seedVersion = 0;
+
+-- Acquire the SQLite writer lock before a transactional read (also on empty DBs).
+claimCatalogWrite:
+UPDATE price_catalog_state SET seedVersion = seedVersion WHERE id = 1;
+
+selectItemByTitleKey:
+SELECT * FROM price_items WHERE titleKey = ? AND deletedAt IS NULL;

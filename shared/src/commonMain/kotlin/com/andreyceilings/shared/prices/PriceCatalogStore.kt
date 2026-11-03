@@ -75,7 +75,7 @@ class PriceCatalogStore(
             unit = unit,
             price = draft.price,
             updatedAt = nowMillis(),
-            unchangedGroupUuid = original.groupUuid.takeIf { draft.category.trim() == original.category && it.isNotBlank() }
+            unchangedGroupUuid = original.groupUuid.takeIf { normalizedNameKey(draft.category) == normalizedNameKey(original.category) && it.isNotBlank() }
         )
     }
 

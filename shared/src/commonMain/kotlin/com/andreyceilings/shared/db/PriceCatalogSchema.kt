@@ -34,7 +34,8 @@ object PriceCatalogSchema : SqlSchema<QueryResult.Value<Unit>> {
     internal fun migrateInTransaction(driver: SqlDriver, oldVersion: Long, newVersion: Long,
         vararg callbacks: AfterVersion): QueryResult.Value<Unit> {
         PrototypeDatabase.Schema.migrate(driver, oldVersion, newVersion, *callbacks)
-        if (newVersion >= 5L) StarterPriceCatalog.initializeInTransaction(PrototypeDatabase(driver))
+        if (oldVersion < 6L && newVersion >= 6L) backfillPriceNameKeys(driver)
+        if (newVersion >= 6L) StarterPriceCatalog.initializeInTransaction(PrototypeDatabase(driver))
         return QueryResult.Unit
     }
 }
