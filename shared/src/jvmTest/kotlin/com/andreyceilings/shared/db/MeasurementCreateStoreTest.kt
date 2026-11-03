@@ -8,14 +8,14 @@ import kotlinx.coroutines.runBlocking
 import kotlin.test.*
 
 class MeasurementCreateStoreTest {
-    @Test fun sharedCreationProofCoversShapesPrecisionReturningIdFlowAndFailurePaths() = runBlocking {
+    @Test fun sharedCreationProofCoversShapesPrecisionReturningIdFlowAndFailurePaths(): Unit = runBlocking {
         JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).use { driver ->
             PrototypeDatabase.Schema.create(driver)
             MeasurementCreatePersistenceProof.run(PrototypeDatabase(driver))
         }
     }
 
-    @Test fun unavailableDatabaseDoesNotReportSuccessAndRollsBackFailedInsert() = runBlocking {
+    @Test fun unavailableDatabaseDoesNotReportSuccessAndRollsBackFailedInsert(): Unit = runBlocking {
         val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
         PrototypeDatabase.Schema.create(driver)
         val db = PrototypeDatabase(driver)
