@@ -40,6 +40,5 @@ class MeasurementWindowsCipherTest {
                     .first { it !is MeasurementDetailsState.Loading })
             }
         } finally { key.fill(0); directory.deleteRecursively() }
-        Unit
     }
 }

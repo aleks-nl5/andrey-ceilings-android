@@ -47,11 +47,32 @@ PRAGMA and EXPLAIN are left intact; ordinary non-returning DML keeps `execute`.
 
 SQLite executes one prepared statement with its original RETURNING clause.
 The facade's supported WITH path exposes the native result through
-`PreparedStatement.execute()` and `getResultSet()`, mapped by SQLDelight's normal
+`PreparedStatement.executeQuery()`, mapped by SQLDelight's normal
 `JdbcCursor`/`JdbcPreparedStatement` classes. Multirow and empty results retain
 their native SQLite semantics, including ON CONFLICT and optimistic no-match.
 There is no last_insert_rowid(), identity re-query, reflection/native-handle access,
 second connection, or read-then-write emulation.
+
+### Reject query-API DML without RETURNING before writing
+
+The review of `412b9cd` identified that a mistaken `executeQuery(INSERT ...)`
+without RETURNING could expose a zero-column cursor; consuming it could perform
+the write despite the caller expecting a query. The adapter now checks
+`ResultSet.metaData.columnCount` before invoking the mapper and throws
+`SQLException` when there are no result columns. In pinned core 0.2.13 this
+metadata is captured by `sqlite3_column_count` immediately after prepare; neither
+`executeQuery()` nor reading/closing the result calls `sqlite3_step`. Only
+`ResultSet.next()` steps the statement. The native metadata probe verifies that
+rejecting/closing this cursor leaves the table unchanged.
+
+This uses SQLite's actual result shape instead of a RETURNING text search or a
+new SQL parser. Literals, escaped strings, quoted identifiers, comments and CTE
+bodies containing the word RETURNING cannot bypass the check. A real RETURNING
+clause has columns even when zero rows match, so legitimate no-match queries
+remain supported. Already WITH-prefixed non-returning DML is guarded as well.
+The query API uses JDBC `executeQuery()` rather than `execute()` so SQL that the
+facade does not recognize as a query is rejected before its non-query step path.
+Ordinary DML callers continue to use `SqlDriver.execute()`.
 
 `connectionAndClose()` keeps SQLDelight's existing thread-local transaction
 connection, including nesting. ResultSet and Statement have nested `use` scopes
@@ -77,6 +98,9 @@ Mandatory Windows tests exercise:
   and competing optimistic updates with exactly one winner.
 - Physical DELETE RETURNING, multiple/zero rows, ON CONFLICT, bound text/real/
   integer flags/blob/null values, an existing CTE and CTE-name collision.
+- Query-API INSERT/UPDATE/DELETE/REPLACE without RETURNING fails before mapper
+  invocation and leaves rows unchanged, outside and inside a transaction;
+  false RETURNING tokens in strings/comments/identifiers/CTEs do not bypass it.
 - Commit, rollback after nested success, nested failure, numbering/immutable
   revision rollback after constraint failure, concurrent related writes.
 - Actual Flow updates on insert/update/tombstone and deferred commit notifications

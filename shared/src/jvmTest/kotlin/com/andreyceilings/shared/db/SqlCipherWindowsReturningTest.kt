@@ -30,6 +30,67 @@ class SqlCipherWindowsReturningTest {
     }
 
     @Test
+    fun nativeMetadataCanRejectNonReturningDmlWithoutSteppingIt() = withEncryptedDatabase { driver ->
+        (driver as JdbcDriver).getConnection().use { connection ->
+            connection.prepareStatement("CREATE TABLE probe(id INTEGER PRIMARY KEY)").use { it.execute() }
+            connection.prepareStatement("WITH unused AS (SELECT 1) INSERT INTO probe DEFAULT VALUES").use { statement ->
+                statement.executeQuery().use { rows ->
+                    assertEquals(0, rows.metaData.columnCount)
+                    // Do not call next(): metadata is available before sqlite3_step.
+                }
+            }
+            connection.prepareStatement("SELECT count(*) FROM probe").use { statement ->
+                statement.executeQuery().use { rows ->
+                    assertTrue(rows.next())
+                    assertEquals(0L, rows.getLong(1), "Reading metadata/closing must not execute the write")
+                }
+            }
+        }
+    }
+
+    @Test
+    fun queryApiRejectsNonReturningDmlBeforeWritingOrInvokingMapper() = withEncryptedDatabase { driver ->
+        driver.execute(null, "CREATE TABLE probe(id INTEGER PRIMARY KEY, value TEXT, \"returning\" TEXT)", 0)
+        driver.execute(null, "INSERT INTO probe(id, value) VALUES (1, 'original')", 0)
+        val invalidQueries = listOf(
+            "INSERT INTO probe(value) VALUES ('new')",
+            "UPDATE probe SET value = 'changed'",
+            "DELETE FROM probe",
+            "REPLACE INTO probe(id, value) VALUES (1, 'replaced')",
+            "INSERT INTO probe(value) VALUES ('RETURNING')",
+            "INSERT INTO probe(value) VALUES ('it''s RETURNING') -- RETURNING id",
+            "/* RETURNING id */ INSERT INTO probe(value) VALUES ('comment')",
+            "INSERT INTO probe(\"returning\") VALUES ('quoted identifier')",
+            "WITH source(value) AS (SELECT 'RETURNING') INSERT INTO probe(value) SELECT value FROM source",
+            "WITH source AS (SELECT 'RETURNING') DELETE FROM probe",
+            "/* leading comment */ WITH source AS (SELECT 1) UPDATE probe SET value = 'changed'"
+        )
+        fun rejectWithoutWrite(sql: String) {
+            var mapperInvoked = false
+            assertFailsWith<SQLException>(sql) {
+                driver.executeQuery(null, sql, { cursor ->
+                    mapperInvoked = true
+                    cursor.next() // Would execute the write on the unguarded facade path.
+                    QueryResult.Unit
+                }, 0)
+            }
+            assertFalse(mapperInvoked, "Reject before exposing the cursor: $sql")
+            assertEquals(listOf(1L), returningIds(driver, "SELECT id FROM probe"), sql)
+            assertEquals("original", driver.executeQuery(null, "SELECT value FROM probe WHERE id = 1", { cursor ->
+                assertTrue(cursor.next().value)
+                QueryResult.Value(cursor.getString(0))
+            }, 0).value, sql)
+        }
+        invalidQueries.forEach(::rejectWithoutWrite)
+        PrototypeDatabase(driver).transaction {
+            rejectWithoutWrite("INSERT INTO probe(value) VALUES ('inside transaction')")
+            assertEquals(listOf(2L), returningIds(driver,
+                "INSERT INTO probe(value) VALUES ('RETURNING in a literal with a real result') RETURNING id"))
+        }
+        assertEquals(listOf(1L, 2L), returningIds(driver, "SELECT id FROM probe ORDER BY id"))
+    }
+
+    @Test
     fun nativeJdbcDispatchProbe() = withEncryptedDatabase { driver ->
         (driver as JdbcDriver).getConnection().use { connection ->
             connection.prepareStatement("CREATE TABLE probe(id INTEGER PRIMARY KEY, value TEXT)").use { it.execute() }

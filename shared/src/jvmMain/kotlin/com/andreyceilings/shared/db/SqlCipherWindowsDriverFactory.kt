@@ -12,6 +12,7 @@ import io.github.s0d3s.sqlcipher_multiplatform_jdbc.SqlCipherJdbcProperties
 import java.io.File
 import java.sql.Connection
 import java.sql.DriverManager
+import java.sql.SQLException
 import java.util.Properties
 
 /**
@@ -131,8 +132,17 @@ private class ConfiguredSqlCipherJdbcDriver(
         try {
             return connection.prepareStatement(sqlCipherRowsetSql(sql)).use { statement ->
                 binders?.invoke(JdbcPreparedStatement(statement))
-                check(statement.execute()) { "Expected SQLCipher query to produce a ResultSet" }
-                checkNotNull(statement.resultSet).use { rows -> mapper(JdbcCursor(rows)) }
+                // Never enter the facade's execute() non-query branch: it can
+                // perform a mutation before reporting an unexpected result type.
+                statement.executeQuery().use { rows ->
+                    // In pinned core 0.2.13 metadata comes from sqlite3_prepare,
+                    // before next()/sqlite3_step. Reject DML without RETURNING
+                    // before the mapper can execute it, including WITH DML.
+                    if (rows.metaData.columnCount == 0) {
+                        throw SQLException("SQLCipher executeQuery requires result columns; use execute for non-returning DML")
+                    }
+                    mapper(JdbcCursor(rows))
+                }
             }
         } finally {
             onClose()
