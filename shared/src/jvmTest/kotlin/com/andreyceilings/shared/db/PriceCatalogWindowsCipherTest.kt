@@ -14,6 +14,9 @@ class PriceCatalogWindowsCipherTest {
             SqlCipherWindowsDriverFactory.open(file, key).use { driver ->
                 PriceCatalogMigrationProof.legacySchema.create(driver)
                 PriceCatalogMigrationProof.populateLegacy(driver)
+                // v3 never tracked payment; unchanged 3.sqm adds 'unknown'
+                // for this active legacy project. Build the expected v4+ row.
+                driver.execute(null, "UPDATE projects SET paymentStatus='unknown'", 0)
                 before = PriceCatalogMigrationProof.untouchedRows(driver)
                 driver.execute(null, "DROP INDEX index_projects_paymentStatus", 0)
                 driver.execute(null, "ALTER TABLE projects DROP COLUMN paymentStatus", 0)
