@@ -12,8 +12,8 @@ immutable кошториси/ревізії/PDF не скидаються.
 вважати підтвердженими лише з цього повідомлення.
 
 **Постмердж-аудит — потребує окремого вузького виправлення:**
-- [#82 — Unicode-безпечна унікальність назв груп](https://github.com/aleks-nl5/andrey-ceilings-android/issues/82): SQLite NOCASE не покриває український регістр.
-  Заплановані KMP нормалізація + атомарний unique constraint, безпечна v5→v6
+- [#82 — Unicode-безпечна унікальність назв груп і позицій](https://github.com/aleks-nl5/andrey-ceilings-android/issues/82): SQLite NOCASE не покриває український регістр.
+  Унікальність активних груп та **назв активних позицій глобально в каталозі**, а не тільки в межах груп. Заплановані KMP нормалізація + атомарні unique constraints, безпечна v5→v6
   міграція/колізії, спільні Android/Windows/iOS тести. Ні reset БД, ні повторного seed.
 - [#80 — технічний scope P1](https://github.com/aleks-nl5/andrey-ceilings-android/issues/80)
   тримати **відкритим до приймання #82**, потім звірити критерії та закрити.
@@ -24,7 +24,7 @@ immutable кошториси/ревізії/PDF не скидаються.
 1. #82 — вузьке виправлення фундаменту, окремий Draft PR.
 2. [#83 — P2, повноцінний CMP редактор груп і позицій](https://github.com/aleks-nl5/andrey-ceilings-android/issues/83):
    керування defaults, індивідуальні `unit/quantityMode/placementKind`, group move,
-   пояснення несумісних одиниць; UX погоджує власник. Жодних toggle «опцій».
+   пояснення несумісних одиниць і дублікатів назв; UX погоджує власник. Жодних toggle «опцій».
 3. P3 — вибір позицій прайсу у стелі/замірі, відкладене розміщення й робочі кількості
    ([#76](https://github.com/aleks-nl5/andrey-ceilings-android/issues/76)).
 4. P4+ — KMP живий розрахунок і зв'язок із кошторисами [#44](https://github.com/aleks-nl5/andrey-ceilings-android/issues/44),
