@@ -38,7 +38,11 @@ class PriceCatalogP1Test {
                     val uuid = groups.create("Before rename", 1, "шт.")
                     assertEquals(uuid, groupEvents.receive().single().uuid)
                     prices.createInGroup("flow", "Flow", uuid, 1.0, 2)
-                    assertEquals("Before rename", itemEvents.receive().single().category)
+                    // Group creation also invalidates the joined item view and
+                    // may emit an empty list before the item INSERT arrives.
+                    var firstItem = itemEvents.receive()
+                    while (firstItem.isEmpty()) firstItem = itemEvents.receive()
+                    assertEquals("Before rename", firstItem.single().category)
                     groups.rename(uuid, 1, "After rename", 3)
                     val renamed = groupEvents.receive().single()
                     assertEquals("After rename", renamed.name)
