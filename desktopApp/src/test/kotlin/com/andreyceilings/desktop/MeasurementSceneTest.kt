@@ -71,7 +71,9 @@ class MeasurementSceneTest {
                             if (bitmap.getColor(x, y) == ink) inkPixels++
                         assertTrue(inkPixels > 10, "Contour/vertices must actually be painted")
                         val text = scene.textContent()
-                        assertTrue(text.contains("AB:"))
+                        val dimension = assertNotNull(measurementDrawingContour(geometry)).sideLabels.first()
+                        assertTrue(text.contains(dimension), "Readable dimension legend must retain actual lengths")
+                        assertFalse(text.contains("AB:"), "Drawing must not show side-name prefixes")
                         assertTrue(text.contains("м"))
                     } finally { bitmap.close(); image.close() }
                     scene.constraints = Constraints.fixed(120, 500)
