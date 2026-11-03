@@ -1,5 +1,7 @@
 # Combined PR: SQLCipher WAL hardening + immutable estimate revisions v2/v3
 
+> **Історія завершеного PR #29. Статус 03.11.2026:** Android SQLCipher WAL, backup/restore і immutable v1/v2/v3 estimates уже merged. Чинне правило: точність заміру фіксується при створенні, глобальні налаштування не переобчислюють стару роботу; нові revisions/PDF не переписують попередні. Водночас власник звільнив наступний CMP Editor PR A/B від підтримки застарілих **тестових креслень/БД/архівів** — не додавати міграцій задля test fixtures. [План редактора](../CMP_MEASUREMENT_EDITOR_PLAN.md).
+
 ## Current policy for Android WAL and SAF (31 Oct 2026)
 
 **Owner-approved final scope:** the live SQLCipher DB and its WAL/SHM files are held in Android private internal storage, with proven real /data ENOSPC for both staged restore and SQLite WAL INSERT ([Android CI #41179759728](https://github.com/aleks-nl5/andrey-ceilings-android/actions/runs/41179759728)). External/cloud SAF destinations are user-selected **exports**, not live database storage. No separate full-SD/cloud stress tests will be added to PR #29; error handling for failed export/automatic backups must remain in place.

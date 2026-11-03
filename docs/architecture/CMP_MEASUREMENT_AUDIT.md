@@ -1,5 +1,7 @@
 # CMP Measurement Foundation audit — stage 1
 
+> **Історичний pre-change аудит PR #66, completed.** Read-only CMP Details merged; Windows JDBC RETURNING repaired in merged PR #68. Не повторювати цей аудит як невиконане завдання. Для нових створень/редагувань застосовувати [план PR A/B](../CMP_MEASUREMENT_EDITOR_PLAN.md); власник скасував вимогу сумісності зі старими тестовими кресленнями, але чинні контракти нових замірів залишаються.
+
 Base: main `0dfcbf9`, merged PR #65 (final head `a36d979`). Reviewed Issues
 #60/#57, README, roadmap, Android editor/drawing/codec and their consumers,
 FrozenPolygonGeometry, MeasurementRepository/queries, ObjectsClientsStore,
@@ -38,7 +40,7 @@ ProjectDetailsScreen, AppNavigationState and Android/Desktop hosts before change
   Escape remain adapters; live predictive preview #56 and runnable iOS #42 remain
   separate work. No create/edit/+ route in this stage.
 
-## Verified PR #65 CI baseline (head a36d979)
+## Historical verified PR #65 CI baseline (head a36d979)
 
 | Platform | Successful run | Job wall time (queue excluded) | Slowest build step |
 | --- | --- | --- | --- |

@@ -1,4 +1,6 @@
 ## Мета та межі
+
+> **Актуально 03.11.2026:** PR #66/#68 merged; для наступного етапу використовувати [CMP Measurement Editor A/B](../docs/CMP_MEASUREMENT_EDITOR_PLAN.md) і [AGENTS.md](../AGENTS.md). Уся БД тестова, legacy drawings/Room/Go migration не є критерієм; зберігати поточний SQLCipher/WAL/backup, new-record geometry, estimate revisions/PDF. UI етапи A/B — окремі Draft PR, тільки власник дозволяє merge.
 <!-- Коротко: що змінилося, які екрани / платформи / шари зачеплено. -->
 
 ## Перевірки

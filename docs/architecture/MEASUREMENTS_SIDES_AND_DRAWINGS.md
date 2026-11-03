@@ -1,5 +1,12 @@
 # Заміри за сторонами та креслення — погоджене UX-рішення
 
+> **Уточнення назв сторін — 03.11.2026:** майбутній CMP Editor (починаючи з PR A) використовує **літери вершин замість числових номерів сторін**. Вершини A, B, C, D; сторони AB, BC, CD, DA за порядком замкненого контуру. Спільна KMP утиліта повертає ті самі назви у формі/легенді/Canvas, підтримує понад 26 вершин (`A…Z, AA…`), перенумерацію після зміни топології, без використання підписів як стабільних ID. Android-only редактор лишається до PR B. Див. [план](../CMP_MEASUREMENT_EDITOR_PLAN.md).
+
+
+> **Уточнення UX 03.11.2026:** підтримка **непрямих кутів** тепер обов'язкова для кінцевого редактора через перемикач 90° snap ON/OFF ([#70](https://github.com/aleks-nl5/andrey-ceilings-android/issues/70)). Для довільного контуру вимірюються довжини плюс кути/діагоналі — **не** достатньо просто вимкнути перевірку 90°; потрібен окремий KMP solver/контракт, строгі перевірки замикання. Також обов'язкові **розмірювані selectable overlay objects** (точкові світильники, люстри, обводи, ніші, вентканали та розширення), спільні з калькулятором і прайсом ([#71](https://github.com/aleks-nl5/andrey-ceilings-android/issues/71), #44, #53). Креслення й числові поля — один двосторонній draft; read-only за замовчуванням, fullscreen незалежний від edit. Чинний #29 ортогональний опис нижче — історичний обсяг, **не** заборона майбутніх непрямих кутів. Етапність: [PR A/B/C/D](../CMP_MEASUREMENT_EDITOR_PLAN.md).
+
+> **Актуальне продуктове рішення 03.11.2026:** після merged PR #66/#68 наступні PR A/B — [CMP Measurement Editor](../CMP_MEASUREMENT_EDITOR_PLAN.md). Залишаємо **єдиний KMP рушій**, реальні виміряні довжини всіх сторін та 90° повороти замість UI X/Y; реалізовані форми rectangle, l_shaped та ортогональний polygon. T/U/трапеції, довільні кути, діагоналі й drawing-by-touch — **окремі майбутні роботи**. Власник підтвердив: **усі БД тестові; жодної обов'язкової backward compatibility старих v1/v2 креслень, старих JSON/архівів або міграції test DB** у PR A/B. Старі пункти нижче відображають історію PR #29, не новий compatibility backlog; зберігати чинний контракт нових замірів і immutable estimates/PDF.
+
 ## Verified v3 schema fix and regression checkpoint (30 Oct 2026)
 
 The `geometrySchemaVersion=3` reader bug in `FrozenPolygonGeometryJson.readGeometryFields` was fixed at `75778c42` by accepting **only** supported v2/v3 schemas instead of the stale v2-only test. The owner reports the APK works; CI for that SHA was successful across Android [#41128915568](https://github.com/aleks-nl5/andrey-ceilings-android/actions/runs/41128915568) and Windows/iOS [#41128915482](https://github.com/aleks-nl5/andrey-ceilings-android/actions/runs/41128915482).
@@ -56,7 +63,7 @@ For **new orthogonal side-based polygon measurements/estimates only**, `geometry
 
 Збережені заміри `drawingJson` та нові кошториси `sourceMeasurementJson` повинні містити **і вихідні виміряні сторони/повороти, і похідний контур** для перевірки походження геометрії; не відтворювати вихідні виміри з однієї площі/периметра. Ревізії кошторисів, дублікат, PDF і переносний бекап `.stpb` мають зберігати оригінальний стан. Вже створені immutable v1/v2/v3 ніколи не переписувати чи тихо перераховувати. SQLCipher WAL і спільна SQLDelight-архітектура зберігаються.
 
-## 5. Приймання PR #29 перед наступними формами
+## 5. Історичне приймання PR #29 перед наступними формами
 
 1. Ручний замір ортогональної кімнати **за довжинами та поворотами**, жодних X/Y; видалення, додавання й корекція сторони.
 2. Креслення-прев'ю **усіх підтриманих замірів** і повторний перегляд після закриття/відкриття застосунку; підписи й масштаб відповідають вимірам.

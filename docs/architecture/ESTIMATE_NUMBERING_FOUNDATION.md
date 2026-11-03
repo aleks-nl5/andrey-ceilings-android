@@ -1,5 +1,7 @@
 ## Update — Android numbering cutover (PR #27)
 
+> **Статус 03.11.2026:** історичний журнал впровадження KMP immutable estimate numbering PR #27/#28, що вже є частиною `main`. Збережені UUID, номери, ревізії та PDF **не міняти** при перенесенні замірів на CMP. Поточна БД тестова, сумісність зі старими кресленнями не є завданням; актуальний [план](../CMP_MEASUREMENT_EDITOR_PLAN.md).
+
 **Implemented in code, CI on new HEAD pending:** the normal Android `EstimateDao.insert` now creates a legacy UI/PDF projection **and** a fresh numbered immutable `estimate_series` + frozen revision v1/lines in one nested SQLDelight transaction. The database has an additive version-2-to-3 migration (`2.sqm`) linking `estimates.seriesUuid` to the numbered series. Existing rows remain readable with `null` document number; there is **no forced renumbering**, copying or dropping old records.
 
 - The list displays a full number with `v1`; PDF displays stored number and creation date, and uses the v1 name snapshot even after the UI label is renamed. The filename includes the full number and version.

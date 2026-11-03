@@ -1,6 +1,8 @@
 # Історія версій — СтеляПро
 
-> **Поточний Draft PR #23 (29.10.2026):** Android-калькулятор переведено на shared Kotlin KMP; Go/AAR і gomobile видалено. Кодовий HEAD `ae326a73` пройшов [Android CI 40903911505](https://github.com/aleks-nl5/andrey-ceilings-android/actions/runs/40903911505) і [Windows/iOS CI 40903911291](https://github.com/aleks-nl5/andrey-ceilings-android/actions/runs/40903911291); власник підтвердив на телефоні розрахунки, кошториси та PDF у новому KMP APK. Відкритий PR #23 не об'єднано з `main`. Історичні Go/Room записи нижче не є описом поточного runtime. Версія у `app/build.gradle.kts` зараз `0.6.2` з номером GitHub Actions для тестових збірок.
+> **Історія версій, актуальна звірка 03.11.2026.** Ранні нотатки з текстом «Draft PR #23», Go, Room та DELETE описують минулі стани, не поточний `main`. PR #66 і #68 merged, Windows JDBC RETURNING виправлено, Android SQLCipher працює з WAL; далі [CMP Measurement Editor A/B](docs/CMP_MEASUREMENT_EDITOR_PLAN.md). Наявна БД тестова й сумісність застарілих креслень не є вимогою.
+
+> **Історичний стан PR #23 (29.10.2026; PR згодом merged):** Android-калькулятор переведено на shared Kotlin KMP; Go/AAR і gomobile видалено. Кодовий HEAD `ae326a73` пройшов [Android CI 40903911505](https://github.com/aleks-nl5/andrey-ceilings-android/actions/runs/40903911505) і [Windows/iOS CI 40903911291](https://github.com/aleks-nl5/andrey-ceilings-android/actions/runs/40903911291); власник підтвердив на телефоні розрахунки, кошториси та PDF у новому KMP APK. Відкритий PR #23 не об'єднано з `main`. Історичні Go/Room записи нижче не є описом поточного runtime. Версія у `app/build.gradle.kts` зараз `0.6.2` з номером GitHub Actions для тестових збірок.
 
 
 > Документ узагальнює історію розробки за доступними GitHub Pull Request, змінами гілок і зафіксованими результатами тестування. Це журнал етапів роботи, а не твердження, що кожен пункт уже пройшов повний регресійний тест на пристрої.
