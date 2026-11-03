@@ -56,8 +56,13 @@ class MeasurementEditSceneTest {
             val model = MeasurementEditModel(null, MeasurementEditDocument(3, 1, draft()))
             val guard = MeasurementCreateNavigationGuard()
             var backs = 0
+            var route = AppNavigationState().selectTab(AppRoute.OBJECTS).openProject(7).openMeasurement(7, 3).editMeasurement(7, 3)
             val scene = ImageComposeScene(600, 1000) {
-                CeilingsTheme(dark) { MeasurementEditScreen(model, onBack = { backs++ }, onSaved = {}, navigationGuard = guard) }
+                CeilingsTheme(dark) { MeasurementEditScreen(model, onBack = {
+                    val next = guard.transition(route, route.back())
+                    if (next != route) backs++
+                    route = next
+                }, onSaved = {}, navigationGuard = guard) }
             }
             try {
                 scene.render().close()
@@ -69,12 +74,12 @@ class MeasurementEditSceneTest {
                 scene.click("Повторити"); scene.frame(); assertEquals("Нова кухня", model.state.value.draft.name)
                 scene.click("На весь екран"); scene.frame(); assertTrue(guard.fullscreen.value)
                 assertFalse(scene.text().contains("Назва заміру"))
-                scene.click("Згорнути"); scene.frame()
                 scene.click("Відхилити"); scene.frame()
                 assertTrue(scene.text().contains("Незбережені зміни")); assertEquals(0, backs)
                 scene.click("Продовжити"); scene.frame(); assertTrue(model.state.value.dirty)
                 scene.click("Відхилити"); scene.frame(); scene.click("Відхилити зміни")
                 assertEquals(1, backs); assertFalse(model.state.value.dirty)
+                assertEquals(MeasurementDetails(7, 3), route.measurementDetails)
             } finally { scene.close() }
         }
     }

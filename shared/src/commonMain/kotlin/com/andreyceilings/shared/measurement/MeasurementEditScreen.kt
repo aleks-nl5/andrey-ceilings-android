@@ -91,7 +91,11 @@ fun MeasurementEditScreen(
                 if (!fullscreen) TextButton(onClick = { focus.clearFocus(); fullscreen = true }) { Text("На весь екран") }
                 TextButton(onClick = { focus.clearFocus(); model.undo() }, enabled = enabled && state.canUndo) { Text("Скасувати дію") }
                 TextButton(onClick = { focus.clearFocus(); model.redo() }, enabled = enabled && state.canRedo) { Text("Повторити") }
-                TextButton(onClick = { model.requestExit(onBack) }, enabled = enabled) { Text("Відхилити") }
+                TextButton(onClick = { model.requestExit {
+                    // Explicit Cancel ends editing; system Back separately exits fullscreen first.
+                    fullscreen = false
+                    onBack()
+                } }, enabled = enabled) { Text("Відхилити") }
                 Button(onClick = ::save, enabled = enabled && validation.canSave && !state.conflict) { Text(if (state.saving) "Збереження…" else "Зберегти") }
             }
             if (state.checking) Text("Перевірка стану заміру. Дочекайтеся результату.")
