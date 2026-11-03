@@ -69,7 +69,9 @@ fun MeasurementDrawing(
     val surface = MaterialTheme.colorScheme.surface
     val labelStyle = MaterialTheme.typography.labelSmall.copy(color = MaterialTheme.colorScheme.onSurface)
     val measurer = rememberTextMeasurer()
-    val labelText = remember(contour) { contour.namedSideLabels }
+    // The contour already has vertex letters A/B/C; draw only dimensions
+    // beside segments. AB/BC labels remain in the separate edit/selection list.
+    val labelText = remember(contour) { contour.sideLabels }
     val textLayouts = labelText.map { measurer.measure(it, labelStyle) }
     val vertexLayouts = contour.vertexNames.map { measurer.measure(it, labelStyle) }
     Column(modifier, verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -139,16 +141,21 @@ fun MeasurementDrawing(
                 drawLine(ink, points[i], points[(i + 1) % points.size], strokeWidth = 8.dp.toPx())
             }
             points.forEach { drawCircle(ink, 3.dp.toPx(), it) }
-            if (!interactive || zoom == 1f && panX == 0f && panY == 0f) {
-                layout.vertexLabels.forEach { label ->
-                    drawText(vertexLayouts[label.sideIndex], topLeft = Offset(label.left, label.top))
-                }
-                layout.labels.forEach { label ->
-                    drawRoundRect(surface.copy(alpha = 0.96f),
-                        topLeft = Offset(label.left, label.top), size = Size(label.width, label.height),
-                        cornerRadius = CornerRadius(3.dp.toPx()))
-                    drawText(textLayouts[label.sideIndex], topLeft = Offset(label.left, label.top))
-                }
+            val visibleLabels = if (interactive && (zoom != 1f || panX != 0f || panY != 0f))
+                layoutMeasurementDrawingForProjectedPoints(
+                    points.map { DrawingPoint(it.x.toDouble(), it.y.toDouble()) },
+                    size.width, size.height,
+                    textLayouts.map { DrawingLabelSize(it.size.width.toFloat(), it.size.height.toFloat()) }, density,
+                    vertexLayouts.map { DrawingLabelSize(it.size.width.toFloat(), it.size.height.toFloat()) })
+            else layout
+            visibleLabels.vertexLabels.forEach { label ->
+                drawText(vertexLayouts[label.sideIndex], topLeft = Offset(label.left, label.top))
+            }
+            visibleLabels.labels.forEach { label ->
+                drawRoundRect(surface.copy(alpha = 0.96f),
+                    topLeft = Offset(label.left, label.top), size = Size(label.width, label.height),
+                    cornerRadius = CornerRadius(3.dp.toPx()))
+                drawText(textLayouts[label.sideIndex], topLeft = Offset(label.left, label.top))
             }
         }
         if (!fullscreen) {
