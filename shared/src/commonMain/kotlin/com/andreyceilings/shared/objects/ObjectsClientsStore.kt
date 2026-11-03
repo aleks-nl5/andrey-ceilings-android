@@ -54,6 +54,7 @@ class ObjectsClientsStore(
     private val projects = ProjectRepository(database)
     private val measurements = MeasurementRepository(database)
     val measurementDetails = com.andreyceilings.shared.measurement.MeasurementDetailsStore(database)
+    val measurementCreate = com.andreyceilings.shared.measurement.MeasurementCreateStore(database, nowMillis)
 
     val rows: Flow<ObjectsClientsRows> = combine(
         clients.observeAll(), projects.observeAll()

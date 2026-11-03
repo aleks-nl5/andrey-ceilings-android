@@ -57,7 +57,9 @@ text measurement/drawText; it has no Android Canvas/Paint/Context dependency.
 The pure `layoutMeasurementDrawing` projects saved world coordinates at a uniform
 scale. V3 labels use actual measured lengths; v2 labels derive from world edges,
 never screen pixels. Vertices are painted as dots and sides retain their ordered
-numbers. Compact/full Canvas heights are 155/235dp.
+names. PR A replaces numeric names with the shared A…Z/AA… vertex and AB/BC/…
+edge labels, also used by the new form and complete readonly legend.
+Compact/full Canvas heights are 155/235dp. See [creation](CMP_MEASUREMENT_CREATE.md).
 
 Inline labels are placed inside the viewport with collision checks against
 other labels and vertices. Labels that cannot fit are omitted **only on the

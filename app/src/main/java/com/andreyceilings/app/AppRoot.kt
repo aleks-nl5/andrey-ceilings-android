@@ -135,7 +135,8 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
         TopAppBarDefaults.enterAlwaysScrollBehavior()
     }
     val isProjectDetailsOpen = tab == AppTab.OBJECTS && navigation.projectDetails != null
-    val isMeasurementDetailsOpen = isProjectDetailsOpen && navigation.measurementDetails != null
+    val isMeasurementDetailsOpen = isProjectDetailsOpen &&
+        (navigation.measurementDetails != null || navigation.measurementCreate != null)
     var projectTitleProgress by remember { mutableFloatStateOf(0f) }
     // Let the shared title own details scrolling rather than enterAlways showing
     // the original toolbar during a reverse swipe.
@@ -510,6 +511,12 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
                             database = database,
                             detailsProjectId = navigation.projectDetails?.projectId,
                             measurementDetails = navigation.measurementDetails,
+                            measurementCreate = navigation.measurementCreate,
+                            measurementPrecision = measurementPrecision,
+                            onCreateMeasurement = { navigation = navigation.createMeasurement(it) },
+                            onMeasurementCreated = { projectId, measurementId ->
+                                navigation = navigation.measurementCreated(projectId, measurementId)
+                            },
                             onOpenMeasurement = { projectId, measurementId ->
                                 navigation = navigation.openMeasurement(projectId, measurementId)
                             },

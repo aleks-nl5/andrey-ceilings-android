@@ -185,7 +185,8 @@ private fun DesktopPriceHost(
         }
         val isProjectDetailsOpen = selectedTab == AppRoute.OBJECTS &&
             navigation.projectDetails != null
-        val isMeasurementDetailsOpen = isProjectDetailsOpen && navigation.measurementDetails != null
+        val isMeasurementDetailsOpen = isProjectDetailsOpen &&
+            (navigation.measurementDetails != null || navigation.measurementCreate != null)
         var projectTitleProgress by remember { mutableFloatStateOf(0f) }
         val passiveDetailsScroll = remember { object : NestedScrollConnection {} }
         LaunchedEffect(navigation.projectDetails?.projectId) {
@@ -237,6 +238,9 @@ private fun DesktopPriceHost(
                     rows = objectRows,
                     detailsProjectId = navigation.projectDetails?.projectId,
                     measurementDetails = navigation.measurementDetails,
+                    measurementCreate = navigation.measurementCreate,
+                    onCreateMeasurement = { onNavigate(navigation.createMeasurement(it)) },
+                    onMeasurementCreated = { projectId, measurementId -> onNavigate(navigation.measurementCreated(projectId, measurementId)) },
                     onOpenMeasurement = { projectId, measurementId -> onNavigate(navigation.openMeasurement(projectId, measurementId)) },
                     detailsStore = objectsStore,
                     onOpenProject = { onNavigate(navigation.openProject(it)) },

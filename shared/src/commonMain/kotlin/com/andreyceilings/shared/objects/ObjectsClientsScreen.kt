@@ -172,7 +172,11 @@ fun ObjectsClientsScreen(
     onListTabChanged: (ObjectsClientsTab) -> Unit = {},
     measurementDetails: MeasurementDetails? = null,
     onOpenMeasurement: (Long, Long) -> Unit = { _, _ -> },
-    onCloseMeasurement: () -> Unit = onCloseProject
+    onCloseMeasurement: () -> Unit = onCloseProject,
+    measurementCreate: com.andreyceilings.shared.navigation.MeasurementCreate? = null,
+    measurementPrecision: com.andreyceilings.shared.calculation.MeasurementPrecision = com.andreyceilings.shared.calculation.MeasurementPrecision.ONE_CENTIMETER,
+    onCreateMeasurement: (Long) -> Unit = {},
+    onMeasurementCreated: (Long, Long) -> Unit = { _, _ -> }
 ) {
     val scope = rememberCoroutineScope()
     val focusManager = LocalFocusManager.current
@@ -553,12 +557,13 @@ fun ObjectsClientsScreen(
 
     if (detailsProjectId != null) {
         val measurement = measurementDetails?.takeIf { it.projectId == detailsProjectId }
+        val create = measurementCreate?.takeIf { it.projectId == detailsProjectId }
         // Retain the real Project Details composition/list state. An unplaced
         // subtree has no drawing, pointer targets or accessibility nodes.
         Box(Modifier.fillMaxSize().layout { measurable, constraints ->
             val placeable = measurable.measure(constraints)
             layout(placeable.width, placeable.height) {
-                if (measurement == null) placeable.place(0, 0)
+                if (measurement == null && create == null) placeable.place(0, 0)
             }
         }) {
         ProjectDetailsScreen(
@@ -571,8 +576,9 @@ fun ObjectsClientsScreen(
             ),
             systemTopInset = systemTopInset,
             onHeaderProgress = onProjectHeaderProgress,
-            active = measurement == null,
+            active = measurement == null && create == null,
             onOpenMeasurement = { onOpenMeasurement(detailsProjectId, it) },
+            onCreateMeasurement = { onCreateMeasurement(detailsProjectId) },
             onDial = onDial,
             onBack = onCloseProject,
             onEdit = { project -> message = null; editor = EditorTarget.Project(project) }
@@ -583,6 +589,11 @@ fun ObjectsClientsScreen(
             store = detailsStore?.measurementDetails,
             contentPadding = contentPadding, systemTopInset = systemTopInset,
             onBack = onCloseMeasurement
+        )
+        if (create != null) com.andreyceilings.shared.measurement.MeasurementCreateScreen(
+            projectId = create.projectId, precision = measurementPrecision, store = detailsStore?.measurementCreate,
+            contentPadding = contentPadding, systemTopInset = systemTopInset,
+            onBack = onCloseMeasurement, onSaved = { onMeasurementCreated(create.projectId, it) }
         )
     }
     }

@@ -1,6 +1,11 @@
 # CMP Measurement Editor — узгоджений план після PR #68 (03.11.2026)
 
-**Стан:** план наступних окремих PR, не реалізовано. **Джерело:** актуальний `main` після merged PR #66 (CMP перегляд) і PR #68 (Windows encrypted JDBC RETURNING). Issues [#60](https://github.com/aleks-nl5/andrey-ceilings-android/issues/60), [#57](https://github.com/aleks-nl5/andrey-ceilings-android/issues/57).
+**Стан:** PR A реалізовано у feature-гілці й очікує фінального CI/приймання; PR B/C/D — план наступних окремих PR. **Джерело:** актуальний `main` після merged PR #66 (CMP перегляд), #68 (Windows encrypted JDBC RETURNING) і документаційного #69. Issues [#60](https://github.com/aleks-nl5/andrey-ceilings-android/issues/60), [#57](https://github.com/aleks-nl5/andrey-ceilings-android/issues/57).
+
+**Оновлення PR A:** create-only код і тести реалізовано у `feature/cmp-measurement-create`
+від `99a49a9` після PR #69. [Технічний контракт](CMP_MEASUREMENT_CREATE.md);
+остаточні CI й owner acceptance — у Draft PR. Нижче збережено затверджену
+специфікацію; PR B/C/D ще не реалізовано, #60/#57 не закриваються.
 
 ## Рішення щодо тестових даних
 
@@ -47,11 +52,11 @@
 
 **Мета:** завершена вертикальна функція «Об’єкти → конкретний об’єкт → + → створити замір → зберегти → реальний список/деталі заміру → Back».
 
-- [ ] Окремий типізований маршрут/стан для create з переданим `projectId`; перевірка існування активного об’єкта, без дублікатів та випадкового auto-save після процесного restore.
-- [ ] Спільний адаптивний екран: назва, форма, параметри шаблону або усі виміряні сторони+повороти, optional notes, точність із чинних налаштувань тільки для нового запису, зрозумілі пояснення помилок, live CMP drawing, площа й периметр.
-- [ ] Використовувати однакову схему створення незалежно від платформи; реальний `MeasurementRepository.createReturningId`, validated geometry, запис `drawingJson`, правильна прив'язка `projectId`. Якщо активний проєкт зник/БД недоступна — fail closed; при повторному тапі не створювати дубль.
-- [ ] Навігація після успішного створення до заміру або деталей об’єкта; без повторного запуску create при Back/restore.
-- [ ] Зберегти чинні Android-only створення/редагування у глобальній вкладці «Заміри» та передачу у калькулятор; **не** видаляти їх у PR A.
+- [x] Окремий типізований маршрут/стан для create з переданим `projectId`; перевірка існування активного об’єкта, без дублікатів та випадкового auto-save після процесного restore.
+- [x] Спільний адаптивний екран: назва, форма, параметри шаблону або усі виміряні сторони+повороти, optional notes, точність із чинних налаштувань тільки для нового запису, зрозумілі пояснення помилок, live CMP drawing, площа й периметр.
+- [x] Використовувати однакову схему створення незалежно від платформи; реальний `MeasurementRepository.createReturningId`, validated geometry, запис `drawingJson`, правильна прив'язка `projectId`. Якщо активний проєкт зник/БД недоступна — fail closed; при повторному тапі не створювати дубль.
+- [x] Навігація після успішного створення до заміру або деталей об’єкта; без повторного запуску create при Back/restore.
+- [x] Зберегти чинні Android-only створення/редагування у глобальній вкладці «Заміри» та передачу у калькулятор; **не** видаляти їх у PR A.
 - [ ] KMP/unit, Android SQLCipher/instrumentation, Windows native encrypted CRUD + CMP UI, iOS framework/simulator tests; owner APK smoke light/dark/narrow/keyboard/Back/error paths.
 - [ ] **Поза PR A:** редагування, видалення, інтеграція глобальної вкладки, нові форми, зміна схем/драйверів/backup, drag-to-draw, переписування кошторисів/PDF.
 

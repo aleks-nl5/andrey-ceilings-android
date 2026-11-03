@@ -24,6 +24,21 @@ class EncryptedBusinessRepositoriesIosTest {
         recovery = SqlCipherRecovery.Fail,
     )
 
+    @Test fun cmpCreatePersistsEveryShapeAndPrecisionOnSimulatorCipher(): Unit = runBlocking {
+        val name = "andrey-ios-create-${Random.nextLong().toString(16)}.db"
+        try {
+            val first = factory.create(PrototypeDatabase.Schema, config(name, 48))
+            val parent = try { MeasurementCreatePersistenceProof.run(PrototypeDatabase(first)) }
+                finally { first.close() }
+            val reopened = factory.create(PrototypeDatabase.Schema, config(name, 48))
+            try {
+                val rows = MeasurementRepository(PrototypeDatabase(reopened)).forProject(parent)
+                assertEquals(12, rows.size)
+                rows.forEach { assertEquals(it.shape, MeasurementGeometryCodec.read(it.drawingJson).shapeType) }
+            } finally { reopened.close() }
+        } finally { factory.deleteDatabase(name) }
+    }
+
     @Test
     fun repositoriesPersistReopenRejectWrongKeyAndCascade(): Unit = runBlocking {
         val name = "andrey-ios-business-${Random.nextLong().toString(16)}.db"
