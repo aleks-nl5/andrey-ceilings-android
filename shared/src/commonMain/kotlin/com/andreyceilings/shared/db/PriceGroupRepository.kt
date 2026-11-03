@@ -40,6 +40,14 @@ class PriceGroupRepository(private val database: PrototypeDatabase) {
         }
     }
 
+    /** Rename alone preserves defaults as well as item membership. */
+    fun rename(uuid: String, expectedUpdatedAt: Long, name: String, now: Long) {
+        val group = checkNotNull(find(uuid)) { "Групу видалено. Оновіть дані." }
+        update(uuid, expectedUpdatedAt, name, now, group.defaultUnit,
+            QuantityMode.entries.single { it.value == group.defaultQuantityMode },
+            PlacementKind.entries.single { it.value == group.defaultPlacementKind })
+    }
+
     fun delete(uuid: String, expectedUpdatedAt: Long, now: Long) {
         checkNotNull(queries.deleteGroupIfVersion(now, uuid, expectedUpdatedAt).executeAsOneOrNull()) {
             "Група містить активні позиції, змінена або видалена. Оновіть дані."

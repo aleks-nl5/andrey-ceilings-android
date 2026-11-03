@@ -58,6 +58,8 @@ class PriceCatalogSqlCipherTest {
             }
             createEncryptedPrototypeDriver(context, key, restoredName, enableWalForTesting = true,
                 initializePriceCatalog = true).use { driver ->
+                com.andreyceilings.shared.prices.StarterPriceCatalog.initialize(PrototypeDatabase(driver))
+                assertEquals(1L, PrototypeDatabase(driver).priceGroupsQueries.selectSeedVersion().executeAsOne())
                 assertEquals(0L, PriceRepository(PrototypeDatabase(driver)).count())
                 assertTrue(PriceGroupRepository(PrototypeDatabase(driver)).all().isEmpty())
                 assertEquals(before, PriceCatalogMigrationProof.untouchedRows(driver))

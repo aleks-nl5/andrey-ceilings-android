@@ -4,7 +4,9 @@ import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
 import com.andreyceilings.shared.prices.StarterPriceCatalog
 import java.nio.file.Files
 import java.util.concurrent.Executors
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.*
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.collect
 import kotlin.test.*
 
 class PriceCatalogP1Test {
@@ -16,6 +18,34 @@ class PriceCatalogP1Test {
             PriceCatalogPersistenceProof.starter(db)
             PriceCatalogPersistenceProof.groupsAndParameters(db)
             PriceCatalogPersistenceProof.removeEverything(db)
+        }
+    }
+
+    @Test fun groupFlowAndItemCategoryReactToGroupRename() = runBlocking {
+        JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).use { driver ->
+            PrototypeDatabase.Schema.create(driver)
+            val db = PrototypeDatabase(driver)
+            val groups = PriceGroupRepository(db)
+            val prices = PriceRepository(db)
+            val groupEvents = Channel<List<Price_groups>>(Channel.UNLIMITED)
+            val itemEvents = Channel<List<Price_catalog_items>>(Channel.UNLIMITED)
+            val groupJob = launch { groups.observeAll().collect { groupEvents.send(it) } }
+            val itemJob = launch { prices.observeAll().collect { itemEvents.send(it) } }
+            try {
+                withTimeout(5000) {
+                    assertTrue(groupEvents.receive().isEmpty())
+                    assertTrue(itemEvents.receive().isEmpty())
+                    val uuid = groups.create("Before rename", 1, "шт.")
+                    assertEquals(uuid, groupEvents.receive().single().uuid)
+                    prices.createInGroup("flow", "Flow", uuid, 1.0, 2)
+                    assertEquals("Before rename", itemEvents.receive().single().category)
+                    groups.rename(uuid, 1, "After rename", 3)
+                    val renamed = groupEvents.receive().single()
+                    assertEquals("After rename", renamed.name)
+                    assertEquals("шт.", renamed.defaultUnit)
+                    assertEquals("After rename", itemEvents.receive().single().category)
+                }
+            } finally { groupJob.cancelAndJoin(); itemJob.cancelAndJoin() }
         }
     }
 
