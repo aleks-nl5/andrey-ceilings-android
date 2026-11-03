@@ -53,6 +53,11 @@ gradle --no-daemon :shared:iosSimulatorArm64Test     # Потрібен macOS/Xc
 [CMP Measurement Foundation](docs/CMP_MEASUREMENT_FOUNDATION.md). Android-редактор
 та глобальна вкладка «Заміри» зберігаються до окремого етапу CMP Editor (#60/#57).
 
+PR A додає [спільне створення замірів](docs/CMP_MEASUREMENT_CREATE.md) із «+»
+деталей конкретного об'єкта: rectangle/L/orthogonal polygon, live креслення,
+точні міліметри й SQLDelight save. Фінальні CI та ручне приймання APK
+відстежуються у Draft PR; редагування й міграція загальної вкладки — PR B.
+
 ## Найближча розробка
 
 Завершено read-only [CMP Measurement Foundation](docs/CMP_MEASUREMENT_FOUNDATION.md) (PR #66) і Windows JDBC RETURNING [#67](docs/WINDOWS_SQLCIPHER_RETURNING.md) (merged PR #68). Далі PR A — CMP створення замірів з картки об'єкта, після нього PR B — CMP редагування й cutover глобальної вкладки; працюючий Android-редактор зберігаємо до PR B. Потім реальні робочі події #49, CMP калькулятор/кошториси #44 і host-и #42.

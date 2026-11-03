@@ -14,6 +14,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.KeyboardArrowDown
@@ -139,7 +140,8 @@ internal fun ProjectDetailsScreen(
     onEdit: (ProjectListEntry) -> Unit,
     onDial: (String) -> Unit,
     active: Boolean = true,
-    onOpenMeasurement: (Long) -> Unit = {}
+    onOpenMeasurement: (Long) -> Unit = {},
+    onCreateMeasurement: () -> Unit = {}
 ) {
     val flow = remember(store, projectId) {
         store?.observeProjectDetails(projectId)?.map<ProjectDetailsData, DetailsState> { DetailsState.Loaded(it) }
@@ -472,9 +474,14 @@ internal fun ProjectDetailsScreen(
                             }
                         }
                         item(key = "measurements-heading") {
-                            Text("Заміри (${state.data.measurements.size})",
-                                modifier = Modifier.padding(top = 4.dp, bottom = 2.dp),
-                                style = MaterialTheme.typography.titleMedium)
+                            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                Text("Заміри (${state.data.measurements.size})",
+                                    modifier = Modifier.weight(1f).padding(top = 4.dp, bottom = 2.dp),
+                                    style = MaterialTheme.typography.titleMedium)
+                                IconButton(onClick = onCreateMeasurement, enabled = active) {
+                                    Icon(Icons.Default.Add, contentDescription = "Створити замір для об'єкта")
+                                }
+                            }
                         }
                         if (state.data.measurements.isEmpty()) item { Text("Замірів ще немає.",
                             color = MaterialTheme.colorScheme.onSurfaceVariant) }

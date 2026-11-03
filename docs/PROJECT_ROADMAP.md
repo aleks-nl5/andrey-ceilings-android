@@ -1,5 +1,11 @@
 # Чинна дорожня карта — після merge PR #68 (03.11.2026)
 
+**PR A у feature-гілці:** реалізовано спільний CMP create-only сценарій із
+деталей об'єкта, typed create route, точний ввід/валідацію, літерні підписи,
+реальний SQLDelight insert і платформні regression tests. [Контракт реалізації](CMP_MEASUREMENT_CREATE.md).
+Фінальні CI/SHA/APK й порівняння з PR #68 — у Draft PR; ручне приймання власником
+ще не виконане. PR B, #70/#71 та завершення #60/#57 залишаються відкритими.
+
 ## Наступний етап: CMP Measurement Editor, PR A — створення замірів (#60/#57)
 
 [PR #66](https://github.com/aleks-nl5/andrey-ceilings-android/pull/66) **merged**: KMP-кодек геометрії та read-only CMP замір, креслення, typed Back. [PR #68](https://github.com/aleks-nl5/andrey-ceilings-android/pull/68) **merged**: реальний Windows encrypted JDBC `INSERT/UPDATE/DELETE … RETURNING`; [#67](https://github.com/aleks-nl5/andrey-ceilings-android/issues/67) **closed**. Не називати ці PR Draft або незавершеними.

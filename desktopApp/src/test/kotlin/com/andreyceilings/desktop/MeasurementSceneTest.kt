@@ -71,7 +71,7 @@ class MeasurementSceneTest {
                             if (bitmap.getColor(x, y) == ink) inkPixels++
                         assertTrue(inkPixels > 10, "Contour/vertices must actually be painted")
                         val text = scene.textContent()
-                        assertTrue(text.contains("1:"))
+                        assertTrue(text.contains("AB:"))
                         assertTrue(text.contains("м"))
                     } finally { bitmap.close(); image.close() }
                     scene.constraints = Constraints.fixed(120, 500)
@@ -111,7 +111,7 @@ class MeasurementSceneTest {
             Snapshot.sendApplyNotifications()
             scene.render(16_000_000).close()
             assertTrue(scene.textContent().contains("Кухня"))
-            assertTrue(scene.textContent().contains("20.0"))
+            assertTrue(scene.textContent().contains("20,0000"))
             scene.sendPointerEvent(PointerEventType.Press, Offset(44f, 60f), type = PointerType.Touch)
             scene.sendPointerEvent(PointerEventType.Release, Offset(44f, 60f), type = PointerType.Touch)
             assertEquals(1, backs)
@@ -128,6 +128,7 @@ class MeasurementSceneTest {
     }
 
     @Test fun nestedRestoreAndBackRetainSearchAndScrollWhileTabSwitchStillStartsAtTop() {
+        for (creating in listOf(false, true)) {
         val rows = ObjectsClientsRows((1..40).map {
             ProjectListEntry(it.toLong(), "Адреса $it", "Адреса $it", null, "", "measurement", "unpaid", "")
         }, (1..40).map { ClientListEntry(it.toLong(), "Адреса $it", "", "", "", 0) })
@@ -143,6 +144,7 @@ class MeasurementSceneTest {
                         onDeleteClient = {}, onDeleteProject = {}, onDial = {}, onExternalAction = { _, _ -> },
                         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 72.dp, bottom = 84.dp),
                         horizontalOverlayInset = 16.dp, measurementDetails = navigation.value.measurementDetails,
+                        measurementCreate = navigation.value.measurementCreate,
                         onListTabChanged = { switches += it },
                         onOpenMeasurement = { p, m -> navigation.value = navigation.value.openMeasurement(p, m) })
                 }
@@ -172,7 +174,8 @@ class MeasurementSceneTest {
             before = visibleAddresses(first)
             assertTrue(before.isNotEmpty(), first.textContent())
             assertFalse(before.contains("Адреса 1"))
-            navigation.value = navigation.value.openProject(7).openMeasurement(7, 12)
+            val project = navigation.value.openProject(7)
+            navigation.value = if (creating) project.createMeasurement(7) else project.openMeasurement(7, 12)
             Snapshot.sendApplyNotifications()
             first.render(632_000_000).close()
             saved = firstRegistry.performSave()
@@ -187,6 +190,7 @@ class MeasurementSceneTest {
             restored.sendPointerEvent(PointerEventType.Release, Offset(44f, 36f), type = PointerType.Touch)
             restored.render(16_000_000).close()
             assertNull(navigation.value.measurementDetails)
+            assertNull(navigation.value.measurementCreate)
             assertEquals(7L, navigation.value.projectDetails?.projectId)
             navigation.value = navigation.value.back()
             Snapshot.sendApplyNotifications()
@@ -202,6 +206,7 @@ class MeasurementSceneTest {
             }
             assertEquals(169f, firstClient.boundsInRoot.top, "Fresh client tab begins immediately below measured controls")
         } finally { restored.close() }
+        }
     }
 
     private fun ImageComposeScene.nodes(): List<SemanticsNode> {

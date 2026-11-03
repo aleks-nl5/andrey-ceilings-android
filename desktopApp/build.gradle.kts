@@ -18,6 +18,8 @@ dependencies {
     implementation("app.cash.sqldelight:runtime:2.4.1")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.2")
     testImplementation(kotlin("test"))
+    // Exercise the real shared write and navigation during a paused SQLDelight transaction.
+    testImplementation("app.cash.sqldelight:sqlite-driver:2.4.1")
 }
 
 compose.desktop {

@@ -85,13 +85,15 @@ class MeasurementRepository(private val database: PrototypeDatabase) {
     fun observeQuery() = queries.selectAllMeasurements()
     fun observeAll() = queries.selectAllMeasurements().asFlow().mapToList(Dispatchers.Default)
     fun count() = queries.countMeasurements().executeAsOne()
+    fun findByUuid(uuid: String) = queries.selectMeasurementByUuid(uuid).executeAsOneOrNull()
     fun createReturningId(
         projectId: Long, name: String, shape: String = "rectangle",
         lengthMeters: Double = 0.0, widthMeters: Double = 0.0,
         areaSquareMeters: Double = 0.0, perimeterMeters: Double = 0.0,
-        drawingJson: String = "{}", notes: String = "", createdAt: Long
+        drawingJson: String = "{}", notes: String = "", createdAt: Long,
+        recordUuid: String = newRecordUuid()
     ): Long = queries.insertMeasurementReturningId(projectId, name, shape, lengthMeters, widthMeters,
-        areaSquareMeters, perimeterMeters, drawingJson, notes, createdAt, newRecordUuid(), createdAt).executeAsOne()
+        areaSquareMeters, perimeterMeters, drawingJson, notes, createdAt, recordUuid, createdAt).executeAsOne()
     fun observeById(id: Long) = queries.selectMeasurementById(id).asFlow().mapToOneOrNull(Dispatchers.Default)
     fun find(id: Long) = queries.selectMeasurementById(id).executeAsOneOrNull()
     fun create(

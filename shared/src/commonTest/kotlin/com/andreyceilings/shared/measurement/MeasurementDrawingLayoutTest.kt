@@ -26,6 +26,14 @@ class MeasurementDrawingLayoutTest {
                             label.top < other.bottom && label.bottom > other.top)
                     }
                 }
+                val withVertices = assertNotNull(layoutMeasurementDrawing(contour, width, height,
+                    contour.sideLabels.map { DrawingLabelSize(68f, 16f) }, vertexSizes = contour.vertexNames.map { DrawingLabelSize(20f, 16f) }))
+                val all = withVertices.labels + withVertices.vertexLabels
+                all.forEachIndexed { i, a ->
+                    all.drop(i + 1).forEach { b ->
+                        assertFalse(a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top)
+                    }
+                }
             }
     }
 

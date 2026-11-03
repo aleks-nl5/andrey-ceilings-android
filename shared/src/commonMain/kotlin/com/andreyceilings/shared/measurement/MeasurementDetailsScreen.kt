@@ -16,6 +16,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.andreyceilings.shared.calculation.CeilingShapeTemplates
+import com.andreyceilings.shared.calculation.MeasurementPrecision
 import com.andreyceilings.shared.ui.CeilingsFab
 import com.andreyceilings.shared.ui.CeilingsFabProfile
 import com.andreyceilings.shared.ui.CeilingsScreenScaffold
@@ -82,7 +83,10 @@ fun MeasurementDetailsScreen(
                                 Text("Об'єкт: ${row.projectAddress.ifBlank { row.projectTitle }}")
                                 Text("Форма: ${CeilingShapeTemplates.template(row.shape)?.title ?: if (row.shape == "polygon") "Багатокутник" else row.shape}")
                                 // Display captured database totals, including historical values.
-                                Text("Площа: ${row.areaSquareMeters} м² · Периметр: ${row.perimeterMeters} м")
+                                val precision = (row.geometry as? MeasurementGeometryView.Captured)?.geometry
+                                    ?.precisionStepMeters?.let(MeasurementPrecision::fromStep)
+                                Text("Площа: ${formatMeasurementArea(row.areaSquareMeters, precision)} м² · " +
+                                    "Периметр: ${formatMeasurementLength(row.perimeterMeters, precision)} м")
                             }
                         }
                     }

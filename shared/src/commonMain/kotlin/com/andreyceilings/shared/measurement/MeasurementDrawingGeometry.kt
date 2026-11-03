@@ -30,7 +30,13 @@ fun measurementGeometryForViewing(
 
 data class DrawingPoint(val x: Double, val y: Double)
 data class MeasurementDrawingContour(val points: List<DrawingPoint>, val sideLabels: List<String>,
-    val historical: Boolean, val measuredSides: Boolean)
+    val historical: Boolean, val measuredSides: Boolean) {
+    val vertexNames: List<String> get() = points.indices.map(::measurementVertexLabel)
+    val namedSideLabels: List<String> get() {
+        val names = measurementSideLabels(points.size)
+        return sideLabels.mapIndexed { i, length -> "${names[i]}: $length" }
+    }
+}
 
 internal fun formatMillimetres(mm: Long): String {
     val fraction = (mm % 1000).toString().padStart(3, '0').trimEnd('0')
@@ -68,12 +74,14 @@ data class DrawingLabelBounds(val sideIndex: Int, val left: Float, val top: Floa
     val right get() = left + width
     val bottom get() = top + height
 }
-data class MeasurementDrawingLayout(val points: List<DrawingPoint>, val labels: List<DrawingLabelBounds>)
+data class MeasurementDrawingLayout(val points: List<DrawingPoint>, val labels: List<DrawingLabelBounds>,
+    val vertexLabels: List<DrawingLabelBounds> = emptyList())
 
 /** Aspect-preserving projection. Omitted inline labels remain in the wrapping legend. */
 fun layoutMeasurementDrawing(
     contour: MeasurementDrawingContour, width: Float, height: Float,
-    sizes: List<DrawingLabelSize>, density: Float = 1f
+    sizes: List<DrawingLabelSize>, density: Float = 1f,
+    vertexSizes: List<DrawingLabelSize> = emptyList()
 ): MeasurementDrawingLayout? {
     if (!width.isFinite() || !height.isFinite() || width <= 0 || height <= 0 ||
         density <= 0 || !density.isFinite() || contour.points.size < 3 ||
@@ -85,6 +93,22 @@ fun layoutMeasurementDrawing(
     val scale = minOf((width - margin * 2) / dx, (height - margin * 2) / dy)
     val ox = (width - dx * scale) / 2; val oy = (height - dy * scale) / 2
     val points = contour.points.map { DrawingPoint(ox + (it.x - left) * scale, oy + (it.y - top) * scale) }
+    val gap = 3f * density
+    fun overlaps(a: DrawingLabelBounds, b: DrawingLabelBounds): Boolean =
+        a.left < b.right + gap && a.right + gap > b.left && a.top < b.bottom + gap && a.bottom + gap > b.top
+    val vertexLabels = mutableListOf<DrawingLabelBounds>()
+    vertexSizes.take(points.size).forEachIndexed { i, size ->
+        if (size.width <= 0 || size.height <= 0 || size.width > width || size.height > height) return@forEachIndexed
+        val point = points[i]
+        for ((dx, dy) in listOf(1 to -1, -1 to -1, 1 to 1, -1 to 1)) {
+            val x = (point.x.toFloat() + if (dx > 0) gap * 2 else -size.width - gap * 2).coerceIn(0f, width - size.width)
+            val y = (point.y.toFloat() + if (dy > 0) gap * 2 else -size.height - gap * 2).coerceIn(0f, height - size.height)
+            val candidate = DrawingLabelBounds(i, x, y, size.width, size.height)
+            val touchesVertex = points.any { it.x >= x - gap && it.x <= candidate.right + gap &&
+                it.y >= y - gap && it.y <= candidate.bottom + gap }
+            if (!touchesVertex && vertexLabels.none { overlaps(candidate, it) }) { vertexLabels.add(candidate); break }
+        }
+    }
     val areaSign = if (contour.points.indices.sumOf { i ->
         val a = contour.points[i]; val b = contour.points[(i + 1) % contour.points.size]
         a.x * b.y - b.x * a.y
@@ -101,13 +125,11 @@ fun layoutMeasurementDrawing(
             val y = (((a.y + b.y) / 2 - (b.x - a.x) / length * areaSign * distance * density)
                 .toFloat() - size.height / 2).coerceIn(0f, height - size.height)
             val candidate = DrawingLabelBounds(i, x, y, size.width, size.height)
-            val gap = 3f * density
-            val overlapsLabel = labels.any { candidate.left < it.right + gap && candidate.right + gap > it.left &&
-                candidate.top < it.bottom + gap && candidate.bottom + gap > it.top }
+            val overlapsLabel = (labels + vertexLabels).any { overlaps(candidate, it) }
             val overlapsVertex = points.any { it.x >= x - gap && it.x <= candidate.right + gap &&
                 it.y >= y - gap && it.y <= candidate.bottom + gap }
             if (!overlapsLabel && !overlapsVertex) { labels.add(candidate); break }
         }
     }
-    return MeasurementDrawingLayout(points, labels)
+    return MeasurementDrawingLayout(points, labels, vertexLabels)
 }

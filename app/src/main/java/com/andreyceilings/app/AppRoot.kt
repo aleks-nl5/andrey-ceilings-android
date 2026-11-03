@@ -117,6 +117,7 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
     var navigation by rememberSaveable(stateSaver = navigationStateSaver) {
         mutableStateOf(AppNavigationState())
     }
+    val measurementCreateNavigationGuard = remember { com.andreyceilings.shared.measurement.MeasurementCreateNavigationGuard() }
     val tab = navigation.current
     var tabChangedAt by remember { mutableLongStateOf(SystemClock.elapsedRealtime()) }
     var lastBackPressTime by remember { mutableStateOf(0L) }
@@ -135,7 +136,8 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
         TopAppBarDefaults.enterAlwaysScrollBehavior()
     }
     val isProjectDetailsOpen = tab == AppTab.OBJECTS && navigation.projectDetails != null
-    val isMeasurementDetailsOpen = isProjectDetailsOpen && navigation.measurementDetails != null
+    val isMeasurementDetailsOpen = isProjectDetailsOpen &&
+        (navigation.measurementDetails != null || navigation.measurementCreate != null)
     var projectTitleProgress by remember { mutableFloatStateOf(0f) }
     // Let the shared title own details scrolling rather than enterAlways showing
     // the original toolbar during a reverse swipe.
@@ -172,23 +174,17 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
         }
     }
 
-    fun navigateTo(target: AppTab) {
-        val next = navigation.selectTab(target)
-        if (next.current != tab) tabChangedAt = SystemClock.elapsedRealtime()
+    fun updateNavigation(proposed: AppNavigationState) {
+        val next = measurementCreateNavigationGuard.transition(navigation, proposed)
+        if (next.current != navigation.current) tabChangedAt = SystemClock.elapsedRealtime()
         navigation = next
     }
 
-    fun openNested(target: AppTab) {
-        val next = navigation.navigate(target)
-        if (next.current != tab) tabChangedAt = SystemClock.elapsedRealtime()
-        navigation = next
-    }
+    fun navigateTo(target: AppTab) = updateNavigation(navigation.selectTab(target))
 
-    fun startQuickCreate(action: AppQuickCreate) {
-        val next = navigation.requestQuickCreate(action)
-        if (next.current != tab) tabChangedAt = SystemClock.elapsedRealtime()
-        navigation = next
-    }
+    fun openNested(target: AppTab) = updateNavigation(navigation.navigate(target))
+
+    fun startQuickCreate(action: AppQuickCreate) = updateNavigation(navigation.requestQuickCreate(action))
 
     LaunchedEffect(tab) {
         contentScrolledPx.floatValue = 0f
@@ -299,6 +295,11 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
     // Android only provides gesture progress. KMP owns the destination and CMP the preview.
     // Keep the callback composed unconditionally; dialogs may take Back precedence.
     PredictiveBackHandler(enabled = tab != AppTab.DASHBOARD) { events ->
+        if (measurementCreateNavigationGuard.blocksExit(navigation)) {
+            // Consume the gesture without preview or navigation while Save owns the screen.
+            events.collect { }
+            return@PredictiveBackHandler
+        }
         var completed = false
         try {
             events.collect { event ->
@@ -308,9 +309,7 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
             // Commit only after a fully completed gesture (never during a swipe).
             completed = true
             predictiveBackProgress.snapTo(0f)
-            val next = navigation.back()
-            if (next.current != navigation.current) tabChangedAt = SystemClock.elapsedRealtime()
-            navigation = next
+            updateNavigation(navigation.back())
             lastBackPressTime = 0L
         } catch (cancelled: CancellationException) {
             throw cancelled
@@ -510,11 +509,18 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
                             database = database,
                             detailsProjectId = navigation.projectDetails?.projectId,
                             measurementDetails = navigation.measurementDetails,
-                            onOpenMeasurement = { projectId, measurementId ->
-                                navigation = navigation.openMeasurement(projectId, measurementId)
+                            measurementCreate = navigation.measurementCreate,
+                            measurementCreateNavigationGuard = measurementCreateNavigationGuard,
+                            measurementPrecision = measurementPrecision,
+                            onCreateMeasurement = { updateNavigation(navigation.createMeasurement(it)) },
+                            onMeasurementCreated = { projectId, measurementId ->
+                                updateNavigation(navigation.measurementCreated(projectId, measurementId))
                             },
-                            onOpenProject = { navigation = navigation.openProject(it) },
-                            onCloseProject = { navigation = navigation.back() },
+                            onOpenMeasurement = { projectId, measurementId ->
+                                updateNavigation(navigation.openMeasurement(projectId, measurementId))
+                            },
+                            onOpenProject = { updateNavigation(navigation.openProject(it)) },
+                            onCloseProject = { updateNavigation(navigation.back()) },
                             onProjectHeaderProgress = { projectTitleProgress = it.coerceIn(0f, 1f) },
                             onListTabChanged = {
                                 // The CMP list resets on tab change; reset the parent
@@ -526,7 +532,7 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
                             headerVisibleFraction = if (isProjectDetailsOpen) 1f
                                 else 1f - topAppBarScrollBehavior.state.collapsedFraction,
                             openCreateProject = navigation.pendingQuickCreate == AppQuickCreate.OBJECT,
-                            onCreateProjectConsumed = { navigation = navigation.consumeQuickCreate(AppQuickCreate.OBJECT) }
+                            onCreateProjectConsumed = { updateNavigation(navigation.consumeQuickCreate(AppQuickCreate.OBJECT)) }
                         )
                         AppTab.MEASUREMENTS -> MeasurementsScreen(
                             database = database,
@@ -578,7 +584,7 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
                                 navigateTo(AppTab.CALCULATOR)
                             },
                             openCreateMeasurement = navigation.pendingQuickCreate == AppQuickCreate.MEASUREMENT,
-                            onCreateMeasurementConsumed = { navigation = navigation.consumeQuickCreate(AppQuickCreate.MEASUREMENT) },
+                            onCreateMeasurementConsumed = { updateNavigation(navigation.consumeQuickCreate(AppQuickCreate.MEASUREMENT)) },
                             onMissingProject = {
                                 startQuickCreate(AppQuickCreate.OBJECT)
                                 Toast.makeText(context, "Спочатку створіть об’єкт для заміру", Toast.LENGTH_LONG).show()

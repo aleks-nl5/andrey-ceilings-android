@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -40,7 +41,12 @@ internal fun ObjectsClientsHost(
     headerVisibleFraction: Float,
     onCreateProjectConsumed: () -> Unit,
     measurementDetails: com.andreyceilings.shared.navigation.MeasurementDetails? = null,
-    onOpenMeasurement: (Long, Long) -> Unit = { _, _ -> }
+    onOpenMeasurement: (Long, Long) -> Unit = { _, _ -> },
+    measurementCreate: com.andreyceilings.shared.navigation.MeasurementCreate? = null,
+    measurementPrecision: com.andreyceilings.shared.calculation.MeasurementPrecision = com.andreyceilings.shared.calculation.MeasurementPrecision.ONE_CENTIMETER,
+    onCreateMeasurement: (Long) -> Unit = {},
+    onMeasurementCreated: (Long, Long) -> Unit = { _, _ -> },
+    measurementCreateNavigationGuard: com.andreyceilings.shared.measurement.MeasurementCreateNavigationGuard? = null
 ) {
     val context = LocalContext.current
     val store = remember(database) {
@@ -66,6 +72,11 @@ internal fun ObjectsClientsHost(
         rows = rows,
         detailsProjectId = detailsProjectId,
         measurementDetails = measurementDetails,
+        measurementCreate = measurementCreate,
+        measurementPrecision = measurementPrecision,
+        onCreateMeasurement = onCreateMeasurement,
+        onMeasurementCreated = onMeasurementCreated,
+        measurementCreateNavigationGuard = measurementCreateNavigationGuard,
         onOpenMeasurement = onOpenMeasurement,
         detailsStore = store,
         onOpenProject = onOpenProject,
@@ -80,7 +91,8 @@ internal fun ObjectsClientsHost(
         contentPadding = PaddingValues(
             start = 16.dp, end = 16.dp,
             top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 72.dp,
-            bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 84.dp
+            bottom = maxOf(WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 84.dp,
+                if (measurementCreate != null) WindowInsets.ime.asPaddingValues().calculateBottomPadding() else 0.dp)
         ),
         onSaveClient = { id, draft ->
             withContext(Dispatchers.IO) {

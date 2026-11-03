@@ -18,7 +18,12 @@ import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.dp
 
-/** Shared Android/Windows/iOS renderer. All dimensions come from saved world geometry. */
+/**
+ * Outline renderer only: all lengths come from world geometry. Optional ceiling features
+ * belong in a separate typed overlay, projected through layoutMeasurementDrawing's same
+ * transform; painted symbols must never become input to contour/area calculations.
+ * compact is presentation only and does not grant editing capability.
+ */
 @Composable
 fun MeasurementDrawing(
     geometry: MeasurementGeometryView,
@@ -35,8 +40,9 @@ fun MeasurementDrawing(
     val surface = MaterialTheme.colorScheme.surface
     val labelStyle = MaterialTheme.typography.labelSmall.copy(color = MaterialTheme.colorScheme.onSurface)
     val measurer = rememberTextMeasurer()
-    val labelText = remember(contour) { contour.sideLabels.mapIndexed { i, label -> "${i + 1}: $label" } }
+    val labelText = remember(contour) { contour.namedSideLabels }
     val textLayouts = labelText.map { measurer.measure(it, labelStyle) }
+    val vertexLayouts = contour.vertexNames.map { measurer.measure(it, labelStyle) }
     Column(modifier, verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Text("Креслення заміру", style = MaterialTheme.typography.titleSmall)
         if (contour.historical) Text(
@@ -45,7 +51,8 @@ fun MeasurementDrawing(
         Canvas(Modifier.fillMaxWidth().height(if (compact) 155.dp else 235.dp)
             .semantics { contentDescription = "Контур стелі, ${contour.points.size} вершин" }) {
             val layout = layoutMeasurementDrawing(contour, size.width, size.height,
-                textLayouts.map { DrawingLabelSize(it.size.width.toFloat(), it.size.height.toFloat()) }, density)
+                textLayouts.map { DrawingLabelSize(it.size.width.toFloat(), it.size.height.toFloat()) }, density,
+                vertexLayouts.map { DrawingLabelSize(it.size.width.toFloat(), it.size.height.toFloat()) })
                 ?: return@Canvas
             val points = layout.points.map { Offset(it.x.toFloat(), it.y.toFloat()) }
             val path = Path().apply {
@@ -56,6 +63,9 @@ fun MeasurementDrawing(
             drawPath(path, ink.copy(alpha = 0.08f))
             drawPath(path, ink, style = Stroke(width = 2.5.dp.toPx()))
             points.forEach { drawCircle(ink, 3.dp.toPx(), it) }
+            layout.vertexLabels.forEach { label ->
+                drawText(vertexLayouts[label.sideIndex], topLeft = Offset(label.left, label.top))
+            }
             layout.labels.forEach { label ->
                 drawRoundRect(surface.copy(alpha = 0.96f),
                     topLeft = Offset(label.left, label.top), size = Size(label.width, label.height),

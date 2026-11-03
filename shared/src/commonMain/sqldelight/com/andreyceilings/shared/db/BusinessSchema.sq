@@ -99,6 +99,9 @@ SELECT * FROM projects WHERE deletedAt IS NULL ORDER BY updatedAt DESC;
 selectMeasurementsForProject:
 SELECT * FROM room_measurements WHERE projectId = ? AND deletedAt IS NULL ORDER BY createdAt DESC;
 
+selectMeasurementByUuid:
+SELECT * FROM room_measurements WHERE uuid = ?;
+
 selectPriceItems:
 SELECT * FROM price_items WHERE deletedAt IS NULL ORDER BY category, title;
 
