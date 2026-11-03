@@ -12,6 +12,7 @@ class MeasurementCreateStoreTest {
         JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).use { driver ->
             PrototypeDatabase.Schema.create(driver)
             MeasurementCreateNavigationProof.run(driver)
+            MeasurementCreateNavigationProof.run(driver, global = true)
         }
     }
 

@@ -11,7 +11,7 @@ import kotlin.test.*
 
 /** Actual transaction paused after active-parent validation, before INSERT RETURNING. */
 object MeasurementCreateNavigationProof {
-    suspend fun run(driver: SqlDriver): Unit = coroutineScope {
+    suspend fun run(driver: SqlDriver, global: Boolean = false): Unit = coroutineScope {
         val db = PrototypeDatabase(driver)
         val project = ProjectRepository(db).createReturningId(null, "Navigation parent", createdAt = 1)
         val entered = CountDownLatch(1)
@@ -25,12 +25,19 @@ object MeasurementCreateNavigationProof {
             MeasurementCreateFixtures.draft(project, "rectangle", MeasurementPrecision.ONE_CENTIMETER))
         val guard = MeasurementCreateNavigationGuard()
         guard.bind(model)
-        val route = AppNavigationState().selectTab(AppRoute.OBJECTS).openProject(project).createMeasurement(project)
+        val parent = if (global) AppNavigationState().requestQuickCreate(AppQuickCreate.MEASUREMENT)
+            else AppNavigationState().selectTab(AppRoute.OBJECTS).openProject(project)
+        val route = parent.createMeasurement(project)
         val save = launch(start = CoroutineStart.UNDISPATCHED) { model.save() }
         try {
             assertTrue(entered.await(10, TimeUnit.SECONDS))
             assertTrue(model.state.value.saving)
             assertTrue(guard.blocksExit(route))
+            val restored = assertNotNull(MeasurementCreateModel.restore(store, model.state.value.draft.snapshot(), project))
+            assertSame(model, restored, "Activity restore must reattach the in-flight Save")
+            guard.unbind(model)
+            assertTrue(guard.blocksExit(route), "A transient Activity/session loading gap cannot unlock Back")
+            guard.bind(restored)
             val attempts = listOf(route.back(), // Android Back / native Escape target
                 route.selectTab(AppRoute.PRICES), route.navigate(AppRoute.DASHBOARD),
                 route.replace(AppRoute.MEASUREMENTS), route.openProject(project + 1),
@@ -48,8 +55,15 @@ object MeasurementCreateNavigationProof {
         assertEquals(MeasurementDetails(project, id), details.measurementDetails)
         assertNull(details.measurementCreate)
         assertFalse(guard.blocksExit(details))
+        model.delivered()
+        assertNull(store.retained(model.state.value.draft.recordUuid), "Delivered results release their session model")
         assertEquals(details.back(), guard.transition(details, details.back()))
         model.save()
+        val processRestored = assertNotNull(MeasurementCreateModel.restore(MeasurementCreateStore(db) { 99 },
+            model.state.value.draft.snapshot(), project))
+        processRestored.save()
+        assertEquals(id, processRestored.state.value.savedId, "A process-restored draft still reuses its committed UUID")
+        processRestored.delivered()
         assertEquals(id, MeasurementRepository(db).forProject(project).single().id)
         guard.unbind(model)
 

@@ -41,8 +41,9 @@ object MeasurementEditPersistenceProof {
             assertTrue(model.state.value.saved, model.state.value.error)
             // Regression: while fullscreen consumes Back, successful Save must
             // deliver to readonly details, NOT go through that Back interceptor.
-            val route = AppNavigationState().selectTab(AppRoute.OBJECTS).openProject(project)
-                .openMeasurement(project, id).editMeasurement(project, id)
+            val parent = if (shape == "rectangle") AppNavigationState().selectTab(AppRoute.MEASUREMENTS)
+                else AppNavigationState().selectTab(AppRoute.OBJECTS).openProject(project)
+            val route = parent.openMeasurement(project, id).editMeasurement(project, id)
             val guard = MeasurementCreateNavigationGuard().also {
                 it.bindEdit(model); it.fullscreen.value = true
             }
@@ -51,6 +52,7 @@ object MeasurementEditPersistenceProof {
             var approved: AppNavigationState? = null
             assertFalse(guard.deliverEditResult(route, project, id + 1) { approved = it })
             assertTrue(guard.deliverEditResult(route, project, id) { approved = it })
+            assertFalse(guard.deliverEditResult(route, project, id) {}, "Completion is delivered only once")
             assertEquals(route.measurementSaved(project, id), approved)
             assertNull(approved?.measurementEdit)
             assertEquals(MeasurementDetails(project, id), approved?.measurementDetails)

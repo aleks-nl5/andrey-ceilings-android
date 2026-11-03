@@ -28,7 +28,7 @@ class MeasurementCreateNavigationGuard {
     fun bind(model: MeasurementCreateModel) { editor = model }
 
     fun unbind(model: MeasurementCreateModel) {
-        if (editor === model) editor = null
+        if (editor === model && !model.state.value.saving && model.state.value.savedId == null) editor = null
     }
 
     fun blocksExit(current: AppNavigationState): Boolean {
@@ -56,6 +56,7 @@ class MeasurementCreateNavigationGuard {
 
     private fun approved(proposed: AppNavigationState): AppNavigationState {
         if (proposed.measurementEdit == null) edit = null
+        if (proposed.measurementCreate == null) editor = null
         if (proposed.measurementDetails == null && proposed.measurementEdit == null && proposed.measurementCreate == null) fullscreen.value = false
         return proposed
     }
@@ -81,6 +82,6 @@ class MeasurementCreateNavigationGuard {
         // Keep the editor visible between commit and its onSaved effect too.
         // Only delivery of this exact successful result may replace it.
         val completed = state.savedId?.let { current.measurementCreated(state.draft.projectId, it) }
-        return if (completed != null && proposed == completed) proposed else current
+        return if (completed != null && proposed == completed) approved(proposed) else current
     }
 }
