@@ -82,12 +82,17 @@ sqldelight {
     databases {
         create("PrototypeDatabase") {
             packageName.set("com.andreyceilings.shared.db")
-            // Check the schema-only v5 snapshot against 5.sqm and fresh v6.
-            verifyMigrations.set(true)
             // INSERT ... RETURNING requires SQLite >= 3.35 on every supported driver.
             dialect("app.cash.sqldelight:sqlite-3-35-dialect:2.4.1")
         }
     }
+}
+
+// Require a snapshot for the real SQLite migration comparison. The generator's
+// legacy migration lint needs a v1 baseline which this repository never had;
+// keep that separate from verifying 5.db -> 5.sqm -> fresh v6.
+tasks.withType<app.cash.sqldelight.gradle.VerifyMigrationTask>().configureEach {
+    verifyMigrations.set(true)
 }
 
 // Native migration failures must expose the SQL error and test phase in CI.

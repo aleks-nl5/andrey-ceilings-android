@@ -42,7 +42,7 @@ object PriceNameUniquenessProof {
         assertEquals(normalizedNameKey(original.title), original.titleKey)
         for (group in listOf(original.groupUuid, first, second).distinct()) {
             assertFailsWith<DuplicateItemTitle> {
-                prices.createInGroup("unique.other", " ТОЧКОВИЙ СВІТИЛЬНИК ", group, 999.0, 111)
+                prices.createInGroup("unique.other", " ТОЧКОВИЙ СВІТИЛЬНИК ", group, 999.0, 111, "шт.")
             }
         }
         assertFailsWith<IllegalArgumentException> { prices.createInGroup("blank", "\t ", first, 1.0, 111) }
