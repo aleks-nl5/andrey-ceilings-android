@@ -70,8 +70,10 @@ object MeasurementEditPersistenceProof {
             val wrongOwner = current.copy(draft = current.draft.copy(projectId = other))
             assertFailsWith<MeasurementEditConflict> { store.update(wrongOwner, wrongOwner.draft.copy(name = "foreign")) }
             val deleted = MeasurementEditModel(store, current)
+            val deletedNoop = MeasurementEditModel(store, current)
             deleted.accept(MeasurementCreateIntent.Name("Deleted")); rows.delete(id); deleted.save()
             assertTrue(deleted.state.value.conflict); assertNull(rows.find(id))
+            deletedNoop.save(); assertTrue(deletedNoop.state.value.conflict, "Even unchanged Save checks the live record")
         }
         val id = create.create(MeasurementCreateFixtures.draft(project, "rectangle", MeasurementPrecision.ONE_CENTIMETER))
         val orphan = MeasurementEditModel(store, store.load(project, id))

@@ -50,8 +50,16 @@ class MeasurementEditStore(private val database: PrototypeDatabase, private val 
             val live = measurements.find(original.measurementId)
             if (projects.find(draft.projectId) == null || live == null || live.projectId != draft.projectId ||
                 live.uuid != draft.recordUuid || live.updatedAt != original.updatedAt) throw MeasurementEditConflict()
-            require(MeasurementGeometryCodec.read(live.drawingJson).precisionStepMeters == draft.precision.stepMeters) {
+            val liveGeometry = MeasurementGeometryCodec.read(live.drawingJson)
+            require(liveGeometry.precisionStepMeters == draft.precision.stepMeters) {
                 "Точність існуючого заміру змінювати не можна."
+            }
+            val normalized = draft.copy(name = draft.name.trim(), notes = draft.notes.trim())
+            // No-op still checks live ownership, parent and version, but never writes.
+            if (live.name == normalized.name && live.notes == normalized.notes && live.shape == geometry.shapeType &&
+                liveGeometry == geometry && live.areaSquareMeters == geometry.areaSquareMeters &&
+                live.perimeterMeters == geometry.perimeterMeters) {
+                return@transactionWithResult MeasurementEditDocument(original.measurementId, live.updatedAt, normalized)
             }
             val version = measurements.updateIfUnchanged(original.measurementId, draft.projectId, original.updatedAt,
                 draft.name.trim(), geometry.shapeType,
@@ -59,7 +67,7 @@ class MeasurementEditStore(private val database: PrototypeDatabase, private val 
                 (geometry.vertices.maxOf { it.yMm } - geometry.vertices.minOf { it.yMm }) / 1000.0,
                 geometry.areaSquareMeters, geometry.perimeterMeters, MeasurementGeometryCodec.write(geometry),
                 draft.notes.trim(), nowMillis()) ?: throw MeasurementEditConflict()
-            MeasurementEditDocument(original.measurementId, version, draft.copy(name = draft.name.trim(), notes = draft.notes.trim()))
+            MeasurementEditDocument(original.measurementId, version, normalized)
         }
     }
 }

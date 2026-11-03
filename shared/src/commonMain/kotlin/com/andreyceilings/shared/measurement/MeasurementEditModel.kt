@@ -101,11 +101,6 @@ class MeasurementEditModel(
             commitInput()
             val before = state.value
             if (!validateMeasurementCreate(before.draft).canSave) return
-            if (!before.dirty) {
-                undo.clear(); redo.clear()
-                mutableState.value = MeasurementEditState(before.original, saved = true)
-                return
-            }
             continueEditing()
             mutableState.value = before.copy(saving = true, exitRequested = false, error = null)
             store?.retain(token, this)

@@ -96,10 +96,11 @@ fun MeasurementDrawing(
             }.focusable()
             .pointerInput(contour, canvasSize) {
                 detectTapGestures { point ->
-                    focusRequester.requestFocus()
                     val layout = layoutMeasurementDrawing(contour, canvasSize.width.toFloat(), canvasSize.height.toFloat(), emptyList(), density)
                     val points = layout?.points?.map { currentViewport.transform(it, canvasSize.width.toFloat(), canvasSize.height.toFloat()) }
                     points?.let { measurementWallAt(it, point.x, point.y, 24.dp.toPx()) }?.let { currentSelection(it) }
+                    // Selection may dismiss a numerical field/IME; focus the Canvas afterwards.
+                    focusRequester.requestFocus()
                 }
             }
             .pointerInput(Unit) { detectTransformGestures { _, pan, scale, _ -> move(pan.x, pan.y, scale) } }

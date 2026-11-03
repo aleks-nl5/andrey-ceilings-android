@@ -84,9 +84,12 @@ class MeasurementEditSceneTest {
         val wire = MeasurementGeometryCodec.write(geometry)
         var selected by mutableStateOf<Int?>(null)
         val scene = ImageComposeScene(600, 600) {
-            CeilingsTheme(false) { MeasurementDrawing(MeasurementGeometryView.Captured(geometry),
-                Modifier.fillMaxSize(), interactive = true, selectedSide = selected,
-                onSelectSide = { selected = it }, fullscreen = true) }
+            CeilingsTheme(false) {
+                val focus = androidx.compose.ui.platform.LocalFocusManager.current
+                MeasurementDrawing(MeasurementGeometryView.Captured(geometry),
+                    Modifier.fillMaxSize(), interactive = true, selectedSide = selected,
+                    onSelectSide = { focus.clearFocus(); selected = it }, fullscreen = true)
+            }
         }
         fun checksum(): Long {
             val image = scene.render(System.nanoTime())
