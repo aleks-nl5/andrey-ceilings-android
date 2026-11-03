@@ -42,7 +42,10 @@ repositories. Save repeats validation and uses one transaction with atomic SQL
 The read checks improve errors; SQL CAS is the concurrency boundary. The new
 version is `max(now, updatedAt + 1)`, including equal/backward clocks. UUID,
 createdAt and projectId are absent from SET. Frozen geometry, measured parameters,
-notes, name and KMP totals are saved together. No-op Save does not update the row.
+notes, name and KMP totals are saved together. No-op Save checks live ownership/parent/version but does not update the row.
+Its equality uses the validated document, not binary tails in JDBC REAL summaries.
+Native JDBC can read 24.000000000000004 as 24.0; persistence tests compare numeric
+summaries within 1e-9 while preserving exact source Long-mm/codec equality.
 No driver/schema migration, DB reset, financial snapshot or PDF changes.
 
 A Mutex rejects repeated Save, edits freeze during the NonCancellable transaction,

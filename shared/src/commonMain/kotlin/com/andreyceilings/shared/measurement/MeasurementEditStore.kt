@@ -56,9 +56,9 @@ class MeasurementEditStore(private val database: PrototypeDatabase, private val 
             }
             val normalized = draft.copy(name = draft.name.trim(), notes = draft.notes.trim())
             // No-op still checks live ownership, parent and version, but never writes.
+            // Compare the validated document, not JDBC REAL conversion's binary tails.
             if (live.name == normalized.name && live.notes == normalized.notes && live.shape == geometry.shapeType &&
-                liveGeometry == geometry && live.areaSquareMeters == geometry.areaSquareMeters &&
-                live.perimeterMeters == geometry.perimeterMeters) {
+                liveGeometry == geometry) {
                 return@transactionWithResult MeasurementEditDocument(original.measurementId, live.updatedAt, normalized)
             }
             val version = measurements.updateIfUnchanged(original.measurementId, draft.projectId, original.updatedAt,

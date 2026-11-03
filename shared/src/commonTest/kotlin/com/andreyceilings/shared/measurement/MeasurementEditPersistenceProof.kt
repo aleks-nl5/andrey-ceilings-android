@@ -47,8 +47,10 @@ object MeasurementEditPersistenceProof {
             assertEquals(precision.stepMeters, geometry.precisionStepMeters)
             assertEquals(if (shape == "rectangle") 24.0 else 16.0, geometry.areaSquareMeters, 0.000001)
             assertEquals(20.0, geometry.perimeterMeters, 0.000001)
-            assertEquals(geometry.areaSquareMeters, after.areaSquareMeters)
-            assertEquals(geometry.perimeterMeters, after.perimeterMeters)
+            // Native JDBC REAL conversion may remove binary Double tails. Exact Long-mm
+            // geometry remains authoritative; this tolerance is below 1 mm² / 1 mm.
+            assertEquals(geometry.areaSquareMeters, after.areaSquareMeters, 1e-9)
+            assertEquals(geometry.perimeterMeters, after.perimeterMeters, 1e-9)
             assertEquals(geometry, validateMeasurementCreate(store.load(project, id).draft).geometry)
             val stale = MeasurementEditModel(store, document)
             stale.accept(MeasurementCreateIntent.Name("Stale")); stale.save()
