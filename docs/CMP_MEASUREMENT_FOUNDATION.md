@@ -128,17 +128,14 @@ Measurements tab, and removal of the legacy editor only after complete parity.
 No forward create/edit route, reparenting, new calculation rule or legacy editor
 rewrite is included here. Issues #60/#57 stay open for that work; #56/#42 are separate.
 
-## Existing JDBC write limitation found during encrypted verification
+## JDBC write limitation discovered in PR #66
 
-The Windows SQLCipher JDBC facade currently rejects `INSERT ... RETURNING` in
-executeQuery (`executeQuery cannot be used for non-query SQL`). The new encrypted
-test initially encountered this while seeding its project, before readonly details
-ran. This was reproduced with the same JDBC core and a temporary Linux native
-runtime outside the repository; no production dependency/configuration changed.
-The readonly proof seeds via existing non-returning `create` APIs, then retains
-all encrypted reopen, geometry, ownership and deletion assertions.
+PR #66 exposed a pre-existing Windows SQLCipher JDBC failure for INSERT RETURNING
+while seeding the encrypted readonly proof. That PR used non-returning create APIs
+in the fixture and explicitly left the production write compatibility issue open.
 
-This is a pre-existing write-path limitation, including ProjectRepository's
-returning-ID path used by Windows object creation. It needs a separate JDBC/write
-compatibility fix before claiming full Windows creation/editor parity. This PR
-neither hides it nor changes SQLCipher or introduces a new creation mechanism.
+The separate [#67 / Draft PR #68](https://github.com/aleks-nl5/andrey-ceilings-android/pull/68)
+repairs the Windows/JVM adapter and switches this encrypted measurement test back
+to the production returning-ID APIs. Geometry, encrypted reopen, ownership and
+deletion assertions remain. See [root cause, adapter and native test coverage](WINDOWS_SQLCIPHER_RETURNING.md).
+This does not migrate or implement the measurement editor.

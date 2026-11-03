@@ -1,16 +1,22 @@
 package com.andreyceilings.shared.db
 
 import app.cash.sqldelight.Query
+import app.cash.sqldelight.db.QueryResult
+import app.cash.sqldelight.db.SqlCursor
 import app.cash.sqldelight.db.SqlDriver
+import app.cash.sqldelight.db.SqlPreparedStatement
+import app.cash.sqldelight.driver.jdbc.JdbcCursor
 import app.cash.sqldelight.driver.jdbc.JdbcDriver
+import app.cash.sqldelight.driver.jdbc.JdbcPreparedStatement
 import io.github.s0d3s.sqlcipher_multiplatform_jdbc.SqlCipherJdbcProperties
 import java.io.File
 import java.sql.Connection
 import java.sql.DriverManager
+import java.sql.SQLException
 import java.util.Properties
 
 /**
- * Windows/JVM SQLCipher-backed SQLDelight driver (migration foundation, not yet production).
+ * Windows/JVM SQLCipher-backed SQLDelight driver.
  *
  * JdbcSqliteDriver is intentionally NOT used for jdbc:sqlcipher:. For on-disk URLs its
  * connection manager opens/closes physical JDBC connections between statements, so a PRAGMA
@@ -72,6 +78,9 @@ private class ConfiguredSqlCipherJdbcDriver(
             val connection = DriverManager.getConnection(url, properties)
             try {
                 // All PRAGMAs and schema/authentication checks run on THIS physical connection.
+                // The native facade defaults to no lock wait. Concurrent writers must
+                // wait for SQLite's lock, never retry a possibly executed mutation.
+                connection.prepareStatement("PRAGMA busy_timeout = 5000").use { it.execute() }
                 connection.prepareStatement("PRAGMA foreign_keys = ON").use { it.execute() }
                 connection.prepareStatement("PRAGMA foreign_keys").use { statement ->
                     statement.executeQuery().use { result ->
@@ -109,6 +118,35 @@ private class ConfiguredSqlCipherJdbcDriver(
 
     override fun closeConnection(connection: Connection) {
         connection.close()
+    }
+
+    override fun <R> executeQuery(
+        identifier: Int?,
+        sql: String,
+        mapper: (SqlCursor) -> QueryResult<R>,
+        parameters: Int,
+        binders: (SqlPreparedStatement.() -> Unit)?
+    ): QueryResult<R> {
+        // Use JdbcDriver's transaction-pinned connection, including nested transactions.
+        val (connection, onClose) = connectionAndClose()
+        try {
+            return connection.prepareStatement(sqlCipherRowsetSql(sql)).use { statement ->
+                binders?.invoke(JdbcPreparedStatement(statement))
+                // Never enter the facade's execute() non-query branch: it can
+                // perform a mutation before reporting an unexpected result type.
+                statement.executeQuery().use { rows ->
+                    // In pinned core 0.2.13 metadata comes from sqlite3_prepare,
+                    // before next()/sqlite3_step. Reject DML without RETURNING
+                    // before the mapper can execute it, including WITH DML.
+                    if (rows.metaData.columnCount == 0) {
+                        throw SQLException("SQLCipher executeQuery requires result columns; use execute for non-returning DML")
+                    }
+                    mapper(JdbcCursor(rows))
+                }
+            }
+        } finally {
+            onClose()
+        }
     }
 
     // Match the SQLite-specific transaction semantics used by JdbcSqliteDriver.
@@ -161,4 +199,22 @@ private class ConfiguredSqlCipherJdbcDriver(
         }
         toNotify.forEach(Query.Listener::queryResultsChanged)
     }
+}
+
+// Core 0.2.13 dispatches rowsets by the leading SQL keyword, not SQLite column
+// metadata. A plain DML RETURNING fails in both executeQuery() and execute().
+// An unused CTE routes the SAME atomic SQLite statement through its WITH rowset
+// path. No identity lookup, extra connection, or read/write split is involved.
+// See docs/WINDOWS_SQLCIPHER_RETURNING.md and the native JDBC dispatch probe.
+private val returningDmlStart = Regex(
+    """\A(?:\s|--[^\r\n]*(?:\r?\n|$)|/\*.*?\*/)*(?:INSERT|UPDATE|DELETE|REPLACE)\b""",
+    setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)
+)
+
+internal fun sqlCipherRowsetSql(sql: String): String {
+    if (!returningDmlStart.containsMatchIn(sql)) return sql
+    // Do not shadow a table/identifier referenced by the original SQL.
+    var cte = "__sqldelight_returning"
+    while (sql.contains(cte, ignoreCase = true)) cte += "_"
+    return "WITH $cte AS (SELECT 1)\n$sql"
 }
