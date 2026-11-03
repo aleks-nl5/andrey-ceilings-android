@@ -45,7 +45,8 @@ internal fun ObjectsClientsHost(
     measurementCreate: com.andreyceilings.shared.navigation.MeasurementCreate? = null,
     measurementPrecision: com.andreyceilings.shared.calculation.MeasurementPrecision = com.andreyceilings.shared.calculation.MeasurementPrecision.ONE_CENTIMETER,
     onCreateMeasurement: (Long) -> Unit = {},
-    onMeasurementCreated: (Long, Long) -> Unit = { _, _ -> }
+    onMeasurementCreated: (Long, Long) -> Unit = { _, _ -> },
+    measurementCreateNavigationGuard: com.andreyceilings.shared.measurement.MeasurementCreateNavigationGuard? = null
 ) {
     val context = LocalContext.current
     val store = remember(database) {
@@ -75,6 +76,7 @@ internal fun ObjectsClientsHost(
         measurementPrecision = measurementPrecision,
         onCreateMeasurement = onCreateMeasurement,
         onMeasurementCreated = onMeasurementCreated,
+        measurementCreateNavigationGuard = measurementCreateNavigationGuard,
         onOpenMeasurement = onOpenMeasurement,
         detailsStore = store,
         onOpenProject = onOpenProject,

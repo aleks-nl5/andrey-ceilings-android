@@ -23,13 +23,15 @@ import com.andreyceilings.shared.ui.CeilingsFab
 import com.andreyceilings.shared.ui.CeilingsFabProfile
 import com.andreyceilings.shared.ui.CeilingsScreenScaffold
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.CoroutineStart
 
 /** Hosts supply their current precision/session, not platform-specific form or write logic. */
 @Composable
 fun MeasurementCreateScreen(
     projectId: Long, precision: MeasurementPrecision, store: MeasurementCreateStore?,
     contentPadding: PaddingValues, systemTopInset: Dp,
-    onBack: () -> Unit, onSaved: (Long) -> Unit
+    onBack: () -> Unit, onSaved: (Long) -> Unit,
+    navigationGuard: MeasurementCreateNavigationGuard? = null
 ) {
     key(projectId) {
         val saver = remember(store) { Saver<MeasurementCreateModel, String>(
@@ -47,7 +49,7 @@ fun MeasurementCreateScreen(
             parentFlow?.collectAsState(MeasurementCreateParent.Loading)?.value
                 ?: MeasurementCreateParent.Unavailable
         }
-        MeasurementCreateScreen(model, parent, contentPadding, systemTopInset, onBack, onSaved)
+        MeasurementCreateScreen(model, parent, contentPadding, systemTopInset, onBack, onSaved, navigationGuard)
     }
 }
 
@@ -56,8 +58,13 @@ fun MeasurementCreateScreen(
 fun MeasurementCreateScreen(
     model: MeasurementCreateModel, parent: MeasurementCreateParent,
     contentPadding: PaddingValues = PaddingValues(16.dp), systemTopInset: Dp = 0.dp,
-    onBack: () -> Unit, onSaved: (Long) -> Unit
+    onBack: () -> Unit, onSaved: (Long) -> Unit,
+    navigationGuard: MeasurementCreateNavigationGuard? = null
 ) {
+    DisposableEffect(model, navigationGuard) {
+        navigationGuard?.bind(model)
+        onDispose { navigationGuard?.unbind(model) }
+    }
     val state by model.state.collectAsState()
     val draft = state.draft
     val validation = remember(draft) { validateMeasurementCreate(draft) }
@@ -88,10 +95,19 @@ fun MeasurementCreateScreen(
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(onClick = ::cancel, enabled = enabled, modifier = Modifier.weight(1f)) { Text("Скасувати") }
-                    Button(onClick = { focus.clearFocus(); scope.launch { model.save() } },
+                    Button(onClick = {
+                        focus.clearFocus()
+                        // Set saving before this input callback returns, so an immediate
+                        // system Back/Escape/tab cannot outrun the shared exit guard.
+                        scope.launch(start = CoroutineStart.UNDISPATCHED) { model.save() }
+                    },
                         enabled = enabled && validation.canSave && parent is MeasurementCreateParent.Active,
                         modifier = Modifier.weight(1f)) { Text(if (state.saving) "Збереження…" else "Зберегти") }
                 }
+                if (state.saving) Text("Збереження триває. Дочекайтеся результату.",
+                    style = MaterialTheme.typography.bodySmall)
+                else if (state.savedId != null) Text("Замір збережено. Відкриття…",
+                    style = MaterialTheme.typography.bodySmall)
             }
         },
         bottomGradient = false
@@ -124,7 +140,8 @@ fun MeasurementCreateScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
                 else {
                     MeasurementDrawing(MeasurementGeometryView.Captured(geometry), Modifier.fillMaxWidth())
-                    Text("Площа: ${geometry.areaSquareMeters} м² · Периметр: ${geometry.perimeterMeters} м")
+                    Text("Площа: ${formatMeasurementArea(geometry.areaSquareMeters, draft.precision)} м² · " +
+                        "Периметр: ${formatMeasurementLength(geometry.perimeterMeters, draft.precision)} м")
                 }
             }
             when (val outline = draft.outline) {

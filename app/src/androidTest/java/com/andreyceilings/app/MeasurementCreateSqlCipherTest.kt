@@ -7,16 +7,61 @@ import com.andreyceilings.shared.calculation.*
 import com.andreyceilings.shared.db.*
 import com.andreyceilings.shared.measurement.*
 import com.andreyceilings.shared.objects.ObjectsClientsStore
+import com.andreyceilings.shared.navigation.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.*
 import org.junit.Assert.*
 import org.junit.Test
 import org.junit.runner.RunWith
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 
 /** Exercises the common editor's production createReturningId path on actual SQLCipher/WAL. */
 @RunWith(AndroidJUnit4::class)
 class MeasurementCreateSqlCipherTest {
+    @Test fun backAndTabCannotHideAnInFlightCipherTransaction(): Unit = runBlocking {
+        val context: Context = ApplicationProvider.getApplicationContext()
+        val name = "cmp-create-navigation.db"
+        val key = ByteArray(32) { 0x57.toByte() }
+        context.deleteDatabase(name)
+        try {
+            createEncryptedPrototypeDriver(context, key, name, enableWalForTesting = true).use { driver ->
+                val db = PrototypeDatabase(driver)
+                val project = ProjectRepository(db).createReturningId(null, "Slow Android parent", createdAt = 1)
+                val entered = CountDownLatch(1)
+                val release = CountDownLatch(1)
+                val store = MeasurementCreateStore(db) {
+                    entered.countDown()
+                    check(release.await(15, TimeUnit.SECONDS))
+                    2L
+                }
+                val model = MeasurementCreateModel(store, draft(project, "rectangle", MeasurementPrecision.ONE_CENTIMETER))
+                val guard = MeasurementCreateNavigationGuard()
+                guard.bind(model)
+                val route = AppNavigationState().selectTab(AppRoute.OBJECTS).openProject(project).createMeasurement(project)
+                val write = launch(start = CoroutineStart.UNDISPATCHED) { model.save() }
+                try {
+                    assertTrue(entered.await(10, TimeUnit.SECONDS))
+                    assertTrue(guard.blocksExit(route))
+                    assertEquals(route, guard.transition(route, route.back()))
+                    assertEquals(route, guard.transition(route, route.selectTab(AppRoute.PRICES)))
+                    assertEquals(route, guard.transition(route, route.requestQuickCreate(AppQuickCreate.OBJECT)))
+                    assertFalse(model.cancel())
+                    model.save()
+                } finally { release.countDown() }
+                withTimeout(10_000) { write.join() }
+                val id = model.state.value.savedId!!
+                assertEquals(route, guard.transition(route, route.back()))
+                val details = guard.transition(route, route.measurementCreated(project, id))
+                assertEquals(MeasurementDetails(project, id), details.measurementDetails)
+                assertFalse(guard.blocksExit(details))
+                assertEquals(id, MeasurementRepository(db).forProject(project).single().id)
+                guard.unbind(model)
+            }
+        } finally { context.deleteDatabase(name); key.fill(0) }
+    }
+
     @Test fun createEveryShapeAndPrecisionObserveReopenAndFailClosed(): Unit = runBlocking {
         val context: Context = ApplicationProvider.getApplicationContext()
         val name = "cmp-create-sqlcipher.db"

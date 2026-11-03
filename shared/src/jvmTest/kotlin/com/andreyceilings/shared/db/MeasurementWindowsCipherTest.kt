@@ -7,6 +7,18 @@ import java.nio.file.Files
 import kotlin.test.*
 
 class MeasurementWindowsCipherTest {
+    @Test fun slowCipherTransactionCannotBeHiddenByBackOrTab(): Unit = runBlocking {
+        if (!System.getProperty("os.name").startsWith("Windows", ignoreCase = true)) return@runBlocking
+        val directory = Files.createTempDirectory("cmp-create-navigation-").toFile()
+        val key = ByteArray(32) { 64 }
+        try {
+            SqlCipherWindowsDriverFactory.open(directory.resolve("navigation.db"), key).use { driver ->
+                PrototypeDatabase.Schema.create(driver)
+                MeasurementCreateNavigationProof.run(driver)
+            }
+        } finally { key.fill(0); directory.deleteRecursively() }
+    }
+
     @Test fun cmpEditorUsesReturningIdsOnRealWindowsCipherAndReopensEveryCapturedShape(): Unit = runBlocking {
         if (!System.getProperty("os.name").startsWith("Windows", ignoreCase = true)) return@runBlocking
         val directory = Files.createTempDirectory("cmp-create-cipher-").toFile()

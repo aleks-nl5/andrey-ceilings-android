@@ -85,8 +85,8 @@ class MeasurementCreateModel(private val store: MeasurementCreateStore?, draft: 
             if (current.savedId != null || current.cancelled) return
             if (!validateMeasurementCreate(current.draft).canSave) return
             mutableState.value = current.copy(saving = true, error = null)
-            // A started atomic write finishes even if the screen leaves composition.
-            // Restoration never replays it; only an explicit Save can start a write.
+            // Hosts keep the editor visible through the shared navigation guard.
+            // A started atomic transaction is not cancelled/retried by navigation.
             withContext(NonCancellable + Dispatchers.Default) {
                 try {
                     val id = checkNotNull(store).create(current.draft)

@@ -41,6 +41,13 @@ Rectangle minimum 0.1m and L-shape minimum 1m² retain the existing verified inp
 policies. All area/perimeter computation and contour checks use the existing
 KMP polygon contract. No side is invented to close a measured polygon.
 
+`MeasurementFormatting` presents area/perimeter with the captured precision's
+decimal digits and a Ukrainian decimal comma. Creation and readonly details
+never expose binary Double tails. Historical metadata without a captured
+precision uses bounded stored digits, not the current global setting. This is
+presentation only: geometry, stored totals, snapshots and PDF are not rounded
+or rewritten by the formatter.
+
 New Android drafts capture the current application preference once. Form restore
 keeps that precision even if a later default differs. Windows currently has no
 settings screen and uses its existing shared default of 1cm; adding a Windows
@@ -75,8 +82,16 @@ query, not a table/schema migration, and covers restoration during a write.
 
 `MeasurementCreateModel` gates repeated saves with a Mutex and a completed ID,
 freezes inputs during a write, and rejects writes after Cancel. An atomic write
-already started finishes even if the screen is dismissed; it is never retried
-automatically. Form restoration restores inputs only, not commands or save
+is never cancelled or retried by navigation. `MeasurementCreateNavigationGuard`
+reads this same model synchronously: Android system/Predictive Back, Windows
+Escape/window close, tab/quick-create and other route transitions cannot remove
+the editor during Save. The pinned status explains that saving is in progress.
+Save starts undispatched to acquire this guard before its click callback returns.
+The guard remains active between commit and onSaved; only delivery of the exact
+created ID can replace the editor, so a late Back cannot hide a successful write.
+Failure unlocks ordinary navigation. The guard is session-local and never enters
+route snapshots; no second saving flag is synchronized through UI effects.
+Form restoration restores inputs only, not commands or save
 effects. Unsaved form contents live in Compose's local saveable registry, never
 in the ID-only route snapshot.
 
@@ -120,6 +135,14 @@ Android instrumentation uses the production encrypted WAL driver and the same
 shared model/store. All shapes/precisions reopen from real encrypted databases.
 JVM Compose scenes exercise both themes, resize, form restore, disabled/error
 states and Cancel; the existing readonly/list/docking scenes remain enabled.
+Review regressions cover floating-point tails for every precision in both create
+and readonly scenes. Real SQLite, Windows SQLCipher and Android SQLCipher
+transactions are paused after parent validation and before INSERT; Back/tab/
+quick-create are rejected, the single commit is delivered, errors unlock exit,
+and no duplicate appears. The Desktop scene exercises the native Escape adapter
+and immediate Save→Back before any subsequent frame/effect. Desktop tests use
+the existing SQLDelight SQLite 2.4.1 artifact as an explicit test compile dependency;
+production dependencies/versions and workflow invocations are unchanged.
 
 Required final-SHA CI: Android unit/instrumentation/Debug/Release, Windows
 Desktop/JVM/native encrypted writes, iOS framework/Simulator. Compare durations

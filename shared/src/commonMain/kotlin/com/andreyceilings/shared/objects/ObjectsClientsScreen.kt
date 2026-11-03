@@ -176,7 +176,8 @@ fun ObjectsClientsScreen(
     measurementCreate: com.andreyceilings.shared.navigation.MeasurementCreate? = null,
     measurementPrecision: com.andreyceilings.shared.calculation.MeasurementPrecision = com.andreyceilings.shared.calculation.MeasurementPrecision.ONE_CENTIMETER,
     onCreateMeasurement: (Long) -> Unit = {},
-    onMeasurementCreated: (Long, Long) -> Unit = { _, _ -> }
+    onMeasurementCreated: (Long, Long) -> Unit = { _, _ -> },
+    measurementCreateNavigationGuard: com.andreyceilings.shared.measurement.MeasurementCreateNavigationGuard? = null
 ) {
     val scope = rememberCoroutineScope()
     val focusManager = LocalFocusManager.current
@@ -593,7 +594,8 @@ fun ObjectsClientsScreen(
         if (create != null) com.andreyceilings.shared.measurement.MeasurementCreateScreen(
             projectId = create.projectId, precision = measurementPrecision, store = detailsStore?.measurementCreate,
             contentPadding = contentPadding, systemTopInset = systemTopInset,
-            onBack = onCloseMeasurement, onSaved = { onMeasurementCreated(create.projectId, it) }
+            onBack = onCloseMeasurement, onSaved = { onMeasurementCreated(create.projectId, it) },
+            navigationGuard = measurementCreateNavigationGuard
         )
     }
     }

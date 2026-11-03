@@ -111,7 +111,7 @@ class MeasurementSceneTest {
             Snapshot.sendApplyNotifications()
             scene.render(16_000_000).close()
             assertTrue(scene.textContent().contains("Кухня"))
-            assertTrue(scene.textContent().contains("20.0"))
+            assertTrue(scene.textContent().contains("20,0000"))
             scene.sendPointerEvent(PointerEventType.Press, Offset(44f, 60f), type = PointerType.Touch)
             scene.sendPointerEvent(PointerEventType.Release, Offset(44f, 60f), type = PointerType.Touch)
             assertEquals(1, backs)

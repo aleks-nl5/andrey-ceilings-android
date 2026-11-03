@@ -8,6 +8,13 @@ import kotlinx.coroutines.runBlocking
 import kotlin.test.*
 
 class MeasurementCreateStoreTest {
+    @Test fun exitGuardKeepsSlowAtomicSaveVisibleAndDeliversItsOneResult(): Unit = runBlocking {
+        JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).use { driver ->
+            PrototypeDatabase.Schema.create(driver)
+            MeasurementCreateNavigationProof.run(driver)
+        }
+    }
+
     @Test fun sharedCreationProofCoversShapesPrecisionReturningIdFlowAndFailurePaths(): Unit = runBlocking {
         JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).use { driver ->
             PrototypeDatabase.Schema.create(driver)

@@ -83,18 +83,16 @@ import kotlinx.coroutines.withContext
 fun main() = application {
     var navigation by remember { mutableStateOf(AppNavigationState()) }
     val availableRoutes = remember { setOf(AppRoute.DASHBOARD, AppRoute.PRICES, AppRoute.OBJECTS) }
+    val measurementCreateNavigationGuard = remember { com.andreyceilings.shared.measurement.MeasurementCreateNavigationGuard() }
+    fun updateNavigation(proposed: AppNavigationState) {
+        navigation = measurementCreateNavigationGuard.transition(navigation, proposed)
+    }
     Window(
-        onCloseRequest = ::exitApplication,
+        onCloseRequest = { if (!measurementCreateNavigationGuard.blocksExit(navigation)) exitApplication() },
         title = "СтеляПро",
         // Bubble after editor/dialog handlers so Escape closes an active modal first.
         onKeyEvent = { event ->
-            if (event.key == Key.Escape && event.type == KeyEventType.KeyDown) {
-                val next = navigation.back(availableRoutes)
-                if (next != navigation) {
-                    navigation = next
-                    true
-                } else false
-            } else false
+            handleNavigationKeyEvent(event, navigation, availableRoutes, measurementCreateNavigationGuard, ::updateNavigation)
         }
     ) {
         PriceCatalogTheme(
@@ -105,11 +103,28 @@ fun main() = application {
                 DesktopPriceHost(
                     navigation = navigation,
                     availableRoutes = availableRoutes,
-                    onNavigate = { navigation = it }
+                    onNavigate = ::updateNavigation,
+                    measurementCreateNavigationGuard = measurementCreateNavigationGuard
                 )
             }
         }
     }
+}
+
+/** Native key adapter; the shared guard owns whether the current editor may leave. */
+internal fun handleNavigationKeyEvent(
+    event: androidx.compose.ui.input.key.KeyEvent,
+    navigation: AppNavigationState,
+    availableRoutes: Set<AppRoute>,
+    guard: com.andreyceilings.shared.measurement.MeasurementCreateNavigationGuard,
+    onNavigate: (AppNavigationState) -> Unit
+): Boolean {
+    if (event.key != Key.Escape || event.type != KeyEventType.KeyDown) return false
+    if (guard.blocksExit(navigation)) return true
+    val next = navigation.back(availableRoutes)
+    if (next == navigation) return false
+    onNavigate(next)
+    return true
 }
 
 /**
@@ -122,7 +137,8 @@ fun main() = application {
 private fun DesktopPriceHost(
     navigation: AppNavigationState,
     availableRoutes: Set<AppRoute>,
-    onNavigate: (AppNavigationState) -> Unit
+    onNavigate: (AppNavigationState) -> Unit,
+    measurementCreateNavigationGuard: com.andreyceilings.shared.measurement.MeasurementCreateNavigationGuard
 ) {
     val scope = rememberCoroutineScope()
     var session by remember { mutableStateOf<DesktopPriceDatabase?>(null) }
@@ -239,6 +255,7 @@ private fun DesktopPriceHost(
                     detailsProjectId = navigation.projectDetails?.projectId,
                     measurementDetails = navigation.measurementDetails,
                     measurementCreate = navigation.measurementCreate,
+                    measurementCreateNavigationGuard = measurementCreateNavigationGuard,
                     onCreateMeasurement = { onNavigate(navigation.createMeasurement(it)) },
                     onMeasurementCreated = { projectId, measurementId -> onNavigate(navigation.measurementCreated(projectId, measurementId)) },
                     onOpenMeasurement = { projectId, measurementId -> onNavigate(navigation.openMeasurement(projectId, measurementId)) },

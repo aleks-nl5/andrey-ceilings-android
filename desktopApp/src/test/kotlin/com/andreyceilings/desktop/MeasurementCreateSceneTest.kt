@@ -13,9 +13,109 @@ import com.andreyceilings.shared.calculation.*
 import com.andreyceilings.shared.measurement.*
 import com.andreyceilings.shared.navigation.*
 import com.andreyceilings.shared.theme.CeilingsTheme
+import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
+import com.andreyceilings.shared.db.*
+import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.first
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import kotlin.test.*
 
 class MeasurementCreateSceneTest {
+    @Test fun creationAndReadonlyTotalsFormatEveryCapturedPrecisionWithoutChangingGeometry() {
+        val expected = listOf("20,40 м² · Периметр: 18,2 м", "20,4000 м² · Периметр: 18,20 м",
+            "20,400000 м² · Периметр: 18,200 м", "20,400000 м² · Периметр: 18,200 м")
+        MeasurementPrecision.entries.forEachIndexed { i, precision ->
+            val draft = draft("rectangle").copy(precision = precision,
+                outline = MeasurementOutlineDraft.Template("rectangle", mapOf("length" to "5,10", "width" to "4,00")))
+            val geometry = assertNotNull(validateMeasurementCreate(draft).geometry)
+            val wireBefore = MeasurementGeometryCodec.write(geometry)
+            for (readonly in listOf(false, true)) {
+                val model = MeasurementCreateModel(null, draft)
+                val scene = ImageComposeScene(500, 1000) {
+                    CeilingsTheme(false) {
+                        if (readonly) MeasurementDetailsScreen(MeasurementDetailsState.Loaded(MeasurementDetailsData(
+                            3, 7, "Кухня", "Об'єкт", "Адреса", "rectangle",
+                            20.400000000000002, 18.200000000000003, "", MeasurementGeometryView.Captured(geometry))), onBack = {})
+                        else MeasurementCreateScreen(model,
+                            MeasurementCreateParent.Active("Об'єкт"), onBack = {}, onSaved = {})
+                    }
+                }
+                try {
+                    scene.render().close()
+                    assertTrue(scene.textContent().contains("Площа: ${expected[i]}"), scene.textContent())
+                    assertEquals(wireBefore, MeasurementGeometryCodec.write(geometry))
+                } finally { scene.close() }
+            }
+        }
+    }
+
+    // Only constructing the synthetic key uses this pinned Compose test API;
+    // production receives the ordinary KeyEvent supplied by Window.
+    @OptIn(androidx.compose.ui.InternalComposeUiApi::class)
+    @Test fun slowSaveConsumesEscapeAndBlocksBackTabsAndCancelUntilResultIsDisplayed(): Unit = runBlocking {
+        JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).use { driver ->
+            PrototypeDatabase.Schema.create(driver)
+            val db = PrototypeDatabase(driver)
+            val project = ProjectRepository(db).createReturningId(null, "Scene parent", createdAt = 1)
+            val entered = CountDownLatch(1)
+            val release = CountDownLatch(1)
+            val store = MeasurementCreateStore(db) {
+                entered.countDown()
+                check(release.await(15, TimeUnit.SECONDS))
+                2L
+            }
+            val model = MeasurementCreateModel(store, draft("rectangle").copy(projectId = project))
+            val guard = MeasurementCreateNavigationGuard()
+            val navigation = mutableStateOf(AppNavigationState().selectTab(AppRoute.OBJECTS)
+                .openProject(project).createMeasurement(project))
+            val scene = ImageComposeScene(360, 1000) {
+                CeilingsTheme(false) {
+                    if (navigation.value.measurementCreate != null) MeasurementCreateScreen(model,
+                        MeasurementCreateParent.Active("Scene parent"), onBack = {
+                            navigation.value = guard.transition(navigation.value, navigation.value.back())
+                        }, onSaved = { id -> navigation.value = guard.transition(navigation.value,
+                            navigation.value.measurementCreated(project, id)) }, navigationGuard = guard)
+                    else androidx.compose.material3.Text("Відкрито замір ${navigation.value.measurementDetails?.measurementId}")
+                }
+            }
+            try {
+                scene.render().close()
+                val editor = navigation.value
+                assertTrue(scene.clickText("Зберегти"))
+                // No frame/effect has run yet: Save must already own navigation.
+                assertTrue(guard.blocksExit(editor))
+                assertTrue(entered.await(10, TimeUnit.SECONDS))
+                navigation.value = guard.transition(navigation.value, navigation.value.back())
+                val escape = androidx.compose.ui.input.key.KeyEvent(
+                    androidx.compose.ui.input.key.Key.Escape, androidx.compose.ui.input.key.KeyEventType.KeyDown)
+                var escaped = false
+                assertTrue(handleNavigationKeyEvent(escape, navigation.value, AppRoute.entries.toSet(), guard) { escaped = true })
+                assertFalse(escaped)
+                navigation.value = guard.transition(navigation.value, navigation.value.selectTab(AppRoute.PRICES))
+                assertEquals(editor, navigation.value)
+                assertFalse(model.cancel())
+                model.save()
+                Snapshot.sendApplyNotifications()
+                scene.render(16_000_000).close()
+                assertTrue(scene.textContent().contains("Збереження триває"))
+                assertTrue(scene.textContent().contains("Новий замір"))
+                release.countDown()
+                val id = withTimeout(10_000) { model.state.first { it.savedId != null }.savedId!! }
+                repeat(4) { i -> Snapshot.sendApplyNotifications(); scene.render((i + 2) * 16_000_000L).close() }
+                assertEquals(MeasurementDetails(project, id), navigation.value.measurementDetails)
+                assertTrue(scene.textContent().contains("Відкрито замір $id"))
+                assertEquals(id, MeasurementRepository(db).forProject(project).single().id)
+                assertFalse(guard.blocksExit(navigation.value))
+                assertTrue(handleNavigationKeyEvent(escape, navigation.value, AppRoute.entries.toSet(), guard) {
+                    navigation.value = guard.transition(navigation.value, it)
+                })
+                assertEquals(project, navigation.value.projectDetails?.projectId)
+                assertNull(navigation.value.measurementDetails)
+            } finally { release.countDown(); scene.close() }
+        }
+    }
+
     private fun draft(shape: String): MeasurementCreateDraft {
         val outline = when (shape) {
             "rectangle" -> MeasurementOutlineDraft.Template(shape, mapOf("length" to "5", "width" to "4"))
