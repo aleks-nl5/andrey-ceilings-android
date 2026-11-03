@@ -518,7 +518,8 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
                                 updateNavigation(navigation.editMeasurement(projectId, measurementId))
                             },
                             onMeasurementSaved = { projectId, measurementId ->
-                                updateNavigation(measurementCreateNavigationGuard.deliverEditResult(navigation, projectId, measurementId))
+                                measurementCreateNavigationGuard.deliverEditResult(
+                                    navigation, projectId, measurementId, ::applyNavigation)
                             },
                             measurementCreate = navigation.measurementCreate,
                             measurementCreateNavigationGuard = measurementCreateNavigationGuard,

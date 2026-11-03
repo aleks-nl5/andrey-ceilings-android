@@ -40,12 +40,18 @@ class MeasurementCreateNavigationGuard {
             (state.saving || state.savedId != null)
     }
 
-    /** Edit Back and success have the same route target; require explicit result delivery. */
-    fun deliverEditResult(current: AppNavigationState, projectId: Long, measurementId: Long): AppNavigationState {
-        val state = edit?.state?.value ?: return current
+    /**
+     * A successful edit is an authorized result, NOT a Back transition. If hosts
+     * pass the resulting route through transition() a second time, fullscreen
+     * consumes it as Back and strands the saved editor in a disabled state.
+     */
+    fun deliverEditResult(current: AppNavigationState, projectId: Long, measurementId: Long,
+        applyApproved: (AppNavigationState) -> Unit): Boolean {
+        val state = edit?.state?.value ?: return false
         if (!state.saved || state.original.measurementId != measurementId || state.draft.projectId != projectId ||
-            current.measurementEdit?.measurementId != measurementId || current.measurementEdit.projectId != projectId) return current
-        return approved(current.measurementSaved(projectId, measurementId))
+            current.measurementEdit?.measurementId != measurementId || current.measurementEdit.projectId != projectId) return false
+        applyApproved(approved(current.measurementSaved(projectId, measurementId)))
+        return true
     }
 
     private fun approved(proposed: AppNavigationState): AppNavigationState {

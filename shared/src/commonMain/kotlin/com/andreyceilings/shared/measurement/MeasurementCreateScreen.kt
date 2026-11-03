@@ -18,6 +18,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -204,9 +210,39 @@ fun MeasurementCreateScreen(
 @Composable
 internal fun MeasurementLengthField(value: String, label: String, error: String?, enabled: Boolean,
     modifier: Modifier = Modifier, selected: Boolean = false, onFocus: (Boolean) -> Unit = {}, onChange: (String) -> Unit) {
-    OutlinedTextField(value, onChange, label = { Text(label) }, enabled = enabled,
-        singleLine = true, modifier = modifier.fillMaxWidth().then(if (selected) Modifier.border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(4.dp)) else Modifier).onFocusChanged { onFocus(it.isFocused) },
+    // A decimal IME hint does not guarantee the user's keyboard offers comma or dot.
+    // Keep an accessible separator action and preserve the actual caret selection.
+    val requester = remember { FocusRequester() }
+    var field by remember { mutableStateOf(TextFieldValue(value, selection = TextRange(value.length))) }
+    LaunchedEffect(value) {
+        if (field.text != value) {
+            field = field.copy(text = value, selection = TextRange(
+                field.selection.start.coerceIn(0, value.length), field.selection.end.coerceIn(0, value.length)))
+        }
+    }
+    OutlinedTextField(value = field, onValueChange = { next ->
+        field = next
+        onChange(next.text)
+    }, label = { Text(label) }, enabled = enabled, singleLine = true,
+        modifier = modifier.fillMaxWidth().focusRequester(requester)
+            .then(if (selected) Modifier.border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(4.dp)) else Modifier)
+            .onFocusChanged { onFocus(it.isFocused) },
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+        trailingIcon = {
+            IconButton(onClick = {
+                val a = field.selection.min.coerceIn(0, field.text.length)
+                val b = field.selection.max.coerceIn(0, field.text.length)
+                val unselected = field.text.substring(0, a) + field.text.substring(b)
+                if ('.' !in unselected && ',' !in unselected) {
+                    val text = field.text.substring(0, a) + "," + field.text.substring(b)
+                    field = TextFieldValue(text, selection = TextRange(a + 1))
+                    onChange(text)
+                }
+                requester.requestFocus()
+            }, enabled = enabled, modifier = Modifier.semantics {
+                contentDescription = "Вставити десяткову кому"
+            }) { Text(",") }
+        },
         isError = value.isNotEmpty() && error != null,
         supportingText = { error?.let { Text(it) } })
 }

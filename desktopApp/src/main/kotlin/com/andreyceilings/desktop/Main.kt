@@ -84,8 +84,9 @@ fun main() = application {
     var navigation by remember { mutableStateOf(AppNavigationState()) }
     val availableRoutes = remember { setOf(AppRoute.DASHBOARD, AppRoute.PRICES, AppRoute.OBJECTS) }
     val measurementCreateNavigationGuard = remember { com.andreyceilings.shared.measurement.MeasurementCreateNavigationGuard() }
+    fun applyNavigation(next: AppNavigationState) { navigation = next }
     fun updateNavigation(proposed: AppNavigationState) {
-        navigation = measurementCreateNavigationGuard.transition(navigation, proposed) { navigation = it }
+        applyNavigation(measurementCreateNavigationGuard.transition(navigation, proposed, ::applyNavigation))
     }
     Window(
         onCloseRequest = { measurementCreateNavigationGuard.requestClose { exitApplication() } },
@@ -104,6 +105,7 @@ fun main() = application {
                     navigation = navigation,
                     availableRoutes = availableRoutes,
                     onNavigate = ::updateNavigation,
+                    onApplyApprovedEditResult = ::applyNavigation,
                     measurementCreateNavigationGuard = measurementCreateNavigationGuard
                 )
             }
@@ -138,6 +140,7 @@ private fun DesktopPriceHost(
     navigation: AppNavigationState,
     availableRoutes: Set<AppRoute>,
     onNavigate: (AppNavigationState) -> Unit,
+    onApplyApprovedEditResult: (AppNavigationState) -> Unit,
     measurementCreateNavigationGuard: com.andreyceilings.shared.measurement.MeasurementCreateNavigationGuard
 ) {
     val measurementFullscreen by measurementCreateNavigationGuard.fullscreen.collectAsState()
@@ -257,7 +260,10 @@ private fun DesktopPriceHost(
                     measurementDetails = navigation.measurementDetails,
                     measurementEdit = navigation.measurementEdit,
                     onEditMeasurement = { projectId, measurementId -> onNavigate(navigation.editMeasurement(projectId, measurementId)) },
-                    onMeasurementSaved = { projectId, measurementId -> onNavigate(measurementCreateNavigationGuard.deliverEditResult(navigation, projectId, measurementId)) },
+                    onMeasurementSaved = { projectId, measurementId ->
+                        measurementCreateNavigationGuard.deliverEditResult(
+                            navigation, projectId, measurementId, onApplyApprovedEditResult)
+                    },
                     measurementCreate = navigation.measurementCreate,
                     measurementCreateNavigationGuard = measurementCreateNavigationGuard,
                     onCreateMeasurement = { onNavigate(navigation.createMeasurement(it)) },
