@@ -53,6 +53,12 @@ SQLCipher/WAL schema/version транзакцією. iOS SQLiter 1.3.3 уже м
 Windows probe визначає v3/v4/v5/v6 за колонками під writer lock;
 `user_version=6` зберігається тільки при успішному commit.
 
+Encrypted backup preflight відкриває лише перевірочну копію через production
+schema, включно з Kotlin backfill/collision check. Контрольований v5 conflict
+не передається старому Room fallback; вихідний encrypted backup не змінюється.
+Restore виявляє таку відмову до заміни live DB/ключа. Окремий Android тест
+перевіряє valid/group-collision/item-collision `.stpb` та незмінність source bytes.
+
 ## Безпечне ручне виправлення колізії v5
 
 Помилка `CatalogNameMigrationConflict` містить тип GROUP/ITEM і UUID проблемних

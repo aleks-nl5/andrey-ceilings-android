@@ -5,6 +5,7 @@ import app.cash.sqldelight.db.QueryResult
 import com.andreyceilings.app.data.db.CeilingsDatabase
 import com.andreyceilings.app.data.db.LegacyRoomDatabaseImporter
 import com.andreyceilings.shared.db.createEncryptedPrototypeDriver
+import com.andreyceilings.shared.db.CatalogNameMigrationConflict
 import java.io.File
 
 /**
@@ -75,9 +76,17 @@ internal object PortableBackupManager {
                 StorageSpaceGuard.requireForImportValidation(context, contents.database.size.toLong())
                 legacy.parentFile?.mkdirs()
                 legacy.writeBytes(contents.database)
-                val alreadySqlDelight = runCatching {
+                val verification = runCatching {
                     verifyEncryptedSnapshot(context, legacy, contents.passphrase)
-                }.isSuccess
+                }
+                // A recognized SQLDelight v5 name conflict is a controlled
+                // migration refusal, not a candidate for the Room importer.
+                var cause = verification.exceptionOrNull()
+                while (cause != null) {
+                    if (cause is CatalogNameMigrationConflict) throw cause
+                    cause = cause.cause
+                }
+                val alreadySqlDelight = verification.isSuccess
 
                 if (alreadySqlDelight) return contents
 
@@ -118,7 +127,7 @@ internal object PortableBackupManager {
         try {
             staged.parentFile?.mkdirs()
             source.copyTo(staged, overwrite = false)
-            createEncryptedPrototypeDriver(context, key, testName).use { driver ->
+            createEncryptedPrototypeDriver(context, key, testName, initializePriceCatalog = true).use { driver ->
                 val integrity = driver.executeQuery(null, "PRAGMA integrity_check",
                     { cursor -> QueryResult.Value(if (cursor.next().value) cursor.getString(0) else null) },
                     0).value
