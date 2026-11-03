@@ -112,7 +112,10 @@ class MeasurementCreateSqlCipherTest {
                 withTimeout(10_000) { write.join() }
                 assertTrue(model.state.value.error, model.state.value.saved)
                 assertEquals(route, guard.transition(route, route.back()))
-                assertEquals(route.measurementSaved(project, id), guard.deliverEditResult(route, project, id))
+                var delivered: AppNavigationState? = null
+                assertTrue(guard.deliverEditResult(route, project, id) { delivered = it })
+                assertEquals(route.measurementSaved(project, id), delivered)
+                assertFalse(guard.blocksExit(requireNotNull(delivered)))
                 assertEquals(3L, MeasurementRepository(db).find(id)!!.updatedAt)
             }
         } finally { context.deleteDatabase(name); key.fill(0) }
