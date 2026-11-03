@@ -41,6 +41,14 @@ class PriceCatalogRulesTest {
         assertTrue(PriceCatalogRules.filter(catalog, "профіль", "Полотна").isEmpty())
     }
 
+    @Test fun normalizedCategorySelectionMatchesPreservedV5Display() {
+        val legacy = catalog.last().copy(category = " ОСВІТЛЕННЯ ")
+        val option = PriceCatalogRules.categories(listOf(legacy)).single()
+        assertEquals(listOf(legacy), PriceCatalogRules.filter(listOf(legacy), " ТОЧКОВИЙ СВІТИЛЬНИК ", option))
+        assertEquals(listOf(legacy), PriceCatalogRules.filter(listOf(legacy), "", "освітлення"))
+        assertEquals(" ОСВІТЛЕННЯ ", legacy.category)
+    }
+
 
     @Test fun categoryDropdownContainsStandardAndExistingCustomCategories() {
         val entries = catalog + PriceCatalogItem(

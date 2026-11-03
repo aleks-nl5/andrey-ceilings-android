@@ -102,7 +102,7 @@ object PriceCatalogRules {
     fun filter(items: List<PriceCatalogItem>, query: String, category: String?): List<PriceCatalogItem> {
         val term = normalizedNameKey(query)
         return items.asSequence()
-            .filter { category == null || it.category == category }
+            .filter { category == null || normalizedNameKey(it.category) == normalizedNameKey(category) }
             .filter { term.isEmpty() || normalizedNameKey(it.title).contains(term) || it.code.lowercase().contains(term) }
             .sortedWith(compareBy<PriceCatalogItem>({ normalizedNameKey(it.category) }, { normalizedNameKey(it.title) }, { it.id }))
             .toList()
