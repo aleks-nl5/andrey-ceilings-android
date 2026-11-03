@@ -1,24 +1,15 @@
-# iOS host integration status
+# iOS host — фактичний стан 03.11.2026
 
-The long-term target is a runnable iOS host that embeds the shared Compose Multiplatform UI and delegates platform-specific behavior (storage, files, PDF, backup, and operating-system APIs) through explicit adapters.
+Наявні `shared` KMP **iosArm64/iosSimulatorArm64** targets, спільний Compose Multiplatform UI, SQLDelight бізнес-схема, SQLCipher encryption tests у **iOS Simulator** та framework compilation у CI. Збірка фреймворку / Simulator tests **не означають**, що існує готовий runnable iOS застосунок. Повноцінний `iosApp` Xcode/Swift entrypoint, запуск CMP/SQLCipher/Keychain і ручний UI smoke — [Issue #42](https://github.com/aleks-nl5/andrey-ceilings-android/issues/42).
 
-This repository is starting the CMP/KMP migration from the current Android `main`; this README documents the intended iOS work and does not claim that an iOS framework or runnable Xcode project already exists on this branch.
+## Поточна черга
 
-## Planned work
+1. PR #66 (CMP Measurement Details) та PR #68 (Windows JDBC) уже в `main`.
+2. Наступні PR A/B: [CMP Measurement Editor](../docs/CMP_MEASUREMENT_EDITOR_PLAN.md) на основі спільного `shared/commonMain`; iOS compiler та Simulator SQLCipher gates залишаються обов'язковими.
+3. Окремо за #42: runnable Compose UI host, Keychain, encryption/key lifecycle, native permissions/file/PDF/backup adapters, Inter font, launch/reopen/UI smoke й підготовка до пакування.
 
-- [ ] Choose and verify a stable Kotlin/Compose Multiplatform/AGP/Gradle version set against official compatibility guidance.
-- [ ] Add the shared KMP module with `iosArm64` and `iosSimulatorArm64` targets.
-- [ ] Export a framework for a SwiftUI host and add a runnable `iosApp.xcodeproj`.
-- [ ] Add macOS CI to compile the iOS simulator framework.
-- [ ] Verify the host launches on an iOS simulator before migrating real product screens.
-- [ ] Add platform adapters for encrypted local storage, file selection, PDF, and backup/restore only after their contracts are defined.
+## Обмеження
 
-## Constraints
+Не відтворювати Android UI або бізнес-логіку окремо для iOS; платформними залишаються OS key storage, sandbox, files, PDF і lifecycle. Не підміняти production дані mock. БД зараз повністю тестова, за рішенням власника не потрібна міграція старих Room/Go БД, застарілих креслень чи архівів; без автоматичного destructive reset і без зміни поточного SQLCipher або immutable estimate contract. Android залишається UX-еталоном.
 
-- Android remains the primary platform and behavioral/UI reference during the migration.
-- Do not replace the current Android app with a placeholder scaffold.
-- Preserve the encrypted database requirements, offline-first operation, and existing user data.
-- Keep Go/AAR until shared Kotlin calculation parity and regression tests pass.
-- Device synchronization is not part of this phase.
-
-An iOS framework build requires macOS and Xcode; successful JVM/Android compilation alone does not verify iOS integration.
+Актуальні рішення: [дорожня карта](../docs/PROJECT_ROADMAP.md) та [AGENTS.md](../AGENTS.md).

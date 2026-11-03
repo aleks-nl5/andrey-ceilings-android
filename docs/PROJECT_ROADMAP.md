@@ -1,28 +1,18 @@
-# Чинна дорожня карта — після merge PR #66 (03.11.2026)
+# Чинна дорожня карта — після merge PR #68 (03.11.2026)
 
-## Поточний етап: Windows SQLCipher/JDBC RETURNING — #67
+## Наступний етап: CMP Measurement Editor, PR A — створення замірів (#60/#57)
 
-[PR #66](https://github.com/aleks-nl5/andrey-ceilings-android/pull/66) об’єднано з main.
-CMP Measurement Foundation для перегляду завершено: спільний v2/v3 geometry codec,
-Canvas, readonly Measurement Details, типізований маршрут «об’єкт → замір → Back»
-та перевірки належності/Flow/restore. Див. [документацію замірів](CMP_MEASUREMENT_FOUNDATION.md)
-й [аудит](architecture/CMP_MEASUREMENT_AUDIT.md). Основа UI з PR #65 —
-[Ceilings UI Foundation](CMP_UI_FOUNDATION.md); прийнятий UX збережено.
+[PR #66](https://github.com/aleks-nl5/andrey-ceilings-android/pull/66) **merged**: KMP-кодек геометрії та read-only CMP замір, креслення, typed Back. [PR #68](https://github.com/aleks-nl5/andrey-ceilings-android/pull/68) **merged**: реальний Windows encrypted JDBC `INSERT/UPDATE/DELETE … RETURNING`; [#67](https://github.com/aleks-nl5/andrey-ceilings-android/issues/67) **closed**. Не називати ці PR Draft або незавершеними.
 
-У PR #66 виявлено несумісність production write-path Windows SQLCipher/JDBC з
-DML RETURNING. Окремий [Draft PR #68](https://github.com/aleks-nl5/andrey-ceilings-android/pull/68)
-виправляє адаптер і перевіряє справжні зашифровані записи, optimistic concurrency,
-транзакції та повідомлення Flow; [причина й рішення](WINDOWS_SQLCIPHER_RETURNING.md).
-Фінальні Android/Windows/iOS CI та їх порівняння з PR #66 фіксуються в PR #68.
-Схема, шифрування/WAL/ключі/backup, математика, immutable revisions/PDF і CMP UI
-не змінюються; автоматичного merge немає.
+**Рішення власника 03.11.2026: усі дані поточної БД тестові; не потрібна backward compatibility із застарілими кресленнями, old JSON, Room/Go і тестовими архівами.** Не створювати міграцій та compatibility layers лише заради цих даних. **Не** виконувати автоматичне видалення БД; не ламати чинний v3 контракт нових замірів, SQLCipher/WAL/backup, UUID/tombstones, immutable revisions/PDF та правила точності.
 
-**Наступний окремий етап:** CMP Measurement Editor із повним паритетом форм,
-введенням виміряних сторін, створенням/редагуванням через KMP, кнопкою «+» із заданим
-projectId та збереженням глобальної вкладки «Заміри». Чинний Android-редактор працює;
-його видалення — лише після повного паритету й приймання. #60/#57 залишаються
-відкритими. Live Predictive Back — #56, runnable iOS host — #42. Ці функції не
-реалізуються в JDBC-виправленні #67.
+**PR A:** спільний CMP create-only Editor з shape-driven fields для rectangle, L-shape і ортогонального polygon за довжинами всіх сторін/поворотами 90°, без X/Y; live креслення й валідація з чинного KMP геометричного ядра, зафіксована точність нового запису, реальний SQLDelight `createReturningId`, prefilled `projectId` із «+» деталей об'єкта, typed navigation, без double-save і fake data. Android-only редактор глобальної вкладки **не видаляти** до PR B. Докладно: [CMP Measurement Editor plan](CMP_MEASUREMENT_EDITOR_PLAN.md).
+
+**PR B:** CMP edit, stale-write policy, інтеграція глобальної вкладки/quick-create, збереження калькулятора й parity; видалення Android-only після ручного приймання. #60/#57 залишаються відкритими. Нові T/U/трапеції, довільні кути/діагоналі, drawing-by-touch — **окремі майбутні задачі**, не PR A/B.
+
+**Далі:** реальні події/календар [#49](https://github.com/aleks-nl5/andrey-ceilings-android/issues/49), CMP калькулятор/кошториси та актуальний прайс для нових документів [#44](https://github.com/aleks-nl5/andrey-ceilings-android/issues/44); паралельно runnable/secure Windows+iOS [#42](https://github.com/aleks-nl5/andrey-ceilings-android/issues/42); Android Predictive Back [#56](https://github.com/aleks-nl5/andrey-ceilings-android/issues/56) після міграції nested CMP; системна діагностика #30–#34 і необов'язковий lifecycle audit #54 — пізніше.
+
+**Правило джерел:** цей верхній розділ і [AGENTS.md](../AGENTS.md) відображають актуальний стан; історичні зрізи та неперевірені старі `[ ]` нижче — хронологія, не нові вимоги.
 
 ## Правило для кожного нового PR: контроль оптимізації CI (02.11.2026)
 
@@ -35,14 +25,13 @@ projectId та збереженням глобальної вкладки «За
 - Зберігати `cancel-in-progress` для застарілих комітів, а фінальні Android/Windows/iOS CI обов'язково перевіряти на **одному останньому SHA**, після якого користувач тестує APK.
 
 
-## Актуальна виміряна база CI: фінальний PR #66
+## Актуальна виміряна база CI: фінальний PR #68
 
-SHA `30f9cd3`, успішні [Android 41546212509](https://github.com/aleks-nl5/andrey-ceilings-android/actions/runs/41546212509)
-та [Windows/iOS 41546212250](https://github.com/aleks-nl5/andrey-ceilings-android/actions/runs/41546212250).
-Без черги runners: Android **7m10s** (emulator 3m18s), Windows **3m36s**
-(JVM/Desktop/CRUD 1m40s), iOS/macOS **17m46s** (framework 12m57s, Simulator 2m09s,
-JVM 1m25s). Android/Windows Gradle home hit, AVD hit; macOS Gradle home miss та
-окреме завантаження Native/LLVM. Порівняння фінального #67 — в PR #68.
+Final SHA `51ae870` — [Android run 41610329852](https://github.com/aleks-nl5/andrey-ceilings-android/actions/runs/41610329852) **10m19s**, [Windows/iOS run 41610329870](https://github.com/aleks-nl5/andrey-ceilings-android/actions/runs/41610329870) Windows **4m19s**, macOS/iOS **17m55s**. Усі платформи success; Windows native encrypted CRUD/`RETURNING` regression, Android unit/emulator/APK, iOS framework+Simulator. Gradle home hit на трьох платформах, Android AVD hit; macOS `~/.konan` LLVM download залишається. Для нового PR порівнювати час/кеш на останньому SHA; не скорочувати тести.
+
+## Історична виміряна база CI: фінальний PR #66
+
+Final SHA `30f9cd3`: Android **7m10s**, Windows **3m36s**, macOS/iOS **17m46s**. Повні [Android CI](https://github.com/aleks-nl5/andrey-ceilings-android/actions/runs/41546212509) та [Windows/iOS CI](https://github.com/aleks-nl5/andrey-ceilings-android/actions/runs/41546212250). Історичний еталон, а не поточний пріоритет.
 
 ## Історична виміряна база CI: фінальний PR #65
 

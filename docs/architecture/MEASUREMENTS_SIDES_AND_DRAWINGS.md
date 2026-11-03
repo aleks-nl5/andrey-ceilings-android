@@ -1,5 +1,7 @@
 # Заміри за сторонами та креслення — погоджене UX-рішення
 
+> **Актуальне продуктове рішення 03.11.2026:** після merged PR #66/#68 наступні PR A/B — [CMP Measurement Editor](../CMP_MEASUREMENT_EDITOR_PLAN.md). Залишаємо **єдиний KMP рушій**, реальні виміряні довжини всіх сторін та 90° повороти замість UI X/Y; реалізовані форми rectangle, l_shaped та ортогональний polygon. T/U/трапеції, довільні кути, діагоналі й drawing-by-touch — **окремі майбутні роботи**. Власник підтвердив: **усі БД тестові; жодної обов'язкової backward compatibility старих v1/v2 креслень, старих JSON/архівів або міграції test DB** у PR A/B. Старі пункти нижче відображають історію PR #29, не новий compatibility backlog; зберігати чинний контракт нових замірів і immutable estimates/PDF.
+
 ## Verified v3 schema fix and regression checkpoint (30 Oct 2026)
 
 The `geometrySchemaVersion=3` reader bug in `FrozenPolygonGeometryJson.readGeometryFields` was fixed at `75778c42` by accepting **only** supported v2/v3 schemas instead of the stale v2-only test. The owner reports the APK works; CI for that SHA was successful across Android [#41128915568](https://github.com/aleks-nl5/andrey-ceilings-android/actions/runs/41128915568) and Windows/iOS [#41128915482](https://github.com/aleks-nl5/andrey-ceilings-android/actions/runs/41128915482).
@@ -56,7 +58,7 @@ For **new orthogonal side-based polygon measurements/estimates only**, `geometry
 
 Збережені заміри `drawingJson` та нові кошториси `sourceMeasurementJson` повинні містити **і вихідні виміряні сторони/повороти, і похідний контур** для перевірки походження геометрії; не відтворювати вихідні виміри з однієї площі/периметра. Ревізії кошторисів, дублікат, PDF і переносний бекап `.stpb` мають зберігати оригінальний стан. Вже створені immutable v1/v2/v3 ніколи не переписувати чи тихо перераховувати. SQLCipher WAL і спільна SQLDelight-архітектура зберігаються.
 
-## 5. Приймання PR #29 перед наступними формами
+## 5. Історичне приймання PR #29 перед наступними формами
 
 1. Ручний замір ортогональної кімнати **за довжинами та поворотами**, жодних X/Y; видалення, додавання й корекція сторони.
 2. Креслення-прев'ю **усіх підтриманих замірів** і повторний перегляд після закриття/відкриття застосунку; підписи й масштаб відповідають вимірам.

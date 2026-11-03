@@ -1,5 +1,7 @@
 # Windows SQLCipher/JDBC RETURNING compatibility (#67)
 
+> **Виконано 03.11.2026:** PR #68 [merged](https://github.com/aleks-nl5/andrey-ceilings-android/pull/68), issue #67 **closed**. Windows native encrypted SQLCipher CRUD/`RETURNING` і захист fail-before-write проходять CI; це більше не блокер для CMP Measurement Editor PR A. Технічні деталі сумісності pinned driver 0.2.13 нижче залишаються актуальними.
+
 ## Audit and reproduction
 
 Base: main after PR #66 (`5e77bae`). SQLDelight 2.4.1 generates
@@ -127,7 +129,7 @@ backup, UUID/tombstone, immutable history/PDF/numbering algorithm, mathematics,
 CMP UI, Gradle version/dependency or CI workflow change is required.
 
 Final-SHA CI links and measured timings/cache observations are recorded in
-[Draft PR #68](https://github.com/aleks-nl5/andrey-ceilings-android/pull/68) and
+[merged PR #68](https://github.com/aleks-nl5/andrey-ceilings-android/pull/68) and
 [#67](https://github.com/aleks-nl5/andrey-ceilings-android/issues/67).
 Baseline PR #66 final head `30f9cd3`: Android job 7m10s (emulator 3m18s), Windows
 3m36s (combined JVM/Desktop 1m40s), macOS 17m46s (framework 12m57s, Simulator

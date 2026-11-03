@@ -1,6 +1,8 @@
 # Andrey Ceilings
 
-Offline-first застосунок для замірів, розрахунків і кошторисів натяжних стель. Поточний Android UI — Jetpack Compose; спільна бізнес-логіка, розрахунки й сховище використовують **Kotlin Multiplatform**.
+Offline-first застосунок для замірів, розрахунків і кошторисів натяжних стель. Android використовує Jetpack Compose та поступово спільний **Compose Multiplatform** UI. Бізнес-логіка, геометрія, SQLDelight та частина екранів — **Kotlin Multiplatform**. PR #66 і #68 об’єднано з `main` 03.11.2026.
+
+> **Актуальний план:** [CMP Measurement Editor — PR A/B](docs/CMP_MEASUREMENT_EDITOR_PLAN.md); [roadmap](docs/PROJECT_ROADMAP.md). Власник підтвердив, що БД повністю тестова: міграція старих креслень/Go/Room та старих архівів **не потрібна**. Автоматично видаляти БД при запуску не можна.
 
 ## Стек
 
@@ -29,7 +31,7 @@ APK: `app/build/outputs/apk/debug/app-debug.apk`.
 - Розрахункові коди, наприклад `light.spot` і `light.line`, не залежать від назв позицій. Обрані матеріал/профіль та редаговані ціни калькулятора передаються в KMP-ядро.
 - Під час збереження кошторису створюються детальні рядки з назвами, кількостями, одиницями, цінами та сумами. Подальше редагування прайсу **не перераховує вже збережений кошторис**; PDF використовує його збережені дані.
 - Майбутні **ручний перерахунок та історія версій**: [Issue #24](https://github.com/aleks-nl5/andrey-ceilings-android/issues/24), **нумерація**: [#25](https://github.com/aleks-nl5/andrey-ceilings-android/issues/25).
-- Фактичний режим журналювання Android SQLCipher на телефоні: `DELETE`. Контрольований перехід на WAL заплановано окремо: [#26](https://github.com/aleks-nl5/andrey-ceilings-android/issues/26).
+- Android SQLCipher **працює в WAL** після PR #29; підтверджено реальними Android SQLCipher/ENOSPC/restore перевірками. [Чинна WAL політика](docs/architecture/WAL_OPERATION_POLICY.md).
 
 ## Розробка та перевірки
 
@@ -51,6 +53,10 @@ gradle --no-daemon :shared:iosSimulatorArm64Test     # Потрібен macOS/Xc
 [CMP Measurement Foundation](docs/CMP_MEASUREMENT_FOUNDATION.md). Android-редактор
 та глобальна вкладка «Заміри» зберігаються до окремого етапу CMP Editor (#60/#57).
 
+## Найближча розробка
+
+Завершено read-only [CMP Measurement Foundation](docs/CMP_MEASUREMENT_FOUNDATION.md) (PR #66) і Windows JDBC RETURNING [#67](docs/WINDOWS_SQLCIPHER_RETURNING.md) (merged PR #68). Далі PR A — CMP створення замірів з картки об'єкта, після нього PR B — CMP редагування й cutover глобальної вкладки; працюючий Android-редактор зберігаємо до PR B. Потім реальні робочі події #49, CMP калькулятор/кошториси #44 і host-и #42.
+
 ## Межі
 
-Поточна SQLDelight-БД і дані ще тестові; міграцію старої тестової Room/Go-БД за рішенням власника не виконуємо. Перед використанням реальних даних потрібні відповідні production migration/backup гарантії. Шифрування забезпечує захист локальної БД, але не окремих PDF/фото. Не поєднувати runtime cutover, WAL, серверну синхронізацію та зміни UI в одному PR.
+Поточна SQLDelight-БД повністю тестова; за рішенням власника сумісність зі старими кресленнями та міграції Room/Go тестових даних/архівів не потрібні. Перед використанням реальних даних потрібні відповідні production migration/backup гарантії. Шифрування забезпечує захист локальної БД, але не окремих PDF/фото. Не поєднувати runtime cutover, WAL, серверну синхронізацію та зміни UI в одному PR.

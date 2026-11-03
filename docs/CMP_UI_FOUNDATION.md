@@ -1,5 +1,7 @@
 # CMP UI Foundation — Issue #63
 
+> **Статус 03.11.2026:** стабільні спільні CMP UI primitives прийняті в PR #65, використовуються Objects/Clients/Project Details/Measurement Details. Продовжуємо повторне використання у [Measurement Editor PR A/B](CMP_MEASUREMENT_EDITOR_PLAN.md); не дублювати header/fade/FAB/insets. Раніші приклади є контрактами, а не новим запитом на міграцію.
+
 New CMP screens use `shared/commonMain/ui/CeilingsScreenScaffold`. Android,
 Windows and a future runnable iOS host share the same components; no Android
 Context or window API enters commonMain. This is an architectural extraction of

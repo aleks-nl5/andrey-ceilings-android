@@ -1,5 +1,7 @@
 # CMP «Об’єкти та клієнти» — робочий план після PR #55
 
+> **Статус 03.11.2026:** історія реалізації Objects/Clients/Project Details; відповідні функції та CMP UI Foundation уже злиті в `main` (PR #62/#65), readonly заміри — PR #66, Windows JDBC fix — PR #68. Старі «Draft» та незавершені чеклісти нижче — історичні знімки. Далі [CMP Measurement Editor](CMP_MEASUREMENT_EDITOR_PLAN.md), а не новий cutover Objects.
+
 **Статус на 02.11.2026: CMP/KMP реалізація готова до фінального CI та ручного APK smoke; злиття ще не виконане.**  
 **Гілка:** `feature/cmp-objects-clients` → `main`.  
 **Issue:** [#58](https://github.com/aleks-nl5/andrey-ceilings-android/issues/58); вкладені маршрути — [#57](https://github.com/aleks-nl5/andrey-ceilings-android/issues/57).

@@ -1,8 +1,10 @@
 # SQLDelight на Android — актуальний стан PR #22 (2026-10-29)
 
+> **Статус 03.11.2026:** Room runtime видалено, KMP SQLDelight+SQLCipher live на Android, Windows/JVM та iOS tests. Android WAL реалізовано в PR #29; ранній опис `DELETE` нижче — **історичний**, не чинна конфігурація. Windows encrypted JDBC `RETURNING` виправлено в merged PR #68. Поточна БД тестова — Room/Go/test drawing migrations не потрібні; нові дані й WAL/backup/immutable contracts залишаються. [Актуальний план](../CMP_MEASUREMENT_EDITOR_PLAN.md).
+
 > Це актуальна специфікація стану гілки `architecture/cmp-kmp-migration-v2`. Старі плани, де Android описано як Room-програму, більше не застосовуються.
 
-## Поточне журналювання Android (підтверджено власником 29.10.2026)
+## Історичний режим журналювання Android (підтверджено 29.10.2026; до WAL-міграції)
 
 **Фактичний `PRAGMA journal_mode = delete`** у встановленому Android APK — підтверджено через «Налаштування → Діагностика бази даних». Це робочий SQLite/SQLCipher rollback-journal режим, не помилка. **WAL не ввімкнено** в поточному шляху відкриття: `CeilingsDatabase` → `createEncryptedPrototypeDriver` → `AndroidSqliteDriver`/`SupportOpenHelperFactory`; драйвер явно задає `PRAGMA foreign_keys = ON`, але **не задає `journal_mode=WAL`**. Наявність `wal_checkpoint(PASSIVE/FULL)` у діагностиці й backup-коді сама по собі не доводить активність WAL.
 

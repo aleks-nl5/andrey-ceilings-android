@@ -1,5 +1,7 @@
 # CMP Measurement Foundation — stage 1 (#60, #57)
 
+> **Статус 03.11.2026:** readonly CMP Measurement Details та кодек/Canvas **злиті в PR #66**. Windows JDBC write `RETURNING` **виправлено у merged PR #68**, Issue #67 закрито. Документ фіксує реалізацію PR #66, а не вимогу зберігати старі креслення в новому редакторі. Власник визначив усю БД тестовою: для наступних [PR A/B](CMP_MEASUREMENT_EDITOR_PLAN.md) сумісність зі старими JSON/кресленнями не вимагається; чинну математику й нові записи зберігаємо.
+
 This stage adds read-only measurement details reached from a project's actual
 1:N measurement list. Android and Windows use the same KMP route, repository
 flows, codec, Compose screen and Canvas renderer. iOS compiles/tests the shared
@@ -134,7 +136,7 @@ PR #66 exposed a pre-existing Windows SQLCipher JDBC failure for INSERT RETURNIN
 while seeding the encrypted readonly proof. That PR used non-returning create APIs
 in the fixture and explicitly left the production write compatibility issue open.
 
-The separate [#67 / Draft PR #68](https://github.com/aleks-nl5/andrey-ceilings-android/pull/68)
+The merged [PR #68 / closed issue #67](https://github.com/aleks-nl5/andrey-ceilings-android/pull/68)
 repairs the Windows/JVM adapter and switches this encrypted measurement test back
 to the production returning-ID APIs. Geometry, encrypted reopen, ownership and
 deletion assertions remain. See [root cause, adapter and native test coverage](WINDOWS_SQLCIPHER_RETURNING.md).

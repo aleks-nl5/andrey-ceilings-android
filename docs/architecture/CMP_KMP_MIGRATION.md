@@ -1,5 +1,7 @@
 # Compose Multiplatform / Kotlin Multiplatform — план і фактичний стан
 
+> **Поточне уточнення 03.11.2026:** документ містить історичну чергу PR #22–#43. Зараз PR #65/#66/#68 merged; Windows JDBC write виправлено. Наступне — [CMP Measurement Editor PR A/B](../CMP_MEASUREMENT_EDITOR_PLAN.md), потім події #49 і CMP калькулятор/кошториси #44, iOS/Windows host #42 паралельно. Усі дані БД тестові, compatibility зі старими кресленнями/Room/Go не потрібна. Діагностика #30–#34 — нижче за пріоритетом.
+
 > **Актуалізовано 31.10.2026 після merge PR #29.** Це поточний план; попередній опис PR #22/#23 нижче лишається як історична довідка. Затверджений пріоритет власника: **спочатку завершити KMP + CMP для Android, Windows і iOS, діагностика #30–#34 пізніше.** Android є production-подібним функціональним еталоном, його UI ще платформний. Go/AAR видалені, KMP-розрахунки та SQLDelight працюють; SQLCipher WAL + immutable revisions + .stpb hardening з PR #29 вже в `main`.
 
 ## Перший CMP прайс завершено — issue #36 закрито, PR #43 готується до злиття (31.10.2026)
@@ -20,7 +22,7 @@
 - **Вимога шифрування:** Android SQLCipher WAL готовий. Працюючі KMP/SQLCipher тести Windows/iOS не доводять production key storage, packaging, реальний iOS host чи parity; кожну платформу вводити контрольованими перевірками.
 - **Без синхронізації**, інтернет необов'язковий. UUID, timestamps і tombstones лише закладають можливість майбутнього sync; клієнтські PDF окремо не шифруємо за погодженою політикою.
 
-## Черга робіт
+## Історична черга робіт (стан 31.10.2026)
 1. **Перший робочий CMP slice: прайс** — [issue #36](https://github.com/aleks-nl5/andrey-ceilings-android/issues/36) / [повна специфікація](CMP_PRICE_LIST_DESIGN.md). Спільна тема та design primitives; adaptive search/filter/list; швидка/повна правка ціни, категорія, додавання/видалення; підтвердження кожного запису; Android cutover; Windows реальний зашифрований CRUD; iOS compile/tests. Один Draft PR без зміни ціноутворення.
 2. **Windows/iOS host hardening** — [issue #42](https://github.com/aleks-nl5/andrey-ceilings-android/issues/42): Xcode host, Keychain, Windows key store/packaging, platform file/backup/PDF adapters, smoke тести запуску. Не називати scaffold повноцінним додатком.
 3. **Поекранне CMP перенесення:** клієнти й об'єкти; заміри/геометрія/креслення/календар; калькулятор/незмінні кошториси та PDF; налаштування/навігація. Кожен cutover проходить Android APK acceptance + Windows/iOS CI; старий Android екран прибирати лише після parity.

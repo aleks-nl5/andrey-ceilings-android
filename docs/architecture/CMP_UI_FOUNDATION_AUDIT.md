@@ -1,5 +1,7 @@
 # CMP UI Foundation audit — #63
 
+> **Історичний аудит перед PR #65 (merged).** Висновки впроваджено в [CMP UI Foundation](../CMP_UI_FOUNDATION.md); PR #66 додав readonly Measurement Details, PR #68 — Windows write fix. Для нового CMP Editor не дублювати перевірені insets, FAB, gradient, pinned-area primitives; [план A/B](../CMP_MEASUREMENT_EDITOR_PLAN.md).
+
 Base: `main` at `bc49d4aa12094e5ff2d1966e9ed1945f4471e4f2`, after accepted PR #62.
 Reviewed Issue #63, README, current roadmap, AppChrome, both Objects screens,
 CeilingsTheme, Android AppRoot, Desktop Main and both CI workflows before code changes.

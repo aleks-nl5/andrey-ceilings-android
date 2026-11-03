@@ -1,5 +1,10 @@
 # Agent instructions — Andrey Ceilings
 
+## Current milestone (03.11.2026)
+- PR #66 (CMP measurement read-only) and PR #68 (Windows SQLCipher JDBC RETURNING) are merged. Issue #67 is closed. **Next: PR A, CMP measurement creation; separate PR B for editing/global tab/cutover.** See `docs/CMP_MEASUREMENT_EDITOR_PLAN.md` and issues #60/#57.
+- The owner confirmed **all existing database records are test data**. No old drawing/legacy Room/Go DB JSON/archive compatibility requirement for PR A/B; do not add migration shims for old test data. Do not automatically destroy the database or regress new geometry records, encrypted storage, existing estimate/PDF semantics, or approved precision rules.
+- Historical Markdown/old Draft statuses are archival; use current roadmap and current code over historical checkpoints. 
+
 ## Read before making changes
 - Review `README.md`, `docs/PROJECT_ROADMAP.md`, and the relevant GitHub Issue and architecture notes. Check the real code before trusting older documentation.
 - Implement only the requested issue scope. Keep unrelated refactors and platform migrations out of the PR. If requirements are unclear, document the tradeoff instead of silently changing behavior.
