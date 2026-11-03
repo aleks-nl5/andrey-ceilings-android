@@ -29,14 +29,18 @@ class EncryptedBusinessRepositoriesTest {
                 }, 0).value
                 assertEquals(1L, foreignKeys, "Every SQLCipher JDBC connection must enforce foreign keys")
                 val db = PrototypeDatabase(driver)
-                ClientRepository(db).create("Encrypted client", createdAt = 100)
-                val clientId = ClientRepository(db).all().single().id
-                ProjectRepository(db).create(clientId, "Encrypted project", createdAt = 101)
-                val projectId = ProjectRepository(db).all().single().id
-                MeasurementRepository(db).create(projectId, "Kitchen", createdAt = 102)
-                PriceRepository(db).create("CIPHER", "Film", "material", "m2", 25.0, 103)
-                EstimateRepository(db).create(projectId, "Estimate", "PVC", "standard", "simple",
+                val clientId = ClientRepository(db).createReturningId("Encrypted client", createdAt = 100)
+                val projectId = ProjectRepository(db).createReturningId(clientId, "Encrypted project", createdAt = 101)
+                val measurementId = MeasurementRepository(db).createReturningId(projectId, "Kitchen", createdAt = 102)
+                val priceId = PriceRepository(db).upsertReturningId(code = "CIPHER", title = "Film",
+                    category = "material", unit = "m2", price = 25.0, updatedAt = 103)
+                val estimateId = EstimateRepository(db).createReturningId(projectId, "Estimate", "PVC", "standard", "simple",
                     3.0, 4.0, 12.0, 14.0, 100.0, 20.0, 0.0, 0.0, 120.0, createdAt = 104)
+                assertEquals("Encrypted client", ClientRepository(db).find(clientId)?.name)
+                assertEquals(clientId, ProjectRepository(db).find(projectId)?.clientId)
+                assertEquals(projectId, MeasurementRepository(db).find(measurementId)?.projectId)
+                assertEquals(projectId, EstimateRepository(db).find(estimateId)?.projectId)
+                assertEquals("CIPHER", PriceRepository(db).find(priceId)?.code)
             }
 
             val encryptedBytes = file.readBytes()
