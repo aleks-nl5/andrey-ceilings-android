@@ -139,7 +139,9 @@ class MeasurementCreateSceneTest {
             try {
                 scene.render().close()
                 assertTrue(scene.textContent().contains("Обраний об'єкт"))
-                assertTrue(scene.textContent().contains("AB:"))
+                // Inline dimensions are now length-only; vertex/side names belong to editor inputs.
+                assertTrue(scene.textContent().contains("5 м"), "Dimension legend must remain visible")
+                assertFalse(scene.textContent().contains("AB:"), "Drawing must not show side-name prefixes")
                 assertTrue(scene.textContent().contains("Площа:"))
                 assertFalse(scene.textContent().contains("Сторона 1"))
                 scene.constraints = Constraints.fixed(240, 700)
