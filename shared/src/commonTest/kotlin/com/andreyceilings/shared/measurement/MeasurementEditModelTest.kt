@@ -61,6 +61,23 @@ class MeasurementEditModelTest {
         assertNull(AppNavigationState.restore(listOf("OBJECTS", "PROJECT_DETAILS:10", "MEASUREMENT_EDIT:11:20")).measurementEdit)
         assertNull(AppNavigationState.restore(listOf("OBJECTS", "PROJECT_DETAILS:10", "MEASUREMENT_EDIT:10:020")).measurementEdit)
     }
+    @Test fun decimalMetresAndZoomedScreenLabelsRemainExactAndVisible() {
+        val precision = MeasurementPrecision.ONE_MILLIMETER
+        assertEquals(2500L, measurementLengthMm("2.5", precision))
+        assertEquals(2750L, measurementLengthMm("2,75", precision))
+        assertEquals(2125L, measurementLengthMm("2,125", precision))
+        val geometry = assertNotNull(validateMeasurementCreate(original().draft).geometry)
+        val contour = assertNotNull(measurementDrawingContour(MeasurementGeometryView.Captured(geometry)))
+        val labelSizes = List(contour.points.size) { DrawingLabelSize(42f, 14f) }
+        val vertexSizes = List(contour.points.size) { DrawingLabelSize(12f, 14f) }
+        val fitted = assertNotNull(layoutMeasurementDrawing(contour, 480f, 360f, labelSizes, vertexSizes = vertexSizes))
+        val zoomed = fitted.points.map { MeasurementViewport(1.08f, 10f, -5f).transform(it, 480f, 360f) }
+        val labels = layoutMeasurementDrawingForProjectedPoints(zoomed, 480f, 360f, labelSizes,
+            vertexSizes = vertexSizes)
+        assertTrue(labels.labels.isNotEmpty(), "Wall dimensions must remain visible after zoom/pan")
+        assertTrue(labels.vertexLabels.isNotEmpty(), "Visible vertex letters must remain visible after zoom/pan")
+    }
+
     @Test fun viewportHitTestingAndTemplateRelationsDoNotChangeWorldGeometry() {
         val points = listOf(DrawingPoint(0.0, 0.0), DrawingPoint(100.0, 0.0), DrawingPoint(100.0, 100.0), DrawingPoint(0.0, 100.0))
         val viewport = MeasurementViewport().move(10f, 20f, 2f)

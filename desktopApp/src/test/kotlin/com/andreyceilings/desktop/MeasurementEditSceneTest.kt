@@ -127,6 +127,36 @@ class MeasurementEditSceneTest {
         } finally { scene.close() }
     }
 
+    @Test fun explicitDecimalSeparatorWorksWhenTheImeHasNoCommaKey() {
+        val model = MeasurementEditModel(null, MeasurementEditDocument(3, 1, draft()))
+        val image = ImageComposeScene(600, 900) {
+            CeilingsTheme(false) { MeasurementEditScreen(model, onBack = {}, onSaved = {}) }
+        }
+        try {
+            image.render().close()
+            image.click("Усі розміри"); image.frame()
+            val field = image.nodes().first {
+                it.config.getOrNull(SemanticsProperties.EditableText)?.text == "5"
+            }
+            assertTrue(field.config.getOrNull(SemanticsActions.SetText)?.action?.invoke(AnnotatedString("2")) == true)
+            image.frame()
+            val button = image.nodes().first {
+                it.config.getOrNull(SemanticsProperties.ContentDescription).orEmpty()
+                    .contains("Вставити десяткову кому")
+            }
+            assertTrue(button.config.getOrNull(SemanticsActions.OnClick)?.action?.invoke() == true)
+            image.frame()
+            assertEquals("2,", (model.state.value.draft.outline as MeasurementOutlineDraft.Template).fields["length"])
+            val nextField = image.nodes().first {
+                it.config.getOrNull(SemanticsProperties.EditableText)?.text == "2,"
+            }
+            assertTrue(nextField.config.getOrNull(SemanticsActions.SetText)?.action?.invoke(AnnotatedString("2,5")) == true)
+            image.frame()
+            val metres = (model.state.value.draft.outline as MeasurementOutlineDraft.Template).fields.getValue("length")
+            assertEquals(2500L, measurementLengthMm(metres, model.state.value.draft.precision))
+        } finally { image.close() }
+    }
+
     private fun ImageComposeScene.frame() { Snapshot.sendApplyNotifications(); render(System.nanoTime()).close() }
     private fun ImageComposeScene.nodes(): List<SemanticsNode> {
         fun flatten(node: SemanticsNode): List<SemanticsNode> = listOf(node) + node.children.flatMap(::flatten)

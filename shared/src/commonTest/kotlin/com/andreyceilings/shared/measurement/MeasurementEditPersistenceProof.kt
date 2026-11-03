@@ -4,6 +4,7 @@ import com.andreyceilings.shared.calculation.*
 import com.andreyceilings.shared.db.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.first
+import com.andreyceilings.shared.navigation.*
 import kotlin.test.*
 
 /** Same CAS/RETURNING proof on SQLite, Windows SQLCipher and iOS Simulator SQLCipher. */
@@ -38,6 +39,23 @@ object MeasurementEditPersistenceProof {
             model.redo(); assertEquals(changed, model.state.value.draft)
             coroutineScope { repeat(8) { launch { model.save() } } }
             assertTrue(model.state.value.saved, model.state.value.error)
+            // Regression: while fullscreen consumes Back, successful Save must
+            // deliver to readonly details, NOT go through that Back interceptor.
+            val route = AppNavigationState().selectTab(AppRoute.OBJECTS).openProject(project)
+                .openMeasurement(project, id).editMeasurement(project, id)
+            val guard = MeasurementCreateNavigationGuard().also {
+                it.bindEdit(model); it.fullscreen.value = true
+            }
+            val surfaceBack: () -> Boolean = { true }
+            guard.bindSurface(surfaceBack)
+            var approved: AppNavigationState? = null
+            assertFalse(guard.deliverEditResult(route, project, id + 1) { approved = it })
+            assertTrue(guard.deliverEditResult(route, project, id) { approved = it })
+            assertEquals(route.measurementSaved(project, id), approved)
+            assertNull(approved?.measurementEdit)
+            assertEquals(MeasurementDetails(project, id), approved?.measurementDetails)
+            assertTrue(guard.fullscreen.value, "Fullscreen presentation survives into readonly details")
+            guard.unbindSurface(surfaceBack)
             model.save()
             val after = assertNotNull(rows.find(id))
             assertEquals(before.uuid, after.uuid); assertEquals(before.createdAt, after.createdAt)
