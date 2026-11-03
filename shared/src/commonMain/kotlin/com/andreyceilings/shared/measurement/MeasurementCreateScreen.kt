@@ -40,14 +40,33 @@ fun MeasurementCreateScreen(
     projectId: Long, precision: MeasurementPrecision, store: MeasurementCreateStore?,
     contentPadding: PaddingValues, systemTopInset: Dp,
     onBack: () -> Unit, onSaved: (Long) -> Unit,
-    navigationGuard: MeasurementCreateNavigationGuard? = null, backLabel: String = "До об’єкта"
+    navigationGuard: MeasurementCreateNavigationGuard? = null, backLabel: String = "До об'єкта"
 ) {
     // Preserve the restored draft/UUID until the unlocked session is available.
     // Consuming it against a transient null store would reset it when startup completes.
     if (store == null) {
-        Column(Modifier.fillMaxSize().padding(contentPadding).padding(top = systemTopInset)) {
-            Text("Захищена база недоступна або завантажується.")
-            TextButton(onClick = onBack) { Text("Назад") }
+        val direction = LocalLayoutDirection.current
+        val start = contentPadding.calculateStartPadding(direction)
+        val end = contentPadding.calculateEndPadding(direction)
+        CeilingsScreenScaffold(
+            windowInsets = WindowInsets(0, 0, 0, 0),
+            contentPadding = PaddingValues(start = start, end = end, top = 8.dp,
+                bottom = contentPadding.calculateBottomPadding()),
+            header = { Spacer(Modifier.height(systemTopInset + 8.dp)) },
+            pinned = {
+                Row(Modifier.fillMaxWidth().padding(start = start, end = end),
+                    verticalAlignment = Alignment.CenterVertically) {
+                    CeilingsFab(onClick = onBack, actionLabel = backLabel, profile = CeilingsFabProfile.COMPACT) {
+                        Icon(Icons.Default.ArrowBack, contentDescription = null)
+                    }
+                    Text("Новий замір", Modifier.weight(1f).padding(start = 8.dp),
+                        style = MaterialTheme.typography.titleLarge)
+                }
+            }, bottomGradient = false
+        ) { padding ->
+            Column(Modifier.fillMaxSize().padding(padding)) {
+                Text("Захищена база недоступна або завантажується.")
+            }
         }
         return
     }
@@ -76,7 +95,7 @@ fun MeasurementCreateScreen(
     model: MeasurementCreateModel, parent: MeasurementCreateParent,
     contentPadding: PaddingValues = PaddingValues(16.dp), systemTopInset: Dp = 0.dp,
     onBack: () -> Unit, onSaved: (Long) -> Unit,
-    navigationGuard: MeasurementCreateNavigationGuard? = null, backLabel: String = "До об’єкта"
+    navigationGuard: MeasurementCreateNavigationGuard? = null, backLabel: String = "До об'єкта"
 ) {
     DisposableEffect(model, navigationGuard) {
         navigationGuard?.bind(model)
