@@ -93,6 +93,18 @@ fun layoutMeasurementDrawing(
     val scale = minOf((width - margin * 2) / dx, (height - margin * 2) / dy)
     val ox = (width - dx * scale) / 2; val oy = (height - dy * scale) / 2
     val points = contour.points.map { DrawingPoint(ox + (it.x - left) * scale, oy + (it.y - top) * scale) }
+    return layoutMeasurementDrawingForProjectedPoints(points, width, height, sizes, density, vertexSizes)
+}
+
+/** Label positions use projected view pixels; they are recomputed after zoom/pan. */
+fun layoutMeasurementDrawingForProjectedPoints(
+    points: List<DrawingPoint>, width: Float, height: Float,
+    sizes: List<DrawingLabelSize>, density: Float = 1f,
+    vertexSizes: List<DrawingLabelSize> = emptyList()
+): MeasurementDrawingLayout {
+    require(width > 0f && height > 0f && width.isFinite() && height.isFinite() &&
+        density > 0f && density.isFinite() &&
+        points.size >= 3 && points.all { it.x.isFinite() && it.y.isFinite() })
     val gap = 3f * density
     fun overlaps(a: DrawingLabelBounds, b: DrawingLabelBounds): Boolean =
         a.left < b.right + gap && a.right + gap > b.left && a.top < b.bottom + gap && a.bottom + gap > b.top
@@ -100,6 +112,8 @@ fun layoutMeasurementDrawing(
     vertexSizes.take(points.size).forEachIndexed { i, size ->
         if (size.width <= 0 || size.height <= 0 || size.width > width || size.height > height) return@forEachIndexed
         val point = points[i]
+        // Offscreen vertices should never produce clamped labels along the border.
+        if (point.x !in 0.0..width.toDouble() || point.y !in 0.0..height.toDouble()) return@forEachIndexed
         for ((dx, dy) in listOf(1 to -1, -1 to -1, 1 to 1, -1 to 1)) {
             val x = (point.x.toFloat() + if (dx > 0) gap * 2 else -size.width - gap * 2).coerceIn(0f, width - size.width)
             val y = (point.y.toFloat() + if (dy > 0) gap * 2 else -size.height - gap * 2).coerceIn(0f, height - size.height)
@@ -109,8 +123,8 @@ fun layoutMeasurementDrawing(
             if (!touchesVertex && vertexLabels.none { overlaps(candidate, it) }) { vertexLabels.add(candidate); break }
         }
     }
-    val areaSign = if (contour.points.indices.sumOf { i ->
-        val a = contour.points[i]; val b = contour.points[(i + 1) % contour.points.size]
+    val areaSign = if (points.indices.sumOf { i ->
+        val a = points[i]; val b = points[(i + 1) % points.size]
         a.x * b.y - b.x * a.y
     } >= 0) 1 else -1
     val labels = mutableListOf<DrawingLabelBounds>()
@@ -119,10 +133,15 @@ fun layoutMeasurementDrawing(
         val a = points[i]; val b = points[(i + 1) % points.size]
         val length = hypot(b.x - a.x, b.y - a.y)
         if (length <= 0) return@forEachIndexed
+        // The visible portion of an enlarged wall may have its midpoint elsewhere.
+        val clipped = clipMeasurementWallToViewport(a, b, width.toDouble(), height.toDouble())
+            ?: return@forEachIndexed
+        val midX = (clipped.first.x + clipped.second.x) / 2
+        val midY = (clipped.first.y + clipped.second.y) / 2
         for (distance in listOf(14f, 28f, 42f)) {
-            val x = (((a.x + b.x) / 2 + (b.y - a.y) / length * areaSign * distance * density)
+            val x = ((midX + (b.y - a.y) / length * areaSign * distance * density)
                 .toFloat() - size.width / 2).coerceIn(0f, width - size.width)
-            val y = (((a.y + b.y) / 2 - (b.x - a.x) / length * areaSign * distance * density)
+            val y = ((midY - (b.x - a.x) / length * areaSign * distance * density)
                 .toFloat() - size.height / 2).coerceIn(0f, height - size.height)
             val candidate = DrawingLabelBounds(i, x, y, size.width, size.height)
             val overlapsLabel = (labels + vertexLabels).any { overlaps(candidate, it) }
@@ -132,4 +151,30 @@ fun layoutMeasurementDrawing(
         }
     }
     return MeasurementDrawingLayout(points, labels, vertexLabels)
+}
+
+/** Liang–Barsky clip in view pixels for stable zoomed labels, never stored geometry. */
+private fun clipMeasurementWallToViewport(
+    a: DrawingPoint, b: DrawingPoint, width: Double, height: Double
+): Pair<DrawingPoint, DrawingPoint>? {
+    val dx = b.x - a.x
+    val dy = b.y - a.y
+    var start = 0.0
+    var end = 1.0
+    fun clip(p: Double, q: Double): Boolean {
+        if (p == 0.0) return q >= 0.0
+        val r = q / p
+        if (p < 0.0) {
+            if (r > end) return false
+            if (r > start) start = r
+        } else {
+            if (r < start) return false
+            if (r < end) end = r
+        }
+        return true
+    }
+    if (!clip(-dx, a.x) || !clip(dx, width - a.x) ||
+        !clip(-dy, a.y) || !clip(dy, height - a.y) || start > end) return null
+    return DrawingPoint(a.x + dx * start, a.y + dy * start) to
+        DrawingPoint(a.x + dx * end, a.y + dy * end)
 }

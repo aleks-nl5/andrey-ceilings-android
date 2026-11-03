@@ -42,6 +42,9 @@ internal fun ObjectsClientsHost(
     onCreateProjectConsumed: () -> Unit,
     measurementDetails: com.andreyceilings.shared.navigation.MeasurementDetails? = null,
     onOpenMeasurement: (Long, Long) -> Unit = { _, _ -> },
+    measurementEdit: com.andreyceilings.shared.navigation.MeasurementEdit? = null,
+    onEditMeasurement: (Long, Long) -> Unit = { _, _ -> },
+    onMeasurementSaved: (Long, Long) -> Unit = { _, _ -> },
     measurementCreate: com.andreyceilings.shared.navigation.MeasurementCreate? = null,
     measurementPrecision: com.andreyceilings.shared.calculation.MeasurementPrecision = com.andreyceilings.shared.calculation.MeasurementPrecision.ONE_CENTIMETER,
     onCreateMeasurement: (Long) -> Unit = {},
@@ -49,8 +52,9 @@ internal fun ObjectsClientsHost(
     measurementCreateNavigationGuard: com.andreyceilings.shared.measurement.MeasurementCreateNavigationGuard? = null
 ) {
     val context = LocalContext.current
+    val fullscreen = measurementCreateNavigationGuard?.fullscreen?.collectAsState()?.value == true
     val store = remember(database) {
-        database?.let { ObjectsClientsStore(it.database, System::currentTimeMillis) }
+        database?.objectsClientsStore
     }
     val flow = remember(store) {
         store?.rows ?: flowOf(ObjectsClientsRows(emptyList(), emptyList()))
@@ -73,6 +77,9 @@ internal fun ObjectsClientsHost(
         detailsProjectId = detailsProjectId,
         measurementDetails = measurementDetails,
         measurementCreate = measurementCreate,
+        measurementEdit = measurementEdit,
+        onEditMeasurement = onEditMeasurement,
+        onMeasurementSaved = onMeasurementSaved,
         measurementPrecision = measurementPrecision,
         onCreateMeasurement = onCreateMeasurement,
         onMeasurementCreated = onMeasurementCreated,
@@ -91,8 +98,8 @@ internal fun ObjectsClientsHost(
         contentPadding = PaddingValues(
             start = 16.dp, end = 16.dp,
             top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 72.dp,
-            bottom = maxOf(WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 84.dp,
-                if (measurementCreate != null) WindowInsets.ime.asPaddingValues().calculateBottomPadding() else 0.dp)
+            bottom = maxOf(WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + if (fullscreen) 0.dp else 84.dp,
+                if (measurementCreate != null || measurementEdit != null) WindowInsets.ime.asPaddingValues().calculateBottomPadding() else 0.dp)
         ),
         onSaveClient = { id, draft ->
             withContext(Dispatchers.IO) {

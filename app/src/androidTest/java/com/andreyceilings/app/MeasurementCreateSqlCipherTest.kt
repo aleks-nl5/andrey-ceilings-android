@@ -20,6 +20,107 @@ import java.util.concurrent.TimeUnit
 /** Exercises the common editor's production createReturningId path on actual SQLCipher/WAL. */
 @RunWith(AndroidJUnit4::class)
 class MeasurementCreateSqlCipherTest {
+    @Test fun sharedEditCasPreservesCapturedGeometryAndRejectsConflicts(): Unit = runBlocking {
+        val context: Context = ApplicationProvider.getApplicationContext()
+        val name = "cmp-edit-sqlcipher.db"
+        val key = ByteArray(32) { 0x58.toByte() }
+        context.deleteDatabase(name)
+        fun open() = createEncryptedPrototypeDriver(context, key, name, enableWalForTesting = true)
+        var project = 0L
+        try {
+            open().use { driver ->
+                val db = PrototypeDatabase(driver)
+                val projects = ProjectRepository(db); val rows = MeasurementRepository(db)
+                project = projects.createReturningId(null, "Edit parent", createdAt = 1)
+                val other = projects.createReturningId(null, "Other", createdAt = 2)
+                val store = MeasurementEditStore(db) { 3 }
+                for (precision in MeasurementPrecision.entries) for (shape in listOf("rectangle", "l_shaped", "polygon")) {
+                    val id = MeasurementCreateStore(db) { 2 }.create(draft(project, shape, precision))
+                    val before = rows.find(id)!!
+                    val original = store.load(project, id)
+                    assertEquals(before, rows.find(id))
+                    val model = MeasurementEditModel(store, original)
+                    when (shape) {
+                        "rectangle" -> model.accept(MeasurementCreateIntent.Dimension("length", "6"), grouped = true)
+                        "l_shaped" -> model.accept(MeasurementCreateIntent.Dimension("A", "6"), grouped = true)
+                        else -> {
+                            model.accept(MeasurementCreateIntent.SideLength(0, "6"), grouped = true)
+                            model.accept(MeasurementCreateIntent.SideLength(2, "4"), grouped = true)
+                        }
+                    }
+                    model.commitInput(); val changed = model.state.value.draft
+                    model.undo(); assertEquals(original.draft, model.state.value.draft)
+                    model.redo(); assertEquals(changed, model.state.value.draft)
+                    coroutineScope { repeat(8) { launch { model.save() } } }
+                    assertTrue(model.state.value.error, model.state.value.saved)
+                    val after = rows.find(id)!!
+                    assertEquals(before.uuid, after.uuid); assertEquals(before.createdAt, after.createdAt)
+                    assertEquals(before.projectId, after.projectId); assertEquals(3L, after.updatedAt)
+                    assertEquals(validateMeasurementCreate(changed).geometry, MeasurementGeometryCodec.read(after.drawingJson))
+                    assertEquals(if (shape == "rectangle") 24.0 else 16.0, after.areaSquareMeters, 0.000001)
+                    assertEquals(20.0, after.perimeterMeters, 0.000001)
+                    val stale = MeasurementEditModel(store, original)
+                    stale.accept(MeasurementCreateIntent.Notes("Stale")); stale.save()
+                    assertTrue(stale.state.value.conflict); assertEquals(after, rows.find(id))
+                    val restored = MeasurementEditModel.restore(store, MeasurementEditModel(store, store.load(project, id)).snapshot(), project, id)!!
+                    assertFalse(restored.state.value.saved); assertEquals(after, rows.find(id))
+                    val wrong = original.copy(draft = original.draft.copy(projectId = other))
+                    try { store.update(wrong, wrong.draft.copy(name = "Foreign")); fail("Foreign ownership accepted") }
+                    catch (_: MeasurementEditConflict) { }
+                }
+                val deletedId = MeasurementCreateStore(db) { 2 }.create(draft(other, "rectangle", MeasurementPrecision.ONE_CENTIMETER))
+                val deleted = MeasurementEditModel(store, store.load(other, deletedId))
+                deleted.accept(MeasurementCreateIntent.Name("Deleted")); rows.delete(deletedId); deleted.save()
+                assertTrue(deleted.state.value.conflict)
+                val orphanId = MeasurementCreateStore(db) { 2 }.create(draft(other, "rectangle", MeasurementPrecision.ONE_CENTIMETER))
+                val orphan = MeasurementEditModel(store, store.load(other, orphanId))
+                orphan.accept(MeasurementCreateIntent.Name("Orphan")); projects.delete(other); orphan.save()
+                assertTrue(orphan.state.value.conflict)
+            }
+            open().use { driver ->
+                val rows = MeasurementRepository(PrototypeDatabase(driver)).forProject(project)
+                assertEquals(12, rows.size)
+                rows.forEach { assertEquals(it.shape, MeasurementGeometryCodec.read(it.drawingJson).shapeType) }
+            }
+        } finally { context.deleteDatabase(name); key.fill(0) }
+    }
+
+    @Test fun editSaveSurvivesImmediateBackEscapeTabAndRecreation(): Unit = runBlocking {
+        val context: Context = ApplicationProvider.getApplicationContext()
+        val name = "cmp-edit-navigation.db"; val key = ByteArray(32) { 0x59.toByte() }
+        context.deleteDatabase(name)
+        try {
+            createEncryptedPrototypeDriver(context, key, name, enableWalForTesting = true).use { driver ->
+                val db = PrototypeDatabase(driver)
+                val project = ProjectRepository(db).createReturningId(null, "Slow edit", createdAt = 1)
+                val id = MeasurementCreateStore(db) { 2 }.create(draft(project, "rectangle", MeasurementPrecision.ONE_CENTIMETER))
+                val entered = CountDownLatch(1); val release = CountDownLatch(1)
+                val store = MeasurementEditStore(db) { entered.countDown(); check(release.await(15, TimeUnit.SECONDS)); 3L }
+                val model = MeasurementEditModel(store, store.load(project, id))
+                model.accept(MeasurementCreateIntent.Dimension("length", "6"))
+                val guard = MeasurementCreateNavigationGuard().also { it.bindEdit(model) }
+                val route = AppNavigationState().selectTab(AppRoute.OBJECTS).openProject(project).openMeasurement(project, id).editMeasurement(project, id)
+                val write = launch(start = CoroutineStart.UNDISPATCHED) { model.save() }
+                try {
+                    assertTrue(entered.await(10, TimeUnit.SECONDS)); assertTrue(guard.blocksExit(route))
+                    assertEquals(route, guard.transition(route, route.back()))
+                    assertEquals(route, guard.transition(route, route.selectTab(AppRoute.PRICES)))
+                    assertEquals(route, guard.transition(route, route.requestQuickCreate(AppQuickCreate.OBJECT)))
+                    assertSame(model, MeasurementEditModel.restore(store, model.snapshot(), project, id))
+                    model.save(); model.undo(); model.discardAndExit()
+                } finally { release.countDown() }
+                withTimeout(10_000) { write.join() }
+                assertTrue(model.state.value.error, model.state.value.saved)
+                assertEquals(route, guard.transition(route, route.back()))
+                var delivered: AppNavigationState? = null
+                assertTrue(guard.deliverEditResult(route, project, id) { delivered = it })
+                assertEquals(route.measurementSaved(project, id), delivered)
+                assertFalse(guard.blocksExit(requireNotNull(delivered)))
+                assertEquals(3L, MeasurementRepository(db).find(id)!!.updatedAt)
+            }
+        } finally { context.deleteDatabase(name); key.fill(0) }
+    }
+
     @Test fun backAndTabCannotHideAnInFlightCipherTransaction(): Unit = runBlocking {
         val context: Context = ApplicationProvider.getApplicationContext()
         val name = "cmp-create-navigation.db"

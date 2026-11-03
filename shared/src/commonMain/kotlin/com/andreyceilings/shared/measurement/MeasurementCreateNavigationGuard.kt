@@ -8,7 +8,22 @@ import com.andreyceilings.shared.navigation.AppNavigationState
  * Hosts bind their current editor and pass every navigation change through transition().
  */
 class MeasurementCreateNavigationGuard {
+    val fullscreen = kotlinx.coroutines.flow.MutableStateFlow(false)
     private var editor: MeasurementCreateModel? = null
+
+    private var edit: MeasurementEditModel? = null
+    private var surfaceBack: (() -> Boolean)? = null
+    fun bindEdit(model: MeasurementEditModel) { edit = model }
+    fun unbindEdit(model: MeasurementEditModel) {
+        if (edit === model && !model.state.value.saving && !model.state.value.checking && !model.state.value.saved) edit = null
+    }
+    fun bindSurface(back: () -> Boolean) { surfaceBack = back }
+    fun unbindSurface(back: () -> Boolean) { if (surfaceBack === back) surfaceBack = null }
+    fun requestClose(close: () -> Unit) {
+        val model = edit
+        if (model != null) model.requestExit(close)
+        else if (editor?.state?.value?.let { it.saving || it.savedId != null } != true) close()
+    }
 
     fun bind(model: MeasurementCreateModel) { editor = model }
 
@@ -17,13 +32,51 @@ class MeasurementCreateNavigationGuard {
     }
 
     fun blocksExit(current: AppNavigationState): Boolean {
+        val editState = edit?.state?.value
+        if (editState != null && current.measurementEdit?.measurementId == editState.original.measurementId &&
+            current.measurementEdit.projectId == editState.draft.projectId) return editState.saving || editState.checking || editState.saved
         val state = editor?.state?.value ?: return false
         return current.measurementCreate?.projectId == state.draft.projectId &&
             (state.saving || state.savedId != null)
     }
 
-    fun transition(current: AppNavigationState, proposed: AppNavigationState): AppNavigationState {
-        if (!blocksExit(current)) return proposed
+    /**
+     * A successful edit is an authorized result, NOT a Back transition. If hosts
+     * pass the resulting route through transition() a second time, fullscreen
+     * consumes it as Back and strands the saved editor in a disabled state.
+     */
+    fun deliverEditResult(current: AppNavigationState, projectId: Long, measurementId: Long,
+        applyApproved: (AppNavigationState) -> Unit): Boolean {
+        val state = edit?.state?.value ?: return false
+        if (!state.saved || state.original.measurementId != measurementId || state.draft.projectId != projectId ||
+            current.measurementEdit?.measurementId != measurementId || current.measurementEdit.projectId != projectId) return false
+        applyApproved(approved(current.measurementSaved(projectId, measurementId)))
+        return true
+    }
+
+    private fun approved(proposed: AppNavigationState): AppNavigationState {
+        if (proposed.measurementEdit == null) edit = null
+        if (proposed.measurementDetails == null && proposed.measurementEdit == null && proposed.measurementCreate == null) fullscreen.value = false
+        return proposed
+    }
+
+    fun transition(current: AppNavigationState, proposed: AppNavigationState,
+        applyApproved: (AppNavigationState) -> Unit = {}): AppNavigationState {
+        if (proposed == current) return current
+        val editModel = edit
+        val editState = editModel?.state?.value
+        if (editState != null && current.measurementEdit?.measurementId == editState.original.measurementId &&
+            current.measurementEdit.projectId == editState.draft.projectId) {
+            if (editState.saving || editState.checking || editState.saved) return current
+        }
+        if (!blocksExit(current)) {
+            if (proposed == current.back() && surfaceBack?.invoke() == true) return current
+            if (editState?.dirty == true) {
+                editModel.requestExit { applyApproved(approved(proposed)) }
+                return current
+            }
+            return approved(proposed)
+        }
         val state = requireNotNull(editor).state.value
         // Keep the editor visible between commit and its onSaved effect too.
         // Only delivery of this exact successful result may replace it.

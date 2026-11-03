@@ -1,11 +1,13 @@
-# CMP Measurement Editor — узгоджений план після PR #68 (03.11.2026)
+# CMP Measurement Editor — після merged PR #72 (03.11.2026)
 
-**Стан:** PR A реалізовано у feature-гілці й очікує фінального CI/приймання; PR B/C/D — план наступних окремих PR. **Джерело:** актуальний `main` після merged PR #66 (CMP перегляд), #68 (Windows encrypted JDBC RETURNING) і документаційного #69. Issues [#60](https://github.com/aleks-nl5/andrey-ceilings-android/issues/60), [#57](https://github.com/aleks-nl5/andrey-ceilings-android/issues/57).
+PR A #72 **merged**, final `b9effed`, merge `55fb717`: Android/Windows/iOS green,
+власник підтвердив APK. [Create contract](CMP_MEASUREMENT_CREATE.md).
 
-**Оновлення PR A:** create-only код і тести реалізовано у `feature/cmp-measurement-create`
-від `99a49a9` після PR #69. [Технічний контракт](CMP_MEASUREMENT_CREATE.md);
-остаточні CI й owner acceptance — у Draft PR. Нижче збережено затверджену
-специфікацію; PR B/C/D ще не реалізовано, #60/#57 не закриваються.
+Поточний окремий **Draft PR B1**, #73 — safe edit/fullscreen, numeric walls,
+Undo/Redo, dirty/save guard, atomic updatedAt CAS і retained parent context.
+[Implementation contract](CMP_MEASUREMENT_EDIT.md). **PR B2** — тільки після
+owner acceptance і merge B1: global tab/quick-create/calculator parity та повне
+вилучення Android-only редактора. #60/#57/#73 залишаються відкритими.
 
 ## Рішення щодо тестових даних
 
@@ -57,10 +59,10 @@
 - [x] Використовувати однакову схему створення незалежно від платформи; реальний `MeasurementRepository.createReturningId`, validated geometry, запис `drawingJson`, правильна прив'язка `projectId`. Якщо активний проєкт зник/БД недоступна — fail closed; при повторному тапі не створювати дубль.
 - [x] Навігація після успішного створення до заміру або деталей об’єкта; без повторного запуску create при Back/restore.
 - [x] Зберегти чинні Android-only створення/редагування у глобальній вкладці «Заміри» та передачу у калькулятор; **не** видаляти їх у PR A.
-- [ ] KMP/unit, Android SQLCipher/instrumentation, Windows native encrypted CRUD + CMP UI, iOS framework/simulator tests; owner APK smoke light/dark/narrow/keyboard/Back/error paths.
+- [x] PR A #72: final-SHA Android/Windows/iOS CI та owner APK acceptance підтверджено. B1 має окремі CI/acceptance.
 - [ ] **Поза PR A:** редагування, видалення, інтеграція глобальної вкладки, нові форми, зміна схем/драйверів/backup, drag-to-draw, переписування кошторисів/PDF.
 
-## PR B: редагування, глобальна вкладка та Android cutover
+## PR B1 / B2: редагування, потім глобальна вкладка та Android cutover
 
 - [ ] CMP edit з тією самою form/state, предзаповненням і безпечною валідацією; project ownership і захист від stale `updatedAt`/видалення (optimistic `UPDATE … WHERE updatedAt = ? AND deletedAt IS NULL RETURNING` за потреби).
 - [ ] Редагування й відкриття з Measurement Details; глобальна вкладка та quick-create використовують спільний редактор; збереження запуску калькулятора від заміру.
@@ -74,4 +76,4 @@
 
 ## Delivery / CI
 
-Зміни від актуального main, один вузький Draft PR на етап, тільки власник робить merge. Усі Android unit/SQLCipher emulator/APK, Windows Desktop/native encrypted CRUD, iOS framework/Simulator тести — зелені на одному final SHA, з порівнянням кешів/тривалості із PR #68 (Android **10m19s**, Windows **4m19s**, macOS/iOS **17m55s**). UI smoke на Android власник перевіряє в обох темах. Інваріанти й workflow: [AGENTS.md](../AGENTS.md), [CMP UI Foundation](CMP_UI_FOUNDATION.md), [geometry contract](architecture/MEASUREMENTS_SIDES_AND_DRAWINGS.md).
+Зміни від актуального main, один вузький Draft PR на етап, тільки власник робить merge. Усі Android unit/SQLCipher emulator/APK, Windows Desktop/native encrypted CRUD, iOS framework/Simulator тести — зелені на одному final SHA, з порівнянням кешів/тривалості із фінальним PR #72 `b9effed` (Android **12m30s**, Windows **5m02s**, macOS/iOS **10m09s**; Gradle-home hit ×3, AVD hit). UI smoke на Android власник перевіряє в обох темах. Інваріанти й workflow: [AGENTS.md](../AGENTS.md), [CMP UI Foundation](CMP_UI_FOUNDATION.md), [geometry contract](architecture/MEASUREMENTS_SIDES_AND_DRAWINGS.md).

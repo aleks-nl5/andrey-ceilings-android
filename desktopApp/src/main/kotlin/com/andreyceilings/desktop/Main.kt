@@ -84,11 +84,12 @@ fun main() = application {
     var navigation by remember { mutableStateOf(AppNavigationState()) }
     val availableRoutes = remember { setOf(AppRoute.DASHBOARD, AppRoute.PRICES, AppRoute.OBJECTS) }
     val measurementCreateNavigationGuard = remember { com.andreyceilings.shared.measurement.MeasurementCreateNavigationGuard() }
+    fun applyNavigation(next: AppNavigationState) { navigation = next }
     fun updateNavigation(proposed: AppNavigationState) {
-        navigation = measurementCreateNavigationGuard.transition(navigation, proposed)
+        applyNavigation(measurementCreateNavigationGuard.transition(navigation, proposed, ::applyNavigation))
     }
     Window(
-        onCloseRequest = { if (!measurementCreateNavigationGuard.blocksExit(navigation)) exitApplication() },
+        onCloseRequest = { measurementCreateNavigationGuard.requestClose { exitApplication() } },
         title = "СтеляПро",
         // Bubble after editor/dialog handlers so Escape closes an active modal first.
         onKeyEvent = { event ->
@@ -104,6 +105,7 @@ fun main() = application {
                     navigation = navigation,
                     availableRoutes = availableRoutes,
                     onNavigate = ::updateNavigation,
+                    onApplyApprovedEditResult = ::applyNavigation,
                     measurementCreateNavigationGuard = measurementCreateNavigationGuard
                 )
             }
@@ -138,8 +140,10 @@ private fun DesktopPriceHost(
     navigation: AppNavigationState,
     availableRoutes: Set<AppRoute>,
     onNavigate: (AppNavigationState) -> Unit,
+    onApplyApprovedEditResult: (AppNavigationState) -> Unit,
     measurementCreateNavigationGuard: com.andreyceilings.shared.measurement.MeasurementCreateNavigationGuard
 ) {
+    val measurementFullscreen by measurementCreateNavigationGuard.fullscreen.collectAsState()
     val scope = rememberCoroutineScope()
     var session by remember { mutableStateOf<DesktopPriceDatabase?>(null) }
     var password by remember { mutableStateOf("") }
@@ -202,7 +206,7 @@ private fun DesktopPriceHost(
         val isProjectDetailsOpen = selectedTab == AppRoute.OBJECTS &&
             navigation.projectDetails != null
         val isMeasurementDetailsOpen = isProjectDetailsOpen &&
-            (navigation.measurementDetails != null || navigation.measurementCreate != null)
+            (navigation.measurementDetails != null || navigation.measurementCreate != null || navigation.measurementEdit != null)
         var projectTitleProgress by remember { mutableFloatStateOf(0f) }
         val passiveDetailsScroll = remember { object : NestedScrollConnection {} }
         LaunchedEffect(navigation.projectDetails?.projectId) {
@@ -220,7 +224,7 @@ private fun DesktopPriceHost(
                             .padding(
                                 start = 24.dp, end = 24.dp,
                                 top = AppHeaderHeight + 16.dp,
-                                bottom = FloatingBarHeight + 16.dp
+                                bottom = if (measurementFullscreen) 8.dp else FloatingBarHeight + 16.dp
                             )
                     ) {
                         // Only real host actions are available, never mock buttons.
@@ -254,6 +258,12 @@ private fun DesktopPriceHost(
                     rows = objectRows,
                     detailsProjectId = navigation.projectDetails?.projectId,
                     measurementDetails = navigation.measurementDetails,
+                    measurementEdit = navigation.measurementEdit,
+                    onEditMeasurement = { projectId, measurementId -> onNavigate(navigation.editMeasurement(projectId, measurementId)) },
+                    onMeasurementSaved = { projectId, measurementId ->
+                        measurementCreateNavigationGuard.deliverEditResult(
+                            navigation, projectId, measurementId, onApplyApprovedEditResult)
+                    },
                     measurementCreate = navigation.measurementCreate,
                     measurementCreateNavigationGuard = measurementCreateNavigationGuard,
                     onCreateMeasurement = { onNavigate(navigation.createMeasurement(it)) },
@@ -274,7 +284,7 @@ private fun DesktopPriceHost(
                     contentPadding = PaddingValues(
                         start = 24.dp, end = 24.dp,
                         top = AppHeaderHeight + 16.dp,
-                        bottom = FloatingBarHeight + 16.dp
+                        bottom = if (measurementFullscreen) 8.dp else FloatingBarHeight + 16.dp
                     ),
                     onSaveClient = { id, draft ->
                         withContext(Dispatchers.IO) { objectsStore.saveClient(id, draft) }
@@ -317,7 +327,7 @@ private fun DesktopPriceHost(
                     contentPadding = PaddingValues(
                         start = 24.dp, end = 24.dp,
                         top = AppHeaderHeight + 16.dp,
-                        bottom = FloatingBarHeight + 16.dp
+                        bottom = if (measurementFullscreen) 8.dp else FloatingBarHeight + 16.dp
                     ),
                     onSave = { original, draft ->
                         withContext(Dispatchers.IO) { store.save(original, draft) }
@@ -347,7 +357,7 @@ private fun DesktopPriceHost(
                         (1f - projectTitleProgress) * (1f - projectTitleProgress)
                     else 1f)
             )
-            AppFloatingNavigation(
+            if (!measurementFullscreen) AppFloatingNavigation(
                 selectedId = selectedTab.name,
                 destinations = navItems,
                 darkTheme = isSystemInDarkTheme(),

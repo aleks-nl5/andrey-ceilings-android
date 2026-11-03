@@ -1,6 +1,6 @@
 # Andrey Ceilings
 
-Offline-first застосунок для замірів, розрахунків і кошторисів натяжних стель. Android використовує Jetpack Compose та поступово спільний **Compose Multiplatform** UI. Бізнес-логіка, геометрія, SQLDelight та частина екранів — **Kotlin Multiplatform**. PR #66 і #68 об’єднано з `main` 03.11.2026.
+Offline-first застосунок для замірів, розрахунків і кошторисів натяжних стель. Android використовує Jetpack Compose та поступово спільний **Compose Multiplatform** UI. Бізнес-логіка, геометрія, SQLDelight та частина екранів — **Kotlin Multiplatform**. PR #66, #68 і #72 об’єднано з `main` 03.11.2026.
 
 > **Актуальний план:** [CMP Measurement Editor — PR A/B](docs/CMP_MEASUREMENT_EDITOR_PLAN.md); [roadmap](docs/PROJECT_ROADMAP.md). Власник підтвердив, що БД повністю тестова: міграція старих креслень/Go/Room та старих архівів **не потрібна**. Автоматично видаляти БД при запуску не можна.
 
@@ -55,12 +55,14 @@ gradle --no-daemon :shared:iosSimulatorArm64Test     # Потрібен macOS/Xc
 
 PR A додає [спільне створення замірів](docs/CMP_MEASUREMENT_CREATE.md) із «+»
 деталей конкретного об'єкта: rectangle/L/orthogonal polygon, live креслення,
-точні міліметри й SQLDelight save. Фінальні CI та ручне приймання APK
-відстежуються у Draft PR; редагування й міграція загальної вкладки — PR B.
+точні міліметри й SQLDelight save. PR #72 merged після green final-SHA CI та власницького APK приймання.
+[PR B1](docs/CMP_MEASUREMENT_EDIT.md) додає безпечне редагування існуючих замірів,
+Undo/Redo, atomic updatedAt CAS і незалежне fullscreen-креслення. Міграція загальної
+вкладки, quick-create та вилучення Android-only редактора — окремий PR B2 після приймання B1.
 
 ## Найближча розробка
 
-Завершено read-only [CMP Measurement Foundation](docs/CMP_MEASUREMENT_FOUNDATION.md) (PR #66) і Windows JDBC RETURNING [#67](docs/WINDOWS_SQLCIPHER_RETURNING.md) (merged PR #68). Далі PR A — CMP створення замірів з картки об'єкта, після нього PR B — CMP редагування й cutover глобальної вкладки; працюючий Android-редактор зберігаємо до PR B. Потім реальні робочі події #49, CMP калькулятор/кошториси #44 і host-и #42.
+Завершено read-only [CMP Measurement Foundation](docs/CMP_MEASUREMENT_FOUNDATION.md) (PR #66) і Windows JDBC RETURNING [#67](docs/WINDOWS_SQLCIPHER_RETURNING.md) (merged PR #68). PR A (#72) merged і протестовано власником. Поточний PR B1 — CMP редагування/fullscreen (#73); потім окремий B2 — cutover глобальної вкладки. Працюючий Android-редактор зберігаємо до B2 та перевірки паритету. Потім реальні робочі події #49, CMP калькулятор/кошториси #44 і host-и #42.
 
 ## Межі
 

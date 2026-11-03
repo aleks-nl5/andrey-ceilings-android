@@ -1,10 +1,10 @@
 # Agent instructions — Andrey Ceilings
 
 ## Current milestone (03.11.2026)
-- PR #66 (CMP measurement read-only) and PR #68 (Windows SQLCipher JDBC RETURNING) are merged. Issue #67 is closed. **Next: PR A, CMP measurement creation; separate PR B for editing/global tab/cutover.** See `docs/CMP_MEASUREMENT_EDITOR_PLAN.md` and issues #60/#57.
+- PR #66 (CMP measurement read-only) and PR #68 (Windows SQLCipher JDBC RETURNING) are merged. Issue #67 is closed. **PR #72 (CMP creation) is merged and owner-tested. Current: PR B1 safe editing/fullscreen (#73); B2 global-tab/cutover follows separately.** See `docs/CMP_MEASUREMENT_EDITOR_PLAN.md` and issues #60/#57.
 - The owner confirmed **all existing database records are test data**. No old drawing/legacy Room/Go DB JSON/archive compatibility requirement for PR A/B; do not add migration shims for old test data. Do not automatically destroy the database or regress new geometry records, encrypted storage, existing estimate/PDF semantics, or approved precision rules.
 - Historical Markdown/old Draft statuses are archival; use current roadmap and current code over historical checkpoints. 
-- PR A implementation/verification contract: `docs/CMP_MEASUREMENT_CREATE.md`. Shared creation from Project Details is implemented in the feature branch; final-head CI and owner APK acceptance are tracked in its Draft PR. Do not treat this as PR B or close #60/#57.
+- PR A implementation/verification contract: `docs/CMP_MEASUREMENT_CREATE.md`. Shared creation from Project Details is merged in PR #72 (final b9effed, merge 55fb717), with green Android/Windows/iOS CI and owner APK acceptance. B1 contract: `docs/CMP_MEASUREMENT_EDIT.md`. Keep #60/#57/#73 open; leave the global tab and Android-only editor for B2.
 
 ## Read before making changes
 - Review `README.md`, `docs/PROJECT_ROADMAP.md`, and the relevant GitHub Issue and architecture notes. Check the real code before trusting older documentation.

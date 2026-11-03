@@ -173,6 +173,9 @@ fun ObjectsClientsScreen(
     measurementDetails: MeasurementDetails? = null,
     onOpenMeasurement: (Long, Long) -> Unit = { _, _ -> },
     onCloseMeasurement: () -> Unit = onCloseProject,
+    measurementEdit: com.andreyceilings.shared.navigation.MeasurementEdit? = null,
+    onEditMeasurement: (Long, Long) -> Unit = { _, _ -> },
+    onMeasurementSaved: (Long, Long) -> Unit = { _, _ -> },
     measurementCreate: com.andreyceilings.shared.navigation.MeasurementCreate? = null,
     measurementPrecision: com.andreyceilings.shared.calculation.MeasurementPrecision = com.andreyceilings.shared.calculation.MeasurementPrecision.ONE_CENTIMETER,
     onCreateMeasurement: (Long) -> Unit = {},
@@ -558,13 +561,14 @@ fun ObjectsClientsScreen(
 
     if (detailsProjectId != null) {
         val measurement = measurementDetails?.takeIf { it.projectId == detailsProjectId }
+        val edit = measurementEdit?.takeIf { it.projectId == detailsProjectId }
         val create = measurementCreate?.takeIf { it.projectId == detailsProjectId }
         // Retain the real Project Details composition/list state. An unplaced
         // subtree has no drawing, pointer targets or accessibility nodes.
         Box(Modifier.fillMaxSize().layout { measurable, constraints ->
             val placeable = measurable.measure(constraints)
             layout(placeable.width, placeable.height) {
-                if (measurement == null && create == null) placeable.place(0, 0)
+                if (measurement == null && create == null && edit == null) placeable.place(0, 0)
             }
         }) {
         ProjectDetailsScreen(
@@ -577,7 +581,7 @@ fun ObjectsClientsScreen(
             ),
             systemTopInset = systemTopInset,
             onHeaderProgress = onProjectHeaderProgress,
-            active = measurement == null && create == null,
+            active = measurement == null && create == null && edit == null,
             onOpenMeasurement = { onOpenMeasurement(detailsProjectId, it) },
             onCreateMeasurement = { onCreateMeasurement(detailsProjectId) },
             onDial = onDial,
@@ -589,7 +593,15 @@ fun ObjectsClientsScreen(
             projectId = measurement.projectId, measurementId = measurement.measurementId,
             store = detailsStore?.measurementDetails,
             contentPadding = contentPadding, systemTopInset = systemTopInset,
-            onBack = onCloseMeasurement
+            onBack = onCloseMeasurement,
+            onEdit = { onEditMeasurement(measurement.projectId, measurement.measurementId) },
+            navigationGuard = measurementCreateNavigationGuard
+        )
+        if (edit != null) com.andreyceilings.shared.measurement.MeasurementEditScreen(
+            projectId = edit.projectId, measurementId = edit.measurementId, store = detailsStore?.measurementEdit,
+            contentPadding = contentPadding, systemTopInset = systemTopInset,
+            onBack = onCloseMeasurement, onSaved = { onMeasurementSaved(edit.projectId, edit.measurementId) },
+            navigationGuard = measurementCreateNavigationGuard
         )
         if (create != null) com.andreyceilings.shared.measurement.MeasurementCreateScreen(
             projectId = create.projectId, precision = measurementPrecision, store = detailsStore?.measurementCreate,

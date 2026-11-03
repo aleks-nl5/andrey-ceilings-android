@@ -103,6 +103,15 @@ class MeasurementRepository(private val database: PrototypeDatabase) {
         drawingJson: String = "{}", notes: String = "", createdAt: Long
     ) = queries.insertMeasurement(projectId, name, shape, lengthMeters, widthMeters,
         areaSquareMeters, perimeterMeters, drawingJson, notes, createdAt, newRecordUuid(), createdAt)
+    /** Atomic CAS: immutable identity/ownership columns are deliberately absent from SET. */
+    fun updateIfUnchanged(
+        id: Long, projectId: Long, expectedUpdatedAt: Long, name: String, shape: String,
+        lengthMeters: Double, widthMeters: Double, areaSquareMeters: Double,
+        perimeterMeters: Double, drawingJson: String, notes: String, nowMillis: Long
+    ): Long? = queries.updateMeasurementIfVersion(name, shape, lengthMeters, widthMeters,
+        areaSquareMeters, perimeterMeters, drawingJson, notes, nowMillis, id, projectId,
+        expectedUpdatedAt).executeAsOneOrNull()
+
     fun update(
         id: Long, name: String, shape: String, lengthMeters: Double, widthMeters: Double,
         areaSquareMeters: Double, perimeterMeters: Double, drawingJson: String, notes: String
