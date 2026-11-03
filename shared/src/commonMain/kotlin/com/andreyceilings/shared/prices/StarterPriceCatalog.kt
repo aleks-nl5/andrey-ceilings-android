@@ -39,16 +39,20 @@ object StarterPriceCatalog {
 
     /** A persisted marker, never row count, controls this single shared bootstrap. */
     fun initialize(database: PrototypeDatabase) = database.transaction {
+        initializeInTransaction(database)
+    }
+
+    /** Caller must own the physical transaction (including SQLiter schema callbacks). */
+    internal fun initializeInTransaction(database: PrototypeDatabase) {
         val queries = database.priceGroupsQueries
         // Acquire SQLite's writer lock BEFORE reading the marker, including concurrent opens.
         queries.claimCatalogInitialization()
         when (queries.selectSeedVersion().executeAsOne()) {
-            1L -> return@transaction
+            1L -> return
             0L -> Unit
             else -> error("Непідтримувана версія початкового каталогу.")
         }
         val groups = PriceGroupRepository(database)
-        val prices = PriceRepository(database)
         val ids = groupNames.associateWith { name ->
             when (name) {
                 "Полотна" -> groups.create(name, 1L, "м²", QuantityMode.CEILING_AREA)
@@ -58,8 +62,9 @@ object StarterPriceCatalog {
             }
         }
         items.forEach { item ->
-            prices.createInGroup(item.code, item.title, ids.getValue(item.category), item.price, 1L,
-                item.unit, item.quantityMode, item.placementKind)
+            PriceParameters.validate(item.unit, item.quantityMode)
+            queries.insertConfiguredItem(item.code, item.title, ids.getValue(item.category), item.unit,
+                item.quantityMode.value, item.placementKind.value, item.price, 1L, newRecordUuid()).executeAsOne()
         }
         queries.finishCatalogInitialization()
     }

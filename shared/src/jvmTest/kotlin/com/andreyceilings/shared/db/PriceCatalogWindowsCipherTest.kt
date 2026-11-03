@@ -13,6 +13,7 @@ class PriceCatalogWindowsCipherTest {
             var before = emptyList<List<String?>>()
             SqlCipherWindowsDriverFactory.open(file, key).use { driver ->
                 PriceCatalogMigrationProof.legacySchema.create(driver)
+                PriceCatalogMigrationProof.populateLegacy(driver)
                 before = PriceCatalogMigrationProof.untouchedRows(driver)
                 assertFails { PriceCatalogSchema.migrate(PriceCatalogMigrationProof.failing(driver), 4, 5) }
                 PriceCatalogMigrationProof.assertOldPrice(driver)

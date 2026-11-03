@@ -175,14 +175,14 @@ class PriceRepository(private val database: PrototypeDatabase) {
     fun upsertReturningId(
         id: Long = 0, code: String, title: String, category: String,
         unit: String, price: Double, updatedAt: Long
-    ): Long = database.transactionWithResult {
+    ): Long {
         val existing = if (id > 0L) checkNotNull(find(id)) {
             "Cannot update missing or deleted price item: $id"
         } else queries.selectActivePriceByKey(category, code).executeAsOneOrNull()
-        if (existing != null) {
+        return if (existing != null) {
             require(existing.code == code) { "Price code is immutable" }
             updateIfUnchanged(existing.id, code, existing.updatedAt, title, category, unit, price, updatedAt)
-        } else {
+        } else database.transactionWithResult {
             createInGroup(code, title, groups.ensureByName(category, updatedAt), price, updatedAt, unit)
         }
     }
@@ -192,15 +192,23 @@ class PriceRepository(private val database: PrototypeDatabase) {
         id: Long, expectedCode: String, expectedUpdatedAt: Long,
         title: String, category: String, unit: String, price: Double, updatedAt: Long,
         unchangedGroupUuid: String? = null
-    ): Long = database.transactionWithResult {
+    ): Long {
+        // Read outside a deferred write transaction. Concurrent JDBC callers
+        // must reach the atomic UPDATE, rather than fail while upgrading two
+        // shared read locks to writer locks. SQL CAS remains authoritative.
         val original = checkNotNull(find(id)) { "Price item changed or deleted; reload before saving." }
         check(original.code == expectedCode && original.updatedAt == expectedUpdatedAt) {
             "Price item changed or deleted; reload before saving."
         }
-        updateConfigured(original, unchangedGroupUuid ?: groups.ensureByName(category, updatedAt), title, unit,
+        fun write(groupUuid: String) = updateConfigured(original, groupUuid, title, unit,
             QuantityMode.entries.single { it.value == original.quantityMode },
-            PlacementKind.entries.single { it.value == original.placementKind },
-            price, updatedAt)
+            PlacementKind.entries.single { it.value == original.placementKind }, price, updatedAt)
+        val target = unchangedGroupUuid ?: groups.findByName(category)?.uuid
+        return if (target != null) write(target) else database.transactionWithResult {
+            // INSERT acquires the writer lock before the CAS. If it loses, the
+            // new category is rolled back along with the failed item edit.
+            write(groups.create(category, updatedAt))
+        }
     }
 
     fun deleteIfUnchanged(id: Long, expectedCode: String, expectedUpdatedAt: Long): Long =

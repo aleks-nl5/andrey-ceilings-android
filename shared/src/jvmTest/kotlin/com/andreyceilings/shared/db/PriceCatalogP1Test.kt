@@ -70,6 +70,7 @@ class PriceCatalogP1Test {
     @Test fun migrationIsAtomicAndLeavesEveryOtherColumnUnchanged() {
         JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).use { driver ->
             PriceCatalogMigrationProof.legacySchema.create(driver)
+            PriceCatalogMigrationProof.populateLegacy(driver)
             driver.execute(null, "PRAGMA foreign_keys = ON", 0)
             val before = PriceCatalogMigrationProof.untouchedRows(driver)
             assertFails { PriceCatalogSchema.migrate(PriceCatalogMigrationProof.failing(driver), 4, 5) }
@@ -85,6 +86,7 @@ class PriceCatalogP1Test {
         for (version in listOf(3L, 4L)) {
             JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).use { driver ->
                 PriceCatalogMigrationProof.legacySchema.create(driver)
+                PriceCatalogMigrationProof.populateLegacy(driver)
                 if (version == 3L) {
                     driver.execute(null, "DROP INDEX index_projects_paymentStatus", 0)
                     driver.execute(null, "ALTER TABLE projects DROP COLUMN paymentStatus", 0)

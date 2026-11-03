@@ -17,25 +17,30 @@ object PriceCatalogMigrationProof {
                     uuid TEXT NOT NULL UNIQUE, deletedAt INTEGER)""",
                 "CREATE UNIQUE INDEX index_price_items_category_code ON price_items(category, code) WHERE deletedAt IS NULL"
             ).forEach { driver.execute(null, it, 0) }
-            val db = PrototypeDatabase(driver)
-            ClientRepository(db).create("Preserve client", createdAt = 10)
-            val client = ClientRepository(db).all().single().id
-            val project = ProjectRepository(db).createReturningId(client, "Preserve project", createdAt = 11)
-            MeasurementRepository(db).create(project, "Preserve geometry", drawingJson = "{\"frozen\":true}", createdAt = 12)
-            EstimateRepository(db).create(project, "Preserve estimate", "PVC", "standard", "simple",
-                2.0, 3.0, 6.0, 10.0, 50.0, 10.0, 0.0, 0.0, 60.0,
-                detailsJson = "{\"oldPriceUuid\":\"old-uuid\",\"pdf\":\"unchanged\"}", createdAt = 13)
-            ImmutableEstimateRepository(db).createSeries(project, 2026, 13,
-                ImmutableEstimateDraft("{\"priceUuid\":\"old-uuid\"}", "{\"frozen\":true}", 0.01, "kmp-1", 9999.0,
-                    listOf(ImmutableEstimateLine("canvas.pvc_matte", "OLD TEST PRICE", "м²", 1.0, 9999.0, 9999.0, priceItemUuid = "old-uuid"))))
-            driver.execute(null, """INSERT INTO price_items(id, code, title, category, unit, price, updatedAt, uuid)
-                VALUES (900, 'canvas.pvc_matte', 'OLD TEST PRICE', 'OLD CATEGORY', 'м²', 9999, 14, 'old-uuid')""", 0)
-            driver.execute(null, """INSERT INTO price_items(code, title, category, unit, price, updatedAt, uuid, deletedAt)
-                VALUES ('old.deleted', 'Deleted', 'OLD CATEGORY', 'шт.', 1, 15, 'old-deleted', 16)""", 0)
             return QueryResult.Unit
         }
         override fun migrate(driver: SqlDriver, oldVersion: Long, newVersion: Long, vararg callbacks: AfterVersion): QueryResult.Value<Unit> =
             error("Fixture cannot migrate")
+    }
+
+    // Populate AFTER opening the v4 driver. Native SQLiter owns the schema
+    // callback transaction; normal repository transactions belong outside it.
+    fun populateLegacy(driver: SqlDriver) {
+        val db = PrototypeDatabase(driver)
+        ClientRepository(db).create("Preserve client", createdAt = 10)
+        val client = ClientRepository(db).all().single().id
+        val project = ProjectRepository(db).createReturningId(client, "Preserve project", createdAt = 11)
+        MeasurementRepository(db).create(project, "Preserve geometry", drawingJson = "{\"frozen\":true}", createdAt = 12)
+        EstimateRepository(db).create(project, "Preserve estimate", "PVC", "standard", "simple",
+            2.0, 3.0, 6.0, 10.0, 50.0, 10.0, 0.0, 0.0, 60.0,
+            detailsJson = "{\"oldPriceUuid\":\"old-uuid\",\"pdf\":\"unchanged\"}", createdAt = 13)
+        ImmutableEstimateRepository(db).createSeries(project, 2026, 13,
+            ImmutableEstimateDraft("{\"priceUuid\":\"old-uuid\"}", "{\"frozen\":true}", 0.01, "kmp-1", 9999.0,
+                listOf(ImmutableEstimateLine("canvas.pvc_matte", "OLD TEST PRICE", "м²", 1.0, 9999.0, 9999.0, priceItemUuid = "old-uuid"))))
+        driver.execute(null, """INSERT INTO price_items(id, code, title, category, unit, price, updatedAt, uuid)
+            VALUES (900, 'canvas.pvc_matte', 'OLD TEST PRICE', 'OLD CATEGORY', 'м²', 9999, 14, 'old-uuid')""", 0)
+        driver.execute(null, """INSERT INTO price_items(code, title, category, unit, price, updatedAt, uuid, deletedAt)
+            VALUES ('old.deleted', 'Deleted', 'OLD CATEGORY', 'шт.', 1, 15, 'old-deleted', 16)""", 0)
     }
 
     /** SQLite quote() preserves NULL/type/blob bytes; compare every non-price column. */

@@ -27,7 +27,11 @@ unit/quantityMode/placementKind overrides. За відсутності defaultUn
 Чинний CMP екран працює через view з `category = price_groups.name`.
 List/search/create/edit/quick-price/delete збережені. Adapter зберігає groupUuid
 при незмінній категорії, навіть якщо групу паралельно перейменовано.
-Новий UI керування групами/параметрами — окремий P2.
+Новий UI керування групами/параметрами — окремий P2. Compatibility CAS читає
+параметри перед одиничним SQL UPDATE з id/uuid/code/version guards: два deferred
+read locks не повинні перетворювати звичайний stale conflict на SQLite busy.
+Створення нової категорії та пов'язаний CAS лишаються однією транзакцією;
+невдалий CAS відкочує створення групи.
 
 ## Одноразове наповнення
 
@@ -57,8 +61,12 @@ writer lock), потім читає `seedVersion`. Версія 0 означає
   v3/v4/v5 колонки. v3 спочатку отримує існуючу additive v4 міграцію, далі v5.
   Успіх зберігає `user_version=5`. Непідтримувана/неповна схема відхиляється.
   Не створюються нові файл БД, ключ або сіль замість існуючих.
-- iOS: тільки KMP framework та isolated Simulator SQLCipher contract. Runnable
-  host лишається #42; P1 не додає iOS застосунок.
+- iOS: тільки KMP framework та isolated Simulator SQLCipher contract. SQLiter 1.3.3
+  сам обгортає create/upgrade та user_version фізичною транзакцією; borrowed driver
+  у callback її не бачить. Тонкий `IosPriceCatalogSchema` використовує цю вже
+  наявну транзакцію для того ж спільного DDL/seed, без вкладеного BEGIN.
+  Fresh install та rollback посеред справжнього upgrade callback перевіряються
+  окремо. Runnable host лишається #42; P1 не додає iOS застосунок.
 
 Будь-яка помилка DDL, seed або marker призводить до rollback і відкриття завершується
 помилкою. Wipe/retry через нову БД не існує. Тести інжектують помилку посеред seed

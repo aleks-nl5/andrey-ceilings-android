@@ -35,6 +35,7 @@ class PriceCatalogSqlCipherTest {
         }
         try {
             val before = openWith(PriceCatalogMigrationProof.legacySchema).use {
+                PriceCatalogMigrationProof.populateLegacy(it)
                 PriceCatalogMigrationProof.untouchedRows(it)
             }
             assertFails { openWith(failingSchema).close() }

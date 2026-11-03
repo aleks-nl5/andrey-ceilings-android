@@ -12,8 +12,7 @@ object PriceCatalogSchema : SqlSchema<QueryResult.Value<Unit>> {
 
     override fun create(driver: SqlDriver): QueryResult.Value<Unit> {
         PrototypeDatabase(driver).transaction {
-            PrototypeDatabase.Schema.create(driver)
-            StarterPriceCatalog.initialize(PrototypeDatabase(driver))
+            createInTransaction(driver)
         }
         return QueryResult.Unit
     }
@@ -21,9 +20,21 @@ object PriceCatalogSchema : SqlSchema<QueryResult.Value<Unit>> {
     override fun migrate(driver: SqlDriver, oldVersion: Long, newVersion: Long,
         vararg callbacks: AfterVersion): QueryResult.Value<Unit> {
         PrototypeDatabase(driver).transaction {
-            PrototypeDatabase.Schema.migrate(driver, oldVersion, newVersion, *callbacks)
-            if (newVersion >= 5L) StarterPriceCatalog.initialize(PrototypeDatabase(driver))
+            migrateInTransaction(driver, oldVersion, newVersion, *callbacks)
         }
+        return QueryResult.Unit
+    }
+
+    internal fun createInTransaction(driver: SqlDriver): QueryResult.Value<Unit> {
+        PrototypeDatabase.Schema.create(driver)
+        StarterPriceCatalog.initializeInTransaction(PrototypeDatabase(driver))
+        return QueryResult.Unit
+    }
+
+    internal fun migrateInTransaction(driver: SqlDriver, oldVersion: Long, newVersion: Long,
+        vararg callbacks: AfterVersion): QueryResult.Value<Unit> {
+        PrototypeDatabase.Schema.migrate(driver, oldVersion, newVersion, *callbacks)
+        if (newVersion >= 5L) StarterPriceCatalog.initializeInTransaction(PrototypeDatabase(driver))
         return QueryResult.Unit
     }
 }
