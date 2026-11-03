@@ -40,9 +40,13 @@ fun MeasurementCreateScreen(
         val model = rememberSaveable(store, saver = saver) {
             MeasurementCreateModel(store, MeasurementCreateDraft(projectId, precision))
         }
-        val parentFlow = remember(store) { store?.observeParent(projectId) }
-        val parent = parentFlow?.collectAsState(MeasurementCreateParent.Loading)?.value
-            ?: MeasurementCreateParent.Unavailable
+        // The form registry key stays stable across Activity recreation, while
+        // replacing an unlocked session must immediately clear its old parent data.
+        val parent = key(store) {
+            val parentFlow = remember { store?.observeParent(projectId) }
+            parentFlow?.collectAsState(MeasurementCreateParent.Loading)?.value
+                ?: MeasurementCreateParent.Unavailable
+        }
         MeasurementCreateScreen(model, parent, contentPadding, systemTopInset, onBack, onSaved)
     }
 }
