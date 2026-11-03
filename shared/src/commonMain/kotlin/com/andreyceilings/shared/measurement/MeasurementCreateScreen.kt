@@ -40,12 +40,40 @@ fun MeasurementCreateScreen(
     projectId: Long, precision: MeasurementPrecision, store: MeasurementCreateStore?,
     contentPadding: PaddingValues, systemTopInset: Dp,
     onBack: () -> Unit, onSaved: (Long) -> Unit,
-    navigationGuard: MeasurementCreateNavigationGuard? = null
+    navigationGuard: MeasurementCreateNavigationGuard? = null, backLabel: String = "До об'єкта"
 ) {
+    // Preserve the restored draft/UUID until the unlocked session is available.
+    // Consuming it against a transient null store would reset it when startup completes.
+    if (store == null) {
+        val direction = LocalLayoutDirection.current
+        val start = contentPadding.calculateStartPadding(direction)
+        val end = contentPadding.calculateEndPadding(direction)
+        CeilingsScreenScaffold(
+            windowInsets = WindowInsets(0, 0, 0, 0),
+            contentPadding = PaddingValues(start = start, end = end, top = 8.dp,
+                bottom = contentPadding.calculateBottomPadding()),
+            header = { Spacer(Modifier.height(systemTopInset + 8.dp)) },
+            pinned = {
+                Row(Modifier.fillMaxWidth().padding(start = start, end = end),
+                    verticalAlignment = Alignment.CenterVertically) {
+                    CeilingsFab(onClick = onBack, actionLabel = backLabel, profile = CeilingsFabProfile.COMPACT) {
+                        Icon(Icons.Default.ArrowBack, contentDescription = null)
+                    }
+                    Text("Новий замір", Modifier.weight(1f).padding(start = 8.dp),
+                        style = MaterialTheme.typography.titleLarge)
+                }
+            }, bottomGradient = false
+        ) { padding ->
+            Column(Modifier.fillMaxSize().padding(padding)) {
+                Text("Захищена база недоступна або завантажується.")
+            }
+        }
+        return
+    }
     key(projectId) {
         val saver = remember(store) { Saver<MeasurementCreateModel, String>(
             save = { it.state.value.draft.snapshot() },
-            restore = { snapshot -> MeasurementCreateDraft.restore(snapshot, projectId)?.let { MeasurementCreateModel(store, it) } }
+            restore = { snapshot -> MeasurementCreateModel.restore(store, snapshot, projectId) }
         ) }
         // Capture the setting once. A restored draft keeps its original resolution.
         val model = rememberSaveable(store, saver = saver) {
@@ -54,11 +82,10 @@ fun MeasurementCreateScreen(
         // The form registry key stays stable across Activity recreation, while
         // replacing an unlocked session must immediately clear its old parent data.
         val parent = key(store) {
-            val parentFlow = remember { store?.observeParent(projectId) }
-            parentFlow?.collectAsState(MeasurementCreateParent.Loading)?.value
-                ?: MeasurementCreateParent.Unavailable
+            val parentFlow = remember { store.observeParent(projectId) }
+            parentFlow.collectAsState(MeasurementCreateParent.Loading).value
         }
-        MeasurementCreateScreen(model, parent, contentPadding, systemTopInset, onBack, onSaved, navigationGuard)
+        MeasurementCreateScreen(model, parent, contentPadding, systemTopInset, onBack, onSaved, navigationGuard, backLabel)
     }
 }
 
@@ -68,7 +95,7 @@ fun MeasurementCreateScreen(
     model: MeasurementCreateModel, parent: MeasurementCreateParent,
     contentPadding: PaddingValues = PaddingValues(16.dp), systemTopInset: Dp = 0.dp,
     onBack: () -> Unit, onSaved: (Long) -> Unit,
-    navigationGuard: MeasurementCreateNavigationGuard? = null
+    navigationGuard: MeasurementCreateNavigationGuard? = null, backLabel: String = "До об'єкта"
 ) {
     DisposableEffect(model, navigationGuard) {
         navigationGuard?.bind(model)
@@ -80,7 +107,7 @@ fun MeasurementCreateScreen(
     val scope = rememberCoroutineScope()
     val focus = LocalFocusManager.current
     val currentSaved by rememberUpdatedState(onSaved)
-    LaunchedEffect(state.savedId) { state.savedId?.let { currentSaved(it) } }
+    LaunchedEffect(state.savedId) { state.savedId?.let { currentSaved(it); model.delivered() } }
     val enabled = !state.saving && state.savedId == null && !state.cancelled
     val direction = LocalLayoutDirection.current
     val start = contentPadding.calculateStartPadding(direction)
@@ -95,7 +122,7 @@ fun MeasurementCreateScreen(
             Column(Modifier.fillMaxWidth().padding(start = start, end = end),
                 verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    CeilingsFab(onClick = ::cancel, actionLabel = "До об'єкта",
+                    CeilingsFab(onClick = ::cancel, actionLabel = backLabel,
                         enabled = enabled, profile = CeilingsFabProfile.COMPACT) {
                         Icon(Icons.Default.ArrowBack, contentDescription = null)
                     }

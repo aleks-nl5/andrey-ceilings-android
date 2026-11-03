@@ -25,14 +25,14 @@ import com.andreyceilings.shared.ui.CeilingsScreenScaffold
 fun MeasurementDetailsScreen(
     projectId: Long, measurementId: Long, store: MeasurementDetailsStore?,
     contentPadding: PaddingValues, systemTopInset: Dp, onBack: () -> Unit, onEdit: (() -> Unit)? = null,
-    navigationGuard: MeasurementCreateNavigationGuard? = null
+    navigationGuard: MeasurementCreateNavigationGuard? = null, backLabel: String = "До об'єкта"
 ) {
     // Reset collector state with its route/session; never flash a previous record.
     key(projectId, measurementId, store) {
         val flow = remember { store?.observe(projectId, measurementId) }
         val state = flow?.collectAsState(MeasurementDetailsState.Loading)?.value
             ?: MeasurementDetailsState.Unavailable
-        MeasurementDetailsScreen(state, contentPadding, systemTopInset, onBack, onEdit, navigationGuard)
+        MeasurementDetailsScreen(state, contentPadding, systemTopInset, onBack, onEdit, navigationGuard, backLabel)
     }
 }
 
@@ -43,7 +43,7 @@ fun MeasurementDetailsScreen(
     contentPadding: PaddingValues = PaddingValues(16.dp),
     systemTopInset: Dp = 0.dp,
     onBack: () -> Unit, onEdit: (() -> Unit)? = null,
-    navigationGuard: MeasurementCreateNavigationGuard? = null
+    navigationGuard: MeasurementCreateNavigationGuard? = null, backLabel: String = "До об'єкта"
 ) {
     var fullscreen by rememberSaveable { mutableStateOf(navigationGuard?.fullscreen?.value == true) }
     var selectedSide by rememberSaveable { mutableStateOf<Int?>(null) }
@@ -91,7 +91,7 @@ fun MeasurementDetailsScreen(
         pinned = {
             Row(Modifier.fillMaxWidth().padding(start = start, end = end),
                 verticalAlignment = Alignment.CenterVertically) {
-                CeilingsFab(onClick = onBack, actionLabel = "До об'єкта", profile = CeilingsFabProfile.COMPACT) {
+                CeilingsFab(onClick = onBack, actionLabel = backLabel, profile = CeilingsFabProfile.COMPACT) {
                     Icon(Icons.Default.ArrowBack, contentDescription = null)
                 }
                 Column(Modifier.weight(1f).padding(start = 8.dp)) {

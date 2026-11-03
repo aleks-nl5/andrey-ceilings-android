@@ -157,38 +157,52 @@ class MeasurementCreateSceneTest {
     }
 
     @Test fun formRegistryRestoresTextAndPrecisionButNeverStartsSave() {
-        var navigation = AppNavigationState().selectTab(AppRoute.OBJECTS).openProject(7).createMeasurement(7)
-        val registry = SaveableStateRegistry(null) { true }
-        fun scene(registry: SaveableStateRegistry, precision: MeasurementPrecision) = ImageComposeScene(360, 1000) {
-            CompositionLocalProvider(LocalSaveableStateRegistry provides registry) {
-                CeilingsTheme(false) {
-                    MeasurementCreateScreen(7, precision, null, PaddingValues(16.dp), 0.dp,
-                        onBack = { navigation = navigation.back() },
-                        onSaved = { fail("Restoration must never save") })
+        JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).use { driver ->
+            PrototypeDatabase.Schema.create(driver)
+            val db = PrototypeDatabase(driver)
+            val project = ProjectRepository(db).createReturningId(null, "Restore parent", createdAt = 1)
+            val store = MeasurementCreateStore(db) { 2 }
+            val activeStore = mutableStateOf<MeasurementCreateStore?>(store)
+            var navigation = AppNavigationState().selectTab(AppRoute.OBJECTS).openProject(project).createMeasurement(project)
+            val registry = SaveableStateRegistry(null) { true }
+            fun scene(registry: SaveableStateRegistry, precision: MeasurementPrecision) = ImageComposeScene(360, 1000) {
+                CompositionLocalProvider(LocalSaveableStateRegistry provides registry) {
+                    CeilingsTheme(false) {
+                        MeasurementCreateScreen(project, precision, activeStore.value, PaddingValues(16.dp), 0.dp,
+                            onBack = { navigation = navigation.back() },
+                            onSaved = { fail("Restoration must never save") })
+                    }
                 }
             }
+            val first = scene(registry, MeasurementPrecision.FIVE_MILLIMETERS)
+            val saved: Map<String, List<Any?>>
+            try {
+                first.render().close()
+                val field = first.nodes().first { it.config.getOrNull(SemanticsActions.SetText) != null }
+                assertTrue(field.config.getOrNull(SemanticsActions.SetText)?.action?.invoke(AnnotatedString("Відновлена кухня")) == true)
+                Snapshot.sendApplyNotifications()
+                first.render(16_000_000).close()
+                saved = registry.performSave()
+            } finally { first.close() }
+            navigation = AppNavigationState.restore(navigation.snapshot())
+            activeStore.value = null // Android's transient startup state after Activity recreation.
+            val restored = scene(SaveableStateRegistry(saved) { true }, MeasurementPrecision.TEN_CENTIMETERS)
+            try {
+                restored.render().close()
+                assertTrue(restored.textContent().contains("база недоступна"))
+                assertFalse(restored.nodes().any { it.config.getOrNull(SemanticsActions.SetText) != null })
+                activeStore.value = store
+                Snapshot.sendApplyNotifications()
+                restored.render(16_000_000).close()
+                assertTrue(restored.textContent().contains("5 мм"))
+                assertTrue(restored.nodes().any { it.config.getOrNull(SemanticsProperties.EditableText)?.text == "Відновлена кухня" })
+                assertFalse(restored.nodes().any { it.config.getOrNull(SemanticsProperties.Text).orEmpty().any { v -> v.text == "Збереження…" } })
+                assertTrue(restored.clickText("Скасувати"))
+                assertNull(navigation.measurementCreate)
+                assertEquals(ProjectDetails(project), navigation.projectDetails)
+                assertTrue(MeasurementRepository(db).all().isEmpty(), "Restoring the form never writes")
+            } finally { restored.close() }
         }
-        val first = scene(registry, MeasurementPrecision.FIVE_MILLIMETERS)
-        val saved: Map<String, List<Any?>>
-        try {
-            first.render().close()
-            val field = first.nodes().first { it.config.getOrNull(SemanticsActions.SetText) != null }
-            assertTrue(field.config.getOrNull(SemanticsActions.SetText)?.action?.invoke(AnnotatedString("Відновлена кухня")) == true)
-            Snapshot.sendApplyNotifications()
-            first.render(16_000_000).close()
-            saved = registry.performSave()
-        } finally { first.close() }
-        navigation = AppNavigationState.restore(navigation.snapshot())
-        val restored = scene(SaveableStateRegistry(saved) { true }, MeasurementPrecision.TEN_CENTIMETERS)
-        try {
-            restored.render().close()
-            assertTrue(restored.textContent().contains("5 мм"))
-            assertTrue(restored.nodes().any { it.config.getOrNull(SemanticsProperties.EditableText)?.text == "Відновлена кухня" })
-            assertFalse(restored.nodes().any { it.config.getOrNull(SemanticsProperties.Text).orEmpty().any { v -> v.text == "Збереження…" } })
-            assertTrue(restored.clickText("Скасувати"))
-            assertNull(navigation.measurementCreate)
-            assertEquals(ProjectDetails(7), navigation.projectDetails)
-        } finally { restored.close() }
     }
 
     @Test fun invalidFormAndUnavailableParentExplainWhySaveIsDisabled() {

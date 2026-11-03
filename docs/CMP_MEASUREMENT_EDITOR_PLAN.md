@@ -3,11 +3,11 @@
 PR A #72 **merged**, final `b9effed`, merge `55fb717`: Android/Windows/iOS green,
 власник підтвердив APK. [Create contract](CMP_MEASUREMENT_CREATE.md).
 
-Поточний окремий **Draft PR B1**, #73 — safe edit/fullscreen, numeric walls,
-Undo/Redo, dirty/save guard, atomic updatedAt CAS і retained parent context.
-[Implementation contract](CMP_MEASUREMENT_EDIT.md). **PR B2** — тільки після
-owner acceptance і merge B1: global tab/quick-create/calculator parity та повне
-вилучення Android-only редактора. #60/#57/#73 залишаються відкритими.
+PR B1 #74 **merged** після платформних CI та приймання Android APK:
+safe edit/fullscreen, Undo/Redo, save guard і atomic updatedAt CAS.
+[Implementation contract](CMP_MEASUREMENT_EDIT.md). **PR B2** — global tab,
+quick-create, calculator parity та вилучення невикористаного Android-only редактора.
+#60/#57/#73 залишаються відкритими.
 
 ## Рішення щодо тестових даних
 
@@ -63,6 +63,11 @@ owner acceptance і merge B1: global tab/quick-create/calculator parity та п�
 - [ ] **Поза PR A:** редагування, видалення, інтеграція глобальної вкладки, нові форми, зміна схем/драйверів/backup, drag-to-draw, переписування кошторисів/PDF.
 
 ## PR B1 / B2: редагування, потім глобальна вкладка та Android cutover
+
+**Завдання B2 для Codex:** використати готові CMP-екрани з B1 у глобальній вкладці,
+Quick Create та чинному переході до калькулятора. Після функціонального паритету
+прибрати невикористаний Android-only редактор. Не виконувати вимірювань CI,
+порівнянь тривалості/кешів або несуміжного рефакторингу; обов'язкові CI-тести зберегти.
 
 - [ ] CMP edit з тією самою form/state, предзаповненням і безпечною валідацією; project ownership і захист від stale `updatedAt`/видалення (optimistic `UPDATE … WHERE updatedAt = ? AND deletedAt IS NULL RETURNING` за потреби).
 - [ ] Редагування й відкриття з Measurement Details; глобальна вкладка та quick-create використовують спільний редактор; збереження запуску калькулятора від заміру.

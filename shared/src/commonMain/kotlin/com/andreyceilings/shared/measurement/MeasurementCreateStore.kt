@@ -22,6 +22,13 @@ class MeasurementCreateStore(private val database: PrototypeDatabase, private va
     private val projects = ProjectRepository(database)
     private val measurements = MeasurementRepository(database)
 
+    // Activity recreation must reattach the actual save, including its exit guard.
+    // Keep only pending results, within the unlocked session, just like the B1 edit store.
+    private val pending = MutableStateFlow<Map<String, MeasurementCreateModel>>(emptyMap())
+    internal fun retain(uuid: String, model: MeasurementCreateModel) { pending.update { it + (uuid to model) } }
+    internal fun release(uuid: String) { pending.update { it - uuid } }
+    internal fun retained(uuid: String): MeasurementCreateModel? = pending.value[uuid]
+
     fun observeParent(projectId: Long): Flow<MeasurementCreateParent> = projects.observeById(projectId)
         .map { row -> if (row == null) MeasurementCreateParent.Missing
             else MeasurementCreateParent.Active(row.address.ifBlank { row.title }) }
@@ -84,6 +91,7 @@ class MeasurementCreateModel(private val store: MeasurementCreateStore?, draft: 
             val current = mutableState.value
             if (current.savedId != null || current.cancelled) return
             if (!validateMeasurementCreate(current.draft).canSave) return
+            store?.retain(current.draft.recordUuid, this)
             mutableState.value = current.copy(saving = true, error = null)
             // Hosts keep the editor visible through the shared navigation guard.
             // A started atomic transaction is not cancelled/retried by navigation.
@@ -101,6 +109,19 @@ class MeasurementCreateModel(private val store: MeasurementCreateStore?, draft: 
                         "Перевірте доступність БД та вільне місце й повторіть збереження.")
                 }
             }
-        } finally { saveMutex.unlock() }
+        } finally {
+            if (state.value.savedId == null) store?.release(state.value.draft.recordUuid)
+            saveMutex.unlock()
+        }
+    }
+
+    fun delivered() { store?.release(state.value.draft.recordUuid) }
+
+    companion object {
+        fun restore(store: MeasurementCreateStore?, snapshot: String, projectId: Long): MeasurementCreateModel? {
+            val draft = MeasurementCreateDraft.restore(snapshot, projectId) ?: return null
+            return store?.retained(draft.recordUuid)?.takeIf { it.state.value.draft.projectId == projectId }
+                ?: MeasurementCreateModel(store, draft)
+        }
     }
 }

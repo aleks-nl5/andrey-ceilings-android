@@ -24,7 +24,6 @@ import kotlinx.coroutines.withContext
 import com.andreyceilings.app.data.PerformanceDiagnosticsLog
 import com.andreyceilings.app.data.PerformanceDiagnosticsSettings
 import com.andreyceilings.app.data.db.CeilingsDatabase
-import com.andreyceilings.app.data.db.FrozenPolygonGeometryJson
 import com.andreyceilings.app.data.backup.BackupPasswordStore
 import com.andreyceilings.app.data.backup.AutomaticBackupScheduler
 import com.andreyceilings.app.data.backup.AutomaticBackupSettings
@@ -138,7 +137,7 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
         TopAppBarDefaults.enterAlwaysScrollBehavior()
     }
     val isProjectDetailsOpen = tab == AppTab.OBJECTS && navigation.projectDetails != null
-    val isMeasurementDetailsOpen = isProjectDetailsOpen &&
+    val isMeasurementDetailsOpen = (isProjectDetailsOpen || tab == AppTab.MEASUREMENTS) &&
         (navigation.measurementDetails != null || navigation.measurementCreate != null || navigation.measurementEdit != null)
     var projectTitleProgress by remember { mutableFloatStateOf(0f) }
     // Let the shared title own details scrolling rather than enterAlways showing
@@ -346,6 +345,10 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
             } ?: MeasurementPrecision.ONE_CENTIMETER
         )
     }
+    // Using a saved measurement captures precision for this calculator input only.
+    // The global preference remains the default for the next new measurement.
+    var capturedCalculatorPrecision by remember { mutableStateOf<MeasurementPrecision?>(null) }
+    val calculatorPrecision = capturedCalculatorPrecision ?: measurementPrecision
     var geometryShape by remember { mutableStateOf(FrozenCeilingShape.RECTANGLE.wireId) }
     // A single keyed measurement store serves every registered shape template.
     // New templates require no new Compose fields or per-shape state variables.
@@ -409,12 +412,12 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
         complexity = complexity
     )
     // The Android calculator now uses the shared Kotlin Multiplatform engine.
-    val calculation = remember(geometryShape, templateMeasurements, polygonSides.toList(), legacyPolygonSource, pricePerM2, profilePrice, priceItems, calculatorOptions, material, profileType, measurementPrecision) {
+    val calculation = remember(geometryShape, templateMeasurements, polygonSides.toList(), legacyPolygonSource, pricePerM2, profilePrice, priceItems, calculatorOptions, material, profileType, calculatorPrecision) {
         runCatching {
             val verifiedGeometry = if (geometryShape == "polygon") {
                 val old = legacyPolygonSource
                 if (old != null) {
-                    require(old.precisionStepMeters == measurementPrecision.stepMeters) {
+                    require(old.precisionStepMeters == calculatorPrecision.stepMeters) {
                         "Точність збереженого заміру змінилась"
                     }
                     com.andreyceilings.shared.estimate.FrozenPolygonGeometryContract.requireValid(old)
@@ -423,13 +426,13 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
                         precisionStepMeters = old.precisionStepMeters
                     )
                 } else {
-                    val sides = sidesFromText(polygonSides.toList(), measurementPrecision.stepMeters)
+                    val sides = sidesFromText(polygonSides.toList(), calculatorPrecision.stepMeters)
                     val contour = com.andreyceilings.shared.calculation.OrthogonalSideContour.build(
-                        sides, measurementPrecision.stepMeters
+                        sides, calculatorPrecision.stepMeters
                     )
                     com.andreyceilings.shared.calculation.GeometryInput(
                         shape = "polygon", verticesMm = contour.vertices,
-                        precisionStepMeters = measurementPrecision.stepMeters
+                        precisionStepMeters = calculatorPrecision.stepMeters
                     )
                 }
             } else VerifiedCeilingGeometry.capturedTemplate(
@@ -437,7 +440,7 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
                 templateMeasurements.mapValues { (_, text) ->
                     text.trim().replace(',', '.').toDoubleOrNull() ?: Double.NaN
                 },
-                measurementPrecision.stepMeters
+                calculatorPrecision.stepMeters
             )
             CeilingCalculator.estimate(
                 length.toSafeDouble(), width.toSafeDouble(),
@@ -445,7 +448,7 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
                 priceItems = priceItems, options = calculatorOptions,
                 materialType = material,
                 profileType = profileType,
-                precisionStepMeters = measurementPrecision.stepMeters,
+                precisionStepMeters = calculatorPrecision.stepMeters,
                 geometryInput = verifiedGeometry,
                 onTimings = if (BuildConfig.DEBUG &&
                     PerformanceDiagnosticsSettings.isEnabled(context.applicationContext)
@@ -499,14 +502,14 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
             modifier = Modifier
                 .fillMaxSize()
                 .background(MaterialTheme.colorScheme.background)
-                .nestedScroll(if (isProjectDetailsOpen) passiveDetailsScroll
+                .nestedScroll(if (isProjectDetailsOpen || isMeasurementDetailsOpen) passiveDetailsScroll
                     else topAppBarScrollBehavior.nestedScrollConnection)
         ) {
         key(tab) {
             if (tab == AppTab.OBJECTS || tab == AppTab.MEASUREMENTS || tab == AppTab.ESTIMATES || tab == AppTab.PRICES || tab == AppTab.CALENDAR) {
                 Box(
                     Modifier.fillMaxSize().nestedScroll(screenScrollConnection)
-                        .padding(horizontal = if (tab == AppTab.OBJECTS) 0.dp else 16.dp)
+                        .padding(horizontal = if (tab == AppTab.OBJECTS || tab == AppTab.MEASUREMENTS) 0.dp else 16.dp)
                 ) {
                     when (tab) {
                         AppTab.OBJECTS -> ObjectsClientsHost(
@@ -546,61 +549,35 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
                             openCreateProject = navigation.pendingQuickCreate == AppQuickCreate.OBJECT,
                             onCreateProjectConsumed = { updateNavigation(navigation.consumeQuickCreate(AppQuickCreate.OBJECT)) }
                         )
-                        AppTab.MEASUREMENTS -> MeasurementsScreen(
-                            database = database,
-                            precision = measurementPrecision,
+                        AppTab.MEASUREMENTS -> MeasurementsHost(
+                            database = database, navigation = navigation, precision = measurementPrecision,
+                            navigationGuard = measurementCreateNavigationGuard,
+                            onNavigate = ::updateNavigation,
+                            onEditSaved = { projectId, measurementId ->
+                                measurementCreateNavigationGuard.deliverEditResult(
+                                    navigation, projectId, measurementId, ::applyNavigation)
+                            },
                             onOpenEstimates = { navigateTo(AppTab.ESTIMATES) },
-                            onUseMeasurement = { measured ->
-                                // A saved measurement is copied into calculator STATE.
-                                // Never mutate its SQLDelight row or any old estimate revision.
-                                val legacy = measured.shape == "rectangle" &&
-                                    measured.drawingJson.trim() == "{}"
-                                if (legacy) {
-                                    check(measured.lengthMeters > 0.0 &&
-                                        measured.widthMeters > 0.0) {
-                                        "Історичний замір не має коректних габаритів"
+                            onUseMeasurement = { source ->
+                                // Copy validated saved inputs; neither the source row nor preferences are written.
+                                capturedCalculatorPrecision = checkNotNull(
+                                    MeasurementPrecision.fromStep(source.precisionStepMeters))
+                                geometryShape = source.shapeType
+                                legacyPolygonSource = null
+                                if (source.shapeType == "polygon") {
+                                    if (source.sides.isEmpty()) legacyPolygonSource = source
+                                    else {
+                                        polygonSides.clear()
+                                        polygonSides.addAll(source.sides.map { wall ->
+                                            (wall.lengthMm / 1000.0).toString() to wall.turnAfter
+                                        })
                                     }
-                                    geometryShape = "rectangle"
-                                    geometryMeasurements["rectangle.length"] =
-                                        measured.lengthMeters.toString()
-                                    geometryMeasurements["rectangle.width"] =
-                                        measured.widthMeters.toString()
-                                } else {
-                                    val source = FrozenPolygonGeometryJson.readMeasurement(
-                                        measured.drawingJson
-                                    )
-                                    val selected = checkNotNull(
-                                        MeasurementPrecision.fromStep(source.precisionStepMeters)
-                                    )
-                                    measurementPrecision = selected
-                                    precisionPreferences.edit()
-                                        .putString("measurement_precision", selected.name).apply()
-                                    geometryShape = source.shapeType
-                                    if (source.shapeType == "polygon") {
-                                        if (source.sides.isEmpty()) {
-                                            legacyPolygonSource = source
-                                        } else {
-                                            legacyPolygonSource = null
-                                            polygonSides.clear()
-                                            polygonSides.addAll(source.sides.map { wall ->
-                                                (wall.lengthMm / 1000.0).toString() to wall.turnAfter
-                                            })
-                                        }
-                                    } else {
-                                        source.measurementsMm.forEach { (key, mm) ->
-                                            geometryMeasurements["${source.shapeType}.$key"] =
-                                                (mm / 1000.0).toString()
-                                        }
-                                    }
+                                } else source.measurementsMm.forEach { (key, mm) ->
+                                    geometryMeasurements["${source.shapeType}.$key"] = (mm / 1000.0).toString()
                                 }
                                 navigateTo(AppTab.CALCULATOR)
                             },
-                            openCreateMeasurement = navigation.pendingQuickCreate == AppQuickCreate.MEASUREMENT,
-                            onCreateMeasurementConsumed = { updateNavigation(navigation.consumeQuickCreate(AppQuickCreate.MEASUREMENT)) },
-                            onMissingProject = {
-                                startQuickCreate(AppQuickCreate.OBJECT)
-                                Toast.makeText(context, "Спочатку створіть об’єкт для заміру", Toast.LENGTH_LONG).show()
-                            }
+                            onCreateProject = { startQuickCreate(AppQuickCreate.OBJECT) }
                         )
                         AppTab.ESTIMATES -> EstimatesScreen(database)
                         AppTab.PRICES -> PriceListScreen(database, darkTheme = useDarkTheme)
@@ -662,8 +639,9 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
                             profilePrice = profilePrice, onProfilePrice = { profilePrice = it },
                             material = material, onMaterial = { material = it },
                             profileType = profileType, onProfileType = { profileType = it },
-                            measurementPrecision = measurementPrecision,
+                            measurementPrecision = calculatorPrecision,
                             onMeasurementPrecision = { selected ->
+                                capturedCalculatorPrecision = null
                                 measurementPrecision = selected
                                 precisionPreferences.edit().putString("measurement_precision", selected.name).apply()
                             },
@@ -687,6 +665,7 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
                             onOpenPriceList = { openNested(AppTab.PRICES) },
                             measurementPrecision = measurementPrecision,
                             onMeasurementPrecision = { selected ->
+                                capturedCalculatorPrecision = null
                                 measurementPrecision = selected
                                 precisionPreferences.edit().putString("measurement_precision", selected.name).apply()
                             }

@@ -20,6 +20,7 @@ class MeasurementEditStoreTest {
         JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).use { driver ->
             PrototypeDatabase.Schema.create(driver)
             MeasurementEditNavigationProof.run(driver)
+            MeasurementEditNavigationProof.run(driver, global = true)
         }
     }
     @Test fun failedUpdateRollsBackAndUnavailableDbRetainsDraft(): Unit = runBlocking {
@@ -46,7 +47,7 @@ class MeasurementEditStoreTest {
 }
 
 object MeasurementEditNavigationProof {
-    suspend fun run(driver: app.cash.sqldelight.db.SqlDriver): Unit = coroutineScope {
+    suspend fun run(driver: app.cash.sqldelight.db.SqlDriver, global: Boolean = false): Unit = coroutineScope {
         val db = PrototypeDatabase(driver)
         val project = ProjectRepository(db).createReturningId(null, "Edit navigation", createdAt = 1)
         val id = MeasurementCreateStore(db) { 2 }.create(MeasurementCreateFixtures.draft(project, "rectangle", MeasurementPrecision.ONE_CENTIMETER))
@@ -55,7 +56,9 @@ object MeasurementEditNavigationProof {
         val model = MeasurementEditModel(store, store.load(project, id))
         model.accept(MeasurementCreateIntent.Dimension("length", "6"))
         val guard = MeasurementCreateNavigationGuard().also { it.bindEdit(model) }
-        val route = AppNavigationState().selectTab(AppRoute.OBJECTS).openProject(project).openMeasurement(project, id).editMeasurement(project, id)
+        val parent = if (global) AppNavigationState().selectTab(AppRoute.MEASUREMENTS)
+            else AppNavigationState().selectTab(AppRoute.OBJECTS).openProject(project)
+        val route = parent.openMeasurement(project, id).editMeasurement(project, id)
         val write = launch(start = CoroutineStart.UNDISPATCHED) { model.save() }
         var inFlightSnapshot = ""
         try {
