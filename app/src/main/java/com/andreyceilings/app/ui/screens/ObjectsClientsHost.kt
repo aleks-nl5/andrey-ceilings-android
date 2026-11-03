@@ -38,7 +38,9 @@ internal fun ObjectsClientsHost(
     onListTabChanged: (ObjectsClientsTab) -> Unit = {},
     openCreateProject: Boolean,
     headerVisibleFraction: Float,
-    onCreateProjectConsumed: () -> Unit
+    onCreateProjectConsumed: () -> Unit,
+    measurementDetails: com.andreyceilings.shared.navigation.MeasurementDetails? = null,
+    onOpenMeasurement: (Long, Long) -> Unit = { _, _ -> }
 ) {
     val context = LocalContext.current
     val store = remember(database) {
@@ -63,6 +65,8 @@ internal fun ObjectsClientsHost(
     ObjectsClientsScreen(
         rows = rows,
         detailsProjectId = detailsProjectId,
+        measurementDetails = measurementDetails,
+        onOpenMeasurement = onOpenMeasurement,
         detailsStore = store,
         onOpenProject = onOpenProject,
         onCloseProject = onCloseProject,

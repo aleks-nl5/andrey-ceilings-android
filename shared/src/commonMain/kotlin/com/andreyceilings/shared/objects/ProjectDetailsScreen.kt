@@ -137,7 +137,9 @@ internal fun ProjectDetailsScreen(
     onHeaderProgress: (Float) -> Unit = {},
     onBack: () -> Unit,
     onEdit: (ProjectListEntry) -> Unit,
-    onDial: (String) -> Unit
+    onDial: (String) -> Unit,
+    active: Boolean = true,
+    onOpenMeasurement: (Long) -> Unit = {}
 ) {
     val flow = remember(store, projectId) {
         store?.observeProjectDetails(projectId)?.map<ProjectDetailsData, DetailsState> { DetailsState.Loaded(it) }
@@ -163,6 +165,9 @@ internal fun ProjectDetailsScreen(
     // A pending settle is cancelled as soon as another finger touches the
     // list. Holding, dragging upward or merely tapping never triggers it.
     var settleJob by remember(projectId) { mutableStateOf<Job?>(null) }
+    LaunchedEffect(active) {
+        if (!active) { settleJob?.cancel(); settleJob = null }
+    }
     // Record the real unscrolled status-card position once its SQLDelight
     // data has loaded. It naturally includes the address wrapping height.
     var statusCardAtRestTopPx by remember(projectId) { mutableStateOf<Int?>(null) }
@@ -193,7 +198,8 @@ internal fun ProjectDetailsScreen(
     )
     val motion = ProjectTitleMotion(initialTopPx, titleProgress)
     val progressCallback by rememberUpdatedState(onHeaderProgress)
-    LaunchedEffect(projectId, visibleProject?.id) {
+    LaunchedEffect(projectId, visibleProject?.id, active) {
+        if (!active) return@LaunchedEffect
         if (visibleProject == null) {
             progressCallback(0f)
         } else {
@@ -473,7 +479,11 @@ internal fun ProjectDetailsScreen(
                         if (state.data.measurements.isEmpty()) item { Text("Замірів ще немає.",
                             color = MaterialTheme.colorScheme.onSurfaceVariant) }
                         items(state.data.measurements, key = { it.id }) { measurement ->
-                            Card(Modifier.fillMaxWidth(), colors = detailsCardColors()) {
+                            Card(onClick = {
+                                settleJob?.cancel()
+                                settleJob = null
+                                onOpenMeasurement(measurement.id)
+                            }, modifier = Modifier.fillMaxWidth(), colors = detailsCardColors()) {
                                 Column(Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
                                     verticalArrangement = Arrangement.spacedBy(2.dp)) {
                                     Text(measurement.name, style = MaterialTheme.typography.titleSmall)

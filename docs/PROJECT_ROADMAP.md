@@ -1,4 +1,31 @@
-# Чинна дорожня карта — після злиття PR #55 (01.11.2026)
+# Чинна дорожня карта — після merge PR #65 (02.11.2026)
+
+## Поточний етап: CMP Measurement Foundation — перегляд (#60, #57)
+
+[PR #65](https://github.com/aleks-nl5/andrey-ceilings-android/pull/65) об’єднано з main.
+Спільні CeilingsScreenScaffold, CeilingsEdgeGradient, CeilingsPinnedContent і
+CeilingsFab — основа нових CMP екранів. Узгоджений UX об’єктів/клієнтів і деталей
+об’єкта збережений; [документація UI Foundation](CMP_UI_FOUNDATION.md).
+
+Наступний функціональний підетап описано в [CMP Measurement Foundation](CMP_MEASUREMENT_FOUNDATION.md):
+
+- KMP measurement geometry codec v2/v3 з точними Long-mm, чинними формами/сторонами/
+  поворотами/точністю та валідацією; сумісність з Android JSON, без автоперезапису.
+- Спільне CMP Canvas креслення та readonly Measurement Details на справжніх
+  SQLDelight/SQLCipher Flow, з безпечними історичними прямокутниками й станами БД.
+- Типізований маршрут «об’єкт → замір → Back», лише числові ID, перевірка належності,
+  double-tap/restore, збереження батьківського скролу/адреси/FAB/30% snap і контексту списку.
+- Common/JVM/scene та Android/Windows/iOS encrypted перевірки. Фінальні CI й ручний
+  APK smoke власника фіксуються в окремому Draft PR; автоматичного merge немає.
+
+**Не входить у цей етап:** CMP editor, створення/редагування/видалення замірів,
+кнопка «+» із заданим projectId, зміна форм або переприв’язування. Чинний Android
+редактор і глобальна вкладка «Заміри» продовжують працювати. Наступний окремий PR
+переносить редактор лише з повним паритетом; #60/#57 залишаються відкритими.
+Live Predictive Back — #56, runnable iOS host — #42. SQLDelight schema, SQLCipher/
+WAL/ключі/backup, математика, immutable revisions/PDF/нумерація не змінюються.
+
+Аудит до змін: [CMP_MEASUREMENT_AUDIT.md](architecture/CMP_MEASUREMENT_AUDIT.md).
 
 ## Правило для кожного нового PR: контроль оптимізації CI (02.11.2026)
 
@@ -11,21 +38,18 @@
 - Зберігати `cancel-in-progress` для застарілих комітів, а фінальні Android/Windows/iOS CI обов'язково перевіряти на **одному останньому SHA**, після якого користувач тестує APK.
 
 
-**Єдиний актуальний план — цей розділ; нижче збережені історичні зрізи попередніх PR.**
+## Актуальна виміряна база CI: фінальний PR #65
 
-## CMP UI Foundation — issue #63 (02.11.2026)
+SHA `a36d979`, успішні [Android 41533897104](https://github.com/aleks-nl5/andrey-ceilings-android/actions/runs/41533897104)
+та [Windows/iOS 41533897297](https://github.com/aleks-nl5/andrey-ceilings-android/actions/runs/41533897297).
+Без черги runners: Android **11m26s** (emulator 4m53s), Windows **2m59s**
+(JVM/Desktop/CRUD 1m51s), iOS/macOS **14m17s** (framework 9m17s, Simulator 2m16s).
+Усі Gradle home cache hits; Android AVD hit; Native/LLVM на macOS завантажувалися
+окремо. Це база для наступного PR; історичні цифри PR #62 вище — лише контекст.
 
-Архітектурна основа та перша інтеграція описані в [CMP UI Foundation](CMP_UI_FOUNDATION.md);
-аудит меж і виміряна база CI — [architecture/CMP_UI_FOUNDATION_AUDIT.md](architecture/CMP_UI_FOUNDATION_AUDIT.md).
-Нові CMP-екрани використовують спільні компоненти; приймання #63 потребує CI на
-фінальному SHA та ручного APK smoke власника. Решта старих екранів — окремі PR.
+---
 
-- **[Issue #63](https://github.com/aleks-nl5/andrey-ceilings-android/issues/63)** — створити єдиний стандарт верхнього/нижнього edge-to-edge градієнта, накладання прокрученого вмісту, закріплених заголовків/пошуку/вкладок та оформлення FAB у `shared/commonMain`. Робочі компоненти: `CeilingsScreenScaffold`, `CeilingsEdgeGradient`, `CeilingsPinnedContent`.
-- **Порядок:** лише після успішних CI, ручного APK smoke й рішення власника щодо завершення [PR #62](https://github.com/aleks-nl5/andrey-ceilings-android/pull/62). Окрема гілка та Draft PR; **не розширювати PR #62** великим UI-refactor.
-- **Суть стандарту:** верхній gradient від краю 50% → 0%, нижній 0% → 50%; content scrolls underneath foreground, початкові safe/content insets і sticky bounds без зайвих порожніх плашок. Touch-shield діє тільки в реальній області закріплених елементів; один стиль тіні/outline/ripple і hit targets для FAB.
-- **Впровадження:** спочатку спільні primitive + API й тести, потім контрольовано перевести «Об'єкти/Клієнти» та «Деталі об'єкта» без візуальних регресій. **Нові CMP-екрани — тільки через стандарт; існуючі — поступово при плановій міграції**, не в одному масовому PR.
-- **Приймання:** Android light/dark/System, короткий і довгий список, Scroll/Back/Edit, 2-рядкова адреса, пошук/вкладки/алфавітний індекс, IME/resize, без click-through чи зайвого перехоплення; Android APK/SQLCipher + Windows JVM/CRUD + iOS framework/Simulator CI на фінальному SHA. Windows/iOS host-ready UI smoke — за доступності; runnable iOS окремо #42.
-- Без змін SQLDelight/SQLCipher/WAL, backup/restore, PDF, кошторисів, бізнес-логіки або секретів.
+# Історичні зрізи попередніх етапів
 
 ## Завершено: KMP/CMP навігація — PR #55 / issue #48
 

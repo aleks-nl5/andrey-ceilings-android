@@ -135,6 +135,7 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
         TopAppBarDefaults.enterAlwaysScrollBehavior()
     }
     val isProjectDetailsOpen = tab == AppTab.OBJECTS && navigation.projectDetails != null
+    val isMeasurementDetailsOpen = isProjectDetailsOpen && navigation.measurementDetails != null
     var projectTitleProgress by remember { mutableFloatStateOf(0f) }
     // Let the shared title own details scrolling rather than enterAlways showing
     // the original toolbar during a reverse swipe.
@@ -201,6 +202,7 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
 
     // Track nested scroll activity separately from screen-opening work on every tab.
     val lastScrollAtNs = remember { AtomicLong(0L) }
+    val measurementRouteVisible = rememberUpdatedState(isMeasurementDetailsOpen)
     val screenScrollConnection = remember {
         object : NestedScrollConnection {
             override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
@@ -212,7 +214,7 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
             override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset {
                 lastScrollAtNs.set(SystemClock.elapsedRealtimeNanos())
                 isScrolling.value = true
-                contentScrolledPx.floatValue =
+                if (!measurementRouteVisible.value) contentScrolledPx.floatValue =
                     (contentScrolledPx.floatValue - consumed.y).coerceAtLeast(0f)
                 return Offset.Zero
             }
@@ -507,6 +509,10 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
                         AppTab.OBJECTS -> ObjectsClientsHost(
                             database = database,
                             detailsProjectId = navigation.projectDetails?.projectId,
+                            measurementDetails = navigation.measurementDetails,
+                            onOpenMeasurement = { projectId, measurementId ->
+                                navigation = navigation.openMeasurement(projectId, measurementId)
+                            },
                             onOpenProject = { navigation = navigation.openProject(it) },
                             onCloseProject = { navigation = navigation.back() },
                             onProjectHeaderProgress = { projectTitleProgress = it.coerceIn(0f, 1f) },
@@ -675,7 +681,7 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
 
         // As the original address moves into the top safe area, it takes the
         // place of СтеляПро. On a true return to the top, the chrome reappears.
-        if (!isProjectDetailsOpen || projectTitleProgress < 0.95f) AppHeader(
+        if (!isMeasurementDetailsOpen && (!isProjectDetailsOpen || projectTitleProgress < 0.95f)) AppHeader(
             collapsedFraction = if (isProjectDetailsOpen) 0f
                 else topAppBarScrollBehavior.state.collapsedFraction,
             // The objects/clients sticky glass reaches the screen's top edge.
