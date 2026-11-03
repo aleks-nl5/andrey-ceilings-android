@@ -1,16 +1,42 @@
-# Поточний P1 — Прайс 2.0 (#80 / #78), 03.11.2026
+# Актуальний стан — Прайс 2.0 після merge PR #81 (03.11.2026)
 
-Після merge B2 (#75), актуальний `main` — `83fece8`. Вузький P1: shared KMP
-групи/параметри, v5 price-only schema і одноразовий starter 5 груп / 22 позиції.
-Старий тестовий прайс **не переносити**; інші таблиці, історичні snapshots/PDF,
-SQLCipher/WAL та backup/restore зберегти. Marker забороняє повторний seed навіть
-після видалення всіх позицій/груп. [Контракт P1](PRICE_CATALOG_P1.md).
+**P1 виконано та об'єднано з `main`:** [PR #81](https://github.com/aleks-nl5/andrey-ceilings-android/pull/81),
+final `de8dddde`, merge `b4907ff`. Один спільний KMP/SQLDelight каталог,
+5 редагованих груп і 22 початкові позиції, незалежні параметри позицій,
+транзакційний одноразовий seed/marker та контрольована заміна тільки старого
+тестового прайсу (v4→v5). Інші SQLCipher-таблиці, WAL, backup/restore,
+immutable кошториси/ревізії/PDF не скидаються. 
+[Контракт P1](PRICE_CATALOG_P1.md).
+Фінальний Android та Windows/iOS CI — успішні; власник підтвердив APK smoke
+без видимих проблем. Деталізовані ручні сценарії не слід автоматично
+вважати підтвердженими лише з цього повідомлення.
 
-P2 (новий CMP UI прайсу), калькулятор #44, Canvas та runnable iOS host #42 —
-окремі етапи. Draft PR, фінальний SHA з Android/Windows/iOS CI та особисте APK
-приймання власника; без merge і закриття #80/#78. Для #80 рішення власника
-прямо виключає CI benchmarks/cache/time comparisons; mandatory coverage збережено.
+**Постмердж-аудит — потребує окремого вузького виправлення:**
+- [#82 — Unicode-безпечна унікальність назв груп](https://github.com/aleks-nl5/andrey-ceilings-android/issues/82): SQLite NOCASE не покриває український регістр.
+  Заплановані KMP нормалізація + атомарний unique constraint, безпечна v5→v6
+  міграція/колізії, спільні Android/Windows/iOS тести. Ні reset БД, ні повторного seed.
+- [#80 — технічний scope P1](https://github.com/aleks-nl5/andrey-ceilings-android/issues/80)
+  тримати **відкритим до приймання #82**, потім звірити критерії та закрити.
+- [#78 — Прайс 2.0](https://github.com/aleks-nl5/andrey-ceilings-android/issues/78)
+  лишається відкритою продуктовою ініціативою.
 
+**Послідовність наступних етапів:**
+1. #82 — вузьке виправлення фундаменту, окремий Draft PR.
+2. [#83 — P2, повноцінний CMP редактор груп і позицій](https://github.com/aleks-nl5/andrey-ceilings-android/issues/83):
+   керування defaults, індивідуальні `unit/quantityMode/placementKind`, group move,
+   пояснення несумісних одиниць; UX погоджує власник. Жодних toggle «опцій».
+3. P3 — вибір позицій прайсу у стелі/замірі, відкладене розміщення й робочі кількості
+   ([#76](https://github.com/aleks-nl5/andrey-ceilings-android/issues/76)).
+4. P4+ — KMP живий розрахунок і зв'язок із кошторисами [#44](https://github.com/aleks-nl5/andrey-ceilings-android/issues/44),
+   Canvas [#71](https://github.com/aleks-nl5/andrey-ceilings-android/issues/71);
+   runnable iOS host залишається #42.
+
+**Правило доставки:** Git feature branch → Draft PR → фінальні Android/Windows/iOS
+gates → ручне APK приймання власником → лише його рішення про merge.
+Для цього price scope актуальне рішення власника **виключає CI
+benchmarks/cache/time comparisons**; не послаблювати тести.
+Нижчі зрізи — історичні; їхні назви «поточний PR» не мають пріоритету над
+цим розділом або чинними issues.
 ---
 
 # Чинна дорожня карта — після merge PR #72 (03.11.2026)
