@@ -50,18 +50,50 @@ CREATE TABLE room_measurements (
 );
 CREATE INDEX index_room_measurements_projectId ON room_measurements(projectId);
 
+CREATE TABLE price_groups (
+    id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    uuid TEXT NOT NULL UNIQUE,
+    name TEXT NOT NULL COLLATE NOCASE,
+    defaultUnit TEXT,
+    defaultQuantityMode TEXT NOT NULL DEFAULT 'manual' CHECK(defaultQuantityMode IN ('manual','ceiling_area','ceiling_perimeter','entered_length')),
+    defaultPlacementKind TEXT NOT NULL DEFAULT 'none' CHECK(defaultPlacementKind IN ('none','point','line','area')),
+    createdAt INTEGER NOT NULL,
+    updatedAt INTEGER NOT NULL,
+    deletedAt INTEGER,
+    CHECK(defaultUnit IS NULL OR length(trim(defaultUnit)) > 0),
+    CHECK(defaultUnit IS NULL OR defaultQuantityMode = 'manual' OR
+        (defaultQuantityMode = 'ceiling_area' AND defaultUnit = 'м²') OR
+        (defaultQuantityMode IN ('ceiling_perimeter','entered_length') AND defaultUnit = 'м.п.'))
+);
+CREATE UNIQUE INDEX index_price_groups_name ON price_groups(name) WHERE deletedAt IS NULL;
+
+CREATE TABLE price_catalog_state (
+    id INTEGER NOT NULL PRIMARY KEY CHECK(id = 1),
+    seedVersion INTEGER NOT NULL
+);
+
 CREATE TABLE price_items (
     id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
     code TEXT NOT NULL,
     title TEXT NOT NULL,
-    category TEXT NOT NULL,
+    groupUuid TEXT NOT NULL REFERENCES price_groups(uuid),
     unit TEXT NOT NULL,
+    quantityMode TEXT NOT NULL DEFAULT 'manual' CHECK(quantityMode IN ('manual','ceiling_area','ceiling_perimeter','entered_length')),
+    placementKind TEXT NOT NULL DEFAULT 'none' CHECK(placementKind IN ('none','point','line','area')),
     price REAL NOT NULL,
     updatedAt INTEGER NOT NULL,
     uuid TEXT NOT NULL UNIQUE,
-    deletedAt INTEGER
+    deletedAt INTEGER,
+    CHECK(length(trim(unit)) > 0),
+    CHECK(quantityMode = 'manual' OR (quantityMode = 'ceiling_area' AND unit = 'м²') OR
+        (quantityMode IN ('ceiling_perimeter','entered_length') AND unit = 'м.п.'))
 );
-CREATE UNIQUE INDEX index_price_items_category_code ON price_items(category, code) WHERE deletedAt IS NULL;
+CREATE UNIQUE INDEX index_price_items_group_code ON price_items(groupUuid, code) WHERE deletedAt IS NULL;
+
+-- Compatibility projection for the current CMP editor; category is never identity.
+CREATE VIEW price_catalog_items AS
+SELECT price_items.*, price_groups.name AS category
+FROM price_items JOIN price_groups ON price_items.groupUuid = price_groups.uuid;
 
 CREATE TABLE estimates (
     id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
@@ -103,7 +135,7 @@ selectMeasurementByUuid:
 SELECT * FROM room_measurements WHERE uuid = ?;
 
 selectPriceItems:
-SELECT * FROM price_items WHERE deletedAt IS NULL ORDER BY category, title;
+SELECT * FROM price_catalog_items WHERE deletedAt IS NULL ORDER BY category, title;
 
 selectEstimatesForProject:
 SELECT * FROM estimates WHERE projectId = ? AND deletedAt IS NULL ORDER BY createdAt DESC;
@@ -174,14 +206,17 @@ WHERE id = ? AND deletedAt IS NULL;
 
 -- Price catalog CRUD
 insertPriceItem:
-INSERT INTO price_items(code, title, category, unit, price, updatedAt, uuid)
-VALUES (?, ?, ?, ?, ?, ?, ?);
+INSERT INTO price_items(code, title, groupUuid, unit, price, updatedAt, uuid)
+VALUES (:code, :title, (SELECT uuid FROM price_groups WHERE name = :category AND deletedAt IS NULL), :unit, :price, :updatedAt, :uuid);
 
 selectPriceItemById:
-SELECT * FROM price_items WHERE id = ? AND deletedAt IS NULL;
+SELECT * FROM price_catalog_items WHERE id = ? AND deletedAt IS NULL;
 
 updatePriceItem:
-UPDATE price_items SET code = ?, title = ?, category = ?, unit = ?, price = ?, updatedAt = max(?, updatedAt + 1) WHERE id = ? AND deletedAt IS NULL;
+UPDATE price_items SET title = :title,
+    groupUuid = (SELECT uuid FROM price_groups WHERE name = :category AND deletedAt IS NULL),
+    unit = :unit, price = :price, updatedAt = max(:updatedAt, updatedAt + 1)
+WHERE code = :code AND id = :id AND deletedAt IS NULL;
 
 deletePriceItem:
 UPDATE price_items
@@ -194,7 +229,7 @@ WHERE id = ? AND deletedAt IS NULL;
 -- SQLite 3.35 dialect and lets callers fail closed if another writer won.
 updatePriceItemIfVersion:
 UPDATE price_items
-SET title = ?, category = ?, unit = ?, price = ?,
+SET title = ?, groupUuid = (SELECT uuid FROM price_groups WHERE name = :category AND deletedAt IS NULL), unit = ?, price = ?,
     updatedAt = max(?, updatedAt + 1)
 WHERE id = ? AND code = ? AND updatedAt = ? AND deletedAt IS NULL
 RETURNING id;
@@ -278,14 +313,14 @@ INSERT INTO estimates(projectId, name, material, profileType, complexity, length
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 RETURNING id;
 
--- A repeat (category, code) must update the existing row and keep its UUID.
+-- A repeat (group, code) must update the existing row and keep its UUID.
 -- Do not use INSERT OR REPLACE: it can discard the old identity without a tombstone.
 selectActivePriceByKey:
-SELECT * FROM price_items WHERE category = ? AND code = ? AND deletedAt IS NULL LIMIT 1;
+SELECT * FROM price_catalog_items WHERE category = ? AND code = ? AND deletedAt IS NULL LIMIT 1;
 
 insertPriceItemReturningId:
-INSERT INTO price_items(code, title, category, unit, price, updatedAt, uuid)
-VALUES (?, ?, ?, ?, ?, ?, ?)
+INSERT INTO price_items(code, title, groupUuid, unit, price, updatedAt, uuid)
+VALUES (:code, :title, (SELECT uuid FROM price_groups WHERE name = :category AND deletedAt IS NULL), :unit, :price, :updatedAt, :uuid)
 RETURNING id;
 
 -- Offline Room-v2 logical data transfer into a fresh SQLDelight database.
@@ -304,8 +339,8 @@ INSERT INTO room_measurements(id, projectId, name, shape, lengthMeters, widthMet
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 importPriceItemWithId:
-INSERT INTO price_items(id, code, title, category, unit, price, updatedAt, uuid)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+INSERT INTO price_items(id, code, title, groupUuid, unit, price, updatedAt, uuid)
+VALUES (:id, :code, :title, (SELECT uuid FROM price_groups WHERE name = :category AND deletedAt IS NULL), :unit, :price, :updatedAt, :uuid);
 
 importEstimateWithId:
 INSERT INTO estimates(id, projectId, name, material, profileType, complexity, lengthMeters, widthMeters, areaSquareMeters, perimeterMeters, canvasCost, profileCost, complexityCost, optionsCost, totalCost, detailsJson, createdAt, uuid, updatedAt)
@@ -322,7 +357,7 @@ selectDeletedMeasurements:
 SELECT * FROM room_measurements WHERE deletedAt IS NOT NULL ORDER BY deletedAt;
 
 selectDeletedPriceItems:
-SELECT * FROM price_items WHERE deletedAt IS NOT NULL ORDER BY deletedAt;
+SELECT * FROM price_catalog_items WHERE deletedAt IS NOT NULL ORDER BY deletedAt;
 
 selectDeletedEstimates:
 SELECT * FROM estimates WHERE deletedAt IS NOT NULL ORDER BY deletedAt;

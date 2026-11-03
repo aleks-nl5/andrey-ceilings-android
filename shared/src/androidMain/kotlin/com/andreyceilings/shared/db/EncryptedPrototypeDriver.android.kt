@@ -18,7 +18,8 @@ fun createEncryptedPrototypeDriver(
     context: Context,
     passphrase: ByteArray,
     databaseName: String = "andrey_ceilings_sqldelight_prototype.db",
-    enableWalForTesting: Boolean = false
+    enableWalForTesting: Boolean = false,
+    initializePriceCatalog: Boolean = false
 ): SqlDriver {
     require(passphrase.size == 32) { "Expected a 256-bit database passphrase" }
     require(databaseName.isNotBlank() && '/' !in databaseName && '\\' !in databaseName) {
@@ -26,7 +27,7 @@ fun createEncryptedPrototypeDriver(
     }
     System.loadLibrary("sqlcipher")
     val driver = AndroidSqliteDriver(
-        schema = PrototypeDatabase.Schema,
+        schema = if (initializePriceCatalog) PriceCatalogSchema else PrototypeDatabase.Schema,
         // The fourth argument enables SQLCipher's WAL-aware OPEN HELPER,
         // including the correct connection-pool behavior. PRAGMA alone
         // does not activate that pool. Production explicitly opts into WAL

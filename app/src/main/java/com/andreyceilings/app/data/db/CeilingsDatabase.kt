@@ -203,7 +203,7 @@ internal class CeilingsDatabase private constructor(
                 // helper now powers WAL in this production entry point.
                 val driver = ProductionDatabaseGate.wrap(
                     createEncryptedPrototypeDriver(
-                        context, key, DATABASE_NAME, enableWalForTesting = true
+                        context, key, DATABASE_NAME, enableWalForTesting = true, initializePriceCatalog = true
                     )
                 )
                 return try {

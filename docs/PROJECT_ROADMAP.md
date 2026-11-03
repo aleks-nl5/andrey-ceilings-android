@@ -1,3 +1,18 @@
+# Поточний P1 — Прайс 2.0 (#80 / #78), 03.11.2026
+
+Після merge B2 (#75), актуальний `main` — `83fece8`. Вузький P1: shared KMP
+групи/параметри, v5 price-only schema і одноразовий starter 5 груп / 22 позиції.
+Старий тестовий прайс **не переносити**; інші таблиці, історичні snapshots/PDF,
+SQLCipher/WAL та backup/restore зберегти. Marker забороняє повторний seed навіть
+після видалення всіх позицій/груп. [Контракт P1](PRICE_CATALOG_P1.md).
+
+P2 (новий CMP UI прайсу), калькулятор #44, Canvas та runnable iOS host #42 —
+окремі етапи. Draft PR, фінальний SHA з Android/Windows/iOS CI та особисте APK
+приймання власника; без merge і закриття #80/#78. Для #80 рішення власника
+прямо виключає CI benchmarks/cache/time comparisons; mandatory coverage збережено.
+
+---
+
 # Чинна дорожня карта — після merge PR #72 (03.11.2026)
 
 PR A [#72](https://github.com/aleks-nl5/andrey-ceilings-android/pull/72) **merged**

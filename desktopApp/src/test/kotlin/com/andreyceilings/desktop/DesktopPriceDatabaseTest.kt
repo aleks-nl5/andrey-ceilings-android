@@ -19,7 +19,7 @@ class DesktopPriceDatabaseTest {
             DesktopPriceDatabase.open("strong-demo-test-password".toCharArray()).use { db ->
                 db.prices.create("custom.example", "Демонстраційний профіль",
                     "Профілі", "м.п.", 123.0, 123L)
-                assertEquals(1, db.prices.all().size)
+                assertEquals(23, db.prices.all().size)
             }
 
             val file = File(home, ".andrey-ceilings/catalog.db")
@@ -35,8 +35,8 @@ class DesktopPriceDatabaseTest {
                 "Wrong password must never replace or mutate the encrypted database")
 
             DesktopPriceDatabase.open("strong-demo-test-password".toCharArray()).use { db ->
-                assertEquals("custom.example", db.prices.all().single().code)
-                assertEquals(123.0, db.prices.all().single().price)
+                assertEquals("custom.example", db.prices.all().single { it.code == "custom.example" }.code)
+                assertEquals(123.0, db.prices.all().single { it.code == "custom.example" }.price)
             }
         } finally {
             System.setProperty("user.home", previousHome)
