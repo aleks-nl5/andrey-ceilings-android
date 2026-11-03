@@ -24,6 +24,17 @@ class EncryptedBusinessRepositoriesIosTest {
         recovery = SqlCipherRecovery.Fail,
     )
 
+    @Test fun cmpEditCasOnSimulatorCipher(): Unit = runBlocking {
+        val name = "andrey-ios-edit-${Random.nextLong().toString(16)}.db"
+        try {
+            val driver = factory.create(PrototypeDatabase.Schema, config(name, 49))
+            try { MeasurementEditPersistenceProof.run(PrototypeDatabase(driver)) } finally { driver.close() }
+            val reopened = factory.create(PrototypeDatabase.Schema, config(name, 49))
+            try { MeasurementRepository(PrototypeDatabase(reopened)).all().forEach { MeasurementGeometryCodec.read(it.drawingJson) } }
+            finally { reopened.close() }
+        } finally { factory.deleteDatabase(name) }
+    }
+
     @Test fun cmpCreatePersistsEveryShapeAndPrecisionOnSimulatorCipher(): Unit = runBlocking {
         val name = "andrey-ios-create-${Random.nextLong().toString(16)}.db"
         try {

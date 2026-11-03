@@ -117,7 +117,9 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
     var navigation by rememberSaveable(stateSaver = navigationStateSaver) {
         mutableStateOf(AppNavigationState())
     }
-    val measurementCreateNavigationGuard = remember { com.andreyceilings.shared.measurement.MeasurementCreateNavigationGuard() }
+    val editorSession: MeasurementEditorSession = androidx.lifecycle.viewmodel.compose.viewModel()
+    val measurementCreateNavigationGuard = editorSession.navigationGuard
+    val measurementFullscreen by measurementCreateNavigationGuard.fullscreen.collectAsState()
     val tab = navigation.current
     var tabChangedAt by remember { mutableLongStateOf(SystemClock.elapsedRealtime()) }
     var lastBackPressTime by remember { mutableStateOf(0L) }
@@ -137,7 +139,7 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
     }
     val isProjectDetailsOpen = tab == AppTab.OBJECTS && navigation.projectDetails != null
     val isMeasurementDetailsOpen = isProjectDetailsOpen &&
-        (navigation.measurementDetails != null || navigation.measurementCreate != null)
+        (navigation.measurementDetails != null || navigation.measurementCreate != null || navigation.measurementEdit != null)
     var projectTitleProgress by remember { mutableFloatStateOf(0f) }
     // Let the shared title own details scrolling rather than enterAlways showing
     // the original toolbar during a reverse swipe.
@@ -174,10 +176,12 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
         }
     }
 
-    fun updateNavigation(proposed: AppNavigationState) {
-        val next = measurementCreateNavigationGuard.transition(navigation, proposed)
+    fun applyNavigation(next: AppNavigationState) {
         if (next.current != navigation.current) tabChangedAt = SystemClock.elapsedRealtime()
         navigation = next
+    }
+    fun updateNavigation(proposed: AppNavigationState) {
+        applyNavigation(measurementCreateNavigationGuard.transition(navigation, proposed, ::applyNavigation))
     }
 
     fun navigateTo(target: AppTab) = updateNavigation(navigation.selectTab(target))
@@ -509,6 +513,13 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
                             database = database,
                             detailsProjectId = navigation.projectDetails?.projectId,
                             measurementDetails = navigation.measurementDetails,
+                            measurementEdit = navigation.measurementEdit,
+                            onEditMeasurement = { projectId, measurementId ->
+                                updateNavigation(navigation.editMeasurement(projectId, measurementId))
+                            },
+                            onMeasurementSaved = { projectId, measurementId ->
+                                updateNavigation(measurementCreateNavigationGuard.deliverEditResult(navigation, projectId, measurementId))
+                            },
                             measurementCreate = navigation.measurementCreate,
                             measurementCreateNavigationGuard = measurementCreateNavigationGuard,
                             measurementPrecision = measurementPrecision,
@@ -714,7 +725,7 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
                 .height(navigationBarInset + systemPanelGradientHeight)
         )
 
-        FloatingNavigationBar(
+        if (!measurementFullscreen) FloatingNavigationBar(
             selectedTab = tab,
             darkTheme = useDarkTheme,
             onSelect = ::navigateTo,
@@ -733,4 +744,9 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
         )
     }
     }
+}
+
+/** Keep the shared navigation guard attached to an in-flight save across Activity recreation. */
+internal class MeasurementEditorSession : androidx.lifecycle.ViewModel() {
+    val navigationGuard = com.andreyceilings.shared.measurement.MeasurementCreateNavigationGuard()
 }

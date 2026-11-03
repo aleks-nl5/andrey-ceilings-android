@@ -1,26 +1,32 @@
-# Чинна дорожня карта — після merge PR #68 (03.11.2026)
+# Чинна дорожня карта — після merge PR #72 (03.11.2026)
 
-**PR A у feature-гілці:** реалізовано спільний CMP create-only сценарій із
-деталей об'єкта, typed create route, точний ввід/валідацію, літерні підписи,
-реальний SQLDelight insert і платформні regression tests. [Контракт реалізації](CMP_MEASUREMENT_CREATE.md).
-Фінальні CI/SHA/APK й порівняння з PR #68 — у Draft PR; ручне приймання власником
-ще не виконане. PR B, #70/#71 та завершення #60/#57 залишаються відкритими.
+PR A [#72](https://github.com/aleks-nl5/andrey-ceilings-android/pull/72) **merged**
+у main `55fb717`; final `b9effed` має green Android/Windows/iOS CI та власницьке
+APK приймання. Shared create із Project Details, три форми, чотири точності,
+validated geometry, SQLDelight/SQLCipher і safe-save navigation вже прийнято.
+[Контракт створення](CMP_MEASUREMENT_CREATE.md).
 
-## Наступний етап: CMP Measurement Editor, PR A — створення замірів (#60/#57)
+**Поточний PR B1, #73:** read-only за замовчуванням, явний typed edit route,
+одна чернетка/геометрія, numeric edit і L-derived relations, Undo/Redo,
+Save/Cancel/dirty guard, atomic updatedAt CAS/ownership/active-parent,
+незалежний fullscreen/zoom/pan/fit/selection. [Контракт B1](CMP_MEASUREMENT_EDIT.md).
+Фінальний SHA/CI й APK acceptance відстежуються в окремому Draft PR B1.
 
-[PR #66](https://github.com/aleks-nl5/andrey-ceilings-android/pull/66) **merged**: KMP-кодек геометрії та read-only CMP замір, креслення, typed Back. [PR #68](https://github.com/aleks-nl5/andrey-ceilings-android/pull/68) **merged**: реальний Windows encrypted JDBC `INSERT/UPDATE/DELETE … RETURNING`; [#67](https://github.com/aleks-nl5/andrey-ceilings-android/issues/67) **closed**. Не називати ці PR Draft або незавершеними.
+**Наступний окремий PR B2:** після owner testing і merge B1 — глобальна вкладка
+«Заміри», quick-create та calculator parity; повне вилучення Android-only редактора
+лише після перевірки паритету. #60/#57/#73 не закривати цим B1.
 
-**Рішення власника 03.11.2026: усі дані поточної БД тестові; не потрібна backward compatibility із застарілими кресленнями, old JSON, Room/Go і тестовими архівами.** Не створювати міграцій та compatibility layers лише заради цих даних. **Не** виконувати автоматичне видалення БД; не ламати чинний v3 контракт нових замірів, SQLCipher/WAL/backup, UUID/tombstones, immutable revisions/PDF та правила точності.
+**PR C, #70:** довільні кути/Snap OFF, точний constraint solver та drag geometry.
+**PR D, #71:** typed overlays світильників/ніші/обводи/вентканали та калькулятор #44.
+Не розширювати B1 цими етапами, PDF, кошторисами чи переписуванням драйверів.
 
-**PR A:** спільний CMP create-only Editor з shape-driven fields для rectangle, L-shape і ортогонального polygon за довжинами всіх сторін/поворотами 90°, без X/Y; live креслення й валідація з чинного KMP геометричного ядра, зафіксована точність нового запису, реальний SQLDelight `createReturningId`, prefilled `projectId` із «+» деталей об'єкта, typed navigation, без double-save і fake data. Android-only редактор глобальної вкладки **не видаляти** до PR B. Докладно: [CMP Measurement Editor plan](CMP_MEASUREMENT_EDITOR_PLAN.md).
+Власник підтвердив: уся поточна БД тестова. Legacy Room/Go/drawing/archive migration
+не потрібна; автоматичний DB reset заборонений. Зберегти нові geometry records,
+captured precision, UUID/tombstones, SQLCipher/WAL/backup та immutable estimates/PDF.
+PR #66/#68 також merged; #67 closed. Повний Predictive Back #56 і runnable hosts #42
+залишаються окремими. Далі — реальні події #49 та CMP калькулятор/кошториси #44.
 
-**PR B:** CMP edit, stale-write policy, інтеграція глобальної вкладки/quick-create, збереження калькулятора й parity; видалення Android-only після ручного приймання. #60/#57 залишаються відкритими. Нові T/U/трапеції, довільні кути/діагоналі, drawing-by-touch — **окремі майбутні задачі**, не PR A/B.
-
-**Далі:** реальні події/календар [#49](https://github.com/aleks-nl5/andrey-ceilings-android/issues/49), CMP калькулятор/кошториси та актуальний прайс для нових документів [#44](https://github.com/aleks-nl5/andrey-ceilings-android/issues/44); паралельно runnable/secure Windows+iOS [#42](https://github.com/aleks-nl5/andrey-ceilings-android/issues/42); Android Predictive Back [#56](https://github.com/aleks-nl5/andrey-ceilings-android/issues/56) після міграції nested CMP; системна діагностика #30–#34 і необов'язковий lifecycle audit #54 — пізніше.
-
-**Додатково затверджено 03.11.2026 (обов'язково для завершеного редактора):** **вимикання 90° snap і точні довільні кути** [#70](https://github.com/aleks-nl5/andrey-ceilings-android/issues/70), а також **типізовані й розмірювані елементи креслення** (точкові світильники, люстри, обводи, ніші, вентканали та розширювані типи), двостороннє редагування з калькулятором [#71](https://github.com/aleks-nl5/andrey-ceilings-android/issues/71). Усі виміри й зміни Canvas йдуть через одну KMP модель, fullscreen незалежний від read-only, Undo/Redo і Save/Cancel. Непрямий контур не визначається одними довжинами: потрібні кути/діагоналі й строгі constraint checks. Feature icons не дорівнюють підтвердженим правилам розрахунку площі/вартості. **PR A не розширювати:** закласти extensibility та продовжити наявні прямокутник/L/orthogonal polygon; PR B — fullscreen/edit foundation; PR C — free-angle/constraint solver, PR D — feature model/overlay/calculator зв'язок #44. [Деталі](CMP_MEASUREMENT_EDITOR_PLAN.md).
-
-**Правило джерел:** цей верхній розділ і [AGENTS.md](../AGENTS.md) відображають актуальний стан; історичні зрізи та неперевірені старі `[ ]` нижче — хронологія, не нові вимоги.
+Цей верхній розділ і AGENTS.md — чинний стан; історичні зрізи нижче — хронологія.
 
 ## Правило для кожного нового PR: контроль оптимізації CI (02.11.2026)
 

@@ -1,6 +1,8 @@
 package com.andreyceilings.shared.measurement
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.border
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.text.KeyboardOptions
@@ -13,6 +15,7 @@ import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.input.KeyboardType
@@ -199,17 +202,17 @@ fun MeasurementCreateScreen(
 }
 
 @Composable
-private fun MeasurementLengthField(value: String, label: String, error: String?, enabled: Boolean,
-    modifier: Modifier = Modifier, onChange: (String) -> Unit) {
+internal fun MeasurementLengthField(value: String, label: String, error: String?, enabled: Boolean,
+    modifier: Modifier = Modifier, selected: Boolean = false, onFocus: (Boolean) -> Unit = {}, onChange: (String) -> Unit) {
     OutlinedTextField(value, onChange, label = { Text(label) }, enabled = enabled,
-        singleLine = true, modifier = modifier.fillMaxWidth(),
+        singleLine = true, modifier = modifier.fillMaxWidth().then(if (selected) Modifier.border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(4.dp)) else Modifier).onFocusChanged { onFocus(it.isFocused) },
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
         isError = value.isNotEmpty() && error != null,
         supportingText = { error?.let { Text(it) } })
 }
 
 @Composable
-private fun MeasurementShapePicker(shape: String, enabled: Boolean, onChange: (String) -> Unit) {
+internal fun MeasurementShapePicker(shape: String, enabled: Boolean, onChange: (String) -> Unit) {
     var expanded by remember { mutableStateOf(false) }
     Box {
         OutlinedButton(onClick = { expanded = true }, enabled = enabled, modifier = Modifier.fillMaxWidth()) {

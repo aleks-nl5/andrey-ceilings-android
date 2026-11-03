@@ -25,6 +25,8 @@ internal class CeilingsDatabase private constructor(
     internal val path: String,
 ) : Closeable {
     internal val database = PrototypeDatabase(driver)
+    // Unlocked-session lifetime: retain in-flight shared edits across Activity recreation.
+    internal val objectsClientsStore = com.andreyceilings.shared.objects.ObjectsClientsStore(database, System::currentTimeMillis)
     private val clientDao = ClientDao(ClientRepository(database))
     private val projectDao = ProjectDao(ProjectRepository(database))
     private val measurementDao = RoomMeasurementDao(MeasurementRepository(database))

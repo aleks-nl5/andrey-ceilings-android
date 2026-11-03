@@ -7,6 +7,22 @@ import java.nio.file.Files
 import kotlin.test.*
 
 class MeasurementWindowsCipherTest {
+    @Test fun editCasAndNavigationOnEncryptedWindows(): Unit = runBlocking {
+        if (!System.getProperty("os.name").startsWith("Windows", ignoreCase = true)) return@runBlocking
+        val directory = Files.createTempDirectory("cmp-edit-cipher-").toFile()
+        val key = ByteArray(32) { 65 }
+        try {
+            SqlCipherWindowsDriverFactory.open(directory.resolve("edit.db"), key).use { driver ->
+                PrototypeDatabase.Schema.create(driver)
+                MeasurementEditPersistenceProof.run(PrototypeDatabase(driver))
+                MeasurementEditNavigationProof.run(driver)
+            }
+            SqlCipherWindowsDriverFactory.open(directory.resolve("edit.db"), key).use { driver ->
+                MeasurementRepository(PrototypeDatabase(driver)).all().forEach { MeasurementGeometryCodec.read(it.drawingJson) }
+            }
+        } finally { key.fill(0); directory.deleteRecursively() }
+    }
+
     @Test fun slowCipherTransactionCannotBeHiddenByBackOrTab(): Unit = runBlocking {
         if (!System.getProperty("os.name").startsWith("Windows", ignoreCase = true)) return@runBlocking
         val directory = Files.createTempDirectory("cmp-create-navigation-").toFile()

@@ -2,8 +2,8 @@
 
 Implementation from `main` `99a49a9` (merged documentation PR #69). Related: #60,
 #57; future free-angle geometry #70 and typed ceiling features #71. This is a
-create-only increment; owner APK acceptance and final-head CI are tracked in the
-Draft PR. Neither issue is closed by this increment.
+create-only increment merged as PR #72 (merge `55fb717`, final `b9effed`), with
+green Android/Windows/iOS CI and owner-confirmed APK acceptance. Neither issue is closed by this increment.
 
 ## Audit and boundaries
 
@@ -150,8 +150,10 @@ and cache logs with PR #68 (`51ae870`): Android 10m19s, Windows 4m19s, iOS 17m55
 Gradle-home hits on all runners and Android clean AVD hit. No test or CI gate is
 removed or weakened. Actual run IDs, results and APK links belong in the PR.
 
-Owner manual acceptance remains **pending**: create from a specific object; all
+PR A owner manual acceptance was confirmed before merge #72: create from a specific object; all
 forms and polygon turns; drawing/area/perimeter; save/reopen; Back/Cancel and
 repeated Save; light/dark, keyboard/scroll/narrow screen; existing Android global
 Measurements/editor/calculator regression checks. Headless scenes and automated
-instrumentation do not replace that acceptance. Merge is owner-only.
+instrumentation do not replace owner acceptance for subsequent PRs. Merge is owner-only.
+
+B1 safe editing/fullscreen is documented separately in [CMP_MEASUREMENT_EDIT.md](CMP_MEASUREMENT_EDIT.md); global-tab cutover remains B2.

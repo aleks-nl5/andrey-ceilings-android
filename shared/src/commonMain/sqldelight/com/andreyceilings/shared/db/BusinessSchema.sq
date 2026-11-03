@@ -153,6 +153,16 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 selectMeasurementById:
 SELECT * FROM room_measurements WHERE id = ? AND deletedAt IS NULL;
 
+updateMeasurementIfVersion:
+UPDATE room_measurements
+SET name = :name, shape = :shape, lengthMeters = :lengthMeters, widthMeters = :widthMeters,
+    areaSquareMeters = :areaSquareMeters, perimeterMeters = :perimeterMeters,
+    drawingJson = :drawingJson, notes = :notes, updatedAt = max(:nowMillis, updatedAt + 1)
+WHERE id = :id AND projectId = :projectId AND updatedAt = :expectedUpdatedAt
+    AND deletedAt IS NULL
+    AND EXISTS (SELECT 1 FROM projects WHERE projects.id = :projectId AND projects.deletedAt IS NULL)
+RETURNING updatedAt;
+
 updateMeasurement:
 UPDATE room_measurements SET name = ?, shape = ?, lengthMeters = ?, widthMeters = ?, areaSquareMeters = ?, perimeterMeters = ?, drawingJson = ?, notes = ?, updatedAt = max(updatedAt + 1, CAST(strftime('%s','now') AS INTEGER) * 1000) WHERE id = ? AND deletedAt IS NULL;
 
