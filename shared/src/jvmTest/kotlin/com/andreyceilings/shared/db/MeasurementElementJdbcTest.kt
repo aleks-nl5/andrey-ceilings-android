@@ -18,7 +18,8 @@ class MeasurementElementJdbcTest {
             driver.execute(null, "PRAGMA foreign_keys=ON", 0)
             assertEquals(7L, PriceCatalogSchema.version)
             verifyMeasurementElementStructure(driver)
-            MeasurementElementProof.run(driver)
+            com.andreyceilings.shared.measurement.MeasurementElementsPresentationProof.run(PrototypeDatabase(driver))
+                        MeasurementElementProof.run(driver)
             MeasurementElementProof.atomicParentDelete(driver)
             MeasurementElementMigrationProof.sqlGuards(driver)
             val failing = object : SqlDriver by driver {

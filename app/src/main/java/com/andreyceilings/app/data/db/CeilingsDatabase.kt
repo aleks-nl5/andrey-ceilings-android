@@ -44,6 +44,7 @@ internal class CeilingsDatabase private constructor(
     val changeTracker = SqlDelightChangeTracker(database)
 
     override fun close() {
+        objectsClientsStore.measurementDetails.elements.close()
         changeTracker.close()
         driver.close()
     }

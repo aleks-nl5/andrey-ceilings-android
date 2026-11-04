@@ -32,7 +32,29 @@ fun MeasurementDetailsScreen(
         val flow = remember { store?.observe(projectId, measurementId) }
         val state = flow?.collectAsState(MeasurementDetailsState.Loading)?.value
             ?: MeasurementDetailsState.Unavailable
-        MeasurementDetailsScreen(state, contentPadding, systemTopInset, onBack, onEdit, navigationGuard, backLabel)
+        val data = (state as? MeasurementDetailsState.Loaded)?.data
+        val model = remember(store, data?.uuid) {
+            if (store != null && data != null && data.uuid.isNotBlank())
+                store.elements.model(ElementRoute(projectId, measurementId, data.uuid)) else null
+        }
+        DisposableEffect(model, navigationGuard) {
+            model?.let { navigationGuard?.bindElements(it) }
+            onDispose { model?.let { navigationGuard?.unbindElements(it) } }
+        }
+        val elementsState = model?.state?.collectAsState()?.value ?: MeasurementElementsState.Loading
+        MeasurementDetailsScreen(state, contentPadding, systemTopInset, onBack, onEdit, navigationGuard, backLabel,
+            elementsContent = {
+                MeasurementElementsSection(elementsState, { model?.add() },
+                    { element, action -> model?.open(element, action) }, { model?.retry() })
+            })
+        if (model != null) {
+            val editor by model.editor.collectAsState()
+            val catalog by model.catalog.collectAsState()
+            editor?.let { current -> MeasurementElementEditor(current, catalog,
+                elementsState is MeasurementElementsState.Loaded, model::update, model::requestDismiss, model::save,
+                model::refreshCatalog, model::continueEditing, model::discardAndExit,
+                model::requestReload, model::cancelReload, model::reload) }
+        }
     }
 }
 
@@ -43,7 +65,8 @@ fun MeasurementDetailsScreen(
     contentPadding: PaddingValues = PaddingValues(16.dp),
     systemTopInset: Dp = 0.dp,
     onBack: () -> Unit, onEdit: (() -> Unit)? = null,
-    navigationGuard: MeasurementCreateNavigationGuard? = null, backLabel: String = "До об'єкта"
+    navigationGuard: MeasurementCreateNavigationGuard? = null, backLabel: String = "До об'єкта",
+    elementsContent: @Composable () -> Unit = {}
 ) {
     var fullscreen by rememberSaveable { mutableStateOf(navigationGuard?.fullscreen?.value == true) }
     var selectedSide by rememberSaveable { mutableStateOf<Int?>(null) }
@@ -144,6 +167,7 @@ fun MeasurementDetailsScreen(
                             }
                         }
                     }
+                    item(key = "elements") { elementsContent() }
                 }
             }
         }

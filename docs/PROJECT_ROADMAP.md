@@ -1,12 +1,12 @@
-# Актуальний стан — P3A / Issue #87, 04.11.2026
+# Актуальний стан — P3B / Issue #90, 04.11.2026
 
-**Прайс 2.0 P2 merged:** [PR #86](https://github.com/aleks-nl5/andrey-ceilings-android/pull/86), merge `fd965db1071d37894726d8eb8bb9d9bcfafd8fe0`, після #81/#85. #80/#82/#83 закриті. Власник прийняв P2 APK/CI; косметичне UI/UX відкладено. Umbrella #78 і продуктовий #76 відкриті.
+**P3A виконаний і merged:** [PR #88](https://github.com/aleks-nl5/andrey-ceilings-android/pull/88), merge `72f77105561f0fde609f33cde4f620b5162510b0`; #87 closed. [Контракт P3A](MEASUREMENT_ELEMENTS_P3A.md) лишається чинним. Прайс P1/P2 #81/#85/#86 уже merged; #80/#82/#83 closed. #76/#78 лишаються відкритими.
 
-**Поточна реалізація — [#87, P3A](https://github.com/aleks-nl5/andrey-ceilings-android/issues/87):** typed KMP елементи/побажання існуючого заміру, нормалізована `measurement_elements`, SQLDelight v7 / `6.sqm`, UUID snapshots, CAS/idempotent create, Flow та tombstones. [Контракт і міграції](MEASUREMENT_ELEMENTS_P3A.md). Нового UI немає; геометрія, native precision, прайс і immutable estimates/PDF не перераховуються. SQLCipher/WAL/backup зберігаються. Статус acceptance і посилання final-SHA CI — у Draft PR; реалізація не означає автоматичного приймання/merge.
+**P3B — реалізація для одного Draft PR від main, [#90](https://github.com/aleks-nl5/andrey-ceilings-android/issues/90):** вбудовані «Елементи стелі» у CMP details, спільні для Android «Заміри»/«Об'єкти» та Windows Objects. Реальний active catalog picker, Wish, точний comma/dot→Long-milli, CRUD/CAS, явний Wish→Catalog, захищені session-only чернетки й Back. [P3B flow та checklist](MEASUREMENT_ELEMENTS_P3B.md). Схема SQLDelight v7, геометрія, captured precision, SQLCipher/WAL/backup та фінансові snapshots не змінюються.
 
-**Наступні етапи:** P3B — список «Елементи» у наявних CMP measurement flows; #44 — актуальні ціни/кошториси; #71 — typed фізичні placements/Canvas; #42 — runnable iOS host. P3A не додає ціни, координати або фінансові рядки.
+**Доставка та приймання:** Draft PR → Android APK/SQLCipher emulator + Windows JVM/encrypted scene/CRUD + iOS framework/Simulator на одному фінальному HEAD. Ручний APK smoke (обидві теми й обидва шляхи) здійснює власник; автоматичні тести його не замінюють. Не merge/close #90/#76/#78. CI workflows/gates незмінні; порівняння часу/кешів і benchmarks поза scope #90.
 
-**Доставка:** feature branch → один Draft PR → Android APK/SQLCipher + Windows/JVM encrypted JDBC + iOS Simulator SQLCipher на одному фінальному SHA. Власницький smoke перевіряє чинні прайс/заміри/кошториси/backup; не вигадувати новий UI або позначати ручні дії виконаними. Не merge/close issue без власника. CI benchmarks/cache/time comparisons для цього scope не проводяться; усі існуючі gates збережені.
+**Окремо:** #44 — live pricing/кошториси; #71 — реальний Canvas placement; #42 — runnable iOS host. Косметичне UI/UX відкладене. Погодження не означає розміщення; P3B не показує кнопки «Розмістити» чи фінансові суми.
 
 Нижче — історичні зрізи, їхні старі «поточні» статуси не є чинним планом.
 

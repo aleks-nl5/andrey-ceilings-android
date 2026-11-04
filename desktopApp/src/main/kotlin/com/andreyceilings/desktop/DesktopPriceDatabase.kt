@@ -26,7 +26,10 @@ internal class DesktopPriceDatabase private constructor(
     val objects: ObjectsClientsStore,
     private val driver: SqlDriver
 ) : AutoCloseable {
-    override fun close() = driver.close()
+    override fun close() {
+        objects.measurementDetails.elements.close()
+        driver.close()
+    }
 
     companion object {
         private const val ITERATIONS = 310_000
