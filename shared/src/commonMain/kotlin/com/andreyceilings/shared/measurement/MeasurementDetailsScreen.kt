@@ -99,7 +99,7 @@ fun MeasurementDetailsScreen(
     val data = (state as? MeasurementDetailsState.Loaded)?.data
     val listState = rememberSaveable(data?.id, saver = LazyListState.Saver) { LazyListState() }
     LaunchedEffect(pointState.modeElementUuid) {
-        if (pointState.modeElementUuid != null) listState.animateScrollToItem(2)
+        if (pointState.modeElementUuid != null) listState.scrollToItem(2)
     }
     val direction = LocalLayoutDirection.current
     val start = contentPadding.calculateStartPadding(direction)

@@ -92,14 +92,26 @@ class PointPlacementSceneTest {
     }
 
     private fun ImageComposeScene.tapWorld(row: Room_measurements, x: Long, y: Long, dx: Float = 0f) {
-        frame()
-        val bounds = canvas().boundsInRoot
+        val bounds = stableCanvasBounds()
         val contour = measurementDrawingContour(measurementGeometryForViewing(row.shape, row.drawingJson, row.lengthMeters, row.widthMeters))!!
         val p = measurementDrawingProjection(contour, bounds.width, bounds.height)!!.project(DrawingPoint(x.toDouble(), y.toDouble()))
         val pos = Offset(bounds.left + p.x.toFloat() + dx, bounds.top + p.y.toFloat())
         sendPointerEvent(PointerEventType.Press, pos, type = PointerType.Touch)
         sendPointerEvent(PointerEventType.Release, pos, type = PointerType.Touch)
         frame()
+    }
+    private fun ImageComposeScene.stableCanvasBounds(): androidx.compose.ui.geometry.Rect {
+        var previous: androidx.compose.ui.geometry.Rect? = null
+        var stable = 0
+        repeat(150) {
+            frame()
+            val current = canvas().boundsInRoot
+            stable = if (current == previous) stable + 1 else 0
+            if (stable >= 3) return current
+            previous = current
+            Thread.sleep(20)
+        }
+        fail("Canvas did not settle before pointer injection")
     }
     private fun ImageComposeScene.canvas() = nodes().first { it.config.getOrNull(SemanticsProperties.ContentDescription).orEmpty().any { it.startsWith("Контур стелі") } }
     private fun ImageComposeScene.frame() { Snapshot.sendApplyNotifications(); render(System.nanoTime()).close() }
