@@ -38,12 +38,21 @@ object WallAnchorProof {
         assertTrue(later.placements.points.all { it.mounting.needsReview && it.mounting.deferredAt==140L })
         val confirmed=store.update(later,later.draft,mapOf(first.uuid to PointMountingEdit(confirm=true)),now=150)
         assertFalse(confirmed.placements.points.first { it.uuid==first.uuid }.mounting.needsReview)
-        val shrunk=store.update(confirmed,confirmed.draft.reduce(MeasurementCreateIntent.Dimension("length","2")),now=160)
+        var shrunk=store.update(confirmed,confirmed.draft.reduce(MeasurementCreateIntent.Dimension("length","2")),now=160)
         assertEquals(1000L,elements.find(f.element.uuid)!!.placedQuantityMilli)
         assertEquals(1,shrunk.placements.points.count { it.mounting.unresolved })
         assertEquals(second.uuid,shrunk.placements.points.single { it.mounting.unresolved }.uuid)
         assertEquals(3500L,points.find(second.uuid)!!.xMm)
         assertFailsWith<IllegalArgumentException> { store.update(shrunk,shrunk.draft,mapOf(second.uuid to PointMountingEdit(confirm=true)),now=170) }
+        val unresolvedPoint=points.find(second.uuid)!!
+        val unresolvedElement=elements.find(f.element.uuid)!!
+        assertFailsWith<PointPlacementFailure.RequiresMeasuredAnchor> {points.movePoint(unresolvedElement.version,unresolvedPoint,shrunk.updatedAt,1000,1500,PointPrecision.APPROXIMATE,175)}
+        assertFails {db.pointPlacementsQueries.insertMoveOperation("unresolved-free-${f.id}",second.uuid,unresolvedPoint.updatedAt,unresolvedElement.updatedAt,shrunk.updatedAt,1000,1500,"approximate",175)}
+        unresolvedJournalCannotInventMeasuredResolution(db,shrunk,second.uuid)
+        val expanded=store.update(shrunk,shrunk.draft.reduce(MeasurementCreateIntent.Dimension("length","5")),now=176)
+        assertTrue(expanded.placements.points.single{it.uuid==second.uuid}.mounting.unresolved,"Expanding geometry cannot invent measured confirmation")
+        assertEquals(1000L,elements.find(f.element.uuid)!!.placedQuantityMilli)
+        shrunk=store.update(expanded,expanded.draft.reduce(MeasurementCreateIntent.Dimension("length","2")),now=177)
         val fixed=store.update(shrunk,shrunk.draft,mapOf(second.uuid to PointMountingEdit(anchor=anchor.copy(firstMm=1200,secondMm=1000))),now=180)
         assertEquals(2000L,elements.find(f.element.uuid)!!.placedQuantityMilli)
         assertFalse(fixed.placements.points.single { it.uuid==second.uuid }.mounting.unresolved)
@@ -216,6 +225,30 @@ object WallAnchorProof {
         points.addPoint(elements.find(f.element.uuid)!!.version,saved.updatedAt,2000,1000,150)
         assertFailsWith<MeasurementEditConflict> {store.update(third,third.draft,edit,"whole-cas-reservation-${f.id}","same-walls",140)}
         assertEquals(2,points.forMeasurement(f.element.measurementUuid).size)
+    }
+
+    private fun unresolvedJournalCannotInventMeasuredResolution(db:PrototypeDatabase,doc:MeasurementEditDocument,uuid:String) {
+        val row=MeasurementRepository(db).find(doc.measurementId)!!
+        val point=doc.placements.points.single{it.uuid==uuid}
+        val target=point.copy(xMm=1000,yMm=1500,mounting=point.mounting.copy(anchor=null,unresolved=false,needsReview=true,
+            modifiedVersion=maxOf(point.updatedAt+1,175),confirmedAt=null,lastValidGeometryJson=row.drawingJson))
+        val payload=buildJsonObject {
+            put("name",row.name);put("notes",row.notes);put("shape",row.shape);put("drawingJson",row.drawingJson);put("oldDrawingJson",row.drawingJson)
+            put("length",row.lengthMeters);put("width",row.widthMeters);put("area",row.areaSquareMeters);put("perimeter",row.perimeterMeters)
+            putJsonArray("walls"){doc.placements.walls.forEach{add(buildJsonObject{put("uuid",it.uuid)})}}
+            putJsonArray("points"){doc.placements.points.forEach {old ->
+                val p=if(old.uuid==uuid)target else old
+                add(buildJsonObject {
+                    put("uuid",p.uuid);put("elementUuid",p.elementUuid);put("expectedUpdatedAt",old.updatedAt)
+                    put("expectedElementUpdatedAt",doc.placements.elements.getValue(p.elementUuid));put("xMm",p.xMm);put("yMm",p.yMm)
+                    put("precision",p.precision.value);put("mountingJson",encodeMounting(p.mounting));put("write",if(p.uuid==uuid)1 else 0)
+                })
+            }}
+        }.toString()
+        val op="unresolved-journal-${doc.measurementId}"
+        assertFails {db.ceilingEditsQueries.insertOperation(op,row.uuid,row.updatedAt,payload,175)}
+        assertNull(db.ceilingEditsQueries.selectOperation(op).executeAsOneOrNull())
+        assertEquals(row,MeasurementRepository(db).find(row.id));assertEquals(point,PointPlacementRepository(db).find(uuid))
     }
 
 }

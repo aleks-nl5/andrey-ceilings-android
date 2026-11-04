@@ -104,7 +104,7 @@ fun MeasurementEditScreen(
                     fullscreen = false
                     onBack()
                 } }, enabled = enabled) { Text("Відхилити") }
-                Button(onClick = ::save, enabled = enabled && validation.canSave && !state.conflict && overlay is PointOverlayState.Loaded) { Text(if (state.saving) "Збереження…" else "Зберегти") }
+                Button(onClick = ::save, enabled = enabled && validation.canSave && model.canSaveMountingDraft() && !state.conflict && overlay is PointOverlayState.Loaded) { Text(if (state.saving) "Збереження…" else "Зберегти") }
             }
             if (state.checking) Text("Перевірка стану заміру. Дочекайтеся результату.")
             if (state.saving || state.saved) Text(if (state.saving) "Збереження триває. Дочекайтеся результату." else "Замір збережено. Відкриття…")
@@ -210,7 +210,7 @@ fun MeasurementEditScreen(
         dismissButton={TextButton(enabled=!state.saving && !state.checking,onClick={scope.launch {model.reviewLater()}}){Text("Пізніше")}})
     if (state.exitRequested) AlertDialog(onDismissRequest = model::continueEditing,
         title = { Text("Незбережені зміни") }, text = { Text("Зберегти зміни заміру? Збереження поверне до перегляду цього заміру.") },
-        confirmButton = { TextButton(onClick = { model.continueEditing(); save() }, enabled = validation.canSave && !state.conflict && overlay is PointOverlayState.Loaded) { Text("Зберегти") } },
+        confirmButton = { TextButton(onClick = { model.continueEditing(); save() }, enabled = validation.canSave && model.canSaveMountingDraft() && !state.conflict && overlay is PointOverlayState.Loaded) { Text("Зберегти") } },
         dismissButton = { Row {
             TextButton(onClick = model::discardAndExit) { Text("Відхилити зміни") }
             TextButton(onClick = model::continueEditing) { Text("Продовжити") }

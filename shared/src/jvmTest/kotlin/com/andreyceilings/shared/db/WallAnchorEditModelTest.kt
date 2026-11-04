@@ -71,6 +71,11 @@ class WallAnchorEditModelTest {
             assertFailsWith<PointPlacementFailure.CapacityReached> {points.addPoint(elements.find(f.element.uuid)!!.version,model.state.value.original.updatedAt,1800,500,300)}
             val review=MeasurementEditModel(store,store.load(f.project,f.id));review.reviewNow()
             review.selectPoint(first.uuid);review.confirmSelected();assertEquals(unresolved,points.find(first.uuid))
+            review.beginPointDrag(first.uuid);review.previewPointDrag(1600.0,700.0);review.finishPointDrag()
+            assertTrue(review.displayPoints().single{it.uuid==first.uuid}.mounting.unresolved)
+            assertFalse(review.canSaveMountingDraft());review.save();assertEquals(unresolved,points.find(first.uuid))
+            review.confirmSelected();assertEquals(unresolved,points.find(first.uuid))
+            review.undo();assertTrue(review.canSaveMountingDraft())
             review.openMounting();val walls=review.draftWalls()
             review.updateMounting {it.copy(firstWall=walls[0].uuid,secondWall=walls[5].uuid,firstText="0.6",secondText="1.5")}
             review.applyMounting();review.save()

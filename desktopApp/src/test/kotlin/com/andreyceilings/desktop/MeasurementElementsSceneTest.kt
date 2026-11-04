@@ -16,6 +16,8 @@ import kotlin.test.*
 
 class MeasurementElementsSceneTest {
     @Test fun realCmpCrudPickerDirtyBackAndConflictInBothThemes(): Unit = runBlocking {
+        val ui=java.util.concurrent.Executors.newSingleThreadExecutor().asCoroutineDispatcher()
+        try { withContext(ui) {
         for (dark in listOf(false, true)) {
             // Windows exercises these UI actions with the same unlocked encrypted JDBC as its host.
             val directory = java.nio.file.Files.createTempDirectory("p3b-scene-").toFile()
@@ -35,7 +37,7 @@ class MeasurementElementsSceneTest {
             suspend fun ready() { withTimeout(10_000) { model.state.first { it is MeasurementElementsState.Loaded } } }
             suspend fun saved() { withTimeout(10_000) { model.editor.first { it == null } } }
             ready()
-            val scene = ImageComposeScene(640, 1200) {
+            val scene = ImageComposeScene(640, 1200, coroutineContext=ui) {
                 CeilingsTheme(dark) {
                     val state by model.state.collectAsState()
                     MeasurementElementsSection(state, model::add, model::open, model::retry)
@@ -46,6 +48,7 @@ class MeasurementElementsSceneTest {
                         model::continueEditing, model::discardAndExit, model::requestReload, model::cancelReload, model::reload) }
                 }
             }
+            var testFailure:Throwable?=null
             try {
                 scene.awaitText("кількість можна уточнити")
                 scene.click("Додати елемент"); scene.frame(); scene.click("Побажання"); scene.frame()
@@ -99,11 +102,16 @@ class MeasurementElementsSceneTest {
                 guard.transition(nav, nav.selectTab(AppRoute.PRICES)) { nav = it; switched = true }
                 scene.frame(); assertFalse(switched)
                 scene.click("Відхилити зміни"); assertTrue(switched)
-            } finally { scene.close(); store.close(); driver.close(); directory.deleteRecursively() }
+            } catch(failure:Throwable) { testFailure=failure;throw failure
+            } finally {
+                try {scene.close()} catch(cleanup:Throwable) {if(testFailure!=null)testFailure.addSuppressed(cleanup) else throw cleanup}
+                finally {store.closeAndAwaitWrites();driver.close();directory.deleteRecursively()}
+            }
         }
+        } } finally {ui.close()}
     }
 
-    @Test fun hoistedDetailsEmbedsElementsAndFullscreenRemainsDrawingOnly() {
+    @Test fun hoistedDetailsEmbedsElementsAndFullscreenRemainsDrawingOnly():Unit = runBlocking {
         val guard = MeasurementCreateNavigationGuard()
         val scene = ImageComposeScene(640, 1800) {
             CeilingsTheme(false) {
@@ -136,31 +144,31 @@ class MeasurementElementsSceneTest {
      * rather than racing the next frame after a completed repository write.
      * Still fail loudly with the visible action tree when a control never appears.
      */
-    private fun ImageComposeScene.awaitAction(label: String, eligible: (SemanticsNode) -> Boolean): SemanticsNode {
+    private suspend fun ImageComposeScene.awaitAction(label: String, eligible: (SemanticsNode) -> Boolean): SemanticsNode {
         repeat(150) {
             frame()
             nodes().firstOrNull { eligible(it) && it.textTree().contains(label) }?.let { return it }
-            Thread.sleep(20)
+            delay(20)
         }
         val visible = nodes().filter(eligible).joinToString(" | ") { it.textTree().take(180) }
         fail("Compose control '$label' did not appear within 3 seconds. Available controls: $visible. UI: ${text().take(1200)}")
     }
     /** List Flow may deliver after the editor closes on encrypted Windows JDBC. */
-    private fun ImageComposeScene.awaitText(label: String) {
+    private suspend fun ImageComposeScene.awaitText(label: String) {
         repeat(200) {
             frame()
             if (text().contains(label)) return
-            Thread.sleep(25)
+            delay(25)
         }
         fail("Compose text '$label' did not appear within 5 seconds. UI: ${text().take(1800)}")
     }
-    private fun ImageComposeScene.click(label: String) {
+    private suspend fun ImageComposeScene.click(label: String) {
         val node = awaitAction(label) { it.config.getOrNull(SemanticsActions.OnClick) != null }
         assertNull(node.config.getOrNull(SemanticsProperties.Disabled), label)
         assertTrue(node.config.getOrNull(SemanticsActions.OnClick)?.action?.invoke() == true)
         frame()
     }
-    private fun ImageComposeScene.setField(label: String, value: String) {
+    private suspend fun ImageComposeScene.setField(label: String, value: String) {
         val node = awaitAction(label) { it.config.getOrNull(SemanticsActions.SetText) != null }
         assertTrue(node.config.getOrNull(SemanticsActions.SetText)?.action?.invoke(AnnotatedString(value)) == true)
         frame()

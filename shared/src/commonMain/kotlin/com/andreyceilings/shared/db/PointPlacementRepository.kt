@@ -81,6 +81,7 @@ class PointPlacementRepository(private val database: PrototypeDatabase) {
         if (element.updatedAt != original.expectedUpdatedAt || actual.updatedAt != point.updatedAt ||
             actual.contourUpdatedAt != point.contourUpdatedAt || actual.updatedAt == Long.MAX_VALUE || element.updatedAt == Long.MAX_VALUE)
             throw PointPlacementFailure.StaleVersion()
+        if(actual.mounting.unresolved) throw PointPlacementFailure.RequiresMeasuredAnchor()
         val capacity = element.pointCapacity() ?: throw PointPlacementFailure.UnsupportedElement()
         val count = queries.countForElement(element.uuid).executeAsOne()
         if (count <= 0 || count > capacity || element.placedQuantityMilli != queries.selectForMeasurement(element.measurementUuid).executeAsList().count { it.elementUuid == element.uuid && !decodeMounting(it.mountingJson).unresolved } * 1000L) throw PointPlacementFailure.StaleVersion()

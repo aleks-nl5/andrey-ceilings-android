@@ -120,7 +120,7 @@ class MeasurementEditModel(
             if (state.value.saving || state.value.checking || state.value.saved || state.value.conflict || state.value.mountingInput!=null) return
             commitInput()
             val before=state.value
-            if (!validateMeasurementCreate(before.draft).canSave) return
+            if (!validateMeasurementCreate(before.draft).canSave || !canSaveMountingDraft()) return
             val completion=store?.beginWrite() ?: return
             val command=attempt ?: CeilingWriteAttempt(newRecordUuid(),null).also { attempt=it }
             exitAction=null
@@ -176,6 +176,8 @@ class MeasurementEditModel(
         if(!state.value.saving && !state.value.saved) mutableState.value=state.value.copy(conflict=true,error="Позначки змінено іншим редактором. Чернетку збережено; перезавантажте актуальні дані.",drag=null)
     }
     fun draftWalls() = ceilingDraftWalls(state.value.original,state.value.draft,state.value.wallGeneration)
+    fun canSaveMountingDraft():Boolean = displayPoints().none { point -> point.mounting.unresolved &&
+        state.value.pointEdits[point.uuid]?.let {it.anchor!=null || it.freeX!=null}==true }
     fun displayPoints(): List<PointPlacement> {
         val geometry=validateMeasurementCreate(state.value.draft).geometry ?: return state.value.original.placements.points
         val changed=geometry!=validateMeasurementCreate(state.value.original.draft).geometry
@@ -207,6 +209,7 @@ class MeasurementEditModel(
         commitInput();undo.add(form());redo.clear()
         mutableState.value=state.value.copy(pointEdits=state.value.pointEdits+(uuid to edit),mountingInput=null,drag=null,error=null)
         publish()
+        if(!canSaveMountingDraft()) mutableState.value=state.value.copy(error="Це лише попередня позиція. Задайте коректні виміряні відступи, щоб уточнити нерозв'язану позначку й зберегти всю чернетку.")
     }
     fun openMounting() {
         if (state.value.saving || state.value.checking || state.value.uncertain || validateMeasurementCreate(state.value.draft).geometry==null) return

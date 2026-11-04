@@ -161,3 +161,11 @@ set і element versions із цим immutable result; пізніший move/add/
 не видається за результат попередньої операції. Result document читається під тим
 самим writer transaction, до звільнення lock. За незмінного контуру SQL буквально
 зберігає старі length/width/area/perimeter scalars, включно з native REAL tails.
+
+
+Unresolved є sticky до нового допустимого measured anchor. Вільний drag може
+показати лише staging-позицію; без нових опор він не потрапляє в placed і не
+підтверджується. Save такого staging блокується без partial commit. Просте
+розширення контуру теж не підтверджує unresolved. Старий details move API й raw
+SQL move receipts відхиляють таку спробу; typed mounting через co-editor — єдиний
+шлях повернення цієї точки у valid placed.

@@ -99,8 +99,9 @@ fun previewMounting(point: PointPlacement, geometry: FrozenPolygonGeometry, wall
     val anchor = if (edit != null && (edit.anchor != null || edit.freeX != null)) edit.anchor else point.mounting.anchor
     val solution = anchor?.let { solveWallAnchor(geometry,walls,it) }
     val free = edit?.freeX?.let { PointPositionMm(it,checkNotNull(edit.freeY)) }
-    val position = solution?.position ?: free ?: PointPositionMm(point.xMm,point.yMm)
-    val unresolved = if (anchor != null) solution == null else !pointStrictlyInside(geometry,position.xMm,position.yMm)
+    val position = if(point.mounting.unresolved && edit?.anchor==null && free==null) PointPositionMm(point.xMm,point.yMm)
+        else solution?.position ?: free ?: PointPositionMm(point.xMm,point.yMm)
+    val unresolved = point.mounting.unresolved && edit?.anchor==null || if (anchor != null) solution == null else !pointStrictlyInside(geometry,position.xMm,position.yMm)
     val measured = edit?.anchor != null
     val dragged = free != null
     val review = when {

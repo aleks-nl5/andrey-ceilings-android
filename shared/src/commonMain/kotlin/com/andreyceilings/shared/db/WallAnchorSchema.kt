@@ -334,6 +334,7 @@ BEGIN
  OR (p.unresolved=1 AND json_extract(p.mountingJson,'$.lastValidGeometryJson') IS NOT coalesce(json_extract(q.mountingJson,'$.lastValidGeometryJson'),json_extract(new.payload,'$.oldDrawingJson')))))
  OR (p.unresolved=1 AND (p.needsReview!=1 OR p.xMm!=q.xMm OR p.yMm!=q.yMm OR p.precision!=q.precision
  OR json_extract(p.mountingJson,'$.anchor') IS NOT json_extract(q.mountingJson,'$.anchor')))
+ OR (coalesce(json_extract(q.mountingJson,'$.unresolved'),0)=1 AND p.unresolved=0 AND (json_extract(p.mountingJson,'$.anchor') IS NULL OR p.precision!='exact' OR json_extract(p.mountingJson,'$.anchorGeometryJson') IS NOT json_extract(new.payload,'$.drawingJson')))
  OR (p.unresolved=0 AND (EXISTS(SELECT 1 FROM ceiling_hidden_offsets WHERE operationUuid=p.operationUuid AND pointUuid=p.pointUuid) OR coalesce(((SELECT CASE WHEN sum(CASE WHEN (bx-ax)*(p.yMm-ay)-(by-ay)*(p.xMm-ax)=0
  AND p.xMm BETWEEN min(ax,bx) AND max(ax,bx) AND p.yMm BETWEEN min(ay,by) AND max(ay,by) THEN 1 ELSE 0 END)=0
  AND sum(CASE WHEN (ay>p.yMm)!=(by>p.yMm) AND (((bx-ax)*(p.yMm-ay)-(by-ay)*(p.xMm-ax))>0)=(by>ay) THEN 1 ELSE 0 END)%2=1 THEN 1 ELSE 0 END
@@ -491,7 +492,7 @@ BEGIN
         SELECT 1 FROM point_placements q JOIN measurement_elements e ON e.uuid = q.elementUuid
         JOIN room_measurements m ON m.uuid = e.measurementUuid JOIN projects p ON p.id = m.projectId
         WHERE q.uuid = new.pointUuid AND q.updatedAt = new.expectedPointUpdatedAt
-        AND q.deletedAt IS NULL AND q.updatedAt < 9223372036854775807
+        AND coalesce(json_extract(q.mountingJson,'$.unresolved'),0)=0 AND q.deletedAt IS NULL AND q.updatedAt < 9223372036854775807
         AND e.updatedAt = new.expectedElementUpdatedAt AND e.updatedAt < 9223372036854775807
         AND m.updatedAt = new.contourUpdatedAt
         AND e.deletedAt IS NULL AND m.deletedAt IS NULL AND p.deletedAt IS NULL

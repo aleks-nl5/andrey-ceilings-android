@@ -29,6 +29,7 @@ sealed class PointPlacementFailure(message: String, cause: Throwable? = null) : 
     class CapacityReached : PointPlacementFailure("All requested pieces are placed")
     class StaleVersion : PointPlacementFailure("Element or point changed; reload")
     class RetryConflict : PointPlacementFailure("Point UUID already used")
+    class RequiresMeasuredAnchor : PointPlacementFailure("Unresolved placement requires measured wall references")
     class InvalidInput : PointPlacementFailure("Invalid coordinates, UUID or timestamp")
     class DatabaseUnavailable(cause: Throwable) : PointPlacementFailure("Database unavailable", cause)
 }
@@ -79,6 +80,7 @@ fun pointFailureMessage(failure: Throwable): String = when (failure) {
     is PointPlacementFailure.CapacityReached -> "Усю заявлену кількість уже розміщено."
     is PointPlacementFailure.StaleVersion -> "Елемент або позначка змінилися. Оберіть актуальний запис."
     is PointPlacementFailure.RetryConflict -> "Ця спроба вже має інші дані або позначку видалено. Перевірте креслення."
+    is PointPlacementFailure.RequiresMeasuredAnchor -> "Позначка потребує уточнення. Задайте виміряні відступи від стін у редакторі заміру; вільний drag не підтверджує розміщення."
     is PointPlacementFailure.InvalidInput -> "Координата поза допустимими межами."
     else -> "Захищена база недоступна. Повторіть ту саму спробу після перевірки сесії."
 }
