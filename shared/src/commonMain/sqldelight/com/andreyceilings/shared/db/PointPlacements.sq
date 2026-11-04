@@ -21,3 +21,26 @@ removePoint:
 UPDATE point_placements SET updatedAt = max(updatedAt + 1, :now), deletedAt = max(updatedAt + 1, :now)
 WHERE uuid = :uuid AND elementUuid = :elementUuid AND updatedAt = :expectedUpdatedAt
     AND updatedAt < 9223372036854775807 AND deletedAt IS NULL;
+
+selectMoveOperation:
+SELECT * FROM point_position_operations WHERE uuid = ?;
+
+insertMoveOperation:
+INSERT INTO point_position_operations(uuid, pointUuid, expectedPointUpdatedAt, expectedElementUpdatedAt,
+    contourUpdatedAt, xMm, yMm, precision, createdAt)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+movePoint:
+UPDATE point_placements SET xMm = :xMm, yMm = :yMm, precision = :precision,
+    lastMoveUuid = :operationUuid, updatedAt = max(updatedAt + 1, :now)
+WHERE uuid = :pointUuid AND elementUuid = :elementUuid AND updatedAt = :expectedPointUpdatedAt
+    AND updatedAt < 9223372036854775807 AND deletedAt IS NULL;
+
+selectEditorOverlay:
+SELECT m.uuid AS measurementUuid, m.drawingJson, m.shape, m.lengthMeters, m.widthMeters,
+    m.updatedAt AS measurementUpdatedAt, q.*
+FROM room_measurements m JOIN projects p ON p.id = m.projectId
+LEFT JOIN point_placements q ON q.deletedAt IS NULL AND q.elementUuid IN (
+    SELECT e.uuid FROM measurement_elements e WHERE e.measurementUuid = m.uuid AND e.deletedAt IS NULL)
+WHERE m.id = :measurementId AND m.projectId = :projectId AND m.uuid = :measurementUuid
+    AND m.deletedAt IS NULL AND p.deletedAt IS NULL ORDER BY q.createdAt, q.uuid;

@@ -70,7 +70,7 @@ object MeasurementElementMigrationProof {
         val migrated = open(production)
         val parent: String
         try {
-            assertEquals(8L, PriceNameUniquenessProof.scalar(migrated, "PRAGMA user_version"))
+            assertEquals(9L, PriceNameUniquenessProof.scalar(migrated, "PRAGMA user_version"))
             assertEquals(before, snapshot(migrated), "All old rows, types, UUIDs, keys, precision, history and sequences survive")
             assertStructure(migrated)
             val db = PrototypeDatabase(migrated)

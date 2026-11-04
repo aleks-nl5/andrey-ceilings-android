@@ -84,11 +84,12 @@ data class MeasurementDrawingProjection(val scale: Double, val offsetX: Double, 
 }
 
 fun measurementDrawingProjection(contour: MeasurementDrawingContour, width: Float, height: Float,
-    density: Float = 1f): MeasurementDrawingProjection? {
+    density: Float = 1f, extraWorldPoints: List<DrawingPoint> = emptyList()): MeasurementDrawingProjection? {
+    val worldPoints = contour.points + extraWorldPoints
     if (!width.isFinite() || !height.isFinite() || width <= 0 || height <= 0 || density <= 0 ||
-        !density.isFinite() || contour.points.size < 3 || contour.points.any { !it.x.isFinite() || !it.y.isFinite() }) return null
-    val left = contour.points.minOf { it.x }; val top = contour.points.minOf { it.y }
-    val dx = contour.points.maxOf { it.x } - left; val dy = contour.points.maxOf { it.y } - top
+        !density.isFinite() || contour.points.size < 3 || worldPoints.any { !it.x.isFinite() || !it.y.isFinite() }) return null
+    val left = worldPoints.minOf { it.x }; val top = worldPoints.minOf { it.y }
+    val dx = worldPoints.maxOf { it.x } - left; val dy = worldPoints.maxOf { it.y } - top
     if (!dx.isFinite() || !dy.isFinite() || dx <= 0 || dy <= 0) return null
     val margin = minOf(36f * density, width * 0.22f, height * 0.22f)
     val scale = minOf((width - margin * 2) / dx, (height - margin * 2) / dy)
@@ -100,9 +101,9 @@ fun measurementDrawingProjection(contour: MeasurementDrawingContour, width: Floa
 fun layoutMeasurementDrawing(
     contour: MeasurementDrawingContour, width: Float, height: Float,
     sizes: List<DrawingLabelSize>, density: Float = 1f,
-    vertexSizes: List<DrawingLabelSize> = emptyList()
+    vertexSizes: List<DrawingLabelSize> = emptyList(), extraWorldPoints: List<DrawingPoint> = emptyList()
 ): MeasurementDrawingLayout? {
-    val projection = measurementDrawingProjection(contour, width, height, density) ?: return null
+    val projection = measurementDrawingProjection(contour, width, height, density, extraWorldPoints) ?: return null
     val points = contour.points.map(projection::project)
     return layoutMeasurementDrawingForProjectedPoints(points, width, height, sizes, density, vertexSizes)
 }

@@ -84,6 +84,9 @@ sqldelight {
             packageName.set("com.andreyceilings.shared.db")
             // INSERT ... RETURNING requires SQLite >= 3.35 on every supported driver.
             dialect("app.cash.sqldelight:sqlite-3-35-dialect:2.4.1")
+            // Declare built-in SQLite JSON signatures for the DB-level strict-interior guard.
+            // SQLCipher supplies JSON at runtime; platform encrypted proofs exercise it.
+            module("app.cash.sqldelight:sqlite-json-module:2.4.1")
         }
     }
 }

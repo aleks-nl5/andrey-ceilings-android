@@ -32,6 +32,8 @@ class MeasurementEditModel(
     private val redo = mutableListOf<MeasurementCreateDraft>()
     private var inputStart: MeasurementCreateDraft? = null
     private var exitAction: (() -> Unit)? = null
+    fun observePoints(): Flow<PointOverlayState> = store?.observePoints(state.value.original)
+        ?: flowOf(PointOverlayState.Unavailable)
 
     private fun publish(draft: MeasurementCreateDraft = state.value.draft) {
         mutableState.value = state.value.copy(draft = draft, canUndo = inputStart?.let { it != draft } == true || undo.isNotEmpty(),

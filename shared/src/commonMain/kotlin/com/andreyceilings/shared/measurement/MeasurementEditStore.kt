@@ -4,6 +4,12 @@ import com.andreyceilings.shared.calculation.MeasurementPrecision
 import com.andreyceilings.shared.db.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import app.cash.sqldelight.coroutines.asFlow
 
 class MeasurementEditConflict : IllegalStateException(
     "Замір змінено іншим редактором, видалено або об'єкт недоступний. Перезавантажте запис; чернетку не записано.")
@@ -12,6 +18,36 @@ class MeasurementEditConflict : IllegalStateException(
 data class MeasurementEditDocument(val measurementId: Long, val updatedAt: Long, val draft: MeasurementCreateDraft)
 
 class MeasurementEditStore(private val database: PrototypeDatabase, private val nowMillis: () -> Long) {
+    private val sessionClosed = MutableStateFlow(false)
+    private val pointRead = Mutex()
+    fun closePointReads() { sessionClosed.value = true }
+    /** JDBC close waits for the mapper; Android's production restore gate already drains reads. */
+    suspend fun closeAndAwaitPointReads() {
+        closePointReads()
+        pointRead.withLock { /* Any accepted SQL mapper has now finished. */ }
+    }
+
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    fun observePoints(document: MeasurementEditDocument): Flow<PointOverlayState> = sessionClosed.flatMapLatest { closed ->
+        if (closed) flowOf(PointOverlayState.Unavailable) else database.pointPlacementsQueries.selectEditorOverlay(
+            document.measurementId, document.draft.projectId, document.draft.recordUuid).asFlow()
+            .map { query -> kotlinx.coroutines.withContext(Dispatchers.Default) {
+                pointRead.withLock { if (sessionClosed.value) null else query.executeAsList() }
+            } }.map { rows ->
+                if (rows == null || sessionClosed.value) return@map PointOverlayState.Unavailable
+                val first = rows.firstOrNull()
+                if (first == null) PointOverlayState.Missing else {
+                    val geometry = (measurementGeometryForViewing(first.shape, first.drawingJson,
+                        first.lengthMeters, first.widthMeters) as? MeasurementGeometryView.Captured)?.geometry
+                    if (geometry == null) PointOverlayState.Unavailable else PointOverlayState.Loaded(rows.mapNotNull { row ->
+                        row.uuid?.let { uuid -> PointPlacement(uuid, checkNotNull(row.elementUuid), checkNotNull(row.xMm), checkNotNull(row.yMm),
+                            checkNotNull(row.contourUpdatedAt), checkNotNull(row.createdAt), checkNotNull(row.updatedAt), row.deletedAt,
+                            PointPrecision.entries.single { it.value == row.precision }, row.lastMoveUuid) }
+                    }, geometry)
+                }
+            }.onStart<PointOverlayState> { emit(PointOverlayState.Loading) }
+                .catch { if (it is CancellationException) throw it else emit(PointOverlayState.Unavailable) }
+    }
     private val measurements = MeasurementRepository(database)
     private val projects = ProjectRepository(database)
     // Only an in-flight/delivered write is retained, scoped to this unlocked database session.

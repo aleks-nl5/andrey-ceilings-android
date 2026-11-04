@@ -59,6 +59,42 @@ class PointPlacementRepository(private val database: PrototypeDatabase) {
         checkNotNull(read(point.uuid))
     }
 
+    /** One immutable operation receipt authorizes one CAS position update. Reuse it after uncertainty. */
+    fun movePoint(original: ElementVersion, point: PointPlacement, contourUpdatedAt: Long,
+        xMm: Long, yMm: Long, precision: PointPrecision, now: Long,
+        operationUuid: String = newRecordUuid()): PointMoveResult = write(original.uuid) {
+        if (operationUuid.isBlank() || now !in 0 until Long.MAX_VALUE || point.elementUuid != original.uuid)
+            throw PointPlacementFailure.InvalidInput()
+        val element = parent(original)
+        val actual = read(point.uuid)?.takeIf { it.elementUuid == original.uuid && it.deletedAt == null }
+            ?: throw PointPlacementFailure.StaleVersion()
+        queries.selectMoveOperation(operationUuid).executeAsOneOrNull()?.let { receipt ->
+            if (receipt.pointUuid != point.uuid || receipt.expectedPointUpdatedAt != point.updatedAt ||
+                receipt.expectedElementUpdatedAt != original.expectedUpdatedAt || receipt.contourUpdatedAt != contourUpdatedAt ||
+                receipt.xMm != xMm || receipt.yMm != yMm || receipt.precision != precision.value)
+                throw PointPlacementFailure.RetryConflict()
+            if (actual.lastMoveUuid != operationUuid) throw PointPlacementFailure.StaleVersion()
+            return@write PointMoveResult(actual, element)
+        }
+        if (element.updatedAt != original.expectedUpdatedAt || actual.updatedAt != point.updatedAt ||
+            actual.contourUpdatedAt != point.contourUpdatedAt || actual.updatedAt == Long.MAX_VALUE || element.updatedAt == Long.MAX_VALUE)
+            throw PointPlacementFailure.StaleVersion()
+        val capacity = element.pointCapacity() ?: throw PointPlacementFailure.UnsupportedElement()
+        val count = queries.countForElement(element.uuid).executeAsOne()
+        if (count <= 0 || count > capacity || element.placedQuantityMilli != count * 1000) throw PointPlacementFailure.StaleVersion()
+        val row = measurements.findByUuid(original.measurementUuid) ?: throw PointPlacementFailure.ParentUnavailable()
+        if (row.updatedAt != contourUpdatedAt) throw PointPlacementFailure.StaleContour()
+        val geometry = (measurementGeometryForViewing(row.shape, row.drawingJson, row.lengthMeters, row.widthMeters)
+            as? MeasurementGeometryView.Captured)?.geometry ?: throw PointPlacementFailure.InvalidContour()
+        if (!pointStrictlyInside(geometry, xMm, yMm)) throw PointPlacementFailure.OutsideContour()
+        queries.insertMoveOperation(operationUuid, point.uuid, point.updatedAt, original.expectedUpdatedAt,
+            contourUpdatedAt, xMm, yMm, precision.value, now)
+        queries.movePoint(xMm, yMm, precision.value, operationUuid, now, point.uuid, element.uuid, point.updatedAt)
+        val saved = checkNotNull(read(point.uuid))
+        if (saved.lastMoveUuid != operationUuid) throw PointPlacementFailure.StaleVersion()
+        PointMoveResult(saved, checkNotNull(elements.find(element.uuid)))
+    }
+
     private fun parent(original: ElementVersion): MeasurementElement {
         if (database.measurementElementsQueries.selectActiveParent(original.measurementUuid).executeAsOneOrNull() == null)
             throw PointPlacementFailure.ParentUnavailable()
@@ -76,4 +112,4 @@ class PointPlacementRepository(private val database: PrototypeDatabase) {
 }
 
 private fun Point_placements.model() = PointPlacement(uuid, elementUuid, xMm, yMm, contourUpdatedAt,
-    createdAt, updatedAt, deletedAt)
+    createdAt, updatedAt, deletedAt, PointPrecision.entries.single { it.value == precision }, lastMoveUuid)

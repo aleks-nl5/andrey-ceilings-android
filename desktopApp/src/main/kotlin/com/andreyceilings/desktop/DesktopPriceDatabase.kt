@@ -31,6 +31,7 @@ internal class DesktopPriceDatabase private constructor(
         // Session close may race a Save already scheduled on Default. Drain the
         // complete write before releasing the encrypted JDBC connection.
         runBlocking { objects.measurementDetails.elements.closeAndAwaitWrites() }
+        runBlocking { objects.measurementEdit.closeAndAwaitPointReads() }
         driver.close()
     }
 

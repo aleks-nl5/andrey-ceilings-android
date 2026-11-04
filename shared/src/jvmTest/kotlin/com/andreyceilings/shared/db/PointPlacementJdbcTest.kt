@@ -30,7 +30,7 @@ class PointPlacementJdbcTest {
             PriceCatalogSchema.create(fresh)
             JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).use { upgraded ->
                 PointPlacementMigrationProof.v7Schema.create(upgraded)
-                PriceCatalogSchema.migrate(upgraded, 7, 8)
+                PriceCatalogSchema.migrate(upgraded, 7, 9)
                 verifyPointPlacementStructure(upgraded)
                 fun definitions(driver: SqlDriver) = MeasurementElementMigrationProof.rows(driver,
                     "SELECT type,name,sql FROM sqlite_master WHERE name='point_placements' OR name LIKE 'point_%' OR name LIKE 'index_point_%' ORDER BY name", 3)
@@ -40,9 +40,9 @@ class PointPlacementJdbcTest {
                 assertFails { openDesktopPriceCatalog(upgraded, true) }
                 assertNotEquals(original, PriceNameMigrationProof.schema(upgraded))
             }
-            fresh.execute(null, "PRAGMA user_version=9", 0)
+            fresh.execute(null, "PRAGMA user_version=10", 0)
             assertFails { openDesktopPriceCatalog(fresh, true) }
-            assertEquals(9L, PriceNameUniquenessProof.scalar(fresh, "PRAGMA user_version"))
+            assertEquals(10L, PriceNameUniquenessProof.scalar(fresh, "PRAGMA user_version"))
         }
         JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).use { partial ->
             PointPlacementMigrationProof.v7Schema.create(partial)

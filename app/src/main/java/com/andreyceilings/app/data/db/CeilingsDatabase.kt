@@ -45,6 +45,7 @@ internal class CeilingsDatabase private constructor(
 
     override fun close() {
         objectsClientsStore.measurementDetails.elements.close()
+        objectsClientsStore.measurementEdit.closePointReads()
         changeTracker.close()
         driver.close()
     }

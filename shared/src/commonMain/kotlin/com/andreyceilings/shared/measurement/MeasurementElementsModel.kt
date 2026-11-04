@@ -80,6 +80,7 @@ class MeasurementElementsModel internal constructor(private val store: Measureme
     val editor = mutableEditor.asStateFlow()
     private val mutablePoints = MutableStateFlow(PointPlacementState())
     val points = mutablePoints.asStateFlow()
+    private val committedPoints = MutableStateFlow<Map<String, PointPlacement>>(emptyMap())
     private fun updatePoints(change: (PointPlacementState) -> PointPlacementState) {
         mutablePoints.update { if (closed) PointPlacementState() else change(it) }
     }
@@ -98,16 +99,22 @@ class MeasurementElementsModel internal constructor(private val store: Measureme
         scope.launch {
             store.observePoints(route).catch { failure ->
                 updatePoints { it.copy(points = emptyList(), available = false,
-                    modeElementUuid = null, selectedPointUuid = null, error = pointFailureMessage(failure)) }
+                    modeElementUuid = null, selectedPointUuid = null, drag = null, undo = null, redo = null, error = pointFailureMessage(failure)) }
             }.collect { rows ->
-                updatePoints { if (closed) PointPlacementState() else it.copy(points = rows, available = true,
+                val currentRows = rows.mapNotNull { row ->
+                    val latest = committedPoints.value[row.uuid]?.takeIf { it.updatedAt > row.updatedAt } ?: row
+                    latest.takeIf { it.deletedAt == null }
+                }
+                updatePoints { if (closed) PointPlacementState() else it.copy(points = currentRows, available = true,
+                    drag = it.drag?.takeIf { drag -> rows.any { p -> p.uuid == drag.point.uuid && p.updatedAt == drag.point.updatedAt } },
                     selectedPointUuid = it.selectedPointUuid?.takeIf { uuid -> rows.any { p -> p.uuid == uuid } }) }
+                validatePointHistory()
             }
         }
     }
 
     fun beginPlacement(element: MeasurementElement, contourUpdatedAt: Long) {
-        if (closed || editor.value != null || points.value.saving || !points.value.available ||
+        if (closed || editor.value != null || points.value.positionEditor != null || points.value.saving || !points.value.available ||
             state.value !is MeasurementElementsState.Loaded || element.measurementUuid != route.measurementUuid ||
             element.pointCapacity() == null) return
         updatePoints { it.copy(modeElementUuid = element.uuid, contourUpdatedAt = contourUpdatedAt,
@@ -115,19 +122,19 @@ class MeasurementElementsModel internal constructor(private val store: Measureme
     }
     /** Returns false while an accepted transaction is still finishing. */
     fun finishPlacement(): Boolean {
-        if (points.value.saving) return false
+        if (points.value.saving || points.value.positionEditor != null) return false
         updatePoints { it.copy(modeElementUuid = null, contourUpdatedAt = null, selectedElementUuid = null,
-            selectedPointUuid = null, confirmingDelete = false, retry = null, error = null) }
+            selectedPointUuid = null, confirmingDelete = false, retry = null, error = null, drag = null) }
         return true
     }
     fun selectPoint(uuid: String) {
-        if (closed || editor.value != null || points.value.saving || points.value.retry != null) return
+        if (closed || editor.value != null || points.value.positionEditor != null || points.value.saving || points.value.retry != null) return
         val point = points.value.points.find { it.uuid == uuid } ?: return
         updatePoints { it.copy(selectedPointUuid = uuid, selectedElementUuid = point.elementUuid, error = null) }
     }
     fun tapPoint(xMm: Long, yMm: Long) {
         val scene = points.value
-        if (!scene.available || scene.saving || scene.retry != null || editor.value != null) return
+        if (!scene.available || scene.saving || scene.positionEditor != null || scene.retry != null || editor.value != null) return
         val element = (state.value as? MeasurementElementsState.Loaded)?.items?.find { it.uuid == scene.modeElementUuid } ?: return
         performPoint(PointCommand.Add(element.version, scene.contourUpdatedAt ?: return, xMm, yMm))
     }
@@ -149,10 +156,15 @@ class MeasurementElementsModel internal constructor(private val store: Measureme
         scope.launch(start = CoroutineStart.UNDISPATCHED) {
             withContext(NonCancellable + Dispatchers.Default) {
                 try {
-                    store.savePoint(route, command)
-                    if (!closed) updatePoints { it.copy(saving = false, retry = null) }
+                    val result = store.savePoint(route, command)
+                    if (!closed) pointCommitted(command, result)
                 } catch (failure: Exception) {
-                    if (!closed) updatePoints { it.copy(saving = false, error = pointFailureMessage(failure),
+                    if (!closed) updatePoints { it.copy(saving = false, drag = null,
+                        undo = if (failure is PointPlacementFailure.StaleVersion || failure is PointPlacementFailure.StaleContour || failure is PointPlacementFailure.RetryConflict || failure is PointPlacementFailure.ParentUnavailable) null else it.undo,
+                        redo = if (failure is PointPlacementFailure.StaleVersion || failure is PointPlacementFailure.StaleContour || failure is PointPlacementFailure.RetryConflict || failure is PointPlacementFailure.ParentUnavailable) null else it.redo,
+                        positionEditor = it.positionEditor?.copy(error = pointFailureMessage(failure),
+                            conflict = failure is PointPlacementFailure.StaleVersion || failure is PointPlacementFailure.StaleContour || failure is PointPlacementFailure.RetryConflict),
+                        error = pointFailureMessage(failure) + if (command is PointCommand.Move && command.historyAction != PointHistoryAction.NORMAL) " Історію положень скинуто; перезавантажте точку." else "",
                         retry = command.takeIf { failure is PointPlacementFailure.DatabaseUnavailable ||
                             failure is MeasurementElementFailure.DatabaseUnavailable }) }
                 } finally { store.endWrite(completion) }
@@ -160,17 +172,143 @@ class MeasurementElementsModel internal constructor(private val store: Measureme
         }
     }
 
+    private var pointExitAction: (() -> Unit)? = null
+    private fun pointElement(uuid: String) = (state.value as? MeasurementElementsState.Loaded)?.items?.find { it.uuid == uuid }
+    fun beginPointDrag(uuid: String, contourVersion: Long) {
+        val scene = points.value
+        if (closed || scene.saving || !scene.available || scene.retry != null || scene.positionEditor != null || editor.value != null || scene.selectedPointUuid != uuid) return
+        val point = scene.points.find { it.uuid == uuid } ?: return
+        val element = pointElement(point.elementUuid) ?: return
+        updatePoints { it.copy(drag = PointDragPreview(point, element.version, contourVersion), error = null) }
+    }
+    fun previewPointDrag(xMm: Double, yMm: Double) {
+        if (points.value.saving) return
+        updatePoints { it.copy(drag = it.drag?.copy(xMm = xMm, yMm = yMm)) }
+    }
+    fun cancelPointDrag() { updatePoints { it.copy(drag = null) } }
+    fun finishPointDrag() {
+        val drag = points.value.drag ?: return
+        cancelPointDrag()
+        val bound = com.andreyceilings.shared.calculation.CeilingPolygonCalculator.MAX_COORDINATE_MM.toDouble()
+        if (!drag.xMm.isFinite() || !drag.yMm.isFinite() || drag.xMm !in -bound..bound || drag.yMm !in -bound..bound) {
+            updatePoints { it.copy(error = pointFailureMessage(PointPlacementFailure.OutsideContour())) }; return
+        }
+        val x = kotlin.math.round(drag.xMm).toLong(); val y = kotlin.math.round(drag.yMm).toLong()
+        if (x == drag.point.xMm && y == drag.point.yMm && drag.point.precision == PointPrecision.APPROXIMATE) return
+        performPoint(PointCommand.Move(drag.element, drag.point, drag.contourUpdatedAt, x, y, PointPrecision.APPROXIMATE))
+    }
+    fun openPosition(geometry: com.andreyceilings.shared.estimate.FrozenPolygonGeometry, contourVersion: Long) {
+        val scene = points.value
+        if (closed || scene.saving || scene.retry != null || scene.positionEditor != null || editor.value != null) return
+        val point = scene.points.find { it.uuid == scene.selectedPointUuid } ?: return
+        val element = pointElement(point.elementUuid) ?: return
+        updatePoints { it.copy(drag = null, positionEditor = PointPositionEditorState(
+            PointPositionDraft(point, element.version, contourVersion, geometry)), error = null) }
+    }
+    fun updatePosition(change: (PointPositionDraft) -> PointPositionDraft) {
+        if (points.value.saving || points.value.retry != null || points.value.positionEditor?.conflict == true) return
+        updatePoints { it.copy(positionEditor = it.positionEditor?.let { editor -> editor.copy(draft = change(editor.draft), error = null) }) }
+    }
+    fun savePosition() {
+        val editor = points.value.positionEditor ?: return
+        if (editor.conflict || points.value.retry != null) return
+        val target = editor.draft.position() ?: return
+        performPoint(PointCommand.Move(editor.draft.element, editor.draft.point, editor.draft.contourUpdatedAt,
+            target.xMm, target.yMm, PointPrecision.EXACT))
+    }
+    fun requestPositionDismiss() = requestPositionExit { updatePoints { it.copy(positionEditor = null) } }
+    fun requestPositionExit(action: () -> Unit) {
+        if (points.value.saving) return
+        val current = points.value.positionEditor
+        if (current == null) { action(); return }
+        if (!current.dirty && points.value.retry == null) { updatePoints { it.copy(positionEditor = null) }; action() }
+        else { pointExitAction = action; updatePoints { it.copy(positionEditor = current.copy(exitRequested = true)) } }
+    }
+    fun continuePosition() { pointExitAction = null; updatePoints { it.copy(positionEditor = it.positionEditor?.copy(exitRequested = false, reloadRequested = false)) } }
+    fun discardPosition() {
+        if (points.value.saving) return
+        val action = pointExitAction; pointExitAction = null
+        updatePoints { it.copy(positionEditor = null, retry = null) }; action?.invoke()
+    }
+    fun requestPositionReload() { if (!points.value.saving) updatePoints { it.copy(positionEditor = it.positionEditor?.copy(reloadRequested = true)) } }
+    fun reloadPosition() {
+        val before = points.value.positionEditor ?: return
+        if (points.value.saving) return
+        updatePoints { it.copy(saving = true) }
+        scope.launch {
+            try {
+                val draft = withContext(Dispatchers.Default) { store.reloadPosition(route, before.draft.point.uuid) }
+                updatePoints { it.copy(saving = false, positionEditor = PointPositionEditorState(draft), retry = null, undo = null, redo = null) }
+            } catch (failure: Exception) {
+                updatePoints { it.copy(saving = false, positionEditor = before.copy(error = pointFailureMessage(failure), reloadRequested = false)) }
+            }
+        }
+    }
+    fun undoPointMove() {
+        val history = points.value.undo ?: return
+        if (points.value.positionEditor != null) return
+        performPoint(PointCommand.Move(history.element, history.after, history.contourUpdatedAt,
+            history.before.xMm, history.before.yMm, history.before.precision,
+            historyAction = PointHistoryAction.UNDO, history = history))
+    }
+    fun redoPointMove() {
+        val history = points.value.redo ?: return
+        if (points.value.positionEditor != null) return
+        performPoint(PointCommand.Move(history.element, history.before, history.contourUpdatedAt,
+            history.after.xMm, history.after.yMm, history.after.precision,
+            historyAction = PointHistoryAction.REDO, history = history))
+    }
+    fun leavePointRoute(): Boolean {
+        if (!finishPlacement()) return false
+        updatePoints { it.copy(undo = null, redo = null, drag = null, positionEditor = null) }
+        pointExitAction = null
+        committedPoints.value = emptyMap()
+        return true
+    }
+    private fun pointCommitted(command: PointCommand, result: PointMoveResult) {
+        committedPoints.update { if (closed) emptyMap() else it + (result.point.uuid to result.point) }
+        mutableState.update { current -> if (closed) MeasurementElementsState.Unavailable
+            else if (current is MeasurementElementsState.Loaded) current.copy(items = current.items.map {
+                if (it.uuid == result.element.uuid) result.element else it }) else current }
+        updatePoints { current ->
+            val moved = command as? PointCommand.Move
+            val history = moved?.let { PointMoveHistory(it.history?.before ?: it.point, result.point, result.element.version, it.contourUpdatedAt) }
+            current.copy(saving = false, retry = null, positionEditor = null, drag = null,
+                points = (current.points.filterNot { it.uuid == result.point.uuid } + listOfNotNull(result.point.takeIf { it.deletedAt == null }))
+                    .sortedWith(compareBy<PointPlacement> { it.createdAt }.thenBy { it.uuid }),
+                undo = if (moved?.historyAction != PointHistoryAction.UNDO) history else null,
+                redo = if (moved?.historyAction == PointHistoryAction.UNDO) PointMoveHistory(result.point,
+                    checkNotNull(moved.history).after, result.element.version, moved.contourUpdatedAt) else null)
+        }
+    }
+
+    private fun validatePointHistory() {
+        val scene = points.value
+        if (scene.saving) return
+        val history = scene.undo ?: scene.redo ?: return
+        val expected = if (scene.undo != null) history.after else history.before
+        val live = scene.points.find { it.uuid == expected.uuid }
+        val element = pointElement(expected.elementUuid)
+        if (live == null || element == null || live.updatedAt > expected.updatedAt || element.updatedAt > history.element.expectedUpdatedAt)
+            updatePoints { it.copy(undo = null, redo = null, error = "Положення або елемент змінилися; історію переміщень скинуто. Оберіть актуальну позначку.") }
+    }
+
     fun retry() {
         if (closed) return
         dataJob?.cancel(); mutableState.update { if (closed) MeasurementElementsState.Unavailable else MeasurementElementsState.Loading }
         dataJob = scope.launch { store.observe(route).collect { value ->
-            mutableState.update { if (closed) MeasurementElementsState.Unavailable else value }
+            mutableState.update { previous -> if (closed) MeasurementElementsState.Unavailable
+                else if (value is MeasurementElementsState.Loaded && previous is MeasurementElementsState.Loaded)
+                    value.copy(items = value.items.map { incoming -> previous.items.find { it.uuid == incoming.uuid && it.updatedAt > incoming.updatedAt } ?: incoming })
+                else value }
             val ids = (value as? MeasurementElementsState.Loaded)?.items
                 ?.filter { it.pointCapacity() != null }?.map { it.uuid }.orEmpty()
             updatePoints { current -> current.copy(
                 modeElementUuid = current.modeElementUuid?.takeIf { it in ids },
                 selectedElementUuid = current.selectedElementUuid?.takeIf { it in ids },
+                drag = current.drag?.takeIf { it.element.uuid in ids },
                 selectedPointUuid = current.selectedPointUuid.takeIf { current.selectedElementUuid in ids }) }
+            validatePointHistory()
         } }
     }
     fun refreshCatalog() {
@@ -255,7 +393,8 @@ class MeasurementElementsModel internal constructor(private val store: Measureme
         }
     }
     fun close() {
-        closed = true; exitAction = null; currentEditor = null
+        closed = true; exitAction = null; pointExitAction = null; currentEditor = null
+        committedPoints.value = emptyMap()
         mutableState.value = MeasurementElementsState.Unavailable; mutableCatalog.value = ElementCatalogState.Unavailable
         mutablePoints.value = PointPlacementState()
         scope.cancel()
