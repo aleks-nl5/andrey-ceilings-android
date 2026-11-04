@@ -123,7 +123,9 @@ CREATE receipts доводить rollback schema/rows/user_version. Backup prefl
 
 `MeasurementEditStore.observePoints` виконує один SQLDelight SELECT active project,
 measurement(local ID + UUID), captured contour і active points. Окремий session
-close signal зупиняє reads; UI починає з Loading у route/model key. Missing і
+close signal зупиняє reads; Windows чекає завершення активного SQL mapper перед
+закриттям JDBC, Android використовує чинний ProductionDatabaseGate. UI починає
+з Loading у route/model key. Missing і
 Unavailable мають власні пояснення, жодна помилка читання не означає «немає точок».
 Overlay не залежить від MeasurementElementsModel: scene закриває попередню модель
 і перевіряє, що редактор продовжує бачити всі точки.
@@ -137,9 +139,9 @@ placement Save з цього екрана. Name/notes-only Save працює; ac
 
 ## Фактичні перевірки
 
-Локальний Linux/JDK 21/Gradle 9.7.0 suite під час реалізації: 275 shared JVM cases,
-26 desktop/CMP scenes, migration verification та Android instrumentation Kotlin
-compilation. Нові common proofs виконуються також у наявних Android encrypted
+Локальний Linux/JDK 21/Gradle 9.7.0 suite після read-drain: 276 shared JVM cases,
+26 desktop/CMP scenes, 8 Android unit tests, migration verification та Android
+instrumentation Kotlin compilation — success, 0 failures. Нові common proofs виконуються також у наявних Android encrypted
 WAL/restore (authentic v8 approximate + moved v9 exact images), Windows encrypted JDBC і iOS Simulator suites. Це не твердження про
 успіх цих платформ до завершення їхніх CI.
 
@@ -147,3 +149,9 @@ WAL/restore (authentic v8 approximate + moved v9 exact images), Windows encrypte
 [PR #97](https://github.com/aleks-nl5/andrey-ceilings-android/pull/97). iOS перевіряє
 framework і Simulator SQLCipher/domain; runnable iOS UI не додано. Жоден manual
 checklist пункт не вважається виконаним на підставі scene/CI.
+
+Попередній Android proof на `ba6eff7`:
+[Build Android APK #41886601443](https://github.com/aleks-nl5/andrey-ceilings-android/actions/runs/41886601443)
+— success, 67 emulator tests, 0 failures/0 skipped, debug/release APK. Після
+додавання Windows read-drain обидва mandatory workflows повторюються на новому
+HEAD; цей попередній run не замінює фінальні перевірки, наведені в PR.

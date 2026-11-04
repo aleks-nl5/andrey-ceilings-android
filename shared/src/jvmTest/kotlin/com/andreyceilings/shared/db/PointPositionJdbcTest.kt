@@ -4,6 +4,7 @@ import app.cash.sqldelight.db.*
 import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
 import com.andreyceilings.shared.measurement.*
 import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.first
 import java.io.File
 import java.nio.file.Files
@@ -11,6 +12,36 @@ import java.util.concurrent.*
 import kotlin.test.*
 
 class PointPositionJdbcTest {
+    @Test fun editorCloseDrainsAcceptedReadAndRejectsLateReads(): Unit = runBlocking {
+        JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).use { raw ->
+            PriceCatalogSchema.create(raw)
+            val fixture = PointPlacementProof.fixture(PrototypeDatabase(raw))
+            val entered = CountDownLatch(1); val release = CountDownLatch(1)
+            val reads = java.util.concurrent.atomic.AtomicInteger()
+            val driver = object : SqlDriver by raw {
+                override fun <R> executeQuery(identifier: Int?, sql: String, mapper: (SqlCursor) -> QueryResult<R>,
+                    parameters: Int, binders: (SqlPreparedStatement.() -> Unit)?): QueryResult<R> {
+                    if (sql.contains("m.uuid AS measurementUuid")) {
+                        reads.incrementAndGet(); entered.countDown()
+                        check(release.await(10, TimeUnit.SECONDS))
+                    }
+                    return raw.executeQuery(identifier, sql, mapper, parameters, binders)
+                }
+            }
+            val store = MeasurementEditStore(PrototypeDatabase(driver)) { 20 }
+            val document = store.load(fixture.project, fixture.id)
+            val collector = launch(Dispatchers.Default) { store.observePoints(document).collect {} }
+            try {
+                assertTrue(entered.await(10, TimeUnit.SECONDS))
+                val closing = async(Dispatchers.Default) { store.closeAndAwaitPointReads() }
+                delay(200)
+                assertFalse(closing.isCompleted)
+                release.countDown(); withTimeout(10_000) { closing.await() }
+                assertEquals(PointOverlayState.Unavailable, store.observePoints(document).first())
+                assertEquals(1, reads.get())
+            } finally { release.countDown(); collector.cancelAndJoin(); store.closeAndAwaitPointReads() }
+        }
+    }
     @Test fun acceptedMoveDrainsBeforeSessionCloseAndOldModelCannotWrite(): Unit = runBlocking {
         JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).use { driver ->
             PriceCatalogSchema.create(driver); val db = PrototypeDatabase(driver)

@@ -7,8 +7,9 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import app.cash.sqldelight.coroutines.asFlow
-import app.cash.sqldelight.coroutines.mapToList
 
 class MeasurementEditConflict : IllegalStateException(
     "Замір змінено іншим редактором, видалено або об'єкт недоступний. Перезавантажте запис; чернетку не записано.")
@@ -18,13 +19,22 @@ data class MeasurementEditDocument(val measurementId: Long, val updatedAt: Long,
 
 class MeasurementEditStore(private val database: PrototypeDatabase, private val nowMillis: () -> Long) {
     private val sessionClosed = MutableStateFlow(false)
+    private val pointRead = Mutex()
     fun closePointReads() { sessionClosed.value = true }
+    /** JDBC close waits for the mapper; Android's production restore gate already drains reads. */
+    suspend fun closeAndAwaitPointReads() {
+        closePointReads()
+        pointRead.withLock { /* Any accepted SQL mapper has now finished. */ }
+    }
 
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
     fun observePoints(document: MeasurementEditDocument): Flow<PointOverlayState> = sessionClosed.flatMapLatest { closed ->
         if (closed) flowOf(PointOverlayState.Unavailable) else database.pointPlacementsQueries.selectEditorOverlay(
             document.measurementId, document.draft.projectId, document.draft.recordUuid).asFlow()
-            .mapToList(Dispatchers.Default).map { rows ->
+            .map { query -> kotlinx.coroutines.withContext(Dispatchers.Default) {
+                pointRead.withLock { if (sessionClosed.value) null else query.executeAsList() }
+            } }.map { rows ->
+                if (rows == null || sessionClosed.value) return@map PointOverlayState.Unavailable
                 val first = rows.firstOrNull()
                 if (first == null) PointOverlayState.Missing else {
                     val geometry = (measurementGeometryForViewing(first.shape, first.drawingJson,
