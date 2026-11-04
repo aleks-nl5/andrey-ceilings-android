@@ -7,6 +7,7 @@ import com.andreyceilings.shared.db.PriceRepository
 import com.andreyceilings.shared.db.PrototypeDatabase
 import com.andreyceilings.shared.db.SqlCipherWindowsDriverFactory
 import java.io.File
+import kotlinx.coroutines.runBlocking
 import java.nio.file.Files
 import java.nio.file.StandardOpenOption
 import java.security.SecureRandom
@@ -26,7 +27,12 @@ internal class DesktopPriceDatabase private constructor(
     val objects: ObjectsClientsStore,
     private val driver: SqlDriver
 ) : AutoCloseable {
-    override fun close() = driver.close()
+    override fun close() {
+        // Session close may race a Save already scheduled on Default. Drain the
+        // complete write before releasing the encrypted JDBC connection.
+        runBlocking { objects.measurementDetails.elements.closeAndAwaitWrites() }
+        driver.close()
+    }
 
     companion object {
         private const val ITERATIONS = 310_000

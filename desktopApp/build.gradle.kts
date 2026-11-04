@@ -27,3 +27,14 @@ compose.desktop {
         mainClass = "com.andreyceilings.desktop.MainKt"
     }
 }
+
+// A failing Compose scene test must identify the exact failed assertion on Windows.
+// Keep test execution and CI gates unchanged; only improve failure diagnostics.
+tasks.withType<org.gradle.api.tasks.testing.Test>().configureEach {
+    testLogging {
+        events("failed")
+        exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
+        showCauses = true
+        showStackTraces = true
+    }
+}

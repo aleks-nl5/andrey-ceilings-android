@@ -10,6 +10,12 @@ import com.andreyceilings.shared.navigation.AppNavigationState
 class MeasurementCreateNavigationGuard {
     val fullscreen = kotlinx.coroutines.flow.MutableStateFlow(false)
     private var editor: MeasurementCreateModel? = null
+    private var elements: MeasurementElementsModel? = null
+    fun bindElements(model: MeasurementElementsModel) { elements = model }
+    fun unbindElements(model: MeasurementElementsModel) {
+        // Retain the session model through Activity disposal/startup gaps while a draft/write exists.
+        if (elements === model && model.editor.value == null) elements = null
+    }
 
     private var edit: MeasurementEditModel? = null
     private var surfaceBack: (() -> Boolean)? = null
@@ -20,6 +26,8 @@ class MeasurementCreateNavigationGuard {
     fun bindSurface(back: () -> Boolean) { surfaceBack = back }
     fun unbindSurface(back: () -> Boolean) { if (surfaceBack === back) surfaceBack = null }
     fun requestClose(close: () -> Unit) {
+        val elementModel = elements
+        if (elementModel?.editor?.value != null) { elementModel.requestExit(close); return }
         val model = edit
         if (model != null) model.requestExit(close)
         else if (editor?.state?.value?.let { it.saving || it.savedId != null } != true) close()
@@ -32,6 +40,7 @@ class MeasurementCreateNavigationGuard {
     }
 
     fun blocksExit(current: AppNavigationState): Boolean {
+        if (elements?.editor?.value?.saving == true) return true
         val editState = edit?.state?.value
         if (editState != null && current.measurementEdit?.measurementId == editState.original.measurementId &&
             current.measurementEdit.projectId == editState.draft.projectId) return editState.saving || editState.checking || editState.saved
@@ -64,6 +73,13 @@ class MeasurementCreateNavigationGuard {
     fun transition(current: AppNavigationState, proposed: AppNavigationState,
         applyApproved: (AppNavigationState) -> Unit = {}): AppNavigationState {
         if (proposed == current) return current
+        val elementModel = elements
+        if (elementModel?.editor?.value != null) {
+            // Back dismisses the modal first; a tab/route change resumes only after explicit discard.
+            if (proposed == current.back()) elementModel.requestDismiss()
+            else elementModel.requestExit { applyApproved(approved(proposed)) }
+            return current
+        }
         val editModel = edit
         val editState = editModel?.state?.value
         if (editState != null && current.measurementEdit?.measurementId == editState.original.measurementId &&

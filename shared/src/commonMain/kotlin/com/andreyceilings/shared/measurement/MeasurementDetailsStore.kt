@@ -10,7 +10,7 @@ data class MeasurementDetailsData(
     val id: Long, val projectId: Long, val name: String,
     val projectTitle: String, val projectAddress: String, val shape: String,
     val areaSquareMeters: Double, val perimeterMeters: Double, val notes: String,
-    val geometry: MeasurementGeometryView
+    val geometry: MeasurementGeometryView, val uuid: String = ""
 )
 
 sealed interface MeasurementDetailsState {
@@ -21,7 +21,9 @@ sealed interface MeasurementDetailsState {
 }
 
 /** Reactive read-only boundary. Neither opening nor restoring can perform a write. */
-class MeasurementDetailsStore(database: PrototypeDatabase) {
+class MeasurementDetailsStore(database: PrototypeDatabase, nowMillis: () -> Long =
+    { com.andreyceilings.shared.dashboard.dashboardClockMillis() }) {
+    val elements = MeasurementElementsStore(database, nowMillis)
     private val measurements = MeasurementRepository(database)
     private val projects = ProjectRepository(database)
 
@@ -32,7 +34,7 @@ class MeasurementDetailsStore(database: PrototypeDatabase) {
             else MeasurementDetailsState.Loaded(MeasurementDetailsData(
                 row.id, projectId, row.name, project.title, project.address, row.shape,
                 row.areaSquareMeters, row.perimeterMeters, row.notes,
-                measurementGeometryForViewing(row.shape, row.drawingJson, row.lengthMeters, row.widthMeters)
+                measurementGeometryForViewing(row.shape, row.drawingJson, row.lengthMeters, row.widthMeters), row.uuid
             ))
         }.onStart<MeasurementDetailsState> { emit(MeasurementDetailsState.Loading) }
             .catch { emit(MeasurementDetailsState.Unavailable) }
