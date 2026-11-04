@@ -77,22 +77,33 @@ data class DrawingLabelBounds(val sideIndex: Int, val left: Float, val top: Floa
 data class MeasurementDrawingLayout(val points: List<DrawingPoint>, val labels: List<DrawingLabelBounds>,
     val vertexLabels: List<DrawingLabelBounds> = emptyList())
 
+/** The single fit projection used by contour, markers and inverse pointer mapping. */
+data class MeasurementDrawingProjection(val scale: Double, val offsetX: Double, val offsetY: Double) {
+    fun project(point: DrawingPoint) = DrawingPoint(offsetX + point.x * scale, offsetY + point.y * scale)
+    fun inverse(point: DrawingPoint) = DrawingPoint((point.x - offsetX) / scale, (point.y - offsetY) / scale)
+}
+
+fun measurementDrawingProjection(contour: MeasurementDrawingContour, width: Float, height: Float,
+    density: Float = 1f): MeasurementDrawingProjection? {
+    if (!width.isFinite() || !height.isFinite() || width <= 0 || height <= 0 || density <= 0 ||
+        !density.isFinite() || contour.points.size < 3 || contour.points.any { !it.x.isFinite() || !it.y.isFinite() }) return null
+    val left = contour.points.minOf { it.x }; val top = contour.points.minOf { it.y }
+    val dx = contour.points.maxOf { it.x } - left; val dy = contour.points.maxOf { it.y } - top
+    if (!dx.isFinite() || !dy.isFinite() || dx <= 0 || dy <= 0) return null
+    val margin = minOf(36f * density, width * 0.22f, height * 0.22f)
+    val scale = minOf((width - margin * 2) / dx, (height - margin * 2) / dy)
+    return MeasurementDrawingProjection(scale, (width - dx * scale) / 2 - left * scale,
+        (height - dy * scale) / 2 - top * scale)
+}
+
 /** Aspect-preserving projection. Omitted inline labels remain in the wrapping legend. */
 fun layoutMeasurementDrawing(
     contour: MeasurementDrawingContour, width: Float, height: Float,
     sizes: List<DrawingLabelSize>, density: Float = 1f,
     vertexSizes: List<DrawingLabelSize> = emptyList()
 ): MeasurementDrawingLayout? {
-    if (!width.isFinite() || !height.isFinite() || width <= 0 || height <= 0 ||
-        density <= 0 || !density.isFinite() || contour.points.size < 3 ||
-        contour.points.any { !it.x.isFinite() || !it.y.isFinite() }) return null
-    val left = contour.points.minOf { it.x }; val top = contour.points.minOf { it.y }
-    val dx = contour.points.maxOf { it.x } - left; val dy = contour.points.maxOf { it.y } - top
-    if (!dx.isFinite() || !dy.isFinite() || dx <= 0 || dy <= 0) return null
-    val margin = minOf(36f * density, width * 0.22f, height * 0.22f)
-    val scale = minOf((width - margin * 2) / dx, (height - margin * 2) / dy)
-    val ox = (width - dx * scale) / 2; val oy = (height - dy * scale) / 2
-    val points = contour.points.map { DrawingPoint(ox + (it.x - left) * scale, oy + (it.y - top) * scale) }
+    val projection = measurementDrawingProjection(contour, width, height, density) ?: return null
+    val points = contour.points.map(projection::project)
     return layoutMeasurementDrawingForProjectedPoints(points, width, height, sizes, density, vertexSizes)
 }
 

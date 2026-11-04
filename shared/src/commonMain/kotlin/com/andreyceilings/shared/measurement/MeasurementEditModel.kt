@@ -112,6 +112,9 @@ class MeasurementEditModel(
                 } catch (conflict: MeasurementEditConflict) {
                     mutableState.value = before.copy(error = conflict.message, conflict = true)
                     store?.release(token)
+                } catch (blocked: MeasurementContourHasPoints) {
+                    mutableState.value = before.copy(error = blocked.message)
+                    store?.release(token)
                 } catch (_: Exception) {
                     mutableState.value = before.copy(error = "Не вдалося зберегти замір у захищеній базі. Перевірте доступність БД та вільне місце.")
                     store?.release(token)

@@ -44,7 +44,17 @@ fun openDesktopPriceCatalog(driver: SqlDriver, previouslyExisting: Boolean) {
                 if ("titleKey" in priceColumns) {
                     if (columns("measurement_elements").isEmpty()) 6L else {
                         verifyMeasurementElementStructure(driver)
-                        7L
+                        if (columns("point_placements").isEmpty()) {
+                            val partial = driver.executeQuery(null,
+                                "SELECT count(*) FROM sqlite_master WHERE name LIKE 'point_%'", { cursor ->
+                                    cursor.next(); QueryResult.Value(cursor.getLong(0))
+                                }, 0).value
+                            check(partial == 0L) { "Partial point placement schema" }
+                            7L
+                        } else {
+                            verifyPointPlacementStructure(driver)
+                            8L
+                        }
                     }
                 } else {
                     check(columns("measurement_elements").isEmpty()) { "Partial measurement element schema" }
@@ -54,9 +64,11 @@ fun openDesktopPriceCatalog(driver: SqlDriver, previouslyExisting: Boolean) {
             "category" in priceColumns -> if ("paymentStatus" in projectColumns) 4L else 3L
             else -> error("Непідтримувана структура прайсу. Оновлення скасовано.")
         }
+        check(persistedVersion < 8L || oldVersion == 8L) { "Incomplete v8 point placement schema" }
         if (oldVersion < PriceCatalogSchema.version)
             PriceCatalogSchema.migrate(driver, oldVersion, PriceCatalogSchema.version)
         verifyMeasurementElementStructure(driver)
+        verifyPointPlacementStructure(driver)
         StarterPriceCatalog.initialize(database)
         driver.execute(null, "PRAGMA user_version = ${PriceCatalogSchema.version}", 0)
     }

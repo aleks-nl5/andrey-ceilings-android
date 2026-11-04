@@ -10,6 +10,11 @@ object PriceCatalogMigrationProof {
         override val version = 4L
         override fun create(driver: SqlDriver): QueryResult.Value<Unit> {
             PrototypeDatabase.Schema.create(driver)
+            // This fixture reconstructs authentic v4, so remove all later v8 objects too.
+            MeasurementElementMigrationProof.rows(driver,
+                "SELECT name FROM sqlite_master WHERE type='trigger' AND name LIKE 'point_%'", 1)
+                .forEach { driver.execute(null, "DROP TRIGGER ${checkNotNull(it.single())}", 0) }
+            driver.execute(null, "DROP TABLE point_placements", 0)
             listOf("DROP VIEW measurement_element_records", "DROP TABLE measurement_elements", "DROP VIEW price_catalog_items", "DROP TABLE price_items", "DROP TABLE price_groups",
                 "DROP TABLE price_catalog_state", """CREATE TABLE price_items (
                     id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, code TEXT NOT NULL, title TEXT NOT NULL,

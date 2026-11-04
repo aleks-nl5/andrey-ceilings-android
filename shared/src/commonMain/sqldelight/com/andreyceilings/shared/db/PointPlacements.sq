@@ -1,0 +1,23 @@
+selectForMeasurement:
+SELECT q.* FROM point_placements q JOIN measurement_elements e ON e.uuid = q.elementUuid
+JOIN room_measurements m ON m.uuid = e.measurementUuid JOIN projects p ON p.id = m.projectId
+WHERE m.uuid = :measurementUuid AND q.deletedAt IS NULL AND e.deletedAt IS NULL
+    AND m.deletedAt IS NULL AND p.deletedAt IS NULL ORDER BY q.createdAt, q.uuid;
+
+selectByUuid:
+SELECT * FROM point_placements WHERE uuid = ?;
+
+selectTombstones:
+SELECT * FROM point_placements WHERE deletedAt IS NOT NULL ORDER BY createdAt, uuid;
+
+countForElement:
+SELECT count(*) FROM point_placements WHERE elementUuid = ? AND deletedAt IS NULL;
+
+insertPoint:
+INSERT INTO point_placements(uuid, elementUuid, xMm, yMm, contourUpdatedAt, createdAt, updatedAt)
+VALUES (:uuid, :elementUuid, :xMm, :yMm, :contourUpdatedAt, :now, :now);
+
+removePoint:
+UPDATE point_placements SET updatedAt = max(updatedAt + 1, :now), deletedAt = max(updatedAt + 1, :now)
+WHERE uuid = :uuid AND elementUuid = :elementUuid AND updatedAt = :expectedUpdatedAt
+    AND updatedAt < 9223372036854775807 AND deletedAt IS NULL;

@@ -1,0 +1,149 @@
+package com.andreyceilings.shared.db
+
+import app.cash.sqldelight.db.QueryResult
+import app.cash.sqldelight.db.SqlDriver
+
+/** Strict v8 fingerprint. Definitions mirror 7.sqm; fresh/migration equality is tested. */
+internal fun verifyPointPlacementStructure(driver: SqlDriver) {
+    fun normalize(sql: String) = sql.trim().trimEnd(';').replace(Regex("\\s+"), " ").lowercase()
+    val names = driver.executeQuery(null,
+        "SELECT name FROM sqlite_master WHERE name LIKE 'point_%' OR name LIKE 'index_point_%'", { cursor ->
+            val found = mutableSetOf<String>()
+            while (cursor.next().value) found.add(checkNotNull(cursor.getString(0)))
+            QueryResult.Value(found)
+        }, 0).value
+    check(names == pointSchemaDefinitions.keys) { "Partial or unknown point placement objects" }
+    pointSchemaDefinitions.forEach { (name, expected) ->
+        val actual = driver.executeQuery(null, "SELECT sql FROM sqlite_master WHERE name = '$name'", { cursor ->
+            QueryResult.Value(if (cursor.next().value) cursor.getString(0) else null)
+        }, 0).value
+        check(actual != null && normalize(actual) == normalize(expected)) { "Incomplete or unknown point placement schema: $name" }
+    }
+}
+
+internal val pointSchemaDefinitions = mapOf(
+    "point_placements" to """
+CREATE TABLE point_placements (
+    uuid TEXT NOT NULL PRIMARY KEY CHECK(length(trim(uuid)) > 0),
+    elementUuid TEXT NOT NULL REFERENCES measurement_elements(uuid),
+    xMm INTEGER NOT NULL CHECK(typeof(xMm) = 'integer' AND xMm BETWEEN -1000000 AND 1000000),
+    yMm INTEGER NOT NULL CHECK(typeof(yMm) = 'integer' AND yMm BETWEEN -1000000 AND 1000000),
+    contourUpdatedAt INTEGER NOT NULL CHECK(typeof(contourUpdatedAt) = 'integer' AND contourUpdatedAt >= 0),
+    createdAt INTEGER NOT NULL CHECK(typeof(createdAt) = 'integer' AND createdAt >= 0),
+    updatedAt INTEGER NOT NULL CHECK(typeof(updatedAt) = 'integer' AND updatedAt >= createdAt),
+    deletedAt INTEGER CHECK(deletedAt IS NULL OR (typeof(deletedAt) = 'integer' AND deletedAt = updatedAt))
+);
+""".trimIndent(),
+    "index_point_placements_element_active_order" to """
+CREATE INDEX index_point_placements_element_active_order ON point_placements(elementUuid, deletedAt, createdAt, uuid);
+""".trimIndent(),
+    "point_insert_guard" to """
+CREATE TRIGGER point_insert_guard BEFORE INSERT ON point_placements
+BEGIN
+    SELECT CASE WHEN new.deletedAt IS NOT NULL OR NOT EXISTS (
+        SELECT 1 FROM measurement_elements e JOIN room_measurements m ON m.uuid = e.measurementUuid
+        JOIN projects p ON p.id = m.projectId
+        WHERE e.uuid = new.elementUuid AND e.deletedAt IS NULL AND m.deletedAt IS NULL AND p.deletedAt IS NULL
+        AND e.kind = 'catalog_item' AND e.placementKind = 'point' AND e.unit = 'шт.'
+        AND e.quantityKind = 'exact' AND e.quantityMilli % 1000 = 0
+        AND e.updatedAt < 9223372036854775807 AND m.updatedAt = new.contourUpdatedAt
+        AND (SELECT count(*) FROM point_placements q WHERE q.elementUuid = e.uuid AND q.deletedAt IS NULL) < e.quantityMilli / 1000
+    ) THEN RAISE(ABORT, 'point_parent_capacity_or_contour') END;
+END;
+""".trimIndent(),
+    "point_identity_guard" to """
+CREATE TRIGGER point_identity_guard BEFORE UPDATE ON point_placements
+WHEN new.uuid IS NOT old.uuid OR new.elementUuid IS NOT old.elementUuid
+    OR new.xMm IS NOT old.xMm OR new.yMm IS NOT old.yMm
+    OR new.contourUpdatedAt IS NOT old.contourUpdatedAt OR new.createdAt IS NOT old.createdAt
+    OR old.deletedAt IS NOT NULL OR new.deletedAt IS NULL OR new.updatedAt <= old.updatedAt
+BEGIN
+    SELECT RAISE(ABORT, 'point_immutable_or_stale');
+END;
+""".trimIndent(),
+    "point_delete_guard" to """
+CREATE TRIGGER point_delete_guard BEFORE DELETE ON point_placements
+BEGIN
+    SELECT RAISE(ABORT, 'point_requires_tombstone');
+END;
+""".trimIndent(),
+    "point_insert_summary" to """
+CREATE TRIGGER point_insert_summary AFTER INSERT ON point_placements
+BEGIN
+    UPDATE measurement_elements SET
+        placedQuantityMilli = (SELECT count(*) * 1000 FROM point_placements WHERE elementUuid = new.elementUuid AND deletedAt IS NULL),
+        placementStatus = CASE WHEN EXISTS (SELECT 1 FROM point_placements WHERE elementUuid = new.elementUuid AND deletedAt IS NULL) THEN 'approximate' ELSE 'unplaced' END,
+        updatedAt = CASE WHEN deletedAt IS NULL THEN max(updatedAt + 1, new.updatedAt) ELSE updatedAt END
+    WHERE uuid = new.elementUuid;
+END;
+""".trimIndent(),
+    "point_remove_summary" to """
+CREATE TRIGGER point_remove_summary AFTER UPDATE OF deletedAt ON point_placements
+BEGIN
+    UPDATE measurement_elements SET
+        placedQuantityMilli = (SELECT count(*) * 1000 FROM point_placements WHERE elementUuid = new.elementUuid AND deletedAt IS NULL),
+        placementStatus = CASE WHEN EXISTS (SELECT 1 FROM point_placements WHERE elementUuid = new.elementUuid AND deletedAt IS NULL) THEN 'approximate' ELSE 'unplaced' END,
+        updatedAt = CASE WHEN deletedAt IS NULL THEN max(updatedAt + 1, new.updatedAt) ELSE updatedAt END
+    WHERE uuid = new.elementUuid;
+END;
+""".trimIndent(),
+    "point_element_insert_guard" to """
+CREATE TRIGGER point_element_insert_guard BEFORE INSERT ON measurement_elements
+WHEN new.placedQuantityMilli != 0 OR new.placementStatus != 'unplaced'
+BEGIN
+    SELECT RAISE(ABORT, 'point_summary_requires_records');
+END;
+""".trimIndent(),
+    "point_element_update_guard" to """
+CREATE TRIGGER point_element_update_guard BEFORE UPDATE ON measurement_elements
+BEGIN
+    SELECT CASE WHEN new.deletedAt IS NULL AND (
+        new.placedQuantityMilli != (SELECT count(*) * 1000 FROM point_placements WHERE elementUuid = old.uuid AND deletedAt IS NULL)
+        OR new.placementStatus != CASE WHEN EXISTS (SELECT 1 FROM point_placements WHERE elementUuid = old.uuid AND deletedAt IS NULL) THEN 'approximate' ELSE 'unplaced' END
+    ) THEN RAISE(ABORT, 'point_summary_requires_records') END;
+    SELECT CASE WHEN EXISTS (SELECT 1 FROM point_placements WHERE elementUuid = old.uuid AND deletedAt IS NULL)
+        AND new.deletedAt IS NULL AND (new.uuid IS NOT old.uuid OR new.measurementUuid IS NOT old.measurementUuid
+            OR new.kind != 'catalog_item' OR new.placementKind IS NOT 'point' OR new.unit IS NOT 'шт.'
+            OR new.quantityKind != 'exact' OR new.quantityMilli IS NULL
+            OR new.quantityMilli < (SELECT count(*) * 1000 FROM point_placements WHERE elementUuid = old.uuid AND deletedAt IS NULL))
+        THEN RAISE(ABORT, 'point_quantity_in_use') END;
+END;
+""".trimIndent(),
+    "point_element_tombstone" to """
+CREATE TRIGGER point_element_tombstone AFTER UPDATE OF deletedAt ON measurement_elements
+WHEN old.deletedAt IS NULL AND new.deletedAt IS NOT NULL
+BEGIN
+    UPDATE point_placements SET updatedAt = max(updatedAt + 1, new.updatedAt), deletedAt = max(updatedAt + 1, new.updatedAt)
+    WHERE elementUuid = old.uuid AND deletedAt IS NULL;
+    UPDATE measurement_elements SET placedQuantityMilli = 0, placementStatus = 'unplaced' WHERE uuid = new.uuid;
+END;
+""".trimIndent(),
+    "point_measurement_tombstone" to """
+CREATE TRIGGER point_measurement_tombstone AFTER UPDATE OF deletedAt ON room_measurements
+WHEN old.deletedAt IS NULL AND new.deletedAt IS NOT NULL
+BEGIN
+    UPDATE measurement_elements SET updatedAt = max(updatedAt + 1, new.updatedAt), deletedAt = max(updatedAt + 1, new.updatedAt)
+    WHERE measurementUuid = old.uuid AND deletedAt IS NULL;
+END;
+""".trimIndent(),
+    "point_project_tombstone" to """
+CREATE TRIGGER point_project_tombstone AFTER UPDATE OF deletedAt ON projects
+WHEN old.deletedAt IS NULL AND new.deletedAt IS NOT NULL
+BEGIN
+    UPDATE measurement_elements SET updatedAt = max(updatedAt + 1, new.updatedAt), deletedAt = max(updatedAt + 1, new.updatedAt)
+    WHERE measurementUuid IN (SELECT uuid FROM room_measurements WHERE projectId = old.id) AND deletedAt IS NULL;
+END;
+""".trimIndent(),
+    "point_contour_guard" to """
+CREATE TRIGGER point_contour_guard BEFORE UPDATE ON room_measurements
+WHEN (new.drawingJson IS NOT old.drawingJson OR new.shape IS NOT old.shape
+    OR new.lengthMeters IS NOT old.lengthMeters OR new.widthMeters IS NOT old.widthMeters
+    OR new.areaSquareMeters IS NOT old.areaSquareMeters OR new.perimeterMeters IS NOT old.perimeterMeters
+    OR new.uuid IS NOT old.uuid OR new.projectId IS NOT old.projectId)
+    AND EXISTS (SELECT 1 FROM point_placements q JOIN measurement_elements e ON e.uuid = q.elementUuid
+        WHERE e.measurementUuid = old.uuid AND q.deletedAt IS NULL)
+BEGIN
+    SELECT RAISE(ABORT, 'measurement_contour_has_points');
+END;
+""".trimIndent()
+)

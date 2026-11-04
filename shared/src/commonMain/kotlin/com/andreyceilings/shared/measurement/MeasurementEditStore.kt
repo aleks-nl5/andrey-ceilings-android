@@ -46,6 +46,7 @@ class MeasurementEditStore(private val database: PrototypeDatabase, private val 
         require(validation.canSave)
         val geometry = requireNotNull(validation.geometry)
         return database.transactionWithResult {
+            database.measurementElementsQueries.claimElementWrite("")
             // Check readability as well as enforcing ownership/active-parent/version in the UPDATE itself.
             val live = measurements.find(original.measurementId)
             if (projects.find(draft.projectId) == null || live == null || live.projectId != draft.projectId ||
@@ -63,9 +64,11 @@ class MeasurementEditStore(private val database: PrototypeDatabase, private val 
             }
             val version = measurements.updateIfUnchanged(original.measurementId, draft.projectId, original.updatedAt,
                 draft.name.trim(), geometry.shapeType,
-                (geometry.vertices.maxOf { it.xMm } - geometry.vertices.minOf { it.xMm }) / 1000.0,
-                (geometry.vertices.maxOf { it.yMm } - geometry.vertices.minOf { it.yMm }) / 1000.0,
-                geometry.areaSquareMeters, geometry.perimeterMeters, MeasurementGeometryCodec.write(geometry),
+                if (liveGeometry == geometry) live.lengthMeters else (geometry.vertices.maxOf { it.xMm } - geometry.vertices.minOf { it.xMm }) / 1000.0,
+                if (liveGeometry == geometry) live.widthMeters else (geometry.vertices.maxOf { it.yMm } - geometry.vertices.minOf { it.yMm }) / 1000.0,
+                if (liveGeometry == geometry) live.areaSquareMeters else geometry.areaSquareMeters,
+                if (liveGeometry == geometry) live.perimeterMeters else geometry.perimeterMeters,
+                if (liveGeometry == geometry) live.drawingJson else MeasurementGeometryCodec.write(geometry),
                 draft.notes.trim(), nowMillis()) ?: throw MeasurementEditConflict()
             MeasurementEditDocument(original.measurementId, version, normalized)
         }

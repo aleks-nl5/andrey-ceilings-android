@@ -32,6 +32,7 @@ sealed interface MeasurementElementsState {
 class MeasurementElementsStore(private val database: PrototypeDatabase, private val nowMillis: () -> Long,
     private val modelDispatcher: CoroutineDispatcher = Dispatchers.Main.immediate) {
     private val repository = MeasurementElementRepository(database)
+    private val points = PointPlacementRepository(database)
     private val measurements = MeasurementRepository(database)
     private val projects = ProjectRepository(database)
     private val prices = PriceCatalogStore(PriceRepository(database), nowMillis)
@@ -106,6 +107,19 @@ class MeasurementElementsStore(private val database: PrototypeDatabase, private 
             })
     }.onStart<ElementCatalogState> { emit(ElementCatalogState.Loading) }
         .catch { emit(ElementCatalogState.Unavailable) }.flowOn(Dispatchers.Default)
+
+    internal fun observePoints(route: ElementRoute) = points.observeForMeasurement(route.measurementUuid)
+
+    internal fun savePoint(route: ElementRoute, command: PointCommand): PointPlacement = database.transactionWithResult {
+        database.measurementElementsQueries.claimElementWrite(command.element.uuid)
+        checkParent(route)
+        if (command.element.measurementUuid != route.measurementUuid) throw PointPlacementFailure.ParentUnavailable()
+        when (command) {
+            is PointCommand.Add -> points.addPoint(command.element, command.contourUpdatedAt,
+                command.xMm, command.yMm, nowMillis(), command.uuid)
+            is PointCommand.Remove -> points.removePoint(command.element, command.point, nowMillis())
+        }
+    }
 
     internal fun save(route: ElementRoute, draft: ElementEditorDraft): MeasurementElement = database.transactionWithResult {
         // Take the same writer lock before checking the displayed picker metadata. The repository

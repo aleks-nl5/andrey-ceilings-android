@@ -69,6 +69,7 @@ sealed class MeasurementElementFailure(message: String, cause: Throwable? = null
     class StaleVersion : MeasurementElementFailure("Element changed or deleted; reload")
     class RetryConflict : MeasurementElementFailure("UUID already used with a different payload or tombstone")
     class IncompatibleQuantity : MeasurementElementFailure("Explicit quantity correction required")
+    class PlacementsInUse : MeasurementElementFailure("Remove point markers before reducing or changing quantity mode")
     class DatabaseUnavailable(cause: Throwable) : MeasurementElementFailure("Element database unavailable", cause)
 }
 

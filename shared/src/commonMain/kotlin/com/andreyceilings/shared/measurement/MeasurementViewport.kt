@@ -7,6 +7,9 @@ data class MeasurementViewport(val zoom: Float = 1f, val panX: Float = 0f, val p
     fun transform(point: DrawingPoint, width: Float, height: Float) = DrawingPoint(
         (point.x - width / 2) * zoom + width / 2 + panX,
         (point.y - height / 2) * zoom + height / 2 + panY)
+    fun inverse(point: DrawingPoint, width: Float, height: Float) = DrawingPoint(
+        (point.x - width / 2 - panX) / zoom + width / 2,
+        (point.y - height / 2 - panY) / zoom + height / 2)
     fun move(dx: Float, dy: Float, factor: Float = 1f): MeasurementViewport =
         if (!dx.isFinite() || !dy.isFinite() || !factor.isFinite() || factor <= 0) this
         else copy(zoom = (zoom * factor).coerceIn(0.25f, 12f),

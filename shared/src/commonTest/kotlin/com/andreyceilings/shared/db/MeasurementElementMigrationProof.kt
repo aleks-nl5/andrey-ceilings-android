@@ -27,7 +27,7 @@ object MeasurementElementMigrationProof {
     }
 
     fun snapshot(driver: SqlDriver): List<List<String?>> = rows(driver,
-        "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name != 'measurement_elements' ORDER BY name", 1)
+        "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT IN ('measurement_elements','point_placements') ORDER BY name", 1)
         .map { checkNotNull(it.single()) }.plus("sqlite_sequence").flatMap { table ->
             val columns = rows(driver, "PRAGMA table_info($table)", 6).map { checkNotNull(it[1]) }
             rows(driver, "SELECT " + columns.joinToString { "quote($it)" } + " FROM $table ORDER BY " +
@@ -70,7 +70,7 @@ object MeasurementElementMigrationProof {
         val migrated = open(production)
         val parent: String
         try {
-            assertEquals(7L, PriceNameUniquenessProof.scalar(migrated, "PRAGMA user_version"))
+            assertEquals(8L, PriceNameUniquenessProof.scalar(migrated, "PRAGMA user_version"))
             assertEquals(before, snapshot(migrated), "All old rows, types, UUIDs, keys, precision, history and sequences survive")
             assertStructure(migrated)
             val db = PrototypeDatabase(migrated)

@@ -18,7 +18,9 @@ import com.andreyceilings.shared.prices.label
 /** Hoisted section and dialog APIs are shared by production hosts and Compose scene tests. */
 @Composable
 fun MeasurementElementsSection(state: MeasurementElementsState, onAdd: () -> Unit,
-    onOpen: (MeasurementElement, ElementEditorAction) -> Unit, onRetry: () -> Unit) {
+    onOpen: (MeasurementElement, ElementEditorAction) -> Unit, onRetry: () -> Unit,
+    onPlace: ((MeasurementElement) -> Unit)? = null, placementUnavailable: String? = null,
+    selectedElementUuid: String? = null) {
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text("Елементи стелі", style = MaterialTheme.typography.titleLarge)
         when (state) {
@@ -32,7 +34,9 @@ fun MeasurementElementsSection(state: MeasurementElementsState, onAdd: () -> Uni
                 if (state.items.isEmpty()) Text("Додайте позицію прайсу або запишіть побажання — кількість можна уточнити пізніше.")
                 else Text("Записів: ${state.items.size}", style = MaterialTheme.typography.bodySmall)
                 state.items.forEach { element -> key(element.uuid) {
-                    Card(Modifier.fillMaxWidth()) {
+                    Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(
+                        containerColor = if (element.uuid == selectedElementUuid) MaterialTheme.colorScheme.secondaryContainer
+                            else MaterialTheme.colorScheme.surfaceContainerHighest)) {
                         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                             Text(element.label, style = MaterialTheme.typography.titleMedium)
                             val source = element.source as? ElementSource.CatalogSelection
@@ -40,8 +44,15 @@ fun MeasurementElementsSection(state: MeasurementElementsState, onAdd: () -> Uni
                             Text(formatElementQuantity(element.quantity, element.unit))
                             if (element.note.isNotBlank()) Text(element.note)
                             Text(if (element.approval == ElementApproval.APPROVED) "Погоджено" else "Обговорюється")
-                            Text("Не розміщено", style = MaterialTheme.typography.bodySmall,
+                            val capacity = element.pointCapacity()
+                            Text(if (capacity != null) "Розміщено: ${element.placedQuantityMilli / 1000} з $capacity" else "Не розміщено", style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            if (onPlace != null) {
+                                val explanation = pointPlacementExplanation(element) ?: placementUnavailable
+                                if (explanation != null) Text(explanation, style = MaterialTheme.typography.bodySmall)
+                                TextButton(enabled = explanation == null && capacity != null && element.placedQuantityMilli / 1000 < capacity,
+                                    onClick = { onPlace(element) }) { Text("Розмістити") }
+                            }
                             if (source?.availability == CatalogAvailability.DELETED_OR_MISSING)
                                 Text("Позиція більше недоступна у прайсі", style = MaterialTheme.typography.bodySmall)
                             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
