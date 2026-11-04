@@ -189,7 +189,7 @@ object PointPlacementProof {
         driver.execute(null, "PRAGMA foreign_keys=ON", 0)
         assertFails { driver.execute(null, "INSERT INTO point_placements VALUES('bad','missing',1,1,1,1,1,NULL)", 0) }
         for (value in listOf("1.5", "1000001", "9223372036854775808", "'not a coordinate'"))
-            assertFails { driver.execute(null, "INSERT INTO point_placements VALUES('bad','${b.element.uuid}',$value,1,2,1,1,NULL)", 0) }
+            assertFails { driver.execute(null, "INSERT INTO point_placements VALUES('bad','${a.element.uuid}',$value,1,2,1,1,NULL)", 0) }
         driver.execute(null, "PRAGMA foreign_keys=OFF", 0)
         assertFails { driver.execute(null, "INSERT INTO point_placements VALUES('bad','missing',1,1,1,1,1,NULL)", 0) }
         driver.execute(null, "PRAGMA foreign_keys=ON", 0)

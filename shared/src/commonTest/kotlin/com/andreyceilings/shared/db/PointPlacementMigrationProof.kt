@@ -10,7 +10,6 @@ object PointPlacementMigrationProof {
         override fun create(driver: SqlDriver): QueryResult.Value<Unit> {
             MeasurementElementMigrationProof.v6Schema.create(driver)
             PrototypeDatabase.Schema.migrate(driver, 6, 7)
-            com.andreyceilings.shared.prices.StarterPriceCatalog.initialize(PrototypeDatabase(driver))
             return QueryResult.Unit
         }
         override fun migrate(driver: SqlDriver, oldVersion: Long, newVersion: Long, vararg callbacks: AfterVersion): QueryResult.Value<Unit> = error("Fixture cannot migrate")
@@ -34,6 +33,9 @@ object PointPlacementMigrationProof {
         val old = open(v7Schema)
         val before: List<List<String?>>; val schemaBefore: List<List<String?>>
         try {
+            // SQLiter owns the schema callback transaction. Seed only after open,
+            // when the normal driver's SQLDelight transaction can own BEGIN.
+            com.andreyceilings.shared.prices.StarterPriceCatalog.initialize(PrototypeDatabase(old))
             if (populated) {
                 MeasurementElementMigrationProof.populate(old)
                 val db = PrototypeDatabase(old)
