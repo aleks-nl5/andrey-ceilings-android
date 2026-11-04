@@ -47,13 +47,13 @@ class MeasurementElementsSceneTest {
                 }
             }
             try {
-                scene.frame(); assertTrue(scene.text().contains("кількість можна уточнити"))
+                scene.awaitText("кількість можна уточнити")
                 scene.click("Додати елемент"); scene.frame(); scene.click("Побажання"); scene.frame()
                 scene.setField("Назва побажання", "Карниз")
                 val uuid = checkNotNull(model.editor.value).draft.uuid
                 assertSame(model, store.model(route))
                 assertEquals(nav, guard.transition(nav, nav.back())); scene.frame()
-                assertTrue(scene.text().contains("Відхилити зміни?"))
+                scene.awaitText("Відхилити зміни?")
                 scene.click("Продовжити"); scene.frame(); scene.click("Зберегти"); saved(); scene.frame()
                 assertEquals(uuid, MeasurementElementRepository(db).active().single().uuid)
                 scene.click("Редагувати"); scene.frame()
@@ -63,7 +63,7 @@ class MeasurementElementsSceneTest {
                 assertEquals("2,", model.editor.value?.draft?.input?.exact)
                 scene.setField("Точна кількість", "2,5")
                 scene.click("Зберегти"); saved(); scene.frame()
-                assertTrue(scene.text().contains("2,5 м.п."))
+                scene.awaitText("2,5 м.п.")
                 scene.click("Прив'язати до прайсу"); scene.frame()
                 withTimeout(10_000) { model.catalog.first { it is ElementCatalogState.Loaded } }
                 scene.setField("Пошук за назвою", "Світильник точковий")
@@ -73,26 +73,26 @@ class MeasurementElementsSceneTest {
                 val spot = catalog.items.first { it.code == "light.spot" }
                 scene.setField("Пошук за назвою", spot.title.uppercase()); scene.frame()
                 scene.click(spot.title); scene.frame()
-                assertTrue(scene.text().contains("несумісні"))
+                scene.awaitText("несумісні")
                 scene.click("Задати нову кількість"); scene.frame()
                 scene.setField("Точна кількість", "6")
                 scene.click("Підтвердити прив'язування"); saved(); scene.frame()
-                assertTrue(scene.text().contains("6 шт.")); assertTrue(scene.text().contains("З прайсу"))
+                scene.awaitText("6 шт."); scene.awaitText("З прайсу")
                 scene.click("Редагувати"); scene.frame(); scene.setField("Примітка", "Local draft")
                 val repo = MeasurementElementRepository(db); val old = checkNotNull(repo.find(uuid))
                 repo.edit(old.version, "Concurrent", old.approval, old.quantity, 4)
                 scene.click("Зберегти")
                 withTimeout(10_000) { model.editor.first { it?.conflict == true } }; scene.frame()
-                assertTrue(scene.text().contains("Чернетку збережено"))
+                scene.awaitText("Чернетку збережено")
                 scene.click("Перезавантажити актуальні дані"); scene.frame()
-                assertTrue(scene.text().contains("Замінити чернетку актуальними даними?"))
+                scene.awaitText("Замінити чернетку актуальними даними?")
                 scene.click("Замінити чернетку")
                 withTimeout(10_000) { model.editor.first { it?.draft?.note == "Concurrent" && !it.saving } }; scene.frame()
                 scene.click("Скасувати"); scene.frame()
-                scene.click("Видалити"); scene.frame(); assertTrue(scene.text().contains("Сам замір залишиться"))
+                scene.click("Видалити"); scene.frame(); scene.awaitText("Сам замір залишиться")
                 scene.click("Підтвердити видалення"); saved()
                 withTimeout(10_000) { model.state.first { it is MeasurementElementsState.Loaded && it.items.isEmpty() } }
-                scene.frame(); assertTrue(scene.text().contains("кількість можна уточнити"))
+                scene.awaitText("кількість можна уточнити")
                 assertNotNull(MeasurementRepository(db).find(measurement))
                 model.add(); model.choose(ElementEditorAction.CREATE_WISH); model.update { it.copy(label = "Dirty") }
                 var switched = false
@@ -144,6 +144,15 @@ class MeasurementElementsSceneTest {
         }
         val visible = nodes().filter(eligible).joinToString(" | ") { it.textTree().take(180) }
         fail("Compose control '$label' did not appear within 3 seconds. Available controls: $visible. UI: ${text().take(1200)}")
+    }
+    /** List Flow may deliver after the editor closes on encrypted Windows JDBC. */
+    private fun ImageComposeScene.awaitText(label: String) {
+        repeat(200) {
+            frame()
+            if (text().contains(label)) return
+            Thread.sleep(25)
+        }
+        fail("Compose text '$label' did not appear within 5 seconds. UI: ${text().take(1800)}")
     }
     private fun ImageComposeScene.click(label: String) {
         val node = awaitAction(label) { it.config.getOrNull(SemanticsActions.OnClick) != null }
