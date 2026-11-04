@@ -22,6 +22,8 @@ Caller може згенерувати `newRecordUuid()` один раз і пе
 
 Edit не має setter-ів catalog identity/snapshot. `linkWishToCatalog` зберігає element UUID/note/approval; Keep відмовляє за несумісної одиниці/режиму, Replace вимагає явної нової кількості. Немає автоматичної конвертації чи switch для вже зв'язаного item. Typed failures: parent/catalog unavailable, invalid input/quantity, incompatible quantity, stale version, retry conflict, database unavailable. Немає журналювання notes/клієнтських даних/ключів.
 
+Зміна одиниці wish у typed overload `edit(..., wishUnitChange = ...)` має три явні дії `WishUnitChange.Keep`, `Set(unit)` (trim) та `Clear` (SQL NULL). Clear дозволена лише разом з Unknown; для Exact/Range спрацьовує typed InvalidQuantity до UPDATE, без зміни будь-якого поля чи CAS token. Усі дії виконуються в тій самій CAS-транзакції. Попередній overload з `wishUnit: String?` збережений: пропущений/null аргумент означає Keep, string — Set. Для catalog selection Set/Clear відхиляються як InvalidInput; snapshot unit незмінна. Регресійний shared persistence proof запускається на Android/Windows/iOS; JDBC race з Clear проти Set доводить одного переможця і StaleVersion другого writer.
+
 `MeasurementRepository.delete` у спільній транзакції tombstones усі active children і parent. Failure parent update відкочує дітей. Видалений project приховує елементи з active Flow й блокує writes; політика project/estimate deletion не переписана.
 
 ## Міграції й backup

@@ -61,6 +61,7 @@ object MeasurementElementProof {
         assertEquals(item.unit, selected.unit)
         assertEquals(item.quantityMode, source.quantityMode.value)
         assertEquals(item.placementKind, source.placementKind.value)
+        wishUnitEdits(db, parent, selected)
         val kept = repo.linkWishToCatalog(range.version, item.uuid, LinkQuantity.Keep, 105)
         assertEquals(range.uuid, kept.uuid)
         assertEquals(range.quantity, kept.quantity)
@@ -128,6 +129,60 @@ object MeasurementElementProof {
         assertEquals(1, repo.observeForMeasurement(sibling).firstValue().size)
         assertTrue(repo.tombstones().any { it.uuid == "six" })
         liveFlow(db, sibling, project)
+    }
+
+    private fun wishUnitEdits(db: PrototypeDatabase, parent: String, selected: MeasurementElement) {
+        val repo = MeasurementElementRepository(db)
+        var wish = repo.createWish(parent, "Unit edit", 104, uuid = "unit-edit", note = "Preserve note",
+            unit = "м.п.", quantity = ElementQuantity.Exact(2500))
+        val rangeWish = repo.createWish(parent, "Unit range edit", 104, uuid = "unit-edit-range",
+            unit = "м.п.", quantity = ElementQuantity.Range(2000, 3000))
+        for (original in listOf(wish, rangeWish)) {
+            assertFailsWith<MeasurementElementFailure.InvalidQuantity> {
+                repo.edit(original.version, "Must roll back", ElementApproval.APPROVED, original.quantity, 105,
+                    wishUnitChange = WishUnitChange.Clear, wishLabel = "Must roll back")
+            }
+            assertEquals(original, repo.find(original.uuid), "Rejected clearing must preserve every field and CAS token")
+        }
+        wish = repo.edit(wish.version, wish.note, wish.approval, wish.quantity, 105,
+            wishUnitChange = WishUnitChange.Set(" custom "))
+        assertEquals("custom", wish.unit)
+        wish = repo.edit(wish.version, wish.note, wish.approval, wish.quantity, 106,
+            wishUnitChange = WishUnitChange.Keep)
+        assertEquals("custom", wish.unit)
+        // Existing calls retain their original semantics, including explicit null and strings.
+        wish = repo.edit(wish.version, wish.note, wish.approval, wish.quantity, 107)
+        assertEquals("custom", wish.unit)
+        wish = repo.edit(wish.version, wish.note, wish.approval, wish.quantity, 108, wishUnit = null)
+        assertEquals("custom", wish.unit)
+        wish = repo.edit(wish.version, wish.note, wish.approval, wish.quantity, 109, wishUnit = " м.п. ")
+        assertEquals("м.п.", wish.unit)
+        val beforeClear = wish
+        val cleared = repo.edit(wish.version, wish.note, wish.approval, ElementQuantity.Unknown, 109,
+            wishUnitChange = WishUnitChange.Clear)
+        assertEquals(beforeClear.copy(unit = null, quantity = ElementQuantity.Unknown, updatedAt = 110), cleared)
+        val stored = checkNotNull(db.measurementElementsQueries.selectByUuid(wish.uuid).executeAsOneOrNull())
+        assertNull(stored.unit, "Clear must persist SQL NULL")
+        assertEquals("unknown", stored.quantityKind)
+        assertNull(stored.quantityMilli)
+        assertNull(stored.quantityMinMilli)
+        assertNull(stored.quantityMaxMilli)
+        assertFailsWith<MeasurementElementFailure.StaleVersion> {
+            repo.edit(beforeClear.version, "Stale", beforeClear.approval, ElementQuantity.Unknown, 111,
+                wishUnitChange = WishUnitChange.Set("шт."))
+        }
+        assertEquals(cleared, repo.find(cleared.uuid))
+        for (change in listOf(WishUnitChange.Clear, WishUnitChange.Set("м.п."))) {
+            assertFailsWith<MeasurementElementFailure.InvalidInput> {
+                repo.edit(selected.version, "Must roll back", selected.approval, ElementQuantity.Unknown, 111,
+                    wishUnitChange = change)
+            }
+            assertEquals(selected, repo.find(selected.uuid), "Catalog selection snapshots must remain immutable")
+        }
+        assertFailsWith<MeasurementElementFailure.InvalidInput> {
+            repo.edit(selected.version, selected.note, selected.approval, selected.quantity, 111, wishUnit = "м.п.")
+        }
+        assertEquals(selected, repo.find(selected.uuid))
     }
 
     private suspend fun liveFlow(db: PrototypeDatabase, parent: String, project: Long) = coroutineScope {

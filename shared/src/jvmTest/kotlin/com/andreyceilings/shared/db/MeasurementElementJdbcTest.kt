@@ -99,7 +99,8 @@ object MeasurementElementFileProof {
                     verifyMeasurementElementStructure(driver)
                     val db = PrototypeDatabase(driver)
                     val parent = MeasurementRepository(db).all().single().uuid
-                    MeasurementElementRepository(db).createWish(parent, "Concurrent", 400, uuid = "race")
+                    MeasurementElementRepository(db).createWish(parent, "Concurrent", 400, uuid = "race",
+                        unit = "м.п.", quantity = ElementQuantity.Exact(2500))
                 }
                 for (scenario in listOf("edit", "retry", "duplicate")) {
                     val ready = CountDownLatch(2); val start = CountDownLatch(1)
@@ -109,7 +110,8 @@ object MeasurementElementFileProof {
                             ready.countDown(); check(start.await(20, TimeUnit.SECONDS))
                             val repo = MeasurementElementRepository(PrototypeDatabase(driver))
                             runCatching { when (scenario) {
-                                "edit" -> repo.edit(row.version, "Writer $index", row.approval, row.quantity, 400)
+                                "edit" -> repo.edit(row.version, "Writer $index", row.approval, ElementQuantity.Unknown, 400,
+                                    wishUnitChange = if (index == 1) WishUnitChange.Clear else WishUnitChange.Set("шт."))
                                 "retry" -> repo.createWish(row.measurementUuid, "Retry", 400, uuid = "retry")
                                 else -> repo.createWish(row.measurementUuid, "Different $index", 400, uuid = "duplicate")
                             } }
@@ -122,8 +124,17 @@ object MeasurementElementFileProof {
                     } else {
                         assertEquals(1, results.count { it.isSuccess })
                         val failure = results.single { it.isFailure }.exceptionOrNull()
-                        if (scenario == "edit") assertIs<MeasurementElementFailure.StaleVersion>(failure)
-                        else assertIs<MeasurementElementFailure.RetryConflict>(failure)
+                        if (scenario == "edit") {
+                            assertIs<MeasurementElementFailure.StaleVersion>(failure)
+                            val winner = results.single { it.isSuccess }.getOrThrow()
+                            assertEquals(401L, winner.updatedAt)
+                            assertEquals(ElementQuantity.Unknown, winner.quantity)
+                            assertEquals(if (winner.note == "Writer 1") null else "шт.", winner.unit)
+                            open(file).use { driver ->
+                                assertEquals(winner, MeasurementElementRepository(PrototypeDatabase(driver)).find(row.uuid),
+                                    "The stale writer must not overwrite the winning unit/quantity/note")
+                            }
+                        } else assertIs<MeasurementElementFailure.RetryConflict>(failure)
                     }
                 }
                 open(file).use { driver ->

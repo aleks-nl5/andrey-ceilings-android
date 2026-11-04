@@ -30,6 +30,13 @@ sealed interface ElementSource {
 
 data class ElementVersion(val uuid: String, val measurementUuid: String, val expectedUpdatedAt: Long)
 
+/** Explicit edit intent; Clear persists SQL NULL and requires Unknown quantity. */
+sealed interface WishUnitChange {
+    data object Keep : WishUnitChange
+    data class Set(val unit: String) : WishUnitChange
+    data object Clear : WishUnitChange
+}
+
 data class MeasurementElement(
     val uuid: String,
     val measurementUuid: String,

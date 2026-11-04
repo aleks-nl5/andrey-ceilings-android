@@ -63,16 +63,27 @@ class MeasurementElementRepository(private val database: PrototypeDatabase) {
             item.unit, item.quantityMode, item.placementKind, approval, quantity, now)
     }
 
-    /** Catalog identity and selection-time metadata have no setters in this operation. */
+    /** Compatibility overload: omitted/null wishUnit keeps the unit; a string sets it. */
     fun edit(
         original: ElementVersion, note: String, approval: ElementApproval, quantity: ElementQuantity,
         now: Long, wishLabel: String? = null, wishUnit: String? = null
+    ): MeasurementElement = edit(original, note, approval, quantity, now,
+        wishUnitChange = wishUnit?.let { WishUnitChange.Set(it) } ?: WishUnitChange.Keep, wishLabel = wishLabel)
+
+    /** Catalog identity and selection-time metadata remain immutable, including unit. */
+    fun edit(
+        original: ElementVersion, note: String, approval: ElementApproval, quantity: ElementQuantity,
+        now: Long, wishUnitChange: WishUnitChange, wishLabel: String? = null
     ): MeasurementElement = write(original.uuid) {
         val current = current(original, now)
         val wish = current.source == ElementSource.Wish
-        if (!wish && (wishLabel != null || wishUnit != null)) throw MeasurementElementFailure.InvalidInput()
+        if (!wish && (wishLabel != null || wishUnitChange != WishUnitChange.Keep)) throw MeasurementElementFailure.InvalidInput()
         val label = if (wish) (wishLabel ?: current.label).trim() else current.label
-        val unit = if (wish) wishUnit?.trim() ?: current.unit else current.unit
+        val unit = when (wishUnitChange) {
+            WishUnitChange.Keep -> current.unit
+            is WishUnitChange.Set -> wishUnitChange.unit.trim()
+            WishUnitChange.Clear -> null
+        }
         if (label.isBlank()) throw MeasurementElementFailure.InvalidInput()
         ElementQuantityRules.validate(quantity, unit, (current.source as? ElementSource.CatalogSelection)?.quantityMode)
         val saved = queries.editElement(label, note, approval.value, unit, quantity.kind(), quantity.exact(),
