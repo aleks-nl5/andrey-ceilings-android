@@ -69,7 +69,7 @@ object PriceNameFileProof {
                 open(file).use { driver ->
                     driver.execute(null, "PRAGMA foreign_keys = ON", 0)
                     openDesktopPriceCatalog(driver, true)
-                    assertEquals(6L, PriceNameUniquenessProof.scalar(driver, "PRAGMA user_version"))
+                    assertEquals(PriceCatalogSchema.version, PriceNameUniquenessProof.scalar(driver, "PRAGMA user_version"))
                     PriceNameMigrationProof.assertMigrated(driver, before)
                 }
                 open(file).use { driver ->

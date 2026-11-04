@@ -90,7 +90,7 @@ sqldelight {
 
 // Require a snapshot for the real SQLite migration comparison. The generator's
 // legacy migration lint needs a v1 baseline which this repository never had;
-// keep that separate from verifying 5.db -> 5.sqm -> fresh v6.
+// keep that separate from verifying 5.db/6.db -> migrations -> fresh v7.
 tasks.withType<app.cash.sqldelight.gradle.VerifyMigrationTask>().configureEach {
     verifyMigrations.set(true)
 }

@@ -122,7 +122,7 @@ object PriceNameMigrationProof {
         }
         val migrated = open(production)
         try {
-            assertEquals(6L, PriceNameUniquenessProof.scalar(migrated, "PRAGMA user_version"))
+            assertEquals(PriceCatalogSchema.version, PriceNameUniquenessProof.scalar(migrated, "PRAGMA user_version"))
             assertMigrated(migrated, before)
         } finally { migrated.close() }
         val reopened = open(production)

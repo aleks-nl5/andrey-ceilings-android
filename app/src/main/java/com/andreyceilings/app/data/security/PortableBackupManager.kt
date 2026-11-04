@@ -135,19 +135,24 @@ internal object PortableBackupManager {
                     "Перевірка цілісності SQLCipher не пройдена."
                 }
                 val count = driver.executeQuery(null,
-                    "SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name IN ('clients','projects','room_measurements','price_items','estimates')",
+                    "SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name IN ('clients','projects','room_measurements','price_items','estimates','measurement_elements')",
                     { cursor -> QueryResult.Value(if (cursor.next().value) cursor.getLong(0) else null) },
                     0).value
-                check(count == 5L) { "Резервна копія не містить повної схеми SQLDelight." }
+                check(count == 6L) { "Резервна копія не містить повної схеми SQLDelight." }
                 // A pre-UUID test backup must not overwrite a database using the
                 // new sync-ready schema. A table-name check alone is insufficient.
-                listOf("clients", "projects", "room_measurements", "price_items", "estimates")
+                listOf("clients", "projects", "room_measurements", "price_items", "estimates", "measurement_elements")
                     .forEach { table ->
                         driver.executeQuery(null,
                             "SELECT uuid, updatedAt, deletedAt FROM $table LIMIT 0",
                             { cursor -> QueryResult.Value(cursor.next().value) }, 0
                         ).value
                     }
+
+                driver.executeQuery(null,
+                    "SELECT measurementUuid, kind, priceItemUuid, quantityKind, quantityMilli, quantityMinMilli, quantityMaxMilli, placementStatus, placedQuantityMilli FROM measurement_elements LIMIT 0",
+                    { cursor -> QueryResult.Value(cursor.next().value) }, 0
+                ).value
 
                 // Do not accept a seemingly valid backup which silently lost
                 // the immutable v1/v2/v3 tables. These tables are essential

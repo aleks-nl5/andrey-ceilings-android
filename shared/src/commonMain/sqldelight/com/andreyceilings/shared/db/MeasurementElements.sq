@@ -1,0 +1,85 @@
+-- A write statement before reads avoids SQLite deferred read-to-write lock upgrades.
+claimElementWrite:
+UPDATE measurement_elements SET updatedAt = updatedAt WHERE uuid = ?;
+
+selectAll:
+SELECT * FROM measurement_element_records ORDER BY createdAt, uuid;
+
+selectTombstones:
+SELECT * FROM measurement_element_records WHERE deletedAt IS NOT NULL ORDER BY createdAt, uuid;
+
+selectByUuid:
+SELECT * FROM measurement_element_records WHERE uuid = ?;
+
+selectActive:
+SELECT * FROM measurement_element_records e WHERE e.deletedAt IS NULL
+AND EXISTS (SELECT 1 FROM room_measurements m JOIN projects p ON p.id = m.projectId
+    WHERE m.uuid = e.measurementUuid AND m.deletedAt IS NULL AND p.deletedAt IS NULL)
+ORDER BY e.createdAt, e.uuid;
+
+selectForMeasurement:
+SELECT * FROM measurement_element_records e WHERE e.measurementUuid = :measurementUuid AND e.deletedAt IS NULL
+AND EXISTS (SELECT 1 FROM room_measurements m JOIN projects p ON p.id = m.projectId
+        WHERE m.uuid = :measurementUuid AND m.deletedAt IS NULL AND p.deletedAt IS NULL)
+ORDER BY e.createdAt, e.uuid;
+
+selectActiveParent:
+SELECT m.uuid FROM room_measurements m JOIN projects p ON p.id = m.projectId
+WHERE m.uuid = ? AND m.deletedAt IS NULL AND p.deletedAt IS NULL;
+
+selectActiveCatalogItem:
+SELECT i.* FROM price_items i JOIN price_groups g ON g.uuid = i.groupUuid
+WHERE i.uuid = ? AND i.deletedAt IS NULL AND g.deletedAt IS NULL;
+
+insertElement:
+INSERT INTO measurement_elements(uuid, measurementUuid, kind, priceItemUuid, label, note,
+    priceItemCode, unit, quantityMode, placementKind, approvalStatus, quantityKind,
+    quantityMilli, quantityMinMilli, quantityMaxMilli, createdAt, updatedAt)
+SELECT :uuid, :measurementUuid, :kind, :priceItemUuid, :label, :note,
+    :priceItemCode, :unit, :quantityMode, :placementKind, :approvalStatus, :quantityKind,
+    :quantityMilli, :quantityMinMilli, :quantityMaxMilli, :now, :now
+WHERE EXISTS (SELECT 1 FROM room_measurements m JOIN projects p ON p.id = m.projectId
+        WHERE m.uuid = :measurementUuid AND m.deletedAt IS NULL AND p.deletedAt IS NULL) AND (:kind = 'wish' OR EXISTS (SELECT 1 FROM price_items i JOIN price_groups g ON g.uuid = i.groupUuid
+        WHERE i.uuid = :priceItemUuid AND i.deletedAt IS NULL AND g.deletedAt IS NULL))
+ON CONFLICT(uuid) DO NOTHING
+RETURNING uuid;
+
+editElement:
+UPDATE measurement_elements SET label = CASE WHEN kind = 'wish' THEN :label ELSE label END,
+    note = :note, approvalStatus = :approvalStatus,
+    unit = CASE WHEN kind = 'wish' THEN :unit ELSE unit END,
+    quantityKind = :quantityKind, quantityMilli = :quantityMilli,
+    quantityMinMilli = :quantityMinMilli, quantityMaxMilli = :quantityMaxMilli,
+    updatedAt = max(:now, updatedAt + 1)
+WHERE uuid = :uuid AND measurementUuid = :measurementUuid AND updatedAt = :expectedUpdatedAt
+    AND updatedAt < 9223372036854775807 AND deletedAt IS NULL AND EXISTS (SELECT 1 FROM room_measurements m JOIN projects p ON p.id = m.projectId
+        WHERE m.uuid = :measurementUuid AND m.deletedAt IS NULL AND p.deletedAt IS NULL)
+RETURNING uuid;
+
+linkWish:
+UPDATE measurement_elements SET kind = 'catalog_item', priceItemUuid = :priceItemUuid,
+    label = :label, priceItemCode = :priceItemCode, unit = :unit,
+    quantityMode = :quantityMode, placementKind = :placementKind,
+    quantityKind = :quantityKind, quantityMilli = :quantityMilli,
+    quantityMinMilli = :quantityMinMilli, quantityMaxMilli = :quantityMaxMilli,
+    updatedAt = max(:now, updatedAt + 1)
+WHERE uuid = :uuid AND measurementUuid = :measurementUuid AND updatedAt = :expectedUpdatedAt
+    AND kind = 'wish' AND updatedAt < 9223372036854775807 AND deletedAt IS NULL
+    AND EXISTS (SELECT 1 FROM room_measurements m JOIN projects p ON p.id = m.projectId
+        WHERE m.uuid = :measurementUuid AND m.deletedAt IS NULL AND p.deletedAt IS NULL) AND EXISTS (SELECT 1 FROM price_items i JOIN price_groups g ON g.uuid = i.groupUuid
+        WHERE i.uuid = :priceItemUuid AND i.deletedAt IS NULL AND g.deletedAt IS NULL)
+RETURNING uuid;
+
+deleteElement:
+UPDATE measurement_elements SET updatedAt = max(:now, updatedAt + 1), deletedAt = max(:now, updatedAt + 1)
+WHERE uuid = :uuid AND measurementUuid = :measurementUuid AND updatedAt = :expectedUpdatedAt
+    AND updatedAt < 9223372036854775807 AND deletedAt IS NULL AND EXISTS (SELECT 1 FROM room_measurements m JOIN projects p ON p.id = m.projectId
+        WHERE m.uuid = :measurementUuid AND m.deletedAt IS NULL AND p.deletedAt IS NULL)
+RETURNING uuid;
+
+softDeleteForMeasurement:
+UPDATE measurement_elements
+SET updatedAt = max(updatedAt + 1, CAST(strftime('%s','now') AS INTEGER) * 1000),
+    deletedAt = max(updatedAt + 1, CAST(strftime('%s','now') AS INTEGER) * 1000)
+WHERE measurementUuid = (SELECT uuid FROM room_measurements WHERE id = :measurementId AND deletedAt IS NULL)
+    AND deletedAt IS NULL;

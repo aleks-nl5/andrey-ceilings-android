@@ -1,21 +1,14 @@
-# Актуальний стан — Прайс 2.0 P2 / підготовка PR #86 до merge, 04.11.2026
+# Актуальний стан — P3A / Issue #87, 04.11.2026
 
-**P2 функціонально реалізовано у [PR #86](https://github.com/aleks-nl5/andrey-ceilings-android/pull/86), поки НЕ merged:** існуючий CMP-прайс, справжні категорії `price_groups` з UUID, керування/типові параметри, незалежні параметри позицій, CAS/quick-price без нової схеми БД. На code HEAD `d92bac4` успішні [Android](https://github.com/aleks-nl5/andrey-ceilings-android/actions/runs/41804457036) (включно із SQLCipher/WAL emulator та debug/release APK) і [Windows/iOS](https://github.com/aleks-nl5/andrey-ceilings-android/actions/runs/41804456931) CI (Windows SQLCipher + iOS Simulator). Власник повідомив, що перевірив APK; окремі деталізовані ручні сценарії не позначати автоматично. Документаційні коміти у PR вимагають повторної перевірки фінального HEAD перед merge. **Рішення власника:** косметичне UI/UX-полірування переносимо на майбутній окремий етап і не блокуємо ним функціональний P2. Після merge — закрити #83, оновити umbrella #78; далі #76 (P3). Не зливати PR без окремого дозволу власника.
+**Прайс 2.0 P2 merged:** [PR #86](https://github.com/aleks-nl5/andrey-ceilings-android/pull/86), merge `fd965db1071d37894726d8eb8bb9d9bcfafd8fe0`, після #81/#85. #80/#82/#83 закриті. Власник прийняв P2 APK/CI; косметичне UI/UX відкладено. Umbrella #78 і продуктовий #76 відкриті.
 
-**P1 та Unicode follow-up прийнято:** PR #81 і [PR #85](https://github.com/aleks-nl5/andrey-ceilings-android/pull/85)
-merged; #80/#82 закриті. Поточний `main` має v6 та глобальну Unicode-безпечну
-унікальність назв активних груп/позицій.
+**Поточна реалізація — [#87, P3A](https://github.com/aleks-nl5/andrey-ceilings-android/issues/87):** typed KMP елементи/побажання існуючого заміру, нормалізована `measurement_elements`, SQLDelight v7 / `6.sqm`, UUID snapshots, CAS/idempotent create, Flow та tombstones. [Контракт і міграції](MEASUREMENT_ELEMENTS_P3A.md). Нового UI немає; геометрія, native precision, прайс і immutable estimates/PDF не перераховуються. SQLCipher/WAL/backup зберігаються. Статус acceptance і посилання final-SHA CI — у Draft PR; реалізація не означає автоматичного приймання/merge.
 
-**P2 технічний контракт (реалізовано у PR #86, поки не merged):** той самий CMP-прайс отримує керування
-«Категоріями» (`price_groups`), UUID-фільтри з порожніми категоріями та
-незалежні параметри позицій. [Контракт і приймання P2](PRICE_CATALOG_P2.md).
-Без нового екрана, DB-міграції, повторного seed чи live calculation.
-Перед merge обов'язкові green Android/Windows/iOS перевірки на фінальному SHA;
-власник уже повідомив про APK-перевірку функціонального коміту.
-Незакриті точкові UI/UX побажання не блокують злиття функціонального P2.
-Umbrella #78 відкрита. Далі #76 (P3), #44/#71 (P4+), iOS host — #42.
+**Наступні етапи:** P3B — список «Елементи» у наявних CMP measurement flows; #44 — актуальні ціни/кошториси; #71 — typed фізичні placements/Canvas; #42 — runnable iOS host. P3A не додає ціни, координати або фінансові рядки.
 
-Нижче — історичний зріз після PR #81; його відкриті статуси #80/#82 вже не актуальні.
+**Доставка:** feature branch → один Draft PR → Android APK/SQLCipher + Windows/JVM encrypted JDBC + iOS Simulator SQLCipher на одному фінальному SHA. Власницький smoke перевіряє чинні прайс/заміри/кошториси/backup; не вигадувати новий UI або позначати ручні дії виконаними. Не merge/close issue без власника. CI benchmarks/cache/time comparisons для цього scope не проводяться; усі існуючі gates збережені.
+
+Нижче — історичні зрізи, їхні старі «поточні» статуси не є чинним планом.
 
 # Історичний стан після merge PR #81 (03.11.2026)
 
