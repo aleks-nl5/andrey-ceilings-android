@@ -130,14 +130,29 @@ class MeasurementElementsSceneTest {
     }
     private fun SemanticsNode.textTree(): String = config.getOrNull(SemanticsProperties.Text).orEmpty().joinToString { it.text } + children.joinToString { it.textTree() }
     private fun ImageComposeScene.text() = semanticsOwners.joinToString { it.rootSemanticsNode.textTree() }
+    /**
+     * SQLDelight Flow and Compose semantics can become visible on different frames,
+     * especially with encrypted JDBC on Windows. Wait for the requested UI action
+     * rather than racing the next frame after a completed repository write.
+     * Still fail loudly with the visible action tree when a control never appears.
+     */
+    private fun ImageComposeScene.awaitAction(label: String, eligible: (SemanticsNode) -> Boolean): SemanticsNode {
+        repeat(150) {
+            frame()
+            nodes().firstOrNull { eligible(it) && it.textTree().contains(label) }?.let { return it }
+            Thread.sleep(20)
+        }
+        val visible = nodes().filter(eligible).joinToString(" | ") { it.textTree().take(180) }
+        fail("Compose control '$label' did not appear within 3 seconds. Available controls: $visible. UI: ${text().take(1200)}")
+    }
     private fun ImageComposeScene.click(label: String) {
-        val node = nodes().first { it.config.getOrNull(SemanticsActions.OnClick) != null && it.textTree().contains(label) }
+        val node = awaitAction(label) { it.config.getOrNull(SemanticsActions.OnClick) != null }
         assertNull(node.config.getOrNull(SemanticsProperties.Disabled), label)
         assertTrue(node.config.getOrNull(SemanticsActions.OnClick)?.action?.invoke() == true)
         frame()
     }
     private fun ImageComposeScene.setField(label: String, value: String) {
-        val node = nodes().first { it.config.getOrNull(SemanticsActions.SetText) != null && it.textTree().contains(label) }
+        val node = awaitAction(label) { it.config.getOrNull(SemanticsActions.SetText) != null }
         assertTrue(node.config.getOrNull(SemanticsActions.SetText)?.action?.invoke(AnnotatedString(value)) == true)
         frame()
     }
