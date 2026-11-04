@@ -5,6 +5,23 @@ import kotlinx.coroutines.runBlocking
 import kotlin.test.*
 
 class PriceCatalogWindowsCipherTest {
+    @Test fun encryptedMeasurementElementsV7MigrationRacesAndSharedContracts() = runBlocking {
+        if (!System.getProperty("os.name").startsWith("Windows", ignoreCase = true)) return@runBlocking
+        val key = ByteArray(32) { 64 }
+        try {
+            MeasurementElementFileProof.run { SqlCipherWindowsDriverFactory.open(it, key) }
+            val file = Files.createTempFile("elements-fresh-cipher-", ".db").toFile()
+            try {
+                SqlCipherWindowsDriverFactory.open(file, key).use { driver ->
+                    openDesktopPriceCatalog(driver, false)
+                    MeasurementElementProof.run(driver)
+                    MeasurementElementProof.atomicParentDelete(driver)
+                    MeasurementElementMigrationProof.sqlGuards(driver)
+                }
+            } finally { file.delete() }
+        } finally { key.fill(0) }
+    }
+
     @Test fun encryptedV3UpgradeAndV6Reopen() {
         if (!System.getProperty("os.name").startsWith("Windows", ignoreCase = true)) return
         val file = Files.createTempFile("price-v3-cipher-", ".db").toFile()
@@ -32,7 +49,7 @@ class PriceCatalogWindowsCipherTest {
                 val schema = PriceNameMigrationProof.schema(driver)
                 openDesktopPriceCatalog(driver, true)
                 assertEquals(schema, PriceNameMigrationProof.schema(driver))
-                assertEquals(6L, PriceNameUniquenessProof.scalar(driver, "PRAGMA user_version"))
+                assertEquals(PriceCatalogSchema.version, PriceNameUniquenessProof.scalar(driver, "PRAGMA user_version"))
             }
         } finally { key.fill(0); file.delete() }
     }

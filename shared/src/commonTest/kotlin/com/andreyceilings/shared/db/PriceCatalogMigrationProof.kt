@@ -10,7 +10,7 @@ object PriceCatalogMigrationProof {
         override val version = 4L
         override fun create(driver: SqlDriver): QueryResult.Value<Unit> {
             PrototypeDatabase.Schema.create(driver)
-            listOf("DROP VIEW price_catalog_items", "DROP TABLE price_items", "DROP TABLE price_groups",
+            listOf("DROP VIEW measurement_element_records", "DROP TABLE measurement_elements", "DROP VIEW price_catalog_items", "DROP TABLE price_items", "DROP TABLE price_groups",
                 "DROP TABLE price_catalog_state", """CREATE TABLE price_items (
                     id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, code TEXT NOT NULL, title TEXT NOT NULL,
                     category TEXT NOT NULL, unit TEXT NOT NULL, price REAL NOT NULL, updatedAt INTEGER NOT NULL,

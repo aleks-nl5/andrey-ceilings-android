@@ -123,7 +123,10 @@ class MeasurementRepository(private val database: PrototypeDatabase) {
         areaSquareMeters: Double, perimeterMeters: Double, drawingJson: String, notes: String
     ) = queries.updateMeasurement(name, shape, lengthMeters, widthMeters, areaSquareMeters,
         perimeterMeters, drawingJson, notes, id)
-    fun delete(id: Long) = queries.deleteMeasurement(id)
+    fun delete(id: Long) = database.transaction {
+        database.measurementElementsQueries.softDeleteForMeasurement(id)
+        queries.deleteMeasurement(id)
+    }
 }
 
 class PriceRepository(private val database: PrototypeDatabase) {
