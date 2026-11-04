@@ -14,7 +14,8 @@ class MeasurementCreateNavigationGuard {
     fun bindElements(model: MeasurementElementsModel) { elements = model }
     fun unbindElements(model: MeasurementElementsModel) {
         // Retain the session model through Activity disposal/startup gaps while a draft/write exists.
-        if (elements === model && model.editor.value == null) elements = null
+        if (elements === model && model.editor.value == null && !model.points.value.saving &&
+            model.points.value.modeElementUuid == null && model.points.value.selectedPointUuid == null) elements = null
     }
 
     private var edit: MeasurementEditModel? = null
@@ -27,6 +28,7 @@ class MeasurementCreateNavigationGuard {
     fun unbindSurface(back: () -> Boolean) { if (surfaceBack === back) surfaceBack = null }
     fun requestClose(close: () -> Unit) {
         val elementModel = elements
+        if (elementModel != null && !elementModel.finishPlacement()) return
         if (elementModel?.editor?.value != null) { elementModel.requestExit(close); return }
         val model = edit
         if (model != null) model.requestExit(close)
@@ -40,7 +42,7 @@ class MeasurementCreateNavigationGuard {
     }
 
     fun blocksExit(current: AppNavigationState): Boolean {
-        if (elements?.editor?.value?.saving == true) return true
+        if (elements?.editor?.value?.saving == true || elements?.points?.value?.saving == true) return true
         val editState = edit?.state?.value
         if (editState != null && current.measurementEdit?.measurementId == editState.original.measurementId &&
             current.measurementEdit.projectId == editState.draft.projectId) return editState.saving || editState.checking || editState.saved
@@ -64,6 +66,7 @@ class MeasurementCreateNavigationGuard {
     }
 
     private fun approved(proposed: AppNavigationState): AppNavigationState {
+        elements?.finishPlacement()
         if (proposed.measurementEdit == null) edit = null
         if (proposed.measurementCreate == null) editor = null
         if (proposed.measurementDetails == null && proposed.measurementEdit == null && proposed.measurementCreate == null) fullscreen.value = false
@@ -74,6 +77,10 @@ class MeasurementCreateNavigationGuard {
         applyApproved: (AppNavigationState) -> Unit = {}): AppNavigationState {
         if (proposed == current) return current
         val elementModel = elements
+        if (elementModel?.points?.value?.saving == true) return current
+        if (proposed == current.back() && elementModel?.points?.value?.let {
+            it.modeElementUuid != null || it.selectedPointUuid != null
+        } == true) { elementModel.finishPlacement(); return current }
         if (elementModel?.editor?.value != null) {
             // Back dismisses the modal first; a tab/route change resumes only after explicit discard.
             if (proposed == current.back()) elementModel.requestDismiss()

@@ -114,15 +114,32 @@ class MeasurementRepository(private val database: PrototypeDatabase) {
         id: Long, projectId: Long, expectedUpdatedAt: Long, name: String, shape: String,
         lengthMeters: Double, widthMeters: Double, areaSquareMeters: Double,
         perimeterMeters: Double, drawingJson: String, notes: String, nowMillis: Long
-    ): Long? = queries.updateMeasurementIfVersion(name, shape, lengthMeters, widthMeters,
-        areaSquareMeters, perimeterMeters, drawingJson, notes, nowMillis, id, projectId,
-        expectedUpdatedAt).executeAsOneOrNull()
+    ): Long? = database.transactionWithResult {
+        // Claim a writer before the guard read; the trigger also protects raw/DAO UPDATEs.
+        database.measurementElementsQueries.claimElementWrite("")
+        guardContour(id, shape, lengthMeters, widthMeters, areaSquareMeters, perimeterMeters, drawingJson)
+        queries.updateMeasurementIfVersion(name, shape, lengthMeters, widthMeters,
+            areaSquareMeters, perimeterMeters, drawingJson, notes, nowMillis, id, projectId,
+            expectedUpdatedAt).executeAsOneOrNull()
+    }
 
     fun update(
         id: Long, name: String, shape: String, lengthMeters: Double, widthMeters: Double,
         areaSquareMeters: Double, perimeterMeters: Double, drawingJson: String, notes: String
-    ) = queries.updateMeasurement(name, shape, lengthMeters, widthMeters, areaSquareMeters,
-        perimeterMeters, drawingJson, notes, id)
+    ) = database.transaction {
+        database.measurementElementsQueries.claimElementWrite("")
+        guardContour(id, shape, lengthMeters, widthMeters, areaSquareMeters, perimeterMeters, drawingJson)
+        queries.updateMeasurement(name, shape, lengthMeters, widthMeters, areaSquareMeters,
+            perimeterMeters, drawingJson, notes, id)
+    }
+    private fun guardContour(id: Long, shape: String, length: Double, width: Double,
+        area: Double, perimeter: Double, drawing: String) {
+        val row = find(id) ?: return
+        if ((row.shape != shape || row.drawingJson != drawing || row.lengthMeters != length ||
+            row.widthMeters != width || row.areaSquareMeters != area || row.perimeterMeters != perimeter) &&
+            database.pointPlacementsQueries.selectForMeasurement(row.uuid).executeAsList().isNotEmpty())
+            throw com.andreyceilings.shared.measurement.MeasurementContourHasPoints()
+    }
     fun delete(id: Long) = database.transaction {
         database.measurementElementsQueries.softDeleteForMeasurement(id)
         queries.deleteMeasurement(id)

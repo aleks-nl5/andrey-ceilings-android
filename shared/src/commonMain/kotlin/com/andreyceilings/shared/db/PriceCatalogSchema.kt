@@ -28,6 +28,7 @@ object PriceCatalogSchema : SqlSchema<QueryResult.Value<Unit>> {
     internal fun createInTransaction(driver: SqlDriver): QueryResult.Value<Unit> {
         PrototypeDatabase.Schema.create(driver)
         StarterPriceCatalog.initializeInTransaction(PrototypeDatabase(driver))
+        verifyPointPlacementStructure(driver)
         return QueryResult.Unit
     }
 
@@ -36,6 +37,7 @@ object PriceCatalogSchema : SqlSchema<QueryResult.Value<Unit>> {
         PrototypeDatabase.Schema.migrate(driver, oldVersion, newVersion, *callbacks)
         if (oldVersion < 6L && newVersion >= 6L) backfillPriceNameKeys(driver)
         if (newVersion >= 6L) StarterPriceCatalog.initializeInTransaction(PrototypeDatabase(driver))
+        if (newVersion >= 8L) verifyPointPlacementStructure(driver)
         return QueryResult.Unit
     }
 }

@@ -64,6 +64,7 @@ fun elementFailureMessage(failure: Throwable): String = when (failure) {
     is MeasurementElementFailure.RetryConflict -> "Ця спроба створення вже має інші дані або запис видалено. Перезавантажте актуальні дані; чернетку збережено."
     is MeasurementElementFailure.IncompatibleQuantity -> "Несумісна кількість. Оберіть і підтвердьте нову кількість для цієї позиції."
     is MeasurementElementFailure.InvalidQuantity -> "Кількість не відповідає одиниці або актуальному режиму прайсу. Перевірте вибір і кількість."
+    is MeasurementElementFailure.PlacementsInUse -> "Спочатку приберіть розміщені позначки, потім зменшуйте кількість або змінюйте її режим."
     is MeasurementElementFailure.InvalidInput -> "Перевірте назву й одиницю елемента."
     else -> "Захищена база недоступна. Перевірте сесію та вільне місце й повторіть. Чернетку збережено."
 }
@@ -77,6 +78,11 @@ class MeasurementElementsModel internal constructor(private val store: Measureme
     val catalog = mutableCatalog.asStateFlow()
     private val mutableEditor = MutableStateFlow<ElementEditorState?>(null)
     val editor = mutableEditor.asStateFlow()
+    private val mutablePoints = MutableStateFlow(PointPlacementState())
+    val points = mutablePoints.asStateFlow()
+    private fun updatePoints(change: (PointPlacementState) -> PointPlacementState) {
+        mutablePoints.update { if (closed) PointPlacementState() else change(it) }
+    }
     private var dataJob: Job? = null
     private var catalogJob: Job? = null
     private var exitAction: (() -> Unit)? = null
@@ -87,13 +93,83 @@ class MeasurementElementsModel internal constructor(private val store: Measureme
     private var currentEditor: ElementEditorState?
         get() = mutableEditor.value
         set(value) { mutableEditor.update { if (closed) null else value } }
-    init { retry(); refreshCatalog() }
+    init {
+        retry(); refreshCatalog()
+        scope.launch {
+            store.observePoints(route).catch { failure ->
+                updatePoints { it.copy(points = emptyList(), available = false,
+                    modeElementUuid = null, selectedPointUuid = null, error = pointFailureMessage(failure)) }
+            }.collect { rows ->
+                updatePoints { if (closed) PointPlacementState() else it.copy(points = rows, available = true,
+                    selectedPointUuid = it.selectedPointUuid?.takeIf { uuid -> rows.any { p -> p.uuid == uuid } }) }
+            }
+        }
+    }
+
+    fun beginPlacement(element: MeasurementElement, contourUpdatedAt: Long) {
+        if (closed || editor.value != null || points.value.saving || !points.value.available ||
+            state.value !is MeasurementElementsState.Loaded || element.measurementUuid != route.measurementUuid ||
+            element.pointCapacity() == null) return
+        updatePoints { it.copy(modeElementUuid = element.uuid, contourUpdatedAt = contourUpdatedAt,
+            selectedElementUuid = element.uuid, selectedPointUuid = null, error = null, retry = null, confirmingDelete = false) }
+    }
+    /** Returns false while an accepted transaction is still finishing. */
+    fun finishPlacement(): Boolean {
+        if (points.value.saving) return false
+        updatePoints { it.copy(modeElementUuid = null, contourUpdatedAt = null, selectedElementUuid = null,
+            selectedPointUuid = null, confirmingDelete = false, retry = null, error = null) }
+        return true
+    }
+    fun selectPoint(uuid: String) {
+        if (closed || editor.value != null || points.value.saving || points.value.retry != null) return
+        val point = points.value.points.find { it.uuid == uuid } ?: return
+        updatePoints { it.copy(selectedPointUuid = uuid, selectedElementUuid = point.elementUuid, error = null) }
+    }
+    fun tapPoint(xMm: Long, yMm: Long) {
+        val scene = points.value
+        if (!scene.available || scene.saving || scene.retry != null || editor.value != null) return
+        val element = (state.value as? MeasurementElementsState.Loaded)?.items?.find { it.uuid == scene.modeElementUuid } ?: return
+        performPoint(PointCommand.Add(element.version, scene.contourUpdatedAt ?: return, xMm, yMm))
+    }
+    fun requestPointDelete() {
+        if (points.value.selectedPointUuid != null && !points.value.saving && points.value.retry == null)
+            updatePoints { it.copy(confirmingDelete = true) }
+    }
+    fun cancelPointDelete() { if (!points.value.saving) updatePoints { it.copy(confirmingDelete = false) } }
+    fun deletePoint() {
+        val point = points.value.points.find { it.uuid == points.value.selectedPointUuid } ?: return
+        val element = (state.value as? MeasurementElementsState.Loaded)?.items?.find { it.uuid == point.elementUuid } ?: return
+        if (points.value.confirmingDelete) performPoint(PointCommand.Remove(element.version, point))
+    }
+    fun retryPoint() { points.value.retry?.let(::performPoint) }
+    private fun performPoint(command: PointCommand) {
+        if (closed || points.value.saving || editor.value != null || state.value !is MeasurementElementsState.Loaded) return
+        val completion = store.beginWrite() ?: return
+        updatePoints { it.copy(saving = true, error = null, confirmingDelete = false) }
+        scope.launch(start = CoroutineStart.UNDISPATCHED) {
+            withContext(NonCancellable + Dispatchers.Default) {
+                try {
+                    store.savePoint(route, command)
+                    if (!closed) updatePoints { it.copy(saving = false, retry = null) }
+                } catch (failure: Exception) {
+                    if (!closed) updatePoints { it.copy(saving = false, error = pointFailureMessage(failure),
+                        retry = command.takeIf { failure is PointPlacementFailure.DatabaseUnavailable ||
+                            failure is MeasurementElementFailure.DatabaseUnavailable }) }
+                } finally { store.endWrite(completion) }
+            }
+        }
+    }
 
     fun retry() {
         if (closed) return
         dataJob?.cancel(); mutableState.update { if (closed) MeasurementElementsState.Unavailable else MeasurementElementsState.Loading }
         dataJob = scope.launch { store.observe(route).collect { value ->
             mutableState.update { if (closed) MeasurementElementsState.Unavailable else value }
+            val ids = (value as? MeasurementElementsState.Loaded)?.items?.map { it.uuid }.orEmpty()
+            updatePoints { current -> current.copy(
+                modeElementUuid = current.modeElementUuid?.takeIf { it in ids },
+                selectedElementUuid = current.selectedElementUuid?.takeIf { it in ids },
+                selectedPointUuid = current.selectedPointUuid.takeIf { current.selectedElementUuid in ids }) }
         } }
     }
     fun refreshCatalog() {
@@ -103,10 +179,10 @@ class MeasurementElementsModel internal constructor(private val store: Measureme
             mutableCatalog.update { if (closed) ElementCatalogState.Unavailable else value }
         } }
     }
-    fun add() { if (state.value is MeasurementElementsState.Loaded && editor.value == null) currentEditor = ElementEditorState(ElementEditorDraft()) }
+    fun add() { if (state.value is MeasurementElementsState.Loaded && editor.value == null && finishPlacement()) currentEditor = ElementEditorState(ElementEditorDraft()) }
     fun open(element: MeasurementElement, action: ElementEditorAction = ElementEditorAction.EDIT) {
         if (state.value !is MeasurementElementsState.Loaded || editor.value != null ||
-            element.measurementUuid != route.measurementUuid) return
+            element.measurementUuid != route.measurementUuid || !finishPlacement()) return
         currentEditor = ElementEditorState(ElementEditorDraft.edit(element, action))
     }
     fun update(change: (ElementEditorDraft) -> ElementEditorDraft) {
@@ -180,6 +256,7 @@ class MeasurementElementsModel internal constructor(private val store: Measureme
     fun close() {
         closed = true; exitAction = null; currentEditor = null
         mutableState.value = MeasurementElementsState.Unavailable; mutableCatalog.value = ElementCatalogState.Unavailable
+        mutablePoints.value = PointPlacementState()
         scope.cancel()
     }
 }

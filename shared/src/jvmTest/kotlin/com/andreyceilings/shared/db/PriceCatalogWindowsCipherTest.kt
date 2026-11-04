@@ -5,6 +5,22 @@ import kotlinx.coroutines.runBlocking
 import kotlin.test.*
 
 class PriceCatalogWindowsCipherTest {
+    @Test fun encryptedPointPlacementsV8UpgradeRollbackReopenRacesAndDomainProof(): Unit = runBlocking {
+        if (!System.getProperty("os.name").startsWith("Windows", ignoreCase = true)) return@runBlocking
+        val key = ByteArray(32) { 76 }
+        try {
+            PointPlacementFileProof.run { SqlCipherWindowsDriverFactory.open(it, key) }
+            val file = Files.createTempFile("points-cipher-", ".db").toFile()
+            try {
+                SqlCipherWindowsDriverFactory.open(file, key).use { driver ->
+                    openDesktopPriceCatalog(driver, false)
+                    PointPlacementProof.run(driver)
+                    PointPlacementProof.geometryAndDeletionGuards(driver)
+                    PointPlacementProof.eligibilityAndIsolation(driver)
+                }
+            } finally { file.delete() }
+        } finally { key.fill(0) }
+    }
     @Test fun encryptedMeasurementElementsV7MigrationRacesAndSharedContracts() = runBlocking {
         if (!System.getProperty("os.name").startsWith("Windows", ignoreCase = true)) return@runBlocking
         val key = ByteArray(32) { 64 }

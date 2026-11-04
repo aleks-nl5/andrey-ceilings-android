@@ -49,6 +49,8 @@ fun createEncryptedPrototypeDriver(
             { cursor -> QueryResult.Value(if (cursor.next().value) cursor.getLong(0) else null) },
             0
         ).value
+        verifyMeasurementElementStructure(driver)
+        verifyPointPlacementStructure(driver)
         if (enableWalForTesting) {
             // A manual PRAGMA journal_mode=WAL does not enable SQLCipher's
             // WAL-aware open-helper pool. The mode MUST already be WAL on

@@ -10,7 +10,7 @@ data class MeasurementDetailsData(
     val id: Long, val projectId: Long, val name: String,
     val projectTitle: String, val projectAddress: String, val shape: String,
     val areaSquareMeters: Double, val perimeterMeters: Double, val notes: String,
-    val geometry: MeasurementGeometryView, val uuid: String = ""
+    val geometry: MeasurementGeometryView, val uuid: String = "", val updatedAt: Long = 0
 )
 
 sealed interface MeasurementDetailsState {
@@ -21,9 +21,11 @@ sealed interface MeasurementDetailsState {
 }
 
 /** Reactive read-only boundary. Neither opening nor restoring can perform a write. */
-class MeasurementDetailsStore(database: PrototypeDatabase, nowMillis: () -> Long =
-    { com.andreyceilings.shared.dashboard.dashboardClockMillis() }) {
-    val elements = MeasurementElementsStore(database, nowMillis)
+class MeasurementDetailsStore(database: PrototypeDatabase, nowMillis: () -> Long,
+    modelDispatcher: kotlinx.coroutines.CoroutineDispatcher) {
+    constructor(database: PrototypeDatabase, nowMillis: () -> Long =
+        { com.andreyceilings.shared.dashboard.dashboardClockMillis() }) : this(database, nowMillis, Dispatchers.Main.immediate)
+    val elements = MeasurementElementsStore(database, nowMillis, modelDispatcher)
     private val measurements = MeasurementRepository(database)
     private val projects = ProjectRepository(database)
 
@@ -34,7 +36,7 @@ class MeasurementDetailsStore(database: PrototypeDatabase, nowMillis: () -> Long
             else MeasurementDetailsState.Loaded(MeasurementDetailsData(
                 row.id, projectId, row.name, project.title, project.address, row.shape,
                 row.areaSquareMeters, row.perimeterMeters, row.notes,
-                measurementGeometryForViewing(row.shape, row.drawingJson, row.lengthMeters, row.widthMeters), row.uuid
+                measurementGeometryForViewing(row.shape, row.drawingJson, row.lengthMeters, row.widthMeters), row.uuid, row.updatedAt
             ))
         }.onStart<MeasurementDetailsState> { emit(MeasurementDetailsState.Loading) }
             .catch { emit(MeasurementDetailsState.Unavailable) }
