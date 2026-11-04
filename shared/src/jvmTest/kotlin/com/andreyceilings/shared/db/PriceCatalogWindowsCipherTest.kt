@@ -72,6 +72,7 @@ class PriceCatalogWindowsCipherTest {
                 PriceCatalogMigrationProof.assertReplaced(db)
                 assertEquals(before, PriceCatalogMigrationProof.untouchedRows(driver))
                 PriceCatalogPersistenceProof.groupsAndParameters(db)
+                PriceCatalogP2Proof.run(db)
                 PriceCatalogPersistenceProof.removeEverything(db)
             }
             SqlCipherWindowsDriverFactory.open(file, key).use { driver ->

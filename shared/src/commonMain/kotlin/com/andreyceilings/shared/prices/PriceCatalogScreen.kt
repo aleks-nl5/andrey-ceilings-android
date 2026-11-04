@@ -11,14 +11,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.foundation.gestures.awaitEachGesture
-import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -34,27 +29,20 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.withFrameNanos
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.ui.input.pointer.PointerEventPass
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
@@ -67,8 +55,12 @@ private enum class PriceEditorMode { FULL, QUICK }
 @Composable
 fun PriceCatalogScreen(
     items: List<PriceCatalogItem>,
+    groups: List<PriceCatalogGroup>,
     databaseAvailable: Boolean,
-    onSave: suspend (original: PriceCatalogItem?, draft: PriceCatalogDraft) -> Unit,
+    onSave: suspend (original: PriceCatalogItem?, draft: ConfiguredPriceDraft) -> Unit,
+    onQuickPrice: suspend (original: PriceCatalogItem, salePriceText: String) -> Unit,
+    onSaveGroup: suspend (original: PriceCatalogGroup?, draft: PriceGroupDraft) -> String,
+    onDeleteGroup: suspend (group: PriceCatalogGroup) -> Unit,
     onDelete: suspend (item: PriceCatalogItem) -> Unit,
     modifier: Modifier = Modifier,
     contentPadding: PaddingValues = PaddingValues(16.dp)
@@ -76,22 +68,23 @@ fun PriceCatalogScreen(
     val scope = rememberCoroutineScope()
     var search by remember { mutableStateOf("") }
     var selectedCategory by remember { mutableStateOf<String?>(null) }
-    var editing by remember { mutableStateOf<PriceCatalogItem?>(null) }
-    var editorMode by remember { mutableStateOf<PriceEditorMode?>(null) }
+    var itemEditor by remember { mutableStateOf<PriceItemEditor?>(null) }
+    var managingGroups by remember { mutableStateOf(false) }
+    var groupEditor by remember { mutableStateOf<PriceGroupEditor?>(null) }
+    var deletingGroup by remember { mutableStateOf<PriceCatalogGroup?>(null) }
     var deleting by remember { mutableStateOf<PriceCatalogItem?>(null) }
     var pending by remember { mutableStateOf(false) }
     var editorError by remember { mutableStateOf<String?>(null) }
-    val categories = remember(items) { PriceCatalogRules.categories(items) }
-    val categoryOptions = remember(items) { PriceCatalogRules.categoryOptions(items) }
+    val categories = groups
+    LaunchedEffect(groups) { selectedCategory = activePriceFilter(selectedCategory, groups) }
     val unitOptions = remember(items) { PriceCatalogRules.unitOptions(items) }
-    val visible = remember(items, search, selectedCategory) {
-        PriceCatalogRules.filter(items, search, selectedCategory)
+    val visible = remember(items, groups, search, selectedCategory) {
+        visiblePriceItems(items, groups, search, activePriceFilter(selectedCategory, groups))
     }
 
     fun openEditor(item: PriceCatalogItem?, mode: PriceEditorMode) {
-        if (!pending) {
-            editing = item
-            editorMode = mode
+        if (!pending && databaseAvailable) {
+            itemEditor = PriceItemEditor.open(item, mode == PriceEditorMode.QUICK)
             editorError = null
         }
     }
@@ -137,14 +130,19 @@ fun PriceCatalogScreen(
                             FilterChip(selected = selectedCategory == null,
                                 onClick = { selectedCategory = null }, label = { Text("Усі") })
                         }
-                        items(categories, key = { "cat-$it" }) { category ->
+                        items(categories, key = { "cat-${it.uuid}" }) { category ->
                             FilterChip(
-                                selected = selectedCategory == category,
-                                onClick = { selectedCategory = category },
-                                label = { Text(category) }
+                                selected = selectedCategory == category.uuid,
+                                onClick = { selectedCategory = category.uuid },
+                                label = { Text(category.name) }
                             )
                         }
                     }
+                }
+                item(key = "manage-categories") {
+                    TextButton(enabled = databaseAvailable && !pending, onClick = {
+                        editorError = null; managingGroups = true
+                    }) { Text("Керувати категоріями") }
                 }
                 if (desktopLayout && visible.isNotEmpty()) {
                     item(key = "columns") {
@@ -159,6 +157,9 @@ fun PriceCatalogScreen(
                     }
                 }
                 when {
+                    selectedCategory != null && visible.isEmpty() && search.isBlank() -> item(key = "category-empty") {
+                        Text("У цій категорії поки немає позицій", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
                     items.isEmpty() -> item(key = "empty") {
                         Text("Прайс порожній. Додайте першу позицію.",
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -259,386 +260,101 @@ fun PriceCatalogScreen(
         }
     }
 
-    val mode = editorMode
-    if (mode != null) {
-        key(editing?.id, mode) {
+    fun runAction(action: suspend () -> Unit) {
+        if (!pending && databaseAvailable) {
+            pending = true
+            editorError = null
+            scope.launch(start = CoroutineStart.UNDISPATCHED) {
+                try { action() }
+                catch (cancelled: CancellationException) { throw cancelled }
+                catch (error: Exception) { editorError = catalogErrorMessage(error) }
+                finally { pending = false }
+            }
+        }
+    }
+
+    // Exactly one interactive window, including child create and confirmations.
+    val child = groupEditor
+    val groupToDelete = deletingGroup
+    val editor = itemEditor
+    when {
+        child != null -> PriceGroupEditorDialog(
+            editor = child, enabled = databaseAvailable && !pending, pending = pending,
+            error = editorError,
+            onChange = { groupEditor = it; editorError = null },
+            onDismiss = { groupEditor = null; editorError = null },
+            onSubmit = {
+                runAction {
+                    val uuid = onSaveGroup(child.original, child.draft)
+                    if (child.fromItem) {
+                        val created = PriceCatalogGroup(uuid, child.draft.name.trim(), 0,
+                            child.draft.defaultUnit.trim().takeIf { it.isNotEmpty() },
+                            child.draft.defaultQuantityMode, child.draft.defaultPlacementKind)
+                        itemEditor = itemEditor?.categoryCreated(created)
+                    }
+                    groupEditor = null
+                }
+            }
+        )
+        groupToDelete != null -> AlertDialog(
+            onDismissRequest = { if (!pending) { deletingGroup = null; editorError = null } },
+            title = { Text("Видалити категорію?") },
+            text = { Column {
+                Text(groupToDelete.name)
+                Text("Можна видалити лише категорію без активних позицій.")
+                editorError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+            } },
+            confirmButton = { Button(enabled = databaseAvailable && !pending, onClick = {
+                runAction { onDeleteGroup(groupToDelete); deletingGroup = null }
+            }) { Text("Видалити") } },
+            dismissButton = { TextButton(enabled = !pending, onClick = {
+                deletingGroup = null; editorError = null
+            }) { Text("Скасувати") } }
+        )
+        managingGroups -> PriceGroupsDialog(
+            groups, enabled = databaseAvailable && !pending,
+            onDismiss = { managingGroups = false; editorError = null },
+            onCreate = { editorError = null; groupEditor = PriceGroupEditor() },
+            onEdit = { editorError = null; groupEditor = PriceGroupEditor(it) },
+            onDelete = { editorError = null; deletingGroup = it }
+        )
+        editor != null -> key(editor.original?.id, editor.quick) {
             PriceEditorDialog(
-                initial = editing,
-                mode = mode,
-                categoryOptions = categoryOptions,
-                unitOptions = unitOptions,
-                pending = pending,
-                error = editorError,
-                onDismiss = { if (!pending) editorMode = null },
-                onSubmit = { draft ->
-                    if (!pending) {
-                        pending = true
-                        editorError = null
-                        scope.launch {
-                            try {
-                                onSave(editing, draft)
-                                editorMode = null
-                            } catch (cancelled: CancellationException) {
-                                throw cancelled
-                            } catch (duplicate: DuplicateItemTitle) {
-                                editorError = duplicate.message
-                            } catch (_: Exception) {
-                                editorError = "Не вдалося зберегти позицію. Перевірте дані та стан БД."
-                            } finally {
-                                pending = false
-                            }
-                        }
+                editor, groups, unitOptions, pending, databaseAvailable, editorError,
+                onChange = { itemEditor = it; editorError = null },
+                onDismiss = { itemEditor = null; editorError = null },
+                onNewCategory = { editorError = null; groupEditor = PriceGroupEditor(fromItem = true) },
+                onSubmit = {
+                    runAction {
+                        if (editor.quick) onQuickPrice(checkNotNull(editor.original), editor.draft.salePriceText)
+                        else onSave(editor.original, editor.draft)
+                        itemEditor = null
                     }
                 }
             )
         }
-    }
-
-    deleting?.let { item ->
-        AlertDialog(
-            onDismissRequest = { if (!pending) deleting = null },
-            title = { Text("Видалити позицію?") },
-            text = {
-                Column {
+        deleting != null -> {
+            val item = checkNotNull(deleting)
+            AlertDialog(
+                onDismissRequest = { if (!pending) deleting = null },
+                title = { Text("Видалити позицію?") },
+                text = { Column {
                     Text(item.title)
-                    Text("Історичні кошториси залишаться незмінними.",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("Історичні кошториси залишаться незмінними.", color = MaterialTheme.colorScheme.onSurfaceVariant)
                     editorError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-                }
-            },
-            confirmButton = {
-                Button(enabled = !pending, onClick = {
-                    if (!pending) {
-                        pending = true
-                        editorError = null
-                        scope.launch {
-                            try {
-                                onDelete(item)
-                                deleting = null
-                            } catch (cancelled: CancellationException) {
-                                throw cancelled
-                            } catch (_: Exception) {
-                                editorError = "Не вдалося видалити позицію."
-                            } finally {
-                                pending = false
-                            }
-                        }
-                    }
-                }) { Text("Видалити") }
-            },
-            dismissButton = {
-                TextButton(enabled = !pending, onClick = { deleting = null }) { Text("Скасувати") }
-            }
-        )
+                } },
+                confirmButton = { Button(enabled = databaseAvailable && !pending, onClick = {
+                    runAction { onDelete(item); deleting = null }
+                }) { Text("Видалити") } },
+                dismissButton = { TextButton(enabled = !pending, onClick = { deleting = null }) { Text("Скасувати") } }
+            )
+        }
     }
 }
 
-@Composable
-private fun PriceEditorDialog(
-    initial: PriceCatalogItem?,
-    mode: PriceEditorMode,
-    categoryOptions: List<String>,
-    unitOptions: List<String>,
-    pending: Boolean,
-    error: String?,
-    onDismiss: () -> Unit,
-    onSubmit: (PriceCatalogDraft) -> Unit
-) {
-    var title by remember { mutableStateOf(initial?.title.orEmpty()) }
-    var category by remember { mutableStateOf(initial?.category ?: "Додаткові роботи") }
-    var unit by remember { mutableStateOf(initial?.unit ?: "шт.") }
-    var price by remember {
-        mutableStateOf(TextFieldValue(initial?.price?.let(PriceCatalogRules::formatSalePrice) ?: ""))
-    }
-    var showCategories by remember { mutableStateOf(false) }
-    var customCategory by remember {
-        mutableStateOf(initial?.category?.let { it !in categoryOptions } == true)
-    }
-    var showUnits by remember { mutableStateOf(false) }
-    var customUnit by remember { mutableStateOf(initial?.unit?.let { it !in unitOptions } == true) }
-    var confirmUnitChange by remember { mutableStateOf(false) }
-    var confirmDiscard by remember { mutableStateOf(false) }
-    var priceTapRequests by remember { mutableIntStateOf(0) }
-    LaunchedEffect(priceTapRequests) {
-        if (priceTapRequests > 0) {
-            // TextField's tap handler can position the cursor AFTER onFocusChanged.
-            // Reselect once the tap has been fully processed, including repeated taps
-            // while the field already has focus. Don't disturb typing/IME edits.
-            withFrameNanos { }
-            price = price.copy(selection = TextRange(0, price.text.length))
-        }
-    }
-    val errorMessage = if (mode == PriceEditorMode.QUICK) {
-        if (PriceCatalogRules.parseSalePrice(price.text) == null) "Перевірте ціну продажу." else null
-    } else PriceCatalogRules.validate(title, category, unit, price.text)
-
-    val hasUnsavedEdits = PriceCatalogRules.hasUnsavedEdits(
-        initial = initial,
-        quickPriceOnly = mode == PriceEditorMode.QUICK,
-        title = title,
-        category = category,
-        unit = unit,
-        salePriceText = price.text
-    )
-    val requestDismiss: () -> Unit = {
-        if (!pending) {
-            if (hasUnsavedEdits) {
-                confirmUnitChange = false
-                confirmDiscard = true
-            } else {
-                onDismiss()
-            }
-        }
-    }
-    val submit = {
-        val parsed = PriceCatalogRules.parseSalePrice(price.text)
-        if (parsed != null && errorMessage == null) {
-            onSubmit(PriceCatalogDraft(title.trim(), category.trim(), unit.trim(), parsed))
-        }
-    }
-
-    AlertDialog(
-        onDismissRequest = requestDismiss,
-        title = { Text(when {
-            mode == PriceEditorMode.QUICK -> "Змінити ціну продажу"
-            initial == null -> "Нова позиція прайсу"
-            else -> "Редагувати позицію"
-        }) },
-        text = {
-            Column(
-                Modifier.verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                if (mode == PriceEditorMode.FULL) {
-                    OutlinedTextField(value = title, onValueChange = { title = it },
-                        label = { Text("Назва *") }, singleLine = true, enabled = !pending)
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.Top
-                    ) {
-                        Column(
-                            modifier = Modifier.weight(0.60f),
-                            verticalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                    Text("Категорія *", style = MaterialTheme.typography.labelMedium)
-                    if (customCategory) {
-                        OutlinedTextField(
-                            value = category,
-                            onValueChange = { category = it },
-                            label = { Text("Власна категорія") },
-                            singleLine = true,
-                            enabled = !pending,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        TextButton(onClick = {
-                            customCategory = false
-                            category = ""
-                        }, enabled = !pending) {
-                            Text("Обрати зі списку")
-                        }
-                    } else {
-                        androidx.compose.foundation.layout.Box(Modifier.fillMaxWidth()) {
-                            OutlinedButton(
-                                onClick = { showCategories = true },
-                                enabled = !pending,
-                                modifier = Modifier.fillMaxWidth(),
-                                contentPadding = PaddingValues(horizontal = 6.dp)
-                            ) {
-                                Row(
-                                    Modifier.fillMaxWidth(),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Text(
-                                        category.ifBlank { "Оберіть категорію" },
-                                        modifier = Modifier.weight(1f),
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                    Text("▾")
-                                }
-                            }
-                            DropdownMenu(
-                                expanded = showCategories,
-                                onDismissRequest = { showCategories = false }
-                            ) {
-                                categoryOptions.forEach { option ->
-                                    DropdownMenuItem(text = { Text(option) }, onClick = {
-                                        category = option
-                                        showCategories = false
-                                    })
-                                }
-                                DropdownMenuItem(text = { Text("Інша категорія…") }, onClick = {
-                                    showCategories = false
-                                    customCategory = true
-                                    category = ""
-                                })
-                            }
-                        }
-                    }
-
-                        }
-                        Column(
-                            modifier = Modifier.weight(0.40f),
-                            verticalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            Text("Одиниця", style = MaterialTheme.typography.labelMedium)
-                            if (customUnit) {
-                                OutlinedTextField(
-                                    value = unit,
-                                    onValueChange = { unit = it },
-                                    label = { Text("Власна одиниця") },
-                                    singleLine = true,
-                                    enabled = !pending,
-                                    modifier = Modifier.fillMaxWidth()
-                                )
-                                TextButton(
-                                    onClick = { customUnit = false; unit = "" },
-                                    enabled = !pending
-                                ) { Text("Зі списку") }
-                            } else {
-                                androidx.compose.foundation.layout.Box(Modifier.fillMaxWidth()) {
-                                    OutlinedButton(
-                                        onClick = { showUnits = true },
-                                        enabled = !pending,
-                                        modifier = Modifier.fillMaxWidth(),
-                                        contentPadding = PaddingValues(horizontal = 4.dp)
-                                    ) {
-                                        Row(
-                                            Modifier.fillMaxWidth(),
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            Text(
-                                                unit.ifBlank { "Оберіть" },
-                                                modifier = Modifier.weight(1f),
-                                                maxLines = 1,
-                                                overflow = TextOverflow.Ellipsis
-                                            )
-                                            Text("▾")
-                                        }
-                                    }
-                                    DropdownMenu(
-                                        expanded = showUnits,
-                                        onDismissRequest = { showUnits = false }
-                                    ) {
-                                        unitOptions.forEach { option ->
-                                            DropdownMenuItem(text = { Text(option) }, onClick = {
-                                                unit = option
-                                                showUnits = false
-                                            })
-                                        }
-                                        DropdownMenuItem(text = { Text("Інша одиниця…") }, onClick = {
-                                            showUnits = false
-                                            customUnit = true
-                                            unit = ""
-                                        })
-                                    }
-                                }
-                            }
-
-                        }
-                    }
-                } else {
-                    Text(initial?.title.orEmpty())
-                }
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    if (mode == PriceEditorMode.FULL) {
-                        Text(
-                            "Зміни прайсу не змінюють історичні кошториси.",
-                            modifier = Modifier.weight(0.65f),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    OutlinedTextField(
-                        value = price, onValueChange = { price = it },
-                        label = { Text(if (mode == PriceEditorMode.FULL) "Ціна, ₴ *" else "Ціна продажу, ₴ *") },
-                        modifier = (if (mode == PriceEditorMode.FULL) Modifier.weight(0.35f) else Modifier.fillMaxWidth())
-                            .onFocusChanged { focus ->
-                                if (focus.isFocused) priceTapRequests++
-                            }
-                            .pointerInput(initial?.id, mode) {
-                                // Observe touch/mouse release without consuming it: TextField
-                                // still opens the keyboard and handles normal input itself.
-                                awaitEachGesture {
-                                    awaitFirstDown(
-                                        requireUnconsumed = false,
-                                        pass = PointerEventPass.Initial
-                                    )
-                                    do {
-                                        val event = awaitPointerEvent(pass = PointerEventPass.Final)
-                                        val pressed = event.changes.any { it.pressed }
-                                    } while (pressed)
-                                    priceTapRequests++
-                                }
-                            },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                        singleLine = true, enabled = !pending
-                    )
-
-                }
-                if (mode == PriceEditorMode.QUICK) {
-                    Text(
-                        "Зміни прайсу не змінюють історичні кошториси.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                errorMessage?.let {
-                    Text(it, style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.error)
-                }
-                error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-            }
-        },
-        confirmButton = {
-            Button(
-                enabled = !pending && errorMessage == null,
-                onClick = {
-                    if (initial != null && mode == PriceEditorMode.FULL && unit.trim() != initial.unit) {
-                        confirmUnitChange = true
-                    } else submit()
-                }
-            ) { Text(if (pending) "Збереження…" else "Зберегти") }
-        },
-        dismissButton = {
-            TextButton(enabled = !pending, onClick = requestDismiss) { Text("Скасувати") }
-        }
-    )
-    if (confirmUnitChange) {
-        AlertDialog(
-            onDismissRequest = { confirmUnitChange = false },
-            title = { Text("Змінити одиницю вимірювання?") },
-            text = { Text("Це може заблокувати майбутній перерахунок старих кошторисів. Історичні дані не змінюються. Автоматичної конвертації кількостей немає.") },
-            confirmButton = {
-                Button(onClick = { confirmUnitChange = false; submit() }) { Text("Підтвердити зміну") }
-            },
-            dismissButton = {
-                TextButton(onClick = { confirmUnitChange = false }) { Text("Повернутися") }
-            }
-        )
-    }
-    if (confirmDiscard) {
-        AlertDialog(
-            onDismissRequest = { confirmDiscard = false },
-            title = { Text("Відкинути зміни?") },
-            text = {
-                Text("Введені зміни цієї позиції ще не збережено. Повернутися до редагування чи відкинути їх?")
-            },
-            confirmButton = {
-                TextButton(onClick = { confirmDiscard = false; onDismiss() }) {
-                    Text("Відкинути")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { confirmDiscard = false }) {
-                    Text("Продовжити редагування")
-                }
-            }
-        )
-    }
+internal fun catalogErrorMessage(error: Exception): String = when (error) {
+    is DuplicateGroupName -> "Категорія з такою назвою вже існує"
+    is DuplicateItemTitle -> "Позиція з такою назвою вже існує"
+    is PriceCatalogConflict, is PriceGroupNotEmpty -> error.message.orEmpty()
+    else -> "Не вдалося зберегти зміни. Перевірте дані та стан БД."
 }

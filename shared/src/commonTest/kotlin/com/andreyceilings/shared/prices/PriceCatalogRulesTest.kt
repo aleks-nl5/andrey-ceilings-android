@@ -50,13 +50,13 @@ class PriceCatalogRulesTest {
     }
 
 
-    @Test fun categoryDropdownContainsStandardAndExistingCustomCategories() {
+    @Test fun legacyCategoryHelperDoesNotRestoreDeletedStandardCategories() {
         val entries = catalog + PriceCatalogItem(
             4, "custom.4", "Тестова послуга", "Особливі роботи", "шт.", 75.0
         )
         val options = PriceCatalogRules.categoryOptions(entries)
-        assertEquals(PriceCatalogRules.standardCategories,
-            options.take(PriceCatalogRules.standardCategories.size))
+        assertEquals(PriceCatalogRules.categories(entries), options)
+        assertTrue("Додаткові роботи" !in options)
         assertTrue("Особливі роботи" in options)
         assertEquals(options.size, options.distinct().size)
         // Merely reading the dropdown must not change a category or a price.

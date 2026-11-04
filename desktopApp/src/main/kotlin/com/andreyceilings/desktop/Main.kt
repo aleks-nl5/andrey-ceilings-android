@@ -160,6 +160,7 @@ private fun DesktopPriceHost(
             PriceCatalogStore(database.prices, nowMillis = System::currentTimeMillis)
         }
         val items by store.items.collectAsState(initial = emptyList())
+        val priceGroups by store.groups.collectAsState(initial = emptyList())
         val objectsStore = remember(database) { database.objects }
         val objectRows by objectsStore.rows.collectAsState(initial =
             ObjectsClientsRows(emptyList(), emptyList()))
@@ -323,6 +324,7 @@ private fun DesktopPriceHost(
                 )
                 AppRoute.PRICES -> PriceCatalogScreen(
                     items = items,
+                    groups = priceGroups,
                     databaseAvailable = true,
                     contentPadding = PaddingValues(
                         start = 24.dp, end = 24.dp,
@@ -330,7 +332,16 @@ private fun DesktopPriceHost(
                         bottom = if (measurementFullscreen) 8.dp else FloatingBarHeight + 16.dp
                     ),
                     onSave = { original, draft ->
-                        withContext(Dispatchers.IO) { store.save(original, draft) }
+                        withContext(Dispatchers.IO) { store.saveConfigured(original, draft) }
+                    },
+                    onQuickPrice = { original, price ->
+                        withContext(Dispatchers.IO) { store.quickPrice(original, price) }
+                    },
+                    onSaveGroup = { original, draft ->
+                        withContext(Dispatchers.IO) { store.saveGroup(original, draft) }
+                    },
+                    onDeleteGroup = { group ->
+                        withContext(Dispatchers.IO) { store.deleteGroup(group) }
                     },
                     onDelete = { item ->
                         withContext(Dispatchers.IO) { store.delete(item) }

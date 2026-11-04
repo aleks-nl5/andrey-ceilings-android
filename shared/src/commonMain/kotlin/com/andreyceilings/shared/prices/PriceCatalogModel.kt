@@ -15,7 +15,10 @@ data class PriceCatalogItem(
     /** SQLite modification token; allows the shared editor to reject stale writes. */
     val updatedAt: Long = 0L,
     /** Canonical membership survives a concurrent group rename. */
-    val groupUuid: String = ""
+    val groupUuid: String = "",
+    val uuid: String = "",
+    val quantityMode: QuantityMode = QuantityMode.MANUAL,
+    val placementKind: PlacementKind = PlacementKind.NONE
 )
 
 data class PriceCatalogDraft(
@@ -27,14 +30,8 @@ data class PriceCatalogDraft(
 
 /** Only the sale price is required; extended cost components belong to issue #37. */
 object PriceCatalogRules {
-    /** Suggested categories; the SQLDelight price rows remain the source of truth. */
-    val standardCategories: List<String> = listOf(
-        "Полотна", "Профілі", "Освітлення", "Роботи", "Додаткові роботи"
-    )
-
-    /** Include user-created categories without requiring a new database table. */
-    fun categoryOptions(items: List<PriceCatalogItem>): List<String> =
-        (standardCategories + categories(items)).distinctBy(::normalizedNameKey)
+    /** Legacy helpers only; the P2 UI takes categories exclusively from the group Flow. */
+    fun categoryOptions(items: List<PriceCatalogItem>): List<String> = categories(items)
 
     /** Common ceiling-work units; existing custom units remain available in the dropdown. */
     val standardUnits: List<String> = listOf("м²", "м.п.", "шт.", "компл.", "послуга")

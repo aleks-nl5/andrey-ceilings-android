@@ -51,6 +51,7 @@ class PriceCatalogIosCipherTest {
                 assertEquals(before, PriceCatalogMigrationProof.untouchedRows(migrated))
                 phase = "group/item CRUD"
                 PriceCatalogPersistenceProof.groupsAndParameters(db)
+                PriceCatalogP2Proof.run(db)
                 PriceCatalogPersistenceProof.removeEverything(db)
             } finally { migrated.close() }
             phase = "reopen deleted catalog"
