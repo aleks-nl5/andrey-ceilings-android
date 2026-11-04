@@ -80,29 +80,39 @@ class MeasurementElementsModel internal constructor(private val store: Measureme
     private var dataJob: Job? = null
     private var catalogJob: Job? = null
     private var exitAction: (() -> Unit)? = null
-    private var closed = false
+    private val closedState = MutableStateFlow(false)
+    private var closed: Boolean
+        get() = closedState.value
+        set(value) { closedState.value = value }
+    private var currentEditor: ElementEditorState?
+        get() = mutableEditor.value
+        set(value) { mutableEditor.update { if (closed) null else value } }
     init { retry(); refreshCatalog() }
 
     fun retry() {
         if (closed) return
-        dataJob?.cancel(); mutableState.value = MeasurementElementsState.Loading
-        dataJob = scope.launch { store.observe(route).collect { mutableState.value = it } }
+        dataJob?.cancel(); mutableState.update { if (closed) MeasurementElementsState.Unavailable else MeasurementElementsState.Loading }
+        dataJob = scope.launch { store.observe(route).collect { value ->
+            mutableState.update { if (closed) MeasurementElementsState.Unavailable else value }
+        } }
     }
     fun refreshCatalog() {
         if (closed) return
-        catalogJob?.cancel(); mutableCatalog.value = ElementCatalogState.Loading
-        catalogJob = scope.launch { store.catalog().collect { mutableCatalog.value = it } }
+        catalogJob?.cancel(); mutableCatalog.update { if (closed) ElementCatalogState.Unavailable else ElementCatalogState.Loading }
+        catalogJob = scope.launch { store.catalog().collect { value ->
+            mutableCatalog.update { if (closed) ElementCatalogState.Unavailable else value }
+        } }
     }
-    fun add() { if (state.value is MeasurementElementsState.Loaded && editor.value == null) mutableEditor.value = ElementEditorState(ElementEditorDraft()) }
+    fun add() { if (state.value is MeasurementElementsState.Loaded && editor.value == null) currentEditor = ElementEditorState(ElementEditorDraft()) }
     fun open(element: MeasurementElement, action: ElementEditorAction = ElementEditorAction.EDIT) {
         if (state.value !is MeasurementElementsState.Loaded || editor.value != null ||
             element.measurementUuid != route.measurementUuid) return
-        mutableEditor.value = ElementEditorState(ElementEditorDraft.edit(element, action))
+        currentEditor = ElementEditorState(ElementEditorDraft.edit(element, action))
     }
     fun update(change: (ElementEditorDraft) -> ElementEditorDraft) {
         val before = editor.value ?: return
         if (before.saving || before.attemptedCreate || before.conflict) return
-        mutableEditor.value = before.copy(draft = change(before.draft), error = null)
+        currentEditor = before.copy(draft = change(before.draft), error = null)
     }
     fun choose(action: ElementEditorAction) = update { it.copy(action = action) }
     fun select(item: ElementCatalogItem) = update { before ->
@@ -110,33 +120,33 @@ class MeasurementElementsModel internal constructor(private val store: Measureme
         // linking still requires a separate Replace confirmation even for Unknown -> derived.
         before.copy(selection = item)
     }
-    fun requestDismiss() = requestExit { mutableEditor.value = null }
+    fun requestDismiss() = requestExit { currentEditor = null }
     fun requestExit(action: () -> Unit) {
         val current = editor.value
         if (current == null) { action(); return }
         if (current.saving) return
-        if (!current.dirty && !current.attemptedCreate) { mutableEditor.value = null; action() }
-        else { exitAction = action; mutableEditor.value = current.copy(exitRequested = true, reloadRequested = false) }
+        if (!current.dirty && !current.attemptedCreate) { currentEditor = null; action() }
+        else { exitAction = action; currentEditor = current.copy(exitRequested = true, reloadRequested = false) }
     }
-    fun continueEditing() { exitAction = null; mutableEditor.value = editor.value?.copy(exitRequested = false) }
+    fun continueEditing() { exitAction = null; currentEditor = editor.value?.copy(exitRequested = false) }
     fun discardAndExit() {
         if (editor.value?.saving == true) return
-        val action = exitAction; exitAction = null; mutableEditor.value = null; action?.invoke()
+        val action = exitAction; exitAction = null; currentEditor = null; action?.invoke()
     }
-    fun requestReload() { if (editor.value?.saving == false) mutableEditor.value = editor.value?.copy(reloadRequested = true) }
-    fun cancelReload() { mutableEditor.value = editor.value?.copy(reloadRequested = false) }
+    fun requestReload() { if (editor.value?.saving == false) currentEditor = editor.value?.copy(reloadRequested = true) }
+    fun cancelReload() { currentEditor = editor.value?.copy(reloadRequested = false) }
     fun reload() {
         val before = editor.value ?: return
         if (before.saving) return
-        mutableEditor.value = before.copy(saving = true, reloadRequested = false)
+        currentEditor = before.copy(saving = true, reloadRequested = false)
         scope.launch {
             try {
                 val actual = withContext(Dispatchers.Default) { store.reload(route, before.draft.uuid) }
-                if (!closed) mutableEditor.value = ElementEditorState(ElementEditorDraft.edit(actual,
+                if (!closed) currentEditor = ElementEditorState(ElementEditorDraft.edit(actual,
                     before.draft.action.takeIf { it == ElementEditorAction.LINK && actual.source == ElementSource.Wish || it == ElementEditorAction.DELETE }
                         ?: ElementEditorAction.EDIT))
             } catch (failure: Exception) {
-                if (!closed) mutableEditor.value = before.copy(error = elementFailureMessage(failure), reloadRequested = false)
+                if (!closed) currentEditor = before.copy(error = elementFailureMessage(failure), reloadRequested = false)
             }
         }
     }
@@ -145,15 +155,15 @@ class MeasurementElementsModel internal constructor(private val store: Measureme
         if (closed || before.saving || before.conflict || before.draft.validationError != null ||
             state.value !is MeasurementElementsState.Loaded) return
         val creates = before.draft.action == ElementEditorAction.CREATE_WISH || before.draft.action == ElementEditorAction.CREATE_CATALOG
-        mutableEditor.value = before.copy(saving = true, error = null, exitRequested = false)
+        currentEditor = before.copy(saving = true, error = null, exitRequested = false)
         exitAction = null
         scope.launch {
             withContext(NonCancellable) {
                 try {
                     withContext(Dispatchers.Default) { store.save(route, before.draft) }
-                    if (!closed) mutableEditor.value = null
+                    if (!closed) currentEditor = null
                 } catch (failure: Exception) {
-                    if (!closed) mutableEditor.value = before.copy(saving = false, error = elementFailureMessage(failure),
+                    if (!closed) currentEditor = before.copy(saving = false, error = elementFailureMessage(failure),
                         conflict = failure is MeasurementElementFailure.StaleVersion || failure is MeasurementElementFailure.RetryConflict,
                         attemptedCreate = before.attemptedCreate || creates &&
                             (failure is MeasurementElementFailure.DatabaseUnavailable || failure !is MeasurementElementFailure))
@@ -162,7 +172,7 @@ class MeasurementElementsModel internal constructor(private val store: Measureme
         }
     }
     fun close() {
-        closed = true; exitAction = null; mutableEditor.value = null
+        closed = true; exitAction = null; currentEditor = null
         mutableState.value = MeasurementElementsState.Unavailable; mutableCatalog.value = ElementCatalogState.Unavailable
         scope.cancel()
     }

@@ -36,13 +36,20 @@ class MeasurementElementsStore(private val database: PrototypeDatabase, private 
     private val projects = ProjectRepository(database)
     private val prices = PriceCatalogStore(PriceRepository(database), nowMillis)
     private var active: MeasurementElementsModel? = null
-    private var closed = false
+    private val closedState = MutableStateFlow(false)
+    private var closed: Boolean
+        get() = closedState.value
+        set(value) { closedState.value = value }
 
     fun model(route: ElementRoute): MeasurementElementsModel {
         if (closed) return MeasurementElementsModel(this, route, modelDispatcher).also { it.close() }
         active?.takeIf { it.route == route }?.let { return it }
         active?.close()
-        return MeasurementElementsModel(this, route, modelDispatcher).also { active = it }
+        return MeasurementElementsModel(this, route, modelDispatcher).also {
+            active = it
+            // DB close may run on a platform worker while the UI acquires its route model.
+            if (closed) { it.close(); active = null }
+        }
     }
     fun close() { closed = true; active?.close(); active = null }
 

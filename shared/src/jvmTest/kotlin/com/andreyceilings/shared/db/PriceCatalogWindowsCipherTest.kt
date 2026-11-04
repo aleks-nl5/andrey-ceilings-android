@@ -15,7 +15,7 @@ class PriceCatalogWindowsCipherTest {
                 SqlCipherWindowsDriverFactory.open(file, key).use { driver ->
                     openDesktopPriceCatalog(driver, false)
                     MeasurementElementsPresentationProof.run(PrototypeDatabase(driver))
-                        MeasurementElementProof.run(driver)
+                    MeasurementElementProof.run(driver)
                     MeasurementElementProof.atomicParentDelete(driver)
                     MeasurementElementMigrationProof.sqlGuards(driver)
                 }

@@ -2,7 +2,7 @@
 
 **P3A виконаний і merged:** [PR #88](https://github.com/aleks-nl5/andrey-ceilings-android/pull/88), merge `72f77105561f0fde609f33cde4f620b5162510b0`; #87 closed. [Контракт P3A](MEASUREMENT_ELEMENTS_P3A.md) лишається чинним. Прайс P1/P2 #81/#85/#86 уже merged; #80/#82/#83 closed. #76/#78 лишаються відкритими.
 
-**P3B — реалізація для одного Draft PR від main, [#90](https://github.com/aleks-nl5/andrey-ceilings-android/issues/90):** вбудовані «Елементи стелі» у CMP details, спільні для Android «Заміри»/«Об'єкти» та Windows Objects. Реальний active catalog picker, Wish, точний comma/dot→Long-milli, CRUD/CAS, явний Wish→Catalog, захищені session-only чернетки й Back. [P3B flow та checklist](MEASUREMENT_ELEMENTS_P3B.md). Схема SQLDelight v7, геометрія, captured precision, SQLCipher/WAL/backup та фінансові snapshots не змінюються.
+**P3B — [Draft PR #91](https://github.com/aleks-nl5/andrey-ceilings-android/pull/91) від main, [#90](https://github.com/aleks-nl5/andrey-ceilings-android/issues/90):** вбудовані «Елементи стелі» у CMP details, спільні для Android «Заміри»/«Об'єкти» та Windows Objects. Реальний active catalog picker, Wish, точний comma/dot→Long-milli, CRUD/CAS, явний Wish→Catalog, захищені session-only чернетки й Back. [P3B flow та checklist](MEASUREMENT_ELEMENTS_P3B.md). Схема SQLDelight v7, геометрія, captured precision, SQLCipher/WAL/backup та фінансові snapshots не змінюються.
 
 **Доставка та приймання:** Draft PR → Android APK/SQLCipher emulator + Windows JVM/encrypted scene/CRUD + iOS framework/Simulator на одному фінальному HEAD. Ручний APK smoke (обидві теми й обидва шляхи) здійснює власник; автоматичні тести його не замінюють. Не merge/close #90/#76/#78. CI workflows/gates незмінні; порівняння часу/кешів і benchmarks поза scope #90.
 

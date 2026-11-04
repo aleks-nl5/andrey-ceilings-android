@@ -1,6 +1,6 @@
 # CMP «Елементи стелі» — P3B / #90
 
-P3A PR #88 merged / #87 closed. Refs #76/#78. P3B is delivered as one Draft PR,
+P3A PR #88 merged / #87 closed. Refs #76/#78. P3B is delivered in [Draft PR #91](https://github.com/aleks-nl5/andrey-ceilings-android/pull/91),
 with owner acceptance pending. Pricing #44, Canvas #71, runnable iOS host #42
 and cosmetic UI/UX remain separate.
 
