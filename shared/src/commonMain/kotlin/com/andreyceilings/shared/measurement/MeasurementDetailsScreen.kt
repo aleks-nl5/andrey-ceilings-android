@@ -60,12 +60,12 @@ fun MeasurementDetailsScreen(
             onPlacePoint = { x, y -> model?.tapPoint(x, y) }, onSelectPoint = { model?.selectPoint(it) },
             onFinishPlacement = { model?.finishPlacement() }, onDeletePoint = { model?.requestPointDelete() },
             onRetryPoint = { model?.retryPoint() },
-            onOpenPosition = { (data?.geometry as? MeasurementGeometryView.Captured)?.let { model?.openPosition(it.geometry, data.updatedAt) } },
+            onOpenPosition = { if (model?.finishPlacement()!=false) onEdit?.invoke() },
             onBeginPointDrag = { uuid -> data?.let { model?.beginPointDrag(uuid, it.updatedAt) } },
             onPreviewPointDrag = { x, y -> model?.previewPointDrag(x, y) },
             onFinishPointDrag = { model?.finishPointDrag() }, onCancelPointDrag = { model?.cancelPointDrag() },
             onUndoPoint = { model?.undoPointMove() }, onRedoPoint = { model?.redoPointMove() })
-        if (model != null) PointPositionEditor(points, model)
+        // Physical mounting input lives in the single co-editor, with the contour draft.
         if (points.confirmingDelete) AlertDialog(onDismissRequest = { model?.cancelPointDelete() },
             title = { Text("Видалити позначку?") }, text = { Text("Прибрати одну позначку «${pointElement?.label.orEmpty()}»? Заявлена кількість залишиться.") },
             confirmButton = { TextButton(onClick = { model?.deletePoint() }) { Text("Видалити позначку") } },
@@ -187,8 +187,14 @@ fun MeasurementDetailsScreen(
                         if (pointElement != null) {
                             Text(pointElement.label, style = MaterialTheme.typography.titleMedium)
                             pointElement.pointCapacity()?.let { capacity ->
-                                Text("Розміщено: ${pointElement.placedQuantityMilli / 1000} з $capacity")
+                                val unresolved=pointState.points.count { it.elementUuid==pointElement.uuid && it.mounting.unresolved }
+                                Text("Розміщено ${pointElement.placedQuantityMilli / 1000} з $capacity · Потребує уточнення: $unresolved")
                             }
+                        }
+                        val reviewCount=pointState.points.count { it.mounting.needsReview }
+                        if(reviewCount>0) {
+                            Text("Розміщення потребує перевірки після зміни контуру або прив'язок.")
+                            TextButton(onClick={onEdit?.invoke()},enabled=onEdit!=null && !pointState.saving){Text("Перевірити ($reviewCount)")}
                         }
                         if (pointState.modeElementUuid != null) {
                             Text("Приблизне розміщення: торкніться всередині контуру. Тап по позначці вибирає її; жест масштабу чи зсуву не додає точок.")
@@ -202,8 +208,10 @@ fun MeasurementDetailsScreen(
                         if (pointState.selectedPointUuid != null) {
                             val marker = pointState.points.find { it.uuid == pointState.selectedPointUuid }
                             Text(if (marker?.precision == PointPrecision.EXACT) "Ця позначка: точне числове положення" else "Ця позначка: приблизне положення")
-                            Text("Перетягніть виділену позначку; порожнє поле пересуває креслення.")
-                            TextButton(enabled = !pointState.saving && pointState.retry == null, onClick = onOpenPosition) { Text("Редагувати положення") }
+                            if(marker?.mounting?.anchor==null) Text("Виміряних стінних прив'язок немає.")
+                            if(marker?.mounting?.needsReview==true) Text(if(marker.mounting.unresolved) "Потребує уточнення" else "Потрібно перевірити розміщення")
+                            Text("Перетягування скидає активну прив'язку й задає приблизне положення; порожнє поле пересуває креслення.")
+                            TextButton(enabled = !pointState.saving && pointState.retry == null, onClick = onOpenPosition) { Text("Задати розміри від стін") }
                         }
                         FlowRow {
                             TextButton(enabled = pointState.undo != null && !pointState.saving && pointState.retry == null,
@@ -215,7 +223,7 @@ fun MeasurementDetailsScreen(
                             Text("Історія переміщень діє лише доки відкрита ця стеля.", style = MaterialTheme.typography.bodySmall)
                         MeasurementDrawing(row.geometry, Modifier.fillMaxWidth(), interactive = true,
                             selectedSide = selectedSide, onSelectSide = { selectedSide = it },
-                            pointPlacements = pointState.points, selectedPointUuid = pointState.selectedPointUuid,
+                            pointPlacements = pointState.points, fitPointPlacements = true, selectedPointUuid = pointState.selectedPointUuid,
                             placementMode = pointState.modeElementUuid != null, onPlacePoint = onPlacePoint, onSelectPoint = onSelectPoint,
                             pointEditingEnabled = !pointState.saving && pointState.retry == null && pointState.positionEditor == null,
                             pointDrag = pointState.drag, onBeginPointDrag = onBeginPointDrag,

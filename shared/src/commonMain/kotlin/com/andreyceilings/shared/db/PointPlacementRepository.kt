@@ -73,7 +73,9 @@ class PointPlacementRepository(private val database: PrototypeDatabase) {
                 receipt.expectedElementUpdatedAt != original.expectedUpdatedAt || receipt.contourUpdatedAt != contourUpdatedAt ||
                 receipt.xMm != xMm || receipt.yMm != yMm || receipt.precision != precision.value)
                 throw PointPlacementFailure.RetryConflict()
-            if (actual.lastMoveUuid != operationUuid) throw PointPlacementFailure.StaleVersion()
+            if (actual.lastMoveUuid != operationUuid || actual.updatedAt != maxOf(receipt.expectedPointUpdatedAt+1,receipt.createdAt) ||
+                actual.lastCeilingEditUuid != point.lastCeilingEditUuid || actual.xMm != receipt.xMm || actual.yMm != receipt.yMm || actual.precision.value != receipt.precision)
+                throw PointPlacementFailure.StaleVersion()
             return@write PointMoveResult(actual, element)
         }
         if (element.updatedAt != original.expectedUpdatedAt || actual.updatedAt != point.updatedAt ||
@@ -81,7 +83,7 @@ class PointPlacementRepository(private val database: PrototypeDatabase) {
             throw PointPlacementFailure.StaleVersion()
         val capacity = element.pointCapacity() ?: throw PointPlacementFailure.UnsupportedElement()
         val count = queries.countForElement(element.uuid).executeAsOne()
-        if (count <= 0 || count > capacity || element.placedQuantityMilli != count * 1000) throw PointPlacementFailure.StaleVersion()
+        if (count <= 0 || count > capacity || element.placedQuantityMilli != queries.selectForMeasurement(element.measurementUuid).executeAsList().count { it.elementUuid == element.uuid && !decodeMounting(it.mountingJson).unresolved } * 1000L) throw PointPlacementFailure.StaleVersion()
         val row = measurements.findByUuid(original.measurementUuid) ?: throw PointPlacementFailure.ParentUnavailable()
         if (row.updatedAt != contourUpdatedAt) throw PointPlacementFailure.StaleContour()
         val geometry = (measurementGeometryForViewing(row.shape, row.drawingJson, row.lengthMeters, row.widthMeters)
@@ -89,7 +91,7 @@ class PointPlacementRepository(private val database: PrototypeDatabase) {
         if (!pointStrictlyInside(geometry, xMm, yMm)) throw PointPlacementFailure.OutsideContour()
         queries.insertMoveOperation(operationUuid, point.uuid, point.updatedAt, original.expectedUpdatedAt,
             contourUpdatedAt, xMm, yMm, precision.value, now)
-        queries.movePoint(xMm, yMm, precision.value, operationUuid, now, point.uuid, element.uuid, point.updatedAt)
+        queries.movePoint(xMm=xMm, yMm=yMm, precision=precision.value, operationUuid=operationUuid, now=now, pointUuid=point.uuid, elementUuid=element.uuid, expectedPointUpdatedAt=point.updatedAt)
         val saved = checkNotNull(read(point.uuid))
         if (saved.lastMoveUuid != operationUuid) throw PointPlacementFailure.StaleVersion()
         PointMoveResult(saved, checkNotNull(elements.find(element.uuid)))
@@ -112,4 +114,4 @@ class PointPlacementRepository(private val database: PrototypeDatabase) {
 }
 
 private fun Point_placements.model() = PointPlacement(uuid, elementUuid, xMm, yMm, contourUpdatedAt,
-    createdAt, updatedAt, deletedAt, PointPrecision.entries.single { it.value == precision }, lastMoveUuid)
+    createdAt, updatedAt, deletedAt, PointPrecision.entries.single { it.value == precision }, lastMoveUuid, decodeMounting(mountingJson), lastCeilingEditUuid)

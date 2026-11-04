@@ -8,6 +8,10 @@ import kotlinx.serialization.json.*
 
 /** Input methods are variants, so 90° turns are not a constraint on all future outlines. */
 sealed interface MeasurementOutlineDraft {
+    /** A verified old polygon without measured source sides is preserved, never reverse-engineered. */
+    data class Captured(val geometry: FrozenPolygonGeometry) : MeasurementOutlineDraft {
+        init { require(geometry.shapeType=="polygon" && geometry.sides.isEmpty());FrozenPolygonGeometryContract.requireValid(geometry) }
+    }
     data class Template(val shape: String, val fields: Map<String, String>) : MeasurementOutlineDraft
     data class Orthogonal(val sides: List<MeasurementSideInput>) : MeasurementOutlineDraft
 }
@@ -30,6 +34,7 @@ data class MeasurementCreateDraft(
     val shape: String get() = when (outline) {
         is MeasurementOutlineDraft.Template -> outline.shape
         is MeasurementOutlineDraft.Orthogonal -> "polygon"
+        is MeasurementOutlineDraft.Captured -> outline.geometry.shapeType
     }
 
     /** Local form state only. No pending Save, DB content or draft in navigation snapshots. */
@@ -37,6 +42,7 @@ data class MeasurementCreateDraft(
         put("version", 1); put("project", projectId); put("precision", precision.name); put("uuid", recordUuid)
         put("name", name); put("notes", notes); put("shape", shape)
         when (val input = outline) {
+            is MeasurementOutlineDraft.Captured -> put("capturedGeometry",MeasurementGeometryCodec.write(input.geometry))
             is MeasurementOutlineDraft.Template -> putJsonObject("fields") {
                 input.fields.forEach { (key, value) -> put(key, value) }
             }
@@ -60,7 +66,11 @@ data class MeasurementCreateDraft(
             require(root.getValue("version").jsonPrimitive.int == 1)
             require(root.getValue("project").jsonPrimitive.long == projectId)
             val shape = root.getValue("shape").jsonPrimitive.content
-            val outline = if (shape == "polygon") {
+            val outline = if(root["capturedGeometry"]!=null) {
+                val geometry=MeasurementGeometryCodec.read(root.getValue("capturedGeometry").jsonPrimitive.content)
+                require(geometry.shapeType==shape)
+                MeasurementOutlineDraft.Captured(geometry)
+            } else if (shape == "polygon") {
                 val sides = root.getValue("sides").jsonArray
                 require(sides.size in 4..CeilingPolygonCalculator.MAX_VERTICES)
                 MeasurementOutlineDraft.Orthogonal(sides.map { value ->
@@ -91,6 +101,7 @@ sealed interface MeasurementCreateIntent {
     data class Dimension(val key: String, val value: String) : MeasurementCreateIntent
     data class SideLength(val index: Int, val value: String) : MeasurementCreateIntent
     data class SideTurn(val index: Int, val value: OrthogonalTurn) : MeasurementCreateIntent
+    data object ReplaceCapturedWithSides : MeasurementCreateIntent
     data object AddSide : MeasurementCreateIntent
     data class RemoveSide(val index: Int) : MeasurementCreateIntent
 }
@@ -115,6 +126,8 @@ fun MeasurementCreateDraft.reduce(intent: MeasurementCreateIntent): MeasurementC
         }
         is MeasurementCreateIntent.SideLength -> editSide(intent.index) { it.copy(length = intent.value) }
         is MeasurementCreateIntent.SideTurn -> editSide(intent.index) { it.copy(turn = intent.value) }
+        MeasurementCreateIntent.ReplaceCapturedWithSides -> if(outline is MeasurementOutlineDraft.Captured)
+            copy(outline=MeasurementOutlineDraft.Orthogonal(List(4){MeasurementSideInput()})) else this
         MeasurementCreateIntent.AddSide -> {
             val input = outline as? MeasurementOutlineDraft.Orthogonal ?: return this
             if (input.sides.size >= CeilingPolygonCalculator.MAX_VERTICES) this
@@ -164,6 +177,9 @@ fun validateMeasurementCreate(draft: MeasurementCreateDraft): MeasurementCreateV
     var geometryError: String? = null
     val geometry = try {
         when (val input = draft.outline) {
+            is MeasurementOutlineDraft.Captured -> FrozenPolygonGeometryContract.requireValid(input.geometry).also {
+                require(it.precisionStepMeters==draft.precision.stepMeters) { "Точність збереженого контуру не змінюється." }
+            }
             is MeasurementOutlineDraft.Template -> {
                 val template = requireNotNull(CeilingShapeTemplates.template(input.shape)) { "Невідома форма стелі." }
                 require(input.fields.keys == template.parameterKeys.toSet()) { "Введіть усі параметри форми." }

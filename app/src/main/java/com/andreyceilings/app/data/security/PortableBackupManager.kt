@@ -135,10 +135,10 @@ internal object PortableBackupManager {
                     "Перевірка цілісності SQLCipher не пройдена."
                 }
                 val count = driver.executeQuery(null,
-                    "SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name IN ('clients','projects','room_measurements','price_items','estimates','measurement_elements','point_placements','point_position_operations')",
+                    "SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name IN ('clients','projects','room_measurements','price_items','estimates','measurement_elements','point_placements','point_position_operations','ceiling_operations','ceiling_walls','ceiling_operation_results')",
                     { cursor -> QueryResult.Value(if (cursor.next().value) cursor.getLong(0) else null) },
                     0).value
-                check(count == 8L) { "Резервна копія не містить повної схеми SQLDelight." }
+                check(count == 11L) { "Резервна копія не містить повної схеми SQLDelight." }
                 // A pre-UUID test backup must not overwrite a database using the
                 // new sync-ready schema. A table-name check alone is insufficient.
                 listOf("clients", "projects", "room_measurements", "price_items", "estimates", "measurement_elements", "point_placements")
@@ -155,7 +155,7 @@ internal object PortableBackupManager {
                 ).value
 
                 driver.executeQuery(null,
-                    "SELECT elementUuid, xMm, yMm, contourUpdatedAt, createdAt, precision, lastMoveUuid FROM point_placements LIMIT 0",
+                    "SELECT elementUuid, xMm, yMm, contourUpdatedAt, createdAt, precision, lastMoveUuid, mountingJson, lastCeilingEditUuid FROM point_placements LIMIT 0",
                     { cursor -> QueryResult.Value(cursor.next().value) }, 0
                 ).value
 
@@ -163,6 +163,13 @@ internal object PortableBackupManager {
                     "SELECT uuid,pointUuid,expectedPointUpdatedAt,expectedElementUpdatedAt,contourUpdatedAt,xMm,yMm,precision,createdAt FROM point_position_operations LIMIT 0",
                     { cursor -> QueryResult.Value(cursor.next().value) }, 0
                 ).value
+
+                driver.executeQuery(null,"SELECT uuid,measurementUuid,expectedUpdatedAt,payload,createdAt FROM ceiling_operations LIMIT 0",
+                    { cursor -> QueryResult.Value(cursor.next().value) },0).value
+                driver.executeQuery(null,"SELECT operationUuid,measurementVersion,pointVersions,elementVersions FROM ceiling_operation_results LIMIT 0",
+                    { cursor -> QueryResult.Value(cursor.next().value) },0).value
+                driver.executeQuery(null,"SELECT uuid,measurementUuid,ordinal,ax,ay,bx,by,geometryVersion,active FROM ceiling_walls LIMIT 0",
+                    { cursor -> QueryResult.Value(cursor.next().value) },0).value
 
                 // Do not accept a seemingly valid backup which silently lost
                 // the immutable v1/v2/v3 tables. These tables are essential

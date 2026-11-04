@@ -181,6 +181,7 @@ fun MeasurementCreateScreen(
                 }
             }
             when (val outline = draft.outline) {
+                is MeasurementOutlineDraft.Captured -> item("captured-source") { Text("Збережений контур без виміряних сторін. Оберіть форму й явно введіть вимірювання, щоб замінити його.") }
                 is MeasurementOutlineDraft.Template -> {
                     val template = requireNotNull(CeilingShapeTemplates.template(outline.shape))
                     items(template.parameterKeys.size, key = { "dimension:${outline.shape}:${template.parameterKeys[it]}" }) { i ->

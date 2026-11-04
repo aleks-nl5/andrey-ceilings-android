@@ -59,6 +59,11 @@ fun MeasurementEditScreen(
     val validation = remember(state.draft) { validateMeasurementCreate(state.draft) }
     val pointFlow = remember(model, state.original.draft.recordUuid) { model.observePoints() }
     val overlay = key(model, state.original.draft.recordUuid) { pointFlow.collectAsState(PointOverlayState.Loading).value }
+    LaunchedEffect(overlay,state.original) {
+        val incoming=(overlay as? PointOverlayState.Loaded)?.points
+        if(incoming!=null && !state.saving && !state.saved && (incoming.map {it.uuid}.toSet()!=state.original.placements.points.map {it.uuid}.toSet() ||
+            incoming.any { p -> state.original.placements.points.any { it.uuid==p.uuid && p.updatedAt>it.updatedAt } })) model.markPointsChanged()
+    }
     val focus = LocalFocusManager.current
     val scope = rememberCoroutineScope()
     var fullscreen by rememberSaveable { mutableStateOf(navigationGuard?.fullscreen?.value == true) }
@@ -66,17 +71,18 @@ fun MeasurementEditScreen(
     var allFields by rememberSaveable { mutableStateOf(false) }
     var reloadConfirm by remember { mutableStateOf(false) }
     val currentSaved by rememberUpdatedState(onSaved)
-    val surfaceBack = remember { { if (fullscreen) { fullscreen = false; true } else false } }
+    val surfaceBack = remember { { if (fullscreen) { model.cancelPointDrag(); fullscreen = false; true } else false } }
     DisposableEffect(model, navigationGuard) {
         navigationGuard?.bindEdit(model); navigationGuard?.bindSurface(surfaceBack)
         onDispose {
+            model.cancelPointDrag()
             navigationGuard?.unbindEdit(model); navigationGuard?.unbindSurface(surfaceBack)
         }
     }
     SideEffect { navigationGuard?.fullscreen?.value = fullscreen }
     LaunchedEffect(model) { model.reconcile() }
     LaunchedEffect(state.saved) { if (state.saved) { currentSaved(); model.delivered() } }
-    val enabled = !state.saving && !state.checking && !state.saved
+    val enabled = !state.saving && !state.checking && !state.saved && !state.uncertain
     fun save() {
         focus.clearFocus(); model.commitInput()
         scope.launch(start = CoroutineStart.UNDISPATCHED) { model.save() }
@@ -98,12 +104,13 @@ fun MeasurementEditScreen(
                     fullscreen = false
                     onBack()
                 } }, enabled = enabled) { Text("Відхилити") }
-                Button(onClick = ::save, enabled = enabled && validation.canSave && !state.conflict) { Text(if (state.saving) "Збереження…" else "Зберегти") }
+                Button(onClick = ::save, enabled = enabled && validation.canSave && !state.conflict && overlay is PointOverlayState.Loaded) { Text(if (state.saving) "Збереження…" else "Зберегти") }
             }
             if (state.checking) Text("Перевірка стану заміру. Дочекайтеся результату.")
             if (state.saving || state.saved) Text(if (state.saving) "Збереження триває. Дочекайтеся результату." else "Замір збережено. Відкриття…")
             state.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-            if (state.conflict) TextButton(onClick = { reloadConfirm = true }, enabled = enabled) { Text("Перезавантажити запис") }
+            if (state.uncertain) TextButton(enabled=!state.saving,onClick={scope.launch {model.save()}}) { Text("Повторити ту саму спробу") }
+            if (state.conflict || state.uncertain) TextButton(onClick = { reloadConfirm = true }, enabled = !state.saving) { Text("Перезавантажити запис") }
         }
     }
     val drawing: @Composable (Boolean) -> Unit = { full ->
@@ -116,9 +123,31 @@ fun MeasurementEditScreen(
             PointOverlayState.Missing -> Text("Замір або об'єкт недоступний; позначки не завантажено.")
             PointOverlayState.Unavailable -> Text("Позначки недоступні: захищена база заблокована або помилка читання.")
             is PointOverlayState.Loaded -> {
-                Text("Збережені позначки: ${pointState.points.size}. Тут лише перегляд; положення змінюйте в деталях заміру.")
+                Text("Позначки: ${pointState.points.size}. Контур і положення зберігаються разом.")
+                val display=model.displayPoints()
+                val unresolved=display.count { it.mounting.unresolved };val review=display.count { it.mounting.needsReview }
+                display.groupBy { it.elementUuid }.forEach { (element,points) ->
+                    val unresolvedForElement=points.count { it.mounting.unresolved }
+                    Text("Розміщено ${points.size-unresolvedForElement} з ${state.original.placements.quantities[element] ?: points.size.toLong()} · Потребує уточнення: $unresolvedForElement")
+                }
+                if(review>0) TextButton(enabled=enabled,onClick=model::reviewNow) { Text("Перевірити ($review)") }
                 if (pointState.points.isNotEmpty() && validation.geometry != savedGeometry)
-                    Text("Контур змінено; зберегти його можна після видалення/перегляду точок.", color = MaterialTheme.colorScheme.error)
+                    Text("Попередній перерахунок. Після збереження зміненого контуру перевірте розміщення.")
+                val marker=display.find { it.uuid==state.selectedPointUuid }
+                if(marker!=null) {
+                    Text(if(marker.mounting.unresolved) "Потребує уточнення: опори втрачено або позиція недопустима." else
+                        if(marker.mounting.needsReview) "Потрібно перевірити розміщення." else "Вибрана позначка")
+                    Text(if(marker.precision==PointPrecision.EXACT) "Точність позначки: точна" else "Точність позначки: приблизна")
+                    marker.mounting.anchor?.let { anchor ->
+                        fun name(id: String)=model.draftWalls().find { it.uuid==id }?.let { measurementSideLabels(model.draftWalls().size)[it.ordinal] } ?: "втрачена стіна"
+                        Text(if(anchor.kind==WallAnchor.Kind.TWO_WALLS) "${name(anchor.firstWall)}: ${formatPointMetres(anchor.firstMm)} м · ${name(anchor.secondWall.orEmpty())}: ${formatPointMetres(anchor.secondMm)} м" else
+                            "${name(anchor.firstWall)}: уздовж ${formatPointMetres(anchor.firstMm)} м · усередину ${formatPointMetres(anchor.secondMm)} м")
+                    } ?: Text("Виміряних прив'язок немає. Перетягування задає лише приблизне положення.")
+                    TextButton(enabled=enabled && validation.geometry!=null,onClick=model::openMounting) { Text("Задати розміри від стін") }
+                    if(state.reviewing && marker.mounting.needsReview) TextButton(enabled=enabled && !marker.mounting.unresolved && !state.dirty,
+                        onClick={scope.launch {model.confirmSelected()}}) { Text("Розміщення перевірено") }
+                }
+                if(state.reviewing && review>0) Text("Виберіть позначку, огляньте опори й відстані. Нерозв'язану прив'язку спершу виправте та збережіть.")
             }
         }
         if (validation.geometry == null && geometry != null)
@@ -127,7 +156,14 @@ fun MeasurementEditScreen(
         else MeasurementDrawing(MeasurementGeometryView.Captured(geometry),
             if (full) Modifier.weight(1f) else Modifier.fillMaxWidth(), interactive = true,
             selectedSide = selected, onSelectSide = ::select, fullscreen = full,
-            pointPlacements = (overlay as? PointOverlayState.Loaded)?.points.orEmpty(), fitPointPlacements = true)
+            pointPlacements = if(overlay is PointOverlayState.Loaded) model.displayPoints() else emptyList(), fitPointPlacements = true,
+            selectedPointUuid=state.selectedPointUuid,onSelectPoint=model::selectPoint,
+            pointEditingEnabled=enabled && overlay is PointOverlayState.Loaded && validation.geometry!=null,editPointsInFullscreen=true,
+            pointDrag=state.drag,onBeginPointDrag=model::beginPointDrag,onPreviewPointDrag=model::previewPointDrag,
+            onFinishPointDrag=model::finishPointDrag,onCancelPointDrag=model::cancelPointDrag,
+            mountingDimensions=if(validation.geometry==null) emptyList() else mountingDimensions(model.displayPoints().find { it.uuid==state.selectedPointUuid },geometry,model.draftWalls()),
+            mountingWallOrdinals=if(validation.geometry==null) emptyList() else model.displayPoints().find { it.uuid==state.selectedPointUuid }?.mounting?.anchor?.let { a ->
+                model.draftWalls().filter { it.uuid==a.firstWall || it.uuid==a.secondWall }.map { it.ordinal } }.orEmpty())
         }
     }
     if (fullscreen) Column(Modifier.fillMaxSize().padding(start = contentPadding.calculateStartPadding(androidx.compose.ui.platform.LocalLayoutDirection.current),
@@ -167,9 +203,14 @@ fun MeasurementEditScreen(
                 }) }
         }
     }
+    WallAnchorEditor(model)
+    if(state.reviewPrompt) AlertDialog(onDismissRequest={},title={Text("Потрібно перевірити розміщення")},
+        text={Text("Контур стелі змінено. Збережені монтажні відстані використано для перерахунку. Перевірте розташування світильників.")},
+        confirmButton={TextButton(enabled=!state.saving && !state.checking,onClick=model::reviewNow){Text("Перевірити")}},
+        dismissButton={TextButton(enabled=!state.saving && !state.checking,onClick={scope.launch {model.reviewLater()}}){Text("Пізніше")}})
     if (state.exitRequested) AlertDialog(onDismissRequest = model::continueEditing,
         title = { Text("Незбережені зміни") }, text = { Text("Зберегти зміни заміру? Збереження поверне до перегляду цього заміру.") },
-        confirmButton = { TextButton(onClick = { model.continueEditing(); save() }, enabled = validation.canSave && !state.conflict) { Text("Зберегти") } },
+        confirmButton = { TextButton(onClick = { model.continueEditing(); save() }, enabled = validation.canSave && !state.conflict && overlay is PointOverlayState.Loaded) { Text("Зберегти") } },
         dismissButton = { Row {
             TextButton(onClick = model::discardAndExit) { Text("Відхилити зміни") }
             TextButton(onClick = model::continueEditing) { Text("Продовжити") }
@@ -184,6 +225,7 @@ fun MeasurementEditScreen(
 internal fun MeasurementWallPicker(draft: MeasurementCreateDraft, selected: Int?, onSelect: (Int) -> Unit) {
     val count = when (val outline = draft.outline) {
         is MeasurementOutlineDraft.Orthogonal -> outline.sides.size
+        is MeasurementOutlineDraft.Captured -> outline.geometry.vertices.size
         is MeasurementOutlineDraft.Template -> if (outline.shape == "l_shaped") 6 else 4
     }
     FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -196,7 +238,8 @@ internal fun MeasurementWallPicker(draft: MeasurementCreateDraft, selected: Int?
 @Composable
 private fun MeasurementSelectedFields(model: MeasurementEditModel, selected: Int?, validation: MeasurementCreateValidation,
     enabled: Boolean, onSelect: (Int) -> Unit, compact: Boolean = false) {
-    val draft = model.state.value.draft
+    val currentState by model.state.collectAsState()
+    val draft = currentState.draft
     val focus = LocalFocusManager.current
     val inputFocus: (Int) -> (Boolean) -> Unit = { side -> { focused ->
         if (focused) { model.commitInput(); model.beginInput(); onSelect(side) } else model.commitInput()
@@ -208,6 +251,10 @@ private fun MeasurementSelectedFields(model: MeasurementEditModel, selected: Int
             contour?.namedSideLabels?.getOrNull(selected)?.let { Text("Вибрано: $it", style = MaterialTheme.typography.titleSmall) }
         }
         when (val outline = draft.outline) {
+            is MeasurementOutlineDraft.Captured -> {
+                Text("Цей контур збережено вершинами, без виміряних сторін. Монтажні розміри й позначки можна редагувати; сторони не вигадуються.")
+                TextButton(enabled=enabled,onClick={model.accept(MeasurementCreateIntent.ReplaceCapturedWithSides)}) { Text("Задати виміряні сторони") }
+            }
             is MeasurementOutlineDraft.Template -> {
                 if (selected != null && draft.shape == "l_shaped" && measurementWallParameter(draft.shape, selected) == null)
                     Text(measurementWallRelation(selected), style = MaterialTheme.typography.bodySmall)

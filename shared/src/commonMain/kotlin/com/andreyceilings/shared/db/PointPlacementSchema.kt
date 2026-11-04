@@ -3,17 +3,17 @@ package com.andreyceilings.shared.db
 import app.cash.sqldelight.db.QueryResult
 import app.cash.sqldelight.db.SqlDriver
 
-/** Strict v8/v9 fingerprints. Historical v8 is preserved for a fail-closed upgrade probe. */
+/** Strict v8/v9/v10 fingerprints. Historical v8/v9 is preserved for a fail-closed upgrade probe. */
 internal fun verifyPointPlacementStructure(driver: SqlDriver, version: Long = PriceCatalogSchema.version) {
     fun normalize(sql: String) = sql.trim().trimEnd(';').replace(Regex("\\s+"), " ").replace(Regex("\\s*([,()])\\s*"), "$1").lowercase()
     val names = driver.executeQuery(null,
-        "SELECT name FROM sqlite_master WHERE name LIKE 'point_%' OR name LIKE 'index_point_%'", { cursor ->
+        "SELECT name FROM sqlite_master WHERE name LIKE 'point_%' OR name LIKE 'index_point_%' OR name LIKE 'ceiling_%' OR name LIKE 'index_ceiling_%'", { cursor ->
             val found = mutableSetOf<String>()
             while (cursor.next().value) found.add(checkNotNull(cursor.getString(0)))
             QueryResult.Value(found)
         }, 0).value
-    check(names == (if (version == 8L) pointV8SchemaDefinitions else pointSchemaDefinitions).keys) { "Partial or unknown point placement objects" }
-    val definitions = if (version == 8L) pointV8SchemaDefinitions else pointSchemaDefinitions
+    check(names == (when(version) { 8L -> pointV8SchemaDefinitions; 9L -> pointV9SchemaDefinitions; else -> pointSchemaDefinitions }).keys) { "Partial or unknown point placement objects" }
+    val definitions = when(version) { 8L -> pointV8SchemaDefinitions; 9L -> pointV9SchemaDefinitions; else -> pointSchemaDefinitions }
     definitions.forEach { (name, expected) ->
         val actual = driver.executeQuery(null, "SELECT sql FROM sqlite_master WHERE name = '$name'", { cursor ->
             QueryResult.Value(if (cursor.next().value) cursor.getString(0) else null)
@@ -149,7 +149,7 @@ END;
 """.trimIndent()
 )
 
-internal val pointSchemaDefinitions = mapOf(
+internal val pointV9SchemaDefinitions = mapOf(
     "point_placements" to """
 CREATE TABLE point_placements (
     uuid TEXT NOT NULL PRIMARY KEY CHECK(length(trim(uuid)) > 0),

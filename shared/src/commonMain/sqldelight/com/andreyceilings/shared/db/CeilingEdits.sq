@@ -1,0 +1,11 @@
+selectWalls:
+SELECT uuid,ordinal FROM ceiling_walls WHERE measurementUuid=? AND active=1 ORDER BY ordinal;
+
+selectOperation:
+SELECT * FROM ceiling_operations WHERE uuid=?;
+
+insertOperation:
+INSERT INTO ceiling_operations(uuid,measurementUuid,expectedUpdatedAt,payload,createdAt) VALUES (?,?,?,?,?);
+
+selectResult:
+SELECT * FROM ceiling_operation_results WHERE operationUuid=?;

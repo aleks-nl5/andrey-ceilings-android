@@ -5,13 +5,17 @@ import com.andreyceilings.shared.calculation.CeilingPolygonCalculator
 import com.andreyceilings.shared.estimate.FrozenPolygonGeometry
 import com.andreyceilings.shared.estimate.FrozenPolygonGeometryContract
 import com.andreyceilings.shared.prices.PlacementKind
+import kotlinx.serialization.Serializable
 
+@Serializable
 data class PointPlacement(
     val uuid: String, val elementUuid: String, val xMm: Long, val yMm: Long,
     val contourUpdatedAt: Long, val createdAt: Long, val updatedAt: Long, val deletedAt: Long?,
-    val precision: PointPrecision = PointPrecision.APPROXIMATE, val lastMoveUuid: String? = null
+    val precision: PointPrecision = PointPrecision.APPROXIMATE, val lastMoveUuid: String? = null,
+    val mounting: PointMounting = PointMounting(), val lastCeilingEditUuid: String? = null
 )
 
+@Serializable
 enum class PointPrecision(val value: String) { APPROXIMATE("approximate"), EXACT("exact") }
 
 data class PointMoveResult(val point: PointPlacement, val element: MeasurementElement)

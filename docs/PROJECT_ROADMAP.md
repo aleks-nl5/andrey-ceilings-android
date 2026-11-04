@@ -1,3 +1,26 @@
+# Актуальний стан — P3C2 merged; P3C3 у роботі (04.11.2026)
+
+P3C1 [PR #94](https://github.com/aleks-nl5/andrey-ceilings-android/pull/94) та P3C2
+[PR #97](https://github.com/aleks-nl5/andrey-ceilings-android/pull/97) об'єднані.
+Актуальна база P3C3 — `c34a2d35348a9534a620728be3cec0a1e85ae566`, schema v9.
+Власник підтвердив детальне успішне тестування APK P3C2; його final-SHA Android
+та Windows/iOS CI успішні. Це не ручне приймання наступного етапу.
+
+**Поточна робота:** [#98](https://github.com/aleks-nl5/andrey-ceilings-android/issues/98),
+[Draft PR #99](https://github.com/aleks-nl5/andrey-ceilings-android/pull/99): єдиний CMP
+редактор контуру й точок, реальні монтажні відстані, persistent wall identities,
+атомарний remap і durable «Перевірити / Пізніше». [Контракт P3C3](MEASUREMENT_WALL_ANCHORS_P3C3.md).
+Міграція v9→v10, legacy без вигаданих anchors, unresolved без втрати UUID/відстаней,
+окремі valid count і reserved capacity. Верифікація та owner APK acceptance P3C3
+ще pending; поточний статус CI й APK — у PR.
+
+Наступні ширші роботи залишаються окремими: UX #95, solver #70, live pricing й
+нові кошториси #44, hosts #42. Не закривати #71/#76/#78 на підставі вузького етапу.
+SQLCipher/keys/WAL/backup format, captured precision та historical estimates/PDF
+зберігаються. Архівні зрізи нижче описують стан на свої дати, а не поточний main.
+
+---
+
 # Актуальний стан — P3B завершено; наступний P3C1 (04.11.2026)
 
 **Завершено:** Прайс 2.0 P1/P2 — [PR #81](https://github.com/aleks-nl5/andrey-ceilings-android/pull/81), [#85](https://github.com/aleks-nl5/andrey-ceilings-android/pull/85), [#86](https://github.com/aleks-nl5/andrey-ceilings-android/pull/86). P3A (KMP + SQLDelight v7 модель елементів) — [PR #88](https://github.com/aleks-nl5/andrey-ceilings-android/pull/88), #87 closed. P3B (спільний CMP розділ «Елементи стелі») — [PR #91](https://github.com/aleks-nl5/andrey-ceilings-android/pull/91), merged у `main` комітом `a0c4b6317a4feca7905cb50a0cb2f7d69bbd909d`; [#90](https://github.com/aleks-nl5/andrey-ceilings-android/issues/90) closed/completed. P3B реалізує реальний active price UUID picker, Wish→Catalog, Unknown/Exact/Range/derived, precise comma/dot→Long milli, редагування/видалення, CAS і session-only drafts. [Контракт P3A](MEASUREMENT_ELEMENTS_P3A.md) / [P3B](MEASUREMENT_ELEMENTS_P3B.md).
