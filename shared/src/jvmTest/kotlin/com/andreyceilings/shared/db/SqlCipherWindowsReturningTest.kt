@@ -154,7 +154,7 @@ class SqlCipherWindowsReturningTest {
             prices.updateIfUnchanged(id, "P1", 100, "Stale", "material", "m2", 99.0, 102)
         }
         assertNull(db.businessSchemaQueries.updatePriceItemIfVersion(
-            "Wrong code", "material", "m2", 99.0, 102, id, "OTHER", 101).executeAsOneOrNull())
+            "Wrong code", "wrong code", "material", "m2", 99.0, 102, id, "OTHER", 101).executeAsOneOrNull())
         assertNull(db.businessSchemaQueries.deletePriceItemIfVersion(id, "P1", 100).executeAsOneOrNull())
         assertEquals(current, prices.find(id), "Stale RETURNING must not mutate the row")
         val executor = Executors.newFixedThreadPool(2)

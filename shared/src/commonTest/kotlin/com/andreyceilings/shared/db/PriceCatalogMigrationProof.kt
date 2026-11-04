@@ -26,6 +26,14 @@ object PriceCatalogMigrationProof {
     // Populate AFTER opening the v4 driver. Native SQLiter owns the schema
     // callback transaction; normal repository transactions belong outside it.
     fun populateLegacy(driver: SqlDriver) {
+        populateHistory(driver)
+        driver.execute(null, """INSERT INTO price_items(id, code, title, category, unit, price, updatedAt, uuid)
+            VALUES (900, 'canvas.pvc_matte', 'OLD TEST PRICE', 'OLD CATEGORY', 'м²', 9999, 14, 'old-uuid')""", 0)
+        driver.execute(null, """INSERT INTO price_items(code, title, category, unit, price, updatedAt, uuid, deletedAt)
+            VALUES ('old.deleted', 'Deleted', 'OLD CATEGORY', 'шт.', 1, 15, 'old-deleted', 16)""", 0)
+    }
+
+    fun populateHistory(driver: SqlDriver) {
         val db = PrototypeDatabase(driver)
         ClientRepository(db).create("Preserve client", createdAt = 10)
         val client = ClientRepository(db).all().single().id
@@ -37,10 +45,6 @@ object PriceCatalogMigrationProof {
         ImmutableEstimateRepository(db).createSeries(project, 2026, 13,
             ImmutableEstimateDraft("{\"priceUuid\":\"old-uuid\"}", "{\"frozen\":true}", 0.01, "kmp-1", 9999.0,
                 listOf(ImmutableEstimateLine("canvas.pvc_matte", "OLD TEST PRICE", "м²", 1.0, 9999.0, 9999.0, priceItemUuid = "old-uuid"))))
-        driver.execute(null, """INSERT INTO price_items(id, code, title, category, unit, price, updatedAt, uuid)
-            VALUES (900, 'canvas.pvc_matte', 'OLD TEST PRICE', 'OLD CATEGORY', 'м²', 9999, 14, 'old-uuid')""", 0)
-        driver.execute(null, """INSERT INTO price_items(code, title, category, unit, price, updatedAt, uuid, deletedAt)
-            VALUES ('old.deleted', 'Deleted', 'OLD CATEGORY', 'шт.', 1, 15, 'old-deleted', 16)""", 0)
     }
 
     /** SQLite quote() preserves NULL/type/blob bytes; compare every non-price column. */
@@ -51,9 +55,10 @@ object PriceCatalogMigrationProof {
         val columns = driver.executeQuery(null, "PRAGMA table_info($table)", { cursor ->
             val names = mutableListOf<String>()
             while (cursor.next().value) names.add(checkNotNull(cursor.getString(1)))
-            QueryResult.Value(names)
+            QueryResult.Value(names.sorted())
         }, 0).value
-        driver.executeQuery(null, "SELECT " + columns.joinToString { "quote($it)" } + " FROM $table ORDER BY 1", { cursor ->
+        driver.executeQuery(null, "SELECT " + columns.joinToString { "quote($it)" } +
+            " FROM $table ORDER BY " + columns.indices.joinToString { (it + 1).toString() }, { cursor ->
             val rows = mutableListOf<List<String?>>()
             while (cursor.next().value) rows.add(listOf(table) + columns.indices.map { cursor.getString(it) })
             QueryResult.Value(rows)

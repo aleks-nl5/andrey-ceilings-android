@@ -60,12 +60,13 @@ CREATE TABLE price_groups (
     createdAt INTEGER NOT NULL,
     updatedAt INTEGER NOT NULL,
     deletedAt INTEGER,
+    nameKey TEXT,
     CHECK(defaultUnit IS NULL OR length(trim(defaultUnit)) > 0),
     CHECK(defaultUnit IS NULL OR defaultQuantityMode = 'manual' OR
         (defaultQuantityMode = 'ceiling_area' AND defaultUnit = 'м²') OR
         (defaultQuantityMode IN ('ceiling_perimeter','entered_length') AND defaultUnit = 'м.п.'))
 );
-CREATE UNIQUE INDEX index_price_groups_name ON price_groups(name) WHERE deletedAt IS NULL;
+CREATE UNIQUE INDEX index_price_groups_name_key ON price_groups(nameKey) WHERE deletedAt IS NULL;
 
 CREATE TABLE price_catalog_state (
     id INTEGER NOT NULL PRIMARY KEY CHECK(id = 1),
@@ -84,11 +85,34 @@ CREATE TABLE price_items (
     updatedAt INTEGER NOT NULL,
     uuid TEXT NOT NULL UNIQUE,
     deletedAt INTEGER,
+    titleKey TEXT,
     CHECK(length(trim(unit)) > 0),
     CHECK(quantityMode = 'manual' OR (quantityMode = 'ceiling_area' AND unit = 'м²') OR
         (quantityMode IN ('ceiling_perimeter','entered_length') AND unit = 'м.п.'))
 );
+CREATE UNIQUE INDEX index_price_items_title_key ON price_items(titleKey) WHERE deletedAt IS NULL;
 CREATE UNIQUE INDEX index_price_items_group_code ON price_items(groupUuid, code) WHERE deletedAt IS NULL;
+
+CREATE TRIGGER price_groups_nameKey_insert BEFORE INSERT ON price_groups
+BEGIN
+    SELECT RAISE(ABORT, 'Active catalog name requires a normalized key')
+    WHERE new.deletedAt IS NULL AND (new.nameKey IS NULL OR length(new.nameKey) = 0);
+END;
+CREATE TRIGGER price_groups_nameKey_update BEFORE UPDATE ON price_groups
+BEGIN
+    SELECT RAISE(ABORT, 'Active catalog name requires a normalized key')
+    WHERE new.deletedAt IS NULL AND (new.nameKey IS NULL OR length(new.nameKey) = 0);
+END;
+CREATE TRIGGER price_items_titleKey_insert BEFORE INSERT ON price_items
+BEGIN
+    SELECT RAISE(ABORT, 'Active catalog name requires a normalized key')
+    WHERE new.deletedAt IS NULL AND (new.titleKey IS NULL OR length(new.titleKey) = 0);
+END;
+CREATE TRIGGER price_items_titleKey_update BEFORE UPDATE ON price_items
+BEGIN
+    SELECT RAISE(ABORT, 'Active catalog name requires a normalized key')
+    WHERE new.deletedAt IS NULL AND (new.titleKey IS NULL OR length(new.titleKey) = 0);
+END;
 
 -- Compatibility projection for the current CMP editor; category is never identity.
 CREATE VIEW price_catalog_items AS
@@ -206,15 +230,15 @@ WHERE id = ? AND deletedAt IS NULL;
 
 -- Price catalog CRUD
 insertPriceItem:
-INSERT INTO price_items(code, title, groupUuid, unit, price, updatedAt, uuid)
-VALUES (:code, :title, (SELECT uuid FROM price_groups WHERE name = :category AND deletedAt IS NULL), :unit, :price, :updatedAt, :uuid);
+INSERT INTO price_items(code, title, titleKey, groupUuid, unit, price, updatedAt, uuid)
+VALUES (:code, :title, :titleKey, (SELECT uuid FROM price_groups WHERE nameKey = :categoryKey AND deletedAt IS NULL), :unit, :price, :updatedAt, :uuid);
 
 selectPriceItemById:
 SELECT * FROM price_catalog_items WHERE id = ? AND deletedAt IS NULL;
 
 updatePriceItem:
-UPDATE price_items SET title = :title,
-    groupUuid = (SELECT uuid FROM price_groups WHERE name = :category AND deletedAt IS NULL),
+UPDATE price_items SET title = :title, titleKey = :titleKey,
+    groupUuid = (SELECT uuid FROM price_groups WHERE nameKey = :categoryKey AND deletedAt IS NULL),
     unit = :unit, price = :price, updatedAt = max(:updatedAt, updatedAt + 1)
 WHERE code = :code AND id = :id AND deletedAt IS NULL;
 
@@ -229,7 +253,7 @@ WHERE id = ? AND deletedAt IS NULL;
 -- SQLite 3.35 dialect and lets callers fail closed if another writer won.
 updatePriceItemIfVersion:
 UPDATE price_items
-SET title = ?, groupUuid = (SELECT uuid FROM price_groups WHERE name = :category AND deletedAt IS NULL), unit = ?, price = ?,
+SET title = :title, titleKey = :titleKey, groupUuid = (SELECT uuid FROM price_groups WHERE nameKey = :categoryKey AND deletedAt IS NULL), unit = ?, price = ?,
     updatedAt = max(?, updatedAt + 1)
 WHERE id = ? AND code = ? AND updatedAt = ? AND deletedAt IS NULL
 RETURNING id;
@@ -316,11 +340,11 @@ RETURNING id;
 -- A repeat (group, code) must update the existing row and keep its UUID.
 -- Do not use INSERT OR REPLACE: it can discard the old identity without a tombstone.
 selectActivePriceByKey:
-SELECT * FROM price_catalog_items WHERE category = ? AND code = ? AND deletedAt IS NULL LIMIT 1;
+SELECT * FROM price_catalog_items WHERE groupUuid = (SELECT uuid FROM price_groups WHERE nameKey = ? AND deletedAt IS NULL) AND code = ? AND deletedAt IS NULL LIMIT 1;
 
 insertPriceItemReturningId:
-INSERT INTO price_items(code, title, groupUuid, unit, price, updatedAt, uuid)
-VALUES (:code, :title, (SELECT uuid FROM price_groups WHERE name = :category AND deletedAt IS NULL), :unit, :price, :updatedAt, :uuid)
+INSERT INTO price_items(code, title, titleKey, groupUuid, unit, price, updatedAt, uuid)
+VALUES (:code, :title, :titleKey, (SELECT uuid FROM price_groups WHERE nameKey = :categoryKey AND deletedAt IS NULL), :unit, :price, :updatedAt, :uuid)
 RETURNING id;
 
 -- Offline Room-v2 logical data transfer into a fresh SQLDelight database.
@@ -339,8 +363,8 @@ INSERT INTO room_measurements(id, projectId, name, shape, lengthMeters, widthMet
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 importPriceItemWithId:
-INSERT INTO price_items(id, code, title, groupUuid, unit, price, updatedAt, uuid)
-VALUES (:id, :code, :title, (SELECT uuid FROM price_groups WHERE name = :category AND deletedAt IS NULL), :unit, :price, :updatedAt, :uuid);
+INSERT INTO price_items(id, code, title, titleKey, groupUuid, unit, price, updatedAt, uuid)
+VALUES (:id, :code, :title, :titleKey, (SELECT uuid FROM price_groups WHERE nameKey = :categoryKey AND deletedAt IS NULL), :unit, :price, :updatedAt, :uuid);
 
 importEstimateWithId:
 INSERT INTO estimates(id, projectId, name, material, profileType, complexity, lengthMeters, widthMeters, areaSquareMeters, perimeterMeters, canvasCost, profileCost, complexityCost, optionsCost, totalCost, detailsJson, createdAt, uuid, updatedAt)

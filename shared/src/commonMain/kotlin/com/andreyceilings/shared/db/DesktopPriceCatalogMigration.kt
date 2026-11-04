@@ -4,13 +4,13 @@ import app.cash.sqldelight.db.QueryResult
 import app.cash.sqldelight.db.SqlDriver
 import com.andreyceilings.shared.prices.StarterPriceCatalog
 
-/** Narrow v3/v4 Windows probe for installations that did not persist user_version. */
+/** Narrow v3/v4/v5/v6 Windows probe for installations that did not persist user_version. */
 fun openDesktopPriceCatalog(driver: SqlDriver, previouslyExisting: Boolean) {
     val database = PrototypeDatabase(driver)
     database.transaction {
         // Acquire the writer lock before probing. Two concurrent first opens must
         // not both observe the old schema. The PRAGMA rolls back on any failure.
-        driver.execute(null, "PRAGMA user_version = 5", 0)
+        driver.execute(null, "PRAGMA user_version = 6", 0)
         fun columns(table: String): Set<String> = driver.executeQuery(null,
             "PRAGMA table_info($table)", { cursor ->
                 val names = mutableSetOf<String>()
@@ -32,12 +32,16 @@ fun openDesktopPriceCatalog(driver: SqlDriver, previouslyExisting: Boolean) {
                     "placementKind" in priceColumns && "seedVersion" in columns("price_catalog_state")) {
                     "Неповна структура каталогу. Оновлення скасовано."
                 }
-                5L
+                val groupColumns = columns("price_groups")
+                check(("titleKey" in priceColumns) == ("nameKey" in groupColumns)) {
+                    "Неповна структура ключів каталогу. Оновлення скасовано."
+                }
+                if ("titleKey" in priceColumns) 6L else 5L
             }
             "category" in priceColumns -> if ("paymentStatus" in projectColumns) 4L else 3L
             else -> error("Непідтримувана структура прайсу. Оновлення скасовано.")
         }
-        if (oldVersion < 5L) PriceCatalogSchema.migrate(driver, oldVersion, 5L)
+        if (oldVersion < 6L) PriceCatalogSchema.migrate(driver, oldVersion, 6L)
         StarterPriceCatalog.initialize(database)
     }
 }

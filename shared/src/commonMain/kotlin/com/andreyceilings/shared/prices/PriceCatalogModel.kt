@@ -34,8 +34,7 @@ object PriceCatalogRules {
 
     /** Include user-created categories without requiring a new database table. */
     fun categoryOptions(items: List<PriceCatalogItem>): List<String> =
-        standardCategories + categories(items)
-            .filter { it !in standardCategories }
+        (standardCategories + categories(items)).distinctBy(::normalizedNameKey)
 
     /** Common ceiling-work units; existing custom units remain available in the dropdown. */
     val standardUnits: List<String> = listOf("м²", "м.п.", "шт.", "компл.", "послуга")
@@ -98,14 +97,14 @@ object PriceCatalogRules {
 
     fun categories(items: List<PriceCatalogItem>): List<String> =
         items.map { it.category.trim() }.filter { it.isNotEmpty() }
-            .distinct().sortedBy { it.lowercase() }
+            .distinctBy(::normalizedNameKey).sortedBy(::normalizedNameKey)
 
     fun filter(items: List<PriceCatalogItem>, query: String, category: String?): List<PriceCatalogItem> {
-        val term = query.trim().lowercase()
+        val term = normalizedNameKey(query)
         return items.asSequence()
-            .filter { category == null || it.category == category }
-            .filter { term.isEmpty() || it.title.lowercase().contains(term) || it.code.lowercase().contains(term) }
-            .sortedWith(compareBy<PriceCatalogItem>({ it.category.lowercase() }, { it.title.lowercase() }, { it.id }))
+            .filter { category == null || normalizedNameKey(it.category) == normalizedNameKey(category) }
+            .filter { term.isEmpty() || normalizedNameKey(it.title).contains(term) || it.code.lowercase().contains(term) }
+            .sortedWith(compareBy<PriceCatalogItem>({ normalizedNameKey(it.category) }, { normalizedNameKey(it.title) }, { it.id }))
             .toList()
     }
 

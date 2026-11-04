@@ -120,6 +120,26 @@ private class ConfiguredSqlCipherJdbcDriver(
         connection.close()
     }
 
+    override fun execute(
+        identifier: Int?, sql: String, parameters: Int,
+        binders: (SqlPreparedStatement.() -> Unit)?
+    ): QueryResult<Long> {
+        if (!userVersionAssignment.matches(sql)) return super.execute(identifier, sql, parameters, binders)
+        // Core 0.2.13 classifies ALL PRAGMAs as lazy rowsets. execute() alone
+        // never steps this header write. Consume it once on the transaction's
+        // pinned connection so user_version and migration DDL commit/roll back together.
+        val (connection, onClose) = connectionAndClose()
+        try {
+            connection.prepareStatement(sql).use { statement ->
+                binders?.invoke(JdbcPreparedStatement(statement))
+                statement.executeQuery().use { rows -> while (rows.next()) { /* consume */ } }
+            }
+            return QueryResult.Value(0L)
+        } finally {
+            onClose()
+        }
+    }
+
     override fun <R> executeQuery(
         identifier: Int?,
         sql: String,
@@ -209,6 +229,10 @@ private class ConfiguredSqlCipherJdbcDriver(
 private val returningDmlStart = Regex(
     """\A(?:\s|--[^\r\n]*(?:\r?\n|$)|/\*.*?\*/)*(?:INSERT|UPDATE|DELETE|REPLACE)\b""",
     setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)
+)
+
+private val userVersionAssignment = Regex(
+    """\s*PRAGMA\s+user_version\s*=\s*\d+\s*;?\s*""", RegexOption.IGNORE_CASE
 )
 
 internal fun sqlCipherRowsetSql(sql: String): String {

@@ -63,7 +63,7 @@ object StarterPriceCatalog {
         }
         items.forEach { item ->
             PriceParameters.validate(item.unit, item.quantityMode)
-            queries.insertConfiguredItem(item.code, item.title, ids.getValue(item.category), item.unit,
+            queries.insertConfiguredItem(item.code, item.title, normalizedNameKey(item.title), ids.getValue(item.category), item.unit,
                 item.quantityMode.value, item.placementKind.value, item.price, 1L, newRecordUuid()).executeAsOne()
         }
         queries.finishCatalogInitialization()

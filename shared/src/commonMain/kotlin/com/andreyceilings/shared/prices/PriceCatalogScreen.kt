@@ -280,6 +280,8 @@ fun PriceCatalogScreen(
                                 editorMode = null
                             } catch (cancelled: CancellationException) {
                                 throw cancelled
+                            } catch (duplicate: DuplicateItemTitle) {
+                                editorError = duplicate.message
                             } catch (_: Exception) {
                                 editorError = "Не вдалося зберегти позицію. Перевірте дані та стан БД."
                             } finally {

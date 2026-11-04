@@ -88,10 +88,17 @@ sqldelight {
     }
 }
 
+// Require a snapshot for the real SQLite migration comparison. The generator's
+// legacy migration lint needs a v1 baseline which this repository never had;
+// keep that separate from verifying 5.db -> 5.sqm -> fresh v6.
+tasks.withType<app.cash.sqldelight.gradle.VerifyMigrationTask>().configureEach {
+    verifyMigrations.set(true)
+}
+
 // Native migration failures must expose the SQL error and test phase in CI.
 // Keep every Simulator test mandatory; this changes only failure diagnostics.
 tasks.withType<org.gradle.api.tasks.testing.AbstractTestTask>().configureEach {
-    if (name == "iosSimulatorArm64Test") {
+    if (name == "iosSimulatorArm64Test" || name == "jvmTest") {
         testLogging.exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
     }
 }

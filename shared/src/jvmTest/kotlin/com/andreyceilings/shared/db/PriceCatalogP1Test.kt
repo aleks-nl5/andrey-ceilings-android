@@ -73,10 +73,10 @@ class PriceCatalogP1Test {
             PriceCatalogMigrationProof.populateLegacy(driver)
             driver.execute(null, "PRAGMA foreign_keys = ON", 0)
             val before = PriceCatalogMigrationProof.untouchedRows(driver)
-            assertFails { PriceCatalogSchema.migrate(PriceCatalogMigrationProof.failing(driver), 4, 5) }
+            assertFails { PriceCatalogSchema.migrate(PriceCatalogMigrationProof.failing(driver), 4, 6) }
             PriceCatalogMigrationProof.assertOldPrice(driver)
             assertEquals(before, PriceCatalogMigrationProof.untouchedRows(driver))
-            PriceCatalogSchema.migrate(driver, 4, 5)
+            PriceCatalogSchema.migrate(driver, 4, 6)
             PriceCatalogMigrationProof.assertReplaced(PrototypeDatabase(driver))
             assertEquals(before, PriceCatalogMigrationProof.untouchedRows(driver))
         }

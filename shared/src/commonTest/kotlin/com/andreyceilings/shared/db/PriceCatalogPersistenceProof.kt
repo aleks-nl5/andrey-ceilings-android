@@ -11,15 +11,18 @@ object PriceCatalogPersistenceProof {
         val groups = PriceGroupRepository(database)
         val prices = PriceRepository(database)
         assertEquals(5, groups.all().size)
+        groups.all().forEach { assertEquals(normalizedNameKey(it.name), it.nameKey) }
         assertEquals(22, prices.all().size)
         val actual = prices.all().associateBy { it.code }
         StarterPriceCatalog.items.forEach { expected ->
             val row = actual.getValue(expected.code)
             assertEquals(expected.title, row.title)
+            assertEquals(normalizedNameKey(expected.title), row.titleKey)
             assertEquals(expected.category, row.category)
             assertEquals(expected.unit, row.unit)
             assertEquals(expected.price, row.price)
             assertEquals(expected.quantityMode.value, row.quantityMode)
+            assertEquals(expected.placementKind.value, row.placementKind)
         }
         StarterPriceCatalog.initialize(database)
         assertEquals(actual, prices.all().associateBy { it.code })

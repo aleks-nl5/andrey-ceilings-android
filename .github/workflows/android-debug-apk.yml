@@ -59,7 +59,7 @@ jobs:
           cache-read-only: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
 
       - name: Build and test shared KMP calculator and SQLDelight
-        run: gradle --no-daemon :shared:assemble :shared:compileKotlinJvm :shared:jvmTest --stacktrace --warning-mode all
+        run: gradle --no-daemon :shared:assemble :shared:compileKotlinJvm :shared:jvmTest :shared:verifySqlDelightMigration --stacktrace --warning-mode all
 
       - name: Compile Compose Desktop host
         run: gradle --no-daemon :desktopApp:compileKotlin --stacktrace --warning-mode all
