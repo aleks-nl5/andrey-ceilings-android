@@ -1,6 +1,7 @@
 package com.andreyceilings.shared.measurement
 
 import com.andreyceilings.shared.prices.QuantityMode
+import com.andreyceilings.shared.prices.PlacementKind
 import kotlin.test.*
 
 class ElementQuantityInputTest {
@@ -42,7 +43,7 @@ class ElementQuantityInputTest {
         assertEquals(WishUnitChange.Clear, draft.copy(unit = "").unitChange())
         assertNotNull(draft.copy(unit = "").validationError)
         assertNull(draft.copy(unit = "", input = ElementQuantityInput()).validationError)
-        val length = ElementCatalogItem("i", "g", "Length", "length", "м.п.", QuantityMode.ENTERED_LENGTH)
+        val length = ElementCatalogItem("i", "g", "Length", "length", "м.п.", QuantityMode.ENTERED_LENGTH, PlacementKind.LINE)
         val link = ElementEditorDraft.edit(wish, ElementEditorAction.LINK).copy(selection = length)
         assertFalse(link.compatibleKeep)
         assertNotNull(link.validationError)

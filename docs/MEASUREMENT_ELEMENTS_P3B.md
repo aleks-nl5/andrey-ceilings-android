@@ -25,7 +25,7 @@ use active group UUIDs, preserve group order and include empty categories. Searc
 uses the existing Unicode normalization. Loading, unavailable, empty and no-match
 states are distinct. The picker uses a price-free projection; it never renders
 sale price. Selection is explicit by item UUID. Inside the writer transaction,
-Save checks the active parent and the selected title/code/unit/mode/group against
+Save checks the active parent and the selected title/code/unit/mode/group/**placement kind** against
 current catalog metadata, then calls P3A. A changed/deleted selection requires an
 explicit reselection; no automatic replacement. Successful create retries skip
 this metadata comparison to preserve P3A's original idempotency after rename/delete.
@@ -60,6 +60,12 @@ Rotation reattaches to the same model, caller UUID, baseline version and in-flig
 operation. Drafts are never serialized into saved state, routes, URI or logs and
 are not promised across process death. Opening another route clears the prior
 model; Android/Windows DB close clears decrypted state and cancels collectors.
+Accepted Saves register a session-scoped completion before launch, and enter the
+NonCancellable Default worker before Save returns. Windows session close stops
+new writes and awaits every accepted worker before closing encrypted JDBC.
+Android production restore/reset already holds exclusive ProductionDatabaseGate
+against full SQLDelight transaction leases; no blocking wait is added inside
+that exclusive gate. Other cancellation remains harmless after close.
 No previous ceiling's list/draft is used as the initial state of another route.
 
 Writes run off the UI thread and continue through configuration changes. Save
@@ -79,7 +85,9 @@ keeps its behavior. Discard may resume a requested tab/route change; no silent S
 ## Verification
 
 Common tests cover decimal boundaries/round trips, intermediate input, three unit
-intents and incompatible linking. `MeasurementElementsPresentationProof` drives
+intents and incompatible linking. JVM tests additionally reject placement-kind
+changes between picker selection and Create/Link and verify shutdown drains an
+in-flight Save before the driver can be released. `MeasurementElementsPresentationProof` drives
 the production model/repository through CRUD, CAS/reload, Keep/Replace, derived
 quantities, catalog disappearance, parent deletion, isolation and reopened state;
 it is invoked by existing JVM, Android encrypted WAL, Windows SQLCipher and iOS

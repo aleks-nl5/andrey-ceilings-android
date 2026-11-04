@@ -7,7 +7,7 @@ import kotlinx.coroutines.flow.*
 
 /** Price-free picker projection. Catalog CRUD and price calculation stay in their existing boundaries. */
 data class ElementCatalogItem(val uuid: String, val groupUuid: String, val title: String,
-    val code: String, val unit: String, val mode: QuantityMode)
+    val code: String, val unit: String, val mode: QuantityMode, val placementKind: PlacementKind)
 data class ElementCatalogGroup(val uuid: String, val name: String)
 sealed interface ElementCatalogState {
     data object Loading : ElementCatalogState
@@ -36,10 +36,31 @@ class MeasurementElementsStore(private val database: PrototypeDatabase, private 
     private val projects = ProjectRepository(database)
     private val prices = PriceCatalogStore(PriceRepository(database), nowMillis)
     private var active: MeasurementElementsModel? = null
-    private val closedState = MutableStateFlow(false)
-    private var closed: Boolean
-        get() = closedState.value
-        set(value) { closedState.value = value }
+    // Registration and shutdown share one atomic state: closing cannot miss a Save
+    // that was accepted synchronously but has not reached SQLDelight yet.
+    private data class SessionWrites(
+        val closed: Boolean = false,
+        val pending: Set<CompletableDeferred<Unit>> = emptySet()
+    )
+    private val lifecycle = MutableStateFlow(SessionWrites())
+    private val closed: Boolean get() = lifecycle.value.closed
+
+    internal fun beginWrite(): CompletableDeferred<Unit>? {
+        val completion = CompletableDeferred<Unit>()
+        val registered = lifecycle.updateAndGet { current ->
+            if (current.closed) current else current.copy(pending = current.pending + completion)
+        }
+        return completion.takeIf { it in registered.pending }
+    }
+
+    internal fun endWrite(completion: CompletableDeferred<Unit>) {
+        // Signal on the SQL worker before any Main-dispatcher continuation.
+        completion.complete(Unit)
+        lifecycle.update { it.copy(pending = it.pending - completion) }
+    }
+
+    private fun stopAcceptingWrites(): List<CompletableDeferred<Unit>> =
+        lifecycle.updateAndGet { it.copy(closed = true) }.pending.toList()
 
     fun model(route: ElementRoute): MeasurementElementsModel {
         if (closed) return MeasurementElementsModel(this, route, modelDispatcher).also { it.close() }
@@ -51,7 +72,22 @@ class MeasurementElementsStore(private val database: PrototypeDatabase, private 
             if (closed) { it.close(); active = null }
         }
     }
-    fun close() { closed = true; active?.close(); active = null }
+    fun close() {
+        stopAcceptingWrites()
+        active?.close()
+        active = null
+    }
+
+    /** Desktop must drain scheduled AND active writes before closing its JDBC driver.
+     * Android production restores already hold the exclusive ProductionDatabaseGate
+     * after SQLDelight transaction leases; never block inside that exclusive gate.
+     */
+    suspend fun closeAndAwaitWrites() {
+        val inFlight = stopAcceptingWrites()
+        active?.close()
+        active = null
+        inFlight.forEach { it.await() }
+    }
 
     internal fun observe(route: ElementRoute): Flow<MeasurementElementsState> = combine(
         projects.observeById(route.projectId), measurements.observeById(route.measurementId),
@@ -66,7 +102,7 @@ class MeasurementElementsStore(private val database: PrototypeDatabase, private 
     internal fun catalog(): Flow<ElementCatalogState> = combine(prices.groups, prices.items) { groups, items ->
         ElementCatalogState.Loaded(groups.map { ElementCatalogGroup(it.uuid, it.name) },
             items.filter { item -> groups.any { it.uuid == item.groupUuid } }.map {
-                ElementCatalogItem(it.uuid, it.groupUuid, it.title, it.code, it.unit, it.quantityMode)
+                ElementCatalogItem(it.uuid, it.groupUuid, it.title, it.code, it.unit, it.quantityMode, it.placementKind)
             })
     }.onStart<ElementCatalogState> { emit(ElementCatalogState.Loading) }
         .catch { emit(ElementCatalogState.Unavailable) }.flowOn(Dispatchers.Default)
@@ -83,7 +119,8 @@ class MeasurementElementsStore(private val database: PrototypeDatabase, private 
             val item = database.measurementElementsQueries.selectActiveCatalogItem(selected.uuid).executeAsOneOrNull()
                 ?: throw MeasurementElementFailure.CatalogUnavailable()
             if (item.title != selected.title || item.code != selected.code || item.unit != selected.unit ||
-                item.quantityMode != selected.mode.value || item.groupUuid != selected.groupUuid)
+                item.quantityMode != selected.mode.value || item.groupUuid != selected.groupUuid ||
+                item.placementKind != selected.placementKind.value)
                 throw MeasurementElementFailure.CatalogUnavailable()
         }
         when (draft.action) {

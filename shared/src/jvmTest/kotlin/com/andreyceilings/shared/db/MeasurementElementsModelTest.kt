@@ -7,6 +7,7 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.first
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicReference
 import kotlin.test.*
 
 class MeasurementElementsModelTest {
@@ -115,6 +116,103 @@ class MeasurementElementsModelTest {
                 assertEquals(newer, repo.find(wish.uuid))
                 assertNotNull(model.editor.value?.error)
             } finally { store.close() }
+        }
+    }
+
+    @Test fun concurrentPlacementChangeRequiresExplicitReselectionForCreateAndLink(): Unit = runBlocking {
+        JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).use { driver ->
+            PriceCatalogSchema.create(driver)
+            val db = PrototypeDatabase(driver)
+            val project = ProjectRepository(db).createReturningId(null, "P3B placement", createdAt = 1)
+            val measurement = MeasurementRepository(db).createReturningId(project, "Kitchen", createdAt = 2)
+            val route = ElementRoute(project, measurement, checkNotNull(MeasurementRepository(db).find(measurement)).uuid)
+            val repo = MeasurementElementRepository(db)
+            val prices = PriceRepository(db)
+            val store = MeasurementElementsStore(db, { 5 }, Dispatchers.Unconfined)
+            try {
+                val model = store.model(route)
+                withTimeout(10_000) { model.state.first { it is MeasurementElementsState.Loaded } }
+                val catalog = withTimeout(10_000) { model.catalog.first { it is ElementCatalogState.Loaded } } as ElementCatalogState.Loaded
+                val selected = catalog.items.first { it.code == "light.spot" }
+                val before = prices.all().single { it.uuid == selected.uuid }
+                val replacement = if (selected.placementKind == com.andreyceilings.shared.prices.PlacementKind.NONE)
+                    com.andreyceilings.shared.prices.PlacementKind.POINT else com.andreyceilings.shared.prices.PlacementKind.NONE
+
+                model.add(); model.choose(ElementEditorAction.CREATE_CATALOG); model.select(selected)
+                val newUuid = checkNotNull(model.editor.value).draft.uuid
+                prices.updateConfigured(before, before.groupUuid, before.title, before.unit, selected.mode,
+                    replacement, before.price, 4)
+                model.save()
+                withTimeout(10_000) { model.editor.first { it?.error != null && !it.saving } }
+                assertNull(repo.find(newUuid), "A changed placement snapshot must not be silently accepted")
+                assertEquals(selected, model.editor.value?.draft?.selection)
+
+                val updated = withTimeout(10_000) {
+                    model.catalog.first { state -> state is ElementCatalogState.Loaded &&
+                        state.items.any { it.uuid == selected.uuid && it.placementKind == replacement } }
+                } as ElementCatalogState.Loaded
+                val refreshed = updated.items.single { it.uuid == selected.uuid }
+                model.select(refreshed); model.save()
+                withTimeout(10_000) { model.editor.first { it == null } }
+                val created = checkNotNull(repo.find(newUuid))
+                assertEquals(replacement, (created.source as ElementSource.CatalogSelection).placementKind)
+
+                val wish = repo.createWish(route.measurementUuid, "Unlinked wish", 6)
+                withTimeout(10_000) { model.state.first { it is MeasurementElementsState.Loaded && it.items.size == 2 } }
+                model.open(wish, ElementEditorAction.LINK); model.select(selected)
+                model.save()
+                withTimeout(10_000) { model.editor.first { it?.error != null && !it.saving } }
+                assertEquals(wish, repo.find(wish.uuid))
+                model.select(refreshed); model.save()
+                withTimeout(10_000) { model.editor.first { it == null } }
+                assertEquals(replacement, (checkNotNull(repo.find(wish.uuid)).source as ElementSource.CatalogSelection).placementKind)
+            } finally { store.close() }
+        }
+    }
+
+    @Test fun desktopSessionShutdownDrainsInFlightWriteBeforeDriverClose(): Unit = runBlocking {
+        JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).use { driver ->
+            PriceCatalogSchema.create(driver)
+            val db = PrototypeDatabase(driver)
+            val project = ProjectRepository(db).createReturningId(null, "P3B shutdown", createdAt = 1)
+            val measurement = MeasurementRepository(db).createReturningId(project, "Kitchen", createdAt = 2)
+            val route = ElementRoute(project, measurement, checkNotNull(MeasurementRepository(db).find(measurement)).uuid)
+            val entered = CountDownLatch(1)
+            val release = CountDownLatch(1)
+            val finished = CountDownLatch(1)
+            val error = AtomicReference<Throwable?>(null)
+            val store = MeasurementElementsStore(db, {
+                entered.countDown()
+                check(release.await(10, TimeUnit.SECONDS))
+                3L
+            }, Dispatchers.Unconfined)
+            val closer = Thread {
+                try { runBlocking { store.closeAndAwaitWrites() } }
+                catch (failure: Throwable) { error.set(failure) }
+                finally { finished.countDown() }
+            }
+            try {
+                val model = store.model(route)
+                withTimeout(10_000) { model.state.first { it is MeasurementElementsState.Loaded } }
+                model.add(); model.choose(ElementEditorAction.CREATE_WISH)
+                model.update { it.copy(label = "Committed before encrypted driver closes") }
+                val uuid = checkNotNull(model.editor.value).draft.uuid
+                model.save()
+                assertTrue(entered.await(10, TimeUnit.SECONDS))
+                closer.start()
+                assertFalse(finished.await(250, TimeUnit.MILLISECONDS), "Shutdown overtook an in-flight write")
+                release.countDown()
+                assertTrue(finished.await(10, TimeUnit.SECONDS), "Shutdown did not drain the write")
+                error.get()?.let { throw AssertionError("Shutdown failed", it) }
+                assertEquals(listOf(uuid), MeasurementElementRepository(db).active().map { it.uuid })
+                assertEquals(MeasurementElementsState.Unavailable, model.state.value)
+                model.save() // A closed session must not initiate a late write.
+                assertEquals(1, MeasurementElementRepository(db).active().size)
+            } finally {
+                release.countDown()
+                closer.join(10_000)
+                store.close()
+            }
         }
     }
 }

@@ -155,18 +155,24 @@ class MeasurementElementsModel internal constructor(private val store: Measureme
         if (closed || before.saving || before.conflict || before.draft.validationError != null ||
             state.value !is MeasurementElementsState.Loaded) return
         val creates = before.draft.action == ElementEditorAction.CREATE_WISH || before.draft.action == ElementEditorAction.CREATE_CATALOG
+        val completion = store.beginWrite() ?: return
         currentEditor = before.copy(saving = true, error = null, exitRequested = false)
         exitAction = null
-        scope.launch {
-            withContext(NonCancellable) {
+        // UNDIPATCHED enters the protected region before Save returns. The actual
+        // transaction and completion signal stay on Default, so a synchronous
+        // desktop window-close never needs the blocked UI dispatcher to finish.
+        scope.launch(start = CoroutineStart.UNDISPATCHED) {
+            withContext(NonCancellable + Dispatchers.Default) {
                 try {
-                    withContext(Dispatchers.Default) { store.save(route, before.draft) }
+                    store.save(route, before.draft)
                     if (!closed) currentEditor = null
                 } catch (failure: Exception) {
                     if (!closed) currentEditor = before.copy(saving = false, error = elementFailureMessage(failure),
                         conflict = failure is MeasurementElementFailure.StaleVersion || failure is MeasurementElementFailure.RetryConflict,
                         attemptedCreate = before.attemptedCreate || creates &&
                             (failure is MeasurementElementFailure.DatabaseUnavailable || failure !is MeasurementElementFailure))
+                } finally {
+                    store.endWrite(completion)
                 }
             }
         }
