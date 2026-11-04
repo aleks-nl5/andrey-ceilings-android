@@ -52,6 +52,10 @@ SQLCipher/WAL schema/version транзакцією. iOS SQLiter 1.3.3 уже м
 транзакцію callback/version: `IosPriceCatalogSchema` не запускає вкладений BEGIN.
 Windows probe визначає v3/v4/v5/v6 за колонками під writer lock;
 `user_version=6` зберігається тільки при успішному commit.
+JDBC core 0.2.13 класифікує PRAGMA як lazy rowset: Windows adapter явно
+споживає assignment `user_version`, щоб цей запис реально виконався на
+transaction-pinned connection. Native тести перевіряють persistent 5/6,
+rollback версії та reopen; просто успішного `execute()` недостатньо.
 
 Encrypted backup preflight відкриває лише перевірочну копію через production
 schema, включно з Kotlin backfill/collision check. Контрольований v5 conflict

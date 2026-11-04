@@ -98,7 +98,7 @@ tasks.withType<app.cash.sqldelight.gradle.VerifyMigrationTask>().configureEach {
 // Native migration failures must expose the SQL error and test phase in CI.
 // Keep every Simulator test mandatory; this changes only failure diagnostics.
 tasks.withType<org.gradle.api.tasks.testing.AbstractTestTask>().configureEach {
-    if (name == "iosSimulatorArm64Test") {
+    if (name == "iosSimulatorArm64Test" || name == "jvmTest") {
         testLogging.exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
     }
 }

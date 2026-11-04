@@ -55,9 +55,10 @@ object PriceCatalogMigrationProof {
         val columns = driver.executeQuery(null, "PRAGMA table_info($table)", { cursor ->
             val names = mutableListOf<String>()
             while (cursor.next().value) names.add(checkNotNull(cursor.getString(1)))
-            QueryResult.Value(names)
+            QueryResult.Value(names.sorted())
         }, 0).value
-        driver.executeQuery(null, "SELECT " + columns.joinToString { "quote($it)" } + " FROM $table ORDER BY 1", { cursor ->
+        driver.executeQuery(null, "SELECT " + columns.joinToString { "quote($it)" } +
+            " FROM $table ORDER BY " + columns.indices.joinToString { (it + 1).toString() }, { cursor ->
             val rows = mutableListOf<List<String?>>()
             while (cursor.next().value) rows.add(listOf(table) + columns.indices.map { cursor.getString(it) })
             QueryResult.Value(rows)
