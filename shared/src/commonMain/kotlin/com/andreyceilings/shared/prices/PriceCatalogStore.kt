@@ -4,6 +4,8 @@ import com.andreyceilings.shared.db.PriceRepository
 import com.andreyceilings.shared.db.newRecordUuid
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.combine
+import com.andreyceilings.shared.db.Price_catalog_items
 
 /**
  * One cross-platform price catalog boundary for the Android and Windows CMP hosts.
@@ -17,19 +19,62 @@ class PriceCatalogStore(
     private val repository: PriceRepository,
     private val nowMillis: () -> Long
 ) {
-    val items: Flow<List<PriceCatalogItem>> = repository.observeAll().map { rows ->
-        rows.map { row ->
-            PriceCatalogItem(
-                id = row.id,
-                code = row.code,
-                title = row.title,
-                category = row.category,
-                unit = row.unit,
-                price = row.price,
-                updatedAt = row.updatedAt,
-                groupUuid = row.groupUuid
-            )
-        }
+    private val groupRepository = repository.groups
+    val groups: Flow<List<PriceCatalogGroup>> = groupRepository.observeAll().map { rows ->
+        rows.map { group -> PriceCatalogGroup(group.uuid, group.name, group.updatedAt, group.defaultUnit,
+            QuantityMode.entries.single { it.value == group.defaultQuantityMode },
+            PlacementKind.entries.single { it.value == group.defaultPlacementKind }) }
+    }
+    val items: Flow<List<PriceCatalogItem>> = combine(repository.observeAll(), groups) { rows, activeGroups ->
+        val names = activeGroups.associate { it.uuid to it.name }
+        rows.mapNotNull { row -> names[row.groupUuid]?.let { row.toCatalogItem(it) } }
+    }
+
+    private fun Price_catalog_items.toCatalogItem(categoryName: String = category) = PriceCatalogItem(
+        id, code, title, categoryName, unit, price, updatedAt, groupUuid, uuid,
+        QuantityMode.entries.single { it.value == quantityMode },
+        PlacementKind.entries.single { it.value == placementKind })
+
+    fun saveGroup(original: PriceCatalogGroup?, draft: PriceGroupDraft): String {
+        require(draft.validationError() == null) { draft.validationError().orEmpty() }
+        val unit = draft.defaultUnit.trim().takeIf { it.isNotEmpty() }
+        if (original == null) return groupRepository.create(draft.name, nowMillis(), unit,
+            draft.defaultQuantityMode, draft.defaultPlacementKind)
+        groupRepository.update(original.uuid, original.updatedAt, draft.name, nowMillis(), unit,
+            draft.defaultQuantityMode, draft.defaultPlacementKind)
+        return original.uuid
+    }
+
+    fun deleteGroup(original: PriceCatalogGroup) =
+        groupRepository.delete(original.uuid, original.updatedAt, nowMillis())
+
+    /** P2 writes explicit parameters to an existing UUID. Never creates a group. */
+    fun saveConfigured(original: PriceCatalogItem?, draft: ConfiguredPriceDraft): Long {
+        require(draft.title.isNotBlank() && draft.groupUuid.isNotBlank()) { "Вкажіть назву та категорію." }
+        PriceParameters.validate(draft.unit.trim(), draft.quantityMode)
+        val price = requireNotNull(PriceCatalogRules.parseSalePrice(draft.salePriceText)) { "Неприпустима ціна продажу." }
+        if (original == null) return repository.createInGroup("custom.${newRecordUuid()}", draft.title,
+            draft.groupUuid, price, nowMillis(), draft.unit.trim(), draft.quantityMode, draft.placementKind)
+        val current = unchanged(original)
+        if (draft.groupUuid != original.groupUuid && draft.title == original.title && draft.unit == original.unit &&
+            draft.quantityMode == original.quantityMode && draft.placementKind == original.placementKind && price == original.price)
+            return repository.move(current, draft.groupUuid, nowMillis())
+        return repository.updateConfigured(current, draft.groupUuid, draft.title, draft.unit,
+            draft.quantityMode, draft.placementKind, price, nowMillis())
+    }
+
+    /** Only price comes from the draft; all other values are the exact CAS-protected row. */
+    fun quickPrice(original: PriceCatalogItem, salePriceText: String): Long {
+        val price = requireNotNull(PriceCatalogRules.parseSalePrice(salePriceText)) { "Неприпустима ціна продажу." }
+        val current = unchanged(original)
+        return repository.updateSalePrice(current, price, nowMillis())
+    }
+
+    private fun unchanged(original: PriceCatalogItem): Price_catalog_items {
+        val row = repository.find(original.id) ?: throw PriceCatalogConflict()
+        if (row.uuid != original.uuid || row.code != original.code || row.updatedAt != original.updatedAt)
+            throw PriceCatalogConflict()
+        return row
     }
 
     /**

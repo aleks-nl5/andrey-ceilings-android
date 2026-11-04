@@ -126,6 +126,7 @@ class PriceCatalogSqlCipherTest {
                 PriceCatalogMigrationProof.assertReplaced(db)
                 assertEquals(before, PriceCatalogMigrationProof.untouchedRows(driver))
                 PriceCatalogPersistenceProof.groupsAndParameters(db)
+                PriceCatalogP2Proof.run(db)
                 PriceCatalogPersistenceProof.removeEverything(db)
                 val destination = context.getDatabasePath(restoredName).absolutePath.replace("'", "''")
                 driver.execute(null, "VACUUM INTO '$destination'", 0)

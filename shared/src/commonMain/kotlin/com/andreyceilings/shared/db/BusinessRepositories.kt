@@ -7,6 +7,7 @@ import com.andreyceilings.shared.estimate.ImmutableEstimateDraft
 import com.andreyceilings.shared.estimate.ImmutableEstimateRepository
 import com.andreyceilings.shared.prices.QuantityMode
 import com.andreyceilings.shared.prices.PlacementKind
+import com.andreyceilings.shared.prices.PriceCatalogConflict
 import com.andreyceilings.shared.prices.PriceParameters
 import com.andreyceilings.shared.prices.normalizedNameKey
 import com.andreyceilings.shared.prices.DuplicateItemTitle
@@ -127,7 +128,7 @@ class MeasurementRepository(private val database: PrototypeDatabase) {
 
 class PriceRepository(private val database: PrototypeDatabase) {
     private val queries = database.businessSchemaQueries
-    private val groups = PriceGroupRepository(database)
+    internal val groups = PriceGroupRepository(database)
     private val parameters = database.priceGroupsQueries
 
     fun tombstones() = queries.selectDeletedPriceItems().executeAsList()
@@ -145,7 +146,7 @@ class PriceRepository(private val database: PrototypeDatabase) {
         placementKind: PlacementKind? = null
     ): Long = database.transactionWithResult {
         parameters.claimCatalogWrite()
-        val group = checkNotNull(groups.find(groupUuid)) { "Групу видалено або не знайдено." }
+        val group = groups.find(groupUuid) ?: throw PriceCatalogConflict()
         val ownUnit = (unit ?: group.defaultUnit)?.trim()
         require(!ownUnit.isNullOrBlank()) { "Для групи без типової одиниці вкажіть одиницю позиції." }
         val mode = quantityMode ?: QuantityMode.entries.single { it.value == group.defaultQuantityMode }
@@ -155,7 +156,7 @@ class PriceRepository(private val database: PrototypeDatabase) {
             mode.value, placement.value, price, updatedAt, newRecordUuid()).executeAsOneOrNull()) {
             if (parameters.selectItemByTitleKey(normalizedNameKey(title)).executeAsOneOrNull() != null)
                 throw DuplicateItemTitle()
-            "Групу видалено. Оновіть дані."
+            throw PriceCatalogConflict()
         }
     }
 
@@ -173,20 +174,27 @@ class PriceRepository(private val database: PrototypeDatabase) {
                 val current = find(original.id)
                 check(current != null && current.uuid == original.uuid && current.code == original.code &&
                     current.updatedAt == original.updatedAt && groups.find(groupUuid) != null) {
-                    "Позицію чи групу змінено або видалено. Оновіть дані."
+                    throw PriceCatalogConflict()
                 }
                 if (parameters.selectItemByTitleKey(normalizedNameKey(title)).executeAsOneOrNull()?.id?.let { it != original.id } == true)
                     throw DuplicateItemTitle()
-                error("Позицію чи групу змінено або видалено. Оновіть дані.")
+                throw PriceCatalogConflict()
             }
             written
         }
     }
 
+    /** CAS-protected quick-price never rewrites labels, membership or parameters. */
+    fun updateSalePrice(original: Price_catalog_items, price: Double, now: Long): Long {
+        require(price.isFinite() && price >= 0) { "Неприпустима ціна продажу." }
+        return parameters.updateSalePriceIfVersion(price, now, original.id, original.uuid, original.code,
+            original.updatedAt).executeAsOneOrNull() ?: throw PriceCatalogConflict()
+    }
+
     /** Moving changes membership only; all item parameters and identity survive. */
     fun move(original: Price_catalog_items, groupUuid: String, now: Long): Long =
         checkNotNull(parameters.moveItemIfVersion(groupUuid, now, original.id, original.uuid,
-            original.updatedAt).executeAsOneOrNull()) { "Позицію чи групу змінено або видалено. Оновіть дані." }
+            original.updatedAt).executeAsOneOrNull()) { throw PriceCatalogConflict() }
 
     // Compatibility boundary for the existing CMP/Android editor. New rows use
     // group defaults, with the unit explicitly chosen in that editor.
@@ -235,7 +243,7 @@ class PriceRepository(private val database: PrototypeDatabase) {
 
     fun deleteIfUnchanged(id: Long, expectedCode: String, expectedUpdatedAt: Long): Long =
         checkNotNull(queries.deletePriceItemIfVersion(id, expectedCode, expectedUpdatedAt).executeAsOneOrNull()) {
-            "Price item changed or deleted; reload before removing."
+            throw PriceCatalogConflict()
         }
 
     fun create(code: String, title: String, category: String, unit: String, price: Double, updatedAt: Long) {

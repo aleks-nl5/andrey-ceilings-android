@@ -1,4 +1,23 @@
-# Актуальний стан — Прайс 2.0 після merge PR #81 (03.11.2026)
+# Актуальний стан — Прайс 2.0 P2 / підготовка PR #86 до merge, 04.11.2026
+
+**P2 функціонально реалізовано у [PR #86](https://github.com/aleks-nl5/andrey-ceilings-android/pull/86), поки НЕ merged:** існуючий CMP-прайс, справжні категорії `price_groups` з UUID, керування/типові параметри, незалежні параметри позицій, CAS/quick-price без нової схеми БД. На code HEAD `d92bac4` успішні [Android](https://github.com/aleks-nl5/andrey-ceilings-android/actions/runs/41804457036) (включно із SQLCipher/WAL emulator та debug/release APK) і [Windows/iOS](https://github.com/aleks-nl5/andrey-ceilings-android/actions/runs/41804456931) CI (Windows SQLCipher + iOS Simulator). Власник повідомив, що перевірив APK; окремі деталізовані ручні сценарії не позначати автоматично. Документаційні коміти у PR вимагають повторної перевірки фінального HEAD перед merge. **Рішення власника:** косметичне UI/UX-полірування переносимо на майбутній окремий етап і не блокуємо ним функціональний P2. Після merge — закрити #83, оновити umbrella #78; далі #76 (P3). Не зливати PR без окремого дозволу власника.
+
+**P1 та Unicode follow-up прийнято:** PR #81 і [PR #85](https://github.com/aleks-nl5/andrey-ceilings-android/pull/85)
+merged; #80/#82 закриті. Поточний `main` має v6 та глобальну Unicode-безпечну
+унікальність назв активних груп/позицій.
+
+**P2 технічний контракт (реалізовано у PR #86, поки не merged):** той самий CMP-прайс отримує керування
+«Категоріями» (`price_groups`), UUID-фільтри з порожніми категоріями та
+незалежні параметри позицій. [Контракт і приймання P2](PRICE_CATALOG_P2.md).
+Без нового екрана, DB-міграції, повторного seed чи live calculation.
+Перед merge обов'язкові green Android/Windows/iOS перевірки на фінальному SHA;
+власник уже повідомив про APK-перевірку функціонального коміту.
+Незакриті точкові UI/UX побажання не блокують злиття функціонального P2.
+Umbrella #78 відкрита. Далі #76 (P3), #44/#71 (P4+), iOS host — #42.
+
+Нижче — історичний зріз після PR #81; його відкриті статуси #80/#82 вже не актуальні.
+
+# Історичний стан після merge PR #81 (03.11.2026)
 
 **P1 виконано та об'єднано з `main`:** [PR #81](https://github.com/aleks-nl5/andrey-ceilings-android/pull/81),
 final `de8dddde`, merge `b4907ff`. Один спільний KMP/SQLDelight каталог,

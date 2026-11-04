@@ -39,9 +39,9 @@ class PriceGroupRepository(private val database: PrototypeDatabase) {
         val written = queries.updateGroupIfVersion(name.trim(), normalizedNameKey(name), defaultUnit?.trim(),
             defaultQuantityMode.value, defaultPlacementKind.value, now, uuid, expectedUpdatedAt).executeAsOneOrNull()
         if (written == null) {
-            check(find(uuid)?.updatedAt == expectedUpdatedAt) { "Групу змінено або видалено. Оновіть дані." }
+            check(find(uuid)?.updatedAt == expectedUpdatedAt) { throw PriceCatalogConflict() }
             if (findByName(name)?.uuid?.let { it != uuid } == true) throw DuplicateGroupName()
-            error("Групу змінено або видалено. Оновіть дані.")
+            throw PriceCatalogConflict()
         }
     }
 
@@ -53,10 +53,12 @@ class PriceGroupRepository(private val database: PrototypeDatabase) {
             PlacementKind.entries.single { it.value == group.defaultPlacementKind })
     }
 
-    fun delete(uuid: String, expectedUpdatedAt: Long, now: Long) {
-        checkNotNull(queries.deleteGroupIfVersion(now, uuid, expectedUpdatedAt).executeAsOneOrNull()) {
-            "Група містить активні позиції, змінена або видалена. Оновіть дані."
-        }
+    fun delete(uuid: String, expectedUpdatedAt: Long, now: Long) = database.transaction {
+        queries.claimCatalogWrite()
+        val current = find(uuid)
+        if (current == null || current.updatedAt != expectedUpdatedAt) throw PriceCatalogConflict()
+        if (queries.deleteGroupIfVersion(now, uuid, expectedUpdatedAt).executeAsOneOrNull() == null)
+            throw PriceGroupNotEmpty()
     }
 
     private fun validate(name: String, unit: String?, mode: QuantityMode) {

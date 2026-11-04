@@ -12,6 +12,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.unit.dp
 import com.andreyceilings.app.data.db.CeilingsDatabase
 import com.andreyceilings.shared.db.PriceRepository
+import com.andreyceilings.shared.prices.PriceCatalogGroup
 import com.andreyceilings.shared.prices.PriceCatalogItem
 import com.andreyceilings.shared.prices.PriceCatalogScreen
 import com.andreyceilings.shared.prices.PriceCatalogStore
@@ -36,10 +37,13 @@ internal fun PriceListScreen(database: CeilingsDatabase?, darkTheme: Boolean) {
         store?.items ?: flowOf<List<PriceCatalogItem>>(emptyList())
     }
     val catalog by priceFlow.collectAsState(initial = emptyList())
+    val groupFlow = remember(store) { store?.groups ?: flowOf<List<PriceCatalogGroup>>(emptyList()) }
+    val groups by groupFlow.collectAsState(initial = emptyList())
 
     PriceCatalogTheme(darkTheme) {
         PriceCatalogScreen(
             items = catalog,
+            groups = groups,
             databaseAvailable = store != null,
             // AppRoot already applies 16.dp on each side, just like Settings.
             // Avoid another nested 16.dp that made Price List appear too narrow.
@@ -52,8 +56,17 @@ internal fun PriceListScreen(database: CeilingsDatabase?, darkTheme: Boolean) {
             onSave = { original, draft ->
                 withContext(Dispatchers.IO) {
                     checkNotNull(store) { "SQLCipher price repository unavailable" }
-                        .save(original, draft)
+                        .saveConfigured(original, draft)
                 }
+            },
+            onQuickPrice = { original, price ->
+                withContext(Dispatchers.IO) { checkNotNull(store).quickPrice(original, price) }
+            },
+            onSaveGroup = { original, draft ->
+                withContext(Dispatchers.IO) { checkNotNull(store).saveGroup(original, draft) }
+            },
+            onDeleteGroup = { group ->
+                withContext(Dispatchers.IO) { checkNotNull(store).deleteGroup(group) }
             },
             onDelete = { item ->
                 withContext(Dispatchers.IO) {

@@ -17,6 +17,7 @@ class PriceCatalogP1Test {
             val db = PrototypeDatabase(driver)
             PriceCatalogPersistenceProof.starter(db)
             PriceCatalogPersistenceProof.groupsAndParameters(db)
+            PriceCatalogP2Proof.run(db)
             PriceCatalogPersistenceProof.removeEverything(db)
         }
     }
