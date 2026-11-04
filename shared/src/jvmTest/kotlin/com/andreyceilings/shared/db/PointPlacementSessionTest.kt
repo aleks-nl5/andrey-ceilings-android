@@ -10,6 +10,24 @@ import java.util.concurrent.atomic.AtomicReference
 import kotlin.test.*
 
 class PointPlacementSessionTest {
+    @Test fun concurrentChangeToUnknownExitsModeBeforeAnotherTap(): Unit = runBlocking {
+        JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).use { driver ->
+            PriceCatalogSchema.create(driver)
+            val db = PrototypeDatabase(driver); val f = PointPlacementProof.fixture(db)
+            val store = MeasurementElementsStore(db, { 20 }, Dispatchers.Unconfined)
+            try {
+                val model = store.model(ElementRoute(f.project, f.id, f.element.measurementUuid))
+                withTimeout(10_000) { model.state.first { it is MeasurementElementsState.Loaded } }
+                withTimeout(10_000) { model.points.first { it.available } }
+                model.beginPlacement(f.element, f.contourVersion)
+                assertEquals(f.element.uuid, model.points.value.modeElementUuid)
+                MeasurementElementRepository(db).edit(f.element.version, "", f.element.approval, ElementQuantity.Unknown, 10)
+                withTimeout(10_000) { model.points.first { it.modeElementUuid == null && it.selectedElementUuid == null } }
+                model.tapPoint(1000, 1000)
+                assertTrue(PointPlacementRepository(db).forMeasurement(f.element.measurementUuid).isEmpty())
+            } finally { store.closeAndAwaitWrites() }
+        }
+    }
     @Test fun acceptedPointWriteDrainsBeforeCloseAndCannotReplayInOldOrDifferentRoute(): Unit = runBlocking {
         JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).use { driver ->
             PriceCatalogSchema.create(driver)

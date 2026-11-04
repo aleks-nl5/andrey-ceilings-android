@@ -176,7 +176,9 @@ fun MeasurementDetailsScreen(
                     item(key = "drawing") {
                         if (pointElement != null) {
                             Text(pointElement.label, style = MaterialTheme.typography.titleMedium)
-                            Text("Розміщено: ${pointElement.placedQuantityMilli / 1000} з ${pointElement.pointCapacity() ?: 0}")
+                            pointElement.pointCapacity()?.let { capacity ->
+                                Text("Розміщено: ${pointElement.placedQuantityMilli / 1000} з $capacity")
+                            }
                         }
                         if (pointState.modeElementUuid != null) {
                             Text("Приблизне розміщення: торкніться всередині контуру. Тап по позначці вибирає її; жест масштабу чи зсуву не додає точок.")

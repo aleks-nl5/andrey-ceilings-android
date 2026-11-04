@@ -165,7 +165,8 @@ class MeasurementElementsModel internal constructor(private val store: Measureme
         dataJob?.cancel(); mutableState.update { if (closed) MeasurementElementsState.Unavailable else MeasurementElementsState.Loading }
         dataJob = scope.launch { store.observe(route).collect { value ->
             mutableState.update { if (closed) MeasurementElementsState.Unavailable else value }
-            val ids = (value as? MeasurementElementsState.Loaded)?.items?.map { it.uuid }.orEmpty()
+            val ids = (value as? MeasurementElementsState.Loaded)?.items
+                ?.filter { it.pointCapacity() != null }?.map { it.uuid }.orEmpty()
             updatePoints { current -> current.copy(
                 modeElementUuid = current.modeElementUuid?.takeIf { it in ids },
                 selectedElementUuid = current.selectedElementUuid?.takeIf { it in ids },
