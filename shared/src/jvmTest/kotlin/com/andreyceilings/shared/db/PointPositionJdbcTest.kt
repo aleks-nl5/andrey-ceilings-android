@@ -11,6 +11,39 @@ import java.util.concurrent.*
 import kotlin.test.*
 
 class PointPositionJdbcTest {
+    @Test fun acceptedMoveDrainsBeforeSessionCloseAndOldModelCannotWrite(): Unit = runBlocking {
+        JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).use { driver ->
+            PriceCatalogSchema.create(driver); val db = PrototypeDatabase(driver)
+            val f = PointPlacementProof.fixture(db)
+            val repo = PointPlacementRepository(db)
+            val point = repo.addPoint(f.element.version, f.contourVersion, 1000, 1000, 10)
+            val entered = CountDownLatch(1); val release = CountDownLatch(1); val finished = CountDownLatch(1)
+            val failure = java.util.concurrent.atomic.AtomicReference<Throwable?>(null)
+            val store = MeasurementElementsStore(db, { entered.countDown(); check(release.await(10, TimeUnit.SECONDS)); 20L }, Dispatchers.Unconfined)
+            val model = store.model(ElementRoute(f.project,f.id,f.element.measurementUuid))
+            val closer = Thread {
+                try { runBlocking { store.closeAndAwaitWrites() } }
+                catch (error: Throwable) { failure.set(error) }
+                finally { finished.countDown() }
+            }
+            try {
+                withTimeout(10_000) { model.state.first { it is MeasurementElementsState.Loaded } }
+                withTimeout(10_000) { model.points.first { it.available && it.points.isNotEmpty() } }
+                model.selectPoint(point.uuid); model.beginPointDrag(point.uuid,f.contourVersion)
+                model.previewPointDrag(1800.0,1500.0); model.finishPointDrag()
+                assertTrue(entered.await(10,TimeUnit.SECONDS))
+                closer.start(); assertFalse(finished.await(200,TimeUnit.MILLISECONDS))
+                release.countDown(); assertTrue(finished.await(10,TimeUnit.SECONDS))
+                failure.get()?.let { throw AssertionError("Move close-drain failed",it) }
+                val moved = repo.find(point.uuid)!!
+                assertEquals(PointPositionMm(1800,1500),PointPositionMm(moved.xMm,moved.yMm))
+                assertEquals(1000L,MeasurementElementRepository(db).find(f.element.uuid)!!.placedQuantityMilli)
+                assertEquals(PointPlacementState(),model.points.value)
+                model.beginPointDrag(point.uuid,f.contourVersion); model.previewPointDrag(2000.0,2000.0); model.finishPointDrag(); model.retryPoint()
+                assertEquals(moved,repo.find(point.uuid))
+            } finally { release.countDown(); closer.join(10_000); store.close() }
+        }
+    }
     @Test fun sharedMoveAndEditorReadOnlyContracts(): Unit = runBlocking {
         JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).use { driver ->
             PriceCatalogSchema.create(driver); driver.execute(null, "PRAGMA foreign_keys=ON", 0)

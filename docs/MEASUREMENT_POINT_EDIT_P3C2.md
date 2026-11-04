@@ -137,10 +137,10 @@ placement Save з цього екрана. Name/notes-only Save працює; ac
 
 ## Фактичні перевірки
 
-Локальний Linux/JDK 21/Gradle 9.7.0 suite під час реалізації: 273 shared JVM cases,
+Локальний Linux/JDK 21/Gradle 9.7.0 suite під час реалізації: 275 shared JVM cases,
 26 desktop/CMP scenes, migration verification та Android instrumentation Kotlin
 compilation. Нові common proofs виконуються також у наявних Android encrypted
-WAL/restore, Windows encrypted JDBC і iOS Simulator suites. Це не твердження про
+WAL/restore (authentic v8 approximate + moved v9 exact images), Windows encrypted JDBC і iOS Simulator suites. Це не твердження про
 успіх цих платформ до завершення їхніх CI.
 
 Фінальні SHA, точні результати та прямі success-run links публікуються в
