@@ -12,7 +12,7 @@ import kotlinx.coroutines.runBlocking
 import kotlin.test.*
 
 class MeasurementElementJdbcTest {
-    @Test fun sharedApiPersistenceFlowSqlChecksAndAtomicDelete() = runBlocking {
+    @Test fun sharedApiPersistenceFlowSqlChecksAndAtomicDelete(): Unit = runBlocking {
         JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).use { driver ->
             PriceCatalogSchema.create(driver)
             driver.execute(null, "PRAGMA foreign_keys=ON", 0)
