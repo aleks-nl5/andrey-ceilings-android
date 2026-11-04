@@ -57,6 +57,8 @@ fun MeasurementEditScreen(
 ) {
     val state by model.state.collectAsState()
     val validation = remember(state.draft) { validateMeasurementCreate(state.draft) }
+    val pointFlow = remember(model, state.original.draft.recordUuid) { model.observePoints() }
+    val overlay = key(model, state.original.draft.recordUuid) { pointFlow.collectAsState(PointOverlayState.Loading).value }
     val focus = LocalFocusManager.current
     val scope = rememberCoroutineScope()
     var fullscreen by rememberSaveable { mutableStateOf(navigationGuard?.fullscreen?.value == true) }
@@ -105,11 +107,28 @@ fun MeasurementEditScreen(
         }
     }
     val drawing: @Composable (Boolean) -> Unit = { full ->
-        val geometry = validation.geometry
+        Column(if (full) Modifier.fillMaxSize() else Modifier.fillMaxWidth()) {
+        val savedGeometry = (overlay as? PointOverlayState.Loaded)?.savedGeometry
+            ?: validateMeasurementCreate(state.original.draft).geometry
+        val geometry = validation.geometry ?: savedGeometry
+        when (val pointState = overlay) {
+            PointOverlayState.Loading -> Text("Завантаження збережених позначок…")
+            PointOverlayState.Missing -> Text("Замір або об'єкт недоступний; позначки не завантажено.")
+            PointOverlayState.Unavailable -> Text("Позначки недоступні: захищена база заблокована або помилка читання.")
+            is PointOverlayState.Loaded -> {
+                Text("Збережені позначки: ${pointState.points.size}. Тут лише перегляд; положення змінюйте в деталях заміру.")
+                if (pointState.points.isNotEmpty() && validation.geometry != savedGeometry)
+                    Text("Контур змінено; зберегти його можна після видалення/перегляду точок.", color = MaterialTheme.colorScheme.error)
+            }
+        }
+        if (validation.geometry == null && geometry != null)
+            Text("Невалідна чернетка: показано збережений контур і позначки. ${validation.geometryError.orEmpty()}")
         if (geometry == null) Text("Креслення недоступне: ${validation.geometryError.orEmpty()}")
         else MeasurementDrawing(MeasurementGeometryView.Captured(geometry),
-            if (full) Modifier.fillMaxSize() else Modifier.fillMaxWidth(), interactive = true,
-            selectedSide = selected, onSelectSide = ::select, fullscreen = full)
+            if (full) Modifier.weight(1f) else Modifier.fillMaxWidth(), interactive = true,
+            selectedSide = selected, onSelectSide = ::select, fullscreen = full,
+            pointPlacements = (overlay as? PointOverlayState.Loaded)?.points.orEmpty(), fitPointPlacements = true)
+        }
     }
     if (fullscreen) Column(Modifier.fillMaxSize().padding(start = contentPadding.calculateStartPadding(androidx.compose.ui.platform.LocalLayoutDirection.current),
         end = contentPadding.calculateEndPadding(androidx.compose.ui.platform.LocalLayoutDirection.current),

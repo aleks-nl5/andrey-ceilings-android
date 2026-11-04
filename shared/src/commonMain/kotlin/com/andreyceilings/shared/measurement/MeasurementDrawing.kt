@@ -2,8 +2,7 @@ package com.andreyceilings.shared.measurement
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.focusable
-import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.foundation.gestures.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.focus.FocusRequester
@@ -51,7 +50,11 @@ fun MeasurementDrawing(
     selectedPointUuid: String? = null,
     placementMode: Boolean = false,
     onPlacePoint: (Long, Long) -> Unit = { _, _ -> },
-    onSelectPoint: (String) -> Unit = {}
+    onSelectPoint: (String) -> Unit = {},
+    pointEditingEnabled: Boolean = false, pointDrag: PointDragPreview? = null,
+    onBeginPointDrag: (String) -> Unit = {}, onPreviewPointDrag: (Double, Double) -> Unit = { _, _ -> },
+    onFinishPointDrag: () -> Unit = {}, onCancelPointDrag: () -> Unit = {},
+    fitPointPlacements: Boolean = false
 ) {
     val contour = remember(geometry) { measurementDrawingContour(geometry) }
     if (contour == null) {
@@ -65,7 +68,9 @@ fun MeasurementDrawing(
     val viewport = MeasurementViewport(zoom, panX, panY)
     var canvasSize by remember { mutableStateOf(IntSize.Zero) }
     val focusRequester = remember { FocusRequester() }
+    var markerGesture by remember { mutableStateOf(false) }
     fun move(dx: Float, dy: Float, factor: Float = 1f) {
+        if (markerGesture) return
         val next = MeasurementViewport(zoom, panX, panY).move(dx, dy, factor)
         zoom = next.zoom; panX = next.panX; panY = next.panY
     }
@@ -76,6 +81,13 @@ fun MeasurementDrawing(
     val currentPointSelection by rememberUpdatedState(onSelectPoint)
     val currentPointTap by rememberUpdatedState(onPlacePoint)
     val currentMode by rememberUpdatedState(placementMode)
+    val fitPoints = if (fitPointPlacements) pointPlacements.map { DrawingPoint(it.xMm.toDouble(), it.yMm.toDouble()) } else emptyList()
+    val currentFitPoints by rememberUpdatedState(fitPoints)
+    val currentSelectedPoint by rememberUpdatedState(selectedPointUuid)
+    val currentBeginDrag by rememberUpdatedState(onBeginPointDrag)
+    val currentPreviewDrag by rememberUpdatedState(onPreviewPointDrag)
+    val currentFinishDrag by rememberUpdatedState(onFinishPointDrag)
+    val currentCancelDrag by rememberUpdatedState(onCancelPointDrag)
     val ink = MaterialTheme.colorScheme.primary
     val surface = MaterialTheme.colorScheme.surface
     val labelStyle = MaterialTheme.typography.labelSmall.copy(color = MaterialTheme.colorScheme.onSurface)
@@ -87,7 +99,7 @@ fun MeasurementDrawing(
     val vertexLayouts = contour.vertexNames.map { measurer.measure(it, labelStyle) }
     Column(modifier, verticalArrangement = Arrangement.spacedBy(6.dp)) {
         if (interactive) Row {
-            TextButton(onClick = ::fit) { Text("Вписати креслення") }
+            TextButton(enabled = !markerGesture, onClick = ::fit) { Text("Вписати креслення") }
             TextButton(onClick = { move(0f, 0f, 1 / 1.25f) }) { Text("−") }
             TextButton(onClick = { move(0f, 0f, 1.25f) }) { Text("+") }
         } else Text("Креслення заміру", style = MaterialTheme.typography.titleSmall)
@@ -107,35 +119,90 @@ fun MeasurementDrawing(
                     else -> false
                 }
             }.focusable()
-            .pointerInput(contour, canvasSize) {
-                detectTapGestures { point ->
+            .pointerInput(contour, canvasSize, pointEditingEnabled, fullscreen) {
+                awaitEachGesture {
+                    val down = awaitFirstDown(requireUnconsumed = false)
                     val width = canvasSize.width.toFloat(); val height = canvasSize.height.toFloat()
-                    val projection = measurementDrawingProjection(contour, width, height, density)
-                    if (projection != null) {
-                        fun screen(x: Long, y: Long) = currentViewport.transform(
-                            projection.project(DrawingPoint(x.toDouble(), y.toDouble())), width, height)
-                        val marker = currentPoints.minByOrNull { p ->
-                            val s = screen(p.xMm, p.yMm); hypot(s.x - point.x, s.y - point.y)
-                        }?.takeIf { p -> val s = screen(p.xMm, p.yMm)
-                            hypot(s.x - point.x, s.y - point.y) <= 24.dp.toPx() }
-                        if (marker != null && !fullscreen) currentPointSelection(marker.uuid)
-                        else if (currentMode && !fullscreen) {
-                            val world = projection.inverse(currentViewport.inverse(
-                                DrawingPoint(point.x.toDouble(), point.y.toDouble()), width, height))
-                            // Bound before roundToLong: no NaN, infinity or saturating conversion.
-                            val bound = com.andreyceilings.shared.calculation.CeilingPolygonCalculator.MAX_COORDINATE_MM.toDouble()
-                            if (world.x.isFinite() && world.y.isFinite() && world.x in -bound..bound && world.y in -bound..bound)
-                                currentPointTap(world.x.roundToLong(), world.y.roundToLong())
-                        } else {
-                            val points = contour.points.map { currentViewport.transform(projection.project(it), width, height) }
-                            measurementWallAt(points, point.x, point.y, 24.dp.toPx())?.let(currentSelection)
-                        }
+                    val projection = measurementDrawingProjection(contour, width, height, density, currentFitPoints) ?: return@awaitEachGesture
+                    val initialView = currentViewport
+                    fun world(position: Offset) = projection.inverse(initialView.inverse(
+                        DrawingPoint(position.x.toDouble(), position.y.toDouble()), width, height))
+                    fun hit(position: Offset): PointPlacement? = currentPoints.minByOrNull { marker ->
+                        val p = currentViewport.transform(projection.project(DrawingPoint(marker.xMm.toDouble(), marker.yMm.toDouble())), width, height)
+                        hypot(p.x - position.x, p.y - position.y)
+                    }?.takeIf { marker ->
+                        val p = currentViewport.transform(projection.project(DrawingPoint(marker.xMm.toDouble(), marker.yMm.toDouble())), width, height)
+                        hypot(p.x - position.x, p.y - position.y) <= 24.dp.toPx()
                     }
-                    // Selection may dismiss a numerical field/IME; focus the Canvas afterwards.
-                    focusRequester.requestFocus()
+                    val marker = hit(down.position)
+                    var ownsMarker = pointEditingEnabled && !fullscreen && marker != null && marker.uuid == currentSelectedPoint
+                    val startWorld = world(down.position)
+                    var moved = false; var multi = false
+                    var last = down.position
+                    if (ownsMarker) { markerGesture = true; currentBeginDrag(checkNotNull(marker).uuid) }
+                    down.consume()
+                    try {
+                        while (true) {
+                            val event = awaitPointerEvent()
+                            val active = event.changes.count { it.pressed }
+                            val change = event.changes.find { it.id == down.id }
+                            if (event.changes.any { it.isConsumed }) break
+                            if (active > 1) {
+                                multi = true
+                                if (ownsMarker) { ownsMarker = false; markerGesture = false; currentCancelDrag() }
+                            }
+                            val position = change?.position ?: last
+                            if ((position - down.position).getDistance() > viewConfiguration.touchSlop) moved = true
+                            if (multi) {
+                                val pan = event.calculatePan(); val zoomFactor = event.calculateZoom()
+                                move(pan.x, pan.y, zoomFactor)
+                                event.changes.forEach { it.consume() }
+                            } else if (moved && active > 0) {
+                                if (ownsMarker) {
+                                    val target = world(position)
+                                    currentPreviewDrag(checkNotNull(marker).xMm + target.x - startWorld.x,
+                                        marker.yMm + target.y - startWorld.y)
+                                } else if (marker == null || fullscreen) {
+                                    val delta = position - last
+                                    move(delta.x, delta.y)
+                                }
+                                event.changes.forEach { it.consume() }
+                            }
+                            last = position
+                            if (active == 0) {
+                                if (ownsMarker) {
+                                    markerGesture = false
+                                    if (moved) {
+                                        val target = world(position)
+                                        currentPreviewDrag(checkNotNull(marker).xMm + target.x - startWorld.x,
+                                            marker.yMm + target.y - startWorld.y)
+                                        currentFinishDrag()
+                                    } else currentCancelDrag()
+                                    ownsMarker = false
+                                }
+                                if (!moved && !multi) {
+                                    if (marker != null && !fullscreen) currentPointSelection(marker.uuid)
+                                    else if (currentMode && !fullscreen) {
+                                        val target = world(position)
+                                        val bound = com.andreyceilings.shared.calculation.CeilingPolygonCalculator.MAX_COORDINATE_MM.toDouble()
+                                        if (target.x.isFinite() && target.y.isFinite() && target.x in -bound..bound && target.y in -bound..bound)
+                                            currentPointTap(target.x.roundToLong(), target.y.roundToLong())
+                                    } else {
+                                        val points = contour.points.map { currentViewport.transform(projection.project(it), width, height) }
+                                        measurementWallAt(points, position.x, position.y, 24.dp.toPx())?.let(currentSelection)
+                                    }
+                                    focusRequester.requestFocus()
+                                }
+                                break
+                            }
+                            if (change == null && !multi) break
+                        }
+                    } finally {
+                        markerGesture = false
+                        if (ownsMarker) currentCancelDrag()
+                    }
                 }
             }
-            .pointerInput(Unit) { detectTransformGestures { _, pan, scale, _ -> move(pan.x, pan.y, scale) } }
             .pointerInput(Unit) {
                 awaitPointerEventScope {
                     while (true) {
@@ -151,10 +218,10 @@ fun MeasurementDrawing(
             }
         Canvas(Modifier.fillMaxWidth().then(if (fullscreen) Modifier.weight(1f) else Modifier.height(if (compact) 155.dp else 235.dp))
             .clipToBounds().onSizeChanged { canvasSize = it }.then(inputModifier)
-            .semantics { contentDescription = "Контур стелі, ${contour.points.size} вершин" }) {
+            .semantics { contentDescription = "Контур стелі, ${contour.points.size} вершин, позначок: ${pointPlacements.size}" }) {
             val layout = layoutMeasurementDrawing(contour, size.width, size.height,
                 textLayouts.map { DrawingLabelSize(it.size.width.toFloat(), it.size.height.toFloat()) }, density,
-                vertexLayouts.map { DrawingLabelSize(it.size.width.toFloat(), it.size.height.toFloat()) })
+                vertexLayouts.map { DrawingLabelSize(it.size.width.toFloat(), it.size.height.toFloat()) }, extraWorldPoints = fitPoints)
                 ?: return@Canvas
             val points = layout.points.map { point ->
                 val transformed = if (interactive) viewport.transform(point, size.width, size.height) else point
@@ -171,13 +238,14 @@ fun MeasurementDrawing(
                 drawLine(ink, points[i], points[(i + 1) % points.size], strokeWidth = 8.dp.toPx())
             }
             points.forEach { drawCircle(ink, 3.dp.toPx(), it) }
-            val projection = measurementDrawingProjection(contour, size.width, size.height, density)
+            val projection = measurementDrawingProjection(contour, size.width, size.height, density, fitPoints)
             if (projection != null) pointPlacements.forEach { marker ->
-                val fitted = projection.project(DrawingPoint(marker.xMm.toDouble(), marker.yMm.toDouble()))
+                val preview = pointDrag?.takeIf { it.point.uuid == marker.uuid }
+                val fitted = projection.project(DrawingPoint(preview?.xMm ?: marker.xMm.toDouble(), preview?.yMm ?: marker.yMm.toDouble()))
                 val projected = if (interactive) viewport.transform(fitted, size.width, size.height) else fitted
                 val center = Offset(projected.x.toFloat(), projected.y.toFloat())
                 drawCircle(surface, 7.dp.toPx(), center)
-                drawCircle(ink, 7.dp.toPx(), center, style = Stroke(2.dp.toPx()))
+                drawCircle(ink, 7.dp.toPx(), center, style = Stroke(if (marker.precision == PointPrecision.EXACT) 3.dp.toPx() else 2.dp.toPx()))
                 drawCircle(ink, 2.dp.toPx(), center)
                 if (marker.uuid == selectedPointUuid) drawCircle(ink, 12.dp.toPx(), center, style = Stroke(3.dp.toPx()))
             }

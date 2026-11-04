@@ -10,6 +10,7 @@ class PriceCatalogWindowsCipherTest {
         val key = ByteArray(32) { 76 }
         try {
             PointPlacementFileProof.run { SqlCipherWindowsDriverFactory.open(it, key) }
+            PointPositionFileProof.run { SqlCipherWindowsDriverFactory.open(it, key) }
             val file = Files.createTempFile("points-cipher-", ".db").toFile()
             try {
                 SqlCipherWindowsDriverFactory.open(file, key).use { driver ->
@@ -17,6 +18,7 @@ class PriceCatalogWindowsCipherTest {
                     PointPlacementProof.run(driver)
                     PointPlacementProof.geometryAndDeletionGuards(driver)
                     PointPlacementProof.eligibilityAndIsolation(driver)
+                    PointPositionProof.run(driver)
                 }
             } finally { file.delete() }
         } finally { key.fill(0) }

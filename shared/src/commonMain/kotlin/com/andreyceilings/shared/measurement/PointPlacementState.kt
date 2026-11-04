@@ -7,12 +7,19 @@ sealed interface PointCommand {
     data class Add(override val element: ElementVersion, val contourUpdatedAt: Long,
         val xMm: Long, val yMm: Long, val uuid: String = newRecordUuid()) : PointCommand
     data class Remove(override val element: ElementVersion, val point: PointPlacement) : PointCommand
+    data class Move(override val element: ElementVersion, val point: PointPlacement, val contourUpdatedAt: Long,
+        val xMm: Long, val yMm: Long, val precision: PointPrecision, val uuid: String = newRecordUuid(),
+        val historyAction: PointHistoryAction = PointHistoryAction.NORMAL, val history: PointMoveHistory? = null) : PointCommand
 }
+
+enum class PointHistoryAction { NORMAL, UNDO, REDO }
 
 data class PointPlacementState(
     val points: List<PointPlacement> = emptyList(), val available: Boolean = false,
     val modeElementUuid: String? = null, val contourUpdatedAt: Long? = null,
     val selectedPointUuid: String? = null, val selectedElementUuid: String? = null,
     val confirmingDelete: Boolean = false, val saving: Boolean = false,
-    val error: String? = null, val retry: PointCommand? = null
+    val error: String? = null, val retry: PointCommand? = null,
+    val drag: PointDragPreview? = null, val positionEditor: PointPositionEditorState? = null,
+    val undo: PointMoveHistory? = null, val redo: PointMoveHistory? = null
 )

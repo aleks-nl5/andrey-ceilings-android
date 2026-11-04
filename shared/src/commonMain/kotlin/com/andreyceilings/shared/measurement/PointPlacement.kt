@@ -8,8 +8,13 @@ import com.andreyceilings.shared.prices.PlacementKind
 
 data class PointPlacement(
     val uuid: String, val elementUuid: String, val xMm: Long, val yMm: Long,
-    val contourUpdatedAt: Long, val createdAt: Long, val updatedAt: Long, val deletedAt: Long?
+    val contourUpdatedAt: Long, val createdAt: Long, val updatedAt: Long, val deletedAt: Long?,
+    val precision: PointPrecision = PointPrecision.APPROXIMATE, val lastMoveUuid: String? = null
 )
+
+enum class PointPrecision(val value: String) { APPROXIMATE("approximate"), EXACT("exact") }
+
+data class PointMoveResult(val point: PointPlacement, val element: MeasurementElement)
 
 sealed class PointPlacementFailure(message: String, cause: Throwable? = null) : Exception(message, cause) {
     class ParentUnavailable : PointPlacementFailure("Parent unavailable")

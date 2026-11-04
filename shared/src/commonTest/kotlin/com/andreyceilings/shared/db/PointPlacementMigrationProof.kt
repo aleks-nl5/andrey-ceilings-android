@@ -60,7 +60,7 @@ object PointPlacementMigrationProof {
         val upgraded = open(production)
         val fixture: PointPlacementProof.Fixture; val point: PointPlacement
         try {
-            assertEquals(8L, PriceNameUniquenessProof.scalar(upgraded, "PRAGMA user_version"))
+            assertEquals(9L, PriceNameUniquenessProof.scalar(upgraded, "PRAGMA user_version"))
             assertEquals(before, snapshot(upgraded))
             val db = PrototypeDatabase(upgraded)
             if (populated) {

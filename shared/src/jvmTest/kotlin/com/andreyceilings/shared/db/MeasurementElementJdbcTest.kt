@@ -16,7 +16,7 @@ class MeasurementElementJdbcTest {
         JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).use { driver ->
             PriceCatalogSchema.create(driver)
             driver.execute(null, "PRAGMA foreign_keys=ON", 0)
-            assertEquals(8L, PriceCatalogSchema.version)
+            assertEquals(9L, PriceCatalogSchema.version)
             verifyMeasurementElementStructure(driver)
             MeasurementElementsPresentationProof.run(PrototypeDatabase(driver))
             MeasurementElementProof.run(driver)
@@ -95,7 +95,7 @@ object MeasurementElementFileProof {
                 } }
                 upgrades.forEach { it.get(30, TimeUnit.SECONDS) }
                 val row = open(file).use { driver ->
-                    assertEquals(8L, PriceNameUniquenessProof.scalar(driver, "PRAGMA user_version"))
+                    assertEquals(9L, PriceNameUniquenessProof.scalar(driver, "PRAGMA user_version"))
                     assertEquals(before, MeasurementElementMigrationProof.snapshot(driver))
                     verifyMeasurementElementStructure(driver)
                     val db = PrototypeDatabase(driver)

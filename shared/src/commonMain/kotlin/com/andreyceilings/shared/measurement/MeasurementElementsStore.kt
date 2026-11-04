@@ -110,15 +110,28 @@ class MeasurementElementsStore(private val database: PrototypeDatabase, private 
 
     internal fun observePoints(route: ElementRoute) = points.observeForMeasurement(route.measurementUuid)
 
-    internal fun savePoint(route: ElementRoute, command: PointCommand): PointPlacement = database.transactionWithResult {
+    internal fun savePoint(route: ElementRoute, command: PointCommand): PointMoveResult = database.transactionWithResult {
         database.measurementElementsQueries.claimElementWrite(command.element.uuid)
         checkParent(route)
         if (command.element.measurementUuid != route.measurementUuid) throw PointPlacementFailure.ParentUnavailable()
-        when (command) {
+        val point = when (command) {
             is PointCommand.Add -> points.addPoint(command.element, command.contourUpdatedAt,
                 command.xMm, command.yMm, nowMillis(), command.uuid)
             is PointCommand.Remove -> points.removePoint(command.element, command.point, nowMillis())
+            is PointCommand.Move -> return@transactionWithResult points.movePoint(command.element, command.point,
+                command.contourUpdatedAt, command.xMm, command.yMm, command.precision, nowMillis(), command.uuid)
         }
+        PointMoveResult(point, checkNotNull(repository.find(command.element.uuid)))
+    }
+
+    internal fun reloadPosition(route: ElementRoute, uuid: String): PointPositionDraft = database.transactionWithResult {
+        checkParent(route)
+        val point = points.find(uuid)?.takeIf { it.deletedAt == null } ?: throw PointPlacementFailure.StaleVersion()
+        val element = reload(route, point.elementUuid)
+        val row = checkNotNull(measurements.find(route.measurementId))
+        val geometry = (measurementGeometryForViewing(row.shape, row.drawingJson, row.lengthMeters, row.widthMeters)
+            as? MeasurementGeometryView.Captured)?.geometry ?: throw PointPlacementFailure.InvalidContour()
+        PointPositionDraft(point, element.version, row.updatedAt, geometry)
     }
 
     internal fun save(route: ElementRoute, draft: ElementEditorDraft): MeasurementElement = database.transactionWithResult {

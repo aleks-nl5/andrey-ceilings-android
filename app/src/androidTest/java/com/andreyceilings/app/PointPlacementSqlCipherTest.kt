@@ -24,7 +24,7 @@ class PointPlacementSqlCipherTest {
         System.loadLibrary("sqlcipher")
         val key = ByteArray(32) { 77 }
         try {
-            for (scenario in listOf("fresh", "empty-v7", "populated-v7")) {
+            for (scenario in listOf("fresh", "empty-v7", "populated-v7", "empty-v8", "populated-v8")) {
                 val name = "points-$scenario-test.db"
                 context.deleteDatabase(name)
                 try {
@@ -34,7 +34,9 @@ class PointPlacementSqlCipherTest {
                         PointPlacementProof.run(driver)
                         PointPlacementProof.geometryAndDeletionGuards(driver)
                         PointPlacementProof.eligibilityAndIsolation(driver)
-                    } else PointPlacementMigrationProof.lifecycle(PriceCatalogSchema, scenario == "populated-v7") { schema ->
+                        PointPositionProof.run(driver)
+                    } else {
+                        val open: suspend (SqlSchema<QueryResult.Value<Unit>>) -> SqlDriver = { schema ->
                         if (schema === PriceCatalogSchema) createEncryptedPrototypeDriver(context, key, name,
                             enableWalForTesting = true, initializePriceCatalog = true)
                         else AndroidSqliteDriver(schema, context, name,
@@ -43,6 +45,9 @@ class PointPlacementSqlCipherTest {
                                 cursor.next(); QueryResult.Value(cursor.getString(0))
                             }, 0).value } catch (failure: Throwable) { driver.close(); throw failure }
                         }
+                        }
+                        if (scenario.endsWith("v8")) PointPositionMigrationProof.lifecycle(PriceCatalogSchema, scenario == "populated-v8", open)
+                        else PointPlacementMigrationProof.lifecycle(PriceCatalogSchema, scenario == "populated-v7", open)
                     }
                 } finally { context.deleteDatabase(name) }
             }
@@ -65,7 +70,9 @@ class PointPlacementSqlCipherTest {
             createEncryptedPrototypeDriver(context, key, name, enableWalForTesting = true, initializePriceCatalog = true).use { driver ->
                 val db = PrototypeDatabase(driver)
                 f = PointPlacementProof.fixture(db)
-                point = PointPlacementRepository(db).addPoint(f.element.version, f.contourVersion, 1234, 2345, 10)
+                val initial = PointPlacementRepository(db).addPoint(f.element.version, f.contourVersion, 1234, 2345, 10)
+                val element = MeasurementElementRepository(db).find(f.element.uuid)!!
+                point = PointPlacementRepository(db).movePoint(element.version, initial, f.contourVersion, 2234, 1345, PointPrecision.EXACT, 11).point
                 val path = context.getDatabasePath(copyName).absolutePath.replace("'", "''")
                 driver.execute(null, "VACUUM INTO '$path'", 0)
             }
@@ -78,7 +85,7 @@ class PointPlacementSqlCipherTest {
             val contents = try { PortableBackupManager.validate(context, envelope, password) } finally { envelope.fill(0) }
             try {
                 val restored = SqlCipherRestoreManager.restore(context, contents)
-                assertEquals(8L, restored.queryLong("PRAGMA user_version"))
+                assertEquals(9L, restored.queryLong("PRAGMA user_version"))
                 assertEquals("wal", MeasurementElementMigrationProof.rows(restored.driver, "PRAGMA journal_mode", 1).single().single())
                 assertEquals(point, PointPlacementRepository(restored.database).find(point.uuid))
                 val details = com.andreyceilings.shared.objects.ObjectsClientsStore(restored.database) { 20 }.measurementDetails

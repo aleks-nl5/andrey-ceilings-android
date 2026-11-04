@@ -52,8 +52,11 @@ fun openDesktopPriceCatalog(driver: SqlDriver, previouslyExisting: Boolean) {
                             check(partial == 0L) { "Partial point placement schema" }
                             7L
                         } else {
-                            verifyPointPlacementStructure(driver)
-                            8L
+                            val pointColumns = columns("point_placements")
+                            check(("precision" in pointColumns) == ("lastMoveUuid" in pointColumns)) { "Partial point position schema" }
+                            val detected = if ("precision" in pointColumns) 9L else 8L
+                            verifyPointPlacementStructure(driver, detected)
+                            detected
                         }
                     }
                 } else {
@@ -64,7 +67,7 @@ fun openDesktopPriceCatalog(driver: SqlDriver, previouslyExisting: Boolean) {
             "category" in priceColumns -> if ("paymentStatus" in projectColumns) 4L else 3L
             else -> error("Непідтримувана структура прайсу. Оновлення скасовано.")
         }
-        check(persistedVersion < 8L || oldVersion == 8L) { "Incomplete v8 point placement schema" }
+        check(persistedVersion < 8L || oldVersion >= persistedVersion) { "Incomplete point placement schema" }
         if (oldVersion < PriceCatalogSchema.version)
             PriceCatalogSchema.migrate(driver, oldVersion, PriceCatalogSchema.version)
         verifyMeasurementElementStructure(driver)

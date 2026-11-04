@@ -135,10 +135,10 @@ internal object PortableBackupManager {
                     "Перевірка цілісності SQLCipher не пройдена."
                 }
                 val count = driver.executeQuery(null,
-                    "SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name IN ('clients','projects','room_measurements','price_items','estimates','measurement_elements','point_placements')",
+                    "SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name IN ('clients','projects','room_measurements','price_items','estimates','measurement_elements','point_placements','point_position_operations')",
                     { cursor -> QueryResult.Value(if (cursor.next().value) cursor.getLong(0) else null) },
                     0).value
-                check(count == 7L) { "Резервна копія не містить повної схеми SQLDelight." }
+                check(count == 8L) { "Резервна копія не містить повної схеми SQLDelight." }
                 // A pre-UUID test backup must not overwrite a database using the
                 // new sync-ready schema. A table-name check alone is insufficient.
                 listOf("clients", "projects", "room_measurements", "price_items", "estimates", "measurement_elements", "point_placements")
@@ -155,7 +155,12 @@ internal object PortableBackupManager {
                 ).value
 
                 driver.executeQuery(null,
-                    "SELECT elementUuid, xMm, yMm, contourUpdatedAt, createdAt FROM point_placements LIMIT 0",
+                    "SELECT elementUuid, xMm, yMm, contourUpdatedAt, createdAt, precision, lastMoveUuid FROM point_placements LIMIT 0",
+                    { cursor -> QueryResult.Value(cursor.next().value) }, 0
+                ).value
+
+                driver.executeQuery(null,
+                    "SELECT uuid,pointUuid,expectedPointUpdatedAt,expectedElementUpdatedAt,contourUpdatedAt,xMm,yMm,precision,createdAt FROM point_position_operations LIMIT 0",
                     { cursor -> QueryResult.Value(cursor.next().value) }, 0
                 ).value
 

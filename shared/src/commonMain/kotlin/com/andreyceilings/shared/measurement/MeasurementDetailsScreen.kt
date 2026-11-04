@@ -59,7 +59,13 @@ fun MeasurementDetailsScreen(
             }, pointState = points, pointElement = pointElement,
             onPlacePoint = { x, y -> model?.tapPoint(x, y) }, onSelectPoint = { model?.selectPoint(it) },
             onFinishPlacement = { model?.finishPlacement() }, onDeletePoint = { model?.requestPointDelete() },
-            onRetryPoint = { model?.retryPoint() })
+            onRetryPoint = { model?.retryPoint() },
+            onOpenPosition = { (data?.geometry as? MeasurementGeometryView.Captured)?.let { model?.openPosition(it.geometry, data.updatedAt) } },
+            onBeginPointDrag = { uuid -> data?.let { model?.beginPointDrag(uuid, it.updatedAt) } },
+            onPreviewPointDrag = { x, y -> model?.previewPointDrag(x, y) },
+            onFinishPointDrag = { model?.finishPointDrag() }, onCancelPointDrag = { model?.cancelPointDrag() },
+            onUndoPoint = { model?.undoPointMove() }, onRedoPoint = { model?.redoPointMove() })
+        if (model != null) PointPositionEditor(points, model)
         if (points.confirmingDelete) AlertDialog(onDismissRequest = { model?.cancelPointDelete() },
             title = { Text("Видалити позначку?") }, text = { Text("Прибрати одну позначку «${pointElement?.label.orEmpty()}»? Заявлена кількість залишиться.") },
             confirmButton = { TextButton(onClick = { model?.deletePoint() }) { Text("Видалити позначку") } },
@@ -86,7 +92,10 @@ fun MeasurementDetailsScreen(
     elementsContent: @Composable () -> Unit = {},
     pointState: PointPlacementState = PointPlacementState(), pointElement: MeasurementElement? = null,
     onPlacePoint: (Long, Long) -> Unit = { _, _ -> }, onSelectPoint: (String) -> Unit = {},
-    onFinishPlacement: () -> Unit = {}, onDeletePoint: () -> Unit = {}, onRetryPoint: () -> Unit = {}
+    onFinishPlacement: () -> Unit = {}, onDeletePoint: () -> Unit = {}, onRetryPoint: () -> Unit = {},
+    onOpenPosition: () -> Unit = {}, onBeginPointDrag: (String) -> Unit = {},
+    onPreviewPointDrag: (Double, Double) -> Unit = { _, _ -> }, onFinishPointDrag: () -> Unit = {},
+    onCancelPointDrag: () -> Unit = {}, onUndoPoint: () -> Unit = {}, onRedoPoint: () -> Unit = {}
 ) {
     var fullscreen by rememberSaveable { mutableStateOf(navigationGuard?.fullscreen?.value == true) }
     var selectedSide by rememberSaveable { mutableStateOf<Int?>(null) }
@@ -115,6 +124,7 @@ fun MeasurementDetailsScreen(
         Column(Modifier.fillMaxSize().padding(start = start, end = end,
             bottom = contentPadding.calculateBottomPadding(), top = systemTopInset + 8.dp)) {
             controls()
+            if (pointState.points.isNotEmpty()) Text("Позначки у fullscreen лише для перегляду. Положення змінюйте у звичайних деталях заміру.")
             Box(Modifier.weight(1f)) {
                 MeasurementDrawing(data.geometry, Modifier.fillMaxSize(), interactive = true,
                     selectedSide = selectedSide, onSelectSide = { selectedSide = it }, fullscreen = true,
@@ -189,10 +199,27 @@ fun MeasurementDetailsScreen(
                         if (pointState.retry != null) TextButton(enabled = !pointState.saving, onClick = onRetryPoint) { Text("Повторити ту саму спробу") }
                         if (pointState.selectedPointUuid != null) TextButton(enabled = !pointState.saving && pointState.retry == null,
                             onClick = onDeletePoint) { Text("Видалити позначку") }
+                        if (pointState.selectedPointUuid != null) {
+                            val marker = pointState.points.find { it.uuid == pointState.selectedPointUuid }
+                            Text(if (marker?.precision == PointPrecision.EXACT) "Ця позначка: точне числове положення" else "Ця позначка: приблизне положення")
+                            Text("Перетягніть виділену позначку; порожнє поле пересуває креслення.")
+                            TextButton(enabled = !pointState.saving && pointState.retry == null, onClick = onOpenPosition) { Text("Редагувати положення") }
+                        }
+                        FlowRow {
+                            TextButton(enabled = pointState.undo != null && !pointState.saving && pointState.retry == null,
+                                onClick = onUndoPoint) { Text("Скасувати переміщення") }
+                            TextButton(enabled = pointState.redo != null && !pointState.saving && pointState.retry == null,
+                                onClick = onRedoPoint) { Text("Повторити переміщення") }
+                        }
+                        if (pointState.undo != null || pointState.redo != null)
+                            Text("Історія переміщень діє лише доки відкрита ця стеля.", style = MaterialTheme.typography.bodySmall)
                         MeasurementDrawing(row.geometry, Modifier.fillMaxWidth(), interactive = true,
                             selectedSide = selectedSide, onSelectSide = { selectedSide = it },
                             pointPlacements = pointState.points, selectedPointUuid = pointState.selectedPointUuid,
-                            placementMode = pointState.modeElementUuid != null, onPlacePoint = onPlacePoint, onSelectPoint = onSelectPoint)
+                            placementMode = pointState.modeElementUuid != null, onPlacePoint = onPlacePoint, onSelectPoint = onSelectPoint,
+                            pointEditingEnabled = !pointState.saving && pointState.retry == null && pointState.positionEditor == null,
+                            pointDrag = pointState.drag, onBeginPointDrag = onBeginPointDrag,
+                            onPreviewPointDrag = onPreviewPointDrag, onFinishPointDrag = onFinishPointDrag, onCancelPointDrag = onCancelPointDrag)
                         val contour = remember(row.geometry) { measurementDrawingContour(row.geometry) }
                         contour?.let { c -> FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             c.namedSideLabels.forEachIndexed { i, label ->
