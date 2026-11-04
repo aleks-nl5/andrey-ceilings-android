@@ -72,14 +72,11 @@ object MeasurementElementFileProof {
     suspend fun run(open: (File) -> SqlDriver) {
         val file = Files.createTempFile("elements-v6-", ".db").toFile()
         try {
-            val before: List<List<String?>>
-            val structure: List<List<String?>>
-            open(file).use { driver ->
+            val (before, structure) = open(file).use { driver ->
                 MeasurementElementMigrationProof.v6Schema.create(driver)
                 driver.execute(null, "PRAGMA user_version=6", 0)
                 MeasurementElementMigrationProof.populate(driver)
-                before = MeasurementElementMigrationProof.snapshot(driver)
-                structure = PriceNameMigrationProof.schema(driver)
+                MeasurementElementMigrationProof.snapshot(driver) to PriceNameMigrationProof.schema(driver)
             }
             open(file).use { driver ->
                 assertFails { openDesktopPriceCatalog(MeasurementElementMigrationProof.failing(driver), true) }
@@ -96,14 +93,13 @@ object MeasurementElementFileProof {
                     }
                 } }
                 upgrades.forEach { it.get(30, TimeUnit.SECONDS) }
-                val row: MeasurementElement
-                open(file).use { driver ->
+                val row = open(file).use { driver ->
                     assertEquals(7L, PriceNameUniquenessProof.scalar(driver, "PRAGMA user_version"))
                     assertEquals(before, MeasurementElementMigrationProof.snapshot(driver))
                     verifyMeasurementElementStructure(driver)
                     val db = PrototypeDatabase(driver)
                     val parent = MeasurementRepository(db).all().single().uuid
-                    row = MeasurementElementRepository(db).createWish(parent, "Concurrent", 400, uuid = "race")
+                    MeasurementElementRepository(db).createWish(parent, "Concurrent", 400, uuid = "race")
                 }
                 for (scenario in listOf("edit", "retry", "duplicate")) {
                     val ready = CountDownLatch(2); val start = CountDownLatch(1)

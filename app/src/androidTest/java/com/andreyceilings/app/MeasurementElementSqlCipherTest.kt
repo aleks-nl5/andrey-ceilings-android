@@ -60,14 +60,13 @@ class MeasurementElementSqlCipherTest {
                 val driver = if (version == 6) AndroidSqliteDriver(MeasurementElementMigrationProof.v6Schema,
                     context, name, factory = SupportOpenHelperFactory(key.copyOf(), null, true))
                 else createEncryptedPrototypeDriver(context, key, name, enableWalForTesting = true, initializePriceCatalog = true)
-                val before: List<List<String?>>
-                val element: MeasurementElement?
-                driver.use {
+                val (before, element) = driver.use {
                     MeasurementElementMigrationProof.populate(it)
-                    before = MeasurementElementMigrationProof.snapshot(it)
+                    val before = MeasurementElementMigrationProof.snapshot(it)
                     val db = PrototypeDatabase(it)
-                    element = if (version == 7) MeasurementElementRepository(db).createWish(
+                    val element = if (version == 7) MeasurementElementRepository(db).createWish(
                         MeasurementRepository(db).all().single().uuid, "Restored wish", 400, uuid = "restored-wish") else null
+                    before to element
                 }
                 val image = context.getDatabasePath(name).readBytes()
                 try {
@@ -105,16 +104,15 @@ class MeasurementElementSqlCipherTest {
                     val driver = if (version == 6) AndroidSqliteDriver(MeasurementElementMigrationProof.v6Schema,
                         context, name, factory = SupportOpenHelperFactory(key.copyOf(), null, true))
                     else createEncryptedPrototypeDriver(context, key, name, enableWalForTesting = true, initializePriceCatalog = true)
-                    val oldRows: List<List<String?>>
-                    val element: MeasurementElement?
-                    driver.use {
+                    val (oldRows, element) = driver.use {
                         MeasurementElementMigrationProof.populate(it)
-                        oldRows = MeasurementElementMigrationProof.snapshot(it)
+                        val oldRows = MeasurementElementMigrationProof.snapshot(it)
                         val db = PrototypeDatabase(it)
-                        element = if (version == 7) MeasurementElementRepository(db).createWish(
+                        val element = if (version == 7) MeasurementElementRepository(db).createWish(
                             MeasurementRepository(db).all().single().uuid, "Backup wish", 400, uuid = "backup-wish") else null
                         val path = context.getDatabasePath(copyName).absolutePath.replace("'", "''")
                         it.execute(null, "VACUUM INTO '$path'", 0)
+                        oldRows to element
                     }
                     val source = context.getDatabasePath(copyName)
                     val before = source.readBytes()
