@@ -16,12 +16,18 @@ data class MeasurementEditState(
     val saving: Boolean = false, val checking: Boolean = false, val saved: Boolean = false, val error: String? = null,
     val conflict: Boolean = false, val exitRequested: Boolean = false,
     val canUndo: Boolean = false, val canRedo: Boolean = false,
+    val lineEdits: Map<String,LinePlacementEdit> = emptyMap(), val declaredLengths: Map<String,Long> = emptyMap(),
+    val selectedLineUuid: String? = null, val lineElementUuid: String? = null,
+    val lineStart: PointPositionMm? = null, val linePreview: LinePlacement? = null,
+    val lineDrag: LinePlacement? = null, val lineMoveTarget: Int = 0, val mountingLineStart: Boolean? = null,
+    val lineProperties:LinePropertiesInput?=null,val linePropertiesDismiss:Boolean=false,
+    val lineDeleteConfirm: Boolean = false, val lengthConfirm: String? = null,
     val pointEdits: Map<String,PointMountingEdit> = emptyMap(), val selectedPointUuid: String? = null,
     val drag: PointDragPreview? = null, val mountingInput: WallAnchorInput? = null,
     val mountingDismiss: Boolean = false, val uncertain: Boolean = false,
     val reviewPrompt: Boolean = false, val reviewing: Boolean = false, val wallGeneration: String = newRecordUuid()
 ) {
-    val dirty: Boolean get() = if (pointEdits.isNotEmpty() || mountingInput?.dirty==true) true else if (draft == original.draft) false else {
+    val dirty: Boolean get() = if (lineProperties?.dirty==true || lineEdits.isNotEmpty() || declaredLengths.isNotEmpty() || lineStart!=null || linePreview!=null || pointEdits.isNotEmpty() || mountingInput?.dirty==true) true else if (draft == original.draft) false else {
         val current = validateMeasurementCreate(draft)
         val baseline = validateMeasurementCreate(original.draft)
         draft.name.trim() != original.draft.name.trim() || draft.notes.trim() != original.draft.notes.trim() ||
@@ -30,7 +36,7 @@ data class MeasurementEditState(
 }
 
 @Serializable
-private data class CeilingFormHistory(val draft: String, val edits: Map<String,PointMountingEdit>, val wallGeneration:String="")
+private data class CeilingFormHistory(val draft: String, val edits: Map<String,PointMountingEdit>, val wallGeneration:String="", val lines: Map<String,LinePlacementEdit> = emptyMap(), val lengths: Map<String,Long> = emptyMap())
 private data class CeilingWriteAttempt(val operation: String, val now: Long?)
 
 /** Input transactions are grouped by focus/Done. Shape, turn and topology changes are discrete. */
@@ -46,13 +52,13 @@ class MeasurementEditModel(
     private var inputStart: CeilingFormHistory? = null
     private var attempt: CeilingWriteAttempt? = null
     private var reconcileReceipt: String? = null
-    private fun form() = CeilingFormHistory(state.value.draft.snapshot(),state.value.pointEdits,state.value.wallGeneration)
+    private fun form() = CeilingFormHistory(state.value.draft.snapshot(),state.value.pointEdits,state.value.wallGeneration,state.value.lineEdits,state.value.declaredLengths)
     private var exitAction: (() -> Unit)? = null
     fun observePoints(): Flow<PointOverlayState> = store?.observePoints(state.value.original)
         ?: flowOf(PointOverlayState.Unavailable)
 
     private fun publish(draft: MeasurementCreateDraft = state.value.draft) {
-        mutableState.value = state.value.copy(draft = draft, canUndo = inputStart?.let { it != CeilingFormHistory(draft.snapshot(),state.value.pointEdits,state.value.wallGeneration) } == true || undo.isNotEmpty(),
+        mutableState.value = state.value.copy(draft = draft, canUndo = inputStart?.let { it != CeilingFormHistory(draft.snapshot(),state.value.pointEdits,state.value.wallGeneration,state.value.lineEdits,state.value.declaredLengths) } == true || undo.isNotEmpty(),
             canRedo = redo.isNotEmpty(), error = null)
     }
     fun beginInput() { if (!state.value.saving && !state.value.checking && !state.value.saved && inputStart == null) inputStart = form() }
@@ -87,7 +93,7 @@ class MeasurementEditModel(
     }
     fun requestExit(action: () -> Unit) {
         if (state.value.saving || state.value.checking || state.value.saved) return
-        cancelPointDrag(); commitInput()
+        cancelPointDrag(); cancelLineDrag(); commitInput()
         if (!state.value.dirty && !state.value.uncertain) action() else {
             exitAction = action
             mutableState.value = state.value.copy(exitRequested = true)
@@ -117,7 +123,7 @@ class MeasurementEditModel(
     suspend fun save(keepEditing: Boolean = false) {
         if (!mutex.tryLock()) return
         try {
-            if (state.value.saving || state.value.checking || state.value.saved || state.value.conflict || state.value.mountingInput!=null) return
+            if (state.value.saving || state.value.checking || state.value.saved || state.value.conflict || state.value.mountingInput!=null || state.value.lineProperties!=null) return
             commitInput()
             val before=state.value
             if (!validateMeasurementCreate(before.draft).canSave || !canSaveMountingDraft()) return
@@ -129,19 +135,22 @@ class MeasurementEditModel(
             withContext(NonCancellable+Dispatchers.Default) {
                 try {
                     val timestamp=command.now ?: checkNotNull(store).now().also { attempt=command.copy(now=it) }
-                    val result=checkNotNull(store).update(before.original,before.draft,before.pointEdits,command.operation,before.wallGeneration,timestamp,completion)
+                    val result=checkNotNull(store).update(before.original,before.draft,before.pointEdits,command.operation,before.wallGeneration,timestamp,completion,before.lineEdits,before.declaredLengths)
                     val geometryChanged=validateMeasurementCreate(before.original.draft).geometry!=validateMeasurementCreate(result.draft).geometry
                     undo.clear();redo.clear();attempt=null
                     mutableState.value=MeasurementEditState(result,
-                        saved=!keepEditing && !(geometryChanged && result.placements.points.any { it.mounting.needsReview }),
-                        reviewPrompt=geometryChanged && result.placements.points.any { it.mounting.needsReview },
+                        saved=!keepEditing && !(geometryChanged && (result.placements.points.any { it.mounting.needsReview } || result.placements.lines.any {it.needsReview})),
+                        reviewPrompt=geometryChanged && (result.placements.points.any { it.mounting.needsReview } || result.placements.lines.any {it.needsReview}),
                         reviewing=keepEditing || before.reviewing,
+                        selectedLineUuid=if(keepEditing && result.placements.points.none {it.mounting.needsReview})result.placements.lines.firstOrNull {it.needsReview}?.uuid else null,
                         selectedPointUuid=if (keepEditing) result.placements.points.firstOrNull { it.mounting.needsReview }?.uuid else null)
                 } catch (conflict: MeasurementEditConflict) {
                     attempt=null;mutableState.value=before.copy(error=conflict.message,conflict=true);store?.release(token)
                 } catch (failure: PointPlacementFailure.RetryConflict) {
                     attempt=null;mutableState.value=before.copy(error=pointFailureMessage(failure),conflict=true);store?.release(token)
                 } catch (failure: MeasurementEditRejected) {
+                    attempt=null;mutableState.value=before.copy(uncertain=false,error=failure.message);store?.release(token)
+                } catch (failure: LinePlacementFailure) {
                     attempt=null;mutableState.value=before.copy(uncertain=false,error=failure.message);store?.release(token)
                 } catch (_: IllegalArgumentException) {
                     attempt=null;mutableState.value=before.copy(uncertain=false,error="Перевірте контур, стінні опори й відступи. Чернетку збережено; недопустимі дані не записано.");store?.release(token)
@@ -153,11 +162,12 @@ class MeasurementEditModel(
     }
     fun reviewNow() {
         mutableState.value=state.value.copy(reviewPrompt=false,reviewing=true,
+            selectedLineUuid=if(state.value.original.placements.points.none {it.mounting.needsReview})state.value.original.placements.lines.firstOrNull {it.needsReview}?.uuid else null,
             selectedPointUuid=state.value.original.placements.points.firstOrNull { it.mounting.needsReview }?.uuid)
     }
     suspend fun reviewLater() {
         if (state.value.saving) return
-        mutableState.value=state.value.copy(reviewPrompt=false,reviewing=false,pointEdits=state.value.original.placements.points
+        mutableState.value=state.value.copy(reviewPrompt=false,reviewing=false,lineEdits=state.value.original.placements.lines.filter {it.needsReview}.associate {it.uuid to LinePlacementEdit(it,defer=true)},pointEdits=state.value.original.placements.points
             .filter { it.mounting.needsReview }.associate { it.uuid to PointMountingEdit(defer=true) })
         save()
     }
@@ -171,14 +181,20 @@ class MeasurementEditModel(
 
     private fun restoreForm(value: CeilingFormHistory) {
         val draft=checkNotNull(MeasurementCreateDraft.restore(value.draft,state.value.draft.projectId))
-        mutableState.value=state.value.copy(draft=draft,pointEdits=value.edits,wallGeneration=value.wallGeneration.ifEmpty { token },drag=null,mountingInput=null)
+        mutableState.value=state.value.copy(draft=draft,lineEdits=value.lines,declaredLengths=value.lengths,pointEdits=value.edits,wallGeneration=value.wallGeneration.ifEmpty { token },drag=null,mountingInput=null,lineStart=null,linePreview=null,lineDrag=null)
         publish()
     }
     fun markPointsChanged() {
         if(!state.value.saving && !state.value.saved) mutableState.value=state.value.copy(conflict=true,error="Позначки змінено іншим редактором. Чернетку збережено; перезавантажте актуальні дані.",drag=null)
     }
     fun draftWalls() = ceilingDraftWalls(state.value.original,state.value.draft,state.value.wallGeneration)
-    fun canSaveMountingDraft():Boolean = displayPoints().none { point -> point.mounting.unresolved &&
+    fun canSaveMountingDraft():Boolean = state.value.lineProperties==null && state.value.linePreview==null && state.value.lineStart==null &&
+        displayLines().none { it.unresolved && state.value.lineEdits[it.uuid]?.let {e ->
+            val old=state.value.original.placements.lines.find {line ->line.uuid==it.uuid}
+            !e.defer && e.value.deletedAt==null && (old==null || e.confirm || e.remeasuredStart || e.remeasuredEnd ||
+                e.value.start!=old.start || e.value.end!=old.end || e.value.startMounting.anchor!=old.startMounting.anchor || e.value.endMounting.anchor!=old.endMounting.anchor)
+        }==true } &&
+        lineCapacityError()==null && displayPoints().none { point -> point.mounting.unresolved &&
         state.value.pointEdits[point.uuid]?.let {it.anchor!=null || it.freeX!=null}==true }
     fun displayPoints(): List<PointPlacement> {
         val geometry=validateMeasurementCreate(state.value.draft).geometry ?: return state.value.original.placements.points
@@ -187,7 +203,7 @@ class MeasurementEditModel(
     }
     fun selectPoint(uuid: String) {
         if (state.value.saving || state.value.uncertain || state.value.checking) return
-        if (displayPoints().any { it.uuid==uuid }) mutableState.value=state.value.copy(selectedPointUuid=uuid)
+        if (displayPoints().any { it.uuid==uuid }) mutableState.value=state.value.copy(selectedPointUuid=uuid,selectedLineUuid=null,lineElementUuid=null,lineStart=null,linePreview=null)
     }
     fun beginPointDrag(uuid: String) {
         if (state.value.saving || state.value.uncertain || state.value.checking || validateMeasurementCreate(state.value.draft).geometry==null || state.value.selectedPointUuid!=uuid) return
@@ -216,7 +232,7 @@ class MeasurementEditModel(
     fun openMounting() {
         if (state.value.saving || state.value.checking || state.value.uncertain || validateMeasurementCreate(state.value.draft).geometry==null) return
         val point=displayPoints().find { it.uuid==state.value.selectedPointUuid } ?: return
-        mutableState.value=state.value.copy(mountingInput=WallAnchorInput.from(point,draftWalls()))
+        mutableState.value=state.value.copy(mountingInput=WallAnchorInput.from(point,draftWalls()),mountingLineStart=null)
     }
     fun updateMounting(change: (WallAnchorInput)->WallAnchorInput) {
         mutableState.value=state.value.copy(mountingInput=state.value.mountingInput?.let(change),error=null)
@@ -226,14 +242,159 @@ class MeasurementEditModel(
         val geometry=validateMeasurementCreate(state.value.draft).geometry ?: return
         val anchor=input.anchor() ?: return
         if (solveWallAnchor(geometry,draftWalls(),anchor)==null) return
-        stagePoint(input.pointUuid,PointMountingEdit(anchor=anchor))
+        val lineFirst=state.value.mountingLineStart
+        if(lineFirst!=null) {
+            val line=state.value.lineEdits[input.pointUuid]?.value ?: displayLines().find {it.uuid==input.pointUuid} ?: return
+            val position=checkNotNull(solveWallAnchor(geometry,draftWalls(),anchor)).position
+            val mounting=PointMounting(anchor=anchor,anchorGeometryJson=MeasurementGeometryCodec.write(geometry))
+            stageLine(if(lineFirst)line.copy(start=position,startMounting=mounting) else line.copy(end=position,endMounting=mounting),
+                remeasuredStart=if(lineFirst)true else null,remeasuredEnd=if(!lineFirst)true else null)
+        } else stagePoint(input.pointUuid,PointMountingEdit(anchor=anchor))
     }
     fun dismissMounting() {
         if(state.value.mountingInput?.dirty==true) mutableState.value=state.value.copy(mountingDismiss=true)
         else discardMounting()
     }
-    fun discardMounting() { mutableState.value=state.value.copy(mountingInput=null,mountingDismiss=false) }
+    fun discardMounting() { mutableState.value=state.value.copy(mountingInput=null,mountingLineStart=null,mountingDismiss=false) }
     fun continueMounting() { mutableState.value=state.value.copy(mountingDismiss=false) }
+
+    private fun editable() = !state.value.saving && !state.value.checking && !state.value.saved && !state.value.uncertain
+    fun displayLines(): List<LinePlacement> {
+        val state=state.value
+        val geometry=validateMeasurementCreate(state.draft).geometry ?: return state.original.placements.lines
+        val changed=geometry!=validateMeasurementCreate(state.original.draft).geometry
+        return (state.original.placements.lines.map {it.uuid}+state.lineEdits.keys).distinct().mapNotNull {id ->
+            val edit=state.lineEdits[id]
+            val line=state.original.placements.lines.find {it.uuid==id} ?: edit?.value ?: return@mapNotNull null
+            if(edit?.value?.deletedAt!=null) null else previewLine(line,geometry,draftWalls(),changed,edit)
+        }
+    }
+    fun lineCapacityError(): String? {
+        val lines=displayLines()
+        if(state.value.declaredLengths.any { (id,length) -> lines.filter {it.elementUuid==id && !it.unresolved}.sumOf {it.lengthMm}!=length })
+            return "Довжина креслення змінилася. Повторіть явну дію «Взяти довжину з креслення» або скасуйте її через Undo."
+        return state.value.original.lineElements.firstOrNull {element ->
+            val capacity=state.value.declaredLengths[element.uuid] ?: element.lineCapacityMm()
+            capacity!=null && lines.filter {it.elementUuid==element.uuid}.sumOf {it.lengthMm}>capacity
+        }?.let {LinePlacementFailure.CapacityReached().message}
+    }
+    fun beginLine(element: String) {
+        if(!editable() || state.value.original.lineElements.none {it.uuid==element})return
+        mutableState.value=state.value.copy(lineElementUuid=element,lineStart=null,linePreview=null,selectedLineUuid=null,selectedPointUuid=null)
+    }
+    fun lineTap(x:Long,y:Long) {
+        if(!editable() || state.value.linePreview!=null)return
+        val element=state.value.lineElementUuid ?: return
+        val geometry=validateMeasurementCreate(state.value.draft).geometry ?: return
+        if(!pointStrictlyInside(geometry,x,y)) {mutableState.value=state.value.copy(error=LinePlacementFailure.InvalidSegment().message);return}
+        val start=state.value.lineStart
+        if(start==null) mutableState.value=state.value.copy(lineStart=PointPositionMm(x,y)) else {
+            val end=PointPositionMm(x,y)
+            if(!lineStrictlyInside(geometry,start,end)) {mutableState.value=state.value.copy(error=LinePlacementFailure.InvalidSegment().message);return}
+            mutableState.value=state.value.copy(linePreview=LinePlacement(newRecordUuid(),element,start,end,state.value.original.updatedAt,0,0))
+        }
+    }
+    fun cancelLineCreation() {mutableState.value=state.value.copy(lineStart=null,linePreview=null,lineElementUuid=null)}
+    fun acceptLineCreation() {
+        if(!editable())return
+        val line=state.value.linePreview ?: return
+        stageLine(line)
+        mutableState.value=state.value.copy(lineStart=null,linePreview=null,lineElementUuid=null,selectedLineUuid=line.uuid)
+    }
+    fun selectLine(uuid:String) {
+        if(!editable())return
+        if(displayLines().any {it.uuid==uuid}) mutableState.value=state.value.copy(selectedLineUuid=uuid,selectedPointUuid=null,lineElementUuid=null,lineStart=null,linePreview=null)
+    }
+    fun stageLine(line:LinePlacement,confirm:Boolean=false,defer:Boolean=false,remeasuredStart:Boolean?=null,remeasuredEnd:Boolean?=null) {
+        if(!editable())return
+        commitInput();undo.add(form());redo.clear()
+        mutableState.value=state.value.copy(lineEdits=state.value.lineEdits+(line.uuid to LinePlacementEdit(line,confirm,defer,remeasuredStart ?: state.value.lineEdits[line.uuid]?.remeasuredStart ?: false,remeasuredEnd ?: state.value.lineEdits[line.uuid]?.remeasuredEnd ?: false)),mountingInput=null,lineDrag=null,error=null)
+        publish()
+        lineCapacityError()?.let {mutableState.value=state.value.copy(error=it)}
+    }
+    fun setLineMoveTarget(target:Int) { if(editable())mutableState.value=state.value.copy(lineMoveTarget=target) }
+    fun beginLineDrag(uuid:String) {if(editable() && state.value.selectedLineUuid==uuid)mutableState.value=state.value.copy(lineDrag=displayLines().find {it.uuid==uuid})}
+    fun previewLineDrag(dx:Double,dy:Double) {
+        val source=displayLines().find {it.uuid==state.value.lineDrag?.uuid} ?: return
+        if(!dx.isFinite() || !dy.isFinite() || dx !in -2_000_000.0..2_000_000.0 || dy !in -2_000_000.0..2_000_000.0)return
+        fun move(p:PointPositionMm)=PointPositionMm(p.xMm+dx.roundToLong(),p.yMm+dy.roundToLong())
+        val target=state.value.lineMoveTarget
+        mutableState.value=state.value.copy(lineDrag=source.copy(start=if(target!=2)move(source.start) else source.start,
+            end=if(target!=1)move(source.end) else source.end,
+            startMounting=if(target!=2)PointMounting() else source.startMounting,endMounting=if(target!=1)PointMounting() else source.endMounting,
+            needsReview=source.needsReview || source.precision==PointPrecision.EXACT))
+    }
+    fun cancelLineDrag() {mutableState.value=state.value.copy(lineDrag=null)}
+    fun finishLineDrag() {
+        val line=state.value.lineDrag ?: return;cancelLineDrag()
+        val geometry=validateMeasurementCreate(state.value.draft).geometry ?: return
+        if(!lineStrictlyInside(geometry,line.start,line.end)){mutableState.value=state.value.copy(error=LinePlacementFailure.InvalidSegment().message);return}
+        stageLine(line,remeasuredStart=if(state.value.lineMoveTarget!=2)false else null,remeasuredEnd=if(state.value.lineMoveTarget!=1)false else null)
+        mutableState.value=state.value.copy(error="Переміщений кінець має приблизне положення. Активні виміряні прив'язки цього кінця скинуто.")
+    }
+    fun openLineMounting(first:Boolean) {
+        if(!editable())return
+        val id=state.value.selectedLineUuid ?: return
+        val line=state.value.lineEdits[id]?.value ?: displayLines().find {it.uuid==id} ?: return
+        mutableState.value=state.value.copy(mountingInput=WallAnchorInput.from(line.endpoint(first),draftWalls()),mountingLineStart=first)
+    }
+    fun confirmLine() {
+        val id=state.value.selectedLineUuid ?: return
+        val line=state.value.lineEdits[id]?.value ?: displayLines().find {it.uuid==id} ?: return
+        val geometry=validateMeasurementCreate(state.value.draft).geometry ?: return
+        val a=line.startMounting.anchor?.let {solveWallAnchor(geometry,draftWalls(),it)}
+        val b=line.endMounting.anchor?.let {solveWallAnchor(geometry,draftWalls(),it)}
+        if(state.value.original.placements.lines.find {it.uuid==id}?.unresolved==true && (a==null || b==null || state.value.lineEdits[id]?.remeasuredStart!=true || state.value.lineEdits[id]?.remeasuredEnd!=true)) {mutableState.value=state.value.copy(error=LinePlacementFailure.RequiresMeasuredAnchors().message);return}
+        stageLine(line.copy(start=a?.position ?: line.start,end=b?.position ?: line.end,
+            startMounting=line.startMounting.copy(unresolved=false),endMounting=line.endMounting.copy(unresolved=false),
+            unresolved=false,needsReview=false),confirm=true)
+    }
+    suspend fun confirmLineAndContinueReview() {
+        confirmLine()
+        if(state.value.error!=null)return
+        if(canSaveMountingDraft())save(keepEditing=true)
+    }
+    fun openLineProperties() {
+        if(!editable())return
+        val line=displayLines().find {it.uuid==state.value.selectedLineUuid} ?: return
+        mutableState.value=state.value.copy(lineProperties=LinePropertiesInput(line.uuid,line.widthMm?.toString().orEmpty(),line.note))
+    }
+    fun changeLineProperties(width:String?=null,note:String?=null) {
+        if(!editable())return
+        mutableState.value=state.value.copy(lineProperties=state.value.lineProperties?.let {it.copy(width=width ?: it.width,note=note ?: it.note)})
+    }
+    fun dismissLineProperties() {
+        if(state.value.lineProperties?.dirty==true)mutableState.value=state.value.copy(linePropertiesDismiss=true) else discardLineProperties()
+    }
+    fun discardLineProperties() {mutableState.value=state.value.copy(lineProperties=null,linePropertiesDismiss=false)}
+    fun continueLineProperties() {mutableState.value=state.value.copy(linePropertiesDismiss=false)}
+    fun applyLineProperties() {
+        if(!editable())return
+        val input=state.value.lineProperties?.takeIf {it.valid} ?: return
+        val line=state.value.lineEdits[input.uuid]?.value ?: displayLines().find {it.uuid==input.uuid} ?: return
+        stageLine(line.copy(widthMm=input.width.toLongOrNull(),note=input.note));discardLineProperties()
+    }
+    fun requestLineDelete() {if(editable())mutableState.value=state.value.copy(lineDeleteConfirm=true)}
+    fun cancelLineDelete() {mutableState.value=state.value.copy(lineDeleteConfirm=false)}
+    fun deleteLine() {
+        if(!editable())return
+        val id=state.value.selectedLineUuid ?: return
+        val line=displayLines().find {it.uuid==id} ?: return
+        if(state.value.original.placements.lines.any {it.uuid==id})stageLine(line.copy(deletedAt=0)) else {
+            commitInput();undo.add(form());redo.clear();mutableState.value=state.value.copy(lineEdits=state.value.lineEdits-id);publish()
+        }
+        mutableState.value=state.value.copy(lineDeleteConfirm=false,selectedLineUuid=null)
+    }
+    fun requestDeclaredLength(element:String?) {if(editable())mutableState.value=state.value.copy(lengthConfirm=element)}
+    fun takeDeclaredLength() {
+        if(!editable())return
+        val element=state.value.lengthConfirm ?: return
+        val lines=displayLines().filter {it.elementUuid==element && !it.unresolved}
+        val length=lines.sumOf {it.lengthMm}
+        if(length<=0)return
+        commitInput();undo.add(form());redo.clear()
+        mutableState.value=state.value.copy(declaredLengths=state.value.declaredLengths+(element to length),lengthConfirm=null);publish()
+    }
 
     /** Local saveable data, never commands or route payloads. History is bounded. */
     fun snapshot(): String = buildJsonObject {
@@ -241,6 +402,15 @@ class MeasurementEditModel(
         put("original", state.value.original.draft.snapshot()); put("draft", state.value.draft.snapshot())
         put("wallGeneration",state.value.wallGeneration)
         put("placements",mountingCodec.encodeToString(state.value.original.placements))
+        state.value.lineProperties?.let {put("lineProperties",mountingCodec.encodeToString(it))}
+        put("lineMoveTarget",state.value.lineMoveTarget)
+        put("lineEdits",mountingCodec.encodeToString(state.value.lineEdits))
+        put("declaredLengths",mountingCodec.encodeToString(state.value.declaredLengths))
+        state.value.selectedLineUuid?.let {put("selectedLine",it)}
+        state.value.lineElementUuid?.let {put("lineElement",it)}
+        state.value.lineStart?.let {put("lineStart",mountingCodec.encodeToString(it))}
+        state.value.linePreview?.let {put("linePreview",mountingCodec.encodeToString(it))}
+        state.value.mountingLineStart?.let {put("mountingLineStart",it)}
         put("pointEdits",mountingCodec.encodeToString(state.value.pointEdits))
         state.value.original.sourceDrawingJson?.let { put("sourceDrawingJson",it) }
         state.value.selectedPointUuid?.let { put("selectedPoint",it) }
@@ -277,6 +447,15 @@ class MeasurementEditModel(
                 json["placements"]?.jsonPrimitive?.content?.let { mountingCodec.decodeFromString<CeilingPlacementDocument>(it) } ?: CeilingPlacementDocument(),
                 json["sourceDrawingJson"]?.jsonPrimitive?.content), token).also {
                 it.mutableState.value = it.state.value.copy(draft = draft,
+                    lineProperties=json["lineProperties"]?.jsonPrimitive?.content?.let {mountingCodec.decodeFromString<LinePropertiesInput>(it)},
+                    lineMoveTarget=json["lineMoveTarget"]?.jsonPrimitive?.intOrNull ?: 0,
+                    lineEdits=json["lineEdits"]?.jsonPrimitive?.content?.let {mountingCodec.decodeFromString<Map<String,LinePlacementEdit>>(it)} ?: emptyMap(),
+                    declaredLengths=json["declaredLengths"]?.jsonPrimitive?.content?.let {mountingCodec.decodeFromString<Map<String,Long>>(it)} ?: emptyMap(),
+                    selectedLineUuid=json["selectedLine"]?.jsonPrimitive?.content,
+                    lineElementUuid=json["lineElement"]?.jsonPrimitive?.content,
+                    lineStart=json["lineStart"]?.jsonPrimitive?.content?.let {mountingCodec.decodeFromString<PointPositionMm>(it)},
+                    linePreview=json["linePreview"]?.jsonPrimitive?.content?.let {mountingCodec.decodeFromString<LinePlacement>(it)},
+                    mountingLineStart=json["mountingLineStart"]?.jsonPrimitive?.booleanOrNull,
                     pointEdits=json["pointEdits"]?.jsonPrimitive?.content?.let { mountingCodec.decodeFromString<Map<String,PointMountingEdit>>(it) } ?: emptyMap(),
                     selectedPointUuid=json["selectedPoint"]?.jsonPrimitive?.content,
                     mountingInput=json["mountingInput"]?.jsonPrimitive?.content?.let { mountingCodec.decodeFromString<WallAnchorInput>(it) },
@@ -316,21 +495,21 @@ class MeasurementEditModel(
                 val committed=withContext(Dispatchers.Default) { store.operationCommitted(receipt,loaded.draft.recordUuid,loaded.updatedAt) }
                 if(committed) {
                     val changed=validateMeasurementCreate(loaded.draft).geometry!=validateMeasurementCreate(before.original.draft).geometry
-                    val review=changed && loaded.placements.points.any {it.mounting.needsReview}
+                    val review=changed && (loaded.placements.points.any {it.mounting.needsReview} || loaded.placements.lines.any {it.needsReview})
                     mutableState.value=MeasurementEditState(loaded,saved=!review,reviewPrompt=review)
                 } else mutableState.value=before.copy(checking=false,conflict=true,error="Спробу не підтверджено. Чернетку збережено; перезавантажте актуальний запис перед новим Save.")
                 return
             }
             val actual = validateMeasurementCreate(loaded.draft).geometry
             val intended = validateMeasurementCreate(before.draft).geometry
-            if (recoveringWrite && (loaded.updatedAt > before.original.updatedAt || loaded.updatedAt == before.original.updatedAt && !before.dirty) && actual == intended &&
+            if (recoveringWrite && before.lineEdits.isEmpty() && before.declaredLengths.isEmpty() && (loaded.updatedAt > before.original.updatedAt || loaded.updatedAt == before.original.updatedAt && !before.dirty) && actual == intended &&
                 loaded.draft.name == before.draft.name.trim() && loaded.draft.notes == before.draft.notes.trim() &&
                 loaded.placements.points.map { it.copy(updatedAt=0,lastCeilingEditUuid=null,mounting=it.mounting.copy(modifiedVersion=0,confirmedAt=null,deferredAt=null,anchorGeometryJson=null,lastValidGeometryJson=null)) } ==
                 displayPoints().map { it.copy(updatedAt=0,lastCeilingEditUuid=null,mounting=it.mounting.copy(modifiedVersion=0,confirmedAt=null,deferredAt=null,anchorGeometryJson=null,lastValidGeometryJson=null)) }) {
                 mutableState.value = MeasurementEditState(loaded, saved = true)
             } else if (loaded.updatedAt != before.original.updatedAt || loaded.draft.recordUuid != before.original.draft.recordUuid || loaded.placements!=before.original.placements) {
                 mutableState.value = before.copy(checking = false, conflict = true, error = MeasurementEditConflict().message)
-            } else mutableState.value = before.copy(checking = false)
+            } else mutableState.value = before.copy(original=loaded,checking = false)
         } catch (_: Exception) {
             mutableState.value = state.value.copy(checking = false, conflict = true, error = "Перевірте результат збереження: запис зараз недоступний. Перезавантажте його перед новим записом.")
         }

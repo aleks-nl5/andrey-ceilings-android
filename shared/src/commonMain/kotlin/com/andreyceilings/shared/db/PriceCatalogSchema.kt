@@ -13,6 +13,9 @@ class MigrationStatementFailure(val statement: Int, cause:Throwable) : IllegalSt
 
 /** Production schema: structure + starter rows + marker commit or roll back together. */
 object PriceCatalogSchema : SqlSchema<QueryResult.Value<Unit>> {
+    /** Read-only full fingerprint audit, also used by physical platform proofs. */
+    fun verifyStructure(driver:SqlDriver,version:Long=this.version) = verifyPointPlacementStructure(driver,version)
+
     override val version: Long get() = PrototypeDatabase.Schema.version
 
     override fun create(driver: SqlDriver): QueryResult.Value<Unit> {
@@ -41,7 +44,7 @@ object PriceCatalogSchema : SqlSchema<QueryResult.Value<Unit>> {
         vararg callbacks: AfterVersion): QueryResult.Value<Unit> {
         // Old draft APKs distributed two exact v10 schemas. Unknown/partial/hybrid schemas
         // must fail BEFORE corrective DDL can accidentally repair away their evidence.
-        if(oldVersion in 8L..10L)verifyPointPlacementStructure(driver,oldVersion)
+        if(oldVersion in 8L..11L)verifyPointPlacementStructure(driver,oldVersion)
         var statement=0
         val observed=object:SqlDriver by driver {
             override fun execute(identifier:Int?,sql:String,parameters:Int,binders:(app.cash.sqldelight.db.SqlPreparedStatement.()->Unit)?):QueryResult<Long> {

@@ -20,7 +20,7 @@ import com.andreyceilings.shared.prices.label
 fun MeasurementElementsSection(state: MeasurementElementsState, onAdd: () -> Unit,
     onOpen: (MeasurementElement, ElementEditorAction) -> Unit, onRetry: () -> Unit,
     onPlace: ((MeasurementElement) -> Unit)? = null, placementUnavailable: String? = null,
-    selectedElementUuid: String? = null) {
+    selectedElementUuid: String? = null, onPlaceLine: ((MeasurementElement)->Unit)? = null) {
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text("Елементи стелі", style = MaterialTheme.typography.titleLarge)
         when (state) {
@@ -45,10 +45,12 @@ fun MeasurementElementsSection(state: MeasurementElementsState, onAdd: () -> Uni
                             if (element.note.isNotBlank()) Text(element.note)
                             Text(if (element.approval == ElementApproval.APPROVED) "Погоджено" else "Обговорюється")
                             val capacity = element.pointCapacity()
-                            Text(if (capacity != null) "Розміщено: ${element.placedQuantityMilli / 1000} з $capacity" else "Не розміщено", style = MaterialTheme.typography.bodySmall,
+                            Text(if (capacity != null) "Розміщено: ${element.placedQuantityMilli / 1000} з $capacity" else if(element.supportsLinePlacement()) "Заявлено: ${formatElementQuantity(element.quantity,element.unit)} · На кресленні ${formatElementMilli(element.placedQuantityMilli)} м" else "Не розміщено", style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            if (onPlace != null) {
-                                val explanation = pointPlacementExplanation(element) ?: placementUnavailable
+                            if(element.supportsLinePlacement() && onPlaceLine!=null) {
+                                TextButton(enabled=placementUnavailable==null,onClick={onPlaceLine(element)}) {Text("Розмістити лінію")}
+                            } else if (onPlace != null) {
+                                val explanation = (if(source?.placementKind==com.andreyceilings.shared.prices.PlacementKind.LINE) linePlacementExplanation(element) else pointPlacementExplanation(element)) ?: placementUnavailable
                                 if (explanation != null) Text(explanation, style = MaterialTheme.typography.bodySmall)
                                 TextButton(enabled = explanation == null && capacity != null && element.placedQuantityMilli / 1000 < capacity,
                                     onClick = { onPlace(element) }) { Text("Розмістити") }

@@ -596,7 +596,7 @@ BEGIN SELECT RAISE(ABORT,'ceiling_version_must_increase'); END;
 )
 
 /** v11 retains the exact v10 contract except the two verified legacy-seed triggers. */
-internal val pointSchemaDefinitions = pointV10SchemaDefinitions + mapOf(
+internal val pointV11SchemaDefinitions = pointV10SchemaDefinitions + mapOf(
     "ceiling_measurement_walls" to """
 CREATE TRIGGER ceiling_measurement_walls AFTER INSERT ON room_measurements BEGIN
 INSERT INTO ceiling_walls(uuid,measurementUuid,ordinal,ax,ay,bx,by,geometryVersion,active)

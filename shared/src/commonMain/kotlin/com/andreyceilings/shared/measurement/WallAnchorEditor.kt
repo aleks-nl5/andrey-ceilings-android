@@ -51,7 +51,7 @@ fun WallAnchorEditor(model: MeasurementEditModel) {
     val solution=geometry?.let { g -> input.anchor()?.let { solveWallAnchor(g,walls,it) } }
     AlertDialog(onDismissRequest=model::dismissMounting,title={Text("Розміри від стін")},
         text={Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(8.dp)) {
-            Text("Виміряйте відстані від обраних стін до центра світильника. Значення у метрах, до 3 знаків після коми або крапки.")
+            Text("Виміряйте відстані від обраних стін до вибраної точки або кінця лінії. Значення у метрах, до 3 знаків після коми або крапки.")
             FlowRow(horizontalArrangement=Arrangement.spacedBy(6.dp)) {
                 FilterChip(input.kind==WallAnchor.Kind.TWO_WALLS,onClick={model.updateMounting { it.copy(kind=WallAnchor.Kind.TWO_WALLS) }},label={Text("Від двох стін")})
                 FilterChip(input.kind==WallAnchor.Kind.ALONG_INWARD,onClick={model.updateMounting { it.copy(kind=WallAnchor.Kind.ALONG_INWARD) }},label={Text("Уздовж + усередину")})

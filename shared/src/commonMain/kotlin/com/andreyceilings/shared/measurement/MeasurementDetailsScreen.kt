@@ -42,6 +42,8 @@ fun MeasurementDetailsScreen(
             onDispose { model?.let { navigationGuard?.unbindElements(it) } }
         }
         val elementsState = model?.state?.collectAsState()?.value ?: MeasurementElementsState.Loading
+        val lines=model?.lines?.collectAsState()?.value ?: emptyList()
+        var selectedLine by rememberSaveable(data?.uuid) {mutableStateOf<String?>(null)}
         val points = model?.points?.collectAsState()?.value ?: PointPlacementState()
         val pointElement = (elementsState as? MeasurementElementsState.Loaded)?.items?.find {
             it.uuid == (points.selectedElementUuid ?: points.modeElementUuid) }
@@ -55,9 +57,15 @@ fun MeasurementDetailsScreen(
                         !points.available -> "Позначки або захищена база недоступні."
                         points.saving -> "Зачекайте завершення збереження."
                         else -> null
-                    }, selectedElementUuid = points.selectedElementUuid)
-            }, pointState = points, pointElement = pointElement,
-            onPlacePoint = { x, y -> model?.tapPoint(x, y) }, onSelectPoint = { model?.selectPoint(it) },
+                    }, selectedElementUuid = lines.find {it.uuid==selectedLine}?.elementUuid ?: points.selectedElementUuid,
+                    onPlaceLine=if(onEdit==null)null else {element ->
+                        if(model?.finishPlacement()!=false) {
+                            navigationGuard?.requestedLinePlacement=data?.uuid?.let {it to element.uuid}
+                            onEdit.invoke()
+                        }
+                    })
+            }, linePlacements=lines,selectedLineUuid=selectedLine,onSelectLine={uuid ->if(model?.finishPlacement()!=false)selectedLine=uuid}, pointState = points, pointElement = pointElement,
+            onPlacePoint = { x, y -> model?.tapPoint(x, y) }, onSelectPoint = { selectedLine=null;model?.selectPoint(it) },
             onFinishPlacement = { model?.finishPlacement() }, onDeletePoint = { model?.requestPointDelete() },
             onRetryPoint = { model?.retryPoint() },
             onOpenPosition = { if (model?.finishPlacement()!=false) onEdit?.invoke() },
@@ -90,6 +98,7 @@ fun MeasurementDetailsScreen(
     onBack: () -> Unit, onEdit: (() -> Unit)? = null,
     navigationGuard: MeasurementCreateNavigationGuard? = null, backLabel: String = "До об'єкта",
     elementsContent: @Composable () -> Unit = {},
+    linePlacements: List<LinePlacement> = emptyList(),selectedLineUuid:String?=null,onSelectLine:(String)->Unit={},
     pointState: PointPlacementState = PointPlacementState(), pointElement: MeasurementElement? = null,
     onPlacePoint: (Long, Long) -> Unit = { _, _ -> }, onSelectPoint: (String) -> Unit = {},
     onFinishPlacement: () -> Unit = {}, onDeletePoint: () -> Unit = {}, onRetryPoint: () -> Unit = {},
@@ -128,7 +137,7 @@ fun MeasurementDetailsScreen(
             Box(Modifier.weight(1f)) {
                 MeasurementDrawing(data.geometry, Modifier.fillMaxSize(), interactive = true,
                     selectedSide = selectedSide, onSelectSide = { selectedSide = it }, fullscreen = true,
-                    pointPlacements = pointState.points)
+                    pointPlacements = pointState.points,linePlacements=linePlacements,selectedLineUuid=selectedLineUuid,onSelectLine=onSelectLine)
             }
             val contour = remember(data.geometry) { measurementDrawingContour(data.geometry) }
             contour?.let {
@@ -191,7 +200,8 @@ fun MeasurementDetailsScreen(
                                 Text("Розміщено ${pointElement.placedQuantityMilli / 1000} з $capacity · Потребує уточнення: $unresolved")
                             }
                         }
-                        val reviewCount=pointState.points.count { it.mounting.needsReview }
+                        val reviewCount=pointState.points.count { it.mounting.needsReview }+linePlacements.count {it.needsReview}
+                        if(linePlacements.isNotEmpty())Text("Ліній: ${linePlacements.size} · Потребує уточнення: ${linePlacements.count {it.unresolved}}")
                         if(reviewCount>0) {
                             Text("Розміщення потребує перевірки після зміни контуру або прив'язок.")
                             TextButton(onClick={onEdit?.invoke()},enabled=onEdit!=null && !pointState.saving){Text("Перевірити ($reviewCount)")}
@@ -228,7 +238,7 @@ fun MeasurementDetailsScreen(
                             Text("Історія переміщень діє лише доки відкрита ця стеля.", style = MaterialTheme.typography.bodySmall)
                         MeasurementDrawing(row.geometry, Modifier.fillMaxWidth(), interactive = true,
                             selectedSide = selectedSide, onSelectSide = { selectedSide = it },
-                            pointPlacements = pointState.points, fitPointPlacements = true, selectedPointUuid = pointState.selectedPointUuid,
+                            linePlacements=linePlacements,selectedLineUuid=selectedLineUuid,onSelectLine=onSelectLine,pointPlacements = pointState.points, fitPointPlacements = true, selectedPointUuid = pointState.selectedPointUuid,
                             placementMode = pointState.modeElementUuid != null, onPlacePoint = onPlacePoint, onSelectPoint = onSelectPoint,
                             pointEditingEnabled = !pointState.saving && pointState.retry == null && pointState.positionEditor == null,
                             pointDrag = pointState.drag, onBeginPointDrag = onBeginPointDrag,

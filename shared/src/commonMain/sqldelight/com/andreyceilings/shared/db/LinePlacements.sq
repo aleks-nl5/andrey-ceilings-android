@@ -1,0 +1,8 @@
+selectForMeasurement:
+SELECT l.* FROM line_placements l JOIN measurement_elements e ON e.uuid=l.elementUuid
+JOIN room_measurements m ON m.uuid=e.measurementUuid JOIN projects p ON p.id=m.projectId
+WHERE m.uuid=? AND l.deletedAt IS NULL AND e.deletedAt IS NULL AND m.deletedAt IS NULL AND p.deletedAt IS NULL
+ORDER BY l.createdAt,l.uuid;
+
+selectAll:
+SELECT * FROM line_placements ORDER BY createdAt,uuid;

@@ -86,7 +86,11 @@ class MeasurementElementRepository(private val database: PrototypeDatabase) {
         }
         if (label.isBlank()) throw MeasurementElementFailure.InvalidInput()
         ElementQuantityRules.validate(quantity, unit, (current.source as? ElementSource.CatalogSelection)?.quantityMode)
-        if (current.placedQuantityMilli > 0 &&
+        if (current.supportsLinePlacement()) {
+            val reserved=LinePlacementRepository(database).forMeasurement(current.measurementUuid).filter {it.elementUuid==current.uuid}.sumOf {it.lengthMm}
+            val cap=when(quantity) {is ElementQuantity.Exact->quantity.milli; is ElementQuantity.Range->quantity.maxMilli; else->null}
+            if(cap!=null && reserved>cap) throw MeasurementElementFailure.PlacementsInUse()
+        } else if (current.placedQuantityMilli > 0 &&
             (quantity !is ElementQuantity.Exact || quantity.milli < current.placedQuantityMilli))
             throw MeasurementElementFailure.PlacementsInUse()
         val saved = queries.editElement(label, note, approval.value, unit, quantity.kind(), quantity.exact(),

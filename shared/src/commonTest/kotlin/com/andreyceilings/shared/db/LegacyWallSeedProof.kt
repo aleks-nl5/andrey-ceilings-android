@@ -23,7 +23,7 @@ object LegacyWallSeedProof {
         return f
     }
     fun decorateV10(driver:SqlDriver,f:PointPlacementProof.Fixture) {
-        val db=PrototypeDatabase(driver);val store=MeasurementEditStore(db){100}
+        val db=PrototypeDatabase(driver);val store=HistoricalPointEditStore(db){100}
         var document=store.load(f.project,f.id)
         val anchor=WallAnchor(WallAnchor.Kind.TWO_WALLS,document.placements.walls[0].uuid,document.placements.walls[3].uuid,600,1500)
         document=store.update(document,document.draft,mapOf("v9-point" to PointMountingEdit(anchor=anchor)),now=100)

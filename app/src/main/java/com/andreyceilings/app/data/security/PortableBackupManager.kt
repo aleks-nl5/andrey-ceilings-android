@@ -135,13 +135,13 @@ internal object PortableBackupManager {
                     "Перевірка цілісності SQLCipher не пройдена."
                 }
                 val count = driver.executeQuery(null,
-                    "SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name IN ('clients','projects','room_measurements','price_items','estimates','measurement_elements','point_placements','point_position_operations','ceiling_operations','ceiling_walls','ceiling_operation_results')",
+                    "SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name IN ('clients','projects','room_measurements','price_items','estimates','measurement_elements','point_placements','point_position_operations','ceiling_operations','ceiling_walls','ceiling_operation_results','line_placements')",
                     { cursor -> QueryResult.Value(if (cursor.next().value) cursor.getLong(0) else null) },
                     0).value
-                check(count == 11L) { "Резервна копія не містить повної схеми SQLDelight." }
+                check(count == 12L) { "Резервна копія не містить повної схеми SQLDelight." }
                 // A pre-UUID test backup must not overwrite a database using the
                 // new sync-ready schema. A table-name check alone is insufficient.
-                listOf("clients", "projects", "room_measurements", "price_items", "estimates", "measurement_elements", "point_placements")
+                listOf("clients", "projects", "room_measurements", "price_items", "estimates", "measurement_elements", "point_placements", "line_placements")
                     .forEach { table ->
                         driver.executeQuery(null,
                             "SELECT uuid, updatedAt, deletedAt FROM $table LIMIT 0",

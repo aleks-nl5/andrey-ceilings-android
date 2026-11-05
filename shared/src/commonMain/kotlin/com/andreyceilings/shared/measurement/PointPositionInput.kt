@@ -27,6 +27,7 @@ fun formatPointMetres(mm: Long): String {
     return (if (mm < 0) "-" else "") + (magnitude / 1000) + if (fraction.isEmpty()) "" else ",$fraction"
 }
 
+@kotlinx.serialization.Serializable
 data class PointPositionMm(val xMm: Long, val yMm: Long)
 data class PointWallDistances(val alongMm: Double, val inwardMm: Double)
 
