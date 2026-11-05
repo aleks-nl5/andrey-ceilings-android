@@ -1,3 +1,17 @@
+# Актуальний етап — P3C4: лінійні елементи стелі (05.11.2026)
+
+**Підтверджена база:** [PR #99](https://github.com/aleks-nl5/andrey-ceilings-android/pull/99) (P3C3) merged в `main` 05.11.2026, merge SHA `0d7f0d005d85ef01879a47ecf71f63756d0c150b`, SQLDelight/SQLCipher schema **v11**. Owner після виправлення startup/migration підтвердив, що фінальний APK працює нормально; P3C3 Android/Windows/iOS final-SHA CI green. Issues P3B #89 (PR #91), P3C1 #93 (PR #94) та P3C3 #98 (PR #99) закриті **completed**; umbrella #71/#76/#78 залишені відкритими.
+
+**Поточне реалізаційне завдання, а не готова функція:** [issue #100](https://github.com/aleks-nl5/andrey-ceilings-android/issues/100) → [Draft PR #101](https://github.com/aleks-nl5/andrey-ceilings-android/pull/101), branch `feat/p3c4-linear-ceiling-features`. Повне самодостатнє Codex ТЗ — [MEASUREMENT_LINE_PLACEMENTS_P3C4.md](MEASUREMENT_LINE_PLACEMENTS_P3C4.md). Початкові коміти PR #101 лише документують роботу, **P3C4 ще не реалізований і не проходив приймання**. Codex має продовжувати **цей самий** Draft PR.
+
+**Межі P3C4:** typed прямолінійні сегменти `LINE` із незалежними stable UUID; два world-mm endpoints, optional width, виміряні wall anchors на кожен endpoint, приблизне й точне розміщення, автоматична геометрична довжина при незалежній заявленій кількості, редагування в одному normal/fullscreen CMP Canvas, sticky unresolved і «Перевірити/Пізніше», atomic contour+POINT+LINE Save, v11→v12 міграція. Не змінювати price/pricing, історичні estimates/PDF, WAL/keys/backup format; зберегти P3C3 schema/backups/fingerprints й strict fail closed.
+
+**Подальша погоджена послідовність:** P3C5 — площинні елементи, отвори й перешкоди (#71), далі P4 — live KMP калькулятор і нові кошториси [#44](https://github.com/aleks-nl5/andrey-ceilings-android/issues/44), потім повний узгоджений UX-redesign [#95](https://github.com/aleks-nl5/andrey-ceilings-android/issues/95). Геометричний solver #70 й hosts #42 — окремо. Не вважати #71/#76/#78 закритими до реалізації всього погодженого scope.
+
+**Правило доставки:** одна feature branch / один Draft PR → common/CMP/SQLCipher Android/Windows/iOS proofs і final-SHA CI → ручне owner APK acceptance → лише власник робить Ready/Merge. Не переписувати цей історичний P3C3 зріз нижче: це архів, не актуальний поточний статус.
+
+---
+
 # Актуальний стан — P3C3: виправлення owner startup blocker (05.11.2026)
 
 P3C1 [PR #94](https://github.com/aleks-nl5/andrey-ceilings-android/pull/94) та P3C2
