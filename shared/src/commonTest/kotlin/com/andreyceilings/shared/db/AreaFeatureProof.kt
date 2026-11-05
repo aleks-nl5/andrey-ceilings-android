@@ -92,6 +92,36 @@ object AreaFeatureProof {
             "DELETE FROM measurement_elements WHERE uuid='${element.uuid}'"))assertFails {driver.execute(null,sql,0)}
         driver.execute(null,"PRAGMA foreign_keys=ON",0)
         assertEquals(0,PriceNameUniquenessProof.scalar(driver,"SELECT count(*) FROM pragma_foreign_key_check"))
+        quantityUnits(db)
+    }
+
+    private fun quantityUnits(db:PrototypeDatabase) {
+        val f=PointPlacementProof.fixture(db,"AREA quantity units")
+        val prices=PriceRepository(db);val elements=MeasurementElementRepository(db)
+        fun price(unit:String)=prices.find(prices.createInGroup("area.unit.${newRecordUuid()}","Area unit ${newRecordUuid()}",PriceGroupRepository(db).all().first().uuid,1.0,300,unit,QuantityMode.MANUAL,PlacementKind.AREA))!!
+        val square=price("м²");val count=price("шт.")
+        val unknown=elements.createCatalogSelection(f.element.measurementUuid,square.uuid,ElementQuantity.Unknown,301)
+        val counted=elements.createCatalogSelection(f.element.measurementUuid,count.uuid,ElementQuantity.Range(1000,3000),302)
+        val store=MeasurementEditStore(db){310};var doc=store.load(f.project,f.id)
+        fun tiny(id:String,element:String)=AreaFeature(id,doc.draft.recordUuid,AreaShape.rectangle(PointPositionMm(500,500),PointPositionMm(520,520)),doc.updatedAt,0,0,elementUuid=element)
+        val one=tiny("tiny-one-${f.id}",unknown.uuid)
+        doc=store.update(doc,doc.draft,now=310,areaEdits=mapOf(one.uuid to AreaFeatureEdit(one)))
+        assertEquals(0,elements.find(unknown.uuid)!!.placedQuantityMilli)
+        assertEquals(ElementPlacement.APPROXIMATE,elements.find(unknown.uuid)!!.placement,"Valid tiny geometry still has a placement")
+        val two=one.copy(uuid="tiny-two-${f.id}")
+        doc=store.update(doc,doc.draft,now=320,areaEdits=mapOf(two.uuid to AreaFeatureEdit(two)))
+        assertEquals(1,elements.find(unknown.uuid)!!.placedQuantityMilli,"Aggregate canonical area must round only once")
+        assertEquals(ElementQuantity.Unknown,elements.find(unknown.uuid)!!.quantity)
+        elements.edit(elements.find(unknown.uuid)!!.version,"",unknown.approval,ElementQuantity.Exact(1),325)
+        doc=store.load(f.project,f.id)
+        val three=one.copy(uuid="tiny-three-${f.id}")
+        doc=store.update(doc,doc.draft,now=330,areaEdits=mapOf(three.uuid to AreaFeatureEdit(three)))
+        assertFails {store.update(doc,doc.draft,now=340,areaEdits=mapOf("tiny-over-${f.id}" to AreaFeatureEdit(one.copy(uuid="tiny-over-${f.id}"))))}
+        val counts=(0..2).map {tiny("count-$it-${f.id}",counted.uuid)}
+        doc=store.update(doc,doc.draft,now=350,areaEdits=counts.associate {it.uuid to AreaFeatureEdit(it)})
+        assertEquals(3000,elements.find(counted.uuid)!!.placedQuantityMilli)
+        assertEquals(ElementQuantity.Range(1000,3000),elements.find(counted.uuid)!!.quantity)
+        assertFails {store.update(doc,doc.draft,now=360,areaEdits=mapOf("count-over-${f.id}" to AreaFeatureEdit(counts[0].copy(uuid="count-over-${f.id}"))))}
     }
 
     private fun rejectRawBypasses(driver:SqlDriver,db:PrototypeDatabase,doc:MeasurementEditDocument) {
@@ -105,12 +135,32 @@ object AreaFeatureProof {
         }
         val source=Json.parseToJsonElement(payload).jsonObject
         val first=source.getValue("areas").jsonArray.first().jsonObject
+        fun alteredArea(id:String,fields:Map<String,JsonElement>):Map<String,JsonElement> = source+mapOf("areas" to JsonArray(source.getValue("areas").jsonArray.map {v ->
+            val area=v.jsonObject
+            if(area.getValue("uuid").jsonPrimitive.content!=id)v else {
+                val mountings=Json.parseToJsonElement(area.getValue("mountingsJson").jsonPrimitive.content).jsonArray.map {m ->
+                    val mounting=Json.parseToJsonElement(m.jsonPrimitive.content).jsonObject
+                    JsonPrimitive(JsonObject(mounting+mapOf("modifiedVersion" to JsonPrimitive(115))).toString())
+                }
+                JsonObject(area+mapOf("write" to JsonPrimitive(1),"mountingsJson" to JsonPrimitive(JsonArray(mountings).toString()))+fields)
+            }
+        }))
+        val circle=doc.placements.areas.first {it.shape is AreaShape.Circle}
+        val tooLarge=AreaShape.Circle((circle.shape as AreaShape.Circle).center,2000)
+        val crossed=AreaShape.Polygon(listOf(PointPositionMm(500,500),PointPositionMm(1600,1500),PointPositionMm(500,1500),PointPositionMm(1500,500)))
+        val missingAnchor=PointMounting(anchor=WallAnchor(WallAnchor.Kind.TWO_WALLS,"missing-wall",doc.placements.walls[3].uuid,1500,2500),
+            modifiedVersion=115,anchorGeometryJson=doc.sourceDrawingJson,lastValidGeometryJson=doc.sourceDrawingJson)
         val mutations=listOf(
             source+mapOf("areas" to JsonArray(emptyList())),
             source+mapOf("areas" to JsonArray(source.getValue("areas").jsonArray+source.getValue("areas").jsonArray.first())),
             source+mapOf("areas" to JsonArray(listOf(JsonObject(first+mapOf("twiceAreaMm2" to JsonPrimitive(1))))+source.getValue("areas").jsonArray.drop(1))),
             source+mapOf("areas" to JsonArray(listOf(JsonObject(first+mapOf("role" to JsonPrimitive("SUBTRACT"))))+source.getValue("areas").jsonArray.drop(1))),
-            source+mapOf("areas" to JsonArray(listOf(JsonObject(first+mapOf("expectedUpdatedAt" to JsonPrimitive(-1))))+source.getValue("areas").jsonArray.drop(1)))
+            source+mapOf("areas" to JsonArray(listOf(JsonObject(first+mapOf("expectedUpdatedAt" to JsonPrimitive(-1))))+source.getValue("areas").jsonArray.drop(1))),
+            alteredArea(circle.uuid,mapOf("radiusMm" to JsonPrimitive(tooLarge.radiusMm),"twiceAreaMm2" to JsonPrimitive(canonicalTwiceAreaMm2(tooLarge)))),
+            alteredArea(first.getValue("uuid").jsonPrimitive.content,mapOf("positionsJson" to JsonPrimitive(encodeAreaPositions(crossed)),"twiceAreaMm2" to JsonPrimitive(100000))),
+            alteredArea(circle.uuid,mapOf("mountingsJson" to JsonPrimitive(encodeAreaMountings(listOf(missingAnchor))))),
+            alteredArea(first.getValue("uuid").jsonPrimitive.content,mapOf("mountingsJson" to JsonPrimitive(JsonArray(
+                Json.parseToJsonElement(first.getValue("mountingsJson").jsonPrimitive.content).jsonArray.map {Json.parseToJsonElement(it.jsonPrimitive.content)}).toString())))
         )
         driver.execute(null,"PRAGMA foreign_keys=OFF",0)
         mutations.forEachIndexed {i,m ->assertFails("raw bypass $i") {db.ceilingEditsQueries.insertOperation("forged-$i-${doc.measurementId}",doc.draft.recordUuid,doc.updatedAt,JsonObject(m).toString(),115)}}
@@ -118,7 +168,10 @@ object AreaFeatureProof {
             "UPDATE area_features SET mountingsJson='[]',updatedAt=updatedAt+1",
             "UPDATE area_features SET unresolved=0,needsReview=0,updatedAt=updatedAt+1",
             "UPDATE measurement_elements SET placedQuantityMilli=1 WHERE placementKind='area'",
+            "UPDATE measurement_elements SET priceItemCode='forged' WHERE placementKind='area'",
+            "UPDATE measurement_elements SET label='forged' WHERE placementKind='area'",
             "UPDATE ceiling_operation_results SET areaVersions='{}'",
+            "UPDATE room_measurements SET updatedAt=updatedAt+1 WHERE id=${doc.measurementId}",
             "DELETE FROM ceiling_operations","UPDATE ceiling_walls SET active=0",
             "UPDATE room_measurements SET drawingJson='{}',updatedAt=updatedAt+1 WHERE id=${doc.measurementId}"))assertFails {driver.execute(null,sql,0)}
         driver.execute(null,"PRAGMA foreign_keys=ON",0)

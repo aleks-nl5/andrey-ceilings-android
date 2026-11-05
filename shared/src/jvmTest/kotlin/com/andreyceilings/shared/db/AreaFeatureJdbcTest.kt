@@ -55,6 +55,44 @@ class AreaFeatureJdbcTest {
             }
         } finally {file.delete()}
     }
+    @Test fun productionV12MixedHistoryIsPopulatedBeforeGuardedLineRows() {
+        JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).use {d ->
+            AreaFeatureMigrationProof.v12Schema.create(d)
+            val legacy=LegacyWallSeedProof.populate(d,false)
+            LegacyWallSeedProof.decorateV10(d,legacy)
+            AreaFeatureMigrationProof.populate(d)
+            val before=AreaFeatureMigrationProof.snapshot(d)
+            PriceCatalogSchema.migrate(d,12,13)
+            assertEquals(before,AreaFeatureMigrationProof.snapshot(d))
+            assertEquals(2,PriceNameUniquenessProof.scalar(d,"SELECT count(*) FROM line_placements"))
+            PriceCatalogSchema.verifyStructure(d)
+        }
+    }
+    @Test fun concurrentSameUuidReconcilesAndDifferentPayloadFailsClosed() {
+        for(opposite in listOf(false,true)) {
+            val file=Files.createTempFile("area-race-",".db").toFile()
+            val pool=java.util.concurrent.Executors.newFixedThreadPool(2)
+            fun open()=JdbcSqliteDriver("jdbc:sqlite:${file.absolutePath}")
+            try {
+                val doc=open().use {d ->openDesktopPriceCatalog(d,false);val db=PrototypeDatabase(d);val f=PointPlacementProof.fixture(db);com.andreyceilings.shared.measurement.MeasurementEditStore(db){100}.load(f.project,f.id)}
+                val ready=java.util.concurrent.CountDownLatch(2);val start=java.util.concurrent.CountDownLatch(1)
+                val futures=(0..1).map {i ->pool.submit<Result<Unit>> {
+                    open().use {d ->
+                        d.execute(null,"PRAGMA busy_timeout=15000",0);ready.countDown();check(start.await(30,java.util.concurrent.TimeUnit.SECONDS))
+                        runCatching {
+                            val shape=com.andreyceilings.shared.measurement.AreaShape.rectangle(com.andreyceilings.shared.measurement.PointPositionMm(500,500),com.andreyceilings.shared.measurement.PointPositionMm(if(opposite && i==1)2000 else 1500,1500))
+                            val area=com.andreyceilings.shared.measurement.AreaFeature("race-area",doc.draft.recordUuid,shape,doc.updatedAt,0,0)
+                            CeilingEditRepository(PrototypeDatabase(d)).save(doc,doc.draft,emptyMap(),"race-operation","race-walls",100,areaEdits=mapOf(area.uuid to com.andreyceilings.shared.measurement.AreaFeatureEdit(area)))
+                        }
+                    }
+                }}
+                assertTrue(ready.await(30,java.util.concurrent.TimeUnit.SECONDS));start.countDown()
+                val results=futures.map {it.get(60,java.util.concurrent.TimeUnit.SECONDS)}
+                assertEquals(if(opposite)1 else 2,results.count {it.isSuccess})
+                open().use {d ->assertEquals(1,PriceNameUniquenessProof.scalar(d,"SELECT count(*) FROM area_features"));assertEquals(1,PriceNameUniquenessProof.scalar(d,"SELECT count(*) FROM ceiling_operations"))}
+            } finally {pool.shutdownNow();file.delete()}
+        }
+    }
     @Test fun encryptedWindowsLifecycle()=runBlocking {
         if(!System.getProperty("os.name").startsWith("Windows",true))return@runBlocking
         val dir=Files.createTempDirectory("area-cipher-").toFile();val key=ByteArray(32){84}

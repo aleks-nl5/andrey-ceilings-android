@@ -37,9 +37,9 @@ class ProductionDatabaseStartupTest {
             val name="production-upgrade-$variant.db";context.deleteDatabase(name)
             try {
                 val before=historical(context,name,key,schema).use { driver ->
-                    if(version==12L)AreaFeatureMigrationProof.populate(driver)
                     val f=LegacyWallSeedProof.populate(driver,version==9L)
                     if(version>=10L)LegacyWallSeedProof.decorateV10(driver,f)
+                    if(version==12L)AreaFeatureMigrationProof.populate(driver)
                     driver.executeQuery(null,"PRAGMA wal_autocheckpoint=0",{c->c.next();QueryResult.Value(c.getLong(0))},0).value
                     ProjectRepository(PrototypeDatabase(driver)).createReturningId(null,"Committed v$version WAL row",createdAt=600)
                     assertEquals("wal",driver.executeQuery(null,"PRAGMA journal_mode",{ c->c.next();QueryResult.Value(c.getString(0)) },0).value)

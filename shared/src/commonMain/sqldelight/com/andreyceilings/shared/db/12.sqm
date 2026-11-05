@@ -46,7 +46,7 @@ json_extract(p.value,'$.write') AS shouldWrite,json_extract(p.value,'$.deleted')
 CREATE VIEW ceiling_area_positions AS SELECT a.operationUuid,a.areaUuid,a.areaUuid || ':' || v.key AS pointUuid,
  CAST(v.key AS INTEGER) AS ordinal,json_extract(v.value,'$.xMm') AS xMm,json_extract(v.value,'$.yMm') AS yMm,
  json_extract(a.mountingsJson,'$[' || v.key || ']') AS mountingJson,
- a.unresolved,a.needsReview,a.shouldWrite,a.deleted,
+ a.unresolved,a.needsReview,a.shouldWrite,a.deleted,json_type(a.mountingsJson,'$[' || v.key || ']') AS mountingType,
  json_extract(q.mountingsJson,'$[' || v.key || ']') AS oldMountingJson
  FROM ceiling_operation_areas a,json_each(a.positionsJson) v LEFT JOIN area_features q ON q.uuid=a.areaUuid;
 
@@ -149,7 +149,7 @@ END;
 
 CREATE TRIGGER area_measurement_elements_delete_guard BEFORE DELETE ON measurement_elements WHEN EXISTS(SELECT 1 FROM area_features WHERE elementUuid=old.uuid) BEGIN SELECT RAISE(ABORT,'area_parent_requires_tombstone'); END;
 
-CREATE TRIGGER area_measurement_elements_identity BEFORE UPDATE ON measurement_elements WHEN (new.uuid IS NOT old.uuid OR new.measurementUuid IS NOT old.measurementUuid) AND EXISTS(SELECT 1 FROM area_features WHERE elementUuid=old.uuid) BEGIN SELECT RAISE(ABORT,'area_parent_identity_immutable'); END;
+CREATE TRIGGER area_measurement_elements_identity BEFORE UPDATE ON measurement_elements WHEN (new.uuid IS NOT old.uuid OR new.measurementUuid IS NOT old.measurementUuid OR new.kind IS NOT old.kind OR new.priceItemUuid IS NOT old.priceItemUuid OR new.priceItemCode IS NOT old.priceItemCode OR new.label IS NOT old.label OR new.unit IS NOT old.unit OR new.quantityMode IS NOT old.quantityMode OR new.placementKind IS NOT old.placementKind OR new.createdAt IS NOT old.createdAt) AND EXISTS(SELECT 1 FROM area_features WHERE elementUuid=old.uuid) BEGIN SELECT RAISE(ABORT,'area_parent_identity_immutable'); END;
 
 CREATE TRIGGER area_room_measurements_delete_guard BEFORE DELETE ON room_measurements WHEN EXISTS(SELECT 1 FROM area_features WHERE measurementUuid=old.uuid) BEGIN SELECT RAISE(ABORT,'area_parent_requires_tombstone'); END;
 
@@ -532,7 +532,7 @@ BEGIN
  OR (a.shapeKind='CIRCLE' AND a.twiceAreaMm2!=2*((a.radiusMm*a.radiusMm*3141593+500000)/1000000))
  OR (a.shapeKind='POLYGON' AND a.twiceAreaMm2 IS NOT (SELECT abs(sum(ax*by-bx*ay)) FROM ceiling_area_edges WHERE operationUuid=a.operationUuid AND areaUuid=a.areaUuid))
  OR EXISTS(SELECT 1 FROM ceiling_area_invalid_positions v WHERE v.operationUuid=a.operationUuid AND v.areaUuid=a.areaUuid)
- OR EXISTS(SELECT 1 FROM ceiling_area_positions p WHERE p.operationUuid=a.operationUuid AND p.areaUuid=a.areaUuid AND (p.xMm NOT BETWEEN -1000000 AND 1000000 OR p.yMm NOT BETWEEN -1000000 AND 1000000))
+ OR EXISTS(SELECT 1 FROM ceiling_area_positions p WHERE p.operationUuid=a.operationUuid AND p.areaUuid=a.areaUuid AND (p.mountingType IS NOT 'text' OR p.xMm NOT BETWEEN -1000000 AND 1000000 OR p.yMm NOT BETWEEN -1000000 AND 1000000))
  )) THEN RAISE(ABORT,'area_shape_or_canonical_area') END;
 SELECT CASE WHEN EXISTS(SELECT 1 FROM ceiling_area_edges a JOIN ceiling_area_edges b ON b.operationUuid=a.operationUuid AND b.areaUuid=a.areaUuid
  JOIN ceiling_operation_areas f ON f.operationUuid=a.operationUuid AND f.areaUuid=a.areaUuid
@@ -552,7 +552,7 @@ SELECT CASE WHEN EXISTS(SELECT 1 FROM ceiling_area_circle_distances WHERE operat
  OR EXISTS(SELECT 1 FROM ceiling_area_totals t JOIN measurement_elements e ON e.uuid=t.elementUuid WHERE t.operationUuid=new.uuid AND t.reservedMilli>coalesce((SELECT fieldValue FROM ceiling_declared_areas WHERE operationUuid=new.uuid AND fieldName=e.uuid),CASE WHEN e.quantityKind='exact' THEN e.quantityMilli WHEN e.quantityKind='range' THEN e.quantityMaxMilli ELSE NULL END))
  THEN RAISE(ABORT,'area_capacity_or_declared_quantity') END;
  SELECT CASE WHEN EXISTS(SELECT 1 FROM ceiling_area_positions p WHERE p.operationUuid=new.uuid AND p.deleted=0 AND (
- (p.unresolved=1 AND (json_extract(p.mountingJson,'$.anchor') IS NOT json_extract(p.oldMountingJson,'$.anchor') OR json_extract(p.mountingJson,'$.anchorGeometryJson') IS NOT json_extract(p.oldMountingJson,'$.anchorGeometryJson'))) OR json_extract(p.mountingJson,'$.unresolved') IS NOT p.unresolved OR json_extract(p.mountingJson,'$.needsReview') IS NOT p.needsReview OR (json_extract(p.mountingJson,'$.confirmedAt') IS NOT NULL AND json_extract(p.mountingJson,'$.confirmedAt')<0) OR (json_extract(p.mountingJson,'$.deferredAt') IS NOT NULL AND json_extract(p.mountingJson,'$.deferredAt')<0) OR NOT json_valid(p.mountingJson) OR json_type(p.mountingJson)!='object'
+ (p.unresolved=1 AND (json_extract(p.mountingJson,'$.anchor') IS NOT json_extract(p.oldMountingJson,'$.anchor') OR json_extract(p.mountingJson,'$.anchorGeometryJson') IS NOT json_extract(p.oldMountingJson,'$.anchorGeometryJson'))) OR json_extract(p.mountingJson,'$.unresolved') IS NOT p.unresolved OR json_extract(p.mountingJson,'$.needsReview') IS NOT p.needsReview OR (json_extract(p.mountingJson,'$.confirmedAt') IS NOT NULL AND json_extract(p.mountingJson,'$.confirmedAt')<0) OR (json_extract(p.mountingJson,'$.deferredAt') IS NOT NULL AND json_extract(p.mountingJson,'$.deferredAt')<0) OR coalesce(json_type(p.mountingJson,'$.anchorGeometryJson'),'missing') NOT IN ('text','null') OR coalesce(json_type(p.mountingJson,'$.lastValidGeometryJson'),'missing') NOT IN ('text','null') OR (json_extract(p.mountingJson,'$.anchor') IS NOT NULL AND (json_type(p.mountingJson,'$.anchor.kind') IS NOT 'text' OR json_type(p.mountingJson,'$.anchor.firstWall') IS NOT 'text' OR coalesce(json_type(p.mountingJson,'$.anchor.secondWall'),'missing') NOT IN ('text','null') OR json_type(p.mountingJson,'$.anchor.firstMm') IS NOT 'integer' OR json_type(p.mountingJson,'$.anchor.secondMm') IS NOT 'integer')) OR NOT json_valid(p.mountingJson) OR json_type(p.mountingJson)!='object'
  OR (SELECT count(*) FROM ceiling_area_mounting_fields WHERE operationUuid=p.operationUuid AND pointUuid=p.pointUuid)!=8
  OR (SELECT count(DISTINCT fieldName) FROM ceiling_area_mounting_fields WHERE operationUuid=p.operationUuid AND pointUuid=p.pointUuid)!=8
  OR EXISTS(SELECT 1 FROM ceiling_area_mounting_fields WHERE operationUuid=p.operationUuid AND pointUuid=p.pointUuid AND fieldName NOT IN ('anchor','needsReview','unresolved','modifiedVersion','confirmedAt','deferredAt','anchorGeometryJson','lastValidGeometryJson'))

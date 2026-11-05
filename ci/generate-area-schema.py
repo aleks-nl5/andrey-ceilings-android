@@ -58,7 +58,7 @@ add('CREATE VIEW ceiling_operation_areas AS SELECT o.uuid AS operationUuid,json_
 add('''CREATE VIEW ceiling_area_positions AS SELECT a.operationUuid,a.areaUuid,a.areaUuid || ':' || v.key AS pointUuid,
  CAST(v.key AS INTEGER) AS ordinal,json_extract(v.value,'$.xMm') AS xMm,json_extract(v.value,'$.yMm') AS yMm,
  json_extract(a.mountingsJson,'$[' || v.key || ']') AS mountingJson,
- a.unresolved,a.needsReview,a.shouldWrite,a.deleted,
+ a.unresolved,a.needsReview,a.shouldWrite,a.deleted,json_type(a.mountingsJson,'$[' || v.key || ']') AS mountingType,
  json_extract(q.mountingsJson,'$[' || v.key || ']') AS oldMountingJson
  FROM ceiling_operation_areas a,json_each(a.positionsJson) v LEFT JOIN area_features q ON q.uuid=a.areaUuid;''')
 add('''CREATE VIEW ceiling_area_edges AS SELECT p.operationUuid,p.areaUuid,p.ordinal,p.xMm AS ax,p.yMm AS ay,n.xMm AS bx,n.yMm AS by
@@ -129,7 +129,7 @@ add('''CREATE TRIGGER area_element_guard BEFORE UPDATE ON measurement_elements B
 END;''')
 for table,condition in [('measurement_elements','elementUuid=old.uuid'),('room_measurements','measurementUuid=old.uuid'),('projects','measurementUuid IN (SELECT uuid FROM room_measurements WHERE projectId=old.id)')]:
     add(f"CREATE TRIGGER area_{table}_delete_guard BEFORE DELETE ON {table} WHEN EXISTS(SELECT 1 FROM area_features WHERE {condition}) BEGIN SELECT RAISE(ABORT,'area_parent_requires_tombstone'); END;")
-    idfields=['uuid','measurementUuid'] if table=='measurement_elements' else ['uuid','projectId','id'] if table=='room_measurements' else ['id']
+    idfields=['uuid','measurementUuid','kind','priceItemUuid','priceItemCode','label','unit','quantityMode','placementKind','createdAt'] if table=='measurement_elements' else ['uuid','projectId','id'] if table=='room_measurements' else ['id']
     add(f"CREATE TRIGGER area_{table}_identity BEFORE UPDATE ON {table} WHEN ({' OR '.join('new.'+f+' IS NOT old.'+f for f in idfields)}) AND EXISTS(SELECT 1 FROM area_features WHERE {condition}) BEGIN SELECT RAISE(ABORT,'area_parent_identity_immutable'); END;")
 for table,col in [('measurement_elements','elementUuid'),('room_measurements','measurementUuid')]:
     add(f'''CREATE TRIGGER area_{table}_tombstone AFTER UPDATE OF deletedAt ON {table} WHEN old.deletedAt IS NULL AND new.deletedAt IS NOT NULL BEGIN
@@ -188,7 +188,7 @@ validate='''
  OR (a.shapeKind='CIRCLE' AND a.twiceAreaMm2!=2*((a.radiusMm*a.radiusMm*3141593+500000)/1000000))
  OR (a.shapeKind='POLYGON' AND a.twiceAreaMm2 IS NOT (SELECT abs(sum(ax*by-bx*ay)) FROM ceiling_area_edges WHERE operationUuid=a.operationUuid AND areaUuid=a.areaUuid))
  OR EXISTS(SELECT 1 FROM ceiling_area_invalid_positions v WHERE v.operationUuid=a.operationUuid AND v.areaUuid=a.areaUuid)
- OR EXISTS(SELECT 1 FROM ceiling_area_positions p WHERE p.operationUuid=a.operationUuid AND p.areaUuid=a.areaUuid AND (p.xMm NOT BETWEEN -1000000 AND 1000000 OR p.yMm NOT BETWEEN -1000000 AND 1000000))
+ OR EXISTS(SELECT 1 FROM ceiling_area_positions p WHERE p.operationUuid=a.operationUuid AND p.areaUuid=a.areaUuid AND (p.mountingType IS NOT 'text' OR p.xMm NOT BETWEEN -1000000 AND 1000000 OR p.yMm NOT BETWEEN -1000000 AND 1000000))
  )) THEN RAISE(ABORT,'area_shape_or_canonical_area') END;
 '''.replace('MATCH_OLD',' OR '.join(f'a.{f} IS NOT q.{f}' for f in persist))
 # Shared exact intersection predicate, all integer products within bounds.
@@ -233,6 +233,7 @@ anchor=trigger[start:end].replace('ceiling_line_','ceiling_area_').replace('ceil
 # unresolved preserves all physical anchors and their original geometry context.
 anchor=anchor.replace("NOT json_valid(p.mountingJson)","(p.unresolved=1 AND (json_extract(p.mountingJson,'$.anchor') IS NOT json_extract(p.oldMountingJson,'$.anchor') OR json_extract(p.mountingJson,'$.anchorGeometryJson') IS NOT json_extract(p.oldMountingJson,'$.anchorGeometryJson'))) OR NOT json_valid(p.mountingJson)")
 anchor=anchor.replace("NOT json_valid(p.mountingJson)","json_extract(p.mountingJson,'$.unresolved') IS NOT p.unresolved OR json_extract(p.mountingJson,'$.needsReview') IS NOT p.needsReview OR (json_extract(p.mountingJson,'$.confirmedAt') IS NOT NULL AND json_extract(p.mountingJson,'$.confirmedAt')<0) OR (json_extract(p.mountingJson,'$.deferredAt') IS NOT NULL AND json_extract(p.mountingJson,'$.deferredAt')<0) OR NOT json_valid(p.mountingJson)")
+anchor=anchor.replace("NOT json_valid(p.mountingJson)", "coalesce(json_type(p.mountingJson,'$.anchorGeometryJson'),'missing') NOT IN ('text','null') OR coalesce(json_type(p.mountingJson,'$.lastValidGeometryJson'),'missing') NOT IN ('text','null') OR (json_extract(p.mountingJson,'$.anchor') IS NOT NULL AND (json_type(p.mountingJson,'$.anchor.kind') IS NOT 'text' OR json_type(p.mountingJson,'$.anchor.firstWall') IS NOT 'text' OR coalesce(json_type(p.mountingJson,'$.anchor.secondWall'),'missing') NOT IN ('text','null') OR json_type(p.mountingJson,'$.anchor.firstMm') IS NOT 'integer' OR json_type(p.mountingJson,'$.anchor.secondMm') IS NOT 'integer')) OR NOT json_valid(p.mountingJson)")
 validate+=anchor
 # Area write is inside the same trigger, before element summaries and immutable receipt.
 write='''
