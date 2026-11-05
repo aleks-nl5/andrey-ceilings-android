@@ -1,3 +1,17 @@
+# Актуальний етап — P3C5: площинні елементи та перешкоди (05.11.2026)
+
+**Фактична прийнята база:** P3C4 [PR #101](https://github.com/aleks-nl5/andrey-ceilings-android/pull/101) об'єднаний у `main` (merge `f6d3993e55c1bc99c1baeab24e39e371ae033cbd`, 05.11.2026), SQLDelight/SQLCipher **v12**. Android [run #42037345796](https://github.com/aleks-nl5/andrey-ceilings-android/actions/runs/42037345796) та Windows/iOS [run #42037345362](https://github.com/aleks-nl5/andrey-ceilings-android/actions/runs/42037345362) succeeded on final P3C4 HEAD `21b7fe3b`; власник протестував APK і сам об'єднав PR. [Issue #100](https://github.com/aleks-nl5/andrey-ceilings-android/issues/100) закрито з результатом completed. Прайс P1/P2, P3A/P3B, P3C1/P3C2/P3C3/P3C4 — базові частини завершені.
+
+**Нова погоджена функціональна задача (ще не реалізована):** [Issue P3C5 #102](https://github.com/aleks-nl5/andrey-ceilings-android/issues/102), branch `feat/p3c5-area-obstacles`, один Draft PR для Codex. Повне ТЗ [MEASUREMENT_AREA_FEATURES_P3C5.md](MEASUREMENT_AREA_FEATURES_P3C5.md). **Початковий PR — тільки документація, не затверджувати як реалізований P3C5.** Реалізацію, міграцію, тести та правдиві CI URLs додавати до цього ж PR.
+
+**Scope P3C5:** typed `AREA` overlays: rectangle polygon preset, arbitrary simple polygons, circles із дійсним integer radius; geometry у Long-mm, stable UUID, roles `GENERAL_AREA`/`OBSTACLE`/`VOID_MARKER`, unpriced annotations або explicit catalog AREA selection; wall anchors, approximate/exact, invalid/unresolved, Review/Later та atomic `contour + POINT + LINE + AREA` Save, нова v12→v13 physical migration. Геометрична площа фігури і заявлена кількість незалежні. НІЧОГО не віднімати від основної площі стелі і не рахувати вартість позначок автоматично.
+
+**Пріоритет після цього:** P4 [#44](https://github.com/aleks-nl5/andrey-ceilings-android/issues/44) — живі KMP розрахунки/нові кошториси з immutable history. Потім спільне UX-проєктування [#95](https://github.com/aleks-nl5/andrey-ceilings-android/issues/95) після функціональної архітектури — backlog із незручного LINE placement, коротких ліній, панелей і UI E2E **не в P3C5**. Umbrella [#71](https://github.com/aleks-nl5/andrey-ceilings-android/issues/71) / [#76](https://github.com/aleks-nl5/andrey-ceilings-android/issues/76) / [#78](https://github.com/aleks-nl5/andrey-ceilings-android/issues/78) залишаються відкритими.
+
+**Обов'язкова схема приймання:** Codex у feature branch/Draft PR → unit/common/SQLCipher physical Android/Windows/iOS + same-final-SHA CI → owner APK і review → тільки owner робить merge. Усі блоки нижче описують історію попередніх етапів і не є поточним станом.
+
+---
+
 # Актуальний етап — P3C4: лінійні елементи стелі (05.11.2026)
 
 **Підтверджена база:** [PR #99](https://github.com/aleks-nl5/andrey-ceilings-android/pull/99) (P3C3) merged в `main` 05.11.2026, merge SHA `0d7f0d005d85ef01879a47ecf71f63756d0c150b`, SQLDelight/SQLCipher schema **v11**. Owner після виправлення startup/migration підтвердив, що фінальний APK працює нормально; P3C3 Android/Windows/iOS final-SHA CI green. Issues P3B #89 (PR #91), P3C1 #93 (PR #94) та P3C3 #98 (PR #99) закриті **completed**; umbrella #71/#76/#78 залишені відкритими.
