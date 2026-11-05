@@ -1,4 +1,4 @@
-> **Implementation contract / one Draft PR:** [GitHub issue #102](https://github.com/aleks-nl5/andrey-ceilings-android/issues/102). This file documents the agreed P3C5 work; its presence **does not imply implementation**. Codex must continue this branch/PR and update status only after actual code/CI/owner APK review.
+> **Implementation contract / [Draft PR #103](https://github.com/aleks-nl5/andrey-ceilings-android/pull/103):** [GitHub issue #102](https://github.com/aleks-nl5/andrey-ceilings-android/issues/102). This file documents the agreed P3C5 work; its presence **does not imply implementation**. Codex must continue this branch/PR and update status only after actual code/CI/owner APK review.
 
 # P3C5 — типізовані площинні об'єкти, перешкоди та позначення отворів на CMP-кресленні
 
