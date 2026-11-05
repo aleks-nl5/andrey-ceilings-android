@@ -20,6 +20,8 @@ import kotlin.test.*
 class ProductionDatabaseProcessRestartTest {
     @Test fun prepareRealV9WalAndKillProcess() {
         val context:Context=ApplicationProvider.getApplicationContext()
+        // This cold-process fixture deliberately bypasses the current production helper.
+        System.loadLibrary("sqlcipher")
         CeilingsDatabase.closeAndReset()
         context.deleteDatabase(CeilingsDatabase.DATABASE_NAME)
         val key=DatabaseKeyManager.getOrCreatePassphrase(context)
