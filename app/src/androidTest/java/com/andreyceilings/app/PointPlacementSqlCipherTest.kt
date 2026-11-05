@@ -24,7 +24,7 @@ class PointPlacementSqlCipherTest {
         System.loadLibrary("sqlcipher")
         val key = ByteArray(32) { 77 }
         try {
-            for (scenario in listOf("fresh", "empty-v7", "populated-v7", "empty-v8", "populated-v8", "empty-v9", "populated-v9", "legacy-v9", "deployed-v10", "initial-v10")) {
+            for (scenario in listOf("fresh", "empty-v7", "populated-v7", "empty-v8", "populated-v8", "empty-v9", "populated-v9", "legacy-v9", "deployed-v10", "initial-v10", "populated-v11")) {
                 val name = "points-$scenario-test.db"
                 context.deleteDatabase(name)
                 try {
@@ -47,7 +47,8 @@ class PointPlacementSqlCipherTest {
                             }, 0).value } catch (failure: Throwable) { driver.close(); throw failure }
                         }
                         }
-                        if(scenario=="initial-v10")LegacyWallSeedProof.initialV10Lifecycle(PriceCatalogSchema,open)
+                        if(scenario=="populated-v11")LinePlacementMigrationProof.lifecycle(PriceCatalogSchema,open)
+                        else if(scenario=="initial-v10")LegacyWallSeedProof.initialV10Lifecycle(PriceCatalogSchema,open)
                         else if(scenario=="legacy-v9" || scenario=="deployed-v10") LegacyWallSeedProof.lifecycle(PriceCatalogSchema,if(scenario=="legacy-v9")9L else 10L,open)
                         else if (scenario.endsWith("v9")) WallAnchorMigrationProof.lifecycle(PriceCatalogSchema, scenario == "populated-v9", open)
                         else if (scenario.endsWith("v8")) PointPositionMigrationProof.lifecycle(PriceCatalogSchema, scenario == "populated-v8", open)
@@ -69,11 +70,11 @@ class PointPlacementSqlCipherTest {
         val password = "point-backup-fixture".toCharArray()
         context.deleteDatabase(name); context.deleteDatabase(copyName)
         try {
-            for (version in listOf(8, 9, 10, 11)) {
+            for (version in listOf(8, 9, 10, 11, 12)) {
                 context.deleteDatabase(name); context.deleteDatabase(copyName)
                 lateinit var f: PointPlacementProof.Fixture
                 lateinit var expectedPoints: List<PointPlacement>
-                val sourceDriver = if (version < 11) AndroidSqliteDriver(when(version){8->PointPositionMigrationProof.v8Schema;9->WallAnchorMigrationProof.v9Schema;else->WallAnchorMigrationProof.v10Schema}, context, name,
+                val sourceDriver = if (version < 12) AndroidSqliteDriver(when(version){8->PointPositionMigrationProof.v8Schema;9->WallAnchorMigrationProof.v9Schema;10->WallAnchorMigrationProof.v10Schema;else->LinePlacementMigrationProof.v11Schema}, context, name,
                     factory = SupportOpenHelperFactory(key.copyOf(), null, true))
                     else createEncryptedPrototypeDriver(context, key, name, enableWalForTesting = true, initializePriceCatalog = true)
                 sourceDriver.use { driver ->
@@ -91,7 +92,7 @@ class PointPlacementSqlCipherTest {
                         val initial = PointPlacementRepository(db).addPoint(f.element.version, f.contourVersion, 1234, 2345, 10)
                         val element = MeasurementElementRepository(db).find(f.element.uuid)!!
                         val moved = PointPlacementRepository(db).movePoint(element.version, initial, f.contourVersion, 2234, 1345, PointPrecision.EXACT, 11).point
-                        val store=MeasurementEditStore(db){12}
+                        val store=HistoricalPointEditStore(db){12}
                         var document=store.load(f.project,f.id)
                         val anchor=WallAnchor(WallAnchor.Kind.TWO_WALLS,document.placements.walls[0].uuid,document.placements.walls[3].uuid,600,1500)
                         document=store.update(document,document.draft,mapOf(moved.uuid to PointMountingEdit(anchor=anchor)),now=12)

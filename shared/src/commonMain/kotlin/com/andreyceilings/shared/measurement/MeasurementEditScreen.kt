@@ -1,6 +1,8 @@
 package com.andreyceilings.shared.measurement
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -38,7 +40,10 @@ fun MeasurementEditScreen(
         LaunchedEffect(store) {
             if (model == null) try {
                 val document = withContext(Dispatchers.Default) { checkNotNull(store).load(projectId, measurementId) }
-                model = MeasurementEditModel(store, document)
+                model = MeasurementEditModel(store, document).also {editor ->
+                    navigationGuard?.requestedLinePlacement?.takeIf {it.first==document.draft.recordUuid}?.let {editor.beginLine(it.second)}
+                    navigationGuard?.requestedLinePlacement=null
+                }
             } catch (_: Exception) { error = "Замір недоступний для редагування. Перевірте об'єкт і збережену геометрію." }
         }
         val editor = model
@@ -71,11 +76,11 @@ fun MeasurementEditScreen(
     var allFields by rememberSaveable { mutableStateOf(false) }
     var reloadConfirm by remember { mutableStateOf(false) }
     val currentSaved by rememberUpdatedState(onSaved)
-    val surfaceBack = remember { { if (fullscreen) { model.cancelPointDrag(); fullscreen = false; true } else false } }
+    val surfaceBack = remember { { if (fullscreen) { model.cancelPointDrag(); model.cancelLineDrag(); fullscreen = false; true } else false } }
     DisposableEffect(model, navigationGuard) {
         navigationGuard?.bindEdit(model); navigationGuard?.bindSurface(surfaceBack)
         onDispose {
-            model.cancelPointDrag()
+            model.cancelPointDrag(); model.cancelLineDrag()
             navigationGuard?.unbindEdit(model); navigationGuard?.unbindSurface(surfaceBack)
         }
     }
@@ -150,6 +155,9 @@ fun MeasurementEditScreen(
                 if(state.reviewing && review>0) Text("Виберіть позначку, огляньте опори й відстані. Нерозв'язану прив'язку спершу виправте та збережіть.")
             }
         }
+        Box(if(full)Modifier.heightIn(max=180.dp).verticalScroll(rememberScrollState()) else Modifier) {
+            LinePlacementControls(model,enabled && validation.geometry!=null)
+        }
         if (validation.geometry == null && geometry != null)
             Text("Невалідна чернетка: показано збережений контур і позначки. ${validation.geometryError.orEmpty()}")
         if (geometry == null) Text("Креслення недоступне: ${validation.geometryError.orEmpty()}")
@@ -161,7 +169,14 @@ fun MeasurementEditScreen(
             pointEditingEnabled=enabled && overlay is PointOverlayState.Loaded && validation.geometry!=null,editPointsInFullscreen=true,
             pointDrag=state.drag,onBeginPointDrag=model::beginPointDrag,onPreviewPointDrag=model::previewPointDrag,
             onFinishPointDrag=model::finishPointDrag,onCancelPointDrag=model::cancelPointDrag,
-            mountingDimensions=if(validation.geometry==null) emptyList() else mountingDimensions(model.displayPoints().find { it.uuid==state.selectedPointUuid },geometry,model.draftWalls()),
+            mountingDimensions=if(validation.geometry==null) emptyList() else mountingDimensions(model.displayPoints().find { it.uuid==state.selectedPointUuid },geometry,model.draftWalls())+
+                model.displayLines().find {it.uuid==state.selectedLineUuid}?.takeUnless {it.unresolved}?.let {line ->
+                    mountingDimensions(line.endpoint(true),geometry,model.draftWalls())+mountingDimensions(line.endpoint(false),geometry,model.draftWalls())
+                }.orEmpty(),
+            linePlacements=model.displayLines()+listOfNotNull(state.linePreview),selectedLineUuid=state.selectedLineUuid,
+            linePlacementMode=enabled && state.lineElementUuid!=null,onLineTap=model::lineTap,onSelectLine=model::selectLine,
+            lineStartPoint=state.lineStart,lineEditingEnabled=enabled && validation.geometry!=null,lineDrag=state.lineDrag,onBeginLineDrag=model::beginLineDrag,
+            onPreviewLineDrag=model::previewLineDrag,onFinishLineDrag=model::finishLineDrag,onCancelLineDrag=model::cancelLineDrag,
             mountingWallOrdinals=if(validation.geometry==null) emptyList() else model.displayPoints().find { it.uuid==state.selectedPointUuid }?.mounting?.anchor?.let { a ->
                 model.draftWalls().filter { it.uuid==a.firstWall || it.uuid==a.secondWall }.map { it.ordinal } }.orEmpty())
         }
@@ -205,7 +220,7 @@ fun MeasurementEditScreen(
     }
     WallAnchorEditor(model)
     if(state.reviewPrompt) AlertDialog(onDismissRequest={},title={Text("Потрібно перевірити розміщення")},
-        text={Text("Контур стелі змінено. Збережені монтажні відстані використано для перерахунку. Перевірте розташування світильників.")},
+        text={Text("Контур стелі змінено. Збережені монтажні відстані використано для перерахунку. Перевірте розташування точок і ліній.")},
         confirmButton={TextButton(enabled=!state.saving && !state.checking,onClick=model::reviewNow){Text("Перевірити")}},
         dismissButton={TextButton(enabled=!state.saving && !state.checking,onClick={scope.launch {model.reviewLater()}}){Text("Пізніше")}})
     if (state.exitRequested) AlertDialog(onDismissRequest = model::continueEditing,

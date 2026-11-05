@@ -1,4 +1,4 @@
-> **Implementation contract:** [GitHub issue #100](https://github.com/aleks-nl5/andrey-ceilings-android/issues/100). Створено як P3C4 handoff; програмна реалізація ще НЕ виконана. Після старту Codex документ і issue оновлювати відповідно до фактичних змін.
+> **Implementation contract:** [GitHub issue #100](https://github.com/aleks-nl5/andrey-ceilings-android/issues/100). P3C4 реалізується у тому самому Draft PR #101. Фактичні CI, результати й owner APK acceptance відстежуються у PR; наведений нижче контракт лишається межею приймання.
 
 # P3C4 — лінійні елементи стелі: самодостатнє завдання для Codex
 
@@ -72,3 +72,15 @@
 - [ ] Не змінені історичні кошториси/PDF, ціноутворення, SQLCipher key/WAL/portable backup; P3C5/P4/#95 залишилися окремими.
 
 **ПРАВИЛО:** чинні P3C3 гарантії безпеки даних/паралельності важливіші за швидкий UI. Жодних direct-main commits, auto-merge, закриття umbrella issues або позначення ручного APK checklist без власника.
+
+
+## Реалізація у PR #101
+
+- `LinePlacement` — окремий typed world-mm сегмент із UUID, endpoint `PointMounting`/`WallAnchor`, width/note, review та sticky unresolved. Solver фізичних прив'язок — чинний P3C3. Валідність перевіряє endpoints і перетин УСЬОГО сегмента зі стінами, включно з увігнутими вирізами та дотиком.
+- Довжина: integer square root + half-up до 1 мм, без persisted Double. Сума активних valid сегментів є `placedQuantityMilli`; unresolved зберігає останні координати, опори, контекст і резерв довжини. Declared Exact/Range/Unknown не переписуються без явної дії «Взяти довжину з креслення».
+- Один `MeasurementEditModel` та Canvas, normal/fullscreen, дві точки локального preview, конкретний UUID selection, drag сегмента/кінця, незалежні монтажні форми, width/note, confirm delete, спільні Undo/Redo та Save. Drag знімає опори лише змінених кінців; unresolved потребує повторного measured input ОБОХ кінців та явного підтвердження.
+- `CeilingEditRepository`/SQL journal включає повний POINT+LINE set, optimistic versions, immutable `lineVersions` result, same-payload idempotency, summary і явну quantity correction в одному statement/outer transaction. Окремого line writer немає. Direct SQL guards та discriminator зберігають POINT reservations/summary.
+- Additive `11.sqm` (v11→v12), populated physical `11.db`, окремі повні fingerprints v11/v12; `9.sqm`, `10.sqm` і роздані v10 definitions незмінні. Test-only frozen P3C3 writer створює історичні v10/v11 записи до міграції, без LINE queries. Це не production fallback.
+- Платформні proofs включають atomic rollback, CAS/retry/lost response, capacity/Unknown/Range, sticky review, direct SQL, реальну SQLCipher migration/reopen та production Keystore/WAL/portable restore. Android touch instrumentation і desktop touch/mouse scenes відокремлені; остаточний статус лише за run links у PR.
+
+Width описує центральну монтажну вісь; оболонка/виріз/boolean area та P3C5/P4/#95 залишаються окремими. Формат portable backup, SQLCipher keys/WAL, фінансові правила та immutable estimates/PDF не змінюються. Ручний APK checklist вище залишається pending до підтвердження власника.

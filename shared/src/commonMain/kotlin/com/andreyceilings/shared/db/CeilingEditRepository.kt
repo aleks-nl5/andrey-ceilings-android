@@ -27,12 +27,14 @@ class CeilingEditRepository(private val database: PrototypeDatabase) {
         val expectedPoints=Json.parseToJsonElement(result.pointVersions).jsonObject.mapValues {it.value.jsonPrimitive.long}
         val actualPoints=PointPlacementRepository(database).forMeasurement(measurement).associate {it.uuid to it.updatedAt}
         if(expectedPoints!=actualPoints)return false
+        val expectedLines=Json.parseToJsonElement(result.lineVersions).jsonObject.mapValues {it.value.jsonPrimitive.long}
+        if(expectedLines!=LinePlacementRepository(database).forMeasurement(measurement).associate {it.uuid to it.updatedAt})return false
         return Json.parseToJsonElement(result.elementVersions).jsonObject.all { (id,v) ->
             MeasurementElementRepository(database).find(id)?.let {it.deletedAt==null && it.updatedAt==v.jsonPrimitive.long}==true
         }
     }
     fun save(original: MeasurementEditDocument, draft: MeasurementCreateDraft, edits: Map<String,PointMountingEdit>,
-        operationUuid: String, wallToken: String, now: Long) {
+        operationUuid: String, wallToken: String, now: Long, lineEdits: Map<String,LinePlacementEdit> = emptyMap(), declaredLengths: Map<String,Long> = emptyMap()) {
         require(now in 0 until Long.MAX_VALUE && operationUuid.isNotBlank())
         require(draft.projectId==original.draft.projectId && draft.recordUuid==original.draft.recordUuid && draft.precision==original.draft.precision)
         val validated = validateMeasurementCreate(draft); require(validated.canSave)
@@ -57,7 +59,41 @@ class CeilingEditRepository(private val database: PrototypeDatabase) {
                     lastValidGeometryJson=if (!preview.mounting.unresolved) drawing else point.mounting.lastValidGeometryJson ?: oldDrawing))
             }
         }
-        val noChange = !changed && targets==original.placements.points && draft.name.trim()==original.draft.name.trim() && draft.notes.trim()==original.draft.notes.trim()
+        require(lineEdits.all { (id,edit) -> id==edit.value.uuid && edit.value.uuid.isNotBlank() &&
+            original.lineElements.any {it.uuid==edit.value.elementUuid} })
+        val lineTargets = (original.placements.lines.map { it.uuid } + lineEdits.keys).distinct().map { id ->
+            val old=original.placements.lines.find {it.uuid==id}
+            val edit=lineEdits[id]
+            val base=old ?: checkNotNull(edit).value
+            require(base.updatedAt < Long.MAX_VALUE)
+            val preview=previewLine(base,geometry,walls,changed,edit)
+            if (old==null && !lineStrictlyInside(geometry,preview.start,preview.end)) throw LinePlacementFailure.InvalidSegment()
+            if(edit!=null && edit.value.deletedAt==null && (preview.unresolved && !base.unresolved ||
+                old?.unresolved==true && !preview.unresolved && !edit.confirm)) throw LinePlacementFailure.RequiresMeasuredAnchors()
+            if(old!=null && preview==old && !changed && edit?.confirm!=true && edit?.defer!=true) old else {
+                val version=if(old==null) now else maxOf(old.updatedAt+1,now)
+                fun mounting(first:Boolean):PointMounting {
+                    val m=if(first)preview.startMounting else preview.endMounting
+                    val previous=old?.let {if(first)it.startMounting else it.endMounting}
+                    return m.copy(modifiedVersion=version,needsReview=preview.needsReview,unresolved=preview.unresolved,
+                        confirmedAt=if(preview.needsReview)null else if(edit?.confirm==true)now else m.confirmedAt,
+                        deferredAt=if(edit?.defer==true && preview.needsReview)now else if(changed || !preview.needsReview)null else m.deferredAt,
+                        anchorGeometryJson=if(preview.unresolved) previous?.anchorGeometryJson else if(m.anchor!=null)drawing else null,
+                        lastValidGeometryJson=if(preview.unresolved)previous?.lastValidGeometryJson ?: oldDrawing else drawing)
+                }
+                preview.copy(updatedAt=version,deletedAt=if(preview.deletedAt!=null)version else null,
+                    startMounting=mounting(true),endMounting=mounting(false))
+            }
+        }
+        original.lineElements.forEach { element ->
+            val lines=lineTargets.filter {it.elementUuid==element.uuid && it.deletedAt==null}
+            val reserved=lines.sumOf {it.lengthMm}
+            val capacity=declaredLengths[element.uuid] ?: element.lineCapacityMm()
+            if(capacity!=null && reserved>capacity) throw LinePlacementFailure.CapacityReached()
+        }
+        require(declaredLengths.all { (id,length) -> length in 1..ElementQuantityRules.MAX_MILLI &&
+            original.lineElements.any {it.uuid==id} && lineTargets.filter {it.elementUuid==id && it.deletedAt==null && !it.unresolved}.sumOf {it.lengthMm}==length })
+        val noChange = lineTargets==original.placements.lines && declaredLengths.isEmpty() && !changed && targets==original.placements.points && draft.name.trim()==original.draft.name.trim() && draft.notes.trim()==original.draft.notes.trim()
         val payload = buildJsonObject {
             put("name",draft.name.trim());put("notes",draft.notes.trim());put("shape",geometry.shapeType)
             put("drawingJson",drawing);put("oldDrawingJson",oldDrawing)
@@ -65,6 +101,21 @@ class CeilingEditRepository(private val database: PrototypeDatabase) {
             put("width",(geometry.vertices.maxOf{it.yMm}-geometry.vertices.minOf{it.yMm})/1000.0)
             put("area",geometry.areaSquareMeters);put("perimeter",geometry.perimeterMeters)
             putJsonArray("walls") { walls.forEach { add(buildJsonObject { put("uuid",it.uuid) }) } }
+            putJsonObject("declaredLengths") {declaredLengths.toSortedMap().forEach { (id,length) ->put(id,length)}}
+            putJsonArray("lines") { lineTargets.forEach { line -> add(buildJsonObject {
+                val old=original.placements.lines.find {it.uuid==line.uuid}
+                put("uuid",line.uuid);put("elementUuid",line.elementUuid)
+                put("expectedUpdatedAt",old?.updatedAt?.let(::JsonPrimitive) ?: JsonNull)
+                put("expectedElementUpdatedAt",original.placements.elements.getValue(line.elementUuid))
+                put("startX",line.start.xMm);put("startY",line.start.yMm);put("endX",line.end.xMm);put("endY",line.end.yMm)
+                put("lengthMm",line.lengthMm);put("widthMm",line.widthMm?.let(::JsonPrimitive) ?: JsonNull);put("note",line.note)
+                put("startMounting",encodeMounting(line.startMounting));put("endMounting",encodeMounting(line.endMounting))
+                put("needsReview",if(line.needsReview)1 else 0);put("unresolved",if(line.unresolved)1 else 0)
+                put("deleted",if(line.deletedAt!=null)1 else 0);put("write",if(line==old)0 else 1)
+                put("confirm",if(lineEdits[line.uuid]?.confirm==true)1 else 0)
+                put("remeasuredStart",if(lineEdits[line.uuid]?.remeasuredStart==true)1 else 0)
+                put("remeasuredEnd",if(lineEdits[line.uuid]?.remeasuredEnd==true)1 else 0)
+            }) } }
             putJsonArray("points") { targets.forEachIndexed { i,p -> add(buildJsonObject {
                 val old=original.placements.points[i]
                 put("uuid",p.uuid);put("elementUuid",p.elementUuid);put("expectedUpdatedAt",old.updatedAt)
@@ -85,6 +136,7 @@ class CeilingEditRepository(private val database: PrototypeDatabase) {
             }
             if(live.uuid!=draft.recordUuid || live.projectId!=draft.projectId || live.updatedAt!=original.updatedAt ||
                 ProjectRepository(database).find(draft.projectId)==null) throw MeasurementEditConflict()
+            if(LinePlacementRepository(database).forMeasurement(live.uuid)!=original.placements.lines) throw MeasurementEditConflict()
             if(PointPlacementRepository(database).forMeasurement(live.uuid)!=original.placements.points) throw MeasurementEditConflict()
             original.placements.elements.forEach { (uuid,version) ->
                 if(MeasurementElementRepository(database).find(uuid)?.updatedAt!=version) throw MeasurementEditConflict()

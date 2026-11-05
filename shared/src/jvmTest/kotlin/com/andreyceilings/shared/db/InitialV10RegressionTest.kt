@@ -12,7 +12,7 @@ class InitialV10RegressionTest {
             val before=LegacyWallSeedProof.snapshot(driver,true)
             PriceCatalogSchema.migrate(driver,10,11)
             assertEquals(before,LegacyWallSeedProof.snapshot(driver,true))
-            verifyPointPlacementStructure(driver)
+            verifyPointPlacementStructure(driver,11)
         }
     }
     @Test fun hybridV10FailsBeforeCorrectiveDdlInsteadOfRelaxingFingerprint() {

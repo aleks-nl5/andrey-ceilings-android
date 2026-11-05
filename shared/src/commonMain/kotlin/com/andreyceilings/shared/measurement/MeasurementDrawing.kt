@@ -56,7 +56,12 @@ fun MeasurementDrawing(
     onFinishPointDrag: () -> Unit = {}, onCancelPointDrag: () -> Unit = {},
     fitPointPlacements: Boolean = false,
     editPointsInFullscreen: Boolean = false, mountingDimensions: List<MountingDimension> = emptyList(),
-    mountingWallOrdinals: List<Int> = emptyList()
+    mountingWallOrdinals: List<Int> = emptyList(),
+    linePlacements: List<LinePlacement> = emptyList(), selectedLineUuid: String? = null,
+    linePlacementMode: Boolean = false, onLineTap: (Long,Long)->Unit = {_,_->},
+    onSelectLine: (String)->Unit = {}, lineEditingEnabled: Boolean = false,
+    lineStartPoint:PointPositionMm?=null,lineDrag: LinePlacement? = null, onBeginLineDrag: (String)->Unit = {},
+    onPreviewLineDrag: (Double,Double)->Unit = {_,_->}, onFinishLineDrag: ()->Unit = {}, onCancelLineDrag: ()->Unit = {}
 ) {
     val contour = remember(geometry) { measurementDrawingContour(geometry) }
     if (contour == null) {
@@ -83,7 +88,17 @@ fun MeasurementDrawing(
     val currentPointSelection by rememberUpdatedState(onSelectPoint)
     val currentPointTap by rememberUpdatedState(onPlacePoint)
     val currentMode by rememberUpdatedState(placementMode)
-    val fitPoints = if (fitPointPlacements) pointPlacements.map { DrawingPoint(it.xMm.toDouble(), it.yMm.toDouble()) } else emptyList()
+    val fitPoints = if (fitPointPlacements) pointPlacements.map { DrawingPoint(it.xMm.toDouble(), it.yMm.toDouble()) } +
+        linePlacements.flatMap {listOf(DrawingPoint(it.start.xMm.toDouble(),it.start.yMm.toDouble()),DrawingPoint(it.end.xMm.toDouble(),it.end.yMm.toDouble()))} else emptyList()
+    val currentLines by rememberUpdatedState(linePlacements)
+    val currentLineMode by rememberUpdatedState(linePlacementMode)
+    val currentLineTap by rememberUpdatedState(onLineTap)
+    val currentLineSelection by rememberUpdatedState(onSelectLine)
+    val currentSelectedLine by rememberUpdatedState(selectedLineUuid)
+    val currentBeginLineDrag by rememberUpdatedState(onBeginLineDrag)
+    val currentPreviewLineDrag by rememberUpdatedState(onPreviewLineDrag)
+    val currentFinishLineDrag by rememberUpdatedState(onFinishLineDrag)
+    val currentCancelLineDrag by rememberUpdatedState(onCancelLineDrag)
     val currentFitPoints by rememberUpdatedState(fitPoints)
     val currentSelectedPoint by rememberUpdatedState(selectedPointUuid)
     val currentBeginDrag by rememberUpdatedState(onBeginPointDrag)
@@ -122,7 +137,7 @@ fun MeasurementDrawing(
                     else -> false
                 }
             }.focusable()
-            .pointerInput(contour, canvasSize, pointEditingEnabled, fullscreen, editPointsInFullscreen) {
+            .pointerInput(contour, canvasSize, pointEditingEnabled, lineEditingEnabled, fullscreen, editPointsInFullscreen) {
                 awaitEachGesture {
                     val down = awaitFirstDown(requireUnconsumed = false)
                     val width = canvasSize.width.toFloat(); val height = canvasSize.height.toFloat()
@@ -137,11 +152,21 @@ fun MeasurementDrawing(
                         val p = currentViewport.transform(projection.project(DrawingPoint(marker.xMm.toDouble(), marker.yMm.toDouble())), width, height)
                         hypot(p.x - position.x, p.y - position.y) <= 24.dp.toPx()
                     }
-                    val marker = hit(down.position)
+                    fun lineDistance(line:LinePlacement,position:Offset):Double {
+                        fun screen(p:PointPositionMm)=currentViewport.transform(projection.project(DrawingPoint(p.xMm.toDouble(),p.yMm.toDouble())),width,height)
+                        val a=screen(line.start);val b=screen(line.end)
+                        val dx=b.x-a.x;val dy=b.y-a.y
+                        val t=(((position.x-a.x)*dx+(position.y-a.y)*dy)/(dx*dx+dy*dy)).coerceIn(0.0,1.0)
+                        return hypot(position.x-a.x-t*dx,position.y-a.y-t*dy)
+                    }
+                    val line=currentLines.minByOrNull {lineDistance(it,down.position)}?.takeIf {lineDistance(it,down.position)<=24.dp.toPx()}
+                    val marker = if(currentLineMode || lineEditingEnabled && line!=null && line.uuid==currentSelectedLine) null else hit(down.position)
+                    var ownsLine=lineEditingEnabled && !currentLineMode && marker==null && line!=null && line.uuid==currentSelectedLine
                     var ownsMarker = pointEditingEnabled && (!fullscreen || editPointsInFullscreen) && marker != null && marker.uuid == currentSelectedPoint
                     val startWorld = world(down.position)
                     var moved = false; var multi = false
                     var last = down.position
+                    if(ownsLine) {markerGesture=true;currentBeginLineDrag(checkNotNull(line).uuid)}
                     if (ownsMarker) { markerGesture = true; currentBeginDrag(checkNotNull(marker).uuid) }
                     down.consume()
                     try {
@@ -152,6 +177,7 @@ fun MeasurementDrawing(
                             if (event.changes.any { it.isConsumed }) break
                             if (active > 1) {
                                 multi = true
+                                if(ownsLine){ownsLine=false;markerGesture=false;currentCancelLineDrag()}
                                 if (ownsMarker) { ownsMarker = false; markerGesture = false; currentCancelDrag() }
                             }
                             val position = change?.position ?: last
@@ -161,7 +187,7 @@ fun MeasurementDrawing(
                                 move(pan.x, pan.y, zoomFactor)
                                 event.changes.forEach { it.consume() }
                             } else if (moved && active > 0) {
-                                if (ownsMarker) {
+                                if(ownsLine) {val target=world(position);currentPreviewLineDrag(target.x-startWorld.x,target.y-startWorld.y)} else if (ownsMarker) {
                                     val target = world(position)
                                     currentPreviewDrag(checkNotNull(marker).xMm + target.x - startWorld.x,
                                         marker.yMm + target.y - startWorld.y)
@@ -173,6 +199,11 @@ fun MeasurementDrawing(
                             }
                             last = position
                             if (active == 0) {
+                                if(ownsLine) {
+                                    markerGesture=false
+                                    if(moved){val target=world(position);currentPreviewLineDrag(target.x-startWorld.x,target.y-startWorld.y);currentFinishLineDrag()} else currentCancelLineDrag()
+                                    ownsLine=false
+                                }
                                 if (ownsMarker) {
                                     markerGesture = false
                                     if (moved) {
@@ -184,7 +215,11 @@ fun MeasurementDrawing(
                                     ownsMarker = false
                                 }
                                 if (!moved && !multi) {
-                                    if (marker != null && (!fullscreen || editPointsInFullscreen)) currentPointSelection(marker.uuid)
+                                    if(currentLineMode) {
+                                        val target=world(position)
+                                        if(target.x.isFinite() && target.y.isFinite() && target.x in -1_000_000.0..1_000_000.0 && target.y in -1_000_000.0..1_000_000.0)currentLineTap(target.x.roundToLong(),target.y.roundToLong())
+                                    } else if (marker != null && (!fullscreen || editPointsInFullscreen)) currentPointSelection(marker.uuid)
+                                    else if(line!=null)currentLineSelection(line.uuid)
                                     else if (currentMode && !fullscreen) {
                                         val target = world(position)
                                         val bound = com.andreyceilings.shared.calculation.CeilingPolygonCalculator.MAX_COORDINATE_MM.toDouble()
@@ -202,6 +237,7 @@ fun MeasurementDrawing(
                         }
                     } finally {
                         markerGesture = false
+                        if(ownsLine)currentCancelLineDrag()
                         if (ownsMarker) currentCancelDrag()
                     }
                 }
@@ -221,7 +257,7 @@ fun MeasurementDrawing(
             }
         Canvas(Modifier.fillMaxWidth().then(if (fullscreen) Modifier.weight(1f) else Modifier.height(if (compact) 155.dp else 235.dp))
             .clipToBounds().onSizeChanged { canvasSize = it }.then(inputModifier)
-            .semantics { contentDescription = "Контур стелі, ${contour.points.size} вершин, позначок: ${pointPlacements.size}" }) {
+            .semantics { contentDescription = "Контур стелі, ${contour.points.size} вершин, позначок: ${pointPlacements.size}, ліній: ${linePlacements.size}" }) {
             val layout = layoutMeasurementDrawing(contour, size.width, size.height,
                 textLayouts.map { DrawingLabelSize(it.size.width.toFloat(), it.size.height.toFloat()) }, density,
                 vertexLayouts.map { DrawingLabelSize(it.size.width.toFloat(), it.size.height.toFloat()) }, extraWorldPoints = fitPoints)
@@ -258,6 +294,25 @@ fun MeasurementDrawing(
                 val mid=(a+b)/2f
                 drawRect(surface.copy(alpha=0.96f),mid,Size(label.size.width.toFloat(),label.size.height.toFloat()))
                 drawText(label,topLeft=mid)
+            }
+            if(projection!=null)lineStartPoint?.let {start ->
+                val p=projection.project(DrawingPoint(start.xMm.toDouble(),start.yMm.toDouble()))
+                val v=if(interactive)viewport.transform(p,size.width,size.height) else p
+                drawCircle(ink,6.dp.toPx(),Offset(v.x.toFloat(),v.y.toFloat()),style=Stroke(2.dp.toPx()))
+            }
+            if(projection!=null)linePlacements.forEach {line ->
+                val visible=lineDrag?.takeIf {it.uuid==line.uuid} ?: line
+                fun screen(p:PointPositionMm):Offset {
+                    val fitted=projection.project(DrawingPoint(p.xMm.toDouble(),p.yMm.toDouble()))
+                    val v=if(interactive)viewport.transform(fitted,size.width,size.height) else fitted
+                    return Offset(v.x.toFloat(),v.y.toFloat())
+                }
+                val a=screen(visible.start);val b=screen(visible.end)
+                val color=if(visible.unresolved)androidx.compose.ui.graphics.Color(0xffb3261e) else ink
+                if(line.uuid==selectedLineUuid)drawLine(color.copy(alpha=0.25f),a,b,strokeWidth=14.dp.toPx())
+                drawLine(color,a,b,strokeWidth=if(visible.precision==PointPrecision.EXACT)3.dp.toPx() else 2.dp.toPx())
+                listOf(a,b).forEach {drawCircle(surface,5.dp.toPx(),it);drawCircle(color,5.dp.toPx(),it,style=Stroke(2.dp.toPx()))}
+                if(visible.needsReview)drawCircle(color,8.dp.toPx(),a,style=Stroke(1.dp.toPx()))
             }
             if (projection != null) pointPlacements.forEach { marker ->
                 val preview = pointDrag?.takeIf { it.point.uuid == marker.uuid }

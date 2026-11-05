@@ -31,24 +31,24 @@ class ProductionDatabaseStartupTest {
     }
 
     @Test fun populatedProductionV9AndDeployedV10ColdUpgradeKeepMixedHistoryAndCanCreateAndRestore() = preserveProduction { context,key ->
-        for(variant in listOf("v9","v10-final","v10-initial")) {
-            val version=if(variant=="v9")9L else 10L
-            val schema=when(variant){"v9"->WallAnchorMigrationProof.v9Schema;"v10-initial"->InitialV10MigrationProof.schema;else->WallAnchorMigrationProof.v10Schema}
+        for(variant in listOf("v9","v10-final","v10-initial","v11")) {
+            val version=when(variant){"v9"->9L;"v11"->11L;else->10L}
+            val schema=when(variant){"v9"->WallAnchorMigrationProof.v9Schema;"v10-initial"->InitialV10MigrationProof.schema;"v11"->LinePlacementMigrationProof.v11Schema;else->WallAnchorMigrationProof.v10Schema}
             val name="production-upgrade-$variant.db";context.deleteDatabase(name)
             try {
                 val before=historical(context,name,key,schema).use { driver ->
                     val f=LegacyWallSeedProof.populate(driver,version==9L)
-                    if(version==10L)LegacyWallSeedProof.decorateV10(driver,f)
+                    if(version>=10L)LegacyWallSeedProof.decorateV10(driver,f)
                     driver.executeQuery(null,"PRAGMA wal_autocheckpoint=0",{c->c.next();QueryResult.Value(c.getLong(0))},0).value
                     ProjectRepository(PrototypeDatabase(driver)).createReturningId(null,"Committed v$version WAL row",createdAt=600)
                     assertEquals("wal",driver.executeQuery(null,"PRAGMA journal_mode",{ c->c.next();QueryResult.Value(c.getString(0)) },0).value)
-                    LegacyWallSeedProof.snapshot(driver,version==10L)
+                    LegacyWallSeedProof.snapshot(driver,version>=10L)
                 }
                 replaceClosedProduction(context,context.getDatabasePath(name))
                 val upgraded=CeilingsDatabase.get(context)
                 assertEquals(context.getDatabasePath(CeilingsDatabase.DATABASE_NAME).absolutePath,upgraded.path)
                 assertEquals(PriceCatalogSchema.version,upgraded.queryLong("PRAGMA user_version"))
-                assertEquals(before,LegacyWallSeedProof.snapshot(upgraded.driver,version==10L))
+                assertEquals(before,LegacyWallSeedProof.snapshot(upgraded.driver,version>=10L))
                 assertEquals(0L,upgraded.queryLong("SELECT count(*) FROM ceiling_walls WHERE measurementUuid LIKE 'legacy-source-%'"))
                 if(version==9L)assertEquals(0L,upgraded.queryLong("SELECT count(*) FROM point_placements WHERE mountingJson!='{}'"))
                 else {
@@ -188,11 +188,17 @@ class ProductionDatabaseStartupTest {
     private suspend fun createAndRoundTrip(context:Context,db:CeilingsDatabase) {
         val id=db.clients().insert(ClientEntity(name="Production client"));assertTrue(id>0)
         assertTrue(ProjectRepository(db.database).createReturningId(id,"Production project",createdAt=700)>0)
+        LinePlacementProof.run(db.driver)
+        val expectedLines=LinePlacementRepository(db.database).all()
         val expected=db.clients().count()
         val envelope=PortableBackupManager.create(context,db,"production-round-trip".toCharArray())
         try {
             val contents=PortableBackupManager.validate(context,envelope,"production-round-trip".toCharArray())
-            try {assertEquals(expected,SqlCipherRestoreManager.restore(context,contents).clients().count())}
+            try {
+                val restored=SqlCipherRestoreManager.restore(context,contents)
+                assertEquals(expected,restored.clients().count())
+                assertEquals(expectedLines,LinePlacementRepository(restored.database).all())
+            }
             finally{contents.database.fill(0);contents.passphrase.fill(0)}
         } finally {envelope.fill(0)}
     }

@@ -8,6 +8,7 @@ import com.andreyceilings.shared.navigation.AppNavigationState
  * Hosts bind their current editor and pass every navigation change through transition().
  */
 class MeasurementCreateNavigationGuard {
+    var requestedLinePlacement: Pair<String,String>? = null
     val fullscreen = kotlinx.coroutines.flow.MutableStateFlow(false)
     private var editor: MeasurementCreateModel? = null
     private var elements: MeasurementElementsModel? = null
@@ -95,7 +96,7 @@ class MeasurementCreateNavigationGuard {
             return current
         }
         val editModel = edit
-        editModel?.cancelPointDrag()
+        editModel?.cancelPointDrag(); editModel?.cancelLineDrag()
         val editState = editModel?.state?.value
         if (editState != null && current.measurementEdit?.measurementId == editState.original.measurementId &&
             current.measurementEdit.projectId == editState.draft.projectId) {

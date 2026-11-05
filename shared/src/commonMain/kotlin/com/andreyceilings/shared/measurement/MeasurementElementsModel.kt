@@ -80,6 +80,8 @@ class MeasurementElementsModel internal constructor(private val store: Measureme
     val editor = mutableEditor.asStateFlow()
     private val mutablePoints = MutableStateFlow(PointPlacementState())
     val points = mutablePoints.asStateFlow()
+    private val mutableLines=MutableStateFlow<List<LinePlacement>>(emptyList())
+    val lines=mutableLines.asStateFlow()
     private val committedPoints = MutableStateFlow<Map<String, PointPlacement>>(emptyMap())
     private fun updatePoints(change: (PointPlacementState) -> PointPlacementState) {
         mutablePoints.update { if (closed) PointPlacementState() else change(it) }
@@ -96,6 +98,7 @@ class MeasurementElementsModel internal constructor(private val store: Measureme
         set(value) { mutableEditor.update { if (closed) null else value } }
     init {
         retry(); refreshCatalog()
+        scope.launch {store.observeLines(route).catch {emit(emptyList())}.collect {mutableLines.value=if(closed)emptyList() else it}}
         scope.launch {
             store.observePoints(route).catch { failure ->
                 updatePoints { it.copy(points = emptyList(), available = false,
@@ -262,7 +265,7 @@ class MeasurementElementsModel internal constructor(private val store: Measureme
         if (!finishPlacement()) return false
         updatePoints { it.copy(undo = null, redo = null, drag = null, positionEditor = null) }
         pointExitAction = null
-        committedPoints.value = emptyMap()
+        committedPoints.value = emptyMap(); mutableLines.value=emptyList()
         return true
     }
     private fun pointCommitted(command: PointCommand, result: PointMoveResult) {
@@ -394,7 +397,7 @@ class MeasurementElementsModel internal constructor(private val store: Measureme
     }
     fun close() {
         closed = true; exitAction = null; pointExitAction = null; currentEditor = null
-        committedPoints.value = emptyMap()
+        committedPoints.value = emptyMap(); mutableLines.value=emptyList()
         mutableState.value = MeasurementElementsState.Unavailable; mutableCatalog.value = ElementCatalogState.Unavailable
         mutablePoints.value = PointPlacementState()
         scope.cancel()

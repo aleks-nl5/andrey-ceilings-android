@@ -9,6 +9,7 @@ import com.andreyceilings.shared.calculation.OrthogonalTurn
 /** Real production transactions on every SQLCipher platform, never a substitute DB implementation. */
 object WallAnchorProof {
     fun run(driver: SqlDriver) {
+        LinePlacementProof.run(driver)
         val db=PrototypeDatabase(driver)
         val f=PointPlacementProof.fixture(db,"Монтаж P3C3")
         val store=MeasurementEditStore(db){100}

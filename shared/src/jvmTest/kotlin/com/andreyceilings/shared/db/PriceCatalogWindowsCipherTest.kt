@@ -9,6 +9,8 @@ class PriceCatalogWindowsCipherTest {
         if (!System.getProperty("os.name").startsWith("Windows", ignoreCase = true)) return@runBlocking
         val key = ByteArray(32) { 76 }
         try {
+            LinePlacementFileProof.concurrent {SqlCipherWindowsDriverFactory.open(it,key)}
+            LinePlacementFileProof.run { SqlCipherWindowsDriverFactory.open(it,key) }
             PointPlacementFileProof.run { SqlCipherWindowsDriverFactory.open(it, key) }
             PointPositionFileProof.run { SqlCipherWindowsDriverFactory.open(it, key) }
             WallAnchorFileProof.run { SqlCipherWindowsDriverFactory.open(it,key) }

@@ -40,9 +40,9 @@ class PointPlacementJdbcTest {
                 assertFails { openDesktopPriceCatalog(upgraded, true) }
                 assertNotEquals(original, PriceNameMigrationProof.schema(upgraded))
             }
-            fresh.execute(null, "PRAGMA user_version=12", 0)
+            fresh.execute(null, "PRAGMA user_version=${PriceCatalogSchema.version+1}", 0)
             assertFails { openDesktopPriceCatalog(fresh, true) }
-            assertEquals(12L, PriceNameUniquenessProof.scalar(fresh, "PRAGMA user_version"))
+            assertEquals(PriceCatalogSchema.version+1, PriceNameUniquenessProof.scalar(fresh, "PRAGMA user_version"))
         }
         JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).use { partial ->
             PointPlacementMigrationProof.v7Schema.create(partial)
