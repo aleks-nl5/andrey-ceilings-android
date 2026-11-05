@@ -36,7 +36,7 @@ class ProductionDatabaseStartupTest {
             try {
                 val before=historical(context,name,key,if(version==9L)WallAnchorMigrationProof.v9Schema else WallAnchorMigrationProof.v10Schema).use { driver ->
                     LegacyWallSeedProof.populate(driver,version==9L)
-                    driver.execute(null,"PRAGMA wal_autocheckpoint=0",0)
+                    driver.executeQuery(null,"PRAGMA wal_autocheckpoint=0",{c->c.next();QueryResult.Value(c.getLong(0))},0).value
                     ProjectRepository(PrototypeDatabase(driver)).createReturningId(null,"Committed v$version WAL row",createdAt=600)
                     assertEquals("wal",driver.executeQuery(null,"PRAGMA journal_mode",{ c->c.next();QueryResult.Value(c.getString(0)) },0).value)
                     LegacyWallSeedProof.snapshot(driver)
@@ -155,7 +155,7 @@ class ProductionDatabaseStartupTest {
             val failure=assertFails {CeilingsDatabase.get(context)}
             assertEquals("DB-KEY",DatabaseStartupDiagnostics.report(failure).code)
             assertFails {SqlCipherRestoreManager.restoreUnavailable(context,contents,confirmed=true)}
-            assertNull(prefs.getString("wrapped_passphrase",null),"A missing key must not be silently replaced")
+            assertTrue(prefs.getString("wrapped_passphrase",null)==null,"A missing key must not be silently replaced")
             assertTrue(original.contentEquals(live.readBytes()),"Existing encrypted bytes changed")
             assertNull(DatabaseKeyManager.pendingRawBundle(context))
         } finally {

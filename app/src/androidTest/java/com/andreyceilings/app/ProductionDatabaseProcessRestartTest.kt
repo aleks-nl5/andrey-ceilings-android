@@ -27,7 +27,7 @@ class ProductionDatabaseProcessRestartTest {
             factory=SupportOpenHelperFactory(key.copyOf(),null,true))
         try {
             LegacyWallSeedProof.populate(driver)
-            driver.execute(null,"PRAGMA wal_autocheckpoint=0",0)
+            driver.executeQuery(null,"PRAGMA wal_autocheckpoint=0",{c->c.next();app.cash.sqldelight.db.QueryResult.Value(c.getLong(0))},0).value
             driver.executeQuery(null,"PRAGMA wal_checkpoint(TRUNCATE)",{c->c.next();app.cash.sqldelight.db.QueryResult.Value(c.getLong(0))},0).value
             ProjectRepository(PrototypeDatabase(driver)).createReturningId(null,"Process WAL sentinel",createdAt=900)
             val live=context.getDatabasePath(CeilingsDatabase.DATABASE_NAME)
