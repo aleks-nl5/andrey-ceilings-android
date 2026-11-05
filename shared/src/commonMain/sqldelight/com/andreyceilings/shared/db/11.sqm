@@ -114,6 +114,23 @@ CREATE TRIGGER line_element_guard BEFORE UPDATE ON measurement_elements BEGIN
  (SELECT coalesce(sum(lengthMm),0) FROM line_placements WHERE elementUuid=old.uuid AND deletedAt IS NULL))) THEN RAISE(ABORT,'line_quantity_in_use') END;
 END;
 
+CREATE TRIGGER line_element_identity BEFORE UPDATE ON measurement_elements
+WHEN (new.uuid IS NOT old.uuid OR new.measurementUuid IS NOT old.measurementUuid)
+ AND EXISTS(SELECT 1 FROM line_placements WHERE elementUuid=old.uuid)
+BEGIN SELECT RAISE(ABORT,'line_parent_identity_immutable'); END;
+
+CREATE TRIGGER line_element_delete_guard BEFORE DELETE ON measurement_elements
+WHEN EXISTS(SELECT 1 FROM line_placements WHERE elementUuid=old.uuid)
+BEGIN SELECT RAISE(ABORT,'line_parent_requires_tombstone'); END;
+
+CREATE TRIGGER line_measurement_delete_guard BEFORE DELETE ON room_measurements
+WHEN EXISTS(SELECT 1 FROM line_placements l JOIN measurement_elements e ON e.uuid=l.elementUuid WHERE e.measurementUuid=old.uuid)
+BEGIN SELECT RAISE(ABORT,'line_parent_requires_tombstone'); END;
+
+CREATE TRIGGER line_project_delete_guard BEFORE DELETE ON projects
+WHEN EXISTS(SELECT 1 FROM line_placements l JOIN measurement_elements e ON e.uuid=l.elementUuid JOIN room_measurements m ON m.uuid=e.measurementUuid WHERE m.projectId=old.id)
+BEGIN SELECT RAISE(ABORT,'line_parent_requires_tombstone'); END;
+
 CREATE TRIGGER line_element_tombstone AFTER UPDATE OF deletedAt ON measurement_elements
 WHEN old.deletedAt IS NULL AND new.deletedAt IS NOT NULL BEGIN
  UPDATE line_placements SET updatedAt=max(updatedAt+1,new.updatedAt),deletedAt=max(updatedAt+1,new.updatedAt) WHERE elementUuid=new.uuid AND deletedAt IS NULL;

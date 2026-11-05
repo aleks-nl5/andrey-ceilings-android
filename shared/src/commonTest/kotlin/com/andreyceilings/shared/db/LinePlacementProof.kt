@@ -80,6 +80,14 @@ object LinePlacementProof {
         elements.delete(elements.find(element.uuid)!!.version,200)
         assertTrue(LinePlacementRepository(db).forMeasurement(element.measurementUuid).isEmpty())
         assertTrue(LinePlacementRepository(db).all().filter {it.elementUuid==element.uuid}.all {it.deletedAt!=null})
+        // Tombstoned LINE history cannot be orphaned/reparented, even with FK checking disabled.
+        driver.execute(null,"PRAGMA foreign_keys=OFF",0)
+        for(sql in listOf(
+            "DELETE FROM measurement_elements WHERE uuid='${element.uuid}'",
+            "DELETE FROM room_measurements WHERE id=${f.id}",
+            "DELETE FROM projects WHERE id=${f.project}",
+            "UPDATE measurement_elements SET measurementUuid='missing-parent' WHERE uuid='${element.uuid}'")) assertFails {driver.execute(null,sql,0)}
+        driver.execute(null,"PRAGMA foreign_keys=ON",0)
         val unknown=elements.createCatalogSelection(element.measurementUuid,item.uuid,ElementQuantity.Unknown,210)
         doc=store.load(f.project,f.id)
         val manual=line.copy(uuid="unknown-line-${f.id}",elementUuid=unknown.uuid,start=PointPositionMm(500,600),end=PointPositionMm(1500,600))
