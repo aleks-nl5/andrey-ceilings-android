@@ -112,6 +112,10 @@ object AreaFeatureProof {
         doc=store.update(doc,doc.draft,now=320,areaEdits=mapOf(two.uuid to AreaFeatureEdit(two)))
         assertEquals(1,elements.find(unknown.uuid)!!.placedQuantityMilli,"Aggregate canonical area must round only once")
         assertEquals(ElementQuantity.Unknown,elements.find(unknown.uuid)!!.quantity)
+        elements.edit(elements.find(unknown.uuid)!!.version,"",unknown.approval,ElementQuantity.Range(1,2),321)
+        assertEquals(ElementQuantity.Range(1,2),elements.find(unknown.uuid)!!.quantity)
+        elements.edit(elements.find(unknown.uuid)!!.version,"",unknown.approval,ElementQuantity.Unknown,322)
+        assertEquals(ElementQuantity.Unknown,elements.find(unknown.uuid)!!.quantity)
         elements.edit(elements.find(unknown.uuid)!!.version,"",unknown.approval,ElementQuantity.Exact(1),325)
         doc=store.load(f.project,f.id)
         val three=one.copy(uuid="tiny-three-${f.id}")
@@ -122,6 +126,10 @@ object AreaFeatureProof {
         assertEquals(3000,elements.find(counted.uuid)!!.placedQuantityMilli)
         assertEquals(ElementQuantity.Range(1000,3000),elements.find(counted.uuid)!!.quantity)
         assertFails {store.update(doc,doc.draft,now=360,areaEdits=mapOf("count-over-${f.id}" to AreaFeatureEdit(counts[0].copy(uuid="count-over-${f.id}"))))}
+        elements.edit(elements.find(counted.uuid)!!.version,"",counted.approval,ElementQuantity.Range(1000,4000),370)
+        elements.edit(elements.find(counted.uuid)!!.version,"",counted.approval,ElementQuantity.Unknown,380)
+        assertEquals(ElementQuantity.Unknown,elements.find(counted.uuid)!!.quantity)
+        assertEquals(3000,elements.find(counted.uuid)!!.placedQuantityMilli)
     }
 
     private fun rejectRawBypasses(driver:SqlDriver,db:PrototypeDatabase,doc:MeasurementEditDocument) {
