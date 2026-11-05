@@ -4,6 +4,7 @@ import app.cash.sqldelight.db.SqlDriver
 import com.andreyceilings.shared.measurement.*
 import com.andreyceilings.shared.prices.*
 import kotlin.test.*
+import kotlinx.serialization.json.*
 
 /** Same production transaction proof on Linux, real Windows SQLCipher, Android WAL and iOS SQLCipher. */
 object LinePlacementProof {
@@ -32,6 +33,7 @@ object LinePlacementProof {
         val exact=saved.copy(startMounting=mounting(500),endMounting=mounting(3000))
         doc=store.update(doc,doc.draft,now=110,lineEdits=mapOf(exact.uuid to LinePlacementEdit(exact,confirm=true)))
         assertEquals(ElementPlacement.EXACT,elements.find(element.uuid)!!.placement)
+        rejectInventedMountingContext(db,doc)
         val second=line.copy(uuid="line-second-${f.id}",start=PointPositionMm(500,1600),end=PointPositionMm(2000,1600))
         doc=store.update(doc,doc.draft,now=120,lineEdits=mapOf(second.uuid to LinePlacementEdit(second)))
         assertEquals(4000,elements.find(element.uuid)!!.placedQuantityMilli)
@@ -106,4 +108,23 @@ object LinePlacementProof {
         assertTrue(doc.placements.lines.all {it.needsReview && it.startMounting.deferredAt==270L && it.endMounting.deferredAt==270L})
         assertEquals(0,PriceNameUniquenessProof.scalar(driver,"SELECT count(*) FROM pragma_foreign_key_check"))
     }
+    private fun rejectInventedMountingContext(db:PrototypeDatabase,doc:MeasurementEditDocument) {
+        val line=doc.placements.lines.single()
+        val operation=db.ceilingEditsQueries.selectOperation(line.lastCeilingEditUuid!!).executeAsOne()
+        val source=Json.parseToJsonElement(operation.payload).jsonObject
+        for (field in listOf("anchorGeometryJson","lastValidGeometryJson")) {
+            val payload=JsonObject(source+mapOf("lines" to JsonArray(source.getValue("lines").jsonArray.map {value ->
+                val item=value.jsonObject
+                fun mounting(name:String)=Json.parseToJsonElement(item.getValue(name).jsonPrimitive.content).jsonObject.let {old ->
+                    JsonObject(old+mapOf("modifiedVersion" to JsonPrimitive(115),field to JsonPrimitive("{}"))).toString()
+                }
+                JsonObject(item+mapOf("expectedUpdatedAt" to JsonPrimitive(line.updatedAt),
+                    "expectedElementUpdatedAt" to JsonPrimitive(MeasurementElementRepository(db).find(line.elementUuid)!!.updatedAt),
+                    "startMounting" to JsonPrimitive(mounting("startMounting")),"endMounting" to JsonPrimitive(mounting("endMounting")),"write" to JsonPrimitive(1)))
+            }))).toString()
+            assertFails {db.ceilingEditsQueries.insertOperation("invalid-line-context-${line.uuid}-$field",doc.draft.recordUuid,doc.updatedAt,payload,115)}
+            assertEquals(doc.placements.lines,LinePlacementRepository(db).forMeasurement(doc.draft.recordUuid))
+        }
+    }
+
 }

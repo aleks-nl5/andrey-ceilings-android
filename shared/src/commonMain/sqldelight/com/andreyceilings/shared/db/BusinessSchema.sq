@@ -442,9 +442,13 @@ CREATE VIEW ceiling_operation_lines AS
  FROM ceiling_operations o,json_each(o.payload,'$.lines') p;
 
 CREATE VIEW ceiling_line_endpoints AS
- SELECT operationUuid,lineUuid || ':start' AS pointUuid,lineUuid,startX AS xMm,startY AS yMm,startMounting AS mountingJson,unresolved,needsReview,shouldWrite,deleted FROM ceiling_operation_lines
+ SELECT l.operationUuid,l.lineUuid || ':start' AS pointUuid,l.lineUuid,l.startX AS xMm,l.startY AS yMm,l.startMounting AS mountingJson,
+ l.unresolved,l.needsReview,l.shouldWrite,l.deleted,q.startMounting AS oldMountingJson
+ FROM ceiling_operation_lines l LEFT JOIN line_placements q ON q.uuid=l.lineUuid
  UNION ALL
- SELECT operationUuid,lineUuid || ':end',lineUuid,endX,endY,endMounting,unresolved,needsReview,shouldWrite,deleted FROM ceiling_operation_lines;
+ SELECT l.operationUuid,l.lineUuid || ':end',l.lineUuid,l.endX,l.endY,l.endMounting,l.unresolved,l.needsReview,l.shouldWrite,l.deleted,q.endMounting
+ FROM ceiling_operation_lines l LEFT JOIN line_placements q ON q.uuid=l.lineUuid;
+
 
 CREATE VIEW ceiling_line_feet AS
  SELECT p.operationUuid,p.pointUuid,w.ordinal,p.xMm AS px,p.yMm AS py,
@@ -733,6 +737,10 @@ BEGIN
  OR (p.shouldWrite=1 AND json_extract(p.mountingJson,'$.modifiedVersion')!=max(coalesce((SELECT expectedUpdatedAt FROM ceiling_operation_lines WHERE operationUuid=p.operationUuid AND lineUuid=p.lineUuid),-1)+1,new.createdAt))
  OR (p.needsReview=1 AND json_extract(p.mountingJson,'$.confirmedAt') IS NOT NULL)
  OR (p.shouldWrite=1 AND p.unresolved=0 AND json_extract(p.mountingJson,'$.lastValidGeometryJson') IS NOT json_extract(new.payload,'$.drawingJson'))
+ OR (p.unresolved=1 AND json_extract(p.mountingJson,'$.lastValidGeometryJson') IS NOT coalesce(json_extract(p.oldMountingJson,'$.lastValidGeometryJson'),json_extract(new.payload,'$.oldDrawingJson')))
+ OR (p.unresolved=0 AND json_extract(p.mountingJson,'$.anchor') IS NOT NULL
+ AND json_extract(p.mountingJson,'$.anchorGeometryJson') IS NOT json_extract(new.payload,'$.drawingJson')
+ AND (json_extract(p.mountingJson,'$.anchor') IS NOT json_extract(p.oldMountingJson,'$.anchor') OR json_extract(p.mountingJson,'$.anchorGeometryJson') IS NOT json_extract(p.oldMountingJson,'$.anchorGeometryJson')))
  OR (p.unresolved=0 AND json_extract(p.mountingJson,'$.unresolved')!=0)
  OR (json_extract(p.mountingJson,'$.anchor') IS NOT NULL AND ((SELECT count(*) FROM ceiling_line_anchor_fields WHERE operationUuid=p.operationUuid AND pointUuid=p.pointUuid)!=5 OR (SELECT count(DISTINCT fieldName) FROM ceiling_line_anchor_fields WHERE operationUuid=p.operationUuid AND pointUuid=p.pointUuid)!=5 OR EXISTS(SELECT 1 FROM ceiling_line_anchor_fields WHERE operationUuid=p.operationUuid AND pointUuid=p.pointUuid AND fieldName NOT IN ('kind','firstWall','secondWall','firstMm','secondMm')) OR coalesce(json_valid(json_extract(p.mountingJson,'$.anchorGeometryJson')),0)=0))
  OR (p.unresolved=0 AND (EXISTS(SELECT 1 FROM ceiling_line_hidden_offsets WHERE operationUuid=p.operationUuid AND pointUuid=p.pointUuid) OR coalesce(((SELECT CASE WHEN sum(CASE WHEN (bx-ax)*(p.yMm-ay)-(by-ay)*(p.xMm-ax)=0
