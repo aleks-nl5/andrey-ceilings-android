@@ -151,7 +151,7 @@ selection/raw mounting input і лише receipt reference для read reconcili
 
 ## Фактична верифікація та межі
 
-Повний Linux suite після startup fixes: **289 shared/JVM + 26 CMP + 9 Android unit**, 0
+Повний Linux suite після initial-v10 fix: **291 shared/JVM + 26 CMP + 10 Android unit**, 0
 failures/0 skipped; migration verification й Android instrumentation compilation success.
 Прогін включає concave visibility/source/SQL bypass checks, Captured legacy
 mounting, immutable result CAS та commit/response-loss retry. Final SHA, Android/Windows/iOS success links і APK публікуються
@@ -172,8 +172,9 @@ records/UUID/precision/timestamps/tombstones/receipts/history не перепи�
 Історичні `8.sqm` та старші не змінені. Вхід із v9 необхідно виправити саме до
 проблемного INSERT: інакше виконання не дійде до corrective migration.
 
-Нова `10.sqm` (v10→v11) змінює лише два automatic seed triggers, а `10.db`
-та strict `pointV10SchemaDefinitions` зберігають фактичну роздану v10 структуру.
+Нова `10.sqm` (v10→v11) змінює два automatic seed та два sticky-unresolved
+triggers. `10.db` і `pointV10SchemaDefinitions` зберігають пізнішу роздану v10;
+`initialV10SchemaDefinitions` — початкову з `2bc7641`.
 Вже створені v10 anchors/wall UUIDs/operation receipts залишаються на місці.
 Fresh-v11 і обидва migrated-v11 шляхи перевіряються; невідома/часткова/майбутня
 схема, неправильний ключ і пошкодження fail closed. Default Android corruption
@@ -185,6 +186,8 @@ Startup завжди показує безпечний код (`DB-KEY`, `DB-MIG
 `DB-CORRUPTION`, `DB-RECOVERY` тощо). Debug Logcat містить лише код, типи exception
 і stack frames; exception messages, SQL values, шляхи, записи та ключі не
 експортуються. Release показує категорію й дозволяє скопіювати код без Logcat.
+Для fingerprint mismatch додається лише whitelist object ID (`-FP-...`),
+для failing migration SQL — лише ordinal (`-S3` тощо), без тексту SQL чи values.
 
 `.stpb` validation доступна без live DB і не викликає `CeilingsDatabase.get()`.
 Звичайний restore зберігає чинний verified SQLCipher snapshot path. Для null
@@ -215,6 +218,32 @@ test source. Результати фізичних платформ — лише
 - [ ] Owner: створити клієнта/об'єкт; перевірити export/verify/restore резервної копії.
 - [ ] Owner: якщо запуск ще відмовляє, передати безпечний код; не видаляти DB/WAL/SHM/ключі.
 - [ ] Owner: повторити монтажний P3C3 journey в обох темах. Блокер лишається до окремого підтвердження.
+
+### Уточнення після реального `DB-MIGRATE-10-11`
+
+Власник перевірив `f1e3cc8`: v10→v11 відхилив відкриття. Попередній fixture v10
+відтворював тільки hardened `4ee131b/9aa8db4`. Початковий APK `2bc7641` мав ту
+саму version 10, але старі `ceiling_operation_validate` та
+`point_operation_insert_guard`: sticky-unresolved fix змінив обидва визначення
+без version bump. Саме ця сумісність була пропущена.
+
+Відтворення на замороженому initial-v10: старий v10→v11 змінював лише seed pair,
+після чого fingerprint падав на `ceiling_operation_validate`. Новий regression
+спочатку RED на попередньому коді. Corrective migration тепер встановлює також
+обидва hardened guards. Цільова структура v11 не змінюється, тож уже відкриті
+v11 файли не потребують нової version чи перезапису.
+
+Перед будь-яким point migration з v8/v9/v10 перевіряється повний відомий source
+fingerprint. Для v10 дозволено рівно два цілі набори; не дозволяється довільна
+суміш окремих визначень. Hybrid/unknown source відхиляється до corrective DDL,
+без переписування доказів чи бізнес-даних. Тести охоплюють initial і hardened
+v10 з anchors, unresolved, deferred review, всіма wall IDs та immutable whole
+operation/result receipts; snapshot до/після включає їхні буквальні JSON і bytes.
+Обидва варіанти додано до production Android singleton/Keystore/WAL і signed
+release suite, а також physical Windows/iOS proofs. Дані зчитуються одним
+узгодженим snapshot transaction; це також уникає окремого JDBC key derivation
+для кожної snapshot query. Фізичні результати очікуються від нового final-SHA
+CI у PR; owner acceptance залишається окремим.
 Цей запис не прирівнює Linux до encrypted runtime перевірки іншої платформи.
 
 Чинні shape inputs (rectangle/L/measured orthogonal) збережені; повний кутовий

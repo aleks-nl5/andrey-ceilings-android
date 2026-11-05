@@ -24,7 +24,7 @@ class PointPlacementSqlCipherTest {
         System.loadLibrary("sqlcipher")
         val key = ByteArray(32) { 77 }
         try {
-            for (scenario in listOf("fresh", "empty-v7", "populated-v7", "empty-v8", "populated-v8", "empty-v9", "populated-v9", "legacy-v9", "deployed-v10")) {
+            for (scenario in listOf("fresh", "empty-v7", "populated-v7", "empty-v8", "populated-v8", "empty-v9", "populated-v9", "legacy-v9", "deployed-v10", "initial-v10")) {
                 val name = "points-$scenario-test.db"
                 context.deleteDatabase(name)
                 try {
@@ -47,7 +47,8 @@ class PointPlacementSqlCipherTest {
                             }, 0).value } catch (failure: Throwable) { driver.close(); throw failure }
                         }
                         }
-                        if(scenario=="legacy-v9" || scenario=="deployed-v10") LegacyWallSeedProof.lifecycle(PriceCatalogSchema,if(scenario=="legacy-v9")9L else 10L,open)
+                        if(scenario=="initial-v10")LegacyWallSeedProof.initialV10Lifecycle(PriceCatalogSchema,open)
+                        else if(scenario=="legacy-v9" || scenario=="deployed-v10") LegacyWallSeedProof.lifecycle(PriceCatalogSchema,if(scenario=="legacy-v9")9L else 10L,open)
                         else if (scenario.endsWith("v9")) WallAnchorMigrationProof.lifecycle(PriceCatalogSchema, scenario == "populated-v9", open)
                         else if (scenario.endsWith("v8")) PointPositionMigrationProof.lifecycle(PriceCatalogSchema, scenario == "populated-v8", open)
                         else PointPlacementMigrationProof.lifecycle(PriceCatalogSchema, scenario == "populated-v7", open)

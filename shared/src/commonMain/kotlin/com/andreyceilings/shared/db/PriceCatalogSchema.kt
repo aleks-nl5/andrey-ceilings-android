@@ -6,6 +6,11 @@ import app.cash.sqldelight.db.SqlDriver
 import app.cash.sqldelight.db.SqlSchema
 import com.andreyceilings.shared.prices.StarterPriceCatalog
 
+/** Ordinal only: never publishes failing SQL, bound values or exception messages. */
+class MigrationStatementFailure(val statement: Int, cause:Throwable) : IllegalStateException("Schema migration statement failed",cause) {
+    init {require(statement>0)}
+}
+
 /** Production schema: structure + starter rows + marker commit or roll back together. */
 object PriceCatalogSchema : SqlSchema<QueryResult.Value<Unit>> {
     override val version: Long get() = PrototypeDatabase.Schema.version
@@ -34,7 +39,18 @@ object PriceCatalogSchema : SqlSchema<QueryResult.Value<Unit>> {
 
     internal fun migrateInTransaction(driver: SqlDriver, oldVersion: Long, newVersion: Long,
         vararg callbacks: AfterVersion): QueryResult.Value<Unit> {
-        PrototypeDatabase.Schema.migrate(driver, oldVersion, newVersion, *callbacks)
+        // Old draft APKs distributed two exact v10 schemas. Unknown/partial/hybrid schemas
+        // must fail BEFORE corrective DDL can accidentally repair away their evidence.
+        if(oldVersion in 8L..10L)verifyPointPlacementStructure(driver,oldVersion)
+        var statement=0
+        val observed=object:SqlDriver by driver {
+            override fun execute(identifier:Int?,sql:String,parameters:Int,binders:(app.cash.sqldelight.db.SqlPreparedStatement.()->Unit)?):QueryResult<Long> {
+                statement++
+                return try {driver.execute(identifier,sql,parameters,binders)}
+                catch(failure:Throwable){throw MigrationStatementFailure(statement,failure)}
+            }
+        }
+        PrototypeDatabase.Schema.migrate(observed, oldVersion, newVersion, *callbacks)
         if (oldVersion < 6L && newVersion >= 6L) backfillPriceNameKeys(driver)
         if (newVersion >= 6L) StarterPriceCatalog.initializeInTransaction(PrototypeDatabase(driver))
         if (newVersion >= 8L) verifyPointPlacementStructure(driver, newVersion)

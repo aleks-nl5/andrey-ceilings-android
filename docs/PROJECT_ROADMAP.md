@@ -15,7 +15,11 @@ P3C1 [PR #94](https://github.com/aleks-nl5/andrey-ceilings-android/pull/94) та
 окремі valid count і reserved capacity. Owner APK на `9aa8db4` не відкрив БД:
 це блокер, попередні green CI не означають runtime acceptance. Відтворено збій
 wall seeding на старих нечислових вершинах; точний збій пристрою потребує
-діагностики. Додаються production filename/Keystore/WAL/restart/release proofs,
+діагностики. Власник на `f1e3cc8` повідомив `DB-MIGRATE-10-11`; відтворено
+несумісність початкового v10 з `2bc7641`: два guards відрізняються від пізнішого
+v10 без зміни version. Новий fix мігрує обидва повні відомі fingerprints у v11,
+не змінює даних і відхиляє невідомі/гібридні схеми до DDL.
+Додаються production filename/Keystore/WAL/restart/release proofs для обох v10,
 санітизовані коди startup і rollback-preserving recovery без live session.
 Нові CI й повторне owner APK acceptance pending; статус і APK — у PR.
 

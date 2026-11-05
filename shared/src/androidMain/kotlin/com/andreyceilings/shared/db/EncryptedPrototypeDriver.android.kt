@@ -39,7 +39,10 @@ fun createEncryptedPrototypeDriver(
     val observedSchema = object : SqlSchema<QueryResult.Value<Unit>> by schema {
         override fun create(driver: SqlDriver) = openStep(EncryptedDatabaseOpenStage.CREATE) { schema.create(driver) }
         override fun migrate(driver: SqlDriver, oldVersion: Long, newVersion: Long, vararg callbacks: AfterVersion): QueryResult.Value<Unit> =
-            try { schema.migrate(driver,oldVersion,newVersion,*callbacks) }
+            try {
+                if(oldVersion in 8L..10L)verifyPointPlacementStructure(driver,oldVersion)
+                schema.migrate(driver,oldVersion,newVersion,*callbacks)
+            }
             catch (failure: Throwable) { throw EncryptedDatabaseOpenFailure(EncryptedDatabaseOpenStage.MIGRATE,failure,oldVersion,newVersion) }
     }
     val driver = AndroidSqliteDriver(

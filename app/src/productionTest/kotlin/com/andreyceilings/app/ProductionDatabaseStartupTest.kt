@@ -31,23 +31,30 @@ class ProductionDatabaseStartupTest {
     }
 
     @Test fun populatedProductionV9AndDeployedV10ColdUpgradeKeepMixedHistoryAndCanCreateAndRestore() = preserveProduction { context,key ->
-        for(version in listOf(9L,10L)) {
-            val name="production-upgrade-$version.db";context.deleteDatabase(name)
+        for(variant in listOf("v9","v10-final","v10-initial")) {
+            val version=if(variant=="v9")9L else 10L
+            val schema=when(variant){"v9"->WallAnchorMigrationProof.v9Schema;"v10-initial"->InitialV10MigrationProof.schema;else->WallAnchorMigrationProof.v10Schema}
+            val name="production-upgrade-$variant.db";context.deleteDatabase(name)
             try {
-                val before=historical(context,name,key,if(version==9L)WallAnchorMigrationProof.v9Schema else WallAnchorMigrationProof.v10Schema).use { driver ->
-                    LegacyWallSeedProof.populate(driver,version==9L)
+                val before=historical(context,name,key,schema).use { driver ->
+                    val f=LegacyWallSeedProof.populate(driver,version==9L)
+                    if(version==10L)LegacyWallSeedProof.decorateV10(driver,f)
                     driver.executeQuery(null,"PRAGMA wal_autocheckpoint=0",{c->c.next();QueryResult.Value(c.getLong(0))},0).value
                     ProjectRepository(PrototypeDatabase(driver)).createReturningId(null,"Committed v$version WAL row",createdAt=600)
                     assertEquals("wal",driver.executeQuery(null,"PRAGMA journal_mode",{ c->c.next();QueryResult.Value(c.getString(0)) },0).value)
-                    LegacyWallSeedProof.snapshot(driver)
+                    LegacyWallSeedProof.snapshot(driver,version==10L)
                 }
                 replaceClosedProduction(context,context.getDatabasePath(name))
                 val upgraded=CeilingsDatabase.get(context)
                 assertEquals(context.getDatabasePath(CeilingsDatabase.DATABASE_NAME).absolutePath,upgraded.path)
                 assertEquals(PriceCatalogSchema.version,upgraded.queryLong("PRAGMA user_version"))
-                assertEquals(before,LegacyWallSeedProof.snapshot(upgraded.driver))
+                assertEquals(before,LegacyWallSeedProof.snapshot(upgraded.driver,version==10L))
                 assertEquals(0L,upgraded.queryLong("SELECT count(*) FROM ceiling_walls WHERE measurementUuid LIKE 'legacy-source-%'"))
-                assertEquals(0L,upgraded.queryLong("SELECT count(*) FROM point_placements WHERE mountingJson!='{}'"))
+                if(version==9L)assertEquals(0L,upgraded.queryLong("SELECT count(*) FROM point_placements WHERE mountingJson!='{}'"))
+                else {
+                    assertNotNull(PointPlacementRepository(upgraded.database).find("v9-point")!!.mounting.anchor)
+                    assertEquals(1L,upgraded.queryLong("SELECT count(*) FROM point_placements WHERE json_extract(mountingJson,'$.unresolved')=1"))
+                }
                 val reopenedKey=DatabaseKeyManager.getOrCreatePassphrase(context)
                 try { assertTrue(key.contentEquals(reopenedKey),"Keystore key changed") } finally { reopenedKey.fill(0) }
                 createAndRoundTrip(context,upgraded)

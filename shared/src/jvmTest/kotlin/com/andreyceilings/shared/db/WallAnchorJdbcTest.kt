@@ -1,6 +1,7 @@
 package com.andreyceilings.shared.db
 
 import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
+import app.cash.sqldelight.db.*
 import kotlin.test.Test
 
 class WallAnchorJdbcTest {
@@ -26,10 +27,11 @@ class WallAnchorJdbcTest {
 
 object LegacyWallSeedFileProof {
     suspend fun run(open:(java.io.File)->app.cash.sqldelight.db.SqlDriver) {
-        for(version in listOf(9L,10L)) {
+        for(variant in listOf("v9","v10-final","v10-initial")) {
+            val version=if(variant=="v9")9L else 10L
             val file=java.nio.file.Files.createTempFile("legacy-walls-",".db").toFile()
             try {
-                LegacyWallSeedProof.lifecycle(PriceCatalogSchema,version) { schema ->
+                val openSchema:suspend (SqlSchema<QueryResult.Value<Unit>>)->SqlDriver = { schema ->
                     val driver=open(file)
                     try {
                         if(schema===PriceCatalogSchema)openDesktopPriceCatalog(driver,true)
@@ -41,6 +43,8 @@ object LegacyWallSeedFileProof {
                         driver
                     } catch(failure:Throwable){driver.close();throw failure}
                 }
+                if(variant=="v10-initial")LegacyWallSeedProof.initialV10Lifecycle(PriceCatalogSchema,openSchema)
+                else LegacyWallSeedProof.lifecycle(PriceCatalogSchema,version,openSchema)
             } finally { file.delete() }
         }
     }
