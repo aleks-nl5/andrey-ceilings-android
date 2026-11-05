@@ -141,8 +141,10 @@ class MeasurementEditModel(
                     attempt=null;mutableState.value=before.copy(error=conflict.message,conflict=true);store?.release(token)
                 } catch (failure: PointPlacementFailure.RetryConflict) {
                     attempt=null;mutableState.value=before.copy(error=pointFailureMessage(failure),conflict=true);store?.release(token)
+                } catch (failure: MeasurementEditRejected) {
+                    attempt=null;mutableState.value=before.copy(uncertain=false,error=failure.message);store?.release(token)
                 } catch (_: IllegalArgumentException) {
-                    attempt=null;mutableState.value=before.copy(error="Перевірте контур, стінні опори й відступи. Чернетку збережено; недопустимі дані не записано.");store?.release(token)
+                    attempt=null;mutableState.value=before.copy(uncertain=false,error="Перевірте контур, стінні опори й відступи. Чернетку збережено; недопустимі дані не записано.");store?.release(token)
                 } catch (_: Exception) {
                     mutableState.value=before.copy(uncertain=true,error="Результат збереження не підтверджено. Повторіть ту саму спробу або перезавантажте запис; чернетку збережено.")
                 } finally { store?.endWrite(completion) }

@@ -84,7 +84,7 @@ class WallAnchorEditModelTest {
             assertEquals(6,points.forMeasurement(f.element.measurementUuid).size)
         }
     }
-    @Test fun failedApplyingTriggerRollsBackContourWallsPointsAndReceiptThenExplicitRetryCommitsOnce()=runBlocking {
+    @Test fun failedApplyingTriggerLeavesDraftEditableAfterProvenRollbackAndNextSaveCommitsOnce()=runBlocking {
         JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).use { driver ->
             PriceCatalogSchema.create(driver);val db=PrototypeDatabase(driver);val f=PointPlacementProof.fixture(db)
             val point=PointPlacementRepository(db).addPoint(f.element.version,f.contourVersion,1000,1000,10)
@@ -92,12 +92,18 @@ class WallAnchorEditModelTest {
             val before=MeasurementRepository(db).find(f.id)
             driver.execute(null,"CREATE TRIGGER test_wall_failure BEFORE UPDATE ON point_placements WHEN new.uuid='${point.uuid}' BEGIN SELECT RAISE(ABORT,'injected'); END",0)
             model.accept(MeasurementCreateIntent.Dimension("length","6"));model.save()
-            assertTrue(model.state.value.uncertain);assertTrue(model.state.value.dirty)
+            assertFalse(model.state.value.uncertain);assertFalse(model.state.value.conflict);assertTrue(model.state.value.dirty)
+            assertTrue(model.state.value.error.orEmpty().contains("Зміни не записано"))
+            assertFalse(model.snapshot().contains("\"receipt\""),"A proven rollback releases the failed operation, not the draft")
             assertEquals(before,MeasurementRepository(db).find(f.id));assertEquals(point,PointPlacementRepository(db).find(point.uuid))
             assertEquals(document.placements.walls,store.load(f.project,f.id).placements.walls)
             assertEquals(0L,PriceNameUniquenessProof.scalar(driver,"SELECT count(*) FROM ceiling_operations"))
+            model.undo();assertEquals(document.draft,model.state.value.draft)
+            model.redo();assertEquals("6",(model.state.value.draft.outline as MeasurementOutlineDraft.Template).fields["length"])
+            model.accept(MeasurementCreateIntent.Dimension("length","7"))
             driver.execute(null,"DROP TRIGGER test_wall_failure",0)
             model.save();assertTrue(model.state.value.reviewPrompt,model.state.value.error)
+            assertEquals(7.0,MeasurementRepository(db).find(f.id)!!.lengthMeters)
             assertEquals(1L,PriceNameUniquenessProof.scalar(driver,"SELECT count(*) FROM ceiling_operations"))
         }
     }
@@ -119,6 +125,11 @@ class WallAnchorEditModelTest {
         }
     }
     @Test fun committedButUnacknowledgedWholeEditRetriesIdenticalReceiptWithoutReplay()=runBlocking {
+        for (responseFailure in listOf<() -> Exception>(
+            { IllegalStateException("Injected response loss after commit") },
+            { IllegalArgumentException("Injected validation-shaped response loss after commit") },
+            { MeasurementEditConflict() }
+        )) {
         JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).use { raw ->
             PriceCatalogSchema.create(raw);val base=PrototypeDatabase(raw);val f=PointPlacementProof.fixture(base)
             val point=PointPlacementRepository(base).addPoint(f.element.version,f.contourVersion,1000,1000,10)
@@ -126,7 +137,7 @@ class WallAnchorEditModelTest {
             val driver=object:SqlDriver by raw {
                 override fun notifyListeners(vararg queryKeys:String) {
                     raw.notifyListeners(*queryKeys)
-                    if("ceiling_operations" in queryKeys && fail.compareAndSet(true,false)) error("Injected response loss after commit")
+                    if("ceiling_operations" in queryKeys && fail.compareAndSet(true,false)) throw responseFailure()
                 }
             }
             val store=MeasurementEditStore(PrototypeDatabase(driver)){100};val doc=store.load(f.project,f.id)
@@ -136,8 +147,34 @@ class WallAnchorEditModelTest {
             val committed=PointPlacementRepository(base).find(point.uuid)!!
             assertNotNull(committed.mounting.anchor,"The SQLite transaction committed before response failure")
             assertEquals(1L,PriceNameUniquenessProof.scalar(raw,"SELECT count(*) FROM ceiling_operations"))
+            val frozen=model.state.value.draft
+            model.accept(MeasurementCreateIntent.Name("Must stay frozen"));assertEquals(frozen,model.state.value.draft)
             model.save();assertTrue(model.state.value.saved,model.state.value.error)
             assertEquals(committed,PointPlacementRepository(base).find(point.uuid))
+            assertEquals(1L,PriceNameUniquenessProof.scalar(raw,"SELECT count(*) FROM ceiling_operations"))
+        }
+        }
+    }
+    @Test fun missingRollbackAcknowledgementKeepsSameAttemptFrozenUntilExplicitRetry()=runBlocking {
+        JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).use { raw ->
+            PriceCatalogSchema.create(raw);val base=PrototypeDatabase(raw);val f=PointPlacementProof.fixture(base)
+            val point=PointPlacementRepository(base).addPoint(f.element.version,f.contourVersion,1000,1000,10)
+            val fail=java.util.concurrent.atomic.AtomicBoolean(false)
+            val driver=object:SqlDriver by raw {
+                override fun newTransaction():QueryResult<app.cash.sqldelight.Transacter.Transaction> = raw.newTransaction().also {
+                    if(fail.compareAndSet(true,false)) it.value.afterRollback { error("Injected rollback acknowledgement loss") }
+                }
+            }
+            val store=MeasurementEditStore(PrototypeDatabase(driver)){100};val document=store.load(f.project,f.id)
+            val model=MeasurementEditModel(store,document)
+            raw.execute(null,"CREATE TRIGGER test_rollback_failure BEFORE UPDATE ON point_placements BEGIN SELECT RAISE(ABORT,'injected'); END",0)
+            model.accept(MeasurementCreateIntent.Dimension("length","6"));fail.set(true);model.save()
+            assertTrue(model.state.value.uncertain);assertTrue(model.snapshot().contains("\"receipt\""))
+            val frozen=model.state.value.draft
+            model.accept(MeasurementCreateIntent.Name("Must stay frozen"));model.undo();assertEquals(frozen,model.state.value.draft)
+            assertEquals(document,store.load(f.project,f.id));assertEquals(point,PointPlacementRepository(base).find(point.uuid))
+            raw.execute(null,"DROP TRIGGER test_rollback_failure",0)
+            model.save();assertTrue(model.state.value.reviewPrompt,model.state.value.error)
             assertEquals(1L,PriceNameUniquenessProof.scalar(raw,"SELECT count(*) FROM ceiling_operations"))
         }
     }

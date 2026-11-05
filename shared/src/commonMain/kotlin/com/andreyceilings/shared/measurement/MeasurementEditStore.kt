@@ -14,6 +14,13 @@ import app.cash.sqldelight.coroutines.asFlow
 class MeasurementEditConflict : IllegalStateException(
     "Замір змінено іншим редактором, видалено або об'єкт недоступний. Перезавантажте запис; чернетку не записано.")
 
+/** Issued only after SQLDelight's outer physical rollback has completed successfully. */
+class MeasurementEditRejected(cause: Throwable) : IllegalStateException(
+    "Зміни не записано. Перевірте контур, стінні опори й відступи та повторіть збереження. Чернетку залишено для редагування.", cause)
+
+/** A commit/rollback/notification failure is not evidence that the write was rejected. */
+internal class MeasurementEditUncertain(cause: Throwable) : IllegalStateException("Результат запису не підтверджено.", cause)
+
 /** A version and its exact source inputs travel together, never from current global settings. */
 @kotlinx.serialization.Serializable
 data class CeilingPlacementDocument(val points: List<PointPlacement> = emptyList(),
@@ -89,9 +96,21 @@ class MeasurementEditStore(private val database: PrototypeDatabase, private val 
         edits: Map<String, PointMountingEdit> = emptyMap(), operationUuid: String = newRecordUuid(),
         wallToken: String = operationUuid, now: Long = nowMillis(), acceptedWrite: kotlinx.coroutines.CompletableDeferred<Unit>? = null): MeasurementEditDocument {
         check(!sessionClosed.value || acceptedWrite in writes.value.pending) { "Сесію закрито." }
-        return database.transactionWithResult {
-            CeilingEditRepository(database).save(original,draft,edits,operationUuid,wallToken,now)
-            loadDocument(draft.projectId,original.measurementId,allowClosing = true)
+        var rolledBack = false
+        try {
+            return database.transactionWithResult {
+                // Runs after endTransaction succeeds, only for the outer rollback. Do not infer
+                // this from a platform exception class/message or from absence of a receipt.
+                afterRollback { rolledBack = true }
+                CeilingEditRepository(database).save(original,draft,edits,operationUuid,wallToken,now)
+                loadDocument(draft.projectId,original.measurementId,allowClosing = true)
+            }
+        } catch (failure: Throwable) {
+            if (!rolledBack) throw MeasurementEditUncertain(failure)
+            when (failure) {
+                is MeasurementEditConflict, is PointPlacementFailure.RetryConflict, is IllegalArgumentException -> throw failure
+                else -> throw MeasurementEditRejected(failure)
+            }
         }
     }
     fun now(): Long = nowMillis()

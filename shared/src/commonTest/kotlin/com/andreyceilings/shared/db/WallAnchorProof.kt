@@ -71,7 +71,38 @@ object WallAnchorProof {
         staleLegacyMoveAfterCeilingEdit(db)
         staleWholeReceiptAfterElementPointOrReservationChange(db)
         capturedInclinedLegacyCanMountWithoutInventingSides(driver,db,f)
+        applyingConstraintRejectIsProvenRollback(driver,db)
         openDesktopPriceCatalog(driver,true)
+    }
+    private fun applyingConstraintRejectIsProvenRollback(driver:SqlDriver,db:PrototypeDatabase) {
+        val f=PointPlacementProof.fixture(db,"Відмова SQL constraint")
+        val point=PointPlacementRepository(db).addPoint(f.element.version,f.contourVersion,1000,1000,10)
+        val store=MeasurementEditStore(db){100};val document=store.load(f.project,f.id)
+        val before=MeasurementRepository(db).find(f.id)
+        val element=MeasurementElementRepository(db).find(f.element.uuid)
+        val operations=PriceNameUniquenessProof.scalar(driver,"SELECT count(*) FROM ceiling_operations")
+        val results=PriceNameUniquenessProof.scalar(driver,"SELECT count(*) FROM ceiling_operation_results")
+        val walls=MeasurementElementMigrationProof.rows(driver,"SELECT * FROM ceiling_walls ORDER BY uuid",9)
+        // Reject after the real whole-operation trigger has already staged contour/wall changes.
+        driver.execute(null,"CREATE TRIGGER test_ceiling_constraint BEFORE UPDATE ON point_placements WHEN new.uuid='${point.uuid}' BEGIN SELECT RAISE(ABORT,'ceiling_test_constraint'); END",0)
+        try {
+            val failure=assertFailsWith<MeasurementEditRejected> {
+                store.update(document,document.draft.reduce(MeasurementCreateIntent.Dimension("length","6")),operationUuid="rejected-${f.id}")
+            }
+            assertNotNull(failure.cause)
+            assertEquals(before,MeasurementRepository(db).find(f.id))
+            assertEquals(point,PointPlacementRepository(db).find(point.uuid))
+            assertEquals(element,MeasurementElementRepository(db).find(f.element.uuid))
+            assertEquals(document,store.load(f.project,f.id))
+            assertEquals(walls,MeasurementElementMigrationProof.rows(driver,"SELECT * FROM ceiling_walls ORDER BY uuid",9))
+            assertEquals(operations,PriceNameUniquenessProof.scalar(driver,"SELECT count(*) FROM ceiling_operations"))
+            assertEquals(results,PriceNameUniquenessProof.scalar(driver,"SELECT count(*) FROM ceiling_operation_results"))
+        } finally { driver.execute(null,"DROP TRIGGER test_ceiling_constraint",0) }
+        val saved=store.update(document,document.draft.reduce(MeasurementCreateIntent.Dimension("length","7")),operationUuid="corrected-${f.id}")
+        assertEquals(7.0,MeasurementRepository(db).find(f.id)!!.lengthMeters)
+        assertTrue(saved.placements.points.single().mounting.needsReview)
+        assertEquals(operations+1,PriceNameUniquenessProof.scalar(driver,"SELECT count(*) FROM ceiling_operations"))
+        assertEquals(results+1,PriceNameUniquenessProof.scalar(driver,"SELECT count(*) FROM ceiling_operation_results"))
     }
     private fun directReceiptBypasses(driver:SqlDriver,db:PrototypeDatabase,f:PointPlacementProof.Fixture) {
         val row=MeasurementRepository(db).find(f.id)!!

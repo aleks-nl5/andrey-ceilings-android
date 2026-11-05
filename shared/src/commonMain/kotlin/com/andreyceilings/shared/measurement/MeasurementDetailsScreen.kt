@@ -207,7 +207,12 @@ fun MeasurementDetailsScreen(
                             onClick = onDeletePoint) { Text("Видалити позначку") }
                         if (pointState.selectedPointUuid != null) {
                             val marker = pointState.points.find { it.uuid == pointState.selectedPointUuid }
-                            Text(if (marker?.precision == PointPrecision.EXACT) "Ця позначка: точне числове положення" else "Ця позначка: приблизне положення")
+                            Text(when {
+                                marker?.mounting?.anchor != null && marker.mounting.unresolved -> "Ця позначка: збережені виміряні відстані; положення потребує уточнення"
+                                marker?.mounting?.anchor != null -> "Ця позначка: положення за виміряними відстанями"
+                                marker?.precision == PointPrecision.EXACT -> "Ця позначка: точне числове положення без виміряних стінних прив'язок"
+                                else -> "Ця позначка: приблизне положення"
+                            })
                             if(marker?.mounting?.anchor==null) Text("Виміряних стінних прив'язок немає.")
                             if(marker?.mounting?.needsReview==true) Text(if(marker.mounting.unresolved) "Потребує уточнення" else "Потрібно перевірити розміщення")
                             Text("Перетягування скидає активну прив'язку й задає приблизне положення; порожнє поле пересуває креслення.")

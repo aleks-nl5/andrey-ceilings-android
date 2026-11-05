@@ -41,7 +41,8 @@ class PointEditingSceneTest {
             val item = PriceRepository(db).all().single { it.code == "light.spot" }
             val element = elements.createCatalogSelection(original.uuid, item.uuid, ElementQuantity.Exact(6000), 3)
             val p = points.addPoint(element.version, original.updatedAt, 1000, 1000, 4)
-            val second = points.addPoint(elements.find(element.uuid)!!.version, original.updatedAt, 3000, 1000, 5)
+            val legacy = points.addPoint(elements.find(element.uuid)!!.version, original.updatedAt, 3000, 1000, 5)
+            val second = points.movePoint(elements.find(element.uuid)!!.version,legacy,original.updatedAt,3000,1000,PointPrecision.EXACT,6).point
             val calls = AtomicInteger()
             val details = MeasurementDetailsStore(db, { calls.incrementAndGet(); 10L }, Dispatchers.Unconfined)
             val model = details.elements.model(ElementRoute(project, id, original.uuid))
@@ -69,7 +70,10 @@ class PointEditingSceneTest {
             var testFailure: Throwable? = null
             try {
                 scene.awaitText("Розміщено: 2 з 6")
+                scene.tapWorld(original,second.xMm,second.yMm)
+                scene.awaitText("Ця позначка: точне числове положення без виміряних стінних прив'язок")
                 scene.tapWorld(original, 1000, 1000)
+                scene.awaitText("Ця позначка: приблизне положення")
                 assertEquals(p.uuid, model.points.value.selectedPointUuid)
                 val before = points.find(p.uuid)
                 val start = scene.world(original, 1000, 1000); val end = scene.world(original, 1800, 1600)
@@ -151,6 +155,8 @@ class PointEditingSceneTest {
                 scene.click("Пізніше")
                 repeat(200) {if(editing){scene.frame();delay(25)}}
                 assertFalse(editing);scene.awaitText("Перевірити (2)")
+                scene.tapWorld(MeasurementRepository(db).find(id)!!,1500,600)
+                scene.awaitText("Ця позначка: положення за виміряними відстанями")
                 assertTrue(points.forMeasurement(original.uuid).all {it.mounting.deferredAt!=null})
                 scene.click("Перевірити (2)");scene.awaitText("Позначки: 2")
                 scene.click("Перевірити (2)");scene.click("Розміщення перевірено")

@@ -134,13 +134,19 @@ Save реєструється до worker scheduling, один NonCancellable wo
 accepted writes та overlay reads; Android лишається під ProductionDatabaseGate.
 Закрита сесія не приймає нових writes. Stale/conflict зберігає чернетку, вимагає
 explicit reload. Невизначена спроба фіксує operation UUID/payload; редагування
-заморожені до retry/reload/discard. Local restoration містить co-draft/history/
+заморожені до retry/reload/discard. Доведена відмова запису визначається лише
+успішним outer `afterRollback` SQLDelight: UI показує «Зміни не записано»,
+звільняє failed attempt і дозволяє виправлення/Undo/Redo без reload. Exception
+text/class або відсутність receipt не доводять rollback. Помилка commit,
+rollback acknowledgement чи post-commit notification лишається uncertain,
+навіть якщо має тип validation/conflict exception; повтор використовує той самий
+operation UUID/payload. Local restoration містить co-draft/history/
 selection/raw mounting input і лише receipt reference для read reconciliation;
 жодного автоматичного повтору команд після process replacement.
 
 ## Фактична верифікація та межі
 
-Повний Linux suite після hardening: **287 shared/JVM + 26 CMP + 8 Android unit**, 0
+Повний Linux suite після review fixes: **288 shared/JVM + 26 CMP + 8 Android unit**, 0
 failures/0 skipped; migration verification й Android instrumentation compilation success.
 Прогін включає concave visibility/source/SQL bypass checks, Captured legacy
 mounting, immutable result CAS та commit/response-loss retry. Final SHA, Android/Windows/iOS success links і APK публікуються
