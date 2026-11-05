@@ -1,7 +1,7 @@
 package com.andreyceilings.shared.db
 
 /** Exact v12 fingerprint. Historical lineages remain immutable. */
-internal val pointSchemaDefinitions = pointV11SchemaDefinitions + mapOf(
+internal val pointV12SchemaDefinitions = pointV11SchemaDefinitions + mapOf(
     "ceiling_operation_results" to """
 CREATE TABLE ceiling_operation_results (
  operationUuid TEXT NOT NULL PRIMARY KEY REFERENCES ceiling_operations(uuid),

@@ -1,9 +1,11 @@
 package com.andreyceilings.shared.prices
 
+@kotlinx.serialization.Serializable
 enum class QuantityMode(val value: String) {
     MANUAL("manual"), CEILING_AREA("ceiling_area"), CEILING_PERIMETER("ceiling_perimeter"), ENTERED_LENGTH("entered_length")
 }
 
+@kotlinx.serialization.Serializable
 enum class PlacementKind(val value: String) {
     NONE("none"), POINT("point"), LINE("line"), AREA("area")
 }

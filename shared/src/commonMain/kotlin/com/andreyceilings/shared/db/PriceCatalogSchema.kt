@@ -44,7 +44,7 @@ object PriceCatalogSchema : SqlSchema<QueryResult.Value<Unit>> {
         vararg callbacks: AfterVersion): QueryResult.Value<Unit> {
         // Old draft APKs distributed two exact v10 schemas. Unknown/partial/hybrid schemas
         // must fail BEFORE corrective DDL can accidentally repair away their evidence.
-        if(oldVersion in 8L..11L)verifyPointPlacementStructure(driver,oldVersion)
+        if(oldVersion in 8L..12L)verifyPointPlacementStructure(driver,oldVersion)
         var statement=0
         val observed=object:SqlDriver by driver {
             override fun execute(identifier:Int?,sql:String,parameters:Int,binders:(app.cash.sqldelight.db.SqlPreparedStatement.()->Unit)?):QueryResult<Long> {

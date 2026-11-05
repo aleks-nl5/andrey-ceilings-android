@@ -13,12 +13,12 @@ class SchemaFingerprintMismatch(val objectId: String) : IllegalStateException("U
 internal fun verifyPointPlacementStructure(driver: SqlDriver, version: Long = PriceCatalogSchema.version) {
     fun normalize(sql: String) = sql.trim().trimEnd(';').replace(Regex("\\s+"), " ").replace(Regex("\\s*([,()])\\s*"), "$1").lowercase()
     val names = driver.executeQuery(null,
-        "SELECT name FROM sqlite_master WHERE name LIKE 'point_%' OR name LIKE 'index_point_%' OR name LIKE 'ceiling_%' OR name LIKE 'index_ceiling_%' OR name LIKE 'line_%' OR name LIKE 'index_line_%'", { cursor ->
+        "SELECT name FROM sqlite_master WHERE name LIKE 'point_%' OR name LIKE 'index_point_%' OR name LIKE 'ceiling_%' OR name LIKE 'index_ceiling_%' OR name LIKE 'line_%' OR name LIKE 'index_line_%' OR name LIKE 'area_%' OR name LIKE 'index_area_%'", { cursor ->
             val found = mutableSetOf<String>()
             while (cursor.next().value) found.add(checkNotNull(cursor.getString(0)))
             QueryResult.Value(found)
         }, 0).value
-    val definitions = when(version) { 8L -> pointV8SchemaDefinitions; 9L -> pointV9SchemaDefinitions; 10L -> pointV10SchemaDefinitions; 11L -> pointV11SchemaDefinitions; else -> pointSchemaDefinitions }
+    val definitions = when(version) { 8L -> pointV8SchemaDefinitions; 9L -> pointV9SchemaDefinitions; 10L -> pointV10SchemaDefinitions; 11L -> pointV11SchemaDefinitions; 12L -> pointV12SchemaDefinitions; else -> pointSchemaDefinitions }
     if(names!=definitions.keys)throw SchemaFingerprintMismatch("point_objects")
     val actual = definitions.mapValues { (name, _) ->
         val actual = driver.executeQuery(null, "SELECT sql FROM sqlite_master WHERE name = '$name'", { cursor ->
