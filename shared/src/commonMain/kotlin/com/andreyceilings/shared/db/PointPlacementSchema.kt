@@ -3,7 +3,7 @@ package com.andreyceilings.shared.db
 import app.cash.sqldelight.db.QueryResult
 import app.cash.sqldelight.db.SqlDriver
 
-/** Strict v8/v9/v10 fingerprints. Historical v8/v9 is preserved for a fail-closed upgrade probe. */
+/** Strict v8/v9/v10/v11 fingerprints, including already distributed P3C3 v10 files. */
 internal fun verifyPointPlacementStructure(driver: SqlDriver, version: Long = PriceCatalogSchema.version) {
     fun normalize(sql: String) = sql.trim().trimEnd(';').replace(Regex("\\s+"), " ").replace(Regex("\\s*([,()])\\s*"), "$1").lowercase()
     val names = driver.executeQuery(null,
@@ -12,8 +12,8 @@ internal fun verifyPointPlacementStructure(driver: SqlDriver, version: Long = Pr
             while (cursor.next().value) found.add(checkNotNull(cursor.getString(0)))
             QueryResult.Value(found)
         }, 0).value
-    check(names == (when(version) { 8L -> pointV8SchemaDefinitions; 9L -> pointV9SchemaDefinitions; else -> pointSchemaDefinitions }).keys) { "Partial or unknown point placement objects" }
-    val definitions = when(version) { 8L -> pointV8SchemaDefinitions; 9L -> pointV9SchemaDefinitions; else -> pointSchemaDefinitions }
+    check(names == (when(version) { 8L -> pointV8SchemaDefinitions; 9L -> pointV9SchemaDefinitions; 10L -> pointV10SchemaDefinitions; else -> pointSchemaDefinitions }).keys) { "Partial or unknown point placement objects" }
+    val definitions = when(version) { 8L -> pointV8SchemaDefinitions; 9L -> pointV9SchemaDefinitions; 10L -> pointV10SchemaDefinitions; else -> pointSchemaDefinitions }
     definitions.forEach { (name, expected) ->
         val actual = driver.executeQuery(null, "SELECT sql FROM sqlite_master WHERE name = '$name'", { cursor ->
             QueryResult.Value(if (cursor.next().value) cursor.getString(0) else null)

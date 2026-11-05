@@ -153,6 +153,9 @@ internal class CeilingsDatabase private constructor(
         const val LEGACY_DATABASE_NAME = "andrey_ceilings_secure.db"
 
         @Volatile private var INSTANCE: CeilingsDatabase? = null
+        // Mutating callers hold the restore gate. A volatile read avoids taking the
+        // singleton monitor while crash recovery already owns its own monitor.
+        internal fun hasOpenSession(): Boolean = INSTANCE != null
 
         fun get(context: Context): CeilingsDatabase = ProductionDatabaseGate.read {
             synchronized(this) {
@@ -191,10 +194,12 @@ internal class CeilingsDatabase private constructor(
         private fun build(context: Context): CeilingsDatabase {
             // On an interrupted restore, never open or create an empty live DB.
             if (!com.andreyceilings.app.data.security.SqlCipherRestoreManager.installing) {
-                com.andreyceilings.app.data.security.SqlCipherRestoreManager.recoverIfNeeded(context)
+                try { com.andreyceilings.app.data.security.SqlCipherRestoreManager.recoverIfNeeded(context) }
+                catch (failure: Throwable) { throw DatabaseStartupFailure(DatabaseStartupFailure.Stage.RECOVERY,failure) }
             }
             val live = context.getDatabasePath(DATABASE_NAME)
-            val key = DatabaseKeyManager.getOrCreatePassphrase(context)
+            val key = try { DatabaseKeyManager.getOrCreatePassphrase(context) }
+                catch (failure: Throwable) { throw DatabaseStartupFailure(DatabaseStartupFailure.Stage.KEY,failure) }
             try {
                 // PR #29: switch only the Android production SQLCipher
                 // opening boundary from DELETE to WAL; the helper configures
@@ -219,8 +224,8 @@ internal class CeilingsDatabase private constructor(
                     check((result.queryLong("SELECT count(*) FROM sqlite_master") ?: 0L) > 0L)
                     result
                 } catch (failure: Throwable) {
-                    driver.close()
-                    throw failure
+                    try {driver.close()}catch(closeFailure:Throwable){failure.addSuppressed(closeFailure)}
+                    throw DatabaseStartupFailure(DatabaseStartupFailure.Stage.SESSION,failure)
                 }
             } finally {
                 key.fill(0)

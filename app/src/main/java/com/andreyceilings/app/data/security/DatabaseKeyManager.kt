@@ -21,6 +21,8 @@ internal object DatabaseKeyManager {
     private const val PREFS_NAME = "secure_db_key_v1"
     private const val PREF_WRAPPED_KEY = "wrapped_passphrase"
     private const val PREF_RESTORE_ORIGINAL_KEY = "restore_pending_original_passphrase"
+    private const val PREF_RESTORE_RAW_BUNDLE = "restore_pending_raw_bundle"
+    private const val PREF_RESTORE_RAW_MANIFEST = "restore_pending_raw_manifest"
     private const val GCM_TAG_BITS = 128
 
     @Synchronized
@@ -28,6 +30,10 @@ internal object DatabaseKeyManager {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         val existing = prefs.getString(PREF_WRAPPED_KEY, null)
         if (existing != null) return unwrap(existing)
+
+        check(!context.getDatabasePath(com.andreyceilings.app.data.db.CeilingsDatabase.DATABASE_NAME).exists()) {
+            "Зашифрована БД існує, але захищений ключ відсутній. Новий ключ не створено."
+        }
 
         val passphrase = ByteArray(32).also { SecureRandom().nextBytes(it) }
         val wrapped = wrap(passphrase)
@@ -56,7 +62,8 @@ internal object DatabaseKeyManager {
      * Its durable presence marks a recoverable, not-yet-committed restore.
      */
     @Synchronized
-    fun beginPendingRestore(context: Context) {
+    fun beginPendingRestore(context: Context, rawBundle: String? = null, rawManifestHash: String? = null) {
+        require((rawBundle==null)==(rawManifestHash==null))
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         check(!prefs.contains(PREF_RESTORE_ORIGINAL_KEY)) {
             "Попереднє відновлення ще не завершене."
@@ -64,10 +71,29 @@ internal object DatabaseKeyManager {
         val prior = checkNotNull(prefs.getString(PREF_WRAPPED_KEY, null)) {
             "Не знайдено поточний ключ БД."
         }
-        check(prefs.edit().putString(PREF_RESTORE_ORIGINAL_KEY, prior).commit()) {
+        check(prefs.edit().putString(PREF_RESTORE_ORIGINAL_KEY, prior)
+            .putString(PREF_RESTORE_RAW_BUNDLE,rawBundle).putString(PREF_RESTORE_RAW_MANIFEST,rawManifestHash).commit()) {
             "Не вдалося зберегти маркер відновлення."
         }
     }
+
+    @Synchronized internal fun currentWrappedForRecovery(context: Context): String =
+        checkNotNull(context.getSharedPreferences(PREFS_NAME,Context.MODE_PRIVATE).getString(PREF_WRAPPED_KEY,null)) {
+            "Немає збереженого захищеного ключа. Безпечна заміна недоступна."
+        }
+
+    @Synchronized internal fun pendingRawBundle(context: Context): String? =
+        context.getSharedPreferences(PREFS_NAME,Context.MODE_PRIVATE).getString(PREF_RESTORE_RAW_BUNDLE,null)
+
+    @Synchronized internal fun pendingRawManifestHash(context: Context): String =
+        checkNotNull(context.getSharedPreferences(PREFS_NAME,Context.MODE_PRIVATE).getString(PREF_RESTORE_RAW_MANIFEST,null)) {
+            "Немає контрольної суми початкового стану."
+        }
+
+    @Synchronized internal fun pendingWrappedForRecovery(context: Context): String =
+        checkNotNull(context.getSharedPreferences(PREFS_NAME,Context.MODE_PRIVATE).getString(PREF_RESTORE_ORIGINAL_KEY,null)) {
+            "Немає захищеного ключа для відкату."
+        }
 
     @Synchronized
     fun pendingRestoreOriginalPassphrase(context: Context): ByteArray? =
@@ -81,7 +107,7 @@ internal object DatabaseKeyManager {
             "Попередній ключ для відкату відсутній."
         }
         check(prefs.edit().putString(PREF_WRAPPED_KEY, prior)
-            .remove(PREF_RESTORE_ORIGINAL_KEY).commit()) {
+            .remove(PREF_RESTORE_ORIGINAL_KEY).remove(PREF_RESTORE_RAW_BUNDLE).remove(PREF_RESTORE_RAW_MANIFEST).commit()) {
             "Не вдалося відновити ключ БД."
         }
     }
@@ -92,7 +118,7 @@ internal object DatabaseKeyManager {
         check(prefs.contains(PREF_RESTORE_ORIGINAL_KEY)) {
             "Маркер відновлення відсутній."
         }
-        check(prefs.edit().remove(PREF_RESTORE_ORIGINAL_KEY).commit()) {
+        check(prefs.edit().remove(PREF_RESTORE_ORIGINAL_KEY).remove(PREF_RESTORE_RAW_BUNDLE).remove(PREF_RESTORE_RAW_MANIFEST).commit()) {
             "Не вдалося завершити відновлення."
         }
     }

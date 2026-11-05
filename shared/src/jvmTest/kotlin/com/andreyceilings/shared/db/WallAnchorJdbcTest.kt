@@ -4,6 +4,14 @@ import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
 import kotlin.test.Test
 
 class WallAnchorJdbcTest {
+    @Test fun unsupportedV9DrawingsAndDeployedV10SurviveCorrectiveUpgrade()=kotlinx.coroutines.runBlocking {
+        JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).use { driver ->
+            WallAnchorMigrationProof.v9Schema.create(driver);LegacyWallSeedProof.populate(driver)
+            PriceCatalogSchema.migrate(driver,9,10);verifyPointPlacementStructure(driver,10)
+            PriceCatalogSchema.migrate(driver,10,PriceCatalogSchema.version);verifyPointPlacementStructure(driver)
+        }
+        LegacyWallSeedFileProof.run { JdbcSqliteDriver("jdbc:sqlite:${it.absolutePath}") }
+    }
     @Test fun v9FilesMigrationRollbackReopenAndConcurrentIdempotentSave()=kotlinx.coroutines.runBlocking {
         WallAnchorFileProof.run { JdbcSqliteDriver("jdbc:sqlite:${it.absolutePath}") }
     }
@@ -12,6 +20,28 @@ class WallAnchorJdbcTest {
         JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).use {
             PriceCatalogSchema.create(it);it.execute(null,"PRAGMA foreign_keys=ON",0)
             WallAnchorProof.run(it)
+        }
+    }
+}
+
+object LegacyWallSeedFileProof {
+    suspend fun run(open:(java.io.File)->app.cash.sqldelight.db.SqlDriver) {
+        for(version in listOf(9L,10L)) {
+            val file=java.nio.file.Files.createTempFile("legacy-walls-",".db").toFile()
+            try {
+                LegacyWallSeedProof.lifecycle(PriceCatalogSchema,version) { schema ->
+                    val driver=open(file)
+                    try {
+                        if(schema===PriceCatalogSchema)openDesktopPriceCatalog(driver,true)
+                        else PrototypeDatabase(driver).transaction {
+                            val version=PriceNameUniquenessProof.scalar(driver,"PRAGMA user_version")
+                            if(version==0L) schema.create(driver) else if(version<schema.version) schema.migrate(driver,version,schema.version)
+                            driver.execute(null,"PRAGMA user_version=${schema.version}",0)
+                        }
+                        driver
+                    } catch(failure:Throwable){driver.close();throw failure}
+                }
+            } finally { file.delete() }
         }
     }
 }

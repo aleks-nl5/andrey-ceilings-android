@@ -1,4 +1,4 @@
-# Актуальний стан — P3C2 merged; P3C3 у роботі (04.11.2026)
+# Актуальний стан — P3C3: виправлення owner startup blocker (05.11.2026)
 
 P3C1 [PR #94](https://github.com/aleks-nl5/andrey-ceilings-android/pull/94) та P3C2
 [PR #97](https://github.com/aleks-nl5/andrey-ceilings-android/pull/97) об'єднані.
@@ -10,9 +10,14 @@ P3C1 [PR #94](https://github.com/aleks-nl5/andrey-ceilings-android/pull/94) та
 [Draft PR #99](https://github.com/aleks-nl5/andrey-ceilings-android/pull/99): єдиний CMP
 редактор контуру й точок, реальні монтажні відстані, persistent wall identities,
 атомарний remap і durable «Перевірити / Пізніше». [Контракт P3C3](MEASUREMENT_WALL_ANCHORS_P3C3.md).
-Міграція v9→v10, legacy без вигаданих anchors, unresolved без втрати UUID/відстаней,
-окремі valid count і reserved capacity. Верифікація та owner APK acceptance P3C3
-ще pending; поточний статус CI й APK — у PR.
+Міграція v9→v11 включає виправлений вхід із v9 і corrective v10→v11 для вже
+розданих APK. Legacy без вигаданих anchors, unresolved без втрати UUID/відстаней,
+окремі valid count і reserved capacity. Owner APK на `9aa8db4` не відкрив БД:
+це блокер, попередні green CI не означають runtime acceptance. Відтворено збій
+wall seeding на старих нечислових вершинах; точний збій пристрою потребує
+діагностики. Додаються production filename/Keystore/WAL/restart/release proofs,
+санітизовані коди startup і rollback-preserving recovery без live session.
+Нові CI й повторне owner APK acceptance pending; статус і APK — у PR.
 
 Наступні ширші роботи залишаються окремими: UX #95, solver #70, live pricing й
 нові кошториси #44, hosts #42. Не закривати #71/#76/#78 на підставі вузького етапу.

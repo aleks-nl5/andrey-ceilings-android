@@ -4,6 +4,8 @@ plugins {
 }
 
 android {
+    val productionReleaseSmoke = providers.gradleProperty("productionReleaseSmoke").orNull == "true"
+    testBuildType = if(productionReleaseSmoke) "release" else "debug"
     namespace = "com.andreyceilings.app"
     compileSdk = 37
 
@@ -45,6 +47,12 @@ android {
 
     // Reuse the P1 persistence/migration contract across real platform drivers.
     sourceSets.getByName("androidTest").kotlin.directories.add("../shared/src/commonTest/kotlin/com/andreyceilings/shared/db")
+    if(productionReleaseSmoke) {
+        // Release tests contain no debug-only crash provider, and exercise the actual signed app.
+        sourceSets.getByName("androidTest").java.setSrcDirs(emptyList<String>())
+        sourceSets.getByName("androidTest").kotlin.setSrcDirs(listOf("src/productionTest/kotlin",
+            "../shared/src/commonTest/kotlin/com/andreyceilings/shared/db"))
+    } else sourceSets.getByName("androidTest").kotlin.directories.add("src/productionTest/kotlin")
 
     // AGP 9+ built-in Kotlin uses the Java compile target by default.
     buildFeatures {

@@ -55,7 +55,9 @@ fun openDesktopPriceCatalog(driver: SqlDriver, previouslyExisting: Boolean) {
                             val pointColumns = columns("point_placements")
                             check(("precision" in pointColumns) == ("lastMoveUuid" in pointColumns)) { "Partial point position schema" }
                             check(("mountingJson" in pointColumns) == ("lastCeilingEditUuid" in pointColumns)) { "Partial mounting schema" }
-                            val detected = if ("mountingJson" in pointColumns) 10L else if ("precision" in pointColumns) 9L else 8L
+                            val detected = if ("mountingJson" in pointColumns) {
+                                if(runCatching { verifyPointPlacementStructure(driver,11L) }.isSuccess) 11L else 10L
+                            } else if ("precision" in pointColumns) 9L else 8L
                             verifyPointPlacementStructure(driver, detected)
                             detected
                         }

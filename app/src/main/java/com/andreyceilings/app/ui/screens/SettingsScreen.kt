@@ -89,6 +89,7 @@ internal fun SettingsScreen(databaseStatus: String, database: CeilingsDatabase?,
         }
     }
     var backupStatus by remember { mutableStateOf("Оберіть резервну копію для перевірки або відновлення.") }
+    var backupBusy by remember { mutableStateOf(false) }
     var backupAction by remember { mutableStateOf("verify") }
     var selectedBackup by remember { mutableStateOf<java.io.File?>(null) }
     var showRestoreConfirmation by remember { mutableStateOf(false) }
@@ -120,6 +121,7 @@ internal fun SettingsScreen(databaseStatus: String, database: CeilingsDatabase?,
     val backupPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
         if (uri == null) backupStatus = "Вибір резервної копії скасовано."
         else scope.launch {
+            backupBusy = true
             backupStatus = "Перевіряю переносну копію .stpb…"
             val result = withContext(Dispatchers.IO) { runCatching {
                 val envelope = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
@@ -137,7 +139,8 @@ internal fun SettingsScreen(databaseStatus: String, database: CeilingsDatabase?,
                 backupStatus = "Пароль правильний, цілісність бази перевірено."
                 if (backupAction == "restore") showRestoreConfirmation = true
                 else { contents.database.fill(0); contents.passphrase.fill(0); pendingRestoreContents = null }
-            }.onFailure { backupStatus = "Перевірка .stpb не пройдена: ${it.message ?: "невідома помилка"}. Поточну БД не змінено." }
+            }.onFailure { backupStatus = "Перевірка .stpb не пройдена. Перевірте пароль і файл. Поточну БД не змінено." }
+            backupBusy = false
         }
     }
     val exportDocumentLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")) { destination: Uri? ->
@@ -285,6 +288,10 @@ internal fun SettingsScreen(databaseStatus: String, database: CeilingsDatabase?,
                 trailingContent = { Icon(Icons.Default.ChevronRight, contentDescription = "Відкрити прайс-лист") }
             )
             ListItem(leadingContent = { Icon(Icons.Default.Lock, null) }, headlineContent = { Text("Захист бази даних") }, supportingContent = { Text(databaseStatus) })
+            if(database == null) OutlinedButton(onClick = {
+                val clipboard=context.getSystemService(android.content.ClipboardManager::class.java)
+                clipboard.setPrimaryClip(android.content.ClipData.newPlainText("Стан БД",databaseStatus))
+            }) { Text("Скопіювати стан БД") }
             HorizontalDivider()
             Text("Діагностика бази даних", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
             Text("Підраховуються фактичні записи в таблицях і розміри основного та допоміжних файлів. Перевірка не змінює дані.", style = MaterialTheme.typography.bodySmall)
@@ -364,8 +371,9 @@ internal fun SettingsScreen(databaseStatus: String, database: CeilingsDatabase?,
             Text("Перевірка та імпорт резервної копії", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
             Text("Перевірка не змінює поточні дані. Імпорт замінить поточну базу лише після успішної перевірки та підтвердження.", style = MaterialTheme.typography.bodySmall)
             Text(backupStatus, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            OutlinedButton(onClick = { backupAction = "verify"; restorePassword = ""; showImportPasswordDialog = true }, modifier = Modifier.fillMaxWidth(), enabled = database != null) { Text("Перевірити резервну копію") }
-            Button(onClick = { backupAction = "restore"; restorePassword = ""; showImportPasswordDialog = true }, modifier = Modifier.fillMaxWidth(), enabled = database != null) { Text("Імпортувати резервну копію") }
+            if(database == null) Text("Перевірка .stpb доступна без відкритої БД. Для відновлення спочатку буде збережено початкові зашифровані файли та захищений ключ. Якщо зберегти їх неможливо, заміни не буде.")
+            OutlinedButton(onClick = { backupAction = "verify"; restorePassword = ""; showImportPasswordDialog = true }, modifier = Modifier.fillMaxWidth(), enabled = !backupBusy) { Text("Перевірити резервну копію") }
+            Button(onClick = { backupAction = "restore"; restorePassword = ""; showImportPasswordDialog = true }, modifier = Modifier.fillMaxWidth(), enabled = !backupBusy) { Text("Імпортувати резервну копію") }
             if (showImportPasswordDialog) {
                 AppAlertDialog(
                     onDismissRequest = { showImportPasswordDialog = false; restorePassword = "" },
@@ -396,19 +404,22 @@ internal fun SettingsScreen(databaseStatus: String, database: CeilingsDatabase?,
                 AppAlertDialog(
                     onDismissRequest = { showRestoreConfirmation = false; pendingRestoreContents?.let { it.database.fill(0); it.passphrase.fill(0) }; pendingRestoreContents = null },
                     title = { Text("Відновити переносну копію?") },
-                    text = { Text("Дані поточної бази буде замінено вмістом .stpb. Продовжити?") },
+                    text = { Text(if(database == null)
+                        "Робоча БД недоступна. Її початкові зашифровані файли, WAL/SHM і захищений ключ буде збережено в приватному сховищі відкату. Лише після цього їх замінить перевірена .stpb. За помилки початковий стан буде повернуто. Продовжити?"
+                        else "Дані поточної бази буде замінено вмістом .stpb. Продовжити?") },
                     confirmButton = { TextButton(onClick = {
                         showRestoreConfirmation = false
                         val payload = pendingRestoreContents
                         pendingRestoreContents = null
                         scope.launch {
+                            backupBusy = true
                             backupStatus = "Відновлюю переносну копію…"
                             val result = withContext(Dispatchers.IO) { runCatching {
                                 val contents = payload ?: error("Спочатку перевірте файл .stpb.")
                                 try {
-                                    com.andreyceilings.app.data.security.SqlCipherRestoreManager.restore(
-                                        context.applicationContext, contents
-                                    )
+                                    if(database == null) com.andreyceilings.app.data.security.SqlCipherRestoreManager.restoreUnavailable(
+                                        context.applicationContext,contents,confirmed=true)
+                                    else com.andreyceilings.app.data.security.SqlCipherRestoreManager.restore(context.applicationContext, contents)
                                 } finally {
                                     contents.database.fill(0)
                                     contents.passphrase.fill(0)
@@ -432,8 +443,10 @@ internal fun SettingsScreen(databaseStatus: String, database: CeilingsDatabase?,
                             }.onFailure { error ->
                                 runCatching { CeilingsDatabase.get(context.applicationContext) }
                                     .onSuccess(onDatabaseReplaced)
-                                backupStatus = "Відновлення не виконано: ${error.message ?: "невідома помилка"}. Початкову БД збережено для відкату."
+                                val diagnostic=com.andreyceilings.app.data.db.DatabaseStartupDiagnostics.report(error)
+                                backupStatus = "Відновлення не виконано. Початковий стан збережено; за незавершеного відкату його маркер залишено. Код: ${diagnostic.code}."
                             }
+                            backupBusy = false
                         }
                     }) { Text("Відновити") } },
                     dismissButton = { TextButton(onClick = { showRestoreConfirmation = false; pendingRestoreContents?.let { it.database.fill(0); it.passphrase.fill(0) }; pendingRestoreContents = null }) { Text("Скасувати") } }

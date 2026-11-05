@@ -5,6 +5,17 @@ import com.andreyceilings.shared.measurement.*
 import kotlin.test.*
 
 object WallAnchorMigrationProof {
+    val v10Schema=object: SqlSchema<QueryResult.Value<Unit>> {
+        override val version=10L
+        override fun create(driver:SqlDriver):QueryResult.Value<Unit> {
+            v9Schema.create(driver);PrototypeDatabase.Schema.migrate(driver,9,10)
+            driver.execute(null,"DROP TRIGGER ceiling_measurement_walls",0)
+            driver.execute(null,"DROP TRIGGER ceiling_unplaced_geometry_walls",0)
+            deployedV10SeedTriggers.forEach { driver.execute(null,it,0) }
+            return QueryResult.Unit
+        }
+        override fun migrate(driver:SqlDriver,oldVersion:Long,newVersion:Long,vararg callbacks:AfterVersion):QueryResult.Value<Unit> = error("Historical fixture")
+    }
     val v9Schema=object: SqlSchema<QueryResult.Value<Unit>> {
         override val version=9L
         override fun create(driver: SqlDriver): QueryResult.Value<Unit> {
@@ -51,7 +62,7 @@ object WallAnchorMigrationProof {
         }
         var saved:PointPlacement?=null
         open(production).use { upgraded ->
-            assertEquals(10L,PriceNameUniquenessProof.scalar(upgraded,"PRAGMA user_version"))
+            assertEquals(PriceCatalogSchema.version,PriceNameUniquenessProof.scalar(upgraded,"PRAGMA user_version"))
             assertEquals(before,PointPlacementMigrationProof.snapshot(upgraded));assertEquals(points,oldPoints(upgraded));assertEquals(ops,receipts(upgraded))
             if(populated) {
                 val db=PrototypeDatabase(upgraded);val point=PointPlacementRepository(db).find("v9-point")!!

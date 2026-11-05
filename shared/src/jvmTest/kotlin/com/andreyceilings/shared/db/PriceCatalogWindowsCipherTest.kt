@@ -12,6 +12,7 @@ class PriceCatalogWindowsCipherTest {
             PointPlacementFileProof.run { SqlCipherWindowsDriverFactory.open(it, key) }
             PointPositionFileProof.run { SqlCipherWindowsDriverFactory.open(it, key) }
             WallAnchorFileProof.run { SqlCipherWindowsDriverFactory.open(it,key) }
+            LegacyWallSeedFileProof.run { SqlCipherWindowsDriverFactory.open(it,key) }
             val file = Files.createTempFile("points-cipher-", ".db").toFile()
             try {
                 SqlCipherWindowsDriverFactory.open(file, key).use { driver ->

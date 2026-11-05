@@ -1,7 +1,7 @@
 package com.andreyceilings.shared.db
 
 /** Canonical v10 schema, checked against both fresh and migrated encrypted files. */
-internal val pointSchemaDefinitions = mapOf(
+internal val pointV10SchemaDefinitions = mapOf(
     "point_placements" to """
 CREATE TABLE point_placements (
     uuid TEXT NOT NULL PRIMARY KEY CHECK(length(trim(uuid)) > 0),
@@ -592,5 +592,57 @@ WHEN EXISTS(SELECT 1 FROM point_placements q JOIN measurement_elements e ON e.uu
  OR new.drawingJson IS NOT old.drawingJson OR new.shape IS NOT old.shape OR new.areaSquareMeters IS NOT old.areaSquareMeters OR new.perimeterMeters IS NOT old.perimeterMeters
  OR new.lengthMeters IS NOT old.lengthMeters OR new.widthMeters IS NOT old.widthMeters) AND new.updatedAt<=old.updatedAt))
 BEGIN SELECT RAISE(ABORT,'ceiling_version_must_increase'); END;
+""".trimIndent()
+)
+
+/** v11 retains the exact v10 contract except the two verified legacy-seed triggers. */
+internal val pointSchemaDefinitions = pointV10SchemaDefinitions + mapOf(
+    "ceiling_measurement_walls" to """
+CREATE TRIGGER ceiling_measurement_walls AFTER INSERT ON room_measurements BEGIN
+INSERT INTO ceiling_walls(uuid,measurementUuid,ordinal,ax,ay,bx,by,geometryVersion,active)
+ SELECT lower(hex(randomblob(16))),m.uuid,CAST(v.key AS INTEGER),
+ json_extract(v.value,'$.xMm'),json_extract(v.value,'$.yMm'),
+ json_extract(CASE WHEN json_valid(m.drawingJson) THEN m.drawingJson ELSE '{}' END,'$.vertices[' || ((CAST(v.key AS INTEGER)+1)%json_array_length(CASE WHEN json_valid(m.drawingJson) THEN m.drawingJson ELSE '{}' END,'$.vertices')) || '].xMm'),
+ json_extract(CASE WHEN json_valid(m.drawingJson) THEN m.drawingJson ELSE '{}' END,'$.vertices[' || ((CAST(v.key AS INTEGER)+1)%json_array_length(CASE WHEN json_valid(m.drawingJson) THEN m.drawingJson ELSE '{}' END,'$.vertices')) || '].yMm'),m.updatedAt,1
+ FROM room_measurements m, json_each(CASE WHEN json_valid(m.drawingJson) THEN m.drawingJson ELSE '{}' END,'$.vertices') v
+ WHERE m.uuid=new.uuid AND json_extract(CASE WHEN json_valid(m.drawingJson) THEN m.drawingJson ELSE '{}' END,'$.precisionStepMeters') IN (0.1,0.01,0.005,0.001)
+ AND json_array_length(CASE WHEN json_valid(m.drawingJson) THEN m.drawingJson ELSE '{}' END,'$.vertices') BETWEEN 3 AND 128
+ AND json_extract(CASE WHEN json_valid(m.drawingJson) THEN m.drawingJson ELSE '{}' END,'$.geometrySchemaVersion') IN (2,3)
+ AND json_extract(CASE WHEN json_valid(m.drawingJson) THEN m.drawingJson ELSE '{}' END,'$.shape')=m.shape AND m.shape IN ('rectangle','l_shaped','polygon')
+ AND typeof(m.updatedAt)='integer' AND m.updatedAt>=0
+ AND json_type(CASE WHEN json_valid(m.drawingJson) THEN m.drawingJson ELSE '{}' END,'$.vertices')='array'
+ AND NOT EXISTS(SELECT 1 FROM room_measurements seed_source, json_each(CASE WHEN json_valid(seed_source.drawingJson) THEN seed_source.drawingJson ELSE '{}' END,'$.vertices') checked
+ WHERE seed_source.uuid=m.uuid AND (checked.type!='object'
+ OR json_type(CASE WHEN checked.type='object' THEN checked.value ELSE '{}' END,'$.xMm') IS NOT 'integer'
+ OR json_type(CASE WHEN checked.type='object' THEN checked.value ELSE '{}' END,'$.yMm') IS NOT 'integer'
+ OR json_extract(CASE WHEN checked.type='object' THEN checked.value ELSE '{}' END,'$.xMm') NOT BETWEEN -1000000 AND 1000000
+ OR json_extract(CASE WHEN checked.type='object' THEN checked.value ELSE '{}' END,'$.yMm') NOT BETWEEN -1000000 AND 1000000));
+END;
+""".trimIndent(),
+    "ceiling_unplaced_geometry_walls" to """
+CREATE TRIGGER ceiling_unplaced_geometry_walls AFTER UPDATE OF drawingJson ON room_measurements
+WHEN new.drawingJson IS NOT old.drawingJson AND NOT EXISTS(SELECT 1 FROM ceiling_operations o WHERE o.measurementUuid=new.uuid AND new.updatedAt=max(o.expectedUpdatedAt+1,o.createdAt) AND new.drawingJson=json_extract(o.payload,'$.drawingJson'))
+ AND NOT EXISTS(SELECT 1 FROM point_placements q JOIN measurement_elements e ON e.uuid=q.elementUuid WHERE e.measurementUuid=new.uuid AND q.deletedAt IS NULL)
+BEGIN
+ UPDATE ceiling_walls SET active=0 WHERE measurementUuid=new.uuid AND active=1;
+INSERT INTO ceiling_walls(uuid,measurementUuid,ordinal,ax,ay,bx,by,geometryVersion,active)
+ SELECT lower(hex(randomblob(16))),m.uuid,CAST(v.key AS INTEGER),
+ json_extract(v.value,'$.xMm'),json_extract(v.value,'$.yMm'),
+ json_extract(CASE WHEN json_valid(m.drawingJson) THEN m.drawingJson ELSE '{}' END,'$.vertices[' || ((CAST(v.key AS INTEGER)+1)%json_array_length(CASE WHEN json_valid(m.drawingJson) THEN m.drawingJson ELSE '{}' END,'$.vertices')) || '].xMm'),
+ json_extract(CASE WHEN json_valid(m.drawingJson) THEN m.drawingJson ELSE '{}' END,'$.vertices[' || ((CAST(v.key AS INTEGER)+1)%json_array_length(CASE WHEN json_valid(m.drawingJson) THEN m.drawingJson ELSE '{}' END,'$.vertices')) || '].yMm'),m.updatedAt,1
+ FROM room_measurements m, json_each(CASE WHEN json_valid(m.drawingJson) THEN m.drawingJson ELSE '{}' END,'$.vertices') v
+ WHERE m.uuid=new.uuid AND json_extract(CASE WHEN json_valid(m.drawingJson) THEN m.drawingJson ELSE '{}' END,'$.precisionStepMeters') IN (0.1,0.01,0.005,0.001)
+ AND json_array_length(CASE WHEN json_valid(m.drawingJson) THEN m.drawingJson ELSE '{}' END,'$.vertices') BETWEEN 3 AND 128
+ AND json_extract(CASE WHEN json_valid(m.drawingJson) THEN m.drawingJson ELSE '{}' END,'$.geometrySchemaVersion') IN (2,3)
+ AND json_extract(CASE WHEN json_valid(m.drawingJson) THEN m.drawingJson ELSE '{}' END,'$.shape')=m.shape AND m.shape IN ('rectangle','l_shaped','polygon')
+ AND typeof(m.updatedAt)='integer' AND m.updatedAt>=0
+ AND json_type(CASE WHEN json_valid(m.drawingJson) THEN m.drawingJson ELSE '{}' END,'$.vertices')='array'
+ AND NOT EXISTS(SELECT 1 FROM room_measurements seed_source, json_each(CASE WHEN json_valid(seed_source.drawingJson) THEN seed_source.drawingJson ELSE '{}' END,'$.vertices') checked
+ WHERE seed_source.uuid=m.uuid AND (checked.type!='object'
+ OR json_type(CASE WHEN checked.type='object' THEN checked.value ELSE '{}' END,'$.xMm') IS NOT 'integer'
+ OR json_type(CASE WHEN checked.type='object' THEN checked.value ELSE '{}' END,'$.yMm') IS NOT 'integer'
+ OR json_extract(CASE WHEN checked.type='object' THEN checked.value ELSE '{}' END,'$.xMm') NOT BETWEEN -1000000 AND 1000000
+ OR json_extract(CASE WHEN checked.type='object' THEN checked.value ELSE '{}' END,'$.yMm') NOT BETWEEN -1000000 AND 1000000));
+END;
 """.trimIndent()
 )

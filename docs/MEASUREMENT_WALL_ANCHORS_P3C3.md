@@ -3,6 +3,11 @@
 Refs #98 / #71 / #76 / #95. Baseline main `c34a2d35348a9534a620728be3cec0a1e85ae566`;
 PR #97 merged власником 04.11.2026 19:42:48 UTC. Початкова схема v9.
 
+**05.11.2026: owner APK на `9aa8db4` не відкрив БД. Це блокер приймання.**
+Нижче — початковий контракт P3C3; поточний startup fix використовує schema v11
+зі збереженням уже розданих v10 даних. Нові CI й повторне owner APK acceptance
+не можна підміняти попередніми успішними перевірками.
+
 ## Рішення до реалізації
 
 - Один MeasurementEditModel володіє чернеткою контуру, точок, опор і review.
@@ -146,11 +151,70 @@ selection/raw mounting input і лише receipt reference для read reconcili
 
 ## Фактична верифікація та межі
 
-Повний Linux suite після review fixes: **288 shared/JVM + 26 CMP + 8 Android unit**, 0
+Повний Linux suite після startup fixes: **289 shared/JVM + 26 CMP + 9 Android unit**, 0
 failures/0 skipped; migration verification й Android instrumentation compilation success.
 Прогін включає concave visibility/source/SQL bypass checks, Captured legacy
 mounting, immutable result CAS та commit/response-loss retry. Final SHA, Android/Windows/iOS success links і APK публікуються
 в [Draft PR #99](https://github.com/aleks-nl5/andrey-ceilings-android/pull/99).
+
+## Startup blocker: відтворення, v11 та recovery
+
+Відтворено конкретну помилку v9→v10: legacy `drawingJson` з `precisionStepMeters`
+і масивом вершин без integer `xMm/yMm` дає `NOT NULL constraint failed:
+ceiling_walls.ax`. Це доведений клас помилки, але без санітизованої діагностики
+пристрою не є доказом точного root cause повідомлення власника.
+
+Вхід `9.sqm` перевіряє весь набір вершин перед автоматичним seed: supported
+geometry version/shape, array, object vertices, integer bounded mm, integer
+geometry version timestamp. Непідтримані старі контури лишаються буквально
+незмінними, без часткових/вигаданих walls або measured anchors. Старі business
+records/UUID/precision/timestamps/tombstones/receipts/history не переписуються.
+Історичні `8.sqm` та старші не змінені. Вхід із v9 необхідно виправити саме до
+проблемного INSERT: інакше виконання не дійде до corrective migration.
+
+Нова `10.sqm` (v10→v11) змінює лише два automatic seed triggers, а `10.db`
+та strict `pointV10SchemaDefinitions` зберігають фактичну роздану v10 структуру.
+Вже створені v10 anchors/wall UUIDs/operation receipts залишаються на місці.
+Fresh-v11 і обидва migrated-v11 шляхи перевіряються; невідома/часткова/майбутня
+схема, неправильний ключ і пошкодження fail closed. Default Android corruption
+handler не має права видаляти файли. За наявної БД без wrapped key новий ключ не
+створюється. Прайс, фінансові snapshots, PDF, SQLCipher cipher/key/WAL/portable
+формат не змінюються.
+
+Startup завжди показує безпечний код (`DB-KEY`, `DB-MIGRATE-9-11`, `DB-SCHEMA`,
+`DB-CORRUPTION`, `DB-RECOVERY` тощо). Debug Logcat містить лише код, типи exception
+і stack frames; exception messages, SQL values, шляхи, записи та ключі не
+експортуються. Release показує категорію й дозволяє скопіювати код без Logcat.
+
+`.stpb` validation доступна без live DB і не викликає `CeilingsDatabase.get()`.
+Звичайний restore зберігає чинний verified SQLCipher snapshot path. Для null
+session є окреме явне підтвердження `restoreUnavailable`: exclusive gate,
+перевірений incoming stage, fsync-архів закритих DB/WAL/SHM/journal та лише
+Keystore-wrapped original key. Маніфест із SHA-256 кожного файла прив'язаний
+контрольною сумою до атомарного SharedPreferences marker з попереднім wrapped
+key. Тільки після цього дозволено закрити/замінити файли та встановити новий key.
+
+За помилки/перезапуску raw recovery спочатку перевіряє маркер/маніфест/усі
+оригінали, готує всі копії й лише тоді повертає точні bytes та попередній key.
+Marker знімається останнім. Recovery не мусить відкривати чи мігрувати початкову
+недоступну БД. Пошкоджений/відсутній резерв зупиняє запуск до будь-якого створення
+порожньої БД. Неможливість зберегти файли/старий wrapped key відхиляє імпорт;
+немає force-replace/reset. Після успіху raw archive залишається в приватному
+`noBackupFilesDir/database_recovery`, без автоматичного видалення. Cleanup/export
+цих історичних raw archives через UI не входить у вузький fix.
+
+Нові proofs: mixed v9 legacy/history/points і deployed-v10 physical upgrade з
+partial-DDL rollback; production singleton filename + реальний Keystore + WAL,
+client/project CRUD та portable round trip; реальний SIGKILL із v9 WAL і raw
+restore після заміни key; explicit recovery, всі failure checkpoints, пошкоджений
+маніфест, незаписуваний archive path, missing key і фізичне пошкодження ciphertext.
+Окремий signed-release instrumentation run використовує той самий production
+test source. Результати фізичних платформ — лише за фактичним final-SHA CI у PR.
+
+- [ ] Owner: оновити фінальним APK без очищення даних; БД відкривається і старі записи видимі.
+- [ ] Owner: створити клієнта/об'єкт; перевірити export/verify/restore резервної копії.
+- [ ] Owner: якщо запуск ще відмовляє, передати безпечний код; не видаляти DB/WAL/SHM/ключі.
+- [ ] Owner: повторити монтажний P3C3 journey в обох темах. Блокер лишається до окремого підтвердження.
 Цей запис не прирівнює Linux до encrypted runtime перевірки іншої платформи.
 
 Чинні shape inputs (rectangle/L/measured orthogonal) збережені; повний кутовий

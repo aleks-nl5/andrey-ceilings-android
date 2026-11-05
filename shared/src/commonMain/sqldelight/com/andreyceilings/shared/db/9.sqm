@@ -31,7 +31,17 @@ INSERT INTO ceiling_walls(uuid,measurementUuid,ordinal,ax,ay,bx,by,geometryVersi
  json_extract(CASE WHEN json_valid(m.drawingJson) THEN m.drawingJson ELSE '{}' END,'$.vertices[' || ((CAST(v.key AS INTEGER)+1)%json_array_length(CASE WHEN json_valid(m.drawingJson) THEN m.drawingJson ELSE '{}' END,'$.vertices')) || '].yMm'),m.updatedAt,1
  FROM room_measurements m, json_each(CASE WHEN json_valid(m.drawingJson) THEN m.drawingJson ELSE '{}' END,'$.vertices') v
  WHERE json_extract(CASE WHEN json_valid(m.drawingJson) THEN m.drawingJson ELSE '{}' END,'$.precisionStepMeters') IN (0.1,0.01,0.005,0.001)
- AND json_array_length(CASE WHEN json_valid(m.drawingJson) THEN m.drawingJson ELSE '{}' END,'$.vertices') BETWEEN 3 AND 128;
+ AND json_array_length(CASE WHEN json_valid(m.drawingJson) THEN m.drawingJson ELSE '{}' END,'$.vertices') BETWEEN 3 AND 128
+ AND json_extract(CASE WHEN json_valid(m.drawingJson) THEN m.drawingJson ELSE '{}' END,'$.geometrySchemaVersion') IN (2,3)
+ AND json_extract(CASE WHEN json_valid(m.drawingJson) THEN m.drawingJson ELSE '{}' END,'$.shape')=m.shape AND m.shape IN ('rectangle','l_shaped','polygon')
+ AND typeof(m.updatedAt)='integer' AND m.updatedAt>=0
+ AND json_type(CASE WHEN json_valid(m.drawingJson) THEN m.drawingJson ELSE '{}' END,'$.vertices')='array'
+ AND NOT EXISTS(SELECT 1 FROM room_measurements seed_source, json_each(CASE WHEN json_valid(seed_source.drawingJson) THEN seed_source.drawingJson ELSE '{}' END,'$.vertices') checked
+ WHERE seed_source.uuid=m.uuid AND (checked.type!='object'
+ OR json_type(CASE WHEN checked.type='object' THEN checked.value ELSE '{}' END,'$.xMm') IS NOT 'integer'
+ OR json_type(CASE WHEN checked.type='object' THEN checked.value ELSE '{}' END,'$.yMm') IS NOT 'integer'
+ OR json_extract(CASE WHEN checked.type='object' THEN checked.value ELSE '{}' END,'$.xMm') NOT BETWEEN -1000000 AND 1000000
+ OR json_extract(CASE WHEN checked.type='object' THEN checked.value ELSE '{}' END,'$.yMm') NOT BETWEEN -1000000 AND 1000000));
 
 CREATE TRIGGER ceiling_measurement_walls AFTER INSERT ON room_measurements BEGIN
 INSERT INTO ceiling_walls(uuid,measurementUuid,ordinal,ax,ay,bx,by,geometryVersion,active)
