@@ -101,7 +101,7 @@ class CeilingEditRepository(private val database: PrototypeDatabase) {
             put("width",(geometry.vertices.maxOf{it.yMm}-geometry.vertices.minOf{it.yMm})/1000.0)
             put("area",geometry.areaSquareMeters);put("perimeter",geometry.perimeterMeters)
             putJsonArray("walls") { walls.forEach { add(buildJsonObject { put("uuid",it.uuid) }) } }
-            putJsonObject("declaredLengths") {declaredLengths.toSortedMap().forEach { (id,length) ->put(id,length)}}
+            putJsonObject("declaredLengths") {declaredLengths.entries.sortedBy {it.key}.forEach { (id,length) ->put(id,length)}}
             putJsonArray("lines") { lineTargets.forEach { line -> add(buildJsonObject {
                 val old=original.placements.lines.find {it.uuid==line.uuid}
                 put("uuid",line.uuid);put("elementUuid",line.elementUuid)
