@@ -55,6 +55,18 @@ class AreaFeatureJdbcTest {
             }
         } finally {file.delete()}
     }
+    @Test fun fingerprintPreservesCaseOfSqlEnumLiterals() {
+        JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).use {d ->
+            PriceCatalogSchema.create(d)
+            val sql=d.executeQuery(null,"SELECT sql FROM sqlite_master WHERE name='area_element_guard'",{c ->c.next();QueryResult.Value(c.getString(0)!!)},0).value
+            d.execute(null,"DROP TRIGGER area_element_guard",0)
+            d.execute(null,sql.replace("new.placementKind='area'","new.placementKind='AREA'"),0)
+            assertFailsWith<SchemaFingerprintMismatch> {PriceCatalogSchema.verifyStructure(d)}
+            val before=PriceNameMigrationProof.schema(d)
+            assertFails {openDesktopPriceCatalog(d,true)}
+            assertEquals(before,PriceNameMigrationProof.schema(d))
+        }
+    }
     @Test fun productionV12MixedHistoryIsPopulatedBeforeGuardedLineRows() {
         JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).use {d ->
             AreaFeatureMigrationProof.v12Schema.create(d)

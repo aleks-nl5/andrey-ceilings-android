@@ -9,9 +9,17 @@ class SchemaFingerprintMismatch(val objectId: String) : IllegalStateException("U
         objectId in pointV11SchemaDefinitions || objectId in pointV10SchemaDefinitions || objectId in pointSchemaDefinitions) { "Unknown schema diagnostic identifier" } }
 }
 
-/** Strict v8/v9/v10/v11 fingerprints, including already distributed P3C3 v10 files. */
+/** Strict source fingerprints, including both deployed v10 lineages and v12/v13. */
 internal fun verifyPointPlacementStructure(driver: SqlDriver, version: Long = PriceCatalogSchema.version) {
-    fun normalize(sql: String) = sql.trim().trimEnd(';').replace(Regex("\\s+"), " ").replace(Regex("\\s*([,()])\\s*"), "$1").lowercase()
+    // SQL keywords may change case; quoted enum values and JSON paths may not.
+    val tokens=Regex("'(?:''|[^'])*'|[^']+")
+    val whitespace=Regex("\\s+")
+    val punctuation=Regex("\\s*([,()])\\s*")
+    fun normalize(sql: String) = tokens
+        .findAll(sql.trim().trimEnd(';')).joinToString("") { token ->
+            if(token.value.startsWith("'"))token.value else token.value
+                .replace(whitespace," ").replace(punctuation,"$1").lowercase()
+        }
     val names = driver.executeQuery(null,
         "SELECT name FROM sqlite_master WHERE name LIKE 'point_%' OR name LIKE 'index_point_%' OR name LIKE 'ceiling_%' OR name LIKE 'index_ceiling_%' OR name LIKE 'line_%' OR name LIKE 'index_line_%' OR name LIKE 'area_%' OR name LIKE 'index_area_%'", { cursor ->
             val found = mutableSetOf<String>()

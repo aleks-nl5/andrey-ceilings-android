@@ -283,4 +283,4 @@ m=sqlite3.connect(':memory:');m.executescript('\n'.join(s for s in oldstmts if n
 norm=lambda sql:re.sub(r'\s*([,()])\s*',r'\1',re.sub(r'\s+',' ',sql.strip().rstrip(';'))).lower()
 lookup=lambda c:{n:norm(s) for n,s in c.execute("SELECT name,sql FROM sqlite_master WHERE sql IS NOT NULL")}
 a,b=lookup(f),lookup(m);assert a==b,[n for n in a if a[n]!=b.get(n)]
-print('v13 fresh/migrated full SQLite fingerprint matches:',len(a),'objects')
+print('v13 BusinessSchema fresh/migrated SQLite fingerprint matches:',len(a),'objects')

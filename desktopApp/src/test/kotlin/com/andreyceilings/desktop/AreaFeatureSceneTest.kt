@@ -41,6 +41,7 @@ class AreaFeatureSceneTest {
             val store=MeasurementEditStore(db){100};val model=MeasurementEditModel(store,store.load(project,id))
             var delivered=false
             val scene=ImageComposeScene(900,1400) {CeilingsTheme(dark) {MeasurementEditScreen(model,PaddingValues(0.dp),0.dp,{}, {delivered=true},null)}}
+            var testFailure:Throwable?=null
             try {
                 scene.click("Позначити перешкоду")
                 scene.tapWorld(row,500,500);scene.tapWorld(row,1000,1000)
@@ -63,7 +64,16 @@ class AreaFeatureSceneTest {
                 withTimeout(15000){while(!delivered && model.state.value.error==null){scene.frame();delay(20)}}
                 assertTrue(delivered,model.state.value.error)
                 assertEquals(ids,store.load(project,id).placements.areas.map {it.uuid}.toSet())
-            } finally {scene.close();store.closePointReads();driver.close();dir.deleteRecursively()}
+            } catch(t:Throwable) {testFailure=t;throw t}
+            finally {
+                try {
+                    store.closeAndAwaitPointReads()
+                    repeat(6){scene.frame();delay(20)}
+                    scene.close()
+                } catch(close:Throwable) {
+                    if(testFailure!=null)testFailure.addSuppressed(close) else throw close
+                } finally {driver.close();dir.deleteRecursively()}
+            }
         }
     }
     private fun ImageComposeScene.world(row: Room_measurements, x: Long, y: Long): Offset {
