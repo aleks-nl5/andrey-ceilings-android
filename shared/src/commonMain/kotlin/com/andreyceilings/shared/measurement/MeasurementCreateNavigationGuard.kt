@@ -95,6 +95,7 @@ class MeasurementCreateNavigationGuard {
             return current
         }
         val editModel = edit
+        editModel?.cancelPointDrag()
         val editState = editModel?.state?.value
         if (editState != null && current.measurementEdit?.measurementId == editState.original.measurementId &&
             current.measurementEdit.projectId == editState.draft.projectId) {

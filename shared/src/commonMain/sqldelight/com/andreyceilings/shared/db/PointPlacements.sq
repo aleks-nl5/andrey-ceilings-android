@@ -31,8 +31,12 @@ INSERT INTO point_position_operations(uuid, pointUuid, expectedPointUpdatedAt, e
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 movePoint:
-UPDATE point_placements SET xMm = :xMm, yMm = :yMm, precision = :precision,
-    lastMoveUuid = :operationUuid, updatedAt = max(updatedAt + 1, :now)
+UPDATE point_placements SET xMm = :xMm, yMm = :yMm, precision = :precision, lastMoveUuid = :operationUuid,
+    mountingJson = CASE WHEN mountingJson = '{}' THEN '{}' ELSE json_set(mountingJson,
+        '$.anchor', NULL, '$.unresolved', json('false'),
+        '$.needsReview', json(CASE WHEN json_extract(mountingJson,'$.anchor') IS NOT NULL OR coalesce(json_extract(mountingJson,'$.needsReview'),0)=1 THEN 'true' ELSE 'false' END),
+        '$.modifiedVersion', max(updatedAt+1,:now), '$.confirmedAt', NULL, '$.deferredAt', NULL) END,
+    updatedAt = max(updatedAt + 1, :now)
 WHERE uuid = :pointUuid AND elementUuid = :elementUuid AND updatedAt = :expectedPointUpdatedAt
     AND updatedAt < 9223372036854775807 AND deletedAt IS NULL;
 

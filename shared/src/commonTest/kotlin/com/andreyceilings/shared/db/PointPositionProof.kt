@@ -59,7 +59,10 @@ object PointPositionProof {
             assertEquals(PointOverlayState.Missing, editor.observePoints(document.copy(draft = document.draft.copy(recordUuid = "old-uuid"))).first { it !is PointOverlayState.Loading })
             val named = editor.update(document, document.draft.copy(name = "Renamed", notes = "Changed notes"))
             assertEquals(loaded.points, points.forMeasurement(f.element.measurementUuid))
-            assertFailsWith<MeasurementContourHasPoints> { editor.update(named, named.draft.reduce(MeasurementCreateIntent.Dimension("length", "8"))) }
+            val resized=editor.update(named, named.draft.reduce(MeasurementCreateIntent.Dimension("length", "8")))
+            assertTrue(resized.placements.points.all { it.mounting.needsReview })
+            assertEquals(setOf(first.uuid,second.uuid),resized.placements.points.map {it.uuid}.toSet())
+            assertTrue(resized.placements.points.all {it.mounting.anchor==null})
             editor.closePointReads()
             assertEquals(PointOverlayState.Unavailable, editor.observePoints(document).first())
             val foreign = PointPlacementProof.fixture(db, "Other ceiling")
@@ -67,7 +70,7 @@ object PointPositionProof {
                 points.movePoint(element().version.copy(measurementUuid = foreign.element.measurementUuid), freeDrag.point,
                     f.contourVersion, 1800, 1600, PointPrecision.EXACT, 40)
             }
-            points.removePoint(element().version, freeDrag.point, 40)
+            points.removePoint(element().version, points.find(first.uuid)!!, 40)
             assertEquals(ElementPlacement.EXACT, element().placement)
             assertFailsWith<PointPlacementFailure.StaleVersion> {
                 points.movePoint(element().version, freeDrag.point, named.updatedAt, 1800, 1600, PointPrecision.EXACT, 41)

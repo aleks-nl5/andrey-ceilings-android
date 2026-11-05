@@ -3,23 +3,35 @@ package com.andreyceilings.shared.db
 import app.cash.sqldelight.db.QueryResult
 import app.cash.sqldelight.db.SqlDriver
 
-/** Strict v8/v9 fingerprints. Historical v8 is preserved for a fail-closed upgrade probe. */
+/** Diagnostic identifiers are restricted to application-owned objects, never SQL or user values. */
+class SchemaFingerprintMismatch(val objectId: String) : IllegalStateException("Unsupported schema fingerprint") {
+    init { require(objectId=="point_objects" || objectId in pointV8SchemaDefinitions || objectId in pointV9SchemaDefinitions ||
+        objectId in pointV10SchemaDefinitions || objectId in pointSchemaDefinitions) { "Unknown schema diagnostic identifier" } }
+}
+
+/** Strict v8/v9/v10/v11 fingerprints, including already distributed P3C3 v10 files. */
 internal fun verifyPointPlacementStructure(driver: SqlDriver, version: Long = PriceCatalogSchema.version) {
     fun normalize(sql: String) = sql.trim().trimEnd(';').replace(Regex("\\s+"), " ").replace(Regex("\\s*([,()])\\s*"), "$1").lowercase()
     val names = driver.executeQuery(null,
-        "SELECT name FROM sqlite_master WHERE name LIKE 'point_%' OR name LIKE 'index_point_%'", { cursor ->
+        "SELECT name FROM sqlite_master WHERE name LIKE 'point_%' OR name LIKE 'index_point_%' OR name LIKE 'ceiling_%' OR name LIKE 'index_ceiling_%'", { cursor ->
             val found = mutableSetOf<String>()
             while (cursor.next().value) found.add(checkNotNull(cursor.getString(0)))
             QueryResult.Value(found)
         }, 0).value
-    check(names == (if (version == 8L) pointV8SchemaDefinitions else pointSchemaDefinitions).keys) { "Partial or unknown point placement objects" }
-    val definitions = if (version == 8L) pointV8SchemaDefinitions else pointSchemaDefinitions
-    definitions.forEach { (name, expected) ->
+    val definitions = when(version) { 8L -> pointV8SchemaDefinitions; 9L -> pointV9SchemaDefinitions; 10L -> pointV10SchemaDefinitions; else -> pointSchemaDefinitions }
+    if(names!=definitions.keys)throw SchemaFingerprintMismatch("point_objects")
+    val actual = definitions.mapValues { (name, _) ->
         val actual = driver.executeQuery(null, "SELECT sql FROM sqlite_master WHERE name = '$name'", { cursor ->
             QueryResult.Value(if (cursor.next().value) cursor.getString(0) else null)
         }, 0).value
-        check(actual != null && normalize(actual) == normalize(expected)) { "Incomplete or unknown point placement schema: $name" }
+        actual?.let(::normalize)
     }
+    // Accept an ENTIRE known v10 lineage, never a mixture of individually permitted guards.
+    val variants=if(version==10L)listOf(definitions,initialV10SchemaDefinitions) else listOf(definitions)
+    fun mismatches(variant:Map<String,String>)=variant.keys.filter { actual[it]!=normalize(variant.getValue(it)) }
+    val differences=variants.map(::mismatches)
+    if(differences.any{it.isEmpty()})return
+    throw SchemaFingerprintMismatch(differences.minBy{it.size}.first())
 }
 
 internal val pointV8SchemaDefinitions = mapOf(
@@ -149,7 +161,7 @@ END;
 """.trimIndent()
 )
 
-internal val pointSchemaDefinitions = mapOf(
+internal val pointV9SchemaDefinitions = mapOf(
     "point_placements" to """
 CREATE TABLE point_placements (
     uuid TEXT NOT NULL PRIMARY KEY CHECK(length(trim(uuid)) > 0),

@@ -4,6 +4,8 @@ plugins {
 }
 
 android {
+    val productionReleaseSmoke = providers.gradleProperty("productionReleaseSmoke").orNull == "true"
+    testBuildType = if(productionReleaseSmoke) "release" else "debug"
     namespace = "com.andreyceilings.app"
     compileSdk = 37
 
@@ -45,6 +47,12 @@ android {
 
     // Reuse the P1 persistence/migration contract across real platform drivers.
     sourceSets.getByName("androidTest").kotlin.directories.add("../shared/src/commonTest/kotlin/com/andreyceilings/shared/db")
+    if(productionReleaseSmoke) {
+        // Release tests contain no debug-only crash provider, and exercise the actual signed app.
+        sourceSets.getByName("androidTest").java.setSrcDirs(emptyList<String>())
+        sourceSets.getByName("androidTest").kotlin.setSrcDirs(listOf("src/productionTest/kotlin",
+            "../shared/src/commonTest/kotlin/com/andreyceilings/shared/db"))
+    } else sourceSets.getByName("androidTest").kotlin.directories.add("src/productionTest/kotlin")
 
     // AGP 9+ built-in Kotlin uses the Java compile target by default.
     buildFeatures {
@@ -79,6 +87,7 @@ dependencies {
     androidTestImplementation(project(":shared"))
     androidTestImplementation("org.jetbrains.kotlin:kotlin-test:2.4.21")
     androidTestImplementation("app.cash.sqldelight:android-driver:2.4.1")
+    androidTestImplementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.9.0")
     androidTestImplementation("androidx.test:core:1.6.1")
     androidTestImplementation("androidx.test:runner:1.6.2")
     androidTestImplementation("androidx.test:rules:1.6.1")

@@ -54,7 +54,9 @@ fun MeasurementDrawing(
     pointEditingEnabled: Boolean = false, pointDrag: PointDragPreview? = null,
     onBeginPointDrag: (String) -> Unit = {}, onPreviewPointDrag: (Double, Double) -> Unit = { _, _ -> },
     onFinishPointDrag: () -> Unit = {}, onCancelPointDrag: () -> Unit = {},
-    fitPointPlacements: Boolean = false
+    fitPointPlacements: Boolean = false,
+    editPointsInFullscreen: Boolean = false, mountingDimensions: List<MountingDimension> = emptyList(),
+    mountingWallOrdinals: List<Int> = emptyList()
 ) {
     val contour = remember(geometry) { measurementDrawingContour(geometry) }
     if (contour == null) {
@@ -96,6 +98,7 @@ fun MeasurementDrawing(
     // beside segments. AB/BC labels remain in the separate edit/selection list.
     val labelText = remember(contour) { contour.sideLabels }
     val textLayouts = labelText.map { measurer.measure(it, labelStyle) }
+    val dimensionLayouts = mountingDimensions.map { measurer.measure(it.label,labelStyle) }
     val vertexLayouts = contour.vertexNames.map { measurer.measure(it, labelStyle) }
     Column(modifier, verticalArrangement = Arrangement.spacedBy(6.dp)) {
         if (interactive) Row {
@@ -119,7 +122,7 @@ fun MeasurementDrawing(
                     else -> false
                 }
             }.focusable()
-            .pointerInput(contour, canvasSize, pointEditingEnabled, fullscreen) {
+            .pointerInput(contour, canvasSize, pointEditingEnabled, fullscreen, editPointsInFullscreen) {
                 awaitEachGesture {
                     val down = awaitFirstDown(requireUnconsumed = false)
                     val width = canvasSize.width.toFloat(); val height = canvasSize.height.toFloat()
@@ -135,7 +138,7 @@ fun MeasurementDrawing(
                         hypot(p.x - position.x, p.y - position.y) <= 24.dp.toPx()
                     }
                     val marker = hit(down.position)
-                    var ownsMarker = pointEditingEnabled && !fullscreen && marker != null && marker.uuid == currentSelectedPoint
+                    var ownsMarker = pointEditingEnabled && (!fullscreen || editPointsInFullscreen) && marker != null && marker.uuid == currentSelectedPoint
                     val startWorld = world(down.position)
                     var moved = false; var multi = false
                     var last = down.position
@@ -162,7 +165,7 @@ fun MeasurementDrawing(
                                     val target = world(position)
                                     currentPreviewDrag(checkNotNull(marker).xMm + target.x - startWorld.x,
                                         marker.yMm + target.y - startWorld.y)
-                                } else if (marker == null || fullscreen) {
+                                } else if (marker == null || fullscreen && !editPointsInFullscreen) {
                                     val delta = position - last
                                     move(delta.x, delta.y)
                                 }
@@ -181,7 +184,7 @@ fun MeasurementDrawing(
                                     ownsMarker = false
                                 }
                                 if (!moved && !multi) {
-                                    if (marker != null && !fullscreen) currentPointSelection(marker.uuid)
+                                    if (marker != null && (!fullscreen || editPointsInFullscreen)) currentPointSelection(marker.uuid)
                                     else if (currentMode && !fullscreen) {
                                         val target = world(position)
                                         val bound = com.andreyceilings.shared.calculation.CeilingPolygonCalculator.MAX_COORDINATE_MM.toDouble()
@@ -237,16 +240,35 @@ fun MeasurementDrawing(
             selectedSide?.takeIf { it in points.indices }?.let { i ->
                 drawLine(ink, points[i], points[(i + 1) % points.size], strokeWidth = 8.dp.toPx())
             }
+            mountingWallOrdinals.filter { it in points.indices }.forEach { i ->
+                drawLine(ink.copy(alpha=0.65f),points[i],points[(i+1)%points.size],strokeWidth=6.dp.toPx())
+            }
             points.forEach { drawCircle(ink, 3.dp.toPx(), it) }
             val projection = measurementDrawingProjection(contour, size.width, size.height, density, fitPoints)
+            if (projection != null) mountingDimensions.forEachIndexed { index, dimension ->
+                fun screen(p: DrawingPoint): Offset {
+                    val fitted=projection.project(p)
+                    val transformed=if(interactive) viewport.transform(fitted,size.width,size.height) else fitted
+                    return Offset(transformed.x.toFloat(),transformed.y.toFloat())
+                }
+                val a=screen(dimension.start);val b=screen(dimension.end)
+                drawLine(ink,a,b,strokeWidth=1.dp.toPx())
+                drawCircle(ink,2.dp.toPx(),b)
+                val label=dimensionLayouts[index]
+                val mid=(a+b)/2f
+                drawRect(surface.copy(alpha=0.96f),mid,Size(label.size.width.toFloat(),label.size.height.toFloat()))
+                drawText(label,topLeft=mid)
+            }
             if (projection != null) pointPlacements.forEach { marker ->
                 val preview = pointDrag?.takeIf { it.point.uuid == marker.uuid }
                 val fitted = projection.project(DrawingPoint(preview?.xMm ?: marker.xMm.toDouble(), preview?.yMm ?: marker.yMm.toDouble()))
                 val projected = if (interactive) viewport.transform(fitted, size.width, size.height) else fitted
                 val center = Offset(projected.x.toFloat(), projected.y.toFloat())
                 drawCircle(surface, 7.dp.toPx(), center)
-                drawCircle(ink, 7.dp.toPx(), center, style = Stroke(if (marker.precision == PointPrecision.EXACT) 3.dp.toPx() else 2.dp.toPx()))
-                drawCircle(ink, 2.dp.toPx(), center)
+                val markerInk=if(marker.mounting.unresolved) androidx.compose.ui.graphics.Color(0xffb3261e) else ink
+                drawCircle(markerInk, 7.dp.toPx(), center, style = Stroke(if (marker.precision == PointPrecision.EXACT) 3.dp.toPx() else 2.dp.toPx()))
+                drawCircle(markerInk, 2.dp.toPx(), center)
+                if(marker.mounting.needsReview) drawCircle(markerInk,10.dp.toPx(),center,style=Stroke(1.dp.toPx()))
                 if (marker.uuid == selectedPointUuid) drawCircle(ink, 12.dp.toPx(), center, style = Stroke(3.dp.toPx()))
             }
             val visibleLabels = if (interactive && (zoom != 1f || panX != 0f || panY != 0f))

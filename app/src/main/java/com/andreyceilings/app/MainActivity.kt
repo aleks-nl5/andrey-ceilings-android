@@ -13,6 +13,7 @@ import androidx.compose.material3.TextButton
 import com.andreyceilings.app.data.security.StorageSpaceGuard
 import com.andreyceilings.app.data.PerformanceDiagnosticsLog
 import com.andreyceilings.app.data.db.CeilingsDatabase
+import com.andreyceilings.app.data.db.DatabaseStartupDiagnostics
 import com.andreyceilings.app.data.backup.BackupPasswordStore
 import com.andreyceilings.app.data.backup.AutomaticBackupScheduler
 import com.andreyceilings.app.data.backup.AutomaticBackupSettings
@@ -27,6 +28,7 @@ class MainActivity : ComponentActivity() {
     private val databaseState = mutableStateOf<CeilingsDatabase?>(null)
     private val storageWarning = mutableStateOf<String?>(null)
     private val themeMode = mutableStateOf(ThemeMode.SYSTEM)
+    private val startupFailure = mutableStateOf<DatabaseStartupDiagnostics.Report?>(null)
 
     private fun saveThemeMode(mode: ThemeMode) {
         themeMode.value = mode
@@ -71,8 +73,11 @@ class MainActivity : ComponentActivity() {
                 databaseState.value = db
                 storageWarning.value = warning
                 databaseStatus.value = "Зашифрована база даних активна"
-            } catch (_: Exception) {
-                databaseStatus.value = "Помилка відкриття захищеної бази. Дані не завантажено."
+            } catch (failure: Exception) {
+                val report = DatabaseStartupDiagnostics.report(failure)
+                databaseStatus.value = report.status
+                startupFailure.value = report
+                if (BuildConfig.DEBUG) android.util.Log.e("CeilingsDatabaseOpen",report.debugTrace)
             }
         }
         setContent {
@@ -84,9 +89,19 @@ class MainActivity : ComponentActivity() {
                     database = databaseState.value,
                     onDatabaseReplaced = { refreshed ->
                         databaseState.value = refreshed
+                        startupFailure.value = null
                         databaseStatus.value = "Зашифрована база даних активна"
                     }
                 )
+                startupFailure.value?.let { report ->
+                    AlertDialog(onDismissRequest = { startupFailure.value = null },
+                        title = { Text("База даних недоступна") }, text = { Text(report.status) },
+                        confirmButton = { TextButton(onClick = {
+                            val clipboard = getSystemService(android.content.ClipboardManager::class.java)
+                            clipboard.setPrimaryClip(android.content.ClipData.newPlainText("Код помилки БД",report.code))
+                        }) { Text("Скопіювати код") } },
+                        dismissButton = { TextButton(onClick = { startupFailure.value = null }) { Text("Зрозуміло") } })
+                }
                 storageWarning.value?.let { warning ->
                     AlertDialog(
                         onDismissRequest = { storageWarning.value = null },

@@ -103,7 +103,6 @@ object PointPlacementProof {
         val marker = points.addPoint(f.element.version, f.contourVersion, 1000, 1000, 10)
         val edit = MeasurementEditStore(db) { 20 }; val document = edit.load(f.project, f.id)
         val changed = document.draft.reduce(MeasurementCreateIntent.Dimension("length", "8"))
-        assertFailsWith<MeasurementContourHasPoints> { edit.update(document, changed) }
         val row = measurements.find(f.id)!!
         assertFails { driver.execute(null, "UPDATE room_measurements SET drawingJson='{}' WHERE id=${f.id}", 0) }
         assertFails { driver.execute(null, "UPDATE room_measurements SET areaSquareMeters=999 WHERE id=${f.id}", 0) }
@@ -116,8 +115,14 @@ object PointPlacementProof {
         val renamed = edit.update(document, document.draft.copy(name = "Нова назва", notes = "Примітка"))
         assertEquals(row.drawingJson, measurements.find(f.id)!!.drawingJson)
         assertEquals(marker, points.find(marker.uuid))
-        points.removePoint(elements.find(f.element.uuid)!!.version, marker, 30)
-        edit.update(renamed, changed.copy(name = renamed.draft.name, notes = renamed.draft.notes))
+        val resized=edit.update(renamed,changed.copy(name=renamed.draft.name,notes=renamed.draft.notes))
+        val moved=points.find(marker.uuid)!!
+        assertEquals(marker.uuid,moved.uuid);assertEquals(marker.xMm,moved.xMm);assertEquals(marker.yMm,moved.yMm)
+        assertTrue(moved.mounting.needsReview);assertFalse(moved.mounting.unresolved)
+        assertEquals(1000L,elements.find(f.element.uuid)!!.placedQuantityMilli)
+        points.removePoint(elements.find(f.element.uuid)!!.version, moved, 30)
+        val afterRemove=edit.load(f.project,f.id)
+        edit.update(afterRemove,resized.draft.reduce(MeasurementCreateIntent.Dimension("length","9")))
         assertNotEquals(row.drawingJson, measurements.find(f.id)!!.drawingJson)
         assertFailsWith<PointPlacementFailure.StaleContour> {
             points.addPoint(elements.find(f.element.uuid)!!.version, f.contourVersion, 1000, 1000, 40)

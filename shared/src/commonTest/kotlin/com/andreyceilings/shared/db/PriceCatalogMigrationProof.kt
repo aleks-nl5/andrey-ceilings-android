@@ -10,6 +10,10 @@ object PriceCatalogMigrationProof {
         override val version = 4L
         override fun create(driver: SqlDriver): QueryResult.Value<Unit> {
             PrototypeDatabase.Schema.create(driver)
+            // Reconstruct the authentic historical schema, including removal of v10-only objects.
+            MeasurementElementMigrationProof.rows(driver,
+                "SELECT type,name FROM sqlite_master WHERE name LIKE 'ceiling_%' AND type IN ('trigger','view','table') ORDER BY CASE type WHEN 'trigger' THEN 0 WHEN 'view' THEN 1 ELSE 2 END",2)
+                .forEach { row -> driver.execute(null,"DROP ${checkNotNull(row[0]).uppercase()} ${checkNotNull(row[1])}",0) }
             // This fixture reconstructs authentic v4, so remove all later v8 objects too.
             MeasurementElementMigrationProof.rows(driver,
                 "SELECT name FROM sqlite_master WHERE type='trigger' AND name LIKE 'point_%'", 1)

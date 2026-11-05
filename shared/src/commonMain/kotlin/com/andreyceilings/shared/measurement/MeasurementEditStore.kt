@@ -14,16 +14,28 @@ import app.cash.sqldelight.coroutines.asFlow
 class MeasurementEditConflict : IllegalStateException(
     "Замір змінено іншим редактором, видалено або об'єкт недоступний. Перезавантажте запис; чернетку не записано.")
 
+/** Issued only after SQLDelight's outer physical rollback has completed successfully. */
+class MeasurementEditRejected(cause: Throwable) : IllegalStateException(
+    "Зміни не записано. Перевірте контур, стінні опори й відступи та повторіть збереження. Чернетку залишено для редагування.", cause)
+
+/** A commit/rollback/notification failure is not evidence that the write was rejected. */
+internal class MeasurementEditUncertain(cause: Throwable) : IllegalStateException("Результат запису не підтверджено.", cause)
+
 /** A version and its exact source inputs travel together, never from current global settings. */
-data class MeasurementEditDocument(val measurementId: Long, val updatedAt: Long, val draft: MeasurementCreateDraft)
+@kotlinx.serialization.Serializable
+data class CeilingPlacementDocument(val points: List<PointPlacement> = emptyList(),
+    val elements: Map<String, Long> = emptyMap(), val walls: List<CeilingWall> = emptyList(), val quantities: Map<String,Long> = emptyMap())
+data class MeasurementEditDocument(val measurementId: Long, val updatedAt: Long, val draft: MeasurementCreateDraft,
+    val placements: CeilingPlacementDocument = CeilingPlacementDocument(), val sourceDrawingJson: String? = null)
 
 class MeasurementEditStore(private val database: PrototypeDatabase, private val nowMillis: () -> Long) {
     private val sessionClosed = MutableStateFlow(false)
     private val pointRead = Mutex()
-    fun closePointReads() { sessionClosed.value = true }
+    fun closePointReads() { sessionClosed.value = true; writes.update { it.copy(closed=true) }; pending.value=emptyMap() }
     /** JDBC close waits for the mapper; Android's production restore gate already drains reads. */
     suspend fun closeAndAwaitPointReads() {
         closePointReads()
+        writes.value.pending.forEach { it.await() }
         pointRead.withLock { /* Any accepted SQL mapper has now finished. */ }
     }
 
@@ -42,7 +54,7 @@ class MeasurementEditStore(private val database: PrototypeDatabase, private val 
                     if (geometry == null) PointOverlayState.Unavailable else PointOverlayState.Loaded(rows.mapNotNull { row ->
                         row.uuid?.let { uuid -> PointPlacement(uuid, checkNotNull(row.elementUuid), checkNotNull(row.xMm), checkNotNull(row.yMm),
                             checkNotNull(row.contourUpdatedAt), checkNotNull(row.createdAt), checkNotNull(row.updatedAt), row.deletedAt,
-                            PointPrecision.entries.single { it.value == row.precision }, row.lastMoveUuid) }
+                            PointPrecision.entries.single { it.value == row.precision }, row.lastMoveUuid, decodeMounting(checkNotNull(row.mountingJson)), row.lastCeilingEditUuid) }
                     }, geometry)
                 }
             }.onStart<PointOverlayState> { emit(PointOverlayState.Loading) }
@@ -57,14 +69,15 @@ class MeasurementEditStore(private val database: PrototypeDatabase, private val 
     internal fun release(token: String) { pending.update { it - token } }
     internal fun retained(token: String): MeasurementEditModel? = pending.value[token]
 
-    fun load(projectId: Long, measurementId: Long): MeasurementEditDocument = database.transactionWithResult {
-        if (projects.find(projectId) == null) throw MeasurementEditConflict()
+    fun load(projectId: Long, measurementId: Long): MeasurementEditDocument = loadDocument(projectId,measurementId)
+    private fun loadDocument(projectId: Long, measurementId: Long, allowClosing: Boolean = false): MeasurementEditDocument = database.transactionWithResult {
+        if ((!allowClosing && sessionClosed.value) || projects.find(projectId) == null) throw MeasurementEditConflict()
         val row = measurements.find(measurementId)?.takeIf { it.projectId == projectId } ?: throw MeasurementEditConflict()
         val geometry = MeasurementGeometryCodec.read(row.drawingJson)
         require(geometry.shapeType == row.shape)
         fun text(mm: Long) = formatMillimetres(mm).removeSuffix(" м")
-        val outline = if (geometry.shapeType == "polygon") {
-            require(geometry.sides.isNotEmpty()) { "Немає виміряних сторін. Редагування недоступне." }
+        val outline = if(geometry.shapeType=="polygon" && geometry.sides.isEmpty()) MeasurementOutlineDraft.Captured(geometry)
+        else if (geometry.shapeType == "polygon") {
             MeasurementOutlineDraft.Orthogonal(geometry.sides.mapIndexed { i, side ->
                 MeasurementSideInput(text(side.lengthMm), side.turnAfter, "saved-side-$i")
             })
@@ -72,41 +85,48 @@ class MeasurementEditStore(private val database: PrototypeDatabase, private val 
         val draft = MeasurementCreateDraft(projectId, requireNotNull(MeasurementPrecision.fromStep(geometry.precisionStepMeters)),
             row.name, row.notes, outline, row.uuid)
         require(validateMeasurementCreate(draft).geometry == geometry) { "Неповні вимірювання. Редагування недоступне." }
-        MeasurementEditDocument(row.id, row.updatedAt, draft)
+        val points = PointPlacementRepository(database).forMeasurement(row.uuid)
+        val elements = points.map { it.elementUuid }.distinct().associateWith { MeasurementElementRepository(database).find(it)!!.updatedAt }
+        val walls = database.ceilingEditsQueries.selectWalls(row.uuid).executeAsList().map { CeilingWall(it.uuid,it.ordinal.toInt()) }
+        require(walls.size == geometry.vertices.size) { "Неповні ідентичності стін." }
+        MeasurementEditDocument(row.id, row.updatedAt, draft, CeilingPlacementDocument(points,elements,walls,elements.keys.associateWith { MeasurementElementRepository(database).find(it)!!.pointCapacity()!! }),row.drawingJson)
     }
 
-    fun update(original: MeasurementEditDocument, draft: MeasurementCreateDraft): MeasurementEditDocument {
-        require(draft.projectId == original.draft.projectId && draft.recordUuid == original.draft.recordUuid &&
-            draft.precision == original.draft.precision)
-        val validation = validateMeasurementCreate(draft)
-        require(validation.canSave)
-        val geometry = requireNotNull(validation.geometry)
-        return database.transactionWithResult {
-            database.measurementElementsQueries.claimElementWrite("")
-            // Check readability as well as enforcing ownership/active-parent/version in the UPDATE itself.
-            val live = measurements.find(original.measurementId)
-            if (projects.find(draft.projectId) == null || live == null || live.projectId != draft.projectId ||
-                live.uuid != draft.recordUuid || live.updatedAt != original.updatedAt) throw MeasurementEditConflict()
-            val liveGeometry = MeasurementGeometryCodec.read(live.drawingJson)
-            require(liveGeometry.precisionStepMeters == draft.precision.stepMeters) {
-                "Точність існуючого заміру змінювати не можна."
+    fun update(original: MeasurementEditDocument, draft: MeasurementCreateDraft,
+        edits: Map<String, PointMountingEdit> = emptyMap(), operationUuid: String = newRecordUuid(),
+        wallToken: String = operationUuid, now: Long = nowMillis(), acceptedWrite: kotlinx.coroutines.CompletableDeferred<Unit>? = null): MeasurementEditDocument {
+        check(!sessionClosed.value || acceptedWrite in writes.value.pending) { "Сесію закрито." }
+        var rolledBack = false
+        try {
+            return database.transactionWithResult {
+                // Runs after endTransaction succeeds, only for the outer rollback. Do not infer
+                // this from a platform exception class/message or from absence of a receipt.
+                afterRollback { rolledBack = true }
+                CeilingEditRepository(database).save(original,draft,edits,operationUuid,wallToken,now)
+                loadDocument(draft.projectId,original.measurementId,allowClosing = true)
             }
-            val normalized = draft.copy(name = draft.name.trim(), notes = draft.notes.trim())
-            // No-op still checks live ownership, parent and version, but never writes.
-            // Compare the validated document, not JDBC REAL conversion's binary tails.
-            if (live.name == normalized.name && live.notes == normalized.notes && live.shape == geometry.shapeType &&
-                liveGeometry == geometry) {
-                return@transactionWithResult MeasurementEditDocument(original.measurementId, live.updatedAt, normalized)
+        } catch (failure: Throwable) {
+            if (!rolledBack) throw MeasurementEditUncertain(failure)
+            when (failure) {
+                is MeasurementEditConflict, is PointPlacementFailure.RetryConflict, is IllegalArgumentException -> throw failure
+                else -> throw MeasurementEditRejected(failure)
             }
-            val version = measurements.updateIfUnchanged(original.measurementId, draft.projectId, original.updatedAt,
-                draft.name.trim(), geometry.shapeType,
-                if (liveGeometry == geometry) live.lengthMeters else (geometry.vertices.maxOf { it.xMm } - geometry.vertices.minOf { it.xMm }) / 1000.0,
-                if (liveGeometry == geometry) live.widthMeters else (geometry.vertices.maxOf { it.yMm } - geometry.vertices.minOf { it.yMm }) / 1000.0,
-                if (liveGeometry == geometry) live.areaSquareMeters else geometry.areaSquareMeters,
-                if (liveGeometry == geometry) live.perimeterMeters else geometry.perimeterMeters,
-                if (liveGeometry == geometry) live.drawingJson else MeasurementGeometryCodec.write(geometry),
-                draft.notes.trim(), nowMillis()) ?: throw MeasurementEditConflict()
-            MeasurementEditDocument(original.measurementId, version, normalized)
         }
+    }
+    fun now(): Long = nowMillis()
+    fun operationCommitted(uuid:String,measurement:String,version:Long):Boolean {
+        if(sessionClosed.value)return false
+        val op=database.ceilingEditsQueries.selectOperation(uuid).executeAsOneOrNull() ?: return false
+        return op.measurementUuid==measurement && maxOf(op.expectedUpdatedAt+1,op.createdAt)==version && CeilingEditRepository(database).isCurrentResult(uuid,measurement,version)
+    }
+
+    private data class Writes(val closed: Boolean = false, val pending: Set<kotlinx.coroutines.CompletableDeferred<Unit>> = emptySet())
+    private val writes = MutableStateFlow(Writes())
+    internal fun beginWrite(): kotlinx.coroutines.CompletableDeferred<Unit>? {
+        val completion = kotlinx.coroutines.CompletableDeferred<Unit>()
+        return completion.takeIf { it in writes.updateAndGet { state -> if (state.closed) state else state.copy(pending=state.pending+completion) }.pending }
+    }
+    internal fun endWrite(completion: kotlinx.coroutines.CompletableDeferred<Unit>) {
+        completion.complete(Unit); writes.update { it.copy(pending=it.pending-completion) }
     }
 }

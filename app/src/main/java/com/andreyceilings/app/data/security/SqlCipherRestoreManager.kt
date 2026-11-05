@@ -24,6 +24,16 @@ internal object SqlCipherRestoreManager {
     @Synchronized
     fun recoverIfNeeded(context: Context) {
         val app = context.applicationContext
+        DatabaseKeyManager.pendingRawBundle(app)?.let { name ->
+            check(!CeilingsDatabase.hasOpenSession()) { "Закрийте сесію перед відкатом початкових файлів." }
+            // The original could not be opened, so recovery restores verified BYTE images,
+            // including WAL/SHM, without attempting a migration or decrypting its old key.
+            RawDatabaseRecovery.restore(RawDatabaseRecovery.root(app),name,
+                app.getDatabasePath(CeilingsDatabase.DATABASE_NAME),DatabaseKeyManager.pendingWrappedForRecovery(app),
+                DatabaseKeyManager.pendingRawManifestHash(app))
+            DatabaseKeyManager.rollbackPendingRestoreKey(app)
+            return
+        }
         val rollback = rollbackFile(app)
         val priorKey = DatabaseKeyManager.pendingRestoreOriginalPassphrase(app)
         if (priorKey == null) {
@@ -77,6 +87,18 @@ internal object SqlCipherRestoreManager {
             }
         }
 
+    /** Explicit UI confirmation is required; there must be no live session/driver. */
+    fun restoreUnavailable(context: Context, contents: PortableBackupPayload.Contents, confirmed: Boolean,
+        onCheckpoint: ((RestoreCheckpoint) -> Unit)? = null): CeilingsDatabase {
+        check(confirmed) { "Підтвердіть відновлення недоступної бази." }
+        return CeilingsDatabase.withExclusiveRestoreLock {
+            synchronized(this) {
+                check(!CeilingsDatabase.hasOpenSession()) { "База вже відкрита. Повторіть звичайний імпорт." }
+                restoreLocked(context.applicationContext,contents,onCheckpoint,rawRecovery=true)
+            }
+        }
+    }
+
     /**
      * Instrumentation-only I/O seam: direct the incoming staging stream at
      * Android's /dev/full to produce a real kernel ENOSPC after the StatFs
@@ -98,7 +120,8 @@ internal object SqlCipherRestoreManager {
         context: Context,
         contents: PortableBackupPayload.Contents,
         onCheckpoint: ((RestoreCheckpoint) -> Unit)?,
-        stageOutput: (File) -> FileOutputStream = { FileOutputStream(it) }
+        stageOutput: (File) -> FileOutputStream = { FileOutputStream(it) },
+        rawRecovery: Boolean = false
     ): CeilingsDatabase {
         recoverIfNeeded(context)
         val live = context.getDatabasePath(CeilingsDatabase.DATABASE_NAME)
@@ -128,19 +151,27 @@ internal object SqlCipherRestoreManager {
             }
             PortableBackupManager.verifyEncryptedSnapshot(context, stage, contents.passphrase)
 
-            val current = CeilingsDatabase.get(context)
-            val snapshot = PortableBackupManager.createVerifiedSnapshot(context, current)
-            originalSnapshot = snapshot
-            check(!rollback.exists()) { "Залишився невиконаний резервний відкат." }
-            val draft = File.createTempFile("restore_prepared_", ".db", parent)
-            rollbackDraft = draft
-            copyAndSync(snapshot, draft) {
-                onCheckpoint?.invoke(RestoreCheckpoint.DURING_ROLLBACK_DRAFT_COPY)
+            if(rawRecovery) {
+                check(!CeilingsDatabase.hasOpenSession())
+                val bundle=RawDatabaseRecovery.capture(RawDatabaseRecovery.root(context),live,
+                    DatabaseKeyManager.currentWrappedForRecovery(context)) {
+                    onCheckpoint?.invoke(RestoreCheckpoint.DURING_ROLLBACK_DRAFT_COPY)
+                }
+                DatabaseKeyManager.beginPendingRestore(context,bundle.name,RawDatabaseRecovery.manifestHash(bundle))
+            } else {
+                val current = CeilingsDatabase.get(context)
+                val snapshot = PortableBackupManager.createVerifiedSnapshot(context, current)
+                originalSnapshot = snapshot
+                check(!rollback.exists()) { "Залишився невиконаний резервний відкат." }
+                val draft = File.createTempFile("restore_prepared_", ".db", parent)
+                rollbackDraft = draft
+                copyAndSync(snapshot, draft) {
+                    onCheckpoint?.invoke(RestoreCheckpoint.DURING_ROLLBACK_DRAFT_COPY)
+                }
+                check(draft.renameTo(rollback)) { "Не вдалося зберегти резерв для відкату." }
+                rollbackDraft = null
+                DatabaseKeyManager.beginPendingRestore(context)
             }
-            check(draft.renameTo(rollback)) { "Не вдалося зберегти резерв для відкату." }
-            rollbackDraft = null
-
-            DatabaseKeyManager.beginPendingRestore(context)
             pending = true
             onCheckpoint?.invoke(RestoreCheckpoint.AFTER_MARKER)
             CeilingsDatabase.closeAndReset()
@@ -158,7 +189,7 @@ internal object SqlCipherRestoreManager {
             check(restored.checkIntegrity()) { "Імпортована БД не пройшла integrity_check." }
             DatabaseKeyManager.finishPendingRestore(context)
             pending = false
-            rollback.delete()
+            if(!rawRecovery) rollback.delete()
             return restored
         } catch (failure: Throwable) {
             if (pending) {
@@ -204,7 +235,7 @@ internal object SqlCipherRestoreManager {
 
     /** MUST only be called when no live driver is open. */
     private fun removeClosedDatabaseFiles(live: File) {
-        listOf(File(live.absolutePath + "-wal"), File(live.absolutePath + "-shm"), live)
+        listOf(File(live.absolutePath + "-wal"), File(live.absolutePath + "-shm"), File(live.absolutePath + "-journal"), live)
             .forEach { file ->
                 if (file.exists()) check(file.delete()) {
                     "Не вдалося прибрати закритий файл БД: ${file.name}"

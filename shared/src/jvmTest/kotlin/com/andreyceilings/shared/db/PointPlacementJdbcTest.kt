@@ -30,7 +30,7 @@ class PointPlacementJdbcTest {
             PriceCatalogSchema.create(fresh)
             JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).use { upgraded ->
                 PointPlacementMigrationProof.v7Schema.create(upgraded)
-                PriceCatalogSchema.migrate(upgraded, 7, 9)
+                PriceCatalogSchema.migrate(upgraded, 7, PriceCatalogSchema.version)
                 verifyPointPlacementStructure(upgraded)
                 fun definitions(driver: SqlDriver) = MeasurementElementMigrationProof.rows(driver,
                     "SELECT type,name,sql FROM sqlite_master WHERE name='point_placements' OR name LIKE 'point_%' OR name LIKE 'index_point_%' ORDER BY name", 3)
@@ -40,9 +40,9 @@ class PointPlacementJdbcTest {
                 assertFails { openDesktopPriceCatalog(upgraded, true) }
                 assertNotEquals(original, PriceNameMigrationProof.schema(upgraded))
             }
-            fresh.execute(null, "PRAGMA user_version=10", 0)
+            fresh.execute(null, "PRAGMA user_version=12", 0)
             assertFails { openDesktopPriceCatalog(fresh, true) }
-            assertEquals(10L, PriceNameUniquenessProof.scalar(fresh, "PRAGMA user_version"))
+            assertEquals(12L, PriceNameUniquenessProof.scalar(fresh, "PRAGMA user_version"))
         }
         JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).use { partial ->
             PointPlacementMigrationProof.v7Schema.create(partial)
@@ -122,13 +122,14 @@ object PointPlacementFileProof {
             }
             // Concurrent geometry edit / first point: exactly one operation wins.
             val g = open(file).use { PointPlacementProof.fixture(PrototypeDatabase(it), "Race geometry") }
+            val geometryDocument=open(file).use { MeasurementEditStore(PrototypeDatabase(it)){10}.load(g.project,g.id) }
             val geometryRace = race(
                 { PointPlacementRepository(it).addPoint(g.element.version, g.contourVersion, 1000, 1000, 10) },
-                { db -> val edit = MeasurementEditStore(db) { 10 }; val doc = edit.load(g.project, g.id)
+                { db -> val edit = MeasurementEditStore(db) { 10 }; val doc = geometryDocument
                     edit.update(doc, doc.draft.reduce(MeasurementCreateIntent.Dimension("length", "8"))) })
             assertEquals(1, geometryRace.count { it.isSuccess })
             val failure = geometryRace.single { it.isFailure }.exceptionOrNull()
-            assertTrue(failure is MeasurementContourHasPoints || failure is PointPlacementFailure.StaleContour, "$failure")
+            assertTrue(failure is MeasurementEditConflict || failure is PointPlacementFailure.StaleContour, "$failure")
             open(file).use { driver ->
                 openDesktopPriceCatalog(driver, true); verifyPointPlacementStructure(driver)
                 assertEquals(1, PointPlacementRepository(PrototypeDatabase(driver)).forMeasurement(f.element.measurementUuid).size)
