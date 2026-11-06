@@ -9,7 +9,7 @@ class SchemaFingerprintMismatch(val objectId: String) : IllegalStateException("U
         objectId in pointV11SchemaDefinitions || objectId in pointV10SchemaDefinitions || objectId in pointSchemaDefinitions) { "Unknown schema diagnostic identifier" } }
 }
 
-/** Strict source fingerprints, including both deployed v10 lineages and v12/v13. */
+/** Strict source fingerprints, including both deployed v10 lineages and v12/v13/v14. */
 internal fun verifyPointPlacementStructure(driver: SqlDriver, version: Long = PriceCatalogSchema.version) {
     // SQL keywords may change case; quoted enum values and JSON paths may not.
     val tokens=Regex("'(?:''|[^'])*'|[^']+")
@@ -26,7 +26,7 @@ internal fun verifyPointPlacementStructure(driver: SqlDriver, version: Long = Pr
             while (cursor.next().value) found.add(checkNotNull(cursor.getString(0)))
             QueryResult.Value(found)
         }, 0).value
-    val definitions = when(version) { 8L -> pointV8SchemaDefinitions; 9L -> pointV9SchemaDefinitions; 10L -> pointV10SchemaDefinitions; 11L -> pointV11SchemaDefinitions; 12L -> pointV12SchemaDefinitions; else -> pointSchemaDefinitions }
+    val definitions = when(version) { 8L -> pointV8SchemaDefinitions; 9L -> pointV9SchemaDefinitions; 10L -> pointV10SchemaDefinitions; 11L -> pointV11SchemaDefinitions; 12L -> pointV12SchemaDefinitions; 13L -> pointV13SchemaDefinitions; else -> pointSchemaDefinitions }
     if(names!=definitions.keys)throw SchemaFingerprintMismatch("point_objects")
     val actual = definitions.mapValues { (name, _) ->
         val actual = driver.executeQuery(null, "SELECT sql FROM sqlite_master WHERE name = '$name'", { cursor ->

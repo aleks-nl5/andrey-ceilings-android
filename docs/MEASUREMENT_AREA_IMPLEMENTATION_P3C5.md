@@ -51,6 +51,19 @@ per-position mounting provenance, review/defer state, versions and tombstones.
 historical test-schema reconstruction removes new AREA objects when reconstructing
 v4; it does not add v13 guarantees to an old schema.
 
+Draft APKs with v13 were uploaded before the final SQL audit reproduced a
+receipt bypass: with `recursive_triggers=OFF`, `INSERT OR REPLACE` can replace an
+existing receipt without invoking its DELETE guard. Frozen `12.sqm` and the v13
+fingerprint remain unchanged. Additive `13.sqm` creates a BEFORE INSERT guard in
+v14: duplicate receipt UUIDs and inserts without the currently applied pending
+operation abort, including with foreign keys and recursive triggers disabled.
+Legitimate full-set Save and identical API retries retain their existing behavior.
+A populated frozen `13.db` preserves annotations, linked measured circles,
+review/defer state, tombstones and complete receipt history. Android/Windows/iOS
+SQLCipher tests inject failure after the new DDL, reopen unchanged v13, migrate,
+compare every table/column, reject REPLACE/IGNORE/fake receipts, and save/reopen.
+Unknown or hybrid v13/v14 guards fail source fingerprint preflight before DDL.
+
 The existing ceiling operation is the only AREA writer. One writer lock precedes
 live reads. Complete POINT+LINE+AREA sets, measurement/element/feature CAS,
 canonical geometry, footprint, source anchors, ownership, reservations and explicit
@@ -62,7 +75,7 @@ payload fails. Existing outer-rollback proof and uncertain-commit handling remai
 SQLDelight invalidates AREA readers from the same operation. Element, measurement
 and project tombstones clean up features without orphaning history. Desktop
 schema detection, strict source fingerprints and Android backup preflight include
-v13. SQLCipher keys, WAL and portable backup envelope format are unchanged.
+v13/v14. SQLCipher keys, WAL and portable backup envelope format are unchanged.
 
 One existing `MeasurementDrawing` renders all overlays with one viewport and
 one gesture arbiter. Selection precedence is POINT, then LINE, then AREA; ties
@@ -82,7 +95,7 @@ Common geometry and transaction proofs are reused on JDBC and real Android,
 Windows and iOS SQLCipher. They exercise whole-footprint geometry, canonical
 rounding, reservations, shared history/restoration, duplicate/uncertain retries,
 rollback, direct-SQL bypass, cleanup and physical v12 migration/reopen/fingerprint.
-Production Android startup/release and portable restore coverage includes v12/v13.
+Production Android startup/release and portable restore coverage includes v12/v13/v14.
 Android pointer injection and desktop Compose scenes use production area controls.
 
 Test outcomes are recorded in PR #103 after execution. Local Linux scene tests

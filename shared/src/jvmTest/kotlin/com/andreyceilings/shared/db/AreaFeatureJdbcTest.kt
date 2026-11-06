@@ -28,7 +28,7 @@ class AreaFeatureJdbcTest {
             PriceCatalogSchema.create(fresh)
             JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).use {migrated ->
                 AreaFeatureMigrationProof.v12Schema.create(migrated)
-                PriceCatalogSchema.migrate(migrated,12,13)
+                PriceCatalogSchema.migrate(migrated,12,PriceCatalogSchema.version)
                 assertEquals(AreaFeatureMigrationProof.fingerprint(fresh),AreaFeatureMigrationProof.fingerprint(migrated))
             }
         }
@@ -50,7 +50,7 @@ class AreaFeatureJdbcTest {
                 AreaFeatureMigrationProof.v12Schema.create(d)
                 d.execute(null,"CREATE TABLE area_features(uuid TEXT)",0)
                 val before=PriceNameMigrationProof.schema(d)
-                assertFails {PriceCatalogSchema.migrate(d,12,13)}
+                assertFails {PriceCatalogSchema.migrate(d,12,PriceCatalogSchema.version)}
                 assertEquals(before,PriceNameMigrationProof.schema(d))
             }
         } finally {file.delete()}
@@ -74,7 +74,7 @@ class AreaFeatureJdbcTest {
             LegacyWallSeedProof.decorateV10(d,legacy)
             AreaFeatureMigrationProof.populate(d)
             val before=AreaFeatureMigrationProof.snapshot(d)
-            PriceCatalogSchema.migrate(d,12,13)
+            PriceCatalogSchema.migrate(d,12,PriceCatalogSchema.version)
             assertEquals(before,AreaFeatureMigrationProof.snapshot(d))
             assertEquals(2,PriceNameUniquenessProof.scalar(d,"SELECT count(*) FROM line_placements"))
             PriceCatalogSchema.verifyStructure(d)

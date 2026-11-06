@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Regenerate v13 SQL and fingerprint literals from the pinned P3C5 handoff.
+"""Regenerate frozen v13 SQL and additive v14 receipt guards from the pinned P3C5 handoff.
 Requires that baseline commit in local git history and Python SQLite JSON support.
 Historical migrations/fixtures are never rewritten. Run from any directory.
 """
@@ -261,7 +261,7 @@ trigger=trigger.replace('AND deletedAt IS NULL)\n FROM room_measurements WHERE u
 new['ceiling_operation_validate']=trigger
 # Emit current fingerprint only, retaining v12 as exact immutable map.
 p=kt/'LinePlacementSchema.kt';txt=p.read_text();p.write_text(txt.replace('internal val pointSchemaDefinitions =','internal val pointV12SchemaDefinitions ='))
-header='package com.andreyceilings.shared.db\n\n/** Complete v13 fingerprints. Historical definitions are retained verbatim. */\ninternal val pointSchemaDefinitions = pointV12SchemaDefinitions + mapOf(\n'
+header='package com.andreyceilings.shared.db\n\n/** Complete v13 fingerprints. Historical definitions are retained verbatim. */\ninternal val pointV13SchemaDefinitions = pointV12SchemaDefinitions + mapOf(\n'
 (kt/'AreaFeatureSchema.kt').write_text(header+',\n'.join('    "'+n+'" to """\n'+s+'\n""".trimIndent()' for n,s in new.items())+'\n)\n')
 # Fresh schema and migration use the exact same definitions (ALTER normalized by SQLite).
 fresh=[]
@@ -269,6 +269,9 @@ for s in oldstmts:
     n=name(s)
     fresh.append(new[n] if n in new else s)
 fresh += [s for n,s in new.items() if n not in original]
+receipt=(sq/'13.sqm').read_text().strip()
+fresh.append(receipt)
+(kt/'CeilingReceiptSchema.kt').write_text('package com.andreyceilings.shared.db\n\n/** v14 closes REPLACE receipt mutations; v13 definitions remain frozen. */\ninternal val pointSchemaDefinitions = pointV13SchemaDefinitions + mapOf(\n    "ceiling_result_insert_guard" to """\n'+receipt+'\n""".trimIndent()\n)\n')
 (sq/'BusinessSchema.sq').write_text('\n\n'.join(fresh)+'\n')
 mig=["ALTER TABLE ceiling_operation_results ADD COLUMN areaVersions TEXT NOT NULL DEFAULT '{}' CHECK(json_valid(areaVersions) AND json_type(areaVersions)='object');"]
 for n,s in new.items():
@@ -279,8 +282,8 @@ for n,s in new.items():
 (sq/'12.sqm').write_text('\n\n'.join(mig)+'\n')
 # Audit the physical fresh and migrated fingerprints using real SQLite.
 f=sqlite3.connect(':memory:');f.executescript('\n'.join(s for s in fresh if name(s)))
-m=sqlite3.connect(':memory:');m.executescript('\n'.join(s for s in oldstmts if name(s)));m.executescript((sq/'12.sqm').read_text())
+m=sqlite3.connect(':memory:');m.executescript('\n'.join(s for s in oldstmts if name(s)));m.executescript((sq/'12.sqm').read_text());m.executescript(receipt)
 norm=lambda sql:re.sub(r'\s*([,()])\s*',r'\1',re.sub(r'\s+',' ',sql.strip().rstrip(';'))).lower()
 lookup=lambda c:{n:norm(s) for n,s in c.execute("SELECT name,sql FROM sqlite_master WHERE sql IS NOT NULL")}
 a,b=lookup(f),lookup(m);assert a==b,[n for n in a if a[n]!=b.get(n)]
-print('v13 BusinessSchema fresh/migrated SQLite fingerprint matches:',len(a),'objects')
+print('v14 BusinessSchema fresh/migrated SQLite fingerprint matches:',len(a),'objects')

@@ -1,7 +1,7 @@
 package com.andreyceilings.shared.db
 
 /** Complete v13 fingerprints. Historical definitions are retained verbatim. */
-internal val pointSchemaDefinitions = pointV12SchemaDefinitions + mapOf(
+internal val pointV13SchemaDefinitions = pointV12SchemaDefinitions + mapOf(
     "area_features" to """
 CREATE TABLE area_features (
  uuid TEXT NOT NULL PRIMARY KEY CHECK(length(trim(uuid))>0),

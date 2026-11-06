@@ -70,12 +70,12 @@ class PointPlacementSqlCipherTest {
         val password = "point-backup-fixture".toCharArray()
         context.deleteDatabase(name); context.deleteDatabase(copyName)
         try {
-            for (version in listOf(8, 9, 10, 11, 12, 13)) {
+            for (version in listOf(8, 9, 10, 11, 12, 13, 14)) {
                 context.deleteDatabase(name); context.deleteDatabase(copyName)
                 lateinit var f: PointPlacementProof.Fixture
                 lateinit var expectedPoints: List<PointPlacement>
                 var expectedAreas=emptyList<AreaFeature>()
-                val sourceDriver = if (version < 13) AndroidSqliteDriver(when(version){8->PointPositionMigrationProof.v8Schema;9->WallAnchorMigrationProof.v9Schema;10->WallAnchorMigrationProof.v10Schema;12->AreaFeatureMigrationProof.v12Schema;else->LinePlacementMigrationProof.v11Schema}, context, name,
+                val sourceDriver = if (version < 14) AndroidSqliteDriver(when(version){8->PointPositionMigrationProof.v8Schema;9->WallAnchorMigrationProof.v9Schema;10->WallAnchorMigrationProof.v10Schema;12->AreaFeatureMigrationProof.v12Schema;13->CeilingReceiptMigrationProof.v13Schema;else->LinePlacementMigrationProof.v11Schema}, context, name,
                     factory = SupportOpenHelperFactory(key.copyOf(), null, true))
                     else createEncryptedPrototypeDriver(context, key, name, enableWalForTesting = true, initializePriceCatalog = true)
                 sourceDriver.use { driver ->
@@ -105,7 +105,7 @@ class PointPlacementSqlCipherTest {
                         assertEquals(1,expectedPoints.count { it.mounting.unresolved })
                         assertTrue(expectedPoints.all { it.mounting.needsReview && it.mounting.deferredAt==15L })
                     }
-                    if(version==13) {
+                    if(version>=13) {
                         val areaStore=MeasurementEditStore(db){20}
                         val doc=areaStore.load(f.project,f.id)
                         val area=AreaFeature("backup-area",doc.draft.recordUuid,AreaShape.rectangle(PointPositionMm(500,500),PointPositionMm(1000,1000)),doc.updatedAt,0,0,role=AreaRole.OBSTACLE,note="Backup obstacle")
