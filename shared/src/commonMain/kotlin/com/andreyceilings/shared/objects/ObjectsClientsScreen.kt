@@ -595,7 +595,7 @@ fun ObjectsClientsScreen(
             contentPadding = contentPadding, systemTopInset = systemTopInset,
             onBack = onCloseMeasurement,
             onEdit = { onEditMeasurement(measurement.projectId, measurement.measurementId) },
-            navigationGuard = measurementCreateNavigationGuard
+            navigationGuard = measurementCreateNavigationGuard, editStore=detailsStore?.measurementEdit
         )
         if (edit != null) com.andreyceilings.shared.measurement.MeasurementEditScreen(
             projectId = edit.projectId, measurementId = edit.measurementId, store = detailsStore?.measurementEdit,

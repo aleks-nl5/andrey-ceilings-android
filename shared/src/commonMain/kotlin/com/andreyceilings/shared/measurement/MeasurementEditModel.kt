@@ -179,6 +179,10 @@ class MeasurementEditModel(
         save(keepEditing=true)
     }
     fun delivered() { store?.release(token) }
+    /** Details keeps the confirmed document open after process-restored receipt reconciliation. */
+    fun resumeDetailsAfterSave() {
+        if(state.value.saved) { delivered();mutableState.value=state.value.copy(saved=false) }
+    }
 
     private fun restoreForm(value: CeilingFormHistory) {
         val draft=checkNotNull(MeasurementCreateDraft.restore(value.draft,state.value.draft.projectId))
@@ -195,7 +199,11 @@ class MeasurementEditModel(
             !e.defer && e.value.deletedAt==null && (old==null || e.confirm || e.remeasuredStart || e.remeasuredEnd ||
                 e.value.start!=old.start || e.value.end!=old.end || e.value.startMounting.anchor!=old.startMounting.anchor || e.value.endMounting.anchor!=old.endMounting.anchor)
         }==true } &&
-        lineCapacityError()==null && displayPoints().none { point -> point.mounting.unresolved &&
+        lineCapacityError()==null && displayAreas().none {area -> area.unresolved && state.value.area.edits[area.uuid]?.let {edit ->
+            val old=state.value.original.placements.areas.find {it.uuid==area.uuid}
+            !edit.defer && edit.value.deletedAt==null && (old==null || edit.confirm || edit.remeasured.isNotEmpty() || edit.remeasuredRadius ||
+                edit.value.shape!=old.shape || edit.value.radiusMeasured!=old.radiusMeasured || edit.value.mountings.map {it.anchor}!=old.mountings.map {it.anchor})
+        }==true } && displayPoints().none { point -> point.mounting.unresolved &&
         state.value.pointEdits[point.uuid]?.let {it.anchor!=null || it.freeX!=null}==true }
     fun displayPoints(): List<PointPlacement> {
         val geometry=validateMeasurementCreate(state.value.draft).geometry ?: return state.value.original.placements.points
@@ -250,7 +258,12 @@ class MeasurementEditModel(
             val position=checkNotNull(solveWallAnchor(geometry,draftWalls(),anchor)).position
             val points=a.shape.positions.toMutableList().also {it[areaIndex]=position}
             val mounts=a.mountings.toMutableList().also {it[areaIndex]=PointMounting(anchor=anchor)}
-            stageArea(a.copy(shape=a.shape.withPositions(points),mountings=mounts),remeasured=state.value.area.edits[a.uuid]?.remeasured.orEmpty()+areaIndex)
+            val shape=a.shape.withPositions(points)
+            if(!a.unresolved && !areaStrictlyInside(geometry,shape)) {
+                mutableState.value=state.value.copy(error="Виміряна вершина утворює недопустиму фігуру. Увесь контур фігури має бути всередині стелі без самоперетинів.")
+                return
+            }
+            stageArea(a.copy(shape=shape,mountings=mounts),remeasured=state.value.area.edits[a.uuid]?.remeasured.orEmpty()+areaIndex)
             return
         }
         val lineFirst=state.value.mountingLineStart
@@ -269,6 +282,8 @@ class MeasurementEditModel(
     fun discardMounting() { updateArea {it.copy(mountingIndex=null)}; mutableState.value=state.value.copy(mountingInput=null,mountingLineStart=null,mountingDismiss=false) }
     fun continueMounting() { mutableState.value=state.value.copy(mountingDismiss=false) }
 
+    private fun PointMounting.freeMoved() = copy(anchor=null,confirmedAt=null,anchorGeometryJson=null,
+        needsReview=needsReview || anchor!=null)
     private fun editable() = !state.value.saving && !state.value.checking && !state.value.saved && !state.value.uncertain
     fun displayLines(): List<LinePlacement> {
         val state=state.value
@@ -324,6 +339,11 @@ class MeasurementEditModel(
         publish()
         lineCapacityError()?.let {mutableState.value=state.value.copy(error=it)}
     }
+    fun clearDrawingSelection() {
+        if(!editable())return
+        cancelAreaDrag();cancelLineDrag();cancelPointDrag()
+        mutableState.value=state.value.copy(selectedPointUuid=null,selectedLineUuid=null,area=state.value.area.copy(selected=null))
+    }
     fun setLineMoveTarget(target:Int) { if(editable())mutableState.value=state.value.copy(lineMoveTarget=target) }
     fun beginLineDrag(uuid:String) {if(editable() && state.value.selectedLineUuid==uuid)mutableState.value=state.value.copy(lineDrag=displayLines().find {it.uuid==uuid})}
     fun previewLineDrag(dx:Double,dy:Double) {
@@ -333,12 +353,14 @@ class MeasurementEditModel(
         val target=state.value.lineMoveTarget
         mutableState.value=state.value.copy(lineDrag=source.copy(start=if(target!=2)move(source.start) else source.start,
             end=if(target!=1)move(source.end) else source.end,
-            startMounting=if(target!=2)PointMounting() else source.startMounting,endMounting=if(target!=1)PointMounting() else source.endMounting,
+            startMounting=if(target!=2 && move(source.start)!=source.start)source.startMounting.freeMoved() else source.startMounting,endMounting=if(target!=1 && move(source.end)!=source.end)source.endMounting.freeMoved() else source.endMounting,
             needsReview=source.needsReview || source.precision==PointPrecision.EXACT))
     }
     fun cancelLineDrag() {mutableState.value=state.value.copy(lineDrag=null)}
     fun finishLineDrag() {
         val line=state.value.lineDrag ?: return;cancelLineDrag()
+        val source=displayLines().find {it.uuid==line.uuid} ?: return
+        if(line.start==source.start && line.end==source.end)return
         val geometry=validateMeasurementCreate(state.value.draft).geometry ?: return
         if(!lineStrictlyInside(geometry,line.start,line.end)){mutableState.value=state.value.copy(error=LinePlacementFailure.InvalidSegment().message);return}
         stageLine(line,remeasuredStart=if(state.value.lineMoveTarget!=2)false else null,remeasuredEnd=if(state.value.lineMoveTarget!=1)false else null)
@@ -494,13 +516,19 @@ class MeasurementEditModel(
         val source=displayAreas().find {it.uuid==a.drag?.uuid} ?: return
         if(!dx.isFinite() || !dy.isFinite() || dx !in -2_000_000.0..2_000_000.0 || dy !in -2_000_000.0..2_000_000.0)return
         val positions=source.shape.positions.mapIndexed {i,p -> if(a.moveVertex==null || a.moveVertex==i)PointPositionMm(p.xMm+dx.roundToLong(),p.yMm+dy.roundToLong()) else p}
-        val moved=source.copy(shape=source.shape.withPositions(positions),mountings=source.mountings.mapIndexed {i,m -> if(a.moveVertex==null || a.moveVertex==i)PointMounting() else m},
+        val moved=source.copy(shape=source.shape.withPositions(positions),mountings=source.mountings.mapIndexed {i,m -> if(positions[i]!=source.shape.positions[i])m.freeMoved() else m},
             needsReview=source.needsReview || source.precision==PointPrecision.EXACT)
         updateArea {it.copy(drag=moved)}
     }
     fun cancelAreaDrag() {updateArea {it.copy(drag=null)}}
     fun finishAreaDrag() {
         val a=state.value.area; val moved=a.drag ?: return;cancelAreaDrag()
+        val source=displayAreas().find {it.uuid==moved.uuid} ?: return
+        if(source.shape==moved.shape)return
+        if(source.unresolved) {
+            mutableState.value=state.value.copy(error="Нерозв’язану фігуру потрібно повторно виміряти за стінними опорами. Перетягування не змінює збережене положення.")
+            return
+        }
         val g=validateMeasurementCreate(state.value.draft).geometry ?: return
         if(!areaStrictlyInside(g,moved.shape)){mutableState.value=state.value.copy(error="Фігура перетинає стіну або себе. Положення не змінено.");return}
         val measured=a.edits[moved.uuid]?.remeasured.orEmpty().filter {a.moveVertex!=null && a.moveVertex!=it}.toSet()
@@ -540,7 +568,7 @@ class MeasurementEditModel(
         val shape=if(circle!=null)runCatching {AreaShape.circleFromDiameter(circle.center,checkNotNull(parsePointMetres(input.diameter,2_000_000)))}.getOrNull() ?: return else old.shape
         val g=validateMeasurementCreate(state.value.draft).geometry ?: return
         if(!areaStrictlyInside(g,shape) && !old.unresolved){mutableState.value=state.value.copy(error="Уся фігура має залишитися всередині стелі.");return}
-        stageArea(old.copy(shape=shape,note=input.note,role=input.role,radiusMeasured=old.radiusMeasured || circle!=null && input.diameterMeasured),remeasuredRadius=circle!=null && input.diameterMeasured)
+        stageArea(old.copy(shape=shape,note=input.note,role=input.role,radiusMeasured=circle!=null && (input.diameterMeasured || shape==old.shape && old.radiusMeasured)),remeasuredRadius=circle!=null && input.diameterMeasured)
         discardAreaProperties()
     }
     fun requestAreaDelete() {if(editable())updateArea {it.copy(deleteConfirm=true)}}

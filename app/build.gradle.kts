@@ -47,6 +47,7 @@ android {
 
     // Reuse the P1 persistence/migration contract across real platform drivers.
     sourceSets.getByName("androidTest").kotlin.directories.add("../shared/src/commonTest/kotlin/com/andreyceilings/shared/db")
+    sourceSets.getByName("androidTest").kotlin.directories.add("../shared/src/testFixtures/kotlin")
     if(productionReleaseSmoke) {
         // Release tests contain no debug-only crash provider, and exercise the actual signed app.
         sourceSets.getByName("androidTest").java.setSrcDirs(emptyList<String>())

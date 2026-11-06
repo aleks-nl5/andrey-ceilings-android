@@ -89,6 +89,40 @@ normal/fullscreen. Catalog quantities only change through an explicit previewed
 This is the functional UI scaffold. UX redesign remains #95; live pricing is #44;
 outline arbitrary-angle solving and a runnable iOS host remain #70/#42.
 
+## Owner review corrections (06.11.2026)
+
+Invalid explicit edits of an existing valid AREA fail before writing when the
+ceiling contour is unchanged. The measured-vertex form checks the entire footprint,
+including self intersections and concave cutouts, before staging. Automatic
+unresolved after a genuine contour change remains sticky. An unresolved feature
+needs new measured anchors; a free drag cannot silently replace its last geometry.
+A changed circle radius inherits measured provenance only from explicit new
+confirmation; an unchanged measured radius retains its provenance.
+
+Standard Details now stages LINE/AREA transforms in the existing saveable
+`MeasurementEditModel` using the session's existing `MeasurementEditStore`.
+Release commits one draft transform; explicit “Зберегти креслення” submits the
+complete contour+POINT+LINE+AREA CAS operation. Undo/Redo, dirty Back, write/retry
+freezing and process-restored receipt reconciliation use the same model. Details
+fullscreen remains a viewing surface, including the current draft overlays.
+Editor normal/fullscreen remain editable. Both Measurements and Objects routes
+supply the same unlocked-session store, including its existing shutdown drain.
+
+A selected target owns its hit halo before unrelated overlays. Otherwise selection
+uses POINT > LINE > AREA and the last painted filled AREA wins ties. Explicit
+selection chips and “Зняти виділення” allow switching overlapping targets. Whole
+LINE movement keeps length; an explicit endpoint changes length. Whole polygon or
+circle movement preserves size; explicit vertex movement changes area. Only moved
+coordinates lose active anchors; unchanged references and review state survive.
+Two-pointer gestures cancel the object drag and keep viewport zoom/pan ownership.
+
+Production Android touch tests and Desktop mouse scene tests exercise Details and
+normal/fullscreen editor transforms, selection near another LINE's halo, history,
+invalid transforms, explicit atomic Save and reopening. Android also closes and
+reopens the physical encrypted database. Regression model tests cover invalid
+measured vertices, concave footprint, declared capacity and radius provenance.
+Final-SHA CI results belong in PR #103. Owner acceptance must be repeated.
+
 ## Verification and owner acceptance
 
 Common geometry and transaction proofs are reused on JDBC and real Android,

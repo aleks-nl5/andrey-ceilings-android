@@ -78,11 +78,11 @@ fun MeasurementEditScreen(
     var allFields by rememberSaveable { mutableStateOf(false) }
     var reloadConfirm by remember { mutableStateOf(false) }
     val currentSaved by rememberUpdatedState(onSaved)
-    val surfaceBack = remember { { if (fullscreen) { model.cancelPointDrag(); model.cancelLineDrag(); fullscreen = false; true } else false } }
+    val surfaceBack = remember { { if (fullscreen) { model.cancelPointDrag(); model.cancelLineDrag(); model.cancelAreaDrag(); fullscreen = false; true } else false } }
     DisposableEffect(model, navigationGuard) {
         navigationGuard?.bindEdit(model); navigationGuard?.bindSurface(surfaceBack)
         onDispose {
-            model.cancelPointDrag(); model.cancelLineDrag()
+            model.cancelPointDrag(); model.cancelLineDrag(); model.cancelAreaDrag()
             navigationGuard?.unbindEdit(model); navigationGuard?.unbindSurface(surfaceBack)
         }
     }
@@ -104,6 +104,7 @@ fun MeasurementEditScreen(
             FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 TextButton(onClick = { if (fullscreen) fullscreen = false else model.requestExit(onBack) }, enabled = enabled) { Text(if (fullscreen) "Згорнути" else "До заміру") }
                 if (!fullscreen) TextButton(onClick = { focus.clearFocus(); fullscreen = true }) { Text("На весь екран") }
+                if(state.selectedLineUuid!=null || state.area.selected!=null)TextButton(enabled=enabled,onClick=model::clearDrawingSelection){Text("Зняти виділення")}
                 TextButton(onClick = { focus.clearFocus(); model.undo() }, enabled = enabled && state.canUndo) { Text("Скасувати дію") }
                 TextButton(onClick = { focus.clearFocus(); model.redo() }, enabled = enabled && state.canRedo) { Text("Повторити") }
                 TextButton(onClick = { model.requestExit {

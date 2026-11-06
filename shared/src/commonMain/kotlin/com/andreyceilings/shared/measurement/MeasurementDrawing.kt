@@ -174,22 +174,30 @@ fun MeasurementDrawing(
                         val t=if(square<=1e-12)0.0 else (((position.x-a.x)*dx+(position.y-a.y)*dy)/square).coerceIn(0.0,1.0)
                         return hypot(position.x-a.x-t*dx,position.y-a.y-t*dy)
                     }
-                    val line=currentLines.minByOrNull {lineDistance(it,down.position)}?.takeIf {lineDistance(it,down.position)<=24.dp.toPx()}
-                    val marker = if(currentAreaMode || currentLineMode || lineEditingEnabled && line!=null && line.uuid==currentSelectedLine) null else hit(down.position)
-                    var ownsLine=lineEditingEnabled && !currentAreaMode && !currentLineMode && marker==null && line!=null && line.uuid==currentSelectedLine
-                    var ownsMarker = pointEditingEnabled && !currentAreaMode && (!fullscreen || editPointsInFullscreen) && marker != null && marker.uuid == currentSelectedPoint
-                    // Point > line > area. Within filled overlaps the last painted UUID wins.
-                    val area=currentAreas.asReversed().minByOrNull { feature -> areaHitDistance(feature.shape,DrawingPoint(down.position.x.toDouble(),down.position.y.toDouble())) {p ->
+                    fun areaDistance(feature:AreaFeature) = areaHitDistance(feature.shape,DrawingPoint(down.position.x.toDouble(),down.position.y.toDouble())) {p ->
                         currentViewport.transform(projection.project(DrawingPoint(p.xMm.toDouble(),p.yMm.toDouble())),width,height)
-                    } }?.takeIf {feature -> areaHitDistance(feature.shape,DrawingPoint(down.position.x.toDouble(),down.position.y.toDouble())) {p ->
-                        currentViewport.transform(projection.project(DrawingPoint(p.xMm.toDouble(),p.yMm.toDouble())),width,height)
-                    }<=24.dp.toPx()}
-                    var ownsArea=areaEditingEnabled && !currentAreaMode && marker==null && line==null && area!=null && area.uuid==currentSelectedArea
+                    }
+                    val halo=24.dp.toPx()
+                    // A selected target owns its halo before unrelated overlays. Otherwise
+                    // POINT > LINE > AREA; equal filled-area hits use the last painted UUID.
+                    val selectedArea=currentAreas.find {it.uuid==currentSelectedArea && areaDistance(it)<=halo}
+                    val selectedLine=currentLines.find {it.uuid==currentSelectedLine && lineDistance(it,down.position)<=halo}
+                    val selectedMarker=currentPoints.find {it.uuid==currentSelectedPoint}?.takeIf {p ->
+                        val screen=currentViewport.transform(projection.project(DrawingPoint(p.xMm.toDouble(),p.yMm.toDouble())),width,height)
+                        hypot(screen.x-down.position.x,screen.y-down.position.y)<=halo
+                    }
+                    val creating=currentAreaMode || currentLineMode || currentMode
+                    val area=selectedArea ?: currentAreas.asReversed().minByOrNull(::areaDistance)?.takeIf {areaDistance(it)<=halo}
+                    val line=selectedLine ?: currentLines.minByOrNull {lineDistance(it,down.position)}?.takeIf {lineDistance(it,down.position)<=halo}
+                    val marker=if(currentAreaMode || currentLineMode) null else selectedMarker ?: hit(down.position)
+                    var ownsMarker=pointEditingEnabled && !currentAreaMode && !currentLineMode && (!fullscreen || editPointsInFullscreen) && selectedMarker!=null
+                    var ownsLine=lineEditingEnabled && !creating && !ownsMarker && selectedLine!=null
+                    var ownsArea=areaEditingEnabled && !creating && !ownsMarker && !ownsLine && selectedArea!=null
                     val startWorld = world(down.position)
                     var moved = false; var multi = false
                     var last = down.position
-                    if(ownsArea){markerGesture=true;currentBeginAreaDrag(checkNotNull(area).uuid)}
-                    if(ownsLine) {markerGesture=true;currentBeginLineDrag(checkNotNull(line).uuid)}
+                    if(ownsArea){markerGesture=true;currentBeginAreaDrag(checkNotNull(selectedArea).uuid)}
+                    if(ownsLine) {markerGesture=true;currentBeginLineDrag(checkNotNull(selectedLine).uuid)}
                     if (ownsMarker) { markerGesture = true; currentBeginDrag(checkNotNull(marker).uuid) }
                     down.consume()
                     try {
@@ -250,7 +258,10 @@ fun MeasurementDrawing(
                                     } else if(currentLineMode) {
                                         val target=world(position)
                                         if(target.x.isFinite() && target.y.isFinite() && target.x in -1_000_000.0..1_000_000.0 && target.y in -1_000_000.0..1_000_000.0)currentLineTap(target.x.roundToLong(),target.y.roundToLong())
-                                    } else if (marker != null && (!fullscreen || editPointsInFullscreen)) currentPointSelection(marker.uuid)
+                                    } else if(selectedMarker!=null && (!fullscreen || editPointsInFullscreen)) currentPointSelection(selectedMarker.uuid)
+                                    else if(selectedLine!=null)currentLineSelection(selectedLine.uuid)
+                                    else if(selectedArea!=null)currentAreaSelection(selectedArea.uuid)
+                                    else if (marker != null && (!fullscreen || editPointsInFullscreen)) currentPointSelection(marker.uuid)
                                     else if(line!=null)currentLineSelection(line.uuid)
                                     else if(area!=null)currentAreaSelection(area.uuid)
                                     else if (currentMode && !fullscreen) {

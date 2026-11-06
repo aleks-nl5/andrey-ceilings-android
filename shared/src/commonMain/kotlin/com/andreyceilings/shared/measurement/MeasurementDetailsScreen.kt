@@ -25,7 +25,8 @@ import com.andreyceilings.shared.ui.CeilingsScreenScaffold
 fun MeasurementDetailsScreen(
     projectId: Long, measurementId: Long, store: MeasurementDetailsStore?,
     contentPadding: PaddingValues, systemTopInset: Dp, onBack: () -> Unit, onEdit: (() -> Unit)? = null,
-    navigationGuard: MeasurementCreateNavigationGuard? = null, backLabel: String = "До об'єкта"
+    navigationGuard: MeasurementCreateNavigationGuard? = null, backLabel: String = "До об'єкта",
+    editStore: MeasurementEditStore? = null
 ) {
     // Reset collector state with its route/session; never flash a previous record.
     key(projectId, measurementId, store) {
@@ -47,39 +48,48 @@ fun MeasurementDetailsScreen(
         var selectedArea by rememberSaveable(data?.uuid) {mutableStateOf<String?>(null)}
         var selectedLine by rememberSaveable(data?.uuid) {mutableStateOf<String?>(null)}
         val points = model?.points?.collectAsState()?.value ?: PointPlacementState()
+        val drawingEditor=if(data?.geometry is MeasurementGeometryView.Captured)
+            rememberDetailsDrawingEditor(editStore,projectId,measurementId,data.updatedAt) else null
+        val drawingState=drawingEditor?.state?.collectAsState()?.value
+        val liveActions=drawingState?.let {!it.dirty && !it.saving && !it.checking && !it.uncertain && !it.conflict}!=false
+        val effectiveArea=if(drawingEditor!=null)drawingState?.area?.selected else selectedArea
+        val effectiveLine=if(drawingEditor!=null)drawingState?.selectedLineUuid else selectedLine
+        val modalOpen=model?.editor?.collectAsState()?.value!=null || points.confirmingDelete || points.saving || points.retry!=null || points.positionEditor!=null || points.modeElementUuid!=null
         val pointElement = (elementsState as? MeasurementElementsState.Loaded)?.items?.find {
             it.uuid == (points.selectedElementUuid ?: points.modeElementUuid) }
         MeasurementDetailsScreen(state, contentPadding, systemTopInset, onBack, onEdit, navigationGuard, backLabel,
+            drawingEditor=drawingEditor,drawingEnabled=!modalOpen,
             elementsContent = {
-                MeasurementElementsSection(elementsState, { model?.add() },
-                    { element, action -> model?.open(element, action) }, { model?.retry() },
-                    onPlace = { element -> data?.let { model?.beginPlacement(element, it.updatedAt) } },
+                MeasurementElementsSection(elementsState, { if(liveActions)model?.add() },
+                    { element, action -> if(liveActions)model?.open(element, action) }, { model?.retry() },
+                    onPlace = { element -> if(liveActions)data?.let { model?.beginPlacement(element, it.updatedAt) } },
                     placementUnavailable = when {
+                        !liveActions -> "Спершу збережіть або відхиліть чернетку креслення."
                         data?.geometry !is MeasurementGeometryView.Captured -> "Потрібен збережений виміряний контур; історичне креслення не підтримується."
                         !points.available -> "Позначки або захищена база недоступні."
                         points.saving -> "Зачекайте завершення збереження."
                         else -> null
-                    }, selectedElementUuid = areas.find {it.uuid==selectedArea}?.elementUuid ?: lines.find {it.uuid==selectedLine}?.elementUuid ?: points.selectedElementUuid,
+                    }, selectedElementUuid = areas.find {it.uuid==effectiveArea}?.elementUuid ?: lines.find {it.uuid==effectiveLine}?.elementUuid ?: points.selectedElementUuid,
                     onPlaceArea=if(onEdit==null)null else {element ->
-                        if(model?.finishPlacement()!=false) {
+                        if(liveActions && model?.finishPlacement()!=false) {
                             navigationGuard?.requestedAreaPlacement=data?.uuid?.let {it to element.uuid}
                             onEdit.invoke()
                         }
                     },onPlaceLine=if(onEdit==null)null else {element ->
-                        if(model?.finishPlacement()!=false) {
+                        if(liveActions && model?.finishPlacement()!=false) {
                             navigationGuard?.requestedLinePlacement=data?.uuid?.let {it to element.uuid}
                             onEdit.invoke()
                         }
                     })
-            }, areaFeatures=areas,selectedAreaUuid=selectedArea,onSelectArea={uuid -> if(model?.finishPlacement()!=false){selectedArea=uuid;selectedLine=null}},linePlacements=lines,selectedLineUuid=selectedLine,onSelectLine={uuid ->if(model?.finishPlacement()!=false)selectedLine=uuid}, pointState = points, pointElement = pointElement,
-            onPlacePoint = { x, y -> model?.tapPoint(x, y) }, onSelectPoint = { selectedArea=null;selectedLine=null;model?.selectPoint(it) },
+            }, areaFeatures=areas,selectedAreaUuid=effectiveArea,onSelectArea={uuid -> if(!modalOpen && model?.finishPlacement()!=false){selectedArea=uuid;selectedLine=null;drawingEditor?.selectArea(uuid)}},linePlacements=lines,selectedLineUuid=effectiveLine,onSelectLine={uuid ->if(!modalOpen && model?.finishPlacement()!=false){selectedLine=uuid;selectedArea=null;drawingEditor?.selectLine(uuid)}}, pointState = if(liveActions)points else points.copy(undo=null,redo=null), pointElement = pointElement,
+            onPlacePoint = { x, y -> model?.tapPoint(x, y) }, onSelectPoint = { if(liveActions){selectedArea=null;selectedLine=null;drawingEditor?.selectPoint(it);model?.selectPoint(it)} },
             onFinishPlacement = { model?.finishPlacement() }, onDeletePoint = { model?.requestPointDelete() },
             onRetryPoint = { model?.retryPoint() },
-            onOpenPosition = { if (model?.finishPlacement()!=false) onEdit?.invoke() },
-            onBeginPointDrag = { uuid -> data?.let { model?.beginPointDrag(uuid, it.updatedAt) } },
+            onOpenPosition = { if (liveActions && model?.finishPlacement()!=false) onEdit?.invoke() },
+            onBeginPointDrag = { uuid -> if(liveActions)data?.let { model?.beginPointDrag(uuid, it.updatedAt) } },
             onPreviewPointDrag = { x, y -> model?.previewPointDrag(x, y) },
             onFinishPointDrag = { model?.finishPointDrag() }, onCancelPointDrag = { model?.cancelPointDrag() },
-            onUndoPoint = { model?.undoPointMove() }, onRedoPoint = { model?.redoPointMove() })
+            onUndoPoint = { if(liveActions)model?.undoPointMove() }, onRedoPoint = { if(liveActions)model?.redoPointMove() })
         // Physical mounting input lives in the single co-editor, with the contour draft.
         if (points.confirmingDelete) AlertDialog(onDismissRequest = { model?.cancelPointDelete() },
             title = { Text("Видалити позначку?") }, text = { Text("Прибрати одну позначку «${pointElement?.label.orEmpty()}»? Заявлена кількість залишиться.") },
@@ -105,6 +115,7 @@ fun MeasurementDetailsScreen(
     onBack: () -> Unit, onEdit: (() -> Unit)? = null,
     navigationGuard: MeasurementCreateNavigationGuard? = null, backLabel: String = "До об'єкта",
     elementsContent: @Composable () -> Unit = {},
+    drawingEditor:MeasurementEditModel?=null,drawingEnabled:Boolean=true,
     areaFeatures: List<AreaFeature> = emptyList(),selectedAreaUuid:String?=null,onSelectArea:(String)->Unit={},
     linePlacements: List<LinePlacement> = emptyList(),selectedLineUuid:String?=null,onSelectLine:(String)->Unit={},
     pointState: PointPlacementState = PointPlacementState(), pointElement: MeasurementElement? = null,
@@ -114,6 +125,15 @@ fun MeasurementDetailsScreen(
     onPreviewPointDrag: (Double, Double) -> Unit = { _, _ -> }, onFinishPointDrag: () -> Unit = {},
     onCancelPointDrag: () -> Unit = {}, onUndoPoint: () -> Unit = {}, onRedoPoint: () -> Unit = {}
 ) {
+    val drawingState=drawingEditor?.state?.collectAsState()?.value
+    val canDrag=drawingEnabled && drawingState?.let {!it.saving && !it.checking && !it.saved && !it.uncertain && !it.conflict && !it.exitRequested}==true
+    DisposableEffect(drawingEditor,navigationGuard) {
+        drawingEditor?.let {navigationGuard?.bindEdit(it)}
+        onDispose {
+            drawingEditor?.let {it.cancelLineDrag();it.cancelAreaDrag();navigationGuard?.unbindEdit(it)}
+        }
+    }
+    drawingEditor?.let {DetailsDrawingExitDialog(it)}
     var fullscreen by rememberSaveable { mutableStateOf(navigationGuard?.fullscreen?.value == true) }
     var selectedSide by rememberSaveable { mutableStateOf<Int?>(null) }
     val surfaceBack = remember { { if (fullscreen) { fullscreen = false; true } else false } }
@@ -132,20 +152,20 @@ fun MeasurementDetailsScreen(
     val end = contentPadding.calculateEndPadding(direction)
     val controls: @Composable () -> Unit = {
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            TextButton(enabled = !pointState.saving, onClick = { onFinishPlacement(); fullscreen = !fullscreen }) { Text(if (fullscreen) "Згорнути" else "На весь екран") }
+            TextButton(enabled = !pointState.saving && drawingState?.saving!=true && drawingState?.checking!=true, onClick = { drawingEditor?.cancelLineDrag();drawingEditor?.cancelAreaDrag();onFinishPlacement(); fullscreen = !fullscreen }) { Text(if (fullscreen) "Згорнути" else "На весь екран") }
             if (onEdit != null && data?.geometry is MeasurementGeometryView.Captured)
-                Button(onClick = onEdit) { Text("Редагувати") }
+                Button(enabled=drawingState?.saving!=true && drawingState?.checking!=true,onClick = {drawingEditor?.requestExit(onEdit) ?: onEdit()}) { Text("Редагувати") }
         }
     }
     if (fullscreen && data != null) {
         Column(Modifier.fillMaxSize().padding(start = start, end = end,
             bottom = contentPadding.calculateBottomPadding(), top = systemTopInset + 8.dp)) {
             controls()
-            if (pointState.points.isNotEmpty()) Text("Позначки у fullscreen лише для перегляду. Положення змінюйте у звичайних деталях заміру.")
+            if (pointState.points.isNotEmpty() || linePlacements.isNotEmpty() || areaFeatures.isNotEmpty()) Text("Позначки у fullscreen лише для перегляду. Положення змінюйте у звичайних деталях заміру.")
             Box(Modifier.weight(1f)) {
                 MeasurementDrawing(data.geometry, Modifier.fillMaxSize(), interactive = true,
                     selectedSide = selectedSide, onSelectSide = { selectedSide = it }, fullscreen = true,
-                    areaFeatures=areaFeatures,selectedAreaUuid=selectedAreaUuid,onSelectArea=onSelectArea,pointPlacements = pointState.points,linePlacements=linePlacements,selectedLineUuid=selectedLineUuid,onSelectLine=onSelectLine)
+                    areaFeatures=drawingEditor?.displayAreas() ?: areaFeatures,selectedAreaUuid=selectedAreaUuid,onSelectArea=onSelectArea,pointPlacements = pointState.points,linePlacements=drawingEditor?.displayLines() ?: linePlacements,selectedLineUuid=selectedLineUuid,onSelectLine=onSelectLine)
             }
             val contour = remember(data.geometry) { measurementDrawingContour(data.geometry) }
             contour?.let {
@@ -165,7 +185,7 @@ fun MeasurementDetailsScreen(
         pinned = {
             Row(Modifier.fillMaxWidth().padding(start = start, end = end),
                 verticalAlignment = Alignment.CenterVertically) {
-                CeilingsFab(onClick = onBack, actionLabel = backLabel, profile = CeilingsFabProfile.COMPACT) {
+                CeilingsFab(onClick = {drawingEditor?.requestExit(onBack) ?: onBack()}, actionLabel = backLabel, profile = CeilingsFabProfile.COMPACT) {
                     Icon(Icons.Default.ArrowBack, contentDescription = null)
                 }
                 Column(Modifier.weight(1f).padding(start = 8.dp)) {
@@ -209,8 +229,12 @@ fun MeasurementDetailsScreen(
                             }
                         }
                         val reviewCount=pointState.points.count { it.mounting.needsReview }+linePlacements.count {it.needsReview}
-                        areaFeatures.forEach {area -> FilterChip(area.uuid==selectedAreaUuid,onClick={onSelectArea(area.uuid)},label={Text(areaDescription(area))});if(area.note.isNotBlank())Text(area.note)}
+                        (drawingEditor?.displayAreas() ?: areaFeatures).forEach {area -> FilterChip(area.uuid==selectedAreaUuid,onClick={onSelectArea(area.uuid)},label={Text(areaDescription(area))});if(area.note.isNotBlank())Text(area.note)}
                         if(areaFeatures.isNotEmpty())Text("Площинні позначки не віднімаються від площі стелі; перекриття не об’єднуються.")
+                        (drawingEditor?.displayLines() ?: linePlacements).forEachIndexed {i,line ->
+                            FilterChip(line.uuid==selectedLineUuid,onClick={onSelectLine(line.uuid)},enabled=canDrag,
+                                label={Text("Сегмент ${i+1}: ${formatElementMilli(line.lengthMm)} м")})
+                        }
                         if(linePlacements.isNotEmpty())Text("Ліній: ${linePlacements.size} · Потребує уточнення: ${linePlacements.count {it.unresolved}}")
                         if(reviewCount>0) {
                             Text("Розміщення потребує перевірки після зміни контуру або прив'язок.")
@@ -246,11 +270,20 @@ fun MeasurementDetailsScreen(
                         }
                         if (pointState.undo != null || pointState.redo != null)
                             Text("Історія переміщень діє лише доки відкрита ця стеля.", style = MaterialTheme.typography.bodySmall)
+                        drawingEditor?.let {DetailsDrawingControls(it,drawingEnabled)}
                         MeasurementDrawing(row.geometry, Modifier.fillMaxWidth(), interactive = true,
                             selectedSide = selectedSide, onSelectSide = { selectedSide = it },
-                            areaFeatures=areaFeatures,selectedAreaUuid=selectedAreaUuid,onSelectArea=onSelectArea,linePlacements=linePlacements,selectedLineUuid=selectedLineUuid,onSelectLine=onSelectLine,pointPlacements = pointState.points, fitPointPlacements = true, selectedPointUuid = pointState.selectedPointUuid,
+                            areaFeatures=drawingEditor?.displayAreas() ?: areaFeatures,selectedAreaUuid=selectedAreaUuid,onSelectArea=onSelectArea,
+                            areaEditingEnabled=canDrag,areaDrag=drawingState?.area?.drag,
+                            onBeginAreaDrag={drawingEditor?.beginAreaDrag(it)},onPreviewAreaDrag={x,y->drawingEditor?.previewAreaDrag(x,y)},
+                            onFinishAreaDrag={drawingEditor?.finishAreaDrag()},onCancelAreaDrag={drawingEditor?.cancelAreaDrag()},
+                            linePlacements=drawingEditor?.displayLines() ?: linePlacements,selectedLineUuid=selectedLineUuid,onSelectLine=onSelectLine,
+                            lineEditingEnabled=canDrag,lineDrag=drawingState?.lineDrag,
+                            onBeginLineDrag={drawingEditor?.beginLineDrag(it)},onPreviewLineDrag={x,y->drawingEditor?.previewLineDrag(x,y)},
+                            onFinishLineDrag={drawingEditor?.finishLineDrag()},onCancelLineDrag={drawingEditor?.cancelLineDrag()},
+                            pointPlacements = pointState.points, fitPointPlacements = true, selectedPointUuid = pointState.selectedPointUuid,
                             placementMode = pointState.modeElementUuid != null, onPlacePoint = onPlacePoint, onSelectPoint = onSelectPoint,
-                            pointEditingEnabled = !pointState.saving && pointState.retry == null && pointState.positionEditor == null,
+                            pointEditingEnabled = drawingState?.dirty!=true && drawingState?.saving!=true && drawingState?.uncertain!=true && !pointState.saving && pointState.retry == null && pointState.positionEditor == null,
                             pointDrag = pointState.drag, onBeginPointDrag = onBeginPointDrag,
                             onPreviewPointDrag = onPreviewPointDrag, onFinishPointDrag = onFinishPointDrag, onCancelPointDrag = onCancelPointDrag)
                         val contour = remember(row.geometry) { measurementDrawingContour(row.geometry) }

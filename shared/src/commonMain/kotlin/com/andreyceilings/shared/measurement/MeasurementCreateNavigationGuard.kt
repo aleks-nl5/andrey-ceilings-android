@@ -48,8 +48,8 @@ class MeasurementCreateNavigationGuard {
     fun blocksExit(current: AppNavigationState): Boolean {
         if (elements?.editor?.value?.saving == true || elements?.points?.value?.saving == true) return true
         val editState = edit?.state?.value
-        if (editState != null && current.measurementEdit?.measurementId == editState.original.measurementId &&
-            current.measurementEdit.projectId == editState.draft.projectId) return editState.saving || editState.checking || editState.saved
+        if (editState != null && (current.measurementEdit?.measurementId == editState.original.measurementId && current.measurementEdit.projectId == editState.draft.projectId ||
+            current.measurementDetails?.measurementId == editState.original.measurementId && current.measurementDetails.projectId == editState.draft.projectId)) return editState.saving || editState.checking || editState.saved
         val state = editor?.state?.value ?: return false
         return current.measurementCreate?.projectId == state.draft.projectId &&
             (state.saving || state.savedId != null)
@@ -97,10 +97,10 @@ class MeasurementCreateNavigationGuard {
             return current
         }
         val editModel = edit
-        editModel?.cancelPointDrag(); editModel?.cancelLineDrag()
+        editModel?.cancelPointDrag(); editModel?.cancelLineDrag(); editModel?.cancelAreaDrag()
         val editState = editModel?.state?.value
-        if (editState != null && current.measurementEdit?.measurementId == editState.original.measurementId &&
-            current.measurementEdit.projectId == editState.draft.projectId) {
+        if (editState != null && (current.measurementEdit?.measurementId == editState.original.measurementId && current.measurementEdit.projectId == editState.draft.projectId ||
+            current.measurementDetails?.measurementId == editState.original.measurementId && current.measurementDetails.projectId == editState.draft.projectId)) {
             if (editState.saving || editState.checking || editState.saved) return current
         }
         if (!blocksExit(current)) {

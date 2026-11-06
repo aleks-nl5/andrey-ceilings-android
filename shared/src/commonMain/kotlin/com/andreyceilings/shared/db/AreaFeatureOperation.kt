@@ -16,6 +16,9 @@ internal fun prepareAreaTargets(original: MeasurementEditDocument, geometry: Fro
         require(base.updatedAt<Long.MAX_VALUE)
         if(old!=null)require(edit==null || edit.value.elementUuid==old.elementUuid)
         val preview=previewArea(base,geometry,walls,changed,edit)
+        require(changed || edit==null || edit.value.deletedAt!=null || old==null || old.unresolved || !preview.unresolved) {
+            "Недопустима ручна зміна площинного об’єкта. Попередні дані не змінено."
+        }
         if(old==null)require(areaStrictlyInside(geometry,preview.shape) && !preview.unresolved && preview.deletedAt==null)
         if(old!=null && preview==old && !changed && edit?.confirm!=true && edit?.defer!=true) old else {
             val version=if(old==null)now else maxOf(old.updatedAt+1,now)

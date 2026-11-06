@@ -6,6 +6,7 @@ plugins {
 
 kotlin {
     jvmToolchain(21)
+    sourceSets.getByName("test").kotlin.srcDir("../shared/src/testFixtures/kotlin")
 }
 
 dependencies {
