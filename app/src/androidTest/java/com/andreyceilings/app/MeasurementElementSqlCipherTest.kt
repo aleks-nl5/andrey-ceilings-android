@@ -38,6 +38,7 @@ class MeasurementElementSqlCipherTest {
                     } else createEncryptedPrototypeDriver(context, key, name,
                         enableWalForTesting = true, initializePriceCatalog = true).use { driver ->
                         assertEquals("wal", MeasurementElementMigrationProof.rows(driver, "PRAGMA journal_mode", 1).single().single())
+                        LivePricingProof.run(driver)
                         MeasurementElementsPresentationProof.run(PrototypeDatabase(driver))
                         MeasurementElementProof.run(driver)
                         MeasurementElementProof.atomicParentDelete(driver)

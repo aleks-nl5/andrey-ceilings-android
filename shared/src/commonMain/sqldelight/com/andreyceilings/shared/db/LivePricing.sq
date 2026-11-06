@@ -1,0 +1,14 @@
+-- P4A contains SELECTs only. No schema, initialization, lock-claim UPDATE or estimate writer.
+selectActiveCatalog:
+SELECT i.*, g.updatedAt AS groupUpdatedAt
+FROM price_items i JOIN price_groups g ON g.uuid = i.groupUuid
+WHERE i.deletedAt IS NULL AND g.deletedAt IS NULL ORDER BY i.uuid;
+
+selectPricingWalls:
+SELECT * FROM ceiling_walls WHERE measurementUuid = ? ORDER BY uuid;
+
+selectPricingReceipts:
+SELECT o.uuid, o.expectedUpdatedAt, o.payload, o.createdAt,
+ r.measurementVersion, r.pointVersions, r.elementVersions, r.lineVersions, r.areaVersions
+FROM ceiling_operations o LEFT JOIN ceiling_operation_results r ON r.operationUuid = o.uuid
+WHERE o.measurementUuid = ? ORDER BY o.uuid;

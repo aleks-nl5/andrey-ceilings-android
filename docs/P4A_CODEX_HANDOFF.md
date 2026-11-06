@@ -1,6 +1,6 @@
 # P4A — Codex implementation handoff
 
-**Status:** starter checklist for feature branch `feat/p4a-kmp-live-pricing`; **implementation not started**. One Draft PR for the entire P4A phase, linked to [issue #104](https://github.com/aleks-nl5/andrey-ceilings-android/issues/104) and parent [#44](https://github.com/aleks-nl5/andrey-ceilings-android/issues/44). This file is an entry point; the complete, precedence-setting contract is [LIVE_ESTIMATE_P4A.md](LIVE_ESTIMATE_P4A.md) (merged to `main` via PR #105), plus `AGENTS.md` and `docs/PROJECT_ROADMAP.md`.
+**Status:** implementation in existing feature branch `feat/p4a-kmp-live-pricing` / Draft PR #107; see [implementation notes](P4A_IMPLEMENTATION.md). CI/review/owner acceptance remain separate gates. One Draft PR for the entire P4A phase, linked to [issue #104](https://github.com/aleks-nl5/andrey-ceilings-android/issues/104) and parent [#44](https://github.com/aleks-nl5/andrey-ceilings-android/issues/44). This file is an entry point; the complete, precedence-setting contract is [LIVE_ESTIMATE_P4A.md](LIVE_ESTIMATE_P4A.md) (merged to `main` via PR #105), plus `AGENTS.md` and `docs/PROJECT_ROADMAP.md`.
 
 ## Goal
 
@@ -15,6 +15,16 @@ Implement a **deterministic read-only KMP live-pricing engine** in shared/common
 - Unit and DB regression tests for measurement elements, point/line/area placements, catalog, immutable estimates, Android physical SQLCipher and desktop/iOS verification.
 
 **Important known limitation:** `MeasurementElement` **does not yet persist a business role** distinguishing primary canvas, primary profile and additional work. Do not infer primary role from code, label, catalog group, position or quantity mode. P4A must model an *explicit, typed and verified classification* in pure inputs and issue a typed unresolved/error when trustworthy classification is unavailable; do not silently claim database-enforced 0..1 role uniqueness. Persistence of that role and its UI belong to a later authorized phase, **not** a v15 migration here.
+
+## Implemented entry points
+
+- `livepricing/LivePricingModel.kt`, `PricingMath.kt`, `LivePricingEngine.kt`: all-element pricing, typed roles, exact quantities/cents, confirmed/potential, local unresolved vs fatal, source/catalog/scope-bound overrides.
+- `livepricing/ProjectPricing.kt`: explicit ordered live/frozen revision selection, omissions, typed origin refs, overlap checks, project-wide works once, content fingerprint/readiness.
+- `livepricing/LivePricingReader.kt` + `db/LivePricing.sq`: one fresh read transaction, child/receipt/catalog versions, expected-token recheck, no write/initialization. End a reader session with `closeReads()` before DB replacement.
+- `livepricing/LivePricingDraftAdapter.kt`: validated stable `MeasurementEditModel` against an explicit coherent source basis; no Save.
+- `commonTest/livepricing/`, `commonTest/db/LivePricingProof.kt`, `jvmTest/db/LivePricingReaderTest.kt`: pure cases and shared physical proof wired into Android/Windows/iOS suites, plus concurrent WAL snapshot test on JDBC/Windows.
+
+The v14 history adapter refuses unverifiable leaf coverage with `PROVENANCE_MISSING`; it does not claim old revisions are supported merely because they have a measurement UUID. Fine captured areas that cannot be represented exactly in integer milli remain `QUANTITY_PRECISION`, without rounding the geometry. Full validation/CI results are recorded in PR #107, not assumed by this checklist.
 
 ## Implementation sequence
 

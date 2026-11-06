@@ -16,6 +16,7 @@ class MeasurementElementIosCipherTest {
                 else {
                     val driver = factory.create(IosPriceCatalogSchema, config)
                     try {
+                        LivePricingProof.run(driver)
                         MeasurementElementsPresentationProof.run(PrototypeDatabase(driver))
                         MeasurementElementProof.run(driver)
                         MeasurementElementProof.atomicParentDelete(driver)

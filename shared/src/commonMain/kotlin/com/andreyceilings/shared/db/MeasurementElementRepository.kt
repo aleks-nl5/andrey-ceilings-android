@@ -18,6 +18,10 @@ class MeasurementElementRepository(private val database: PrototypeDatabase) {
     fun all(): List<MeasurementElement> = access { queries.selectAll().executeAsList().map { it.model() } }
     fun active(): List<MeasurementElement> = access { queries.selectActive().executeAsList().map { it.model() } }
     fun tombstones(): List<MeasurementElement> = access { queries.selectTombstones(::Measurement_element_records).executeAsList().map { it.model() } }
+    /** Synchronous projection for callers already inside a coherent SQLDelight transaction. */
+    fun forMeasurement(measurementUuid: String): List<MeasurementElement> = access {
+        queries.selectForMeasurement(measurementUuid).executeAsList().map { it.model() }
+    }
     fun find(uuid: String): MeasurementElement? = access { read(uuid) }
     fun observeForMeasurement(measurementUuid: String): Flow<List<MeasurementElement>> =
         queries.selectForMeasurement(measurementUuid).asFlow().mapToList(Dispatchers.Default)
