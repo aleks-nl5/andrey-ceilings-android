@@ -1,6 +1,7 @@
 package com.andreyceilings.app
 
 import android.content.Context
+import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.material3.Text
@@ -10,11 +11,9 @@ import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.*
-import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.unit.dp
 import androidx.test.core.app.ApplicationProvider
-import androidx.test.platform.app.InstrumentationRegistry
-import android.view.KeyEvent
 import com.andreyceilings.shared.db.*
 import com.andreyceilings.shared.measurement.*
 import com.andreyceilings.shared.navigation.*
@@ -28,9 +27,9 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.test.*
 
-/** Actual Details route, physical Canvas drag, system Back and physical dialog buttons. */
+/** Actual Details route, physical Canvas drag, Activity Back dispatcher and physical dialog buttons. */
 class DetailsSaveExitTouchTest {
-    @get:Rule val compose=createComposeRule()
+    @get:Rule val compose=createAndroidComposeRule<ComponentActivity>()
     @Test fun backSaveWaitsForCommitAndNavigatesOnce()=scenario("back")
     @Test fun editSaveKeepsTheRequestedRoute()=scenario("edit")
     @Test fun rollbackKeepsDialogAndDraftUntilRetry()=scenario("rollback")
@@ -47,6 +46,7 @@ class DetailsSaveExitTouchTest {
         val initial=AppNavigationState().selectTab(AppRoute.MEASUREMENTS).openMeasurement(f.project,f.id)
         val guard=MeasurementCreateNavigationGuard();var nav by mutableStateOf(initial)
         val calls=AtomicInteger();val expectSaved=AtomicBoolean(mode!="conflict")
+        val backs=AtomicInteger()
         val started=AtomicBoolean();val release=CountDownLatch(1)
         fun apply(next:AppNavigationState) {
             if(next==nav)return
@@ -62,7 +62,7 @@ class DetailsSaveExitTouchTest {
             if(accepted!=current)apply(accepted)
         }
         compose.setContent {CeilingsTheme(mode=="edit" || mode=="uncertain") {
-            BackHandler(nav.measurementDetails!=null) {navigate(nav.back())}
+            BackHandler(nav.measurementDetails!=null) {backs.incrementAndGet();navigate(nav.back())}
             if(nav.measurementDetails!=null)MeasurementDetailsScreen(f.project,f.id,details,PaddingValues(0.dp),0.dp,
                 onBack={navigate(nav.back())},onEdit={navigate(nav.editMeasurement(f.project,f.id))},navigationGuard=guard,editStore=store)
             else Text(if(nav.measurementEdit!=null)"Edit destination" else "Back destination")
@@ -83,11 +83,22 @@ class DetailsSaveExitTouchTest {
         }
         fun dialog(label:String)=compose.onNode(hasText(label) and hasClickAction() and hasAnyAncestor(isDialog()))
         fun awaitDialog()=compose.waitUntil(15000){compose.onAllNodesWithText("Незбережені зміни креслення").fetchSemanticsNodes().isNotEmpty()}
+        fun back() {
+            // Drive Android's registered Back callbacks, including the host navigation
+            // guard. Raw KEYCODE_BACK isn't reliably delivered to this test Activity.
+            val before=backs.get()
+            compose.runOnUiThread {compose.activity.onBackPressedDispatcher.onBackPressed()}
+            compose.waitForIdle()
+            assertEquals(before+1,backs.get(),"The Activity Back callback must run")
+        }
         try {
             compose.waitUntil(15000) {compose.onAllNodes(hasText("Сегмент 1: 1 м") and hasClickAction()).fetchSemanticsNodes().any {it.config.getOrNull(SemanticsProperties.Disabled)==null}}
             val x=1000L;val y=if(mode=="edit")950L else 1500L
             val start=position(x,y);canvas().performTouchInput {click(start)}
             val a=position(x,y);val b=position(x+300,y+200);canvas().performTouchInput {swipe(a,b,500)}
+            val undo=hasText("Скасувати дію") and hasClickAction()
+            compose.onNode(hasScrollToIndexAction()).performScrollToNode(undo)
+            compose.onNode(undo).assertIsEnabled()
             val before=OverlayDragFixture.snapshot(raw)
             if(mode=="conflict") {
                 store.update(original,original.draft.copy(notes="Concurrent writer"),now=150)
@@ -99,13 +110,13 @@ class DetailsSaveExitTouchTest {
                 "uncertain"->fault.failNext(DetailsExitFaultDriver.Fault.LOST_RESPONSE)
                 "back"->fault.afterInsert={started.set(true);check(release.await(15,TimeUnit.SECONDS))}
             }
-            if(mode=="edit")openEdit() else InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
+            if(mode=="edit")openEdit() else back()
             awaitDialog();dialog("Зберегти креслення").assertIsEnabled().performClick()
             when(mode) {
                 "back"->{
                     compose.waitUntil(15000){started.get()}
                     assertEquals(0,calls.get());assertEquals(initial,nav);assertTrue(guard.blocksExit(nav))
-                    InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
+                    back()
                     assertEquals(0,calls.get());assertEquals(initial,nav)
                     release.countDown()
                 }
@@ -127,7 +138,7 @@ class DetailsSaveExitTouchTest {
                     dialog("Зберегти креслення").assertIsNotEnabled()
                     assertEquals(expectedDb,OverlayDragFixture.snapshot(raw))
                     dialog("Продовжити").performClick();compose.waitForIdle()
-                    InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(KeyEvent.KEYCODE_BACK);awaitDialog();dialog("Відхилити зміни").performClick()
+                    back();awaitDialog();dialog("Відхилити зміни").performClick()
                 }
             }
             compose.waitUntil(15000){calls.get()==1};compose.waitForIdle()
