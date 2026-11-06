@@ -134,7 +134,9 @@ class MeasurementEditSceneTest {
         }
         try {
             image.render().close()
+            image.reveal {it.config.getOrNull(SemanticsActions.OnClick)!=null && it.textTree().contains("Усі розміри")}
             image.click("Усі розміри"); image.frame()
+            image.reveal {it.config.getOrNull(SemanticsProperties.EditableText)?.text=="5"}
             val field = image.nodes().first {
                 it.config.getOrNull(SemanticsProperties.EditableText)?.text == "5"
             }
@@ -164,6 +166,16 @@ class MeasurementEditSceneTest {
     }
     private fun SemanticsNode.textTree(): String = config.getOrNull(SemanticsProperties.Text).orEmpty().joinToString { it.text } + children.joinToString { it.textTree() }
     private fun ImageComposeScene.text() = semanticsOwners.joinToString { it.rootSemanticsNode.textTree() }
+    private fun ImageComposeScene.reveal(predicate:(SemanticsNode)->Boolean) {
+        repeat(30) {
+            frame()
+            if(nodes().any(predicate))return
+            val scroll=nodes().firstOrNull {it.config.getOrNull(SemanticsActions.ScrollBy)!=null}
+            assertTrue(scroll?.config?.getOrNull(SemanticsActions.ScrollBy)?.action?.invoke(0f,160f)==true,"Editor must remain scrollable")
+            repeat(4){frame();Thread.sleep(10)}
+        }
+        fail("Editor control did not become available by scrolling")
+    }
     private fun ImageComposeScene.click(label: String) {
         val node = nodes().first { it.config.getOrNull(SemanticsActions.OnClick) != null && it.textTree().contains(label) }
         assertTrue(node.config.getOrNull(SemanticsActions.OnClick)?.action?.invoke() == true)

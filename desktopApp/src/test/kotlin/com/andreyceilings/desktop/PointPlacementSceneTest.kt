@@ -32,6 +32,7 @@ class PointPlacementSceneTest {
             val spot = PriceRepository(db).all().single { it.code == "light.spot" }
             val element = MeasurementElementRepository(db).createCatalogSelection(row.uuid, spot.uuid, ElementQuantity.Exact(6000), 3)
             val details = MeasurementDetailsStore(db, { 4 }, Dispatchers.Unconfined)
+            val edit=MeasurementEditStore(db){20}
             val model = details.elements.model(ElementRoute(project, measurement, row.uuid))
             val guard = MeasurementCreateNavigationGuard()
             val nav = AppNavigationState().selectTab(AppRoute.OBJECTS).openProject(project).openMeasurement(project, measurement)
@@ -40,16 +41,18 @@ class PointPlacementSceneTest {
             val scene = ImageComposeScene(700, 1800) {
                 CeilingsTheme(dark) {
                     MeasurementDetailsScreen(project, measurement, details, androidx.compose.foundation.layout.PaddingValues(),
-                        androidx.compose.ui.unit.Dp(0f), {}, navigationGuard = guard)
+                        androidx.compose.ui.unit.Dp(0f), {}, navigationGuard = guard,editStore=edit)
                 }
             }
             suspend fun count(n: Int) {
                 withTimeout(10_000) { model.points.first { !it.saving && it.points.size == n } }
                 withTimeout(10_000) { model.state.first { it is MeasurementElementsState.Loaded && it.items.single().placedQuantityMilli == n * 1000L } }
                 scene.frame()
+                withTimeout(10000){while(scene.canvas().config.getOrNull(MeasurementDrawingSemantics.Points).orEmpty().size!=n){scene.frame();delay(20)}}
             }
             try {
                 scene.awaitText("Розміщено: 0 з 6")
+                withTimeout(15000){while(scene.canvas().config.getOrNull(MeasurementDrawingSemantics.EditingEnabled)!=true){scene.frame();delay(20)}}
                 scene.click("Розмістити"); scene.awaitText("Приблизне розміщення")
                 scene.tapWorld(row, 0, 1000)
                 scene.awaitText("Торкніться всередині контуру")
@@ -60,8 +63,8 @@ class PointPlacementSceneTest {
                 scene.awaitText("Розміщено: 2 з 6")
                 // Enlarged marker hit target selects the existing record; it cannot add a third.
                 scene.tapWorld(row, first.xMm, first.yMm, dx = 12f)
-                assertEquals(first.uuid, model.points.value.selectedPointUuid)
-                assertEquals(element.uuid, model.points.value.selectedElementUuid)
+                assertEquals(first.uuid,scene.canvas().config.getOrNull(MeasurementDrawingSemantics.SelectedPoint))
+                assertEquals(element.uuid,scene.canvas().config[MeasurementDrawingSemantics.Points].first {it.uuid==first.uuid}.elementUuid)
                 assertEquals(2, model.points.value.points.size)
                 scene.click("Видалити позначку"); scene.awaitText("Видалити позначку?")
                 scene.click("Скасувати"); assertEquals(2, model.points.value.points.size)
@@ -77,7 +80,7 @@ class PointPlacementSceneTest {
                 scene.sendPointerEvent(PointerEventType.Release, start + Offset(70f, 50f), type = PointerType.Touch)
                 scene.frame(); delay(100); assertEquals(1, model.points.value.points.size, "Pan must not place")
                 scene.click("Вписати креслення")
-                assertEquals(nav, guard.transition(nav, nav.back()))
+                assertEquals(nav.back(), guard.transition(nav, nav.back()))
                 assertNull(model.points.value.modeElementUuid)
                 scene.click("На весь екран"); scene.frame()
                 assertTrue(guard.fullscreen.value)
@@ -87,7 +90,7 @@ class PointPlacementSceneTest {
                 scene.awaitText("Розміщено: 1 з 6")
                 assertEquals(row.drawingJson, MeasurementRepository(db).find(measurement)!!.drawingJson)
                 assertEquals(1, PointPlacementRepository(db).forMeasurement(row.uuid).size)
-            } finally { scene.close(); details.elements.closeAndAwaitWrites(); driver.close(); directory.deleteRecursively() }
+            } finally { scene.close(); details.elements.closeAndAwaitWrites();edit.closeAndAwaitPointReads(); driver.close(); directory.deleteRecursively() }
         }
     }
 

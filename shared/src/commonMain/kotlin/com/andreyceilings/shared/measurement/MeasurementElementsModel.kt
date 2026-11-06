@@ -82,6 +82,8 @@ class MeasurementElementsModel internal constructor(private val store: Measureme
     val points = mutablePoints.asStateFlow()
     private val mutableLines=MutableStateFlow<List<LinePlacement>>(emptyList())
     val lines=mutableLines.asStateFlow()
+    private val mutableAreas=MutableStateFlow<List<AreaFeature>>(emptyList())
+    val areas=mutableAreas.asStateFlow()
     private val committedPoints = MutableStateFlow<Map<String, PointPlacement>>(emptyMap())
     private fun updatePoints(change: (PointPlacementState) -> PointPlacementState) {
         mutablePoints.update { if (closed) PointPlacementState() else change(it) }
@@ -98,6 +100,7 @@ class MeasurementElementsModel internal constructor(private val store: Measureme
         set(value) { mutableEditor.update { if (closed) null else value } }
     init {
         retry(); refreshCatalog()
+        scope.launch {store.observeAreas(route).catch {emit(emptyList())}.collect {mutableAreas.value=if(closed)emptyList() else it}}
         scope.launch {store.observeLines(route).catch {emit(emptyList())}.collect {mutableLines.value=if(closed)emptyList() else it}}
         scope.launch {
             store.observePoints(route).catch { failure ->

@@ -90,6 +90,11 @@ class MeasurementElementRepository(private val database: PrototypeDatabase) {
             val reserved=LinePlacementRepository(database).forMeasurement(current.measurementUuid).filter {it.elementUuid==current.uuid}.sumOf {it.lengthMm}
             val cap=when(quantity) {is ElementQuantity.Exact->quantity.milli; is ElementQuantity.Range->quantity.maxMilli; else->null}
             if(cap!=null && reserved>cap) throw MeasurementElementFailure.PlacementsInUse()
+        } else if (current.supportsAreaPlacement()) {
+            val reserved=areaQuantityMilli(AreaFeatureRepository(database).forMeasurement(current.measurementUuid)
+                .filter {it.elementUuid==current.uuid},checkNotNull(current.unit),includeUnresolved=true)
+            val cap=when(quantity) {is ElementQuantity.Exact->quantity.milli; is ElementQuantity.Range->quantity.maxMilli; else->null}
+            if(cap!=null && reserved>cap)throw MeasurementElementFailure.PlacementsInUse()
         } else if (current.placedQuantityMilli > 0 &&
             (quantity !is ElementQuantity.Exact || quantity.milli < current.placedQuantityMilli))
             throw MeasurementElementFailure.PlacementsInUse()

@@ -76,6 +76,7 @@ fun WallAnchorEditor(model: MeasurementEditModel) {
                 label={Text(if(input.kind==WallAnchor.Kind.TWO_WALLS) "Від другої стіни, м" else "Відступ усередину, м")})
             if(solution==null) Text("Немає однозначної внутрішньої точки з проєкціями на обрані відрізки. Перевірте розміри, оберіть інші стіни або спосіб «Уздовж + усередину».",color=MaterialTheme.colorScheme.error)
             else Text("Фактично після округлення до мм: ${formatPointMetres(solution.firstActualMm.roundToLong())} м / ${formatPointMetres(solution.secondActualMm.roundToLong())} м. Похибка представлення не перевищує 1 мм.")
+            state.error?.let {Text(it,color=MaterialTheme.colorScheme.error)}
             Text("Застосування змінює тільки чернетку. Для запису всієї стелі натисніть «Зберегти».")
         }},confirmButton={TextButton(enabled=solution!=null,onClick=model::applyMounting){Text("Застосувати розміри")}},
         dismissButton={TextButton(onClick=model::dismissMounting){Text("Скасувати")}})

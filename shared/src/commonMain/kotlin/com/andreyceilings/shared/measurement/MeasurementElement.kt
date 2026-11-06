@@ -1,24 +1,39 @@
 package com.andreyceilings.shared.measurement
 
+import kotlinx.serialization.Serializable
 import com.andreyceilings.shared.prices.PlacementKind
 import com.andreyceilings.shared.prices.QuantityMode
 
 /** Working quantities in thousandths, independent of measurement precision and placements. */
+@Serializable
 sealed interface ElementQuantity {
+    @Serializable
     data object Unknown : ElementQuantity
+    @Serializable
     data class Exact(val milli: Long) : ElementQuantity
+    @Serializable
     data class Range(val minMilli: Long, val maxMilli: Long) : ElementQuantity
+    @Serializable
     data object CeilingArea : ElementQuantity
+    @Serializable
     data object CeilingPerimeter : ElementQuantity
 }
 
+@Serializable
+
 enum class ElementApproval(val value: String) { DISCUSSING("discussing"), APPROVED("approved") }
+@Serializable
 enum class ElementPlacement(val value: String) { UNPLACED("unplaced"), APPROXIMATE("approximate"), EXACT("exact") }
+@Serializable
 enum class CatalogAvailability { ACTIVE, DELETED_OR_MISSING }
 
+@Serializable
+
 sealed interface ElementSource {
+    @Serializable
     data object Wish : ElementSource
     /** Selection-time metadata. No sale price or automatic rebinding. */
+    @Serializable
     data class CatalogSelection(
         val priceItemUuid: String,
         val code: String,
@@ -28,14 +43,22 @@ sealed interface ElementSource {
     ) : ElementSource
 }
 
+@Serializable
+
 data class ElementVersion(val uuid: String, val measurementUuid: String, val expectedUpdatedAt: Long)
 
 /** Explicit edit intent; Clear persists SQL NULL and requires Unknown quantity. */
+@Serializable
 sealed interface WishUnitChange {
+    @Serializable
     data object Keep : WishUnitChange
+    @Serializable
     data class Set(val unit: String) : WishUnitChange
+    @Serializable
     data object Clear : WishUnitChange
 }
+
+@Serializable
 
 data class MeasurementElement(
     val uuid: String,
@@ -56,8 +79,11 @@ data class MeasurementElement(
 }
 
 /** Keep never converts incompatible units/bases; Replace is explicit caller correction. */
+@Serializable
 sealed interface LinkQuantity {
+    @Serializable
     data object Keep : LinkQuantity
+    @Serializable
     data class Replace(val quantity: ElementQuantity) : LinkQuantity
 }
 

@@ -100,6 +100,11 @@ class MeasurementElementsStore(private val database: PrototypeDatabase, private 
     }.onStart<MeasurementElementsState> { emit(MeasurementElementsState.Loading) }
         .catch { emit(MeasurementElementsState.Unavailable) }.flowOn(Dispatchers.Default)
 
+    internal fun observeAreas(route:ElementRoute) = combine(projects.observeById(route.projectId),measurements.observeById(route.measurementId),
+        AreaFeatureRepository(database).observeForMeasurement(route.measurementUuid)) {project,measurement,areas ->
+        if(project==null || measurement?.uuid!=route.measurementUuid || measurement.projectId!=route.projectId)emptyList() else areas
+    }.flowOn(Dispatchers.Default)
+
     internal fun observeLines(route:ElementRoute) = combine(projects.observeById(route.projectId),measurements.observeById(route.measurementId),
         LinePlacementRepository(database).observeForMeasurement(route.measurementUuid)) {project,measurement,lines ->
         if(project==null || measurement?.uuid!=route.measurementUuid || measurement.projectId!=route.projectId) emptyList() else lines

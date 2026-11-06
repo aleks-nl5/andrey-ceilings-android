@@ -29,12 +29,14 @@ class CeilingEditRepository(private val database: PrototypeDatabase) {
         if(expectedPoints!=actualPoints)return false
         val expectedLines=Json.parseToJsonElement(result.lineVersions).jsonObject.mapValues {it.value.jsonPrimitive.long}
         if(expectedLines!=LinePlacementRepository(database).forMeasurement(measurement).associate {it.uuid to it.updatedAt})return false
+        val expectedAreas=Json.parseToJsonElement(result.areaVersions).jsonObject.mapValues {it.value.jsonPrimitive.long}
+        if(expectedAreas!=AreaFeatureRepository(database).forMeasurement(measurement).associate {it.uuid to it.updatedAt})return false
         return Json.parseToJsonElement(result.elementVersions).jsonObject.all { (id,v) ->
             MeasurementElementRepository(database).find(id)?.let {it.deletedAt==null && it.updatedAt==v.jsonPrimitive.long}==true
         }
     }
     fun save(original: MeasurementEditDocument, draft: MeasurementCreateDraft, edits: Map<String,PointMountingEdit>,
-        operationUuid: String, wallToken: String, now: Long, lineEdits: Map<String,LinePlacementEdit> = emptyMap(), declaredLengths: Map<String,Long> = emptyMap()) {
+        operationUuid: String, wallToken: String, now: Long, lineEdits: Map<String,LinePlacementEdit> = emptyMap(), declaredLengths: Map<String,Long> = emptyMap(), areaEdits: Map<String,AreaFeatureEdit> = emptyMap(), declaredAreas: Map<String,Long> = emptyMap()) {
         require(now in 0 until Long.MAX_VALUE && operationUuid.isNotBlank())
         require(draft.projectId==original.draft.projectId && draft.recordUuid==original.draft.recordUuid && draft.precision==original.draft.precision)
         val validated = validateMeasurementCreate(draft); require(validated.canSave)
@@ -93,7 +95,15 @@ class CeilingEditRepository(private val database: PrototypeDatabase) {
         }
         require(declaredLengths.all { (id,length) -> length in 1..ElementQuantityRules.MAX_MILLI &&
             original.lineElements.any {it.uuid==id} && lineTargets.filter {it.elementUuid==id && it.deletedAt==null && !it.unresolved}.sumOf {it.lengthMm}==length })
-        val noChange = lineTargets==original.placements.lines && declaredLengths.isEmpty() && !changed && targets==original.placements.points && draft.name.trim()==original.draft.name.trim() && draft.notes.trim()==original.draft.notes.trim()
+        val areaTargets = prepareAreaTargets(original,geometry,walls,changed,areaEdits,now,drawing,oldDrawing)
+        original.areaElements.forEach {element ->
+            val capacity=declaredAreas[element.uuid] ?: element.lineCapacityMm()
+            require(capacity==null || areaQuantityMilli(areaTargets.filter {it.elementUuid==element.uuid},element.unit!!,true)<=capacity) {"Площа/кількість перевищує заявлену, включно з нерозв'язаними об'єктами."}
+        }
+        require(declaredAreas.all { (id,quantity) -> quantity in 1..ElementQuantityRules.MAX_MILLI && original.areaElements.any {
+            it.uuid==id && areaQuantityMilli(areaTargets.filter {a -> a.elementUuid==id},it.unit!!)==quantity
+        } })
+        val noChange = areaTargets==original.placements.areas && declaredAreas.isEmpty() && lineTargets==original.placements.lines && declaredLengths.isEmpty() && !changed && targets==original.placements.points && draft.name.trim()==original.draft.name.trim() && draft.notes.trim()==original.draft.notes.trim()
         val payload = buildJsonObject {
             put("name",draft.name.trim());put("notes",draft.notes.trim());put("shape",geometry.shapeType)
             put("drawingJson",drawing);put("oldDrawingJson",oldDrawing)
@@ -102,6 +112,8 @@ class CeilingEditRepository(private val database: PrototypeDatabase) {
             put("area",geometry.areaSquareMeters);put("perimeter",geometry.perimeterMeters)
             putJsonArray("walls") { walls.forEach { add(buildJsonObject { put("uuid",it.uuid) }) } }
             putJsonObject("declaredLengths") {declaredLengths.entries.sortedBy {it.key}.forEach { (id,length) ->put(id,length)}}
+            putJsonObject("declaredAreas") {declaredAreas.entries.sortedBy {it.key}.forEach { (id,quantity) ->put(id,quantity)}}
+            put("areas",areaOperationPayload(original,areaTargets,areaEdits))
             putJsonArray("lines") { lineTargets.forEach { line -> add(buildJsonObject {
                 val old=original.placements.lines.find {it.uuid==line.uuid}
                 put("uuid",line.uuid);put("elementUuid",line.elementUuid)
@@ -136,6 +148,7 @@ class CeilingEditRepository(private val database: PrototypeDatabase) {
             }
             if(live.uuid!=draft.recordUuid || live.projectId!=draft.projectId || live.updatedAt!=original.updatedAt ||
                 ProjectRepository(database).find(draft.projectId)==null) throw MeasurementEditConflict()
+            if(AreaFeatureRepository(database).forMeasurement(live.uuid)!=original.placements.areas) throw MeasurementEditConflict()
             if(LinePlacementRepository(database).forMeasurement(live.uuid)!=original.placements.lines) throw MeasurementEditConflict()
             if(PointPlacementRepository(database).forMeasurement(live.uuid)!=original.placements.points) throw MeasurementEditConflict()
             original.placements.elements.forEach { (uuid,version) ->

@@ -45,7 +45,7 @@ fun MeasurementsScreen(
     navigation.measurementDetails?.let { route ->
         MeasurementDetailsScreen(route.projectId, route.measurementId, detailsStore, contentPadding, systemTopInset,
             onBack = back, onEdit = { onNavigate(navigation.editMeasurement(route.projectId, route.measurementId)) },
-            navigationGuard = navigationGuard, backLabel = "До замірів")
+            navigationGuard = navigationGuard, backLabel = "До замірів", editStore=editStore)
         return
     }
     key(store) {

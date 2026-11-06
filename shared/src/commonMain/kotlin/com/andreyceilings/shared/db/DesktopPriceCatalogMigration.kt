@@ -56,7 +56,11 @@ fun openDesktopPriceCatalog(driver: SqlDriver, previouslyExisting: Boolean) {
                             check(("precision" in pointColumns) == ("lastMoveUuid" in pointColumns)) { "Partial point position schema" }
                             check(("mountingJson" in pointColumns) == ("lastCeilingEditUuid" in pointColumns)) { "Partial mounting schema" }
                             val detected = if ("mountingJson" in pointColumns) {
-                                if("lineVersions" in columns("ceiling_operation_results") || columns("line_placements").isNotEmpty()) 12L
+                                if("areaVersions" in columns("ceiling_operation_results") || columns("area_features").isNotEmpty()) {
+                                    val guarded=driver.executeQuery(null,"SELECT count(*) FROM sqlite_master WHERE name='ceiling_result_insert_guard'",{c ->c.next();QueryResult.Value(c.getLong(0))},0).value
+                                    if(guarded==1L)14L else 13L
+                                }
+                                else if("lineVersions" in columns("ceiling_operation_results") || columns("line_placements").isNotEmpty()) 12L
                                 else if(runCatching { verifyPointPlacementStructure(driver,11L) }.isSuccess) 11L else 10L
                             } else if ("precision" in pointColumns) 9L else 8L
                             verifyPointPlacementStructure(driver, detected)

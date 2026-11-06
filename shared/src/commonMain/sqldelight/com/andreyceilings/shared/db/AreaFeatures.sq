@@ -1,0 +1,8 @@
+selectAll:
+SELECT * FROM area_features ORDER BY createdAt,uuid;
+
+selectForMeasurement:
+SELECT a.* FROM area_features a JOIN room_measurements m ON m.uuid=a.measurementUuid
+JOIN projects p ON p.id=m.projectId LEFT JOIN measurement_elements e ON e.uuid=a.elementUuid
+WHERE a.measurementUuid=? AND a.deletedAt IS NULL AND m.deletedAt IS NULL AND p.deletedAt IS NULL
+AND (a.elementUuid IS NULL OR e.deletedAt IS NULL) ORDER BY a.createdAt,a.uuid;

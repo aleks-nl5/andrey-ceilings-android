@@ -70,11 +70,12 @@ class PointPlacementSqlCipherTest {
         val password = "point-backup-fixture".toCharArray()
         context.deleteDatabase(name); context.deleteDatabase(copyName)
         try {
-            for (version in listOf(8, 9, 10, 11, 12)) {
+            for (version in listOf(8, 9, 10, 11, 12, 13, 14)) {
                 context.deleteDatabase(name); context.deleteDatabase(copyName)
                 lateinit var f: PointPlacementProof.Fixture
                 lateinit var expectedPoints: List<PointPlacement>
-                val sourceDriver = if (version < 12) AndroidSqliteDriver(when(version){8->PointPositionMigrationProof.v8Schema;9->WallAnchorMigrationProof.v9Schema;10->WallAnchorMigrationProof.v10Schema;else->LinePlacementMigrationProof.v11Schema}, context, name,
+                var expectedAreas=emptyList<AreaFeature>()
+                val sourceDriver = if (version < 14) AndroidSqliteDriver(when(version){8->PointPositionMigrationProof.v8Schema;9->WallAnchorMigrationProof.v9Schema;10->WallAnchorMigrationProof.v10Schema;12->AreaFeatureMigrationProof.v12Schema;13->CeilingReceiptMigrationProof.v13Schema;else->LinePlacementMigrationProof.v11Schema}, context, name,
                     factory = SupportOpenHelperFactory(key.copyOf(), null, true))
                     else createEncryptedPrototypeDriver(context, key, name, enableWalForTesting = true, initializePriceCatalog = true)
                 sourceDriver.use { driver ->
@@ -104,6 +105,13 @@ class PointPlacementSqlCipherTest {
                         assertEquals(1,expectedPoints.count { it.mounting.unresolved })
                         assertTrue(expectedPoints.all { it.mounting.needsReview && it.mounting.deferredAt==15L })
                     }
+                    if(version>=13) {
+                        val areaStore=MeasurementEditStore(db){20}
+                        val doc=areaStore.load(f.project,f.id)
+                        val area=AreaFeature("backup-area",doc.draft.recordUuid,AreaShape.rectangle(PointPositionMm(500,500),PointPositionMm(1000,1000)),doc.updatedAt,0,0,role=AreaRole.OBSTACLE,note="Backup obstacle")
+                        val circle=area.copy(uuid="backup-circle",shape=AreaShape.Circle(PointPositionMm(1500,1500),100),mountings=listOf(PointMounting()),role=AreaRole.VOID_MARKER,radiusMeasured=true)
+                        expectedAreas=areaStore.update(doc,doc.draft,areaEdits=mapOf(area.uuid to AreaFeatureEdit(area),circle.uuid to AreaFeatureEdit(circle))).placements.areas
+                    }
                     val path = context.getDatabasePath(copyName).absolutePath.replace("'", "''")
                     driver.execute(null, "VACUUM INTO '$path'", 0)
                 }
@@ -118,6 +126,7 @@ class PointPlacementSqlCipherTest {
                     val restored = SqlCipherRestoreManager.restore(context, contents)
                     assertEquals(PriceCatalogSchema.version, restored.queryLong("PRAGMA user_version"))
                     assertEquals("wal", MeasurementElementMigrationProof.rows(restored.driver, "PRAGMA journal_mode", 1).single().single())
+                    assertEquals(expectedAreas,AreaFeatureRepository(restored.database).forMeasurement(f.element.measurementUuid))
                     expectedPoints.forEach { point -> assertEquals(point, PointPlacementRepository(restored.database).find(point.uuid)) }
                     val details = com.andreyceilings.shared.objects.ObjectsClientsStore(restored.database) { 20 }.measurementDetails
                     val entries = listOf(

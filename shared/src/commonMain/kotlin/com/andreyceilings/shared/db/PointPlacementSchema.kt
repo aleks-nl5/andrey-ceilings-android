@@ -9,16 +9,24 @@ class SchemaFingerprintMismatch(val objectId: String) : IllegalStateException("U
         objectId in pointV11SchemaDefinitions || objectId in pointV10SchemaDefinitions || objectId in pointSchemaDefinitions) { "Unknown schema diagnostic identifier" } }
 }
 
-/** Strict v8/v9/v10/v11 fingerprints, including already distributed P3C3 v10 files. */
+/** Strict source fingerprints, including both deployed v10 lineages and v12/v13/v14. */
 internal fun verifyPointPlacementStructure(driver: SqlDriver, version: Long = PriceCatalogSchema.version) {
-    fun normalize(sql: String) = sql.trim().trimEnd(';').replace(Regex("\\s+"), " ").replace(Regex("\\s*([,()])\\s*"), "$1").lowercase()
+    // SQL keywords may change case; quoted enum values and JSON paths may not.
+    val tokens=Regex("'(?:''|[^'])*'|[^']+")
+    val whitespace=Regex("\\s+")
+    val punctuation=Regex("\\s*([,()])\\s*")
+    fun normalize(sql: String) = tokens
+        .findAll(sql.trim().trimEnd(';')).joinToString("") { token ->
+            if(token.value.startsWith("'"))token.value else token.value
+                .replace(whitespace," ").replace(punctuation,"$1").lowercase()
+        }
     val names = driver.executeQuery(null,
-        "SELECT name FROM sqlite_master WHERE name LIKE 'point_%' OR name LIKE 'index_point_%' OR name LIKE 'ceiling_%' OR name LIKE 'index_ceiling_%' OR name LIKE 'line_%' OR name LIKE 'index_line_%'", { cursor ->
+        "SELECT name FROM sqlite_master WHERE name LIKE 'point_%' OR name LIKE 'index_point_%' OR name LIKE 'ceiling_%' OR name LIKE 'index_ceiling_%' OR name LIKE 'line_%' OR name LIKE 'index_line_%' OR name LIKE 'area_%' OR name LIKE 'index_area_%'", { cursor ->
             val found = mutableSetOf<String>()
             while (cursor.next().value) found.add(checkNotNull(cursor.getString(0)))
             QueryResult.Value(found)
         }, 0).value
-    val definitions = when(version) { 8L -> pointV8SchemaDefinitions; 9L -> pointV9SchemaDefinitions; 10L -> pointV10SchemaDefinitions; 11L -> pointV11SchemaDefinitions; else -> pointSchemaDefinitions }
+    val definitions = when(version) { 8L -> pointV8SchemaDefinitions; 9L -> pointV9SchemaDefinitions; 10L -> pointV10SchemaDefinitions; 11L -> pointV11SchemaDefinitions; 12L -> pointV12SchemaDefinitions; 13L -> pointV13SchemaDefinitions; else -> pointSchemaDefinitions }
     if(names!=definitions.keys)throw SchemaFingerprintMismatch("point_objects")
     val actual = definitions.mapValues { (name, _) ->
         val actual = driver.executeQuery(null, "SELECT sql FROM sqlite_master WHERE name = '$name'", { cursor ->

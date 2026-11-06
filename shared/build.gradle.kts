@@ -62,6 +62,8 @@ kotlin {
             implementation("io.ktor:ktor-client-mock:3.6.1")
         }
 
+        getByName("commonTest").kotlin.srcDir("src/testFixtures/kotlin")
+
         commonTest.dependencies {
             implementation(kotlin("test"))
         }

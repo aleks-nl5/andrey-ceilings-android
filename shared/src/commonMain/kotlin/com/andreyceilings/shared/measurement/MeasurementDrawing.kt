@@ -27,9 +27,22 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.SemanticsPropertyKey
 import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.dp
+
+/** Typed Canvas state for interaction verification; never persisted or spoken as labels. */
+object MeasurementDrawingSemantics {
+    val Points=SemanticsPropertyKey<List<PointPlacement>>("Measurement points")
+    val Lines=SemanticsPropertyKey<List<LinePlacement>>("Measurement lines")
+    val Areas=SemanticsPropertyKey<List<AreaFeature>>("Measurement areas")
+    val SelectedPoint=SemanticsPropertyKey<String>("Selected measurement point")
+    val SelectedLine=SemanticsPropertyKey<String>("Selected measurement line")
+    val SelectedArea=SemanticsPropertyKey<String>("Selected measurement area")
+    val PointDrag=SemanticsPropertyKey<PointDragPreview>("Measurement point drag")
+    val EditingEnabled=SemanticsPropertyKey<Boolean>("Measurement overlay editing enabled")
+}
 
 /**
  * Outline renderer only: all lengths come from world geometry. Optional ceiling features
@@ -61,7 +74,12 @@ fun MeasurementDrawing(
     linePlacementMode: Boolean = false, onLineTap: (Long,Long)->Unit = {_,_->},
     onSelectLine: (String)->Unit = {}, lineEditingEnabled: Boolean = false,
     lineStartPoint:PointPositionMm?=null,lineDrag: LinePlacement? = null, onBeginLineDrag: (String)->Unit = {},
-    onPreviewLineDrag: (Double,Double)->Unit = {_,_->}, onFinishLineDrag: ()->Unit = {}, onCancelLineDrag: ()->Unit = {}
+    onPreviewLineDrag: (Double,Double)->Unit = {_,_->}, onFinishLineDrag: ()->Unit = {}, onCancelLineDrag: ()->Unit = {},
+    areaFeatures: List<AreaFeature> = emptyList(), selectedAreaUuid: String? = null,
+    areaPlacementMode: Boolean = false, onAreaTap: (Long,Long)->Unit = {_,_->}, onSelectArea: (String)->Unit = {},
+    areaEditingEnabled: Boolean = false, areaDrag: AreaFeature? = null, areaCreationPoints: List<PointPositionMm> = emptyList(),
+    onBeginAreaDrag: (String)->Unit = {}, onPreviewAreaDrag: (Double,Double)->Unit = {_,_->},
+    onFinishAreaDrag: ()->Unit = {}, onCancelAreaDrag: ()->Unit = {}
 ) {
     val contour = remember(geometry) { measurementDrawingContour(geometry) }
     if (contour == null) {
@@ -90,6 +108,15 @@ fun MeasurementDrawing(
     val currentMode by rememberUpdatedState(placementMode)
     val fitPoints = if (fitPointPlacements) pointPlacements.map { DrawingPoint(it.xMm.toDouble(), it.yMm.toDouble()) } +
         linePlacements.flatMap {listOf(DrawingPoint(it.start.xMm.toDouble(),it.start.yMm.toDouble()),DrawingPoint(it.end.xMm.toDouble(),it.end.yMm.toDouble()))} else emptyList()
+    val currentAreas by rememberUpdatedState(areaFeatures)
+    val currentAreaMode by rememberUpdatedState(areaPlacementMode)
+    val currentAreaTap by rememberUpdatedState(onAreaTap)
+    val currentAreaSelection by rememberUpdatedState(onSelectArea)
+    val currentSelectedArea by rememberUpdatedState(selectedAreaUuid)
+    val currentBeginAreaDrag by rememberUpdatedState(onBeginAreaDrag)
+    val currentPreviewAreaDrag by rememberUpdatedState(onPreviewAreaDrag)
+    val currentFinishAreaDrag by rememberUpdatedState(onFinishAreaDrag)
+    val currentCancelAreaDrag by rememberUpdatedState(onCancelAreaDrag)
     val currentLines by rememberUpdatedState(linePlacements)
     val currentLineMode by rememberUpdatedState(linePlacementMode)
     val currentLineTap by rememberUpdatedState(onLineTap)
@@ -137,7 +164,7 @@ fun MeasurementDrawing(
                     else -> false
                 }
             }.focusable()
-            .pointerInput(contour, canvasSize, pointEditingEnabled, lineEditingEnabled, fullscreen, editPointsInFullscreen) {
+            .pointerInput(contour, canvasSize, pointEditingEnabled, lineEditingEnabled, areaEditingEnabled, fullscreen, editPointsInFullscreen) {
                 awaitEachGesture {
                     val down = awaitFirstDown(requireUnconsumed = false)
                     val width = canvasSize.width.toFloat(); val height = canvasSize.height.toFloat()
@@ -156,17 +183,34 @@ fun MeasurementDrawing(
                         fun screen(p:PointPositionMm)=currentViewport.transform(projection.project(DrawingPoint(p.xMm.toDouble(),p.yMm.toDouble())),width,height)
                         val a=screen(line.start);val b=screen(line.end)
                         val dx=b.x-a.x;val dy=b.y-a.y
-                        val t=(((position.x-a.x)*dx+(position.y-a.y)*dy)/(dx*dx+dy*dy)).coerceIn(0.0,1.0)
+                        val square=dx*dx+dy*dy
+                        val t=if(square<=1e-12)0.0 else (((position.x-a.x)*dx+(position.y-a.y)*dy)/square).coerceIn(0.0,1.0)
                         return hypot(position.x-a.x-t*dx,position.y-a.y-t*dy)
                     }
-                    val line=currentLines.minByOrNull {lineDistance(it,down.position)}?.takeIf {lineDistance(it,down.position)<=24.dp.toPx()}
-                    val marker = if(currentLineMode || lineEditingEnabled && line!=null && line.uuid==currentSelectedLine) null else hit(down.position)
-                    var ownsLine=lineEditingEnabled && !currentLineMode && marker==null && line!=null && line.uuid==currentSelectedLine
-                    var ownsMarker = pointEditingEnabled && (!fullscreen || editPointsInFullscreen) && marker != null && marker.uuid == currentSelectedPoint
+                    fun areaDistance(feature:AreaFeature) = areaHitDistance(feature.shape,DrawingPoint(down.position.x.toDouble(),down.position.y.toDouble())) {p ->
+                        currentViewport.transform(projection.project(DrawingPoint(p.xMm.toDouble(),p.yMm.toDouble())),width,height)
+                    }
+                    val halo=24.dp.toPx()
+                    // A selected target owns its halo before unrelated overlays. Otherwise
+                    // POINT > LINE > AREA; equal filled-area hits use the last painted UUID.
+                    val selectedArea=currentAreas.find {it.uuid==currentSelectedArea && areaDistance(it)<=halo}
+                    val selectedLine=currentLines.find {it.uuid==currentSelectedLine && lineDistance(it,down.position)<=halo}
+                    val selectedMarker=currentPoints.find {it.uuid==currentSelectedPoint}?.takeIf {p ->
+                        val screen=currentViewport.transform(projection.project(DrawingPoint(p.xMm.toDouble(),p.yMm.toDouble())),width,height)
+                        hypot(screen.x-down.position.x,screen.y-down.position.y)<=halo
+                    }
+                    val creating=currentAreaMode || currentLineMode || currentMode
+                    val area=selectedArea ?: currentAreas.asReversed().minByOrNull(::areaDistance)?.takeIf {areaDistance(it)<=halo}
+                    val line=selectedLine ?: currentLines.minByOrNull {lineDistance(it,down.position)}?.takeIf {lineDistance(it,down.position)<=halo}
+                    val marker=if(currentAreaMode || currentLineMode) null else selectedMarker ?: hit(down.position)
+                    var ownsMarker=pointEditingEnabled && !currentAreaMode && !currentLineMode && (!fullscreen || editPointsInFullscreen) && selectedMarker!=null
+                    var ownsLine=lineEditingEnabled && !creating && !ownsMarker && selectedLine!=null
+                    var ownsArea=areaEditingEnabled && !creating && !ownsMarker && !ownsLine && selectedArea!=null
                     val startWorld = world(down.position)
                     var moved = false; var multi = false
                     var last = down.position
-                    if(ownsLine) {markerGesture=true;currentBeginLineDrag(checkNotNull(line).uuid)}
+                    if(ownsArea){markerGesture=true;currentBeginAreaDrag(checkNotNull(selectedArea).uuid)}
+                    if(ownsLine) {markerGesture=true;currentBeginLineDrag(checkNotNull(selectedLine).uuid)}
                     if (ownsMarker) { markerGesture = true; currentBeginDrag(checkNotNull(marker).uuid) }
                     down.consume()
                     try {
@@ -177,6 +221,7 @@ fun MeasurementDrawing(
                             if (event.changes.any { it.isConsumed }) break
                             if (active > 1) {
                                 multi = true
+                                if(ownsArea){ownsArea=false;markerGesture=false;currentCancelAreaDrag()}
                                 if(ownsLine){ownsLine=false;markerGesture=false;currentCancelLineDrag()}
                                 if (ownsMarker) { ownsMarker = false; markerGesture = false; currentCancelDrag() }
                             }
@@ -187,7 +232,7 @@ fun MeasurementDrawing(
                                 move(pan.x, pan.y, zoomFactor)
                                 event.changes.forEach { it.consume() }
                             } else if (moved && active > 0) {
-                                if(ownsLine) {val target=world(position);currentPreviewLineDrag(target.x-startWorld.x,target.y-startWorld.y)} else if (ownsMarker) {
+                                if(ownsArea){val target=world(position);currentPreviewAreaDrag(target.x-startWorld.x,target.y-startWorld.y)} else if(ownsLine) {val target=world(position);currentPreviewLineDrag(target.x-startWorld.x,target.y-startWorld.y)} else if (ownsMarker) {
                                     val target = world(position)
                                     currentPreviewDrag(checkNotNull(marker).xMm + target.x - startWorld.x,
                                         marker.yMm + target.y - startWorld.y)
@@ -199,6 +244,11 @@ fun MeasurementDrawing(
                             }
                             last = position
                             if (active == 0) {
+                                if(ownsArea){
+                                    markerGesture=false
+                                    if(moved){val target=world(position);currentPreviewAreaDrag(target.x-startWorld.x,target.y-startWorld.y);currentFinishAreaDrag()} else currentCancelAreaDrag()
+                                    ownsArea=false
+                                }
                                 if(ownsLine) {
                                     markerGesture=false
                                     if(moved){val target=world(position);currentPreviewLineDrag(target.x-startWorld.x,target.y-startWorld.y);currentFinishLineDrag()} else currentCancelLineDrag()
@@ -215,11 +265,17 @@ fun MeasurementDrawing(
                                     ownsMarker = false
                                 }
                                 if (!moved && !multi) {
-                                    if(currentLineMode) {
+                                    if(currentAreaMode) {
+                                        val target=world(position)
+                                        if(target.x.isFinite() && target.y.isFinite() && target.x in -1_000_000.0..1_000_000.0 && target.y in -1_000_000.0..1_000_000.0)currentAreaTap(target.x.roundToLong(),target.y.roundToLong())
+                                    } else if(currentLineMode) {
                                         val target=world(position)
                                         if(target.x.isFinite() && target.y.isFinite() && target.x in -1_000_000.0..1_000_000.0 && target.y in -1_000_000.0..1_000_000.0)currentLineTap(target.x.roundToLong(),target.y.roundToLong())
-                                    } else if (marker != null && (!fullscreen || editPointsInFullscreen)) currentPointSelection(marker.uuid)
+                                    } else if(marker!=null && (!fullscreen || editPointsInFullscreen)) currentPointSelection(marker.uuid)
+                                    else if(selectedLine!=null)currentLineSelection(selectedLine.uuid)
+                                    else if(selectedArea!=null)currentAreaSelection(selectedArea.uuid)
                                     else if(line!=null)currentLineSelection(line.uuid)
+                                    else if(area!=null)currentAreaSelection(area.uuid)
                                     else if (currentMode && !fullscreen) {
                                         val target = world(position)
                                         val bound = com.andreyceilings.shared.calculation.CeilingPolygonCalculator.MAX_COORDINATE_MM.toDouble()
@@ -237,6 +293,7 @@ fun MeasurementDrawing(
                         }
                     } finally {
                         markerGesture = false
+                        if(ownsArea)currentCancelAreaDrag()
                         if(ownsLine)currentCancelLineDrag()
                         if (ownsMarker) currentCancelDrag()
                     }
@@ -257,7 +314,17 @@ fun MeasurementDrawing(
             }
         Canvas(Modifier.fillMaxWidth().then(if (fullscreen) Modifier.weight(1f) else Modifier.height(if (compact) 155.dp else 235.dp))
             .clipToBounds().onSizeChanged { canvasSize = it }.then(inputModifier)
-            .semantics { contentDescription = "Контур стелі, ${contour.points.size} вершин, позначок: ${pointPlacements.size}, ліній: ${linePlacements.size}" }) {
+            .semantics {
+                contentDescription = "Контур стелі, ${contour.points.size} вершин, позначок: ${pointPlacements.size}, ліній: ${linePlacements.size}, площинних об’єктів: ${areaFeatures.size}"
+                this[MeasurementDrawingSemantics.Points]=pointPlacements
+                this[MeasurementDrawingSemantics.Lines]=linePlacements
+                this[MeasurementDrawingSemantics.Areas]=areaFeatures
+                this[MeasurementDrawingSemantics.EditingEnabled]=pointEditingEnabled || lineEditingEnabled || areaEditingEnabled
+                selectedPointUuid?.let {this[MeasurementDrawingSemantics.SelectedPoint]=it}
+                selectedLineUuid?.let {this[MeasurementDrawingSemantics.SelectedLine]=it}
+                selectedAreaUuid?.let {this[MeasurementDrawingSemantics.SelectedArea]=it}
+                pointDrag?.let {this[MeasurementDrawingSemantics.PointDrag]=it}
+            }) {
             val layout = layoutMeasurementDrawing(contour, size.width, size.height,
                 textLayouts.map { DrawingLabelSize(it.size.width.toFloat(), it.size.height.toFloat()) }, density,
                 vertexLayouts.map { DrawingLabelSize(it.size.width.toFloat(), it.size.height.toFloat()) }, extraWorldPoints = fitPoints)
@@ -281,6 +348,34 @@ fun MeasurementDrawing(
             }
             points.forEach { drawCircle(ink, 3.dp.toPx(), it) }
             val projection = measurementDrawingProjection(contour, size.width, size.height, density, fitPoints)
+            if(projection!=null) {
+                fun screenArea(p:PointPositionMm):Offset {
+                    val fitted=projection.project(DrawingPoint(p.xMm.toDouble(),p.yMm.toDouble()))
+                    val transformed=if(interactive)viewport.transform(fitted,size.width,size.height) else fitted
+                    return Offset(transformed.x.toFloat(),transformed.y.toFloat())
+                }
+                areaFeatures.forEach {saved ->
+                    val feature=areaDrag?.takeIf {it.uuid==saved.uuid} ?: saved
+                    val color=if(feature.unresolved) androidx.compose.ui.graphics.Color(0xFFD34C44) else ink
+                    val width=if(feature.uuid==selectedAreaUuid)4.dp.toPx() else 2.dp.toPx()
+                    when(val shape=feature.shape) {
+                        is AreaShape.Circle -> {
+                            val center=screenArea(shape.center)
+                            val radius=(screenArea(PointPositionMm(shape.center.xMm+shape.radiusMm,shape.center.yMm))-center).getDistance()
+                            drawCircle(color.copy(alpha=0.16f),radius,center)
+                            drawCircle(color,radius,center,style=Stroke(width))
+                        }
+                        is AreaShape.Polygon -> {
+                            val vertices=shape.vertices.map(::screenArea)
+                            val areaPath=Path().apply {moveTo(vertices.first().x,vertices.first().y);vertices.drop(1).forEach {lineTo(it.x,it.y)};close()}
+                            drawPath(areaPath,color.copy(alpha=0.16f));drawPath(areaPath,color,style=Stroke(width))
+                        }
+                    }
+                    if(feature.uuid==selectedAreaUuid)feature.shape.positions.forEach {drawCircle(color,5.dp.toPx(),screenArea(it))}
+                }
+                areaCreationPoints.forEach {drawCircle(ink,5.dp.toPx(),screenArea(it))}
+                areaCreationPoints.zipWithNext().forEach {(a,b)->drawLine(ink.copy(alpha=0.6f),screenArea(a),screenArea(b),strokeWidth=2.dp.toPx())}
+            }
             if (projection != null) mountingDimensions.forEachIndexed { index, dimension ->
                 fun screen(p: DrawingPoint): Offset {
                     val fitted=projection.project(p)

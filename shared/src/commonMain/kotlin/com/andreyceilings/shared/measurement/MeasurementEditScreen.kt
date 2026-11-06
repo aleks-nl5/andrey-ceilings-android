@@ -43,6 +43,8 @@ fun MeasurementEditScreen(
                 model = MeasurementEditModel(store, document).also {editor ->
                     navigationGuard?.requestedLinePlacement?.takeIf {it.first==document.draft.recordUuid}?.let {editor.beginLine(it.second)}
                     navigationGuard?.requestedLinePlacement=null
+                    navigationGuard?.requestedAreaPlacement?.takeIf {it.first==document.draft.recordUuid}?.let {editor.beginArea(AreaRole.GENERAL_AREA,it.second)}
+                    navigationGuard?.requestedAreaPlacement=null
                 }
             } catch (_: Exception) { error = "Замір недоступний для редагування. Перевірте об'єкт і збережену геометрію." }
         }
@@ -76,11 +78,11 @@ fun MeasurementEditScreen(
     var allFields by rememberSaveable { mutableStateOf(false) }
     var reloadConfirm by remember { mutableStateOf(false) }
     val currentSaved by rememberUpdatedState(onSaved)
-    val surfaceBack = remember { { if (fullscreen) { model.cancelPointDrag(); model.cancelLineDrag(); fullscreen = false; true } else false } }
+    val surfaceBack = remember { { if (fullscreen) { model.cancelPointDrag(); model.cancelLineDrag(); model.cancelAreaDrag(); fullscreen = false; true } else false } }
     DisposableEffect(model, navigationGuard) {
         navigationGuard?.bindEdit(model); navigationGuard?.bindSurface(surfaceBack)
         onDispose {
-            model.cancelPointDrag(); model.cancelLineDrag()
+            model.cancelPointDrag(); model.cancelLineDrag(); model.cancelAreaDrag()
             navigationGuard?.unbindEdit(model); navigationGuard?.unbindSurface(surfaceBack)
         }
     }
@@ -102,6 +104,7 @@ fun MeasurementEditScreen(
             FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 TextButton(onClick = { if (fullscreen) fullscreen = false else model.requestExit(onBack) }, enabled = enabled) { Text(if (fullscreen) "Згорнути" else "До заміру") }
                 if (!fullscreen) TextButton(onClick = { focus.clearFocus(); fullscreen = true }) { Text("На весь екран") }
+                if(state.selectedLineUuid!=null || state.area.selected!=null)TextButton(enabled=enabled,onClick=model::clearDrawingSelection){Text("Зняти виділення")}
                 TextButton(onClick = { focus.clearFocus(); model.undo() }, enabled = enabled && state.canUndo) { Text("Скасувати дію") }
                 TextButton(onClick = { focus.clearFocus(); model.redo() }, enabled = enabled && state.canRedo) { Text("Повторити") }
                 TextButton(onClick = { model.requestExit {
@@ -156,7 +159,10 @@ fun MeasurementEditScreen(
             }
         }
         Box(if(full)Modifier.heightIn(max=180.dp).verticalScroll(rememberScrollState()) else Modifier) {
+            Column {
             LinePlacementControls(model,enabled && validation.geometry!=null)
+            AreaFeatureControls(model,enabled && validation.geometry!=null)
+            }
         }
         if (validation.geometry == null && geometry != null)
             Text("Невалідна чернетка: показано збережений контур і позначки. ${validation.geometryError.orEmpty()}")
@@ -172,7 +178,13 @@ fun MeasurementEditScreen(
             mountingDimensions=if(validation.geometry==null) emptyList() else mountingDimensions(model.displayPoints().find { it.uuid==state.selectedPointUuid },geometry,model.draftWalls())+
                 model.displayLines().find {it.uuid==state.selectedLineUuid}?.takeUnless {it.unresolved}?.let {line ->
                     mountingDimensions(line.endpoint(true),geometry,model.draftWalls())+mountingDimensions(line.endpoint(false),geometry,model.draftWalls())
+                }.orEmpty()+model.displayAreas().find {it.uuid==state.area.selected}?.takeUnless {it.unresolved}?.let {a ->
+                    mountingDimensions(a.point(state.area.mountingIndex ?: state.area.moveVertex ?: 0),geometry,model.draftWalls())
                 }.orEmpty(),
+            areaFeatures=model.displayAreas()+listOfNotNull(model.areaCreationShape()?.let {shape -> AreaFeature("area-preview",state.draft.recordUuid,shape,state.original.updatedAt,0,0,role=state.area.role)}),
+            selectedAreaUuid=state.area.selected,areaPlacementMode=enabled && state.area.tool!=null,onAreaTap=model::areaTap,onSelectArea=model::selectArea,
+            areaEditingEnabled=enabled && validation.geometry!=null,areaDrag=state.area.drag,areaCreationPoints=state.area.vertices,
+            onBeginAreaDrag=model::beginAreaDrag,onPreviewAreaDrag=model::previewAreaDrag,onFinishAreaDrag=model::finishAreaDrag,onCancelAreaDrag=model::cancelAreaDrag,
             linePlacements=model.displayLines()+listOfNotNull(state.linePreview),selectedLineUuid=state.selectedLineUuid,
             linePlacementMode=enabled && state.lineElementUuid!=null,onLineTap=model::lineTap,onSelectLine=model::selectLine,
             lineStartPoint=state.lineStart,lineEditingEnabled=enabled && validation.geometry!=null,lineDrag=state.lineDrag,onBeginLineDrag=model::beginLineDrag,

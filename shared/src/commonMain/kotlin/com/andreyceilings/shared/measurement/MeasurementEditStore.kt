@@ -6,6 +6,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -24,9 +25,9 @@ internal class MeasurementEditUncertain(cause: Throwable) : IllegalStateExceptio
 /** A version and its exact source inputs travel together, never from current global settings. */
 @kotlinx.serialization.Serializable
 data class CeilingPlacementDocument(val points: List<PointPlacement> = emptyList(),
-    val elements: Map<String, Long> = emptyMap(), val walls: List<CeilingWall> = emptyList(), val quantities: Map<String,Long> = emptyMap(), val lines: List<LinePlacement> = emptyList())
+    val elements: Map<String, Long> = emptyMap(), val walls: List<CeilingWall> = emptyList(), val quantities: Map<String,Long> = emptyMap(), val lines: List<LinePlacement> = emptyList(), val areas: List<AreaFeature> = emptyList())
 data class MeasurementEditDocument(val measurementId: Long, val updatedAt: Long, val draft: MeasurementCreateDraft,
-    val placements: CeilingPlacementDocument = CeilingPlacementDocument(), val sourceDrawingJson: String? = null, val lineElements: List<MeasurementElement> = emptyList())
+    val placements: CeilingPlacementDocument = CeilingPlacementDocument(), val sourceDrawingJson: String? = null, val lineElements: List<MeasurementElement> = emptyList(), val areaElements: List<MeasurementElement> = emptyList())
 
 class MeasurementEditStore(private val database: PrototypeDatabase, private val nowMillis: () -> Long) {
     private val sessionClosed = MutableStateFlow(false)
@@ -70,6 +71,25 @@ class MeasurementEditStore(private val database: PrototypeDatabase, private val 
     internal fun retained(token: String): MeasurementEditModel? = pending.value[token]
 
     fun load(projectId: Long, measurementId: Long): MeasurementEditDocument = loadDocument(projectId,measurementId)
+
+    internal suspend fun readDocument(projectId:Long,measurementId:Long):MeasurementEditDocument=withContext(Dispatchers.Default) {
+        pointRead.withLock {
+            if(sessionClosed.value)throw MeasurementEditConflict()
+            loadDocument(projectId,measurementId)
+        }
+    }
+
+    /** One transactional document, rather than a fingerprint of independently loading UI lists.
+     * The existing overlay query observes POINT/element changes and every ceiling commit
+     * through its measurement row. Accepted reads share the session shutdown drain.
+     */
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    internal fun observeDocument(projectId:Long,measurementId:Long,uuid:String):Flow<MeasurementEditDocument?> =
+        sessionClosed.flatMapLatest {closed ->
+            if(closed)flowOf(null) else database.pointPlacementsQueries.selectEditorOverlay(measurementId,projectId,uuid).asFlow()
+                .map {readDocument(projectId,measurementId).takeUnless {sessionClosed.value}}
+                .catch {if(it is CancellationException)throw it else emit(null)}
+        }
     private fun loadDocument(projectId: Long, measurementId: Long, allowClosing: Boolean = false): MeasurementEditDocument = database.transactionWithResult {
         if ((!allowClosing && sessionClosed.value) || projects.find(projectId) == null) throw MeasurementEditConflict()
         val row = measurements.find(measurementId)?.takeIf { it.projectId == projectId } ?: throw MeasurementEditConflict()
@@ -87,16 +107,18 @@ class MeasurementEditStore(private val database: PrototypeDatabase, private val 
         require(validateMeasurementCreate(draft).geometry == geometry) { "Неповні вимірювання. Редагування недоступне." }
         val points = PointPlacementRepository(database).forMeasurement(row.uuid)
         val lines = LinePlacementRepository(database).forMeasurement(row.uuid)
+        val areas = AreaFeatureRepository(database).forMeasurement(row.uuid)
+        val areaElements = MeasurementElementRepository(database).active().filter {it.measurementUuid==row.uuid && it.supportsAreaPlacement()}
         val lineElements = MeasurementElementRepository(database).active().filter { it.measurementUuid==row.uuid && it.supportsLinePlacement() }
-        val elements = (points.map { it.elementUuid } + lines.map { it.elementUuid } + lineElements.map { it.uuid }).distinct().associateWith { MeasurementElementRepository(database).find(it)!!.updatedAt }
+        val elements = (points.map { it.elementUuid } + lines.map { it.elementUuid } + lineElements.map { it.uuid } + areaElements.map {it.uuid}).distinct().associateWith { MeasurementElementRepository(database).find(it)!!.updatedAt }
         val walls = database.ceilingEditsQueries.selectWalls(row.uuid).executeAsList().map { CeilingWall(it.uuid,it.ordinal.toInt()) }
         require(walls.size == geometry.vertices.size) { "Неповні ідентичності стін." }
-        MeasurementEditDocument(row.id, row.updatedAt, draft, CeilingPlacementDocument(points,elements,walls,points.map {it.elementUuid}.distinct().associateWith { MeasurementElementRepository(database).find(it)!!.pointCapacity()!! },lines),row.drawingJson,lineElements)
+        MeasurementEditDocument(row.id, row.updatedAt, draft, CeilingPlacementDocument(points,elements,walls,points.map {it.elementUuid}.distinct().associateWith { MeasurementElementRepository(database).find(it)!!.pointCapacity()!! },lines,areas),row.drawingJson,lineElements,areaElements)
     }
 
     fun update(original: MeasurementEditDocument, draft: MeasurementCreateDraft,
         edits: Map<String, PointMountingEdit> = emptyMap(), operationUuid: String = newRecordUuid(),
-        wallToken: String = operationUuid, now: Long = nowMillis(), acceptedWrite: kotlinx.coroutines.CompletableDeferred<Unit>? = null, lineEdits: Map<String,LinePlacementEdit> = emptyMap(), declaredLengths: Map<String,Long> = emptyMap()): MeasurementEditDocument {
+        wallToken: String = operationUuid, now: Long = nowMillis(), acceptedWrite: kotlinx.coroutines.CompletableDeferred<Unit>? = null, lineEdits: Map<String,LinePlacementEdit> = emptyMap(), declaredLengths: Map<String,Long> = emptyMap(), areaEdits: Map<String,AreaFeatureEdit> = emptyMap(), declaredAreas: Map<String,Long> = emptyMap()): MeasurementEditDocument {
         check(!sessionClosed.value || acceptedWrite in writes.value.pending) { "Сесію закрито." }
         var rolledBack = false
         try {
@@ -104,7 +126,7 @@ class MeasurementEditStore(private val database: PrototypeDatabase, private val 
                 // Runs after endTransaction succeeds, only for the outer rollback. Do not infer
                 // this from a platform exception class/message or from absence of a receipt.
                 afterRollback { rolledBack = true }
-                CeilingEditRepository(database).save(original,draft,edits,operationUuid,wallToken,now,lineEdits,declaredLengths)
+                CeilingEditRepository(database).save(original,draft,edits,operationUuid,wallToken,now,lineEdits,declaredLengths,areaEdits,declaredAreas)
                 loadDocument(draft.projectId,original.measurementId,allowClosing = true)
             }
         } catch (failure: Throwable) {

@@ -1,0 +1,15 @@
+package com.andreyceilings.shared.db
+
+/** v14 closes REPLACE receipt mutations; v13 definitions remain frozen. */
+internal val pointSchemaDefinitions = pointV13SchemaDefinitions + mapOf(
+    "ceiling_result_insert_guard" to """
+CREATE TRIGGER ceiling_result_insert_guard BEFORE INSERT ON ceiling_operation_results
+BEGIN
+ SELECT CASE WHEN EXISTS(SELECT 1 FROM ceiling_operation_results WHERE operationUuid=new.operationUuid)
+ OR NOT EXISTS(SELECT 1 FROM ceiling_operations o JOIN room_measurements m ON m.uuid=o.measurementUuid
+ WHERE o.uuid=new.operationUuid AND m.deletedAt IS NULL
+ AND new.measurementVersion=m.updatedAt AND m.updatedAt=max(o.expectedUpdatedAt+1,o.createdAt))
+ THEN RAISE(ABORT,'ceiling_result_requires_pending_operation') END;
+END;
+""".trimIndent()
+)

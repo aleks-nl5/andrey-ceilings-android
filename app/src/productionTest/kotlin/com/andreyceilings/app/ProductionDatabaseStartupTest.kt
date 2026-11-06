@@ -31,14 +31,16 @@ class ProductionDatabaseStartupTest {
     }
 
     @Test fun populatedProductionV9AndDeployedV10ColdUpgradeKeepMixedHistoryAndCanCreateAndRestore() = preserveProduction { context,key ->
-        for(variant in listOf("v9","v10-final","v10-initial","v11")) {
-            val version=when(variant){"v9"->9L;"v11"->11L;else->10L}
-            val schema=when(variant){"v9"->WallAnchorMigrationProof.v9Schema;"v10-initial"->InitialV10MigrationProof.schema;"v11"->LinePlacementMigrationProof.v11Schema;else->WallAnchorMigrationProof.v10Schema}
+        for(variant in listOf("v9","v10-final","v10-initial","v11","v12","v13")) {
+            val version=when(variant){"v9"->9L;"v11"->11L;"v12"->12L;"v13"->13L;else->10L}
+            val schema=when(variant){"v9"->WallAnchorMigrationProof.v9Schema;"v10-initial"->InitialV10MigrationProof.schema;"v11"->LinePlacementMigrationProof.v11Schema;"v12"->AreaFeatureMigrationProof.v12Schema;"v13"->CeilingReceiptMigrationProof.v13Schema;else->WallAnchorMigrationProof.v10Schema}
             val name="production-upgrade-$variant.db";context.deleteDatabase(name)
             try {
                 val before=historical(context,name,key,schema).use { driver ->
                     val f=LegacyWallSeedProof.populate(driver,version==9L)
                     if(version>=10L)LegacyWallSeedProof.decorateV10(driver,f)
+                    if(version>=12L)AreaFeatureMigrationProof.populate(driver)
+                    if(version==13L)CeilingReceiptMigrationProof.populate(driver)
                     driver.executeQuery(null,"PRAGMA wal_autocheckpoint=0",{c->c.next();QueryResult.Value(c.getLong(0))},0).value
                     ProjectRepository(PrototypeDatabase(driver)).createReturningId(null,"Committed v$version WAL row",createdAt=600)
                     assertEquals("wal",driver.executeQuery(null,"PRAGMA journal_mode",{ c->c.next();QueryResult.Value(c.getString(0)) },0).value)
