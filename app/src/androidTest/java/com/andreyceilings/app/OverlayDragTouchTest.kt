@@ -39,15 +39,21 @@ class OverlayDragTouchTest {
         }}}
         val matcher=SemanticsMatcher("ceiling canvas") {n -> n.config.getOrNull(SemanticsProperties.ContentDescription).orEmpty().any {it.startsWith("Контур стелі")}}
         fun click(label:String) {
-            val node=compose.onNodeWithText(label,useUnmergedTree=true)
-            if(!node.isDisplayed())node.performScrollTo()
-            node.performClick()
+            val action=hasText(label) and hasClickAction()
+            val node=compose.onNode(action)
+            // A partly clipped Text can be "displayed" under the pinned toolbar.
+            // Scroll the merged action itself into view; pinned actions have no scroll ancestor.
+            if(compose.onAllNodes(action and hasAnyAncestor(hasScrollAction())).fetchSemanticsNodes().isNotEmpty())node.performScrollTo()
+            node.assertIsDisplayed().assertIsEnabled().performClick()
         }
-        fun canvas()=compose.onNode(matcher).also {if(mode!="fullscreen")it.performScrollTo()}
+        fun canvas()=compose.onNode(matcher).also {
+            if(mode!="fullscreen")it.performScrollTo()
+            compose.waitForIdle()
+        }
         fun position(x:Long,y:Long):Offset {
-            val b=canvas().fetchSemanticsNode().boundsInRoot
+            val size=canvas().fetchSemanticsNode().size
             val contour=measurementDrawingContour(MeasurementGeometryView.Captured(validateMeasurementCreate(doc.draft).geometry!!))!!
-            val p=measurementDrawingProjection(contour,b.width,b.height,compose.density.density)!!.project(DrawingPoint(x.toDouble(),y.toDouble()))
+            val p=measurementDrawingProjection(contour,size.width.toFloat(),size.height.toFloat(),compose.density.density)!!.project(DrawingPoint(x.toDouble(),y.toDouble()))
             return Offset(p.x.toFloat(),p.y.toFloat())
         }
         fun tap(x:Long,y:Long){val p=position(x,y);canvas().performTouchInput {click(p)}}
@@ -61,7 +67,14 @@ class OverlayDragTouchTest {
             tap(1000,1500);drag(1000,1050,1300,1250) // selected AREA takes priority over LINE halo
             click("Скасувати дію");click("Повторити");click("Скасувати дію")
             click("Вершина 1");drag(500,1000,800,1200)
-            click("Сегмент 1: 1 м");drag(1000,950,1300,750)
+            click("Сегмент 1: 1 м")
+            compose.onNode(hasText("Кінець") and hasClickAction()).assertExists()
+            if(mode!="details")compose.runOnIdle {assertEquals(f.line,m.state.value.selectedLineUuid,"LINE chip must select its UUID before pointer drag")}
+            drag(1000,950,1300,750)
+            if(mode!="details")compose.runOnIdle {
+                assertEquals(f.line,m.state.value.selectedLineUuid,"Drag must retain LINE selection: ${m.state.value.error}")
+                assertEquals(PointPositionMm(800,750),m.displayLines().single().start,"The injected gesture must move the selected LINE")
+            }
             click("Кінець");drag(1800,750,2400,750)
             tap(2800,1500);drag(2800,1500,3100,1800)
             drag(3100,1800,4500,1800)
