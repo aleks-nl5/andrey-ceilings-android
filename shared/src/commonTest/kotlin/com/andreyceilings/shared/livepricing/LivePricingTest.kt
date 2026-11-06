@@ -109,7 +109,7 @@ class LivePricingTest {
             val result = preview(s, ActiveCatalogSnapshot(listOf(i)))
             assertEquals(unit != "custom", result.canFinalizeFull)
             if (unit != "custom") assertEquals(0, result.priceableLines.single().totalCents)
-            assertFalse(preview(s.copy(elements = listOf(element(i, ElementQuantity.Exact(1500)))), ActiveCatalogSnapshot(listOf(i))).canFinalizeFull)
+            assertEquals(unit == "послуга", preview(s.copy(elements = listOf(element(i, ElementQuantity.Exact(1500)))), ActiveCatalogSnapshot(listOf(i))).canFinalizeFull)
         }
     }
 

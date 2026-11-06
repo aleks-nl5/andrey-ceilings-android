@@ -66,7 +66,7 @@ object LivePricingEngine {
             val cents = item?.let { PricingMath.salePriceCents(it.salePrice) }
             if (item != null && cents == null) reasons += PricingProblemCode.INVALID_PRICE
             val validQuantity = runCatching { ElementQuantityRules.validate(e.quantity, e.unit, selection?.quantityMode) }.isSuccess &&
-                (e.unit !in listOf("шт.", "компл.", "послуга") || when (val q = e.quantity) {
+                (e.unit !in listOf("шт.", "компл.") || when (val q = e.quantity) {
                     is ElementQuantity.Exact -> q.milli % 1000 == 0L
                     is ElementQuantity.Range -> q.minMilli % 1000 == 0L && q.maxMilli % 1000 == 0L
                     else -> true

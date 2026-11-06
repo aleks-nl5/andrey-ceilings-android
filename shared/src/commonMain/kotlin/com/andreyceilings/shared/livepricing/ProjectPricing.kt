@@ -15,6 +15,7 @@ data class VerifiedFrozenRevision(val projectUuid: String, val seriesUuid: Strin
 sealed interface ProjectSourceSelection {
     val sourceId: String
     data class Live(override val sourceId: String, val expectedSignature: String,
+        val measurementUuid: String, val basisSourceSignature: String, val basisCatalogSignature: String,
         val includedSourceKeys: Set<String>? = null) : ProjectSourceSelection
     data class Frozen(override val sourceId: String, val seriesUuid: String, val revisionUuid: String,
         val expectedSignature: String) : ProjectSourceSelection
@@ -30,7 +31,7 @@ data class ProjectEstimateSelection(val projectUuid: String, val compositionUuid
     /** Defined before pricing: excludes preview signatures to avoid a circular override token. */
     val scopeSignature: String get() = contentToken(listOf(projectUuid, compositionUuid) + sources.map { source ->
         when (source) {
-            is ProjectSourceSelection.Live -> contentToken(listOf("LIVE", source.sourceId) + (source.includedSourceKeys?.sorted() ?: listOf("ALL")))
+            is ProjectSourceSelection.Live -> contentToken(listOf("LIVE", source.sourceId, source.measurementUuid, source.basisSourceSignature, source.basisCatalogSignature) + (source.includedSourceKeys?.sorted() ?: listOf("ALL")))
             is ProjectSourceSelection.Frozen -> contentToken(listOf("FROZEN", source.sourceId, source.seriesUuid, source.revisionUuid))
         }
     } + pricingJson.encodeToString(projectWorks))
@@ -94,6 +95,11 @@ object ProjectPricingEngine {
                     val preview = live[source.sourceId]
                     if (preview == null) { fail(PricingProblemCode.STALE_SOURCE, source.sourceId); continue }
                     tokens += preview.signature
+                    if (source.measurementUuid.isBlank() || source.basisSourceSignature.isBlank() || source.basisCatalogSignature.isBlank())
+                        fail(PricingProblemCode.INVALID_SELECTION, source.sourceId)
+                    if (preview.measurementUuid != source.measurementUuid || preview.sourceSignature != source.basisSourceSignature)
+                        fail(PricingProblemCode.STALE_SOURCE, source.sourceId)
+                    if (preview.catalogSignature != source.basisCatalogSignature) fail(PricingProblemCode.STALE_CATALOG, source.sourceId)
                     liveCatalogs += preview.catalogSignature
                     if (catalog != null && preview.catalogSignature != catalog.signature) fail(PricingProblemCode.STALE_CATALOG, source.sourceId)
                     val identity = contentToken(listOf(preview.projectUuid, preview.measurementUuid, preview.sourceSignature,
@@ -157,7 +163,7 @@ object ProjectPricingEngine {
                 item == null -> PricingProblemCode.CATALOG_MISSING
                 item.quantityMode != QuantityMode.MANUAL || item.unit != work.unit || item.code != work.expectedCode -> PricingProblemCode.METADATA_DRIFT
                 work.unit !in PriceCatalogRules.standardUnits -> PricingProblemCode.UNSUPPORTED_UNIT
-                work.quantityMilli !in 1..9_000_000_000_000_000L || work.unit in listOf("шт.", "компл.", "послуга") && work.quantityMilli % 1000 != 0L -> PricingProblemCode.INVALID_QUANTITY
+                work.quantityMilli !in 1..9_000_000_000_000_000L || work.unit in listOf("шт.", "компл.") && work.quantityMilli % 1000 != 0L -> PricingProblemCode.INVALID_QUANTITY
                 PricingMath.salePriceCents(item.salePrice) == null -> PricingProblemCode.INVALID_PRICE
                 else -> null
             }
@@ -192,7 +198,7 @@ object ProjectPricingEngine {
 
     private fun validFrozenLine(line: LiveEstimateLine): Boolean = runCatching {
         line.sourceQuantityMilli in 1..9_000_000_000_000_000L &&
-            (line.unit !in listOf("шт.", "компл.", "послуга") || line.effectiveBillableQuantityMilli % 1000 == 0L) && line.unit in PriceCatalogRules.standardUnits &&
+            (line.unit !in listOf("шт.", "компл.") || line.effectiveBillableQuantityMilli % 1000 == 0L) && line.unit in PriceCatalogRules.standardUnits &&
             line.totalCents == PricingMath.lineCents(line.unitPriceCents, line.effectiveBillableQuantityMilli)
     }.getOrDefault(false)
 }

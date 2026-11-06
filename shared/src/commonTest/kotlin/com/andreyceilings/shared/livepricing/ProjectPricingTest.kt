@@ -16,7 +16,10 @@ class ProjectPricingTest {
         return LiveEstimateSource("p", "m$id", geometry, listOf(e, e.copy(uuid = "potential$id", approval = ElementApproval.DISCUSSING)))
     }
     private fun setup(ids: List<Int>, subset: Set<String>? = null, priceCatalog: ActiveCatalogSnapshot = catalog): Pair<ProjectEstimateSelection, Map<String, LiveEstimatePreview>> {
-        var selection = ProjectEstimateSelection("p", "q", ids.map { ProjectSourceSelection.Live("s$it", "", subset) })
+        var selection = ProjectEstimateSelection("p", "q", ids.map {
+            val s = source(it)
+            ProjectSourceSelection.Live("s$it", "", s.measurementUuid, s.signature, priceCatalog.signature, subset)
+        })
         val previews = ids.associate { id ->
             val s = source(id)
             "s$id" to LivePricingEngine.buildPreview(s, priceCatalog, BusinessRoleBindings(s.signature, s.elements.associate { it.uuid to BusinessRole.ADDITIONAL_WORK }),
@@ -63,7 +66,7 @@ class ProjectPricingTest {
         val selection = initial.copy(projectWorks = listOf(work))
         val s = source(1)
         val p = LivePricingEngine.buildPreview(s, catalog, BusinessRoleBindings(s.signature, s.elements.associate { it.uuid to BusinessRole.ADDITIONAL_WORK }), "q", scopeSignature = selection.scopeSignature)
-        val selected = selection.copy(sources = listOf(ProjectSourceSelection.Live("s1", p.signature)))
+        val selected = selection.copy(sources = listOf((selection.sources.single() as ProjectSourceSelection.Live).copy(expectedSignature = p.signature)))
         val result = ProjectPricingEngine.previewComposition(selected, mapOf("s1" to p), catalog = catalog)
         assertEquals(emptyList(), result.fatalProblems)
         assertEquals(300, result.confirmedTotalCents)
@@ -156,6 +159,19 @@ class ProjectPricingTest {
             assertFalse(p.canRequestPartialAcknowledgement)
             assertTrue(p.fatalProblems.isNotEmpty())
             assertTrue(p.included.isEmpty())
+        }
+    }
+
+    @Test fun scopeBindsEverySelectedLiveMeasurementAndCatalogBasisBeforePricing() {
+        val (selection, previews) = setup(listOf(1, 2))
+        val peer = selection.sources[1] as ProjectSourceSelection.Live
+        for (changed in listOf(peer.copy(basisSourceSignature = "new-child-version"),
+            peer.copy(basisCatalogSignature = "new-price-version"), peer.copy(measurementUuid = "different"))) {
+            val updated = selection.copy(sources = listOf(selection.sources[0], changed))
+            assertNotEquals(selection.scopeSignature, updated.scopeSignature)
+            val stale = ProjectPricingEngine.previewComposition(updated, previews)
+            assertFalse(stale.canFinalizeFull)
+            assertFalse(stale.canRequestPartialAcknowledgement)
         }
     }
 
