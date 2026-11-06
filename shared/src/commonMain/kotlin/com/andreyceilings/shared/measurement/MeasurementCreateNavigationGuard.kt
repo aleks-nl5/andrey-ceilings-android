@@ -25,7 +25,7 @@ class MeasurementCreateNavigationGuard {
     private var surfaceBack: (() -> Boolean)? = null
     fun bindEdit(model: MeasurementEditModel) { edit = model }
     fun unbindEdit(model: MeasurementEditModel) {
-        if (edit === model && !model.state.value.saving && !model.state.value.checking && !model.state.value.saved) edit = null
+        if (edit === model && !model.state.value.saving && !model.state.value.checking && !model.state.value.saved && !model.state.value.exitReady) edit = null
     }
     fun bindSurface(back: () -> Boolean) { surfaceBack = back }
     fun unbindSurface(back: () -> Boolean) { if (surfaceBack === back) surfaceBack = null }
@@ -49,7 +49,7 @@ class MeasurementCreateNavigationGuard {
         if (elements?.editor?.value?.saving == true || elements?.points?.value?.saving == true) return true
         val editState = edit?.state?.value
         if (editState != null && (current.measurementEdit?.measurementId == editState.original.measurementId && current.measurementEdit.projectId == editState.draft.projectId ||
-            current.measurementDetails?.measurementId == editState.original.measurementId && current.measurementDetails.projectId == editState.draft.projectId)) return editState.saving || editState.checking || editState.saved
+            current.measurementDetails?.measurementId == editState.original.measurementId && current.measurementDetails.projectId == editState.draft.projectId)) return editState.saving || editState.checking || editState.saved || editState.exitReady
         val state = editor?.state?.value ?: return false
         return current.measurementCreate?.projectId == state.draft.projectId &&
             (state.saving || state.savedId != null)
@@ -97,12 +97,13 @@ class MeasurementCreateNavigationGuard {
             return current
         }
         val editModel = edit
-        editModel?.cancelPointDrag(); editModel?.cancelLineDrag(); editModel?.cancelAreaDrag()
         val editState = editModel?.state?.value
         if (editState != null && (current.measurementEdit?.measurementId == editState.original.measurementId && current.measurementEdit.projectId == editState.draft.projectId ||
             current.measurementDetails?.measurementId == editState.original.measurementId && current.measurementDetails.projectId == editState.draft.projectId)) {
-            if (editState.saving || editState.checking || editState.saved) return current
+            if (editState.saving || editState.checking || editState.saved || editState.exitReady) return current
         }
+        // Accepted writes / confirmed exit delivery must not be mutated by another Back.
+        editModel?.cancelPointDrag(); editModel?.cancelLineDrag(); editModel?.cancelAreaDrag()
         if (!blocksExit(current)) {
             if (proposed == current.back() && surfaceBack?.invoke() == true) return current
             if (editState?.dirty == true) {

@@ -33,7 +33,7 @@ internal fun rememberDetailsDrawingEditor(store:MeasurementEditStore?, project:L
 internal fun DetailsDrawingControls(model:MeasurementEditModel,enabled:Boolean) {
     val state by model.state.collectAsState()
     val scope=rememberCoroutineScope()
-    val available=enabled && !state.saving && !state.checking && !state.saved && !state.uncertain && !state.conflict
+    val available=enabled && !state.saving && !state.checking && !state.saved && !state.exitReady && !state.uncertain && !state.conflict
     fun save() {scope.launch(start=CoroutineStart.UNDISPATCHED) {model.saveDetailsDrawing()}}
     if(state.selectedLineUuid!=null)FlowRow {
         listOf("Перемістити сегмент","Початок","Кінець").forEachIndexed {i,label ->
@@ -71,6 +71,7 @@ internal fun DetailsDrawingControls(model:MeasurementEditModel,enabled:Boolean) 
 }
 
 internal suspend fun MeasurementEditModel.saveDetailsDrawing() {
+    if(state.value.exitRequested || state.value.exitReady) {saveAndExit();return}
     val line=state.value.selectedLineUuid;val area=state.value.area.selected
     save(keepEditing=true)
     if(!state.value.uncertain)delivered()
@@ -84,13 +85,17 @@ internal suspend fun MeasurementEditModel.saveDetailsDrawing() {
 internal fun DetailsDrawingExitDialog(model:MeasurementEditModel) {
     val state by model.state.collectAsState()
     val scope=rememberCoroutineScope()
-    val available=!state.saving && !state.checking && !state.uncertain && !state.conflict
-    fun save(){scope.launch(start=CoroutineStart.UNDISPATCHED){model.saveDetailsDrawing()}}
+    LaunchedEffect(model,state.exitReady) {model.deliverPendingExit()}
+    val available=!state.saving && !state.checking && !state.exitReady && !state.conflict
+    fun save(){scope.launch(start=CoroutineStart.UNDISPATCHED){model.saveAndExit()}}
     if(state.exitRequested)AlertDialog(onDismissRequest=model::continueEditing,title={Text("Незбережені зміни креслення")},
-        text={Text("Збережіть креслення або явно відхиліть зміни перед виходом.")},
-        confirmButton={TextButton(enabled=available && model.canSaveMountingDraft(),onClick={model.continueEditing();save()}){Text("Зберегти креслення")}},
+        text={Column {
+            Text("Збережіть креслення або явно відхиліть зміни перед виходом.")
+            state.error?.let {Text(it,color=MaterialTheme.colorScheme.error)}
+        }},
+        confirmButton={TextButton(enabled=available && model.canSaveMountingDraft(),onClick=::save){Text(if(state.uncertain)"Повторити ту саму спробу" else "Зберегти креслення")}},
         dismissButton={Row {
             TextButton(enabled=!state.saving && !state.checking,onClick=model::discardAndExit){Text("Відхилити зміни")}
-            TextButton(onClick=model::continueEditing){Text("Продовжити")}
+            TextButton(enabled=!state.saving && !state.checking,onClick=model::continueEditing){Text("Продовжити")}
         }})
 }

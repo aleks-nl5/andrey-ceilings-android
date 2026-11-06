@@ -14,7 +14,7 @@ import kotlinx.serialization.json.*
 data class MeasurementEditState(
     val original: MeasurementEditDocument, val draft: MeasurementCreateDraft = original.draft,
     val saving: Boolean = false, val checking: Boolean = false, val saved: Boolean = false, val error: String? = null,
-    val conflict: Boolean = false, val exitRequested: Boolean = false,
+    val conflict: Boolean = false, val exitRequested: Boolean = false, val exitReady: Boolean = false,
     val canUndo: Boolean = false, val canRedo: Boolean = false,
     val area: AreaEditorState = AreaEditorState(),
     val lineEdits: Map<String,LinePlacementEdit> = emptyMap(), val declaredLengths: Map<String,Long> = emptyMap(),
@@ -62,7 +62,7 @@ class MeasurementEditModel(
         mutableState.value = state.value.copy(draft = draft, canUndo = inputStart?.let { it != CeilingFormHistory(draft.snapshot(),state.value.pointEdits,state.value.wallGeneration,state.value.lineEdits,state.value.declaredLengths,state.value.area.history()) } == true || undo.isNotEmpty(),
             canRedo = redo.isNotEmpty(), error = null)
     }
-    fun beginInput() { if (!state.value.saving && !state.value.checking && !state.value.saved && inputStart == null) inputStart = form() }
+    fun beginInput() { if (!state.value.saving && !state.value.checking && !state.value.saved && !state.value.exitReady && inputStart == null) inputStart = form() }
     fun commitInput() {
         val start = inputStart ?: return
         inputStart = null
@@ -70,7 +70,7 @@ class MeasurementEditModel(
         publish()
     }
     fun accept(intent: MeasurementCreateIntent, grouped: Boolean = false) {
-        if (state.value.saving || state.value.checking || state.value.saved || state.value.uncertain) return
+        if (state.value.saving || state.value.checking || state.value.saved || state.value.exitReady || state.value.uncertain) return
         if (grouped) beginInput() else commitInput()
         val before = state.value.draft
         val after = before.reduce(intent)
@@ -81,28 +81,48 @@ class MeasurementEditModel(
         publish(after)
     }
     fun undo() {
-        if (state.value.saving || state.value.checking || state.value.saved || state.value.uncertain) return
+        if (state.value.saving || state.value.checking || state.value.saved || state.value.exitReady || state.value.uncertain) return
         commitInput()
         if (undo.isEmpty()) return
         redo.add(form()); restoreForm(undo.removeAt(undo.lastIndex))
     }
     fun redo() {
-        if (state.value.saving || state.value.checking || state.value.saved || state.value.uncertain) return
+        if (state.value.saving || state.value.checking || state.value.saved || state.value.exitReady || state.value.uncertain) return
         commitInput()
         if (redo.isEmpty()) return
         undo.add(form()); restoreForm(redo.removeAt(redo.lastIndex))
     }
     fun requestExit(action: () -> Unit) {
-        if (state.value.saving || state.value.checking || state.value.saved) return
+        if (state.value.saving || state.value.checking || state.value.saved || state.value.exitReady) return
         cancelAreaDrag(); cancelPointDrag(); cancelLineDrag(); commitInput()
         if (!state.value.dirty && !state.value.uncertain) action() else {
             exitAction = action
             mutableState.value = state.value.copy(exitRequested = true)
         }
     }
-    fun continueEditing() { exitAction = null; mutableState.value = state.value.copy(exitRequested = false) }
+    fun continueEditing() {
+        if(state.value.saving || state.value.checking || state.value.exitReady)return
+        exitAction = null; mutableState.value = state.value.copy(exitRequested = false)
+    }
+    /** Retain the exact requested action through rejection/uncertain retries. */
+    suspend fun saveAndExit() {
+        if(state.value.exitReady) {deliverPendingExit();return}
+        if(exitAction==null || !state.value.exitRequested)return
+        saveAttempt(keepEditing=true,preserveExitAction=true)
+        deliverPendingExit()
+    }
+    /** UI also drains this after reattachment; clear before invoking to prevent duplicate delivery. */
+    fun deliverPendingExit() {
+        val current=state.value
+        if(!current.exitReady || current.saving || current.checking || current.uncertain || current.conflict)return
+        val action=exitAction ?: return
+        exitAction=null
+        mutableState.value=current.copy(exitReady=false)
+        delivered()
+        action()
+    }
     fun discardAndExit() {
-        if (state.value.saving || state.value.checking || state.value.saved) return
+        if (state.value.saving || state.value.checking || state.value.saved || state.value.exitReady) return
         val action = exitAction
         exitAction = null; attempt=null; store?.release(token); undo.clear(); redo.clear(); inputStart = null
         mutableState.value = MeasurementEditState(state.value.original)
@@ -110,53 +130,56 @@ class MeasurementEditModel(
     }
     /** Reload is a read and is offered explicitly only after a conflict, with discard confirmation. */
     suspend fun reload() {
-        if (state.value.saving || state.value.checking || state.value.saved) return
+        if (state.value.saving || state.value.checking || state.value.saved || state.value.exitReady) return
         mutableState.value = state.value.copy(checking = true)
         try {
             val original = state.value.original
             val loaded = withContext(Dispatchers.Default) { checkNotNull(store).load(original.draft.projectId, original.measurementId) }
-            undo.clear(); redo.clear(); inputStart = null; attempt=null; store?.release(token)
+            undo.clear(); redo.clear(); inputStart = null; attempt=null; exitAction=null;store?.release(token)
             mutableState.value = MeasurementEditState(loaded)
         } catch (_: Exception) {
             mutableState.value = state.value.copy(checking = false, error = "Запис недоступний. Чернетку залишено на екрані.")
         }
     }
-    suspend fun save(keepEditing: Boolean = false) {
-        if (!mutex.tryLock()) return
+    suspend fun save(keepEditing: Boolean = false) {saveAttempt(keepEditing,preserveExitAction=false)}
+    private suspend fun saveAttempt(keepEditing:Boolean,preserveExitAction:Boolean):Boolean {
+        if (!mutex.tryLock()) return false
         try {
-            if (state.value.saving || state.value.checking || state.value.saved || state.value.area.properties!=null || state.value.conflict || state.value.mountingInput!=null || state.value.lineProperties!=null) return
+            if (state.value.saving || state.value.checking || state.value.saved || state.value.exitReady || state.value.area.properties!=null || state.value.conflict || state.value.mountingInput!=null || state.value.lineProperties!=null) return false
             commitInput()
             val before=state.value
-            if (!validateMeasurementCreate(before.draft).canSave || !canSaveMountingDraft()) return
-            val completion=store?.beginWrite() ?: return
+            if (!validateMeasurementCreate(before.draft).canSave || !canSaveMountingDraft()) return false
+            val completion=store?.beginWrite() ?: return false
             val command=attempt ?: CeilingWriteAttempt(newRecordUuid(),null).also { attempt=it }
-            exitAction=null
+            if(!preserveExitAction)exitAction=null
             mutableState.value=before.copy(saving=true,exitRequested=false,error=null,drag=null)
             store?.retain(token,this)
-            withContext(NonCancellable+Dispatchers.Default) {
+            return withContext(NonCancellable+Dispatchers.Default) {
                 try {
                     val timestamp=command.now ?: checkNotNull(store).now().also { attempt=command.copy(now=it) }
                     val result=checkNotNull(store).update(before.original,before.draft,before.pointEdits,command.operation,before.wallGeneration,timestamp,completion,before.lineEdits,before.declaredLengths,before.area.edits,before.area.quantities)
                     val geometryChanged=validateMeasurementCreate(before.original.draft).geometry!=validateMeasurementCreate(result.draft).geometry
                     undo.clear();redo.clear();attempt=null
-                    mutableState.value=MeasurementEditState(result,
+                    mutableState.value=MeasurementEditState(result,exitReady=preserveExitAction && exitAction!=null,
                         saved=!keepEditing && !(geometryChanged && (result.placements.points.any { it.mounting.needsReview } || result.placements.lines.any {it.needsReview} || result.placements.areas.any {it.needsReview})),
                         reviewPrompt=geometryChanged && (result.placements.points.any { it.mounting.needsReview } || result.placements.lines.any {it.needsReview} || result.placements.areas.any {it.needsReview}),
                         reviewing=keepEditing || before.reviewing,
                         selectedLineUuid=if(keepEditing && result.placements.points.none {it.mounting.needsReview})result.placements.lines.firstOrNull {it.needsReview}?.uuid else null,
                         selectedPointUuid=if (keepEditing) result.placements.points.firstOrNull { it.mounting.needsReview }?.uuid else null)
+                    true
                 } catch (conflict: MeasurementEditConflict) {
-                    attempt=null;mutableState.value=before.copy(error=conflict.message,conflict=true);store?.release(token)
+                    attempt=null;mutableState.value=before.copy(error=conflict.message,conflict=true);store?.release(token);false
                 } catch (failure: PointPlacementFailure.RetryConflict) {
-                    attempt=null;mutableState.value=before.copy(error=pointFailureMessage(failure),conflict=true);store?.release(token)
+                    attempt=null;mutableState.value=before.copy(error=pointFailureMessage(failure),conflict=true);store?.release(token);false
                 } catch (failure: MeasurementEditRejected) {
-                    attempt=null;mutableState.value=before.copy(uncertain=false,error=failure.message);store?.release(token)
+                    attempt=null;mutableState.value=before.copy(uncertain=false,error=failure.message);store?.release(token);false
                 } catch (failure: LinePlacementFailure) {
-                    attempt=null;mutableState.value=before.copy(uncertain=false,error=failure.message);store?.release(token)
+                    attempt=null;mutableState.value=before.copy(uncertain=false,error=failure.message);store?.release(token);false
                 } catch (_: IllegalArgumentException) {
-                    attempt=null;mutableState.value=before.copy(uncertain=false,error="Перевірте контур, стінні опори й відступи. Чернетку збережено; недопустимі дані не записано.");store?.release(token)
+                    attempt=null;mutableState.value=before.copy(uncertain=false,error="Перевірте контур, стінні опори й відступи. Чернетку збережено; недопустимі дані не записано.");store?.release(token);false
                 } catch (_: Exception) {
                     mutableState.value=before.copy(uncertain=true,error="Результат збереження не підтверджено. Повторіть ту саму спробу або перезавантажте запис; чернетку збережено.")
+                    false
                 } finally { store?.endWrite(completion) }
             }
         } finally { mutex.unlock() }
@@ -211,7 +234,7 @@ class MeasurementEditModel(
         return state.value.original.placements.points.map { previewMounting(it,geometry,draftWalls(),changed,state.value.pointEdits[it.uuid]) }
     }
     fun selectPoint(uuid: String) {
-        if (state.value.saving || state.value.uncertain || state.value.checking) return
+        if (state.value.saving || state.value.uncertain || state.value.checking || state.value.exitReady) return
         if (displayPoints().any { it.uuid==uuid }) mutableState.value=state.value.copy(area=state.value.area.copy(selected=null,tool=null,vertices=emptyList()),selectedPointUuid=uuid,selectedLineUuid=null,lineElementUuid=null,lineStart=null,linePreview=null)
     }
     fun beginPointDrag(uuid: String) {
@@ -232,7 +255,7 @@ class MeasurementEditModel(
         stagePoint(drag.point.uuid,PointMountingEdit(freeX=drag.xMm.roundToLong(),freeY=drag.yMm.roundToLong()))
     }
     fun stagePoint(uuid: String,edit: PointMountingEdit) {
-        if (state.value.saving || state.value.checking || state.value.uncertain || state.value.saved) return
+        if (state.value.saving || state.value.checking || state.value.uncertain || state.value.saved || state.value.exitReady) return
         commitInput();undo.add(form());redo.clear()
         mutableState.value=state.value.copy(pointEdits=state.value.pointEdits+(uuid to edit),mountingInput=null,drag=null,error=null)
         publish()
@@ -284,7 +307,7 @@ class MeasurementEditModel(
 
     private fun PointMounting.freeMoved() = copy(anchor=null,confirmedAt=null,anchorGeometryJson=null,
         needsReview=needsReview || anchor!=null)
-    private fun editable() = !state.value.saving && !state.value.checking && !state.value.saved && !state.value.uncertain
+    private fun editable() = !state.value.saving && !state.value.checking && !state.value.saved && !state.value.exitReady && !state.value.uncertain
     fun displayLines(): List<LinePlacement> {
         val state=state.value
         val geometry=validateMeasurementCreate(state.draft).geometry ?: return state.original.placements.lines

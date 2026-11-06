@@ -123,6 +123,23 @@ reopens the physical encrypted database. Regression model tests cover invalid
 measured vertices, concave footprint, declared capacity and radius provenance.
 Final-SHA CI results belong in PR #103. Owner acceptance must be repeated.
 
+## Details Save-and-exit navigation correction (06.11.2026)
+
+The dirty Details dialog retains the original Back/Edit/host transition callback
+until the existing atomic Save returns a confirmed result. A narrow `saveAndExit`
+path uses the same writer and frozen uncertain-retry command. The committed exit
+is delivered once, clearing its callback before invocation; the mounted Details
+surface can also drain delivery after a suspended caller resumes. Navigation and
+gesture changes remain blocked during the write and confirmed-delivery interval.
+
+Rollback, invalid input, conflict and uncertain outcomes leave the draft and exit
+intent in the dialog. Uncertain retry confirms the same immutable receipt without
+another write. Continue explicitly cancels the exit intent; Discard keeps its
+separate navigation behavior. No SQL schema, migration, encryption or writer is
+added. Model regressions, actual Desktop dialog scenes and Android system Back /
+Edit + physical dialog-button tests cover commit ordering, failure, conflict,
+uncertain reconciliation, exactly one transition and no duplicate journal row.
+
 ## Verification and owner acceptance
 
 Common geometry and transaction proofs are reused on JDBC and real Android,

@@ -51,7 +51,7 @@ fun MeasurementDetailsScreen(
         val drawingEditor=if(data?.geometry is MeasurementGeometryView.Captured)
             rememberDetailsDrawingEditor(editStore,projectId,measurementId,data.updatedAt) else null
         val drawingState=drawingEditor?.state?.collectAsState()?.value
-        val liveActions=drawingState?.let {!it.dirty && !it.saving && !it.checking && !it.uncertain && !it.conflict}!=false
+        val liveActions=drawingState?.let {!it.dirty && !it.saving && !it.checking && !it.exitReady && !it.uncertain && !it.conflict}!=false
         val effectiveArea=if(drawingEditor!=null)drawingState?.area?.selected else selectedArea
         val effectiveLine=if(drawingEditor!=null)drawingState?.selectedLineUuid else selectedLine
         val modalOpen=model?.editor?.collectAsState()?.value!=null || points.confirmingDelete || points.saving || points.retry!=null || points.positionEditor!=null || points.modeElementUuid!=null
@@ -126,7 +126,7 @@ fun MeasurementDetailsScreen(
     onCancelPointDrag: () -> Unit = {}, onUndoPoint: () -> Unit = {}, onRedoPoint: () -> Unit = {}
 ) {
     val drawingState=drawingEditor?.state?.collectAsState()?.value
-    val canDrag=drawingEnabled && drawingState?.let {!it.saving && !it.checking && !it.saved && !it.uncertain && !it.conflict && !it.exitRequested}==true
+    val canDrag=drawingEnabled && drawingState?.let {!it.saving && !it.checking && !it.saved && !it.exitReady && !it.uncertain && !it.conflict && !it.exitRequested}==true
     DisposableEffect(drawingEditor,navigationGuard) {
         drawingEditor?.let {navigationGuard?.bindEdit(it)}
         onDispose {
@@ -152,9 +152,9 @@ fun MeasurementDetailsScreen(
     val end = contentPadding.calculateEndPadding(direction)
     val controls: @Composable () -> Unit = {
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            TextButton(enabled = !pointState.saving && drawingState?.saving!=true && drawingState?.checking!=true, onClick = { drawingEditor?.cancelLineDrag();drawingEditor?.cancelAreaDrag();onFinishPlacement(); fullscreen = !fullscreen }) { Text(if (fullscreen) "Згорнути" else "На весь екран") }
+            TextButton(enabled = !pointState.saving && drawingState?.saving!=true && drawingState?.checking!=true && drawingState?.exitReady!=true, onClick = { drawingEditor?.cancelLineDrag();drawingEditor?.cancelAreaDrag();onFinishPlacement(); fullscreen = !fullscreen }) { Text(if (fullscreen) "Згорнути" else "На весь екран") }
             if (onEdit != null && data?.geometry is MeasurementGeometryView.Captured)
-                Button(enabled=drawingState?.saving!=true && drawingState?.checking!=true,onClick = {drawingEditor?.requestExit(onEdit) ?: onEdit()}) { Text("Редагувати") }
+                Button(enabled=drawingState?.saving!=true && drawingState?.checking!=true && drawingState?.exitReady!=true,onClick = {drawingEditor?.requestExit(onEdit) ?: onEdit()}) { Text("Редагувати") }
         }
     }
     if (fullscreen && data != null) {
@@ -283,7 +283,7 @@ fun MeasurementDetailsScreen(
                             onFinishLineDrag={drawingEditor?.finishLineDrag()},onCancelLineDrag={drawingEditor?.cancelLineDrag()},
                             pointPlacements = pointState.points, fitPointPlacements = true, selectedPointUuid = pointState.selectedPointUuid,
                             placementMode = pointState.modeElementUuid != null, onPlacePoint = onPlacePoint, onSelectPoint = onSelectPoint,
-                            pointEditingEnabled = drawingState?.dirty!=true && drawingState?.saving!=true && drawingState?.uncertain!=true && !pointState.saving && pointState.retry == null && pointState.positionEditor == null,
+                            pointEditingEnabled = drawingState?.exitReady!=true && drawingState?.dirty!=true && drawingState?.saving!=true && drawingState?.uncertain!=true && !pointState.saving && pointState.retry == null && pointState.positionEditor == null,
                             pointDrag = pointState.drag, onBeginPointDrag = onBeginPointDrag,
                             onPreviewPointDrag = onPreviewPointDrag, onFinishPointDrag = onFinishPointDrag, onCancelPointDrag = onCancelPointDrag)
                         val contour = remember(row.geometry) { measurementDrawingContour(row.geometry) }
