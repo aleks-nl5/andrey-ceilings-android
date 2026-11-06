@@ -62,7 +62,7 @@ class MixedDetailsTouchTest {
         fun awaitDialog()=compose.waitUntil(15000){compose.onAllNodesWithText("Незбережені зміни креслення").fetchSemanticsNodes().isNotEmpty()}
         var expected:MeasurementEditDocument?=null
         try {
-            compose.waitUntil(15000){compose.onAllNodes(hasText("Сегмент 1: 1 м") and hasClickAction()).fetchSemanticsNodes().any {it.config.getOrNull(SemanticsProperties.Disabled)==null}}
+            compose.waitUntil(15000){compose.onAllNodes(matcher).fetchSemanticsNodes().any {it.config.getOrNull(MeasurementDrawingSemantics.EditingEnabled)==true}}
             val ui=object:MixedOverlayProof.Canvas {
                 override fun tap(x:Long,y:Long){val at=p(x,y);canvas().performTouchInput {click(at)}}
                 override fun drag(x:Long,y:Long,toX:Long,toY:Long){val a=p(x,y);val b=p(toX,toY);canvas().performTouchInput {swipe(a,b,500)}}

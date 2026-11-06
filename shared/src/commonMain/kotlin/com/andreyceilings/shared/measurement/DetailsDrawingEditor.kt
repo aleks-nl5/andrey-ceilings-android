@@ -10,48 +10,39 @@ import kotlinx.coroutines.flow.collect
 
 /** Details stages transforms in the same saveable full-set editor as the contour screen. */
 @Composable
-internal fun rememberDetailsDrawingEditor(store:MeasurementEditStore?, project:Long, id:Long, version:Long,
-    sourceVersions:Map<String,Long>?=null):MeasurementEditModel? {
-    if(store==null)return null
+internal fun rememberDetailsDrawingEditor(store:MeasurementEditStore?, project:Long, id:Long, uuid:String):Pair<MeasurementEditModel?,Boolean> {
+    if(store==null)return null to false
     val saver=remember(store) {Saver<MeasurementEditModel?,String>(save={it?.snapshot()},
         restore={MeasurementEditModel.restore(store,it,project,id)})}
     var model by rememberSaveable(store,project,id,stateSaver=saver) {mutableStateOf<MeasurementEditModel?>(null)}
-    LaunchedEffect(store,project,id) {
-        if(model==null)try {model=MeasurementEditModel(store,withContext(Dispatchers.Default){store.load(project,id)})}
-        catch(_:Exception) { /* Viewing remains available if an old contour cannot be edited. */ }
-    }
+    val source=remember(store,project,id,uuid) {store.observeDocument(project,id,uuid)}.collectAsState(null).value
+    LaunchedEffect(source) {if(model==null && source!=null)model=MeasurementEditModel(store,source)}
     val current=model
     val state=current?.state?.collectAsState()?.value
     LaunchedEffect(current) {current?.reconcile()}
     LaunchedEffect(current,state?.saved) {current?.resumeDetailsAfterSave()}
-    // Checking/error changes from this read are not a new refresh request. In
-    // particular a failed read must wait for a new source revision or explicit retry.
-    val reloadBlocked=state?.let {it.dirty || it.saving || it.saved || it.exitReady || it.uncertain || it.conflict ||
+    val blocked=current?.state?.value?.let {it.dirty || it.saving || it.saved || it.exitReady || it.exitRequested || it.uncertain || it.conflict ||
         it.drag!=null || it.lineDrag!=null || it.area.drag!=null}!=false
-    val refresh by rememberUpdatedState(Triple(version,sourceVersions,state?.original to reloadBlocked))
+    val refresh by rememberUpdatedState(source to (state?.original to blocked))
     LaunchedEffect(current) {
         if(current==null)return@LaunchedEffect
-        var document:MeasurementEditDocument?=null
-        var expected=emptyMap<String,Long>()
-        // Sequential collection lets an accepted read finish when another child stream
-        // changes; collectLatest/effect-key cancellation could strand a stale co-editor.
-        snapshotFlow {refresh}.collect { (version,source,_) ->
-            // A pointer event can precede the next Compose snapshot. Consult the model
-            // synchronously before a read that would replace its clean document.
+        var processed:MeasurementEditDocument?=null
+        // Observe complete transactions, never partial loading values from UI streams.
+        snapshotFlow {refresh}.collect { (source,_) ->
+            if(source==null || source==processed)return@collect
             val state=current.state.value
-            if(document!==state.original) {
-                document=state.original
-                val original=state.original.placements
-                expected=detailsDrawingVersions(original.points,original.lines,original.areas,original.elements)
+            if(source.updatedAt<state.original.updatedAt || source==state.original) {
+                processed=source;return@collect
             }
-            // Ignore reactive notifications older than our own confirmed Save.
-            val changed=version>state.original.updatedAt || source!=null &&
-                (expected.keys!=source.keys || source.any {(key,value)->value>expected.getValue(key)})
-            if(changed && !state.dirty && !state.saving && !state.exitReady && !state.checking && !state.saved &&
-                !state.uncertain && !state.conflict && state.drag==null && state.lineDrag==null && state.area.drag==null)current.reload()
+            if(!state.dirty && !state.saving && !state.exitReady && !state.exitRequested && !state.checking && !state.saved &&
+                !state.uncertain && !state.conflict && state.drag==null && state.lineDrag==null && state.area.drag==null) {
+                processed=source
+                current.reloadDrawing()
+            }
         }
     }
-    return current
+    val ready=current!=null && source!=null && (blocked || source.updatedAt<current.state.value.original.updatedAt || source==current.state.value.original)
+    return current to ready
 }
 
 @Composable
@@ -88,7 +79,7 @@ internal fun DetailsDrawingControls(model:MeasurementEditModel,enabled:Boolean) 
     if(state.saving || state.checking) {LinearProgressIndicator();Text("Збереження або перевірка креслення…")}
     if(state.uncertain)TextButton(enabled=!state.saving,onClick=::save){Text("Повторити ту саму спробу")}
     var reload by remember {mutableStateOf(false)}
-    if(state.conflict || state.uncertain || state.dirty)TextButton(enabled=!state.saving && !state.checking,onClick={reload=true}){Text("Перезавантажити креслення")}
+    if(state.conflict || state.uncertain || state.dirty || state.error!=null)TextButton(enabled=!state.saving && !state.checking,onClick={reload=true}){Text("Перезавантажити креслення")}
     if(reload)AlertDialog(onDismissRequest={reload=false},title={Text("Відхилити чернетку креслення?")},
         text={Text("Відкриються поточні дані з бази. Незбережені переміщення буде відхилено.")},
         confirmButton={TextButton(onClick={reload=false;scope.launch {model.reload()}}){Text("Перезавантажити")}},
@@ -104,14 +95,6 @@ internal suspend fun MeasurementEditModel.saveDetailsDrawing() {
         point?.let(::selectPoint);line?.let(::selectLine);area?.let(::selectArea)
     }
 }
-
-internal fun detailsDrawingVersions(points:List<PointPlacement>,lines:List<LinePlacement>,areas:List<AreaFeature>,elements:Map<String,Long>)=
-    buildMap<String,Long> {
-        points.forEach {put("point:${it.uuid}",it.updatedAt)}
-        lines.forEach {put("line:${it.uuid}",it.updatedAt)}
-        areas.forEach {put("area:${it.uuid}",it.updatedAt)}
-        elements.forEach {(uuid,version)->put("element:$uuid",version)}
-    }
 
 /** Keep the navigation modal mounted even when the LazyColumn drawing is off screen. */
 @Composable

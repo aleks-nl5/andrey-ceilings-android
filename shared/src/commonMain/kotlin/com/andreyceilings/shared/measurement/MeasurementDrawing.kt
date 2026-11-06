@@ -41,6 +41,7 @@ object MeasurementDrawingSemantics {
     val SelectedLine=SemanticsPropertyKey<String>("Selected measurement line")
     val SelectedArea=SemanticsPropertyKey<String>("Selected measurement area")
     val PointDrag=SemanticsPropertyKey<PointDragPreview>("Measurement point drag")
+    val EditingEnabled=SemanticsPropertyKey<Boolean>("Measurement overlay editing enabled")
 }
 
 /**
@@ -318,6 +319,7 @@ fun MeasurementDrawing(
                 this[MeasurementDrawingSemantics.Points]=pointPlacements
                 this[MeasurementDrawingSemantics.Lines]=linePlacements
                 this[MeasurementDrawingSemantics.Areas]=areaFeatures
+                this[MeasurementDrawingSemantics.EditingEnabled]=pointEditingEnabled || lineEditingEnabled || areaEditingEnabled
                 selectedPointUuid?.let {this[MeasurementDrawingSemantics.SelectedPoint]=it}
                 selectedLineUuid?.let {this[MeasurementDrawingSemantics.SelectedLine]=it}
                 selectedAreaUuid?.let {this[MeasurementDrawingSemantics.SelectedArea]=it}

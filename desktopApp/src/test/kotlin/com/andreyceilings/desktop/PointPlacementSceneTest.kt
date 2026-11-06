@@ -52,6 +52,7 @@ class PointPlacementSceneTest {
             }
             try {
                 scene.awaitText("Розміщено: 0 з 6")
+                withTimeout(15000){while(scene.canvas().config.getOrNull(MeasurementDrawingSemantics.EditingEnabled)!=true){scene.frame();delay(20)}}
                 scene.click("Розмістити"); scene.awaitText("Приблизне розміщення")
                 scene.tapWorld(row, 0, 1000)
                 scene.awaitText("Торкніться всередині контуру")

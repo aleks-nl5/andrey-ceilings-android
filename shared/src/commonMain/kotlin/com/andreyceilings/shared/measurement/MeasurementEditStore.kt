@@ -6,6 +6,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -70,6 +71,25 @@ class MeasurementEditStore(private val database: PrototypeDatabase, private val 
     internal fun retained(token: String): MeasurementEditModel? = pending.value[token]
 
     fun load(projectId: Long, measurementId: Long): MeasurementEditDocument = loadDocument(projectId,measurementId)
+
+    internal suspend fun readDocument(projectId:Long,measurementId:Long):MeasurementEditDocument=withContext(Dispatchers.Default) {
+        pointRead.withLock {
+            if(sessionClosed.value)throw MeasurementEditConflict()
+            loadDocument(projectId,measurementId)
+        }
+    }
+
+    /** One transactional document, rather than a fingerprint of independently loading UI lists.
+     * The existing overlay query observes POINT/element changes and every ceiling commit
+     * through its measurement row. Accepted reads share the session shutdown drain.
+     */
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    internal fun observeDocument(projectId:Long,measurementId:Long,uuid:String):Flow<MeasurementEditDocument?> =
+        sessionClosed.flatMapLatest {closed ->
+            if(closed)flowOf(null) else database.pointPlacementsQueries.selectEditorOverlay(measurementId,projectId,uuid).asFlow()
+                .map {readDocument(projectId,measurementId).takeUnless {sessionClosed.value}}
+                .catch {if(it is CancellationException)throw it else emit(null)}
+        }
     private fun loadDocument(projectId: Long, measurementId: Long, allowClosing: Boolean = false): MeasurementEditDocument = database.transactionWithResult {
         if ((!allowClosing && sessionClosed.value) || projects.find(projectId) == null) throw MeasurementEditConflict()
         val row = measurements.find(measurementId)?.takeIf { it.projectId == projectId } ?: throw MeasurementEditConflict()

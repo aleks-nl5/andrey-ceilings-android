@@ -49,18 +49,13 @@ fun MeasurementDetailsScreen(
         var selectedLine by rememberSaveable(data?.uuid) {mutableStateOf<String?>(null)}
         val points = model?.points?.collectAsState()?.value ?: PointPlacementState()
         val items=(elementsState as? MeasurementElementsState.Loaded)?.items
-        val sourceVersions=remember(points.points,points.available,lines,areas,items) {
-            val related=(points.points.map {it.elementUuid}+lines.map {it.elementUuid}+areas.mapNotNull {it.elementUuid}).toSet()
-            if(items!=null && points.available)detailsDrawingVersions(points.points,lines,areas,
-                items.filter {it.uuid in related || it.supportsLinePlacement() || it.supportsAreaPlacement()}.associate {it.uuid to it.updatedAt}) else null
-        }
-        val drawingEditor=if(data?.geometry is MeasurementGeometryView.Captured)
-            rememberDetailsDrawingEditor(editStore,projectId,measurementId,data.updatedAt,sourceVersions) else null
+        val (drawingEditor,drawingReady)=if(data?.geometry is MeasurementGeometryView.Captured)
+            rememberDetailsDrawingEditor(editStore,projectId,measurementId,data.uuid) else (null to false)
         val drawingState=drawingEditor?.state?.collectAsState()?.value
         fun liveActionsAllowed(retry:Boolean=false):Boolean {
             val scene=model?.points?.value ?: return false
             if(!scene.available || scene.saving || !retry && scene.retry!=null || model.state.value !is MeasurementElementsState.Loaded)return false
-            if(editStore!=null && data?.geometry is MeasurementGeometryView.Captured && drawingEditor==null)return false
+            if(editStore!=null && data?.geometry is MeasurementGeometryView.Captured && !drawingReady)return false
             return drawingEditor?.state?.value?.let {
                 !it.dirty && !it.saving && !it.checking && !it.saved && !it.exitReady && !it.exitRequested && !it.uncertain && !it.conflict &&
                     it.drag==null && it.lineDrag==null && it.area.drag==null
@@ -71,11 +66,13 @@ fun MeasurementDetailsScreen(
         val effectiveLine=if(drawingEditor!=null)drawingState?.selectedLineUuid else selectedLine
         val effectivePoint=if(drawingEditor!=null)drawingState?.selectedPointUuid else points.selectedPointUuid
         val displayedPoints=drawingEditor?.displayPoints() ?: points.points
+        val displayedLines=drawingEditor?.displayLines() ?: lines
+        val displayedAreas=drawingEditor?.displayAreas() ?: areas
         val modalOpen=model?.editor?.collectAsState()?.value!=null || points.confirmingDelete || points.saving || points.retry!=null || points.positionEditor!=null || points.modeElementUuid!=null
         val pointElement = (elementsState as? MeasurementElementsState.Loaded)?.items?.find {
             it.uuid == (displayedPoints.find {it.uuid==effectivePoint}?.elementUuid ?: points.modeElementUuid) }
         MeasurementDetailsScreen(state, contentPadding, systemTopInset, onBack, onEdit, navigationGuard, backLabel,
-            drawingEditor=drawingEditor,drawingEnabled=!modalOpen && points.available && items!=null,
+            drawingEditor=drawingEditor,drawingEnabled=!modalOpen && (editStore==null || drawingReady) && points.available && items!=null,
             elementsContent = {
                 MeasurementElementsSection(elementsState, { if(liveActionsAllowed())model?.add() },
                     { element, action -> if(liveActionsAllowed())model?.open(element, action) }, { model?.retry() },
@@ -86,7 +83,7 @@ fun MeasurementDetailsScreen(
                         !points.available -> "Позначки або захищена база недоступні."
                         points.saving -> "Зачекайте завершення збереження."
                         else -> null
-                    }, selectedElementUuid = areas.find {it.uuid==effectiveArea}?.elementUuid ?: lines.find {it.uuid==effectiveLine}?.elementUuid ?: pointElement?.uuid,
+                    }, selectedElementUuid = displayedAreas.find {it.uuid==effectiveArea}?.elementUuid ?: displayedLines.find {it.uuid==effectiveLine}?.elementUuid ?: pointElement?.uuid,
                     onPlaceArea=if(onEdit==null)null else {element ->
                         if(liveActionsAllowed() && model?.finishPlacement()!=false) {
                             navigationGuard?.requestedAreaPlacement=data?.uuid?.let {it to element.uuid}
@@ -98,7 +95,7 @@ fun MeasurementDetailsScreen(
                             onEdit.invoke()
                         }
                     })
-            }, areaFeatures=areas,selectedAreaUuid=effectiveArea,onSelectArea={uuid -> if(!modalOpen && model?.finishPlacement()!=false){selectedArea=uuid;selectedLine=null;drawingEditor?.selectArea(uuid)}},linePlacements=lines,selectedLineUuid=effectiveLine,onSelectLine={uuid ->if(!modalOpen && model?.finishPlacement()!=false){selectedLine=uuid;selectedArea=null;drawingEditor?.selectLine(uuid)}},
+            }, areaFeatures=displayedAreas,selectedAreaUuid=effectiveArea,onSelectArea={uuid -> if(!modalOpen && model?.finishPlacement()!=false){selectedArea=uuid;selectedLine=null;drawingEditor?.selectArea(uuid)}},linePlacements=displayedLines,selectedLineUuid=effectiveLine,onSelectLine={uuid ->if(!modalOpen && model?.finishPlacement()!=false){selectedLine=uuid;selectedArea=null;drawingEditor?.selectLine(uuid)}},
             pointState = if(drawingEditor==null)points else points.copy(points=displayedPoints,selectedPointUuid=effectivePoint,
                 selectedElementUuid=pointElement?.uuid,drag=drawingState?.drag,undo=null,redo=null), pointElement = pointElement,
             onPlacePoint = { x, y -> if(liveActionsAllowed())model?.tapPoint(x, y) }, onSelectPoint = { if(!modalOpen || points.modeElementUuid!=null){

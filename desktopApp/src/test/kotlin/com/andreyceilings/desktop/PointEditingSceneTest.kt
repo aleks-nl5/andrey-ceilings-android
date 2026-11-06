@@ -184,7 +184,7 @@ class PointEditingSceneTest {
             } finally {
                 try { scene.close() } catch (cleanup: Throwable) {
                     if (testFailure != null) testFailure.addSuppressed(cleanup) else throw cleanup
-                } finally { edit.closePointReads(); details.elements.closeAndAwaitWrites(); driver.close(); directory.deleteRecursively() }
+                } finally { edit.closeAndAwaitPointReads(); details.elements.closeAndAwaitWrites(); driver.close(); directory.deleteRecursively() }
             }
         }
     }
@@ -195,6 +195,11 @@ class PointEditingSceneTest {
         return Offset(b.left + p.x.toFloat(), b.top + p.y.toFloat())
     }
     private fun ImageComposeScene.tapWorld(row: Room_measurements, x: Long, y: Long) {
+        val deadline=System.nanoTime()+15_000_000_000L
+        while(canvas().config.getOrNull(MeasurementDrawingSemantics.EditingEnabled)!=true && System.nanoTime()<deadline) {
+            frame();Thread.sleep(20)
+        }
+        assertEquals(true,canvas().config.getOrNull(MeasurementDrawingSemantics.EditingEnabled),"Wait for the actual drawing editor")
         val p = world(row, x, y)
         sendPointerEvent(PointerEventType.Press, p, type = PointerType.Touch)
         sendPointerEvent(PointerEventType.Release, p, type = PointerType.Touch); frame()

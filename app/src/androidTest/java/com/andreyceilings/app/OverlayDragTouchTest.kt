@@ -69,7 +69,7 @@ class OverlayDragTouchTest {
             val a=position(x,y);val b=position(toX,toY);canvas().performTouchInput {swipe(a,b,500)}
         }
         try {
-            compose.waitUntil(15000){compose.onAllNodes(matcher).fetchSemanticsNodes().isNotEmpty()}
+            compose.waitUntil(15000){compose.onAllNodes(matcher).fetchSemanticsNodes().any {it.config.getOrNull(MeasurementDrawingSemantics.EditingEnabled)==true}}
             if(mode=="fullscreen")compose.onNodeWithText("На весь екран").performClick()
             val before=OverlayDragFixture.snapshot(driver)
             tap(1000,1500);drag(1000,1050,1300,1250) // selected AREA takes priority over LINE halo

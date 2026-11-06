@@ -129,14 +129,24 @@ class MeasurementEditModel(
         action?.invoke()
     }
     /** Reload is a read and is offered explicitly only after a conflict, with discard confirmation. */
-    suspend fun reload() {
+    suspend fun reload() {reloadDocument(keepSelection=false)}
+    internal suspend fun reloadDrawing() {reloadDocument(keepSelection=true)}
+    private suspend fun reloadDocument(keepSelection:Boolean) {
         if (state.value.saving || state.value.checking || state.value.saved || state.value.exitReady) return
-        mutableState.value = state.value.copy(checking = true)
+        val before=state.value
+        if(keepSelection && (before.dirty || before.exitRequested || before.uncertain || before.conflict ||
+            before.drag!=null || before.lineDrag!=null || before.area.drag!=null))return
+        mutableState.value = before.copy(checking = true)
         try {
             val original = state.value.original
-            val loaded = withContext(Dispatchers.Default) { checkNotNull(store).load(original.draft.projectId, original.measurementId) }
+            val loaded = checkNotNull(store).readDocument(original.draft.projectId, original.measurementId)
             undo.clear(); redo.clear(); inputStart = null; attempt=null; exitAction=null;store?.release(token)
-            mutableState.value = MeasurementEditState(loaded)
+            val point=before.selectedPointUuid?.takeIf {id->keepSelection && loaded.placements.points.any {it.uuid==id}}
+            val line=before.selectedLineUuid?.takeIf {id->keepSelection && loaded.placements.lines.any {it.uuid==id}}
+            val area=loaded.placements.areas.find {keepSelection && it.uuid==before.area.selected}
+            mutableState.value = MeasurementEditState(loaded,selectedPointUuid=point,selectedLineUuid=line,
+                lineMoveTarget=if(keepSelection)before.lineMoveTarget else 0,
+                area=AreaEditorState(selected=area?.uuid,moveVertex=before.area.moveVertex?.takeIf {area?.shape is AreaShape.Polygon && it in area.shape.positions.indices}))
         } catch (_: Exception) {
             mutableState.value = state.value.copy(checking = false, error = "Запис недоступний. Чернетку залишено на екрані.")
         }

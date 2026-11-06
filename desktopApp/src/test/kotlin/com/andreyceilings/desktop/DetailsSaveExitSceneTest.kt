@@ -47,7 +47,7 @@ class DetailsSaveExitSceneTest {
                     var ready=false
                     while(!ready) {
                         scene.frame()
-                        ready=scene.nodes().any {it.textTree()=="Сегмент 1: 1 м" && it.config.getOrNull(SemanticsActions.OnClick)!=null && it.config.getOrNull(SemanticsProperties.Disabled)==null}
+                        ready=scene.nodes().any {it.config.getOrNull(MeasurementDrawingSemantics.EditingEnabled)==true}
                         if(!ready)delay(20)
                     }
                 }

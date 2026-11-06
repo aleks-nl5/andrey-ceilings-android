@@ -136,11 +136,16 @@ All three kinds share Undo/Redo and the visible explicit “Зберегти к�
 The compact Details layout and read-only fullscreen policy remain in place.
 
 Catalog/add/delete actions are available only with a clean, idle drawing draft.
-Their child/element CAS versions invalidate a clean co-editor even when the
-measurement version does not change. Lagging reactive notifications from our own
-Save cannot reset selection. Accepted gestures, uncertain writes, conflicts and
-exit delivery are protected from automatic reload. Back during an active gesture
-cancels the preview before leaving the surface.
+Their child/element notifications refresh a clean co-editor even when the
+measurement version does not change. One transactional `MeasurementEditDocument`
+is observed through the existing POINT/element/measurement query listener; partial
+loading values from independent UI lists are never compared as DB versions.
+Initialization and input availability use that same document. Legitimate clean
+refresh preserves still-existing selected UUIDs and targets; lagging notifications
+from our own Save cannot reset selection. Accepted gestures, dirty drafts, uncertain
+writes, conflicts and exit delivery are protected from automatic reload. Reads
+share the existing session-close drain. Back during an active gesture cancels its
+preview before leaving the surface.
 
 `MixedOverlayProof` drives real Android touch / Desktop mouse adapters through
 POINT→LINE→POINT, LINE→POINT→AREA and AREA→POINT→LINE without intermediate Save.
@@ -152,6 +157,27 @@ one ceiling journal operation and zero standalone point-position operations.
 Android covers Objects/Measurements, both themes and pinch cancellation; Desktop
 uses the production route and real Windows SQLCipher when run on Windows.
 Existing point scene proofs now assert staged movement and explicit Save.
+
+### Windows CI follow-up
+
+On `f06db67`, Android run #42243902072 and the iOS/macOS job of #42243902111
+succeeded, but Windows reported four failures: `DetailsSaveExitSceneTest`,
+`MixedDetailsSceneTest`, `PointEditingSceneTest` and `PointPlacementSceneTest`.
+Independent LINE/AREA UI lists initially appeared empty while the co-editor was
+already loaded; this initiated a redundant reload that reset selection or disabled
+input. Some tests also acted on visible text before the co-editor was ready.
+
+The document observation above replaces that partial-list fingerprint. Controls
+expose actual editing readiness; POINT scene helpers await it before gestures or
+placement actions. The regression `delayedLineObserverCannotResetSelectionOrCancelAcceptedPointDrag`
+holds an ordinary LINE observer and a possible redundant document reload, then
+releases it during an accepted real mouse drag. It checks selected UUID, preview,
+unchanged Canvas bounds, staged coordinates, no premature DB write and explicit
+Save. This regression failed on the previous `f06db67` production code with a lost
+POINT selection. JDBC tests additionally cover a child-only mutation observed as
+one complete document, preserved selection on clean refresh, and protected dirty
+drafts with fail-closed CAS. The native Windows result after this fix remains a
+GitHub CI gate, not a claim based on local Linux tests.
 
 No SQL writer, schema version, migration, fingerprint, key/WAL or backup format
 changes are needed. GitHub CI is launched after local verification; per the

@@ -92,7 +92,7 @@ class DetailsSaveExitTouchTest {
             assertEquals(before+1,backs.get(),"The Activity Back callback must run")
         }
         try {
-            compose.waitUntil(15000) {compose.onAllNodes(hasText("Сегмент 1: 1 м") and hasClickAction()).fetchSemanticsNodes().any {it.config.getOrNull(SemanticsProperties.Disabled)==null}}
+            compose.waitUntil(15000) {compose.onAllNodes(canvasMatcher).fetchSemanticsNodes().any {it.config.getOrNull(MeasurementDrawingSemantics.EditingEnabled)==true}}
             val x=1000L;val y=if(mode=="edit")950L else 1500L
             val start=position(x,y);canvas().performTouchInput {click(start)}
             val a=position(x,y);val b=position(x+300,y+200);canvas().performTouchInput {swipe(a,b,500)}
