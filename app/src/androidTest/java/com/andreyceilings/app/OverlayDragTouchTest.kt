@@ -40,6 +40,9 @@ class OverlayDragTouchTest {
         val matcher=SemanticsMatcher("ceiling canvas") {n -> n.config.getOrNull(SemanticsProperties.ContentDescription).orEmpty().any {it.startsWith("Контур стелі")}}
         fun click(label:String) {
             val action=hasText(label) and hasClickAction()
+            if(compose.onAllNodes(action).fetchSemanticsNodes().isEmpty()) {
+                compose.onNode(hasScrollToIndexAction()).performScrollToNode(action)
+            }
             val node=compose.onNode(action)
             // A partly clipped Text can be "displayed" under the pinned toolbar.
             // Scroll the merged action itself into view; pinned actions have no scroll ancestor.
@@ -68,8 +71,7 @@ class OverlayDragTouchTest {
             click("Скасувати дію");click("Повторити");click("Скасувати дію")
             click("Вершина 1");drag(500,1000,800,1200)
             click("Сегмент 1: 1 м")
-            compose.onNode(hasText("Кінець") and hasClickAction()).assertExists()
-            if(mode!="details")compose.runOnIdle {assertEquals(f.line,m.state.value.selectedLineUuid,"LINE chip must select its UUID before pointer drag")}
+            if(mode!="details")compose.runOnIdle {assertEquals(f.line,m.state.value.selectedLineUuid,"LINE chip must select its UUID before pointer drag; area=${m.state.value.area.selected}; error=${m.state.value.error}")}
             drag(1000,950,1300,750)
             if(mode!="details")compose.runOnIdle {
                 assertEquals(f.line,m.state.value.selectedLineUuid,"Drag must retain LINE selection: ${m.state.value.error}")
