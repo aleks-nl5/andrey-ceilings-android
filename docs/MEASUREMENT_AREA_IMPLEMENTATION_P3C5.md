@@ -99,7 +99,7 @@ needs new measured anchors; a free drag cannot silently replace its last geometr
 A changed circle radius inherits measured provenance only from explicit new
 confirmation; an unchanged measured radius retains its provenance.
 
-Standard Details now stages LINE/AREA transforms in the existing saveable
+Standard Details now stages POINT/LINE/AREA transforms in the existing saveable
 `MeasurementEditModel` using the session's existing `MeasurementEditStore`.
 Release commits one draft transform; explicit “Зберегти креслення” submits the
 complete contour+POINT+LINE+AREA CAS operation. Undo/Redo, dirty Back, write/retry
@@ -108,8 +108,9 @@ fullscreen remains a viewing surface, including the current draft overlays.
 Editor normal/fullscreen remain editable. Both Measurements and Objects routes
 supply the same unlocked-session store, including its existing shutdown drain.
 
-A selected target owns its hit halo before unrelated overlays. Otherwise selection
-uses POINT > LINE > AREA and the last painted filled AREA wins ties. Explicit
+A selected target owns its drag halo before unrelated overlays. A tap can switch
+to POINT within that halo even when LINE/AREA is selected; tap and drag ownership
+are distinct. Otherwise selection uses POINT > LINE > AREA and the last painted filled AREA wins ties. Explicit
 selection chips and “Зняти виділення” allow switching overlapping targets. Whole
 LINE movement keeps length; an explicit endpoint changes length. Whole polygon or
 circle movement preserves size; explicit vertex movement changes area. Only moved
@@ -122,6 +123,40 @@ invalid transforms, explicit atomic Save and reopening. Android also closes and
 reopens the physical encrypted database. Regression model tests cover invalid
 measured vertices, concave footprint, declared capacity and radius provenance.
 Final-SHA CI results belong in PR #103. Owner acceptance must be repeated.
+
+## Owner mixed-overlay regression correction (06.11.2026)
+
+The owner's `fe079b9` APK check found that dirty LINE/AREA drafts disabled POINT
+selection in normal Details. Per the owner's follow-up architecture decision in
+issue #102, every Details movement now uses the existing `MeasurementEditModel`
+from the full editor, including a point-only clean session. POINT tap, drag preview,
+staged `pointEdits`, selected UUID and displayed coordinates come from that model.
+There is no Details gesture route to `MeasurementElementsModel.PointCommand.Move`.
+All three kinds share Undo/Redo and the visible explicit “Зберегти креслення” action.
+The compact Details layout and read-only fullscreen policy remain in place.
+
+Catalog/add/delete actions are available only with a clean, idle drawing draft.
+Their child/element CAS versions invalidate a clean co-editor even when the
+measurement version does not change. Lagging reactive notifications from our own
+Save cannot reset selection. Accepted gestures, uncertain writes, conflicts and
+exit delivery are protected from automatic reload. Back during an active gesture
+cancels the preview before leaving the surface.
+
+`MixedOverlayProof` drives real Android touch / Desktop mouse adapters through
+POINT→LINE→POINT, LINE→POINT→AREA and AREA→POINT→LINE without intermediate Save.
+The fixture has a measured point inside the polygon fill and LINE's 24dp halo.
+Tests inspect typed Canvas semantics for UUID/coordinates, compare every DB table
+between stages, reject boundary movement, exercise shared Undo/Redo and
+Back/Save/Continue/Discard, then close/reopen the physical database. They require
+one ceiling journal operation and zero standalone point-position operations.
+Android covers Objects/Measurements, both themes and pinch cancellation; Desktop
+uses the production route and real Windows SQLCipher when run on Windows.
+Existing point scene proofs now assert staged movement and explicit Save.
+
+No SQL writer, schema version, migration, fingerprint, key/WAL or backup format
+changes are needed. GitHub CI is launched after local verification; per the
+owner's instruction Codex stops after launch without polling runs. CI success and
+physical owner APK acceptance remain separate pending gates.
 
 ## Details Save-and-exit navigation correction (06.11.2026)
 

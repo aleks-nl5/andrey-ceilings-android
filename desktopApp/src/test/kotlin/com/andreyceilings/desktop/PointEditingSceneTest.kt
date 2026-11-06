@@ -59,7 +59,7 @@ class PointEditingSceneTest {
                     }, { guard.deliverEditResult(nav, project, id) { nav = it; editing = false } }, guard)
                     else MeasurementDetailsScreen(project, id, details, PaddingValues(), 0.dp, {}, onEdit = {
                         nav = guard.transition(nav, nav.editMeasurement(project, id)); editing = nav.measurementEdit != null
-                    }, navigationGuard = guard)
+                    }, navigationGuard = guard,editStore=edit)
                 }
             }
             suspend fun awaitPoint(x: Long, precision: PointPrecision? = null) {
@@ -74,7 +74,7 @@ class PointEditingSceneTest {
                 scene.awaitText("Ця позначка: точне числове положення без виміряних стінних прив'язок")
                 scene.tapWorld(original, 1000, 1000)
                 scene.awaitText("Ця позначка: приблизне положення")
-                assertEquals(p.uuid, model.points.value.selectedPointUuid)
+                assertEquals(p.uuid, scene.canvas().config.getOrNull(MeasurementDrawingSemantics.SelectedPoint))
                 val before = points.find(p.uuid)
                 val start = scene.world(original, 1000, 1000); val end = scene.world(original, 1800, 1600)
                 val inputType = if (dark) PointerType.Mouse else PointerType.Touch
@@ -82,13 +82,17 @@ class PointEditingSceneTest {
                 scene.sendPointerEvent(PointerEventType.Move, end, type = inputType)
                 scene.frame()
                 assertEquals(before, points.find(p.uuid)); assertEquals(0, calls.get())
-                assertNotNull(model.points.value.drag, "Selected marker owns drag")
+                assertNotNull(scene.canvas().config.getOrNull(MeasurementDrawingSemantics.PointDrag), "Selected marker owns shared drag")
                 scene.sendPointerEvent(PointerEventType.Release, end, type = inputType)
-                awaitPoint(1800, PointPrecision.APPROXIMATE)
-                assertEquals(1, calls.get(), "One release performs one save")
-                assertEquals(second, points.find(second.uuid)); assertEquals(original, MeasurementRepository(db).find(id))
+                withTimeout(15000) {while(scene.canvas().config.getOrNull(MeasurementDrawingSemantics.Points).orEmpty().none {it.uuid==p.uuid && it.xMm==1800L}) {scene.frame();delay(20)}}
+                assertEquals(before,points.find(p.uuid),"POINT release must stage, with no instant SQL writer")
+                assertEquals(0,calls.get())
+                scene.click("Зберегти креслення");awaitPoint(1800,PointPrecision.APPROXIMATE)
+                assertEquals(0,calls.get(),"Only the common ceiling writer may save this drag")
+                assertEquals(second, points.find(second.uuid)); assertEquals(original.drawingJson, MeasurementRepository(db).find(id)!!.drawingJson)
                 assertEquals(2, points.forMeasurement(original.uuid).size)
                 val saved = points.find(p.uuid)!!
+                val afterPointSave=MeasurementRepository(db).find(id)
                 val pinch = scene.world(original, saved.xMm, saved.yMm)
                 fun pointer(id: Long, offset: Offset, pressed: Boolean) = ComposeScenePointer(PointerId(id), offset, pressed, PointerType.Touch)
                 val callsBeforePinch = calls.get()
@@ -96,13 +100,13 @@ class PointEditingSceneTest {
                 scene.sendPointerEvent(PointerEventType.Press, pointers = listOf(pointer(0, pinch, true), pointer(1, pinch + Offset(80f, 0f), true)))
                 scene.sendPointerEvent(PointerEventType.Move, pointers = listOf(pointer(0, pinch - Offset(20f, 0f), true), pointer(1, pinch + Offset(100f, 0f), true)))
                 scene.sendPointerEvent(PointerEventType.Release, pointers = listOf(pointer(0, pinch - Offset(20f, 0f), false), pointer(1, pinch + Offset(100f, 0f), false)))
-                scene.frame(); assertNull(model.points.value.drag); assertEquals(callsBeforePinch, calls.get())
+                scene.frame(); assertNull(scene.canvas().config.getOrNull(MeasurementDrawingSemantics.PointDrag)); assertEquals(callsBeforePinch, calls.get())
                 assertEquals(saved, points.find(p.uuid)); scene.click("Вписати креслення")
                 val canceledStart = scene.world(original, saved.xMm, saved.yMm)
                 val canceledEnd = scene.world(original, saved.xMm + 1000, saved.yMm + 500)
                 scene.sendPointerEvent(PointerEventType.Press, canceledStart, type = PointerType.Touch)
                 scene.sendPointerEvent(PointerEventType.Move, canceledEnd, type = PointerType.Touch)
-                scene.frame(); assertNotNull(model.points.value.drag)
+                scene.frame(); assertNotNull(scene.canvas().config.getOrNull(MeasurementDrawingSemantics.PointDrag))
                 assertEquals(nav, guard.transition(nav, nav.back()))
                 scene.sendPointerEvent(PointerEventType.Release, canceledEnd, type = PointerType.Touch)
                 scene.frame(); assertEquals(saved, points.find(p.uuid)); assertEquals(callsBeforePinch, calls.get())
@@ -112,7 +116,7 @@ class PointEditingSceneTest {
                 scene.sendPointerEvent(PointerEventType.Press, from, type = PointerType.Touch)
                 scene.sendPointerEvent(PointerEventType.Move, outside, type = PointerType.Touch)
                 scene.sendPointerEvent(PointerEventType.Release, outside, type = PointerType.Touch)
-                scene.awaitText("Торкніться всередині контуру")
+                scene.awaitText("Позначка має бути строго всередині контуру.")
                 assertEquals(saved, points.find(p.uuid))
                 val empty = scene.world(original, 4000, 3000)
                 scene.sendPointerEvent(PointerEventType.Press, empty, type = PointerType.Touch)
@@ -145,7 +149,7 @@ class PointEditingSceneTest {
                 scene.awaitText("Попередній перерахунок")
                 assertTrue(scene.canvas().config.getOrNull(SemanticsProperties.ContentDescription).orEmpty().any { it.contains("позначок: 2") })
                 scene.setField("Сторона BC", "4");scene.setField("Сторона AB", "6")
-                assertEquals(original,MeasurementRepository(db).find(id));assertEquals(saved,points.find(p.uuid))
+                assertEquals(afterPointSave,MeasurementRepository(db).find(id));assertEquals(saved,points.find(p.uuid))
                 scene.click("Зберегти");scene.awaitText("Контур стелі змінено. Збережені монтажні відстані")
                 assertEquals(PointPositionMm(1500,600),points.find(p.uuid)!!.let{PointPositionMm(it.xMm,it.yMm)})
                 assertTrue(points.forMeasurement(original.uuid).all {it.mounting.needsReview})

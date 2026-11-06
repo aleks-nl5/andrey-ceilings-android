@@ -27,9 +27,21 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.SemanticsPropertyKey
 import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.dp
+
+/** Typed Canvas state for interaction verification; never persisted or spoken as labels. */
+object MeasurementDrawingSemantics {
+    val Points=SemanticsPropertyKey<List<PointPlacement>>("Measurement points")
+    val Lines=SemanticsPropertyKey<List<LinePlacement>>("Measurement lines")
+    val Areas=SemanticsPropertyKey<List<AreaFeature>>("Measurement areas")
+    val SelectedPoint=SemanticsPropertyKey<String>("Selected measurement point")
+    val SelectedLine=SemanticsPropertyKey<String>("Selected measurement line")
+    val SelectedArea=SemanticsPropertyKey<String>("Selected measurement area")
+    val PointDrag=SemanticsPropertyKey<PointDragPreview>("Measurement point drag")
+}
 
 /**
  * Outline renderer only: all lengths come from world geometry. Optional ceiling features
@@ -258,10 +270,9 @@ fun MeasurementDrawing(
                                     } else if(currentLineMode) {
                                         val target=world(position)
                                         if(target.x.isFinite() && target.y.isFinite() && target.x in -1_000_000.0..1_000_000.0 && target.y in -1_000_000.0..1_000_000.0)currentLineTap(target.x.roundToLong(),target.y.roundToLong())
-                                    } else if(selectedMarker!=null && (!fullscreen || editPointsInFullscreen)) currentPointSelection(selectedMarker.uuid)
+                                    } else if(marker!=null && (!fullscreen || editPointsInFullscreen)) currentPointSelection(marker.uuid)
                                     else if(selectedLine!=null)currentLineSelection(selectedLine.uuid)
                                     else if(selectedArea!=null)currentAreaSelection(selectedArea.uuid)
-                                    else if (marker != null && (!fullscreen || editPointsInFullscreen)) currentPointSelection(marker.uuid)
                                     else if(line!=null)currentLineSelection(line.uuid)
                                     else if(area!=null)currentAreaSelection(area.uuid)
                                     else if (currentMode && !fullscreen) {
@@ -302,7 +313,16 @@ fun MeasurementDrawing(
             }
         Canvas(Modifier.fillMaxWidth().then(if (fullscreen) Modifier.weight(1f) else Modifier.height(if (compact) 155.dp else 235.dp))
             .clipToBounds().onSizeChanged { canvasSize = it }.then(inputModifier)
-            .semantics { contentDescription = "Контур стелі, ${contour.points.size} вершин, позначок: ${pointPlacements.size}, ліній: ${linePlacements.size}, площинних об’єктів: ${areaFeatures.size}" }) {
+            .semantics {
+                contentDescription = "Контур стелі, ${contour.points.size} вершин, позначок: ${pointPlacements.size}, ліній: ${linePlacements.size}, площинних об’єктів: ${areaFeatures.size}"
+                this[MeasurementDrawingSemantics.Points]=pointPlacements
+                this[MeasurementDrawingSemantics.Lines]=linePlacements
+                this[MeasurementDrawingSemantics.Areas]=areaFeatures
+                selectedPointUuid?.let {this[MeasurementDrawingSemantics.SelectedPoint]=it}
+                selectedLineUuid?.let {this[MeasurementDrawingSemantics.SelectedLine]=it}
+                selectedAreaUuid?.let {this[MeasurementDrawingSemantics.SelectedArea]=it}
+                pointDrag?.let {this[MeasurementDrawingSemantics.PointDrag]=it}
+            }) {
             val layout = layoutMeasurementDrawing(contour, size.width, size.height,
                 textLayouts.map { DrawingLabelSize(it.size.width.toFloat(), it.size.height.toFloat()) }, density,
                 vertexLayouts.map { DrawingLabelSize(it.size.width.toFloat(), it.size.height.toFloat()) }, extraWorldPoints = fitPoints)

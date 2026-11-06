@@ -10,6 +10,8 @@
 - **Acceptance:** actual code/tests → Android + Windows/iOS **same final feature SHA** CI success → owner APK smoke/review → only owner decides Ready/Merge. Do not mark checklists green early. UX polish is separately tracked.
 
 ## Read before making changes
+
+- **Owner clarification (06.11.2026):** `fe079b9` passed CI but failed owner APK acceptance: POINT was disabled after dirty LINE/AREA drag in normal Details. All Details POINT/LINE/AREA movements must use the existing shared `MeasurementEditModel` and explicit staged Save; no separate instant POINT gesture writer. Keep catalog/add/delete behind clean-draft guards and refresh child/element versions. Physical mixed-order Android/Desktop regressions and repeat owner acceptance are required. Per the owner's session instruction, after fixes/docs/local checks push to #103 to launch GitHub CI, then stop without monitoring runs; never claim those pending gates passed.
 - Review `README.md`, `docs/PROJECT_ROADMAP.md`, and the relevant GitHub Issue and architecture notes. Check the real code before trusting older documentation.
 - Implement only the requested issue scope. Keep unrelated refactors and platform migrations out of the PR. If requirements are unclear, document the tradeoff instead of silently changing behavior.
 

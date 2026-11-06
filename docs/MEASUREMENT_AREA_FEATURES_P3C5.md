@@ -50,6 +50,19 @@
 - Rect preset: два протилежні кути створюють 4 vertices; polygon: по точках 3..16 з явним завершенням; circle: центр на Canvas і поле діаметра/радіуса з введенням `2,5`/`2.5` (у метрах) та валідованим mm. Ввід для існуючого polygon vertex — tap/drag approximate або measured wall anchor form; circle center anchor і numeric diameter. Повний дизайнерський сценарій не закріплювати тут, він #95.
 - CRUD, selection ↔ logical item, properties, Undo/Redo, dirty Back, route, orientation, process recreation, window insets, zoom, Android Compose touch / Windows mouse. У fullscreen та normal — той самий draft, без незалежних SQL operations. Не позначати placement exact від піксельної зміни.
 
+## Owner clarification, 06.11.2026 — mixed Details editing
+
+Owner APK acceptance on `fe079b9` failed: POINT was disabled after an unsaved
+LINE/AREA drag. All normal Details POINT/LINE/AREA selection, preview and movement
+must use the existing shared `MeasurementEditModel`, including point-only gestures
+from a clean state. Every movement is staged until “Зберегти креслення”; no Details
+drag may call the separate instant POINT writer. Shared Undo/Redo, single selection,
+deterministic POINT tap through a selected LINE/AREA halo, one full-set CAS Save,
+dirty Back/Discard and cold reopen are required. Catalog/add/delete may remain
+separate only for a clean, idle draft, with child/element-version refresh.
+Android/Desktop physical mixed-order regressions and repeat owner acceptance are
+required; no schema or full UX #95 redesign. Full clarification is appended to #102.
+
 ## 5. Найкритичніше: атомарний контур + POINT + LINE + AREA, вбудована БД
 
 - **Нова additive SQLDelight v12→v13 migration** (звірити фактичну версію); нова нормалізована `area_features`/ `area_placements` із FK на `room_measurements.uuid`, optional FK на `measurement_elements.uuid`, typed role+shape, validated bounded JSON coordinates або окремі child vertices, geometry/provenance, active indexes/soft delete, canonical area payload, CAS timestamps, idempotent operation receipts. Прямий measurementUuid обов'язковий для unpriced objects.

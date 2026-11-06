@@ -104,6 +104,7 @@ class MeasurementCreateNavigationGuard {
         }
         // Accepted writes / confirmed exit delivery must not be mutated by another Back.
         editModel?.cancelPointDrag(); editModel?.cancelLineDrag(); editModel?.cancelAreaDrag()
+        if(proposed==current.back() && editState?.let {!it.dirty && (it.drag!=null || it.lineDrag!=null || it.area.drag!=null)}==true)return current
         if (!blocksExit(current)) {
             if (proposed == current.back() && surfaceBack?.invoke() == true) return current
             if (editState?.dirty == true) {
