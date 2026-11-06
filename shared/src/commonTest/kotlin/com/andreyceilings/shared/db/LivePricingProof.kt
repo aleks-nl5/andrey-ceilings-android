@@ -104,6 +104,15 @@ object LivePricingProof {
                 binders: (SqlPreparedStatement.() -> Unit)?): QueryResult<R> = error("Injected database failure")
         }
         assertEquals(PricingReadResult.Unavailable(PricingProblemCode.DATABASE_UNAVAILABLE), LivePricingReader(PrototypeDatabase(failing)).read(fixture.projectId, fixture.measurementUuid))
+        var beginAttempts = 0
+        val cannotBegin = object : SqlDriver by driver {
+            override fun newTransaction(): Nothing { beginAttempts++; error("Closed session began transaction") }
+        }
+        val closedReader = LivePricingReader(PrototypeDatabase(cannotBegin))
+        closedReader.closeReads()
+        assertEquals(PricingReadResult.Unavailable(PricingProblemCode.DATABASE_UNAVAILABLE), closedReader.read(fixture.projectId, fixture.measurementUuid))
+        assertEquals(PricingProblemCode.DATABASE_UNAVAILABLE, closedReader.verifyFrozenRevision(fixture.projectId, created.seriesUuid, created.initialRevisionUuid))
+        assertEquals(0, beginAttempts)
         reader.closeReads()
         assertEquals(PricingReadResult.Unavailable(PricingProblemCode.DATABASE_UNAVAILABLE), reader.read(fixture.projectId, fixture.measurementUuid))
         assertEquals(0, writeAttempts)
