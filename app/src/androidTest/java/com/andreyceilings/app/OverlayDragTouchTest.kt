@@ -5,6 +5,7 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.runtime.*
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.*
@@ -47,7 +48,11 @@ class OverlayDragTouchTest {
             // A partly clipped Text can be "displayed" under the pinned toolbar.
             // Scroll the merged action itself into view; pinned actions have no scroll ancestor.
             if(compose.onAllNodes(action and hasAnyAncestor(hasScrollAction())).fetchSemanticsNodes().isNotEmpty())node.performScrollTo()
-            node.assertIsDisplayed().assertIsEnabled().performClick()
+            // Standard controls use their accessible UI action; all Canvas selection,
+            // movement, pinch and pan below still inject real Android pointers.
+            node.assertIsDisplayed().assertIsEnabled().performSemanticsAction(SemanticsActions.OnClick) { action ->
+                assertTrue(action(),"UI action rejected: $label")
+            }
         }
         fun canvas()=compose.onNode(matcher).also {
             if(mode!="fullscreen")it.performScrollTo()
@@ -68,10 +73,19 @@ class OverlayDragTouchTest {
             if(mode=="fullscreen")compose.onNodeWithText("На весь екран").performClick()
             val before=OverlayDragFixture.snapshot(driver)
             tap(1000,1500);drag(1000,1050,1300,1250) // selected AREA takes priority over LINE halo
+            if(mode!="details")compose.runOnIdle {
+                assertEquals(PointPositionMm(800,1200),m.displayAreas().first {it.uuid==f.polygon}.shape.positions.first(),"Canvas must move the selected polygon")
+            }
             click("Скасувати дію");click("Повторити");click("Скасувати дію")
             click("Вершина 1");drag(500,1000,800,1200)
-            click("Сегмент 1: 1 м")
-            if(mode!="details")compose.runOnIdle {assertEquals(f.line,m.state.value.selectedLineUuid,"LINE chip must select its UUID before pointer drag; area=${m.state.value.area.selected}; error=${m.state.value.error}")}
+            if(mode!="details")compose.runOnIdle {
+                val polygon=m.displayAreas().first {it.uuid==f.polygon}
+                assertEquals(PointPositionMm(800,1200),polygon.shape.positions.first(),"Canvas must move the explicit vertex")
+                assertNull(polygon.mountings.first().anchor)
+                assertTrue(polygon.mountings.drop(1).all {it.anchor!=null})
+            }
+            click("Зняти виділення");tap(1000,950)
+            if(mode!="details")compose.runOnIdle {assertEquals(f.line,m.state.value.selectedLineUuid,"Canvas tap must select LINE UUID before pointer drag; area=${m.state.value.area.selected}; error=${m.state.value.error}")}
             drag(1000,950,1300,750)
             if(mode!="details")compose.runOnIdle {
                 assertEquals(f.line,m.state.value.selectedLineUuid,"Drag must retain LINE selection: ${m.state.value.error}")
