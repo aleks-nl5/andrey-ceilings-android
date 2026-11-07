@@ -43,7 +43,7 @@ fun openDesktopPriceCatalog(driver: SqlDriver, previouslyExisting: Boolean) {
                 }
                 if ("titleKey" in priceColumns) {
                     if (columns("measurement_elements").isEmpty()) 6L else {
-                        verifyMeasurementElementStructure(driver)
+                        verifyMeasurementElementStructure(driver, if ("businessRole" in columns("measurement_elements")) 15L else 14L)
                         if (columns("point_placements").isEmpty()) {
                             val partial = driver.executeQuery(null,
                                 "SELECT count(*) FROM sqlite_master WHERE name LIKE 'point_%'", { cursor ->
@@ -58,7 +58,7 @@ fun openDesktopPriceCatalog(driver: SqlDriver, previouslyExisting: Boolean) {
                             val detected = if ("mountingJson" in pointColumns) {
                                 if("areaVersions" in columns("ceiling_operation_results") || columns("area_features").isNotEmpty()) {
                                     val guarded=driver.executeQuery(null,"SELECT count(*) FROM sqlite_master WHERE name='ceiling_result_insert_guard'",{c ->c.next();QueryResult.Value(c.getLong(0))},0).value
-                                    if(guarded==1L)14L else 13L
+                                    if ("businessRole" in columns("measurement_elements")) 15L else if(guarded==1L)14L else 13L
                                 }
                                 else if("lineVersions" in columns("ceiling_operation_results") || columns("line_placements").isNotEmpty()) 12L
                                 else if(runCatching { verifyPointPlacementStructure(driver,11L) }.isSuccess) 11L else 10L

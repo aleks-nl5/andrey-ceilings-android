@@ -52,7 +52,7 @@ android {
         // Release tests contain no debug-only crash provider, and exercise the actual signed app.
         sourceSets.getByName("androidTest").java.setSrcDirs(emptyList<String>())
         sourceSets.getByName("androidTest").kotlin.setSrcDirs(listOf("src/productionTest/kotlin",
-            "../shared/src/commonTest/kotlin/com/andreyceilings/shared/db"))
+            "../shared/src/commonTest/kotlin/com/andreyceilings/shared/db", "../shared/src/testFixtures/kotlin"))
     } else sourceSets.getByName("androidTest").kotlin.directories.add("src/productionTest/kotlin")
 
     // AGP 9+ built-in Kotlin uses the Java compile target by default.

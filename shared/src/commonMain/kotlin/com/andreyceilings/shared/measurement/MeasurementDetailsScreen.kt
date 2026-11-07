@@ -42,6 +42,7 @@ fun MeasurementDetailsScreen(
             model?.let { navigationGuard?.bindElements(it) }
             onDispose { model?.let { navigationGuard?.unbindElements(it) } }
         }
+        val pricingState = model?.pricing?.collectAsState()?.value ?: MeasurementPricingState.Loading
         val elementsState = model?.state?.collectAsState()?.value ?: MeasurementElementsState.Loading
         val areas=model?.areas?.collectAsState()?.value ?: emptyList()
         val lines=model?.lines?.collectAsState()?.value ?: emptyList()
@@ -72,6 +73,13 @@ fun MeasurementDetailsScreen(
         val pointElement = (elementsState as? MeasurementElementsState.Loaded)?.items?.find {
             it.uuid == (displayedPoints.find {it.uuid==effectivePoint}?.elementUuid ?: points.modeElementUuid) }
         MeasurementDetailsScreen(state, contentPadding, systemTopInset, onBack, onEdit, navigationGuard, backLabel,
+            pricingContent = { compact -> MeasurementPricingSection(
+                if (elementsState == MeasurementElementsState.Unavailable) MeasurementPricingState.Unavailable(
+                    com.andreyceilings.shared.livepricing.PricingProblemCode.DATABASE_UNAVAILABLE) else pricingState, items.orEmpty(),
+                editing = drawingState?.let { it.dirty || it.saving || it.checking || it.uncertain || it.conflict || it.error != null ||
+                    it.drag != null || it.lineDrag != null || it.area.drag != null } == true || points.saving || points.retry != null ||
+                    model?.editor?.value != null,
+                compact = compact, measurementUpdatedAt = data?.updatedAt, onRefresh = { model?.refreshPricing() }) },
             drawingEditor=drawingEditor,drawingEnabled=!modalOpen && (editStore==null || drawingReady) && points.available && items!=null,
             elementsContent = {
                 MeasurementElementsSection(elementsState, { if(liveActionsAllowed())model?.add() },
@@ -133,6 +141,7 @@ fun MeasurementDetailsScreen(
     onBack: () -> Unit, onEdit: (() -> Unit)? = null,
     navigationGuard: MeasurementCreateNavigationGuard? = null, backLabel: String = "До об'єкта",
     elementsContent: @Composable () -> Unit = {},
+    pricingContent: @Composable (Boolean) -> Unit = {},
     drawingEditor:MeasurementEditModel?=null,drawingEnabled:Boolean=true,
     areaFeatures: List<AreaFeature> = emptyList(),selectedAreaUuid:String?=null,onSelectArea:(String)->Unit={},
     linePlacements: List<LinePlacement> = emptyList(),selectedLineUuid:String?=null,onSelectLine:(String)->Unit={},
@@ -186,6 +195,7 @@ fun MeasurementDetailsScreen(
         Column(Modifier.fillMaxSize().padding(start = start, end = end,
             bottom = contentPadding.calculateBottomPadding(), top = systemTopInset + 8.dp)) {
             controls()
+            pricingContent(true)
             if (displayedPoints.isNotEmpty() || linePlacements.isNotEmpty() || areaFeatures.isNotEmpty()) Text("Позначки у fullscreen лише для перегляду. Положення змінюйте у звичайних деталях заміру.")
             Box(Modifier.weight(1f)) {
                 MeasurementDrawing(data.geometry, Modifier.fillMaxSize(), interactive = true,
@@ -319,6 +329,7 @@ fun MeasurementDetailsScreen(
                             }
                         }
                     }
+                    item(key = "pricing") { pricingContent(false) }
                     item(key = "elements") { elementsContent() }
                 }
             }

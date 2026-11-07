@@ -13,7 +13,7 @@ object LinePlacementProof {
         val prices=PriceRepository(db);val elements=MeasurementElementRepository(db)
         val item=prices.find(prices.createInGroup("line.${newRecordUuid()}","Лінія ${newRecordUuid()}",PriceGroupRepository(db).all().first().uuid,
             1.0,6,"м.п.",QuantityMode.ENTERED_LENGTH,PlacementKind.LINE))!!
-        val element=elements.createCatalogSelection(f.element.measurementUuid,item.uuid,ElementQuantity.Exact(4500),7)
+        val element=elements.createCatalogSelection(f.element.measurementUuid,item.uuid,ElementQuantity.Exact(4500),7, businessRole = com.andreyceilings.shared.livepricing.BusinessRole.ADDITIONAL_WORK)
         val point=PointPlacementRepository(db).addPoint(f.element.version,f.contourVersion,4000,2500,8)
         val store=MeasurementEditStore(db){100}
         var doc=store.load(f.project,f.id)
@@ -90,13 +90,13 @@ object LinePlacementProof {
             "DELETE FROM projects WHERE id=${f.project}",
             "UPDATE measurement_elements SET measurementUuid='missing-parent' WHERE uuid='${element.uuid}'")) assertFails {driver.execute(null,sql,0)}
         driver.execute(null,"PRAGMA foreign_keys=ON",0)
-        val unknown=elements.createCatalogSelection(element.measurementUuid,item.uuid,ElementQuantity.Unknown,210)
+        val unknown=elements.createCatalogSelection(element.measurementUuid,item.uuid,ElementQuantity.Unknown,210, businessRole = com.andreyceilings.shared.livepricing.BusinessRole.ADDITIONAL_WORK)
         doc=store.load(f.project,f.id)
         val manual=line.copy(uuid="unknown-line-${f.id}",elementUuid=unknown.uuid,start=PointPositionMm(500,600),end=PointPositionMm(1500,600))
         doc=store.update(doc,doc.draft,now=220,lineEdits=mapOf(manual.uuid to LinePlacementEdit(manual)))
         assertEquals(ElementQuantity.Unknown,elements.find(unknown.uuid)!!.quantity)
         assertEquals(1000,elements.find(unknown.uuid)!!.placedQuantityMilli)
-        val ranged=elements.createCatalogSelection(element.measurementUuid,item.uuid,ElementQuantity.Range(500,1500),230)
+        val ranged=elements.createCatalogSelection(element.measurementUuid,item.uuid,ElementQuantity.Range(500,1500),230, businessRole = com.andreyceilings.shared.livepricing.BusinessRole.ADDITIONAL_WORK)
         doc=store.load(f.project,f.id)
         val rangeLine=manual.copy(uuid="range-line-${f.id}",elementUuid=ranged.uuid)
         doc=store.update(doc,doc.draft,now=240,lineEdits=mapOf(rangeLine.uuid to LinePlacementEdit(rangeLine)))

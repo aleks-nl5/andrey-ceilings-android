@@ -29,10 +29,10 @@ object PointPositionMigrationProof {
         val before: List<List<String?>>; val beforePoints: List<List<String?>>; val structure: List<List<String?>>
         var fixture: PointPlacementProof.Fixture? = null
         try {
-            com.andreyceilings.shared.prices.StarterPriceCatalog.initialize(PrototypeDatabase(old))
+            com.andreyceilings.shared.prices.StarterPriceCatalog.initialize(historicalElementDatabase(old))
             if (populated) {
                 MeasurementElementMigrationProof.populate(old)
-                val f = PointPlacementProof.fixture(PrototypeDatabase(old), "v8 captured")
+                val f = PointPlacementProof.fixture(historicalElementDatabase(old), "v8 captured")
                 fixture = f
                 old.execute(null, "INSERT INTO point_placements(uuid,elementUuid,xMm,yMm,contourUpdatedAt,createdAt,updatedAt) VALUES('old-v8-point','${f.element.uuid}',1000,1000,${f.contourVersion},10,10)", 0)
             }

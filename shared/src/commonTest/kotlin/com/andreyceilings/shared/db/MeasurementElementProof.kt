@@ -51,8 +51,8 @@ object MeasurementElementProof {
         assertFailsWith<MeasurementElementFailure.InvalidQuantity> { repo.createWish(parent, "Fraction", 104, unit = "шт.", quantity = ElementQuantity.Exact(2500)) }
         assertFailsWith<MeasurementElementFailure.ParentUnavailable> { repo.createWish("missing", "Wish", 104) }
         val item = PriceRepository(db).all().single { it.code == "light.spot" }
-        val selected = repo.createCatalogSelection(parent, item.uuid, ElementQuantity.Exact(6000), 104, uuid = "selected")
-        val duplicateItem = repo.createCatalogSelection(parent, item.uuid, ElementQuantity.Range(4000, 6000), 104, uuid = "selected-again")
+        val selected = repo.createCatalogSelection(parent, item.uuid, ElementQuantity.Exact(6000), 104, uuid = "selected", businessRole = com.andreyceilings.shared.livepricing.BusinessRole.ADDITIONAL_WORK)
+        val duplicateItem = repo.createCatalogSelection(parent, item.uuid, ElementQuantity.Range(4000, 6000), 104, uuid = "selected-again", businessRole = com.andreyceilings.shared.livepricing.BusinessRole.ADDITIONAL_WORK)
         assertNotEquals(selected.uuid, duplicateItem.uuid)
         val source = assertIs<ElementSource.CatalogSelection>(selected.source)
         assertEquals(item.uuid, source.priceItemUuid)
@@ -62,7 +62,7 @@ object MeasurementElementProof {
         assertEquals(item.quantityMode, source.quantityMode.value)
         assertEquals(item.placementKind, source.placementKind.value)
         wishUnitEdits(db, parent, selected)
-        val kept = repo.linkWishToCatalog(range.version, item.uuid, LinkQuantity.Keep, 105)
+        val kept = repo.linkWishToCatalog(range.version, item.uuid, LinkQuantity.Keep, 105, businessRole = com.andreyceilings.shared.livepricing.BusinessRole.ADDITIONAL_WORK)
         assertEquals(range.uuid, kept.uuid)
         assertEquals(range.quantity, kept.quantity)
         assertEquals(range.note, kept.note)
@@ -74,9 +74,9 @@ object MeasurementElementProof {
         val length = prices.all().first { it.quantityMode == "entered_length" }
         val lengthWish = repo.createWish(parent, "Six pieces", 105, uuid = "to-link", note = "Keep note",
             approval = ElementApproval.APPROVED, unit = "шт.", quantity = ElementQuantity.Exact(6000))
-        assertFailsWith<MeasurementElementFailure.IncompatibleQuantity> { repo.linkWishToCatalog(lengthWish.version, length.uuid, LinkQuantity.Keep, 106) }
+        assertFailsWith<MeasurementElementFailure.IncompatibleQuantity> { repo.linkWishToCatalog(lengthWish.version, length.uuid, LinkQuantity.Keep, 106, businessRole = com.andreyceilings.shared.livepricing.BusinessRole.ADDITIONAL_WORK) }
         assertEquals(lengthWish, repo.find(lengthWish.uuid))
-        val linked = repo.linkWishToCatalog(lengthWish.version, length.uuid, LinkQuantity.Replace(ElementQuantity.Exact(2500)), 106)
+        val linked = repo.linkWishToCatalog(lengthWish.version, length.uuid, LinkQuantity.Replace(ElementQuantity.Exact(2500)), 106, businessRole = com.andreyceilings.shared.livepricing.BusinessRole.ADDITIONAL_WORK)
         assertEquals(lengthWish.uuid, linked.uuid)
         assertEquals("Keep note", linked.note)
         assertEquals(ElementApproval.APPROVED, linked.approval)
@@ -84,15 +84,15 @@ object MeasurementElementProof {
         assertEquals("м.п.", linked.unit)
         for ((mode, quantity) in listOf("ceiling_area" to ElementQuantity.CeilingArea, "ceiling_perimeter" to ElementQuantity.CeilingPerimeter)) {
             val derived = prices.all().first { it.quantityMode == mode }
-            assertEquals(quantity, repo.createCatalogSelection(parent, derived.uuid, quantity, 106).quantity)
-            assertFailsWith<MeasurementElementFailure.InvalidQuantity> { repo.createCatalogSelection(parent, derived.uuid, ElementQuantity.Exact(1000), 106) }
+            assertEquals(quantity, repo.createCatalogSelection(parent, derived.uuid, quantity, 106, businessRole = com.andreyceilings.shared.livepricing.BusinessRole.ADDITIONAL_WORK).quantity)
+            assertFailsWith<MeasurementElementFailure.InvalidQuantity> { repo.createCatalogSelection(parent, derived.uuid, ElementQuantity.Exact(1000), 106, businessRole = com.andreyceilings.shared.livepricing.BusinessRole.ADDITIONAL_WORK) }
         }
         prices.delete(item.id)
         val unavailable = checkNotNull(repo.find(selected.uuid))
         assertEquals(CatalogAvailability.DELETED_OR_MISSING, assertIs<ElementSource.CatalogSelection>(unavailable.source).availability)
         assertEquals(selected.label, unavailable.label)
-        assertEquals(unavailable, repo.createCatalogSelection(parent, item.uuid, selected.quantity, 107, uuid = selected.uuid))
-        assertFailsWith<MeasurementElementFailure.CatalogUnavailable> { repo.createCatalogSelection(parent, item.uuid, selected.quantity, 107) }
+        assertEquals(unavailable, repo.createCatalogSelection(parent, item.uuid, selected.quantity, 107, uuid = selected.uuid, businessRole = com.andreyceilings.shared.livepricing.BusinessRole.ADDITIONAL_WORK))
+        assertFailsWith<MeasurementElementFailure.CatalogUnavailable> { repo.createCatalogSelection(parent, item.uuid, selected.quantity, 107, businessRole = com.andreyceilings.shared.livepricing.BusinessRole.ADDITIONAL_WORK) }
         val reusedId = prices.createInGroup(item.code, item.title, item.groupUuid, 1.0, 107, item.unit, QuantityMode.MANUAL)
         assertNotEquals(item.uuid, prices.find(reusedId)?.uuid)
         assertEquals(item.uuid, assertIs<ElementSource.CatalogSelection>(repo.find(selected.uuid)?.source).priceItemUuid)
@@ -103,7 +103,7 @@ object MeasurementElementProof {
         val blockedItem = checkNotNull(prices.find(reusedId))
         driver.execute(null, "UPDATE price_groups SET deletedAt=109 WHERE uuid='${blockedItem.groupUuid}'", 0)
         assertFailsWith<MeasurementElementFailure.CatalogUnavailable> {
-            repo.createCatalogSelection(parent, blockedItem.uuid, ElementQuantity.Unknown, 109)
+            repo.createCatalogSelection(parent, blockedItem.uuid, ElementQuantity.Unknown, 109, businessRole = com.andreyceilings.shared.livepricing.BusinessRole.ADDITIONAL_WORK)
         }
         driver.execute(null, "UPDATE price_groups SET deletedAt=NULL WHERE uuid='${blockedItem.groupUuid}'", 0)
         val tombstone = repo.delete(exact.version, 108)
@@ -201,7 +201,7 @@ object MeasurementElementProof {
             repo.edit(row.version, "Changed", row.approval, row.quantity, 121)
             await { it.any { e -> e.note == "Changed" } }
             val catalogItem = PriceRepository(db).all().first { it.code == "light.chandelier" }
-            val selected = repo.createCatalogSelection(parent, catalogItem.uuid, ElementQuantity.Unknown, 122, uuid = "flow-catalog")
+            val selected = repo.createCatalogSelection(parent, catalogItem.uuid, ElementQuantity.Unknown, 122, uuid = "flow-catalog", businessRole = com.andreyceilings.shared.livepricing.BusinessRole.ADDITIONAL_WORK)
             await { it.any { e -> e.uuid == selected.uuid } }
             PriceRepository(db).delete(catalogItem.id)
             await { rows -> rows.any { e -> e.uuid == selected.uuid &&

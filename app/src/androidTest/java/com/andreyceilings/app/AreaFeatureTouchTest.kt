@@ -32,7 +32,7 @@ class AreaFeatureTouchTest {
         val db=PrototypeDatabase(driver);val f=PointPlacementProof.fixture(db)
         val prices=PriceRepository(db)
         val price=prices.find(prices.createInGroup("area.touch","Область UI",PriceGroupRepository(db).all().first().uuid,1.0,6,"шт.",QuantityMode.MANUAL,PlacementKind.AREA))!!
-        val element=MeasurementElementRepository(db).createCatalogSelection(f.element.measurementUuid,price.uuid,ElementQuantity.Unknown,7)
+        val element=MeasurementElementRepository(db).createCatalogSelection(f.element.measurementUuid,price.uuid,ElementQuantity.Unknown,7, businessRole = com.andreyceilings.shared.livepricing.BusinessRole.ADDITIONAL_WORK)
         val store=MeasurementEditStore(db){100}
         val model=MeasurementEditModel(store,store.load(f.project,f.id))
         compose.setContent {CeilingsTheme(dark) {MeasurementEditScreen(model,PaddingValues(0.dp),0.dp,{}, {},null)}}

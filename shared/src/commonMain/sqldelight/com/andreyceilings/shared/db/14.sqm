@@ -1,0 +1,10 @@
+-- Legacy selections remain unclassified. No row, UUID, token or frozen history rewrite.
+ALTER TABLE measurement_elements ADD COLUMN businessRole TEXT CHECK(businessRole IS NULL OR (kind = 'catalog_item' AND businessRole IN ('CANVAS','PRIMARY_PROFILE','ADDITIONAL_WORK')
+        AND (businessRole != 'CANVAS' OR (quantityMode = 'ceiling_area' AND unit = 'м²'))
+        AND (businessRole != 'PRIMARY_PROFILE' OR (quantityMode = 'ceiling_perimeter' AND unit = 'м.п.'))));
+
+CREATE UNIQUE INDEX index_measurement_elements_canvas ON measurement_elements(measurementUuid)
+WHERE deletedAt IS NULL AND businessRole = 'CANVAS';
+
+CREATE UNIQUE INDEX index_measurement_elements_profile ON measurement_elements(measurementUuid)
+WHERE deletedAt IS NULL AND businessRole = 'PRIMARY_PROFILE';

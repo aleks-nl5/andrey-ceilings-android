@@ -70,7 +70,7 @@ object MeasurementElementsPresentationProof {
             withTimeout(10_000) { model.editor.first { it?.draft?.original?.version == concurrent.version && !it.saving } }
             assertEquals("Other writer", model.editor.value?.draft?.note)
             model.requestDismiss()
-            model.open(concurrent, ElementEditorAction.LINK); model.select(spot)
+            model.open(concurrent, ElementEditorAction.LINK); model.select(spot); model.update { it.copy(businessRole = com.andreyceilings.shared.livepricing.BusinessRole.ADDITIONAL_WORK) }
             assertTrue(checkNotNull(model.editor.value).draft.compatibleKeep)
             model.save(); saved()
             element = checkNotNull(repo.find(uuid)); assertIs<ElementSource.CatalogSelection>(element.source)
@@ -79,12 +79,12 @@ object MeasurementElementsPresentationProof {
             val length = catalog.items.first { it.mode == QuantityMode.ENTERED_LENGTH }
             val wish = repo.createWish(first.measurementUuid, "Pieces to length", 503, unit = "шт.", quantity = ElementQuantity.Exact(6000))
             loaded(2)
-            model.open(wish, ElementEditorAction.LINK); model.select(length); model.save()
+            model.open(wish, ElementEditorAction.LINK); model.select(length); model.update { it.copy(businessRole = com.andreyceilings.shared.livepricing.BusinessRole.ADDITIONAL_WORK) }; model.save()
             assertEquals(wish, repo.find(wish.uuid)); assertNotNull(model.editor.value?.draft?.validationError)
             model.update { it.copy(replaceQuantity = true, input = ElementQuantityInput(ElementQuantityKind.EXACT, "2.5")) }
             model.save(); saved(); assertEquals(ElementQuantity.Exact(2500), repo.find(wish.uuid)?.quantity)
             for (item in catalog.items.filter { it.mode in listOf(QuantityMode.CEILING_AREA, QuantityMode.CEILING_PERIMETER) }) {
-                model.add(); model.choose(ElementEditorAction.CREATE_CATALOG); model.select(item); model.save(); saved()
+                model.add(); model.choose(ElementEditorAction.CREATE_CATALOG); model.select(item); model.update { it.copy(businessRole = com.andreyceilings.shared.livepricing.BusinessRole.ADDITIONAL_WORK) }; model.save(); saved()
                 val selected = repo.active().single { (it.source as? ElementSource.CatalogSelection)?.priceItemUuid == item.uuid && it.measurementUuid == first.measurementUuid }
                 assertEquals(if (item.mode == QuantityMode.CEILING_AREA) ElementQuantity.CeilingArea else ElementQuantity.CeilingPerimeter, selected.quantity)
             }

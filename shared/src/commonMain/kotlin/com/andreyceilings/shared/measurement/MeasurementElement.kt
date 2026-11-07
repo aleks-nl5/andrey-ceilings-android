@@ -1,6 +1,7 @@
 package com.andreyceilings.shared.measurement
 
 import kotlinx.serialization.Serializable
+import com.andreyceilings.shared.livepricing.BusinessRole
 import com.andreyceilings.shared.prices.PlacementKind
 import com.andreyceilings.shared.prices.QuantityMode
 
@@ -73,7 +74,8 @@ data class MeasurementElement(
     val placedQuantityMilli: Long,
     val createdAt: Long,
     val updatedAt: Long,
-    val deletedAt: Long?
+    val deletedAt: Long?,
+    val businessRole: BusinessRole? = null
 ) {
     val version get() = ElementVersion(uuid, measurementUuid, updatedAt)
 }
@@ -90,6 +92,9 @@ sealed interface LinkQuantity {
 sealed class MeasurementElementFailure(message: String, cause: Throwable? = null) : Exception(message, cause) {
     class ParentUnavailable : MeasurementElementFailure("Measurement or project missing/deleted")
     class CatalogUnavailable : MeasurementElementFailure("Catalog item or group missing/deleted")
+    class RoleRequired : MeasurementElementFailure("Choose an explicit business role")
+    class IncompatibleRole : MeasurementElementFailure("Role is incompatible with catalog selection")
+    class DuplicateRole : MeasurementElementFailure("Measurement already has this main role")
     class InvalidQuantity : MeasurementElementFailure("Invalid quantity, bounds, unit or basis")
     class InvalidInput : MeasurementElementFailure("Invalid element input")
     class StaleVersion : MeasurementElementFailure("Element changed or deleted; reload")
@@ -124,5 +129,19 @@ object ElementQuantityRules {
             QuantityMode.CEILING_AREA -> if (quantity != ElementQuantity.CeilingArea || unit != "м²") reject()
             QuantityMode.CEILING_PERIMETER -> if (quantity != ElementQuantity.CeilingPerimeter || unit != "м.п.") reject()
         }
+    }
+}
+
+/** Selection metadata is immutable; choosing a role never converts quantity or catalog identity. */
+object ElementBusinessRoleRules {
+    fun validate(role: BusinessRole?, source: ElementSource, unit: String?) {
+        if (source == ElementSource.Wish) {
+            if (role != null) throw MeasurementElementFailure.IncompatibleRole()
+            return
+        }
+        val mode = (source as ElementSource.CatalogSelection).quantityMode
+        if (role == BusinessRole.CANVAS && (mode != QuantityMode.CEILING_AREA || unit != "м²") ||
+            role == BusinessRole.PRIMARY_PROFILE && (mode != QuantityMode.CEILING_PERIMETER || unit != "м.п."))
+            throw MeasurementElementFailure.IncompatibleRole()
     }
 }

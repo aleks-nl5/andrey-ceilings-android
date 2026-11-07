@@ -32,7 +32,7 @@ class LinePlacementTouchTest {
         val db=PrototypeDatabase(driver);val f=PointPlacementProof.fixture(db)
         val prices=PriceRepository(db)
         val id=prices.createInGroup("line.touch","Лінія",PriceGroupRepository(db).all().first().uuid,1.0,5,"м.п.",QuantityMode.ENTERED_LENGTH,PlacementKind.LINE)
-        val element=MeasurementElementRepository(db).createCatalogSelection(f.element.measurementUuid,prices.find(id)!!.uuid,ElementQuantity.Exact(4500),6)
+        val element=MeasurementElementRepository(db).createCatalogSelection(f.element.measurementUuid,prices.find(id)!!.uuid,ElementQuantity.Exact(4500),6, businessRole = com.andreyceilings.shared.livepricing.BusinessRole.ADDITIONAL_WORK)
         val store=MeasurementEditStore(db){100}
         var model=MeasurementEditModel(store,store.load(f.project,f.id))
         var dark by mutableStateOf(false);var full by mutableStateOf(false)

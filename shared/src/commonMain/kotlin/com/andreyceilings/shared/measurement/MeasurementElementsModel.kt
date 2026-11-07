@@ -1,6 +1,7 @@
 package com.andreyceilings.shared.measurement
 
 import com.andreyceilings.shared.db.newRecordUuid
+import com.andreyceilings.shared.livepricing.BusinessRole
 import com.andreyceilings.shared.prices.QuantityMode
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
@@ -14,7 +15,8 @@ data class ElementEditorDraft(
     val unit: String = original?.unit.orEmpty(),
     val approval: ElementApproval = original?.approval ?: ElementApproval.DISCUSSING,
     val input: ElementQuantityInput = ElementQuantityInput.from(original?.quantity ?: ElementQuantity.Unknown),
-    val selection: ElementCatalogItem? = null, val replaceQuantity: Boolean = false
+    val selection: ElementCatalogItem? = null, val replaceQuantity: Boolean = false,
+    val businessRole: BusinessRole? = original?.businessRole
 ) {
     val catalog: Boolean get() = action == ElementEditorAction.CREATE_CATALOG || action == ElementEditorAction.LINK ||
         original?.source is ElementSource.CatalogSelection
@@ -37,6 +39,9 @@ data class ElementEditorDraft(
         action == ElementEditorAction.CHOOSE -> "Оберіть спосіб додавання."
         action == ElementEditorAction.DELETE -> null
         (action == ElementEditorAction.CREATE_CATALOG || action == ElementEditorAction.LINK) && selection == null -> "Оберіть позицію прайсу."
+        catalog && businessRole == null && (original?.businessRole != null || action != ElementEditorAction.EDIT) -> "Оберіть роль: полотно, основний профіль або інші роботи."
+        catalog && businessRole == BusinessRole.CANVAS && (mode != QuantityMode.CEILING_AREA || quantityUnit != "м²") -> "Полотно потребує позиції з кількістю за площею стелі та одиницею м². Оберіть сумісну позицію."
+        catalog && businessRole == BusinessRole.PRIMARY_PROFILE && (mode != QuantityMode.CEILING_PERIMETER || quantityUnit != "м.п.") -> "Основний профіль потребує позиції з кількістю за периметром стелі та одиницею м.п. Оберіть сумісну позицію."
         !catalog && label.isBlank() -> "Вкажіть назву побажання."
         action == ElementEditorAction.LINK && !replaceQuantity ->
             if (compatibleKeep) null else "Кількість або одиниця несумісні. Явно задайте нову кількість."
@@ -58,6 +63,9 @@ data class ElementEditorState(
 ) { val dirty: Boolean get() = draft != baseline }
 
 fun elementFailureMessage(failure: Throwable): String = when (failure) {
+    is MeasurementElementFailure.RoleRequired -> "Явно оберіть роль позиції в цьому замірі."
+    is MeasurementElementFailure.IncompatibleRole -> "Роль несумісна з режимом кількості або одиницею. Параметри позиції не змінено."
+    is MeasurementElementFailure.DuplicateRole -> "У цьому замірі вже є полотно або основний профіль. Спершу змініть роль чи видаліть попередній елемент."
     is MeasurementElementFailure.StaleVersion -> "Запис змінено або видалено іншим редактором. Чернетку збережено; перезавантажте актуальні дані."
     is MeasurementElementFailure.ParentUnavailable -> "Замір або об'єкт уже недоступний. Збереження заблоковано."
     is MeasurementElementFailure.CatalogUnavailable -> "Позиція або категорія змінилася чи більше недоступна у прайсі. Оновіть каталог і явно оберіть позицію."
@@ -72,6 +80,18 @@ fun elementFailureMessage(failure: Throwable): String = when (failure) {
 /** UI-thread intents; SQL and Flow work on Default. Lifetime belongs to the unlocked session. */
 class MeasurementElementsModel internal constructor(private val store: MeasurementElementsStore, val route: ElementRoute, dispatcher: CoroutineDispatcher) {
     private val scope = CoroutineScope(SupervisorJob() + dispatcher)
+    private val mutablePricing = MutableStateFlow<MeasurementPricingState>(MeasurementPricingState.Loading)
+    val pricing = mutablePricing.asStateFlow()
+    private var pricingJob: Job? = null
+    fun refreshPricing() {
+        if (closed) return
+        pricingJob?.cancel()
+        mutablePricing.value = MeasurementPricingState.Loading
+        pricingJob = scope.launch { store.observePricing(route).collect { result ->
+            mutablePricing.update { if (closed) MeasurementPricingState.Unavailable(
+                com.andreyceilings.shared.livepricing.PricingProblemCode.DATABASE_UNAVAILABLE) else result }
+        } }
+    }
     private val mutableState = MutableStateFlow<MeasurementElementsState>(MeasurementElementsState.Loading)
     val state = mutableState.asStateFlow()
     private val mutableCatalog = MutableStateFlow<ElementCatalogState>(ElementCatalogState.Loading)
@@ -99,6 +119,16 @@ class MeasurementElementsModel internal constructor(private val store: Measureme
         get() = mutableEditor.value
         set(value) { mutableEditor.update { if (closed) null else value } }
     init {
+        // Pricing is read only while its measurement info view has a subscriber.
+        scope.launch {
+            mutablePricing.subscriptionCount.map { it > 0 }.distinctUntilChanged().collect { visible ->
+                if (visible) refreshPricing()
+                else {
+                    pricingJob?.cancel()
+                    if (!closed) mutablePricing.value = MeasurementPricingState.Loading
+                }
+            }
+        }
         retry(); refreshCatalog()
         scope.launch {store.observeAreas(route).catch {emit(emptyList())}.collect {mutableAreas.value=if(closed)emptyList() else it}}
         scope.launch {store.observeLines(route).catch {emit(emptyList())}.collect {mutableLines.value=if(closed)emptyList() else it}}
@@ -386,7 +416,12 @@ class MeasurementElementsModel internal constructor(private val store: Measureme
             withContext(NonCancellable + Dispatchers.Default) {
                 try {
                     store.save(route, before.draft)
-                    if (!closed) currentEditor = null
+                    if (!closed) scope.launch {
+                        if (!closed) {
+                            if (mutablePricing.subscriptionCount.value > 0) refreshPricing()
+                            currentEditor = null
+                        }
+                    }
                 } catch (failure: Exception) {
                     if (!closed) currentEditor = before.copy(saving = false, error = elementFailureMessage(failure),
                         conflict = failure is MeasurementElementFailure.StaleVersion || failure is MeasurementElementFailure.RetryConflict,
@@ -402,6 +437,7 @@ class MeasurementElementsModel internal constructor(private val store: Measureme
         closed = true; exitAction = null; pointExitAction = null; currentEditor = null
         committedPoints.value = emptyMap(); mutableLines.value=emptyList()
         mutableState.value = MeasurementElementsState.Unavailable; mutableCatalog.value = ElementCatalogState.Unavailable
+        mutablePricing.value = MeasurementPricingState.Unavailable(com.andreyceilings.shared.livepricing.PricingProblemCode.DATABASE_UNAVAILABLE)
         mutablePoints.value = PointPlacementState()
         scope.cancel()
     }

@@ -97,7 +97,7 @@ object PointPositionProof {
                 perimeterMeters = geometry.perimeterMeters, createdAt = 2)
             val parent = measurements.find(id)!!
             val elements = MeasurementElementRepository(db); val points = PointPlacementRepository(db)
-            val element = elements.createCatalogSelection(parent.uuid, item, ElementQuantity.Exact(6000), 3)
+            val element = elements.createCatalogSelection(parent.uuid, item, ElementQuantity.Exact(6000), 3, businessRole = com.andreyceilings.shared.livepricing.BusinessRole.ADDITIONAL_WORK)
             val initial = listOf(1000L to 1000L, -1500L to -1000L).first { pointStrictlyInside(geometry, it.first, it.second) }
             var point = points.addPoint(element.version, parent.updatedAt, initial.first, initial.second, 4)
             for ((x,y) in listOf(initial, 1500L to 1500L, 4500L to 3500L, -1000L to -1000L, vertices.first(), 999999L to 999999L, Long.MAX_VALUE to 1L)) {

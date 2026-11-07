@@ -87,7 +87,7 @@ object MeasurementElementMigrationProof {
     }
 
     fun assertStructure(driver: SqlDriver) {
-        assertEquals(20, rows(driver, "PRAGMA table_info(measurement_elements)", 6).size)
+        assertEquals(21, rows(driver, "PRAGMA table_info(measurement_elements)", 6).size)
         assertEquals(setOf("room_measurements", "price_items"), rows(driver,
             "PRAGMA foreign_key_list(measurement_elements)", 8).map { it[2] }.toSet())
         assertEquals(listOf("measurementUuid", "deletedAt", "createdAt", "uuid"), rows(driver,

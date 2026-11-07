@@ -44,7 +44,7 @@ class ElementQuantityInputTest {
         assertNotNull(draft.copy(unit = "").validationError)
         assertNull(draft.copy(unit = "", input = ElementQuantityInput()).validationError)
         val length = ElementCatalogItem("i", "g", "Length", "length", "м.п.", QuantityMode.ENTERED_LENGTH, PlacementKind.LINE)
-        val link = ElementEditorDraft.edit(wish, ElementEditorAction.LINK).copy(selection = length)
+        val link = ElementEditorDraft.edit(wish, ElementEditorAction.LINK).copy(selection = length, businessRole = com.andreyceilings.shared.livepricing.BusinessRole.ADDITIONAL_WORK)
         assertFalse(link.compatibleKeep)
         assertNotNull(link.validationError)
         assertEquals(ElementQuantity.Exact(6000), link.original?.quantity)

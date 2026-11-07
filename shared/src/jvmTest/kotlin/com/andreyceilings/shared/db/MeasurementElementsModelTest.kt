@@ -94,7 +94,7 @@ class MeasurementElementsModelTest {
                 withTimeout(10_000) { model.state.first { it is MeasurementElementsState.Loaded } }
                 val catalog = withTimeout(10_000) { model.catalog.first { it is ElementCatalogState.Loaded } } as ElementCatalogState.Loaded
                 val selected = catalog.items.first { it.code == "light.spot" }
-                model.add(); model.choose(ElementEditorAction.CREATE_CATALOG); model.select(selected)
+                model.add(); model.choose(ElementEditorAction.CREATE_CATALOG); model.select(selected); model.update { it.copy(businessRole = com.andreyceilings.shared.livepricing.BusinessRole.ADDITIONAL_WORK) }
                 val uuid = checkNotNull(model.editor.value).draft.uuid
                 val prices = PriceRepository(db); val item = prices.all().single { it.uuid == selected.uuid }
                 prices.updateConfigured(item, item.groupUuid, "Renamed while picking", item.unit,
@@ -138,7 +138,7 @@ class MeasurementElementsModelTest {
                 val replacement = if (selected.placementKind == com.andreyceilings.shared.prices.PlacementKind.NONE)
                     com.andreyceilings.shared.prices.PlacementKind.POINT else com.andreyceilings.shared.prices.PlacementKind.NONE
 
-                model.add(); model.choose(ElementEditorAction.CREATE_CATALOG); model.select(selected)
+                model.add(); model.choose(ElementEditorAction.CREATE_CATALOG); model.select(selected); model.update { it.copy(businessRole = com.andreyceilings.shared.livepricing.BusinessRole.ADDITIONAL_WORK) }
                 val newUuid = checkNotNull(model.editor.value).draft.uuid
                 prices.updateConfigured(before, before.groupUuid, before.title, before.unit, selected.mode,
                     replacement, before.price, 4)
@@ -159,7 +159,7 @@ class MeasurementElementsModelTest {
 
                 val wish = repo.createWish(route.measurementUuid, "Unlinked wish", 6)
                 withTimeout(10_000) { model.state.first { it is MeasurementElementsState.Loaded && it.items.size == 2 } }
-                model.open(wish, ElementEditorAction.LINK); model.select(selected)
+                model.open(wish, ElementEditorAction.LINK); model.select(selected); model.update { it.copy(businessRole = com.andreyceilings.shared.livepricing.BusinessRole.ADDITIONAL_WORK) }
                 model.save()
                 withTimeout(10_000) { model.editor.first { it?.error != null && !it.saving } }
                 assertEquals(wish, repo.find(wish.uuid))

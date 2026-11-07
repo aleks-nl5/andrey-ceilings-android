@@ -12,6 +12,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import com.andreyceilings.shared.livepricing.BusinessRole
 import com.andreyceilings.shared.prices.QuantityMode
 import com.andreyceilings.shared.prices.label
 
@@ -41,6 +42,7 @@ fun MeasurementElementsSection(state: MeasurementElementsState, onAdd: () -> Uni
                             Text(element.label, style = MaterialTheme.typography.titleMedium)
                             val source = element.source as? ElementSource.CatalogSelection
                             Text(if (source == null) "Побажання" else "З прайсу · ${source.code} · ${element.unit}")
+                            if (source != null) Text(element.businessRole?.measurementLabel ?: "Роль не визначена — оберіть у редагуванні")
                             Text(formatElementQuantity(element.quantity, element.unit))
                             if (element.note.isNotBlank()) Text(element.note)
                             Text(if (element.approval == ElementApproval.APPROVED) "Погоджено" else "Обговорюється")
@@ -155,6 +157,17 @@ fun MeasurementElementEditor(
                             }
                         }
                     }
+                    if (draft.catalog) {
+                        Text("Роль у цьому замірі", style = MaterialTheme.typography.titleSmall)
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            BusinessRole.entries.forEach { role ->
+                                FilterChip(draft.businessRole == role, enabled = enabled,
+                                    onClick = { onChange { it.copy(businessRole = role) } },
+                                    label = { Text(role.measurementLabel) })
+                            }
+                        }
+                        if (draft.businessRole == null) Text("Роль не визначена. Оберіть її явно; без ролі новий кошторис не готовий.")
+                    }
                     if (draft.action != ElementEditorAction.LINK || draft.replaceQuantity)
                         ElementQuantityFields(draft.input, draft.quantityUnit, draft.mode,
                             enabled && (!draft.catalog || draft.action == ElementEditorAction.EDIT || draft.selection != null)) { input ->
@@ -256,4 +269,10 @@ private fun ElementCatalogPicker(state: ElementCatalogState, selection: ElementC
             TextButton(enabled = enabled, onClick = onRefresh) { Text("Оновити каталог") }
         }
     }
+}
+
+val BusinessRole.measurementLabel: String get() = when (this) {
+    BusinessRole.CANVAS -> "Полотно"
+    BusinessRole.PRIMARY_PROFILE -> "Основний профіль"
+    BusinessRole.ADDITIONAL_WORK -> "Інші роботи"
 }

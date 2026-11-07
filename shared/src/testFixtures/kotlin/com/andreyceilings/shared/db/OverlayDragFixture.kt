@@ -18,10 +18,10 @@ object OverlayDragFixture {
         fun item(code:String,unit:String,kind:PlacementKind)=prices.find(prices.createInGroup(code,code,
             PriceGroupRepository(db).all().first().uuid,1.0,20,unit,QuantityMode.MANUAL,kind))!!
         val elements=MeasurementElementRepository(db)
-        val pointElement=elements.createCatalogSelection(row.uuid,item("drag.point","шт.",PlacementKind.POINT).uuid,ElementQuantity.Exact(6000),5)
+        val pointElement=elements.createCatalogSelection(row.uuid,item("drag.point","шт.",PlacementKind.POINT).uuid,ElementQuantity.Exact(6000),5, businessRole = com.andreyceilings.shared.livepricing.BusinessRole.ADDITIONAL_WORK)
         PointPlacementRepository(db).addPoint(pointElement.version,row.updatedAt,3500,2500,10)
-        val lineElement=elements.createCatalogSelection(row.uuid,item("drag.line","м.п.",PlacementKind.LINE).uuid,ElementQuantity.Exact(2000),21)
-        val areaElement=elements.createCatalogSelection(row.uuid,item("drag.area","шт.",PlacementKind.AREA).uuid,ElementQuantity.Exact(3000),22)
+        val lineElement=elements.createCatalogSelection(row.uuid,item("drag.line","м.п.",PlacementKind.LINE).uuid,ElementQuantity.Exact(2000),21, businessRole = com.andreyceilings.shared.livepricing.BusinessRole.ADDITIONAL_WORK)
+        val areaElement=elements.createCatalogSelection(row.uuid,item("drag.area","шт.",PlacementKind.AREA).uuid,ElementQuantity.Exact(3000),22, businessRole = com.andreyceilings.shared.livepricing.BusinessRole.ADDITIONAL_WORK)
         val store=MeasurementEditStore(db){100};val doc=store.load(project,id)
         fun mounting(p:PointPositionMm)=PointMounting(anchor=WallAnchor(WallAnchor.Kind.TWO_WALLS,doc.placements.walls[0].uuid,doc.placements.walls[3].uuid,p.yMm,p.xMm))
         val start=PointPositionMm(500,950);val end=PointPositionMm(1500,950)

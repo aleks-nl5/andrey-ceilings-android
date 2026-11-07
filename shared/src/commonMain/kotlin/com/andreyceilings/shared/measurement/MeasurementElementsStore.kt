@@ -1,6 +1,8 @@
 package com.andreyceilings.shared.measurement
 
 import com.andreyceilings.shared.db.*
+import com.andreyceilings.shared.livepricing.*
+import app.cash.sqldelight.coroutines.asFlow
 import com.andreyceilings.shared.prices.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
@@ -31,6 +33,7 @@ sealed interface MeasurementElementsState {
 /** One registry per unlocked DB session. Drafts never enter Android saved state or route snapshots. */
 class MeasurementElementsStore(private val database: PrototypeDatabase, private val nowMillis: () -> Long,
     private val modelDispatcher: CoroutineDispatcher = Dispatchers.Main.immediate) {
+    private val pricingReader = LivePricingReader(database)
     private val repository = MeasurementElementRepository(database)
     private val points = PointPlacementRepository(database)
     private val measurements = MeasurementRepository(database)
@@ -74,6 +77,7 @@ class MeasurementElementsStore(private val database: PrototypeDatabase, private 
         }
     }
     fun close() {
+        pricingReader.closeAdmission()
         stopAcceptingWrites()
         active?.close()
         active = null
@@ -87,8 +91,45 @@ class MeasurementElementsStore(private val database: PrototypeDatabase, private 
         val inFlight = stopAcceptingWrites()
         active?.close()
         active = null
+        pricingReader.closeReads()
         inFlight.forEach { it.await() }
     }
+
+    /** Android calls under its exclusive physical DB gate, which already drained outer transactions.
+     * Desktop uses closeAndAwaitWrites to drain scheduled work before a reopenable JDBC driver closes.
+     */
+    suspend fun closePricingReads() {
+        close()
+        pricingReader.closeReads()
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    internal fun observePricing(route: ElementRoute): Flow<MeasurementPricingState> =
+        database.livePricingQueries.selectPricingInvalidations().asFlow().transformLatest {
+            emit(MeasurementPricingState.Loading)
+            val completion = beginWrite()
+            if (completion == null) emit(MeasurementPricingState.Unavailable(PricingProblemCode.DATABASE_UNAVAILABLE))
+            else try {
+                val result = withContext(Dispatchers.Default) {
+                    // Admission to the reader happens AFTER the outer transaction/Android gate lease.
+                    // Restore can drain the physical gate then await closeReads without a gate inversion.
+                    database.transactionWithResult {
+                        if (closed) PricingReadResult.Unavailable(PricingProblemCode.DATABASE_UNAVAILABLE)
+                        else pricingReader.read(route.projectId, route.measurementUuid)
+                    }
+                }
+                emit(if (closed) MeasurementPricingState.Unavailable(PricingProblemCode.DATABASE_UNAVAILABLE)
+                    else when (result) {
+                        is PricingReadResult.Loaded -> MeasurementPricingState.Loaded(result.buildPreview(),
+                            result.source.versions["measurementUpdatedAt"]?.toLongOrNull(),
+                            result.source.elements.associate { it.uuid to it.updatedAt })
+                        is PricingReadResult.Unavailable -> MeasurementPricingState.Unavailable(result.problem)
+                    })
+            } finally { endWrite(completion) }
+        }.catch { failure ->
+            if (failure is CancellationException) throw failure
+            emit(MeasurementPricingState.Unavailable(PricingProblemCode.DATABASE_UNAVAILABLE))
+        }.flowOn(Dispatchers.Default)
 
     internal fun observe(route: ElementRoute): Flow<MeasurementElementsState> = combine(
         projects.observeById(route.projectId), measurements.observeById(route.measurementId),
@@ -164,13 +205,13 @@ class MeasurementElementsStore(private val database: PrototypeDatabase, private 
             ElementEditorAction.CREATE_WISH -> repository.createWish(route.measurementUuid, draft.label, nowMillis(),
                 draft.uuid, draft.note, draft.approval, draft.unit.takeIf { it.isNotBlank() }?.trim(), checkNotNull(draft.quantity()))
             ElementEditorAction.CREATE_CATALOG -> repository.createCatalogSelection(route.measurementUuid,
-                checkNotNull(draft.selection).uuid, checkNotNull(draft.quantity()), nowMillis(), draft.uuid, draft.note, draft.approval)
+                checkNotNull(draft.selection).uuid, checkNotNull(draft.quantity()), nowMillis(), draft.uuid, draft.note, draft.approval, draft.businessRole ?: throw MeasurementElementFailure.RoleRequired())
             ElementEditorAction.EDIT -> repository.edit(checkNotNull(original).version, draft.note, draft.approval,
                 checkNotNull(draft.quantity()), nowMillis(), draft.unitChange(),
-                wishLabel = draft.label.takeIf { original.source == ElementSource.Wish })
+                wishLabel = draft.label.takeIf { original.source == ElementSource.Wish }, businessRole = draft.businessRole)
             ElementEditorAction.LINK -> repository.linkWishToCatalog(checkNotNull(original).version,
                 checkNotNull(draft.selection).uuid,
-                if (draft.replaceQuantity) LinkQuantity.Replace(checkNotNull(draft.quantity())) else LinkQuantity.Keep, nowMillis())
+                if (draft.replaceQuantity) LinkQuantity.Replace(checkNotNull(draft.quantity())) else LinkQuantity.Keep, nowMillis(), draft.businessRole ?: throw MeasurementElementFailure.RoleRequired())
             ElementEditorAction.DELETE -> repository.delete(checkNotNull(original).version, nowMillis())
             ElementEditorAction.CHOOSE -> throw MeasurementElementFailure.InvalidInput()
         }

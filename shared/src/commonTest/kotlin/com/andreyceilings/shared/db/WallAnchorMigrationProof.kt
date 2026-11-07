@@ -33,7 +33,7 @@ object WallAnchorMigrationProof {
         "SELECT quote(uuid),quote(elementUuid),quote(xMm),quote(yMm),quote(contourUpdatedAt),quote(createdAt),quote(updatedAt),quote(deletedAt),quote(precision),quote(lastMoveUuid) FROM point_placements ORDER BY uuid",10)
     private fun receipts(driver:SqlDriver)=MeasurementElementMigrationProof.rows(driver,"SELECT quote(uuid),quote(pointUuid),quote(expectedPointUpdatedAt),quote(expectedElementUpdatedAt),quote(contourUpdatedAt),quote(xMm),quote(yMm),quote(precision),quote(createdAt) FROM point_position_operations ORDER BY uuid",9)
     fun populateV9(driver:SqlDriver):PointPlacementProof.Fixture {
-        val db=PrototypeDatabase(driver)
+        val db=historicalElementDatabase(driver)
         com.andreyceilings.shared.prices.StarterPriceCatalog.initialize(db)
         val f=PointPlacementProof.fixture(db,"Старий v9")
         driver.execute(null,"INSERT INTO point_placements(uuid,elementUuid,xMm,yMm,contourUpdatedAt,createdAt,updatedAt) VALUES('v9-point','${f.element.uuid}',1000,1000,${f.contourVersion},10,10)",0)

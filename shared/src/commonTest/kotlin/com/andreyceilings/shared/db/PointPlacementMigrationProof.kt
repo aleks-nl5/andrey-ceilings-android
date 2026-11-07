@@ -35,15 +35,15 @@ object PointPlacementMigrationProof {
         try {
             // SQLiter owns the schema callback transaction. Seed only after open,
             // when the normal driver's SQLDelight transaction can own BEGIN.
-            com.andreyceilings.shared.prices.StarterPriceCatalog.initialize(PrototypeDatabase(old))
+            com.andreyceilings.shared.prices.StarterPriceCatalog.initialize(historicalElementDatabase(old))
             if (populated) {
                 MeasurementElementMigrationProof.populate(old)
-                val db = PrototypeDatabase(old)
+                val db = historicalElementDatabase(old)
                 val parent = MeasurementRepository(db).all().single().uuid
                 val spot = PriceRepository(db).all().single { it.code == "light.spot" }
                 // Historical snapshot remains NONE after upgrade, even when fresh defaults are POINT.
                 old.execute(null, "UPDATE price_items SET placementKind='none' WHERE uuid='${spot.uuid}'", 0)
-                MeasurementElementRepository(db).createCatalogSelection(parent, spot.uuid, ElementQuantity.Exact(6000), 400, "old-none-snapshot")
+                MeasurementElementRepository(db).createCatalogSelection(parent, spot.uuid, ElementQuantity.Exact(6000), 400, "old-none-snapshot", businessRole = com.andreyceilings.shared.livepricing.BusinessRole.ADDITIONAL_WORK)
             }
             before = snapshot(old); schemaBefore = PriceNameMigrationProof.schema(old)
         } finally { old.close() }

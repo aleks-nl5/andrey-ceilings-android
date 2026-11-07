@@ -6,18 +6,31 @@ import app.cash.sqldelight.db.SqlDriver
 /** Fail closed on a partial v7 Windows schema, including missing CHECKs/FKs/index/view.
  * Canonical SQL mirrors 6.sqm; the shared migration contract verifies both paths.
  */
-internal fun verifyMeasurementElementStructure(driver: SqlDriver) {
-    fun normalize(sql: String) = sql.trim().trimEnd(';').replace(Regex("\\s+"), " ").lowercase()
+internal fun verifyMeasurementElementStructure(driver: SqlDriver, version: Long = PriceCatalogSchema.version) {
+    // Ignore formatting/SQL keyword case; persisted enum literals remain case-sensitive.
+    fun normalize(sql: String) = Regex("'(?:''|[^'])*'|[^']+")
+        .findAll(sql.trim().trimEnd(';')).joinToString("") { token ->
+            if (token.value.startsWith("'")) token.value else token.value
+                .replace(Regex("\\s+"), " ").replace(Regex("\\s*([,()])\\s*"), "$1").lowercase()
+        }
     fun definition(name: String): String = driver.executeQuery(null,
         "SELECT sql FROM sqlite_master WHERE name = '$name'", { cursor ->
             QueryResult.Value(if (cursor.next().value) cursor.getString(0) else null)
         }, 0).value ?: error("Incomplete measurement element schema")
-    check(normalize(definition("measurement_elements")) == normalize(elementTableSql)) {
+    check(normalize(definition("measurement_elements")) == normalize(if (version >= 15) elementTableSql.replace("    CHECK(unit IS NULL OR length(trim(unit)) > 0),", "    $businessRoleColumn,\n    CHECK(unit IS NULL OR length(trim(unit)) > 0),") else elementTableSql)) {
         "Unsupported measurement element table structure"
     }
     check(normalize(definition("index_measurement_elements_parent_active_order")) == normalize(
         "CREATE INDEX index_measurement_elements_parent_active_order ON measurement_elements(measurementUuid, deletedAt, createdAt, uuid)")) {
         "Unsupported measurement element index"
+    }
+    if (version >= 15) {
+        for ((name, role) in listOf("canvas" to "CANVAS", "profile" to "PRIMARY_PROFILE")) {
+            check(normalize(definition("index_measurement_elements_$name")) == normalize(
+                "CREATE UNIQUE INDEX index_measurement_elements_$name ON measurement_elements(measurementUuid) WHERE deletedAt IS NULL AND businessRole = '$role'")) {
+                "Unsupported business role index"
+            }
+        }
     }
     check(normalize(definition("measurement_element_records")) == normalize(elementViewSql)) {
         "Unsupported measurement element projection"
@@ -82,3 +95,7 @@ FROM measurement_elements e
 LEFT JOIN price_items i ON i.uuid = e.priceItemUuid
 LEFT JOIN price_groups g ON g.uuid = i.groupUuid
 """.trimIndent()
+
+internal val businessRoleColumn = """businessRole TEXT CHECK(businessRole IS NULL OR (kind = 'catalog_item' AND businessRole IN ('CANVAS','PRIMARY_PROFILE','ADDITIONAL_WORK')
+        AND (businessRole != 'CANVAS' OR (quantityMode = 'ceiling_area' AND unit = 'м²'))
+        AND (businessRole != 'PRIMARY_PROFILE' OR (quantityMode = 'ceiling_perimeter' AND unit = 'м.п.'))))"""
