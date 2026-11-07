@@ -1,3 +1,12 @@
+## Current milestone (07.11.2026 — #106, Draft PR pending; P4B2 #110 queued)
+
+- Owner merged [P4B1 PR #109](https://github.com/aleks-nl5/andrey-ceilings-android/pull/109) into `main` (merge `977577f5b2739ea73c5d096009410ec1b7026615`), Android/Windows/iOS CI green, code review PASS, owner confirmed APK works. [P4B1 #108](https://github.com/aleks-nl5/andrey-ceilings-android/issues/108) closed completed. Schema v15 roles and read-only in-measurement calculator are accepted baseline.
+- **NEXT active task [#106](https://github.com/aleks-nl5/andrey-ceilings-android/issues/106):** shared KMP/CMP support for leading decimals (`.5`, `.007`, `,5`), protecting partial edit states and existing field-specific precision/unit rules. Continue only `fix/shared-leading-decimal-input`, read [handoff](docs/LEADING_DECIMAL_INPUT_106.md). No schema/pricing changes. Create no other overlapping branch/PR.
+- **AFTER #106 merge:** [P4B2 #110](https://github.com/aleks-nl5/andrey-ceilings-android/issues/110) is a planned separate feature, with *memory-only* individual quote composition and quantity overrides; no Save/number/PDF. P4C separately implements atomic individual Save/frozen drawing, individual PDF and selected-room frozen-only consolidated print. Umbrella #44 remains open; #71/#76/#78/#95/#70 are not finished by #106.
+- Keep Draft PR, same-SHA CI Android+Windows+iOS, independent code review, owner APK; merge only by owner.
+
+## Historical stage — P4B1 (merged and accepted)
+
 # Agent instructions — Andrey Ceilings
 
 ## Current milestone (07.11.2026 — P4B1, Issue #108 / Draft PR #109)
