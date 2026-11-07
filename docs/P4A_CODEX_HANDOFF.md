@@ -1,63 +1,34 @@
 # P4A — Codex implementation handoff
 
-**Status:** implementation in existing feature branch `feat/p4a-kmp-live-pricing` / Draft PR #107; see [implementation notes](P4A_IMPLEMENTATION.md). CI/review/owner acceptance remain separate gates. One Draft PR for the entire P4A phase, linked to [issue #104](https://github.com/aleks-nl5/andrey-ceilings-android/issues/104) and parent [#44](https://github.com/aleks-nl5/andrey-ceilings-android/issues/44). This file is an entry point; the complete, precedence-setting contract is [LIVE_ESTIMATE_P4A.md](LIVE_ESTIMATE_P4A.md) (merged to `main` via PR #105), plus `AGENTS.md` and `docs/PROJECT_ROADMAP.md`.
+Continue **existing** `feat/p4a-kmp-live-pricing` / [Draft PR #107](https://github.com/aleks-nl5/andrey-ceilings-android/pull/107), issue #104 under #44. No other PR, Ready, merge or issue closure. Implementation is not owner acceptance.
 
-## Goal
+Read AGENTS.md, [LIVE_ESTIMATE_P4A.md](LIVE_ESTIMATE_P4A.md), [implementation notes](P4A_IMPLEMENTATION.md), roadmap and [final owner instruction](https://github.com/aleks-nl5/andrey-ceilings-android/pull/107#issuecomment-6704739545). This supersedes mixed composition and print-dialog creation proposals.
 
-Implement a **deterministic read-only KMP live-pricing engine** in shared/commonMain using a coherent validated measurement snapshot and current active catalog, with precise source provenance, separately priced confirmed and potential work, typed missing/invalid conditions, and read-only project composition. Leave new Compose screens, estimate writes, schema migrations, PDF, preset templates, bidirectional drawing editor and price catalog changes out of scope.
+## Entry points
 
-## Read before changing code
+- LivePricingModel/PricingMath/LivePricingEngine/MandatoryPricingRoles: pure single-measurement pricing, exact quantities/cents, typed roles/overrides, confirmed/potential and readiness problems.
+- IndividualEstimatePricing: exact single-measurement live selection, inclusion/exclusion, full/partial readiness. Mandatory confirmed included base applies to **new individual Save**, never historical reprint.
+- ConsolidatedEstimate: frozen-only selected rooms, exact revision provenance, complete frozen rows/drawing/details and SUM(saved subtotals). Separate token-only frozenSourceWarnings has no financial effect. Mixed ProjectPricingEngine removed.
+- LivePricingReader / SELECT-only db/LivePricing.sq: coherent snapshot/token recheck. Await suspending admission/drain closeReads() before DB session replacement/close.
+- LivePricingDraftAdapter: stable validated measurement draft against coherent basis; no Save.
+- commonTest/livepricing, db/LivePricingProof, JVM LivePricingReaderTest/ConsolidatedApiBoundaryTest: pure/API/SQLite proofs and Android/Windows/iOS physical integrations.
 
-- `shared/src/commonMain/kotlin/com/andreyceilings/shared/measurement/MeasurementElement.kt` and `MeasurementEditStore.kt`
-- `shared/src/commonMain/kotlin/com/andreyceilings/shared/prices/PriceCatalogModel.kt`, `PriceParameters.kt`, `PriceCatalogStore.kt`
-- `shared/src/commonMain/kotlin/com/andreyceilings/shared/estimate/` and calculation KMP geometry; source-backed precision and legacy saved revisions
-- `shared/src/commonMain/sqldelight/com/andreyceilings/shared/db/BusinessSchema.sq` (schema v14), relevant SQLDelight repositories and transactional store conventions
-- Unit and DB regression tests for measurement elements, point/line/area placements, catalog, immutable estimates, Android physical SQLCipher and desktop/iOS verification.
+## Constraints
 
-**Important known limitation:** `MeasurementElement` **does not yet persist a business role** distinguishing primary canvas, primary profile and additional work. Do not infer primary role from code, label, catalog group, position or quantity mode. P4A must model an *explicit, typed and verified classification* in pure inputs and issue a typed unresolved/error when trustworthy classification is unavailable; do not silently claim database-enforced 0..1 role uniqueness. Persistence of that role and its UI belong to a later authorized phase, **not** a v15 migration here.
+v14 persists neither business roles nor sufficient immutable individual/drawing provenance. Require trusted typed role bindings or ROLE_UNDETERMINED; never infer by names/code/group/mode/order. Production frozen-history reader returns PROVENANCE_MISSING. Verifier fixtures are not a production adapter. Never fabricate drawing snapshots from current measurements.
 
-## Implemented entry points
+No SQL writes/init, schema/seed, UI, numbering, writer, PDF, price changes, #106 parsers or #70 solver. Preserve geometry precision, measurement journal/CAS, SQLCipher keys/WAL/backup/restore and history/PDF.
 
-- `livepricing/LivePricingModel.kt`, `PricingMath.kt`, `LivePricingEngine.kt`: all-element pricing, typed roles, exact quantities/cents, confirmed/potential, local unresolved vs fatal, source/catalog/scope-bound overrides.
-- `livepricing/ProjectPricing.kt`: explicit ordered live/frozen revision selection, omissions, typed origin refs, overlap checks, project-wide works once, content fingerprint/readiness.
-- `livepricing/LivePricingReader.kt` + `db/LivePricing.sq`: one fresh read transaction, child/receipt/catalog versions, expected-token recheck, no write/initialization. Await the suspending `closeReads()` admission/drain barrier before DB replacement.
-- `livepricing/LivePricingDraftAdapter.kt`: validated stable `MeasurementEditModel` against an explicit coherent source basis; no Save.
-- `commonTest/livepricing/`, `commonTest/db/LivePricingProof.kt`, `jvmTest/db/LivePricingReaderTest.kt`: pure cases and shared physical proof wired into Android/Windows/iOS suites, plus concurrent WAL snapshot test on JDBC/Windows.
+## Review and delivery checklist
 
-The v14 history adapter refuses unverifiable leaf coverage with `PROVENANCE_MISSING`; it does not claim old revisions are supported merely because they have a measurement UUID. Fine captured areas that cannot be represented exactly in integer milli remain `QUANTITY_PRECISION`, without rounding the geometry. Full validation/CI results are recorded in PR #107, not assumed by this checklist.
+- Mandatory pair: missing/unpriced/deleted/discussing/excluded blocks full and partial; valid zero-price pair works; optional omissions need future acknowledgement.
+- Lifecycle: reject admission, drain accepted physical read/verify after success/failure/rollback including cancelled closer.
+- Frozen package: 2 selected of 3 (unselected missing ignored); selected missing/empty/cross-project/duplicate/ambiguous fail; alternate revision affects only its room; live changes preserve totals/drawing with separate warnings; exact cents/overflow; no live/catalog/projectWorks API; no current role checks on history.
+- Local shared/JVM, Android unit/build/instrumentation compile, desktop compile, migration checks; fresh **same-final-SHA** Android instrumentation, Windows/JVM/physical SQLCipher and iOS Simulator CI. Record actual results in PR.
+- Draft until independent re-review and owner acceptance; APK smoke owner-only.
 
-## Implementation sequence
+## Deferred P4B/P4C acceptance
 
-1. **Model & pure engine (commonMain):** validated `LiveEstimateSource` containing **all active measurement elements including unplaced/NONE/Wish**, stable UUID identities, captured geometry, actual active catalog item+group with price/version tokens, and placement metadata for review only. Validate area/perimeter/exact/range/unknown quantity without treating overlays as additional billable rows.
-2. **Business rules:** at most one explicitly classified CANVAS and one PRIMARY_PROFILE per measurement (zero is allowed only in an incomplete measurement; both readiness flags require a confirmed included base pair); additional works remain independent. For derived canvas/profile quantities, use verified area/perimeter once; a **per-composition explicit billable override** may change the priced amount but never mutate measured dimensions, `ElementQuantity.CeilingArea/Perimeter`, prices or database. Expose both measured and effective quantities, typed source/origin and safety checks.
-3. **Pricing buckets and problems:** APPROVED valid catalog-linked rows contribute to `confirmedTotalCents`; valid DISCUSSING only to `potentialTotalCents`. Distinguish local `OMITTABLE_UNRESOLVED` (price/quantity/item missing, with identity/reason, no silent zero) vs fatal geometry/identity/duplicate-role/stale/overflow problems. Full estimate readiness vs controlled partial **candidate** readiness. P4A does **not** record user acknowledgement: explicit inclusion/exclusion confirmation is future P4B; immutable Save/PDF is P4C.
-4. **Composition pure API:** standalone ceiling, all ceilings or explicitly selected subset of live previews and exact frozen source revision UUIDs. Retain original saved revision prices; reject cross-project, missing, overlapping/provenance-duplicate or stale sources rather than guessing/double-counting. Keep selected confirmed/potential totals separate and preserve local omissions.
-5. **Transactional read adapter:** load measurement, all children, catalog items+groups and version/receipt tokens as **one coherent SQLDelight transaction**; do not combine unrelated hot Flows, leak stale values or modify database. Version/source signature must support later P4C revalidation.
-6. **Tests/proofs and PR update:** pure commonTest, SQLDelight DB proof, Android SQLCipher and Windows/JVM/iOS CI where available. Validate geometry/price/rounding/units/negative/overflow/selection/status/overrides/duplicate placements/partial vs fatal/stale cases. Ensure unchanged schema v14 and immutable estimate history. Update this checklist with actual implementation details and tests before asking for review.
+P4B: one-measurement calculator, memory-only individual selection/override/ack. Object print dialog selects rooms and ONE saved revision each; empty or selected missing blocks; unselected rooms never gate. Offer navigation to create in its measurement; no autosave in print dialog. Changed provenance warns and offers unchanged historical print or navigation; no silent latest.
 
-## Strict boundaries
-
-- **No INSERT/UPDATE of estimate history, series, numbering, PDF, or preview drafts in P4A.**
-- No new SQLDelight tables, migration, new price seed rows, preset library or business role DB writer in this PR.
-- No automatic price lookup by title, fuzzy matching, default prices, implicit rounding, or double-counting source UUIDs.
-- Preserve previously merged P3C5 Android/Windows/iOS interactions and their CI; avoid unrelated refactors.
-- Decimal input bug [#106](https://github.com/aleks-nl5/andrey-ceilings-android/issues/106) is a **separate** shared KMP/CMP task, not scope creep in this PR. Geometry bidirectional editor remains [#70](https://github.com/aleks-nl5/andrey-ceilings-android/issues/70).
-
-## Review correction checklist (07.11.2026)
-
-- [x] Mandatory base pair per selected live ceiling; missing/invalid/discussing/excluded base blocks full and partial, zero prices valid.
-- [x] Empty/project-only/extras-only/advisory-only documents are not ready; frozen roles need verified proof.
-- [x] Close barrier read/verify concurrency + failure/cancellation regression passed on JDBC; physical Windows proof is wired into fresh CI; no new admission during drain.
-- [x] Mixed advisory live/frozen same provenance allowed; selecting both is rejected in either source order.
-- [ ] Fresh same-head Android/Windows/iOS CI and PR/issue evidence; repeat review and owner approval pending.
-
-## Done when
-
-- [ ] Pure pricing and selection APIs implemented with deterministic output.
-- [ ] One coherent read adapter, exact versions/UUIDs, no writes.
-- [ ] Confirmed/potential, partial/unresolved/fatal, override and provenance cases covered by automated tests.
-- [ ] Android, Windows and iOS required CI results checked on the **same final SHA**; any platform execution limitation stated explicitly.
-- [ ] PR description documents file changes, test evidence, remaining deferred P4B/P4C issues and manual APK validation status (if relevant).
-- [ ] Independent code review and owner approval before marking Ready and merging.
-
-**Codex:** work **on this existing branch and Draft PR**, not a competing branch or new PR; read issue #104 and complete contract before implementation. Stop with explicit documented blocker rather than inventing business logic if any source classifications cannot be proven without persistence changes.
+P4C: explicit individual Save creates immutable revision/number after atomic recheck, freezing price/quantity/source/catalog and exact versioned drawing. PDF uses committed snapshot. Consolidated PDF packages frozen room sections/subtotals/drawings with summed total; no automatic consolidated series, source mutation/renumbering or historical repricing.
