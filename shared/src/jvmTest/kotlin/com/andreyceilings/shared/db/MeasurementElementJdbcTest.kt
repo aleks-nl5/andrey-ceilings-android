@@ -18,6 +18,7 @@ class MeasurementElementJdbcTest {
             driver.execute(null, "PRAGMA foreign_keys=ON", 0)
             assertEquals(PriceCatalogSchema.version, PriceCatalogSchema.version)
             verifyMeasurementElementStructure(driver)
+            LivePricingProof.run(driver)
             MeasurementElementsPresentationProof.run(PrototypeDatabase(driver))
             MeasurementElementProof.run(driver)
             MeasurementElementProof.atomicParentDelete(driver)
