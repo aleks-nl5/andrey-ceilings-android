@@ -41,13 +41,24 @@ fun filterNumericEdit(previous: TextFieldValue, next: TextFieldValue, signed: Bo
     if (previous.text == next.text) return next
     var start = previous.selection.min
     var end = previous.selection.max
+    var normalizationPrevious = previous
     var prefix = previous.text.substring(0, start)
     var suffix = previous.text.substring(end)
     if (next.text.length < prefix.length + suffix.length ||
         !next.text.startsWith(prefix) || !next.text.endsWith(suffix)) {
-        start = previous.text.commonPrefixWith(next.text).length
-        val commonEnd = previous.text.substring(start).commonSuffixWith(next.text.substring(start)).length
-        end = previous.text.length - commonEnd
+        val composition = previous.composition
+        val compositionPrefix = composition?.let { previous.text.substring(0, it.min) }
+        val compositionSuffix = composition?.let { previous.text.substring(it.max) }
+        if (composition != null && next.text.length >= compositionPrefix!!.length + compositionSuffix!!.length &&
+            next.text.startsWith(compositionPrefix) && next.text.endsWith(compositionSuffix)) {
+            start = composition.min
+            end = composition.max
+            normalizationPrevious = previous.copy(selection = composition)
+        } else {
+            start = previous.text.commonPrefixWith(next.text).length
+            val commonEnd = previous.text.substring(start).commonSuffixWith(next.text.substring(start)).length
+            end = previous.text.length - commonEnd
+        }
         prefix = previous.text.substring(0, start)
         suffix = previous.text.substring(end)
     }
@@ -79,5 +90,5 @@ fun filterNumericEdit(previous: TextFieldValue, next: TextFieldValue, signed: Bo
     }.coerceIn(0, text.length)
     fun map(range: TextRange) = TextRange(map(range.start), map(range.end))
     val filtered = next.copy(text = text, selection = map(next.selection), composition = next.composition?.let(::map))
-    return if (decimal) normalizeInitialDecimalEdit(previous, filtered, signed) else filtered
+    return if (decimal) normalizeInitialDecimalEdit(normalizationPrevious, filtered, signed) else filtered
 }

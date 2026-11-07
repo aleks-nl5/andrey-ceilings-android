@@ -25,6 +25,9 @@ class NumericEditFilterTest {
         assertEquals(".5", filterNumericEdit(before, TextFieldValue(".5", TextRange(0))).text)
         val empty = TextFieldValue("")
         assertEquals(empty, filterNumericEdit(empty, TextFieldValue("abc", TextRange(3))))
+        val signedAll = TextFieldValue("-0.5", TextRange(0, 4))
+        assertEquals("0.5", filterNumericEdit(signedAll, TextFieldValue("..5", TextRange(3)), signed = true).text)
+        assertEquals(signedAll, filterNumericEdit(signedAll, TextFieldValue("abc", TextRange(3)), signed = true))
     }
 
     @Test fun separatorsSignsAndUnicodeRespectTheUnselectedText() {
@@ -44,6 +47,9 @@ class NumericEditFilterTest {
         assertEquals("12,3", result.text)
         assertEquals(TextRange(4, 1), result.selection)
         assertEquals(TextRange(0, 4), result.composition)
+        val composing = TextFieldValue("-0.5", TextRange(4), TextRange(0, 4))
+        val replacement = filterNumericEdit(composing, TextFieldValue("..5", TextRange(3), TextRange(0, 3)), signed = true)
+        assertEquals("0.5", replacement.text)
     }
 
     @Test fun separatorActionMapsCompositionAcrossSelection() {

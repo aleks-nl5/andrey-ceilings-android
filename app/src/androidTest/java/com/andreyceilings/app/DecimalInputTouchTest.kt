@@ -34,6 +34,11 @@ class DecimalInputTouchTest {
         // Material3 merges the label into Text; this contract concerns only the editable buffer.
         fun assertInput(expected: String) = field.assert(
             SemanticsMatcher.expectValue(SemanticsProperties.EditableText, AnnotatedString(expected)))
+        fun replaceSelectionWith(value: String) {
+            val length = compose.runOnIdle { text.length }
+            field.performTextInputSelection(TextRange(0, length))
+            field.performTextInput(value)
+        }
         for (theme in listOf(false, true)) {
             compose.runOnIdle { dark = theme; text = "" }
             field.performClick().performTextInput(".")
@@ -47,7 +52,7 @@ class DecimalInputTouchTest {
             compose.onNodeWithText("Зберегти").assertIsNotEnabled()
             field.performTextInput("5")
             compose.runOnIdle { assertEquals(0.5, PriceCatalogRules.parseSalePrice(text)) }
-            field.performTextReplacement(".007") // Paste through the real Compose text-input service.
+            replaceSelectionWith(".007") // Replace the selected buffer through the Compose text-input service.
             assertInput("0.007").assertIsFocused()
             compose.onNodeWithText("Зберегти").assertIsNotEnabled()
             compose.runOnIdle {
@@ -65,7 +70,7 @@ class DecimalInputTouchTest {
             assertInput("0,").assertIsFocused()
             field.performTextInput("5")
             assertInput("0,5")
-            field.performTextReplacement("05")
+            replaceSelectionWith("05")
             field.performTextInputSelection(TextRange(0, 1))
             compose.onNodeWithContentDescription("Вставити десяткову кому").performClick()
             assertInput("0,5").assertIsFocused()
@@ -76,17 +81,17 @@ class DecimalInputTouchTest {
             assertInput("-0.")
             field.performTextInput("5")
             assertInput("-0.5").assertIsFocused()
-            field.performTextReplacement("..5")
+            replaceSelectionWith("..5")
             assertInput("0.5")
             compose.runOnIdle { assertEquals(500L, parseElementMilli(text, "м.п.")) }
-            field.performTextReplacement("2.5")
+            replaceSelectionWith("2.5")
             assertInput("2.5").assertIsFocused()
-            field.performTextReplacement("0")
+            replaceSelectionWith("0")
             field.performTextInput(".0.0.5")
             assertInput("0.005").assertIsFocused()
-            field.performTextReplacement("1a2,3x")
+            replaceSelectionWith("1a2,3x")
             assertInput("12,3").assertIsFocused()
-            field.performTextReplacement("12.5")
+            replaceSelectionWith("12.5")
             field.performTextInputSelection(TextRange(0, 2))
             field.performTextInput("abc")
             assertInput("12.5").assertIsFocused()
