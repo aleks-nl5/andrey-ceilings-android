@@ -1,5 +1,8 @@
 package com.andreyceilings.app.ui.screens
 
+import com.andreyceilings.app.toSafeDouble
+import com.andreyceilings.shared.input.DecimalInputField
+
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -51,11 +54,8 @@ internal fun OrthogonalSidesEditor(
         sides.forEachIndexed { index, (length, turn) ->
             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(
-                        value = length, onValueChange = { onEdit(index, it to turn) },
-                        label = { Text("Сторона ${index + 1}, м") },
-                        singleLine = true, modifier = Modifier.weight(1f)
-                    )
+                    DecimalInputField(length, { onEdit(index, it to turn) },
+                        "Сторона ${index + 1}, м", modifier = Modifier.weight(1f))
                     IconButton(
                         onClick = { onRemove(index) },
                         enabled = sides.size > 4
@@ -96,7 +96,7 @@ internal fun sidesFromText(
     precisionStepMeters: Double
 ): List<MeasuredOrthogonalSide> = OrthogonalSideContour.fromMeters(
     sides.map { (text, turn) ->
-        (text.trim().replace(',', '.').toDoubleOrNull() ?: Double.NaN) to turn
+        (text.toSafeDouble()) to turn
     },
     precisionStepMeters
 )

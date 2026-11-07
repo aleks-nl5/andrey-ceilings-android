@@ -1,16 +1,16 @@
 package com.andreyceilings.shared.measurement
 
+import com.andreyceilings.shared.input.DecimalInputField
+
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalFocusManager
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.andreyceilings.shared.livepricing.BusinessRole
 import com.andreyceilings.shared.prices.QuantityMode
@@ -206,16 +206,7 @@ private fun ElementQuantityFields(input: ElementQuantityInput, unit: String?, mo
             enabled = enabled, onClick = { onChange(input.copy(kind = kind)) }, label = { Text(kind.label) }) }
     }
     @Composable fun field(text: String, label: String, change: (String) -> Unit) {
-        // Keep the raw draft verbatim, including a trailing comma/dot. Validation never edits text.
-        OutlinedTextField(text, change, enabled = enabled, label = { Text(label) },
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), singleLine = true,
-            modifier = Modifier.fillMaxWidth())
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            TextButton(enabled = enabled && text.isNotEmpty() && text.all { it in '0'..'9' },
-                onClick = { change("$text,") }) { Text("Вставити кому") }
-            TextButton(enabled = enabled && text.isNotEmpty() && text.all { it in '0'..'9' },
-                onClick = { change("$text.") }) { Text("Вставити крапку") }
-        }
+        DecimalInputField(text, change, label, enabled = enabled, allowDecimalSeparator = unit?.trim() != "шт.")
     }
     when (input.kind) {
         ElementQuantityKind.UNKNOWN -> Unit

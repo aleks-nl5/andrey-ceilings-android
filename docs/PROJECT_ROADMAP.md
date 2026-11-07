@@ -1,4 +1,18 @@
-# Поточний зріз — P4B1 (#108 / Draft PR #109), 07.11.2026
+# Поточний план після merged P4B1 (#109) — 07.11.2026
+
+**Підтверджено:** [PR #107](https://github.com/aleks-nl5/andrey-ceilings-android/pull/107) P4A read-only core та [PR #109](https://github.com/aleks-nl5/andrey-ceilings-android/pull/109) P4B1 typed roles, CMP калькулятор у замірі, SQLCipher **v15** об'єднані. P4B1 merge SHA `977577f5b2739ea73c5d096009410ec1b7026615`; Android #1167 і Windows/iOS #921 SUCCESS, independent review PASS, власник підтвердив роботу APK; [issue #108](https://github.com/aleks-nl5/andrey-ceilings-android/issues/108) closed/completed.
+
+**Найближчий крок:** маленьке окреме виправлення [#106](https://github.com/aleks-nl5/andrey-ceilings-android/issues/106) — набір `.5`, `.007` без потреби вводити початковий нуль: за новим owner UX перший роздільник одразу показує `0.`/`0,` (signed `-.` → `-0.`), paste `.007` показує `0.007`; integer `шт.` без кнопки роздільника. Це діє в усіх відповідних числових KMP/CMP полях із правильними проміжними editable states та domain precision; ніяких змін БД/кошторисів. [Handoff](LEADING_DECIMAL_INPUT_106.md) і feature `fix/shared-leading-decimal-input` створені від вже об'єднаного `main`, один Draft PR. Це попередник нових quantity inputs у P4B2, а не заміна P4B2.
+
+**Наступний функціональний етап:** [P4B2 Issue #110](https://github.com/aleks-nl5/andrey-ceilings-android/issues/110) — CMP *попередній індивідуальний кошторис* у конкретному замірі: selection підтверджених optional rows, окремо potential, явний per-quote measured/billable override CANVAS/PRIMARY_PROFILE, partial omitted-list acknowledgment, guarded transient source/catalog tokens, **0 writes to estimate history**. Створюємо Draft PR від актуального `main` лише після об'єднання #106.
+
+**P4C1** — явне «Створити кошторис» із transactional recheck і immutable price+quantity+**drawing** snapshot / номером. **P4C2** — окремий PDF/повторний друк і object-level зведений PDF: checkbox кімнат, лише вибрані saved individual revisions; невибрані без кошторисів не блокують; без repricing/автозбереження, один сумарний total.
+
+[#44](https://github.com/aleks-nl5/andrey-ceilings-android/issues/44) лишається umbrella open до P4C; [#71](https://github.com/aleks-nl5/andrey-ceilings-android/issues/71), [#76](https://github.com/aleks-nl5/andrey-ceilings-android/issues/76), [#78](https://github.com/aleks-nl5/andrey-ceilings-android/issues/78) — широкі незавершені product umbrellas. [#95](https://github.com/aleks-nl5/andrey-ceilings-android/issues/95) — комплексний UX після P4; #70 solver та #42 native hosts окремо. Кодекс не закриває umbrella/не робить merge/не маркує smoke від власника.
+
+---
+
+# Архівний зріз — P4B1 до приймання (07.11.2026)
 
 У гілці `feat/p4b1-measurement-live-calculator` реалізується явна persisted business role каталожного елемента заміру та read-only CMP калькулятор. Схема v15: legacy v14 ролі залишаються null, нові create/link потребують явного вибору; SQL CHECK + partial UNIQUE індекси захищають сумісність і максимум одне активне полотно/основний профіль. CAS, UUID, POINT/LINE/AREA та frozen history збережені.
 

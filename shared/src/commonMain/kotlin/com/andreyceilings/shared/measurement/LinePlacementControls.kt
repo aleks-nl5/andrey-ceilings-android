@@ -1,8 +1,8 @@
 package com.andreyceilings.shared.measurement
 
+import com.andreyceilings.shared.input.DecimalInputField
+
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -74,7 +74,7 @@ internal fun LinePlacementControls(model:MeasurementEditModel,enabled:Boolean) {
             dismissButton={TextButton(onClick=model::continueLineProperties){Text("Продовжити")}})
         else AlertDialog(onDismissRequest=model::dismissLineProperties,title={Text("Параметри лінії")},
             text={Column(verticalArrangement=Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(input.width,{model.changeLineProperties(width=it)},singleLine=true,keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Number),label={Text("Ширина, мм (необов'язково)")},isError=!input.valid)
+                DecimalInputField(input.width, { model.changeLineProperties(width = it) }, "Ширина, мм (необов'язково)", isError = !input.valid, allowDecimalSeparator = false)
                 OutlinedTextField(input.note,{model.changeLineProperties(note=it)},label={Text("Примітка сегмента")})
                 Text("Ширина є довідковим параметром. Площу не віднімаємо; допустимість отвору чи оболонки не перевірена.")
             }},confirmButton={TextButton(enabled=input.valid,onClick=model::applyLineProperties){Text("Застосувати параметри")}},

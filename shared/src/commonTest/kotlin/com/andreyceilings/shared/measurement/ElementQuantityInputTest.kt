@@ -6,7 +6,7 @@ import kotlin.test.*
 
 class ElementQuantityInputTest {
     @Test fun exactIntegerMilliRoundTripAndBothSeparators() {
-        for ((text, expected) in listOf("2.5" to 2500L, "2,5" to 2500L, "0,125" to 125L,
+        for ((text, expected) in listOf(".5" to 500L, ",5" to 500L, ".007" to 7L, ",007" to 7L, "2.5" to 2500L, "2,5" to 2500L, "0,125" to 125L,
             "6" to 6000L, "9000000000000" to ElementQuantityRules.MAX_MILLI, "0002,500" to 2500L)) {
             assertEquals(expected, parseElementMilli(text, "м.п."))
             assertEquals(expected, parseElementMilli(formatElementMilli(expected), "м.п."))
@@ -19,9 +19,11 @@ class ElementQuantityInputTest {
     }
     @Test fun invalidNeverRoundsAndDraftKeepsIntermediateText() {
         for (text in listOf("", "0", "-1", "+1", "NaN", "1e3", "1,0001", "1.2,3", "2,", "2.",
-            "9000000000000,001", "9223372036854775808", "9999999999999999999999999999", "1 000", ".5"))
+            "9000000000000,001", "9223372036854775808", "9999999999999999999999999999", "1 000"))
             assertNull(parseElementMilli(text, "м.п."), text)
         assertNull(parseElementMilli("2,5", "шт."))
+        assertNull(parseElementMilli(".5", "шт."))
+        assertNull(parseElementMilli(".007", "шт."))
         assertEquals(6000L, parseElementMilli("6,000", "шт."))
         for (text in listOf("2,", "2.")) {
             val draft = ElementQuantityInput(ElementQuantityKind.EXACT, exact = text)

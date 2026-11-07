@@ -1,11 +1,11 @@
 package com.andreyceilings.shared.measurement
 
 import com.andreyceilings.shared.prices.QuantityMode
+import com.andreyceilings.shared.input.DecimalTextPolicy
 
 /** Strict positive decimal -> integer thousandths. Never rounds or passes through Double. */
 fun parseElementMilli(text: String, unit: String?): Long? {
-    val value = text.trim()
-    if (!Regex("[0-9]+(?:[.,][0-9]{1,3})?").matches(value)) return null
+    val value = DecimalTextPolicy(3).committed(text.trim()) ?: return null
     val parts = value.replace(',', '.').split('.')
     val whole = parts[0].toLongOrNull() ?: return null
     if (whole > ElementQuantityRules.MAX_MILLI / 1000) return null

@@ -1,5 +1,8 @@
 package com.andreyceilings.shared.measurement
 
+import com.andreyceilings.shared.input.insertDecimalSeparator
+import com.andreyceilings.shared.input.filterNumericEdit
+
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.border
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -248,24 +251,20 @@ internal fun MeasurementLengthField(value: String, label: String, error: String?
                 field.selection.start.coerceIn(0, value.length), field.selection.end.coerceIn(0, value.length)))
         }
     }
-    OutlinedTextField(value = field, onValueChange = { next ->
-        field = next
-        onChange(next.text)
-    }, label = { Text(label) }, enabled = enabled, singleLine = true,
+    fun update(next: TextFieldValue) {
+        val edited = filterNumericEdit(field, next)
+        val changed = edited.text != field.text
+        field = edited
+        if (changed) onChange(edited.text)
+    }
+    OutlinedTextField(value = field, onValueChange = ::update, label = { Text(label) }, enabled = enabled, singleLine = true,
         modifier = modifier.fillMaxWidth().focusRequester(requester)
             .then(if (selected) Modifier.border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(4.dp)) else Modifier)
             .onFocusChanged { onFocus(it.isFocused) },
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
         trailingIcon = {
             IconButton(onClick = {
-                val a = field.selection.min.coerceIn(0, field.text.length)
-                val b = field.selection.max.coerceIn(0, field.text.length)
-                val unselected = field.text.substring(0, a) + field.text.substring(b)
-                if ('.' !in unselected && ',' !in unselected) {
-                    val text = field.text.substring(0, a) + "," + field.text.substring(b)
-                    field = TextFieldValue(text, selection = TextRange(a + 1))
-                    onChange(text)
-                }
+                insertDecimalSeparator(field)?.let(::update)
                 requester.requestFocus()
             }, enabled = enabled, modifier = Modifier.semantics {
                 contentDescription = "Вставити десяткову кому"

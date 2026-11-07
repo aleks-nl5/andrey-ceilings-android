@@ -1,5 +1,7 @@
 package com.andreyceilings.app.ui.screens
 
+import com.andreyceilings.shared.input.DecimalInputField
+
 import com.andreyceilings.app.ui.theme.AppAlertDialog
 import com.andreyceilings.app.ui.theme.AppExposedDropdownMenu
 import com.andreyceilings.app.*
@@ -132,13 +134,9 @@ internal fun CalculatorScreen(
     activeTemplate?.parameterKeys?.chunked(2)?.forEach { pair ->
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             pair.forEach { key ->
-                OutlinedTextField(
-                    value = shapeMeasurements[key].orEmpty(),
-                    onValueChange = { onShapeMeasurement(key, it) },
-                    label = { Text(activeTemplate.parameterLabels.getValue(key)) },
-                    modifier = Modifier.weight(1f),
-                    singleLine = true
-                )
+                DecimalInputField(shapeMeasurements[key].orEmpty(),
+                    { onShapeMeasurement(key, it) }, activeTemplate.parameterLabels.getValue(key),
+                    modifier = Modifier.weight(1f))
             }
         }
     }
@@ -177,8 +175,8 @@ internal fun CalculatorScreen(
     }
     Text("Округлення розмірів до вибраного кроку; грошові суми округлюються окремо.",
         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-    OutlinedTextField(price, onPrice, label = { Text("Полотно, ₴/м²") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
-    OutlinedTextField(profilePrice, onProfilePrice, label = { Text("Профіль, ₴/м.п.") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
+    DecimalInputField(price, onPrice, "Полотно, ₴/м²", modifier = Modifier.fillMaxWidth())
+    DecimalInputField(profilePrice, onProfilePrice, "Профіль, ₴/м.п.", modifier = Modifier.fillMaxWidth())
     var materialExpanded by remember { mutableStateOf(false) }
     ExposedDropdownMenuBox(expanded = materialExpanded, onExpandedChange = { materialExpanded = it }) {
         OutlinedTextField(
@@ -210,22 +208,22 @@ internal fun CalculatorScreen(
     }
     Text("Додаткові роботи", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        OutlinedTextField(lightLineMeters, onLightLineMeters, label = { Text("Світлова лінія, м") }, modifier = Modifier.weight(1f), singleLine = true)
-        OutlinedTextField(curtainNicheMeters, onCurtainNicheMeters, label = { Text("Ніша штор, м") }, modifier = Modifier.weight(1f), singleLine = true)
+        DecimalInputField(lightLineMeters, onLightLineMeters, "Світлова лінія, м", modifier = Modifier.weight(1f))
+        DecimalInputField(curtainNicheMeters, onCurtainNicheMeters, "Ніша штор, м", modifier = Modifier.weight(1f))
     }
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        OutlinedTextField(chandeliersCount, onChandeliersCount, label = { Text("Люстри, шт.") }, modifier = Modifier.weight(1f), singleLine = true)
-        OutlinedTextField(spotCount, onSpotCount, label = { Text("Точкові світильники, шт.") }, modifier = Modifier.weight(1f), singleLine = true)
+        DecimalInputField(chandeliersCount, onChandeliersCount, "Люстри, шт.", modifier = Modifier.weight(1f), allowDecimalSeparator = false)
+        DecimalInputField(spotCount, onSpotCount, "Точкові світильники, шт.", modifier = Modifier.weight(1f), allowDecimalSeparator = false)
     }
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        OutlinedTextField(pipePassCount, onPipePassCount, label = { Text("Обхід труб, шт.") }, modifier = Modifier.weight(1f), singleLine = true)
-        OutlinedTextField(extraCorners, onExtraCorners, label = { Text("Дод. кути, шт.") }, modifier = Modifier.weight(1f), singleLine = true)
+        DecimalInputField(pipePassCount, onPipePassCount, "Обхід труб, шт.", modifier = Modifier.weight(1f), allowDecimalSeparator = false)
+        DecimalInputField(extraCorners, onExtraCorners, "Дод. кути, шт.", modifier = Modifier.weight(1f), allowDecimalSeparator = false)
     }
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        OutlinedTextField(shadowProfileMeters, onShadowProfileMeters, label = { Text("Тіньовий профіль, м") }, modifier = Modifier.weight(1f), singleLine = true)
-        OutlinedTextField(floatingCeilingMeters, onFloatingCeilingMeters, label = { Text("Парящий профіль, м") }, modifier = Modifier.weight(1f), singleLine = true)
+        DecimalInputField(shadowProfileMeters, onShadowProfileMeters, "Тіньовий профіль, м", modifier = Modifier.weight(1f))
+        DecimalInputField(floatingCeilingMeters, onFloatingCeilingMeters, "Парящий профіль, м", modifier = Modifier.weight(1f))
     }
-    OutlinedTextField(hardWallMeters, onHardWallMeters, label = { Text("Складна стіна, м") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
+    DecimalInputField(hardWallMeters, onHardWallMeters, "Складна стіна, м", modifier = Modifier.fillMaxWidth())
     var complexityExpanded by remember { mutableStateOf(false) }
     ExposedDropdownMenuBox(expanded = complexityExpanded, onExpandedChange = { complexityExpanded = it }) {
         OutlinedTextField(
@@ -267,7 +265,7 @@ internal fun CalculatorScreen(
     // vertices for rectangles, L rooms and future straight-edge shapes.
     val frozenPolygon = if (estimate != null) runCatching {
         val numericInputs = shapeMeasurements.mapValues { (_, value) ->
-            value.trim().replace(',', '.').toDoubleOrNull() ?: Double.NaN
+            value.toSafeDouble()
         }
         if (geometryShape == "polygon") {
             if (legacyPolygonSource != null) {
@@ -314,7 +312,7 @@ internal fun CalculatorScreen(
             VerifiedCeilingGeometry.capturedTemplate(
                 geometryShape,
                 shapeMeasurements.mapValues { (_, value) ->
-                    value.trim().replace(',', '.').toDoubleOrNull() ?: Double.NaN
+                    value.toSafeDouble()
                 },
                 measurementPrecision.stepMeters
             ).copy(verticesMm = emptyList())

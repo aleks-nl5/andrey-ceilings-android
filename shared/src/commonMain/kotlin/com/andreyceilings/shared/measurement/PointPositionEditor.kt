@@ -1,13 +1,13 @@
 package com.andreyceilings.shared.measurement
 
+import com.andreyceilings.shared.input.DecimalInputField
+
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import kotlin.math.roundToLong
 
@@ -36,8 +36,8 @@ fun PointPositionEditor(scene: PointPlacementState, model: MeasurementElementsMo
                     onClick = { model.updatePosition { it.copy(kind = PointPositionInputKind.WALL) } }, label = { Text("Від стіни") })
             }
             if (draft.kind == PointPositionInputKind.WORLD) {
-                PositionField(draft.x, "X, м", enabled) { value -> model.updatePosition { it.copy(x = value) } }
-                PositionField(draft.y, "Y, м", enabled) { value -> model.updatePosition { it.copy(y = value) } }
+                PositionField(draft.x, "X, м", enabled, signed = true) { value -> model.updatePosition { it.copy(x = value) } }
+                PositionField(draft.y, "Y, м", enabled, signed = true) { value -> model.updatePosition { it.copy(y = value) } }
             } else {
                 Text("Сторона й напрям від її початку:")
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -65,13 +65,6 @@ fun PointPositionEditor(scene: PointPlacementState, model: MeasurementElementsMo
 }
 
 @Composable
-private fun PositionField(value: String, label: String, enabled: Boolean, onChange: (String) -> Unit) {
-    Column {
-        OutlinedTextField(value, onChange, enabled = enabled, label = { Text(label) }, singleLine = true,
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth())
-        Row {
-            TextButton(enabled = enabled, onClick = { onChange(value + ",") }) { Text("Вставити кому") }
-            TextButton(enabled = enabled, onClick = { onChange(if (value.startsWith('-')) value.removePrefix("-") else "-$value") }) { Text("Змінити знак") }
-        }
-    }
+private fun PositionField(value: String, label: String, enabled: Boolean, signed: Boolean = false, onChange: (String) -> Unit) {
+    DecimalInputField(value, onChange, label, enabled = enabled, signed = signed)
 }

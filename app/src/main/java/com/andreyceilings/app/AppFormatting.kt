@@ -15,7 +15,10 @@ internal fun money(value: Double) = String.format("%,.0f ₴", value)
 
 internal fun Double.toPriceInput(): String = if (this % 1.0 == 0.0) toLong().toString() else toString()
 
-internal fun String.toSafeDouble(): Double = replace(',', '.').toDoubleOrNull()?.coerceAtLeast(0.0) ?: 0.0
+/** Text boundary only; invalid/partial text must make the calculator unavailable. */
+internal fun String.toSafeDouble(): Double =
+    com.andreyceilings.shared.input.DecimalTextPolicy(3).committed(trim())
+        ?.toDoubleOrNull()?.takeIf { it.isFinite() } ?: Double.NaN
 
 internal fun Double.format2(): String = String.format(java.util.Locale.getDefault(), "%.2f", this)
 

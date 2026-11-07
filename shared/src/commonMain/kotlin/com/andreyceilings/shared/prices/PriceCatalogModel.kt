@@ -1,5 +1,7 @@
 package com.andreyceilings.shared.prices
 
+import com.andreyceilings.shared.input.DecimalTextPolicy
+
 /**
  * Common UI projection; SQLDelight remains the source of truth.
  * ID is the stable local SQLDelight row ID, never a printable document number.
@@ -73,13 +75,11 @@ object PriceCatalogRules {
             priceChanged
     }
 
-    private val pricePattern = Regex("""^\d{1,9}(?:[.,]\d{1,2})?$""")
-
     fun parseSalePrice(input: String): Double? {
         val cleaned = input.trim().replace(" ", "").replace('\u00A0', ' ')
             .replace(" ", "")
-        if (!pricePattern.matches(cleaned)) return null
-        return cleaned.replace(',', '.').toDoubleOrNull()
+        val committed = DecimalTextPolicy(2, wholeDigits = 9).committed(cleaned) ?: return null
+        return committed.toDoubleOrNull()
             ?.takeIf { it.isFinite() && it >= 0.0 }
     }
 
