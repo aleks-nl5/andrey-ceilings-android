@@ -412,8 +412,22 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
         complexity = complexity
     )
     // The Android calculator now uses the shared Kotlin Multiplatform engine.
-    val calculation = remember(geometryShape, templateMeasurements, polygonSides.toList(), legacyPolygonSource, pricePerM2, profilePrice, priceItems, calculatorOptions, material, profileType, calculatorPrecision) {
+    val optionTexts = listOf(lightLineMeters, shadowProfileMeters, floatingCeilingMeters, curtainNicheMeters,
+        hardWallMeters, chandeliersCount, spotCount, pipePassCount, extraCorners)
+    val calculation = remember(geometryShape, templateMeasurements, polygonSides.toList(), legacyPolygonSource, pricePerM2, profilePrice, priceItems, calculatorOptions, optionTexts, material, profileType, calculatorPrecision) {
         runCatching {
+            // A partial/invalid editor must never be calculated or saved as zero.
+            require(listOf(lightLineMeters, shadowProfileMeters, floatingCeilingMeters,
+                curtainNicheMeters, hardWallMeters).all { it.toSafeDouble().isFinite() } &&
+                listOf(chandeliersCount, spotCount, pipePassCount, extraCorners).all {
+                    it.toSafeDouble().let { number -> number.isFinite() && number % 1.0 == 0.0 }
+                }) { "Перевірте кількості: до 3 десяткових знаків для метрів, лише цілі штуки." }
+            val canvasPrice = requireNotNull(com.andreyceilings.shared.prices.PriceCatalogRules.parseSalePrice(pricePerM2)) {
+                "Ціна полотна: до 2 знаків після коми/крапки."
+            }
+            val primaryProfilePrice = requireNotNull(com.andreyceilings.shared.prices.PriceCatalogRules.parseSalePrice(profilePrice)) {
+                "Ціна профілю: до 2 знаків після коми/крапки."
+            }
             val verifiedGeometry = if (geometryShape == "polygon") {
                 val old = legacyPolygonSource
                 if (old != null) {
@@ -438,13 +452,13 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
             } else VerifiedCeilingGeometry.capturedTemplate(
                 geometryShape,
                 templateMeasurements.mapValues { (_, text) ->
-                    text.trim().replace(',', '.').toDoubleOrNull() ?: Double.NaN
+                    text.toSafeDouble()
                 },
                 calculatorPrecision.stepMeters
             )
             CeilingCalculator.estimate(
                 length.toSafeDouble(), width.toSafeDouble(),
-                pricePerM2.toSafeDouble(), profilePrice.toSafeDouble(),
+                canvasPrice, primaryProfilePrice,
                 priceItems = priceItems, options = calculatorOptions,
                 materialType = material,
                 profileType = profileType,

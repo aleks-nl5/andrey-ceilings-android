@@ -17,10 +17,13 @@ class PriceCatalogRulesTest {
         assertEquals(290.5, PriceCatalogRules.parseSalePrice("290,50"))
         assertEquals(290.5, PriceCatalogRules.parseSalePrice("290.50"))
         assertEquals(0.0, PriceCatalogRules.parseSalePrice("0"))
+        for (text in listOf(".5", ",5", "0.5", "0,50"))
+            assertEquals(0.5, PriceCatalogRules.parseSalePrice(text))
+        assertEquals(0.07, PriceCatalogRules.parseSalePrice(".07"))
     }
 
     @Test fun rejectInvalidSalePriceWithoutSilentRounding() {
-        listOf("", " ", "-10", "10,999", "NaN", "Infinity", "1e6",
+        listOf("", " ", ".", ",", "0.", "0,", ".007", ",007", "..5", "1..2", ".,5", "-10", "10,999", "NaN", "Infinity", "1e6",
             "1000000000", "50abc", "1.2.3").forEach { value ->
             assertNull(PriceCatalogRules.parseSalePrice(value), "Invalid price: $value")
         }

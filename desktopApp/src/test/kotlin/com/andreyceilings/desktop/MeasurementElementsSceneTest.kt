@@ -63,11 +63,14 @@ class MeasurementElementsSceneTest {
                 scene.click("Редагувати"); scene.frame()
                 scene.setField("Одиниця", "м.п."); scene.click("Точно"); scene.frame()
                 scene.setField("Точна кількість", "2")
-                scene.click("Вставити кому"); scene.frame()
+                scene.click("Вставити десяткову кому"); scene.frame()
                 assertEquals("2,", model.editor.value?.draft?.input?.exact)
-                scene.setField("Точна кількість", "2,5")
+                scene.setField("Точна кількість", ".")
+                assertNotNull(model.editor.value?.draft?.validationError)
+                scene.setField("Точна кількість", ".007")
                 scene.click("Зберегти"); saved(); scene.frame()
-                scene.awaitText("2,5 м.п.")
+                scene.awaitText("0,007 м.п.")
+                assertEquals(ElementQuantity.Exact(7), MeasurementElementRepository(db).find(uuid)?.quantity)
                 scene.click("Прив'язати до прайсу"); scene.frame()
                 withTimeout(10_000) { model.catalog.first { it is ElementCatalogState.Loaded } }
                 scene.setField("Пошук за назвою", "Світильник точковий")
@@ -237,7 +240,7 @@ class MeasurementElementsSceneTest {
     private suspend fun ImageComposeScene.awaitAction(label: String, eligible: (SemanticsNode) -> Boolean): SemanticsNode {
         repeat(150) {
             frame()
-            nodes().firstOrNull { eligible(it) && it.textTree().contains(label) }?.let { return it }
+            nodes().firstOrNull { eligible(it) && (it.textTree().contains(label) || it.config.getOrNull(SemanticsProperties.ContentDescription).orEmpty().any { description -> description.contains(label) }) }?.let { return it }
             delay(20)
         }
         val visible = nodes().filter(eligible).joinToString(" | ") { it.textTree().take(180) }

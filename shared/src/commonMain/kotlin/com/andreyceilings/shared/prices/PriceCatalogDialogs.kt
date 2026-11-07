@@ -1,7 +1,5 @@
 package com.andreyceilings.shared.prices
 
-import androidx.compose.foundation.gestures.awaitEachGesture
-import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -15,13 +13,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.ui.input.pointer.PointerEventPass
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
+import com.andreyceilings.shared.input.insertDecimalSeparator
 
 internal data class PriceGroupEditor(
     val original: PriceCatalogGroup? = null,
@@ -80,14 +79,8 @@ internal fun PriceEditorDialog(
         .onFocusChanged { if (it.isFocused && editor.focusField != field) onChange(editor.copy(focusField = field)) }
     fun change(value: ConfiguredPriceDraft) = onChange(editor.copy(draft = value))
     val group = groups.find { it.uuid == draft.groupUuid }
-    var price by remember { mutableStateOf(TextFieldValue(draft.salePriceText)) }
-    var priceTapRequests by remember { mutableIntStateOf(0) }
-    LaunchedEffect(priceTapRequests) {
-        if (priceTapRequests > 0) {
-            withFrameNanos { }
-            price = price.copy(selection = TextRange(0, price.text.length))
-        }
-    }
+    // Select the initial amount once; later taps/IME updates keep the user's caret.
+    var price by remember { mutableStateOf(TextFieldValue(draft.salePriceText, TextRange(0, draft.salePriceText.length))) }
     AlertDialog(
         onDismissRequest = requestDismiss,
         title = { Text(when {
@@ -120,21 +113,19 @@ internal fun PriceEditorDialog(
                 }
                 OutlinedTextField(value = price,
                     onValueChange = { price = it; change(draft.copy(salePriceText = it.text)) },
+                    trailingIcon = {
+                        IconButton(enabled = enabled, onClick = {
+                            focusRequesters.getValue("price").requestFocus()
+                            insertDecimalSeparator(price)?.let { next ->
+                                price = next
+                                onChange(editor.copy(focusField = "price", draft = draft.copy(salePriceText = next.text)))
+                            }
+                        }, modifier = Modifier.semantics { contentDescription = "Вставити десяткову кому" }) { Text(",") }
+                    },
                     label = { Text("Ціна продажу, ₴ *") }, singleLine = true, enabled = enabled,
                     isError = PriceCatalogRules.parseSalePrice(draft.salePriceText) == null,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                    modifier = Modifier.fillMaxWidth().then(fieldFocus("price"))
-                        .onFocusChanged { if (it.isFocused) priceTapRequests++ }
-                        .pointerInput(Unit) {
-                            awaitEachGesture {
-                                awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
-                                do {
-                                    val event = awaitPointerEvent(pass = PointerEventPass.Final)
-                                    val pressed = event.changes.any { it.pressed }
-                                } while (pressed)
-                                priceTapRequests++
-                            }
-                        })
+                    modifier = Modifier.fillMaxWidth().then(fieldFocus("price")))
                 Text("Зміни прайсу не змінюють історичні кошториси.", style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
                 if (!databaseAvailable) Text("Захищена база недоступна. Збереження тимчасово вимкнено.",

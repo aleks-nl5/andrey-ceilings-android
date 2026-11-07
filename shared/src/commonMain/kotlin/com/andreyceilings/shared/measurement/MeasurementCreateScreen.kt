@@ -1,5 +1,7 @@
 package com.andreyceilings.shared.measurement
 
+import com.andreyceilings.shared.input.insertDecimalSeparator
+
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.border
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -258,13 +260,9 @@ internal fun MeasurementLengthField(value: String, label: String, error: String?
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
         trailingIcon = {
             IconButton(onClick = {
-                val a = field.selection.min.coerceIn(0, field.text.length)
-                val b = field.selection.max.coerceIn(0, field.text.length)
-                val unselected = field.text.substring(0, a) + field.text.substring(b)
-                if ('.' !in unselected && ',' !in unselected) {
-                    val text = field.text.substring(0, a) + "," + field.text.substring(b)
-                    field = TextFieldValue(text, selection = TextRange(a + 1))
-                    onChange(text)
+                insertDecimalSeparator(field)?.let { next ->
+                    field = next
+                    onChange(next.text)
                 }
                 requester.requestFocus()
             }, enabled = enabled, modifier = Modifier.semantics {

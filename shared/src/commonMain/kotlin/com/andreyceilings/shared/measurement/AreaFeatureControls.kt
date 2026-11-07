@@ -1,5 +1,7 @@
 package com.andreyceilings.shared.measurement
 
+import com.andreyceilings.shared.input.DecimalInputField
+
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -36,7 +38,7 @@ fun AreaFeatureControls(model: MeasurementEditModel, enabled: Boolean) {
                 AreaTool.RECTANGLE -> "Прямокутник";AreaTool.POLYGON -> "Багатокутник";AreaTool.CIRCLE -> "Коло"
             })})}}
             Text(when(a.tool) {AreaTool.RECTANGLE -> "Позначте два протилежні кути.";AreaTool.POLYGON -> "Позначте 3–16 вершин, потім завершіть фігуру.";else -> "Позначте центр і введіть виміряний діаметр."})
-            if(a.tool==AreaTool.CIRCLE)OutlinedTextField(a.diameter,model::setAreaDiameter,enabled=enabled,singleLine=true,label={Text("Діаметр, м (парні мм)")})
+            if(a.tool==AreaTool.CIRCLE)DecimalInputField(a.diameter, model::setAreaDiameter, "Діаметр, м (парні мм)", enabled = enabled)
             Text("Точок: ${a.vertices.size}. Положення від тапів приблизне.")
             FlowRow {
                 TextButton(enabled=enabled && model.areaCreationShape()!=null,onClick=model::acceptAreaCreation) {Text("Завершити фігуру в чернетці")}
@@ -84,15 +86,20 @@ fun AreaFeatureControls(model: MeasurementEditModel, enabled: Boolean) {
     }
     val properties=a.properties
     if(properties!=null) {
+        val circle = areas.find { it.uuid == properties.uuid }?.shape is AreaShape.Circle
+        val validDiameter = !circle || parsePointMetres(properties.diameter, 2_000_000)?.let {
+            it in 2..2_000_000 && it % 2L == 0L
+        } == true
         if(a.dismissProperties)AlertDialog(onDismissRequest=model::continueAreaProperties,title={Text("Відхилити властивості?")},
             confirmButton={TextButton(onClick=model::discardAreaProperties){Text("Відхилити")}},dismissButton={TextButton(onClick=model::continueAreaProperties){Text("Продовжити")}})
         else AlertDialog(onDismissRequest=model::dismissAreaProperties,title={Text("Властивості фігури")},text={
             Column(Modifier.verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(6.dp)) {
                 AreaRole.entries.forEach {role ->FilterChip(properties.role==role,onClick={model.changeAreaProperties {it.copy(role=role)}},label={Text(areaRoleLabel(role))})}
                 OutlinedTextField(properties.note,{text->model.changeAreaProperties {it.copy(note=text)}},label={Text("Примітка фігури")})
-                if(properties.diameter.isNotEmpty())Row {Checkbox(properties.diameterMeasured,onCheckedChange={checked ->model.changeAreaProperties {it.copy(diameterMeasured=checked)}});Text("Діаметр повторно виміряно")}
-                if(properties.diameter.isNotEmpty())OutlinedTextField(properties.diameter,{text->model.changeAreaProperties {it.copy(diameter=text,diameterMeasured=true)}},label={Text("Виміряний діаметр, м (парні мм)")})
+                if(circle)Row {Checkbox(properties.diameterMeasured,onCheckedChange={checked ->model.changeAreaProperties {it.copy(diameterMeasured=checked)}});Text("Діаметр повторно виміряно")}
+                if(circle)DecimalInputField(properties.diameter, { text -> model.changeAreaProperties { it.copy(diameter=text,diameterMeasured=true) } }, "Виміряний діаметр, м (парні мм)", isError = !validDiameter)
+                if (!validDiameter) Text("Введіть додатний діаметр до 2000 м: цілий радіус у мм, до 3 знаків після коми/крапки.", color = MaterialTheme.colorScheme.error)
             }
-        },confirmButton={TextButton(onClick=model::applyAreaProperties){Text("Застосувати властивості")}},dismissButton={TextButton(onClick=model::dismissAreaProperties){Text("Скасувати")}})
+        },confirmButton={TextButton(enabled=validDiameter,onClick=model::applyAreaProperties){Text("Застосувати властивості")}},dismissButton={TextButton(onClick=model::dismissAreaProperties){Text("Скасувати")}})
     }
 }
