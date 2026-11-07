@@ -21,7 +21,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.contentDescription
 import com.andreyceilings.shared.input.insertDecimalSeparator
-import com.andreyceilings.shared.input.normalizeInitialDecimalEdit
+import com.andreyceilings.shared.input.filterNumericEdit
 
 internal data class PriceGroupEditor(
     val original: PriceCatalogGroup? = null,
@@ -114,17 +114,19 @@ internal fun PriceEditorDialog(
                 }
                 OutlinedTextField(value = price,
                     onValueChange = { next ->
-                        val edited = normalizeInitialDecimalEdit(price, next)
+                        val edited = filterNumericEdit(price, next)
+                        val changed = edited.text != price.text
                         price = edited
-                        change(draft.copy(salePriceText = edited.text))
+                        if (changed) change(draft.copy(salePriceText = edited.text))
                     },
                     trailingIcon = {
                         IconButton(enabled = enabled, onClick = {
                             focusRequesters.getValue("price").requestFocus()
                             insertDecimalSeparator(price)?.let { next ->
-                                val edited = normalizeInitialDecimalEdit(price, next)
+                                val edited = filterNumericEdit(price, next)
+                                val changed = edited.text != price.text
                                 price = edited
-                                onChange(editor.copy(focusField = "price", draft = draft.copy(salePriceText = edited.text)))
+                                if (changed) onChange(editor.copy(focusField = "price", draft = draft.copy(salePriceText = edited.text)))
                             }
                         }, modifier = Modifier.semantics { contentDescription = "Вставити десяткову кому" }) { Text(",") }
                     },

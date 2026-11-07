@@ -27,9 +27,10 @@ fun DecimalInputField(
             field.selection.start.coerceIn(0, value.length), field.selection.end.coerceIn(0, value.length)))
     }
     fun update(next: TextFieldValue) {
-        val edited = if (allowDecimalSeparator) normalizeInitialDecimalEdit(field, next, signed) else next
+        val edited = filterNumericEdit(field, next, signed, allowDecimalSeparator)
+        val changed = edited.text != field.text
         field = edited
-        onValueChange(edited.text)
+        if (changed) onValueChange(edited.text)
     }
     OutlinedTextField(field, { update(it) }, label = { Text(label) },
         modifier = modifier.fillMaxWidth().focusRequester(requester), enabled = enabled,
@@ -48,7 +49,10 @@ fun DecimalInputField(
                 val delta = if (removing) -1 else 1
                 update(TextFieldValue(text, TextRange(
                     (field.selection.start + delta).coerceIn(0, text.length),
-                    (field.selection.end + delta).coerceIn(0, text.length))))
+                    (field.selection.end + delta).coerceIn(0, text.length)),
+                    field.composition?.let { range -> TextRange(
+                        (range.start + delta).coerceIn(0, text.length),
+                        (range.end + delta).coerceIn(0, text.length)) }))
                 requester.requestFocus()
             }, modifier = Modifier.semantics { contentDescription = "Змінити знак" }) { Text("±") }
         }) else null)
@@ -60,5 +64,14 @@ fun insertDecimalSeparator(field: TextFieldValue): TextFieldValue? {
     val b = field.selection.max
     val remaining = field.text.removeRange(a, b)
     if ('.' in remaining || ',' in remaining) return null
-    return TextFieldValue(field.text.replaceRange(a, b, ","), TextRange(a + 1))
+    fun map(offset: Int) = when {
+        offset <= a -> offset
+        offset < b -> a + 1
+        else -> offset + 1 - (b - a)
+    }
+    return TextFieldValue(field.text.replaceRange(a, b, ","), TextRange(a + 1),
+        field.composition?.let {
+            val start = if (a == b && it.start == a && it.end > a) a + 1 else map(it.start)
+            TextRange(start, map(it.end))
+        })
 }

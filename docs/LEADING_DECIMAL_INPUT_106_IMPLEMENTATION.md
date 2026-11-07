@@ -4,6 +4,8 @@ Work stays in `fix/shared-leading-decimal-input`, based on schema v15 after #109
 
 ## Editing and commit
 
+**Owner keypad revision:** [canonical comment](https://github.com/aleks-nl5/andrey-ceilings-android/pull/111#issuecomment-6711213696). Numeric editors filter invalid inserted characters, duplicate separators and disallowed signs before initial-zero normalization. A fully rejected insertion preserves the previous text and selection; accepted replacement maps caret and composition. Integer controls allow digits only. Fractional digit counts are still validated by each domain and are never silently rounded.
+
 `shared/commonMain/input/DecimalTextPolicy.kt` distinguishes PARTIAL, COMPLETE and
 INVALID lexical text, with explicit fractional precision, sign and whole-digit
 limits. Commit-only normalization accepts `.5`/`,5` and signed `-.5`/`-,5` where

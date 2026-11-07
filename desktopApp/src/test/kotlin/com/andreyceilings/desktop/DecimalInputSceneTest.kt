@@ -59,8 +59,8 @@ class DecimalInputSceneTest {
                 ?.contains("Вставити десяткову кому") == true })
             val field = scene.nodes().first { it.config.getOrNull(SemanticsActions.SetText) != null }
             assertTrue(field.config[SemanticsActions.SetText].action!!.invoke(AnnotatedString(".5"))); render()
-            assertEquals(".5", text)
-            assertNull(parseElementMilli(text, "шт."))
+            assertEquals("5", text)
+            assertEquals(5000L, parseElementMilli(text, "шт."))
         } finally { scene.close() }
     }
 
@@ -95,7 +95,7 @@ class DecimalInputSceneTest {
                 render(); render()
                 assertTrue(field().config[SemanticsActions.RequestFocus].action!!.invoke())
                 render(); render()
-                for ((value, displayed) in listOf("." to "0.", "," to "0,", "0." to "0.", ".007" to "0.007", "..5" to "0..5")) {
+                for ((value, displayed) in listOf("." to "0.", "," to "0,", "0." to "0.", ".007" to "0.007")) {
                     assertTrue(field().config[SemanticsActions.SetText].action!!.invoke(AnnotatedString(value)))
                     render()
                     assertEquals(displayed, field().config[SemanticsProperties.EditableText].text)
@@ -138,7 +138,7 @@ class DecimalInputSceneTest {
                 render()
                 assertTrue(field().config[SemanticsActions.RequestFocus].action!!.invoke())
                 render()
-                for ((value, displayed) in listOf("." to "0.", ".5" to "0.5", ".007" to "0.007", "" to "", "," to "0,", ",5" to "0,5", "-" to "-", "-." to "-0.", "-.5" to "-0.5", "0." to "0.", "..5" to "0..5", "2.5" to "2.5")) {
+                for ((value, displayed) in listOf("." to "0.", ".5" to "0.5", ".007" to "0.007", "" to "", "," to "0,", ",5" to "0,5", "-" to "-", "-." to "-0.", "-.5" to "-0.5", "0." to "0.", "..5" to "0.5", "2.5" to "2.5", "12abc" to "12", "1a2,3x" to "12,3", "1.2.3" to "1.23")) {
                     set(value, displayed)
                     tick++
                     render()

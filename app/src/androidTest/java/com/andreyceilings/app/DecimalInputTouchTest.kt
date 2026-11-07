@@ -77,15 +77,25 @@ class DecimalInputTouchTest {
             field.performTextInput("5")
             assertInput("-0.5").assertIsFocused()
             field.performTextReplacement("..5")
-            assertInput("0..5")
-            compose.runOnIdle { assertNull(parseElementMilli(text, "м.п.")) }
+            assertInput("0.5")
+            compose.runOnIdle { assertEquals(500L, parseElementMilli(text, "м.п.")) }
             field.performTextReplacement("2.5")
             assertInput("2.5").assertIsFocused()
+            field.performTextReplacement("0")
+            field.performTextInput(".0.0.5")
+            assertInput("0.005").assertIsFocused()
+            field.performTextReplacement("1a2,3x")
+            assertInput("12,3").assertIsFocused()
+            field.performTextReplacement("12.5")
+            field.performTextInputSelection(TextRange(0, 2))
+            field.performTextInput("abc")
+            assertInput("12.5").assertIsFocused()
+            field.assert(SemanticsMatcher.expectValue(SemanticsProperties.TextSelectionRange, TextRange(0, 2)))
         }
         compose.runOnIdle { allowDecimal = false; text = "" }
         compose.onNodeWithContentDescription("Вставити десяткову кому").assertDoesNotExist()
         field.performTextInput(".5")
-        assertInput(".5")
-        compose.onNodeWithText("Зберегти").assertIsNotEnabled()
+        assertInput("5")
+        compose.onNodeWithText("Зберегти").assertIsEnabled()
     }
 }

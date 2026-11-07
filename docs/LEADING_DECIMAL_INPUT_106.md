@@ -4,13 +4,15 @@
 
 ## Business behavior (exact)
 
+**Latest owner decision:** [numeric keypad filtering](https://github.com/aleks-nl5/andrey-ceilings-android/pull/111#issuecomment-6711213696) takes precedence over older invalid-text display guidance: ignore letters and illegal symbols, duplicate separators and disallowed signs during edits/paste; preserve selection if no inserted character is allowed. Keep initial zero display, cursor/IME mapping and all domain precision/Save guards. Integer fields accept digits only.
+
 **Owner UX revision 07.11.2026:** [approved correction](https://github.com/aleks-nl5/andrey-ceilings-android/pull/111#issuecomment-6710030092) supersedes the earlier instruction to retain a literal leading separator in the UI. Users still do not type the initial zero: entering `.` or `,` displays `0.` or `0,` immediately, then typing `5` displays `0.5` or `0,5`. Initial paste `.007`/`,007` displays `0.007`/`0,007`. Signed `-.`/`-,` displays `-0.`/`-0,` only where negatives are already legal.
 
 Apply this once to an edit that introduces a leading separator, including selection replacement and the comma action. Preserve selection/caret and map IME composition ranges around the inserted zero. Do not reinsert text after deletion, rewrite an existing number or normalize a cursor-only event. Deliver only the normalized value to the parent so its echo cannot revert the editor.
 
 `0.`/`0,`/`-0.`/`-0,` remain PARTIAL, with Save/calculation disabled and no stale total. This is display normalization, not a numerical zero or a domain-parser change. Domain APIs still accept `.5`/`,5` and allowed signed/three-decimal values. Integer `шт.` controls hide the separator action and use a number keyboard; fractional quantities remain invalid.
 
-Field-specific domain validation remains mandatory: sale-price max 2 decimals (so `.5` valid, `.007` invalid); quantities up to milli precision only where applicable; pieces integral; geometric step/bounds and signed coordinates preserved. `0.007m=7mm` only where precision/min constraints permit, not universal. Multiple separators, illegal signs, overflow and excessive decimals reject with explanation, never default zero or stale value.
+Field-specific domain validation remains mandatory: sale-price max 2 decimals (so `.5` valid, `.007` invalid); quantities up to milli precision only where applicable; pieces integral; geometric step/bounds and signed coordinates preserved. `0.007m=7mm` only where precision/min constraints permit, not universal. Illegal characters and extra separators are filtered while editing. Overflow and excessive fractional digits remain subject to domain validation; never silently round or commit zero/stale values.
 
 ## Implementation checkpoints
 

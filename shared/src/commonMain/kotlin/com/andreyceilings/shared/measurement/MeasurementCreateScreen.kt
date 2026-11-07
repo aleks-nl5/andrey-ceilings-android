@@ -1,7 +1,7 @@
 package com.andreyceilings.shared.measurement
 
 import com.andreyceilings.shared.input.insertDecimalSeparator
-import com.andreyceilings.shared.input.normalizeInitialDecimalEdit
+import com.andreyceilings.shared.input.filterNumericEdit
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.border
@@ -252,9 +252,10 @@ internal fun MeasurementLengthField(value: String, label: String, error: String?
         }
     }
     fun update(next: TextFieldValue) {
-        val edited = normalizeInitialDecimalEdit(field, next)
+        val edited = filterNumericEdit(field, next)
+        val changed = edited.text != field.text
         field = edited
-        onChange(edited.text)
+        if (changed) onChange(edited.text)
     }
     OutlinedTextField(value = field, onValueChange = ::update, label = { Text(label) }, enabled = enabled, singleLine = true,
         modifier = modifier.fillMaxWidth().focusRequester(requester)
