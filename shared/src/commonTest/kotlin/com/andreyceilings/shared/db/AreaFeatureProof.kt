@@ -15,10 +15,10 @@ object AreaFeatureProof {
         val prices=PriceRepository(db)
         val item=prices.find(prices.createInGroup("area.${newRecordUuid()}","Область ${newRecordUuid()}",
             PriceGroupRepository(db).all().first().uuid,1.0,6,"м²",QuantityMode.MANUAL,PlacementKind.AREA))!!
-        val element=elements.createCatalogSelection(f.element.measurementUuid,item.uuid,ElementQuantity.Range(100,3000),7)
+        val element=elements.createCatalogSelection(f.element.measurementUuid,item.uuid,ElementQuantity.Range(100,3000),7, businessRole = com.andreyceilings.shared.livepricing.BusinessRole.ADDITIONAL_WORK)
         val lineItem=prices.find(prices.createInGroup("area.line.${newRecordUuid()}","Лінія ${newRecordUuid()}",
             item.groupUuid,1.0,8,"м.п.",QuantityMode.MANUAL,PlacementKind.LINE))!!
-        val lineElement=elements.createCatalogSelection(f.element.measurementUuid,lineItem.uuid,ElementQuantity.Unknown,9)
+        val lineElement=elements.createCatalogSelection(f.element.measurementUuid,lineItem.uuid,ElementQuantity.Unknown,9, businessRole = com.andreyceilings.shared.livepricing.BusinessRole.ADDITIONAL_WORK)
         PointPlacementRepository(db).addPoint(f.element.version,f.contourVersion,4000,2500,10)
         val store=MeasurementEditStore(db){100}
         var doc=store.load(f.project,f.id)
@@ -100,8 +100,8 @@ object AreaFeatureProof {
         val prices=PriceRepository(db);val elements=MeasurementElementRepository(db)
         fun price(unit:String)=prices.find(prices.createInGroup("area.unit.${newRecordUuid()}","Area unit ${newRecordUuid()}",PriceGroupRepository(db).all().first().uuid,1.0,300,unit,QuantityMode.MANUAL,PlacementKind.AREA))!!
         val square=price("м²");val count=price("шт.")
-        val unknown=elements.createCatalogSelection(f.element.measurementUuid,square.uuid,ElementQuantity.Unknown,301)
-        val counted=elements.createCatalogSelection(f.element.measurementUuid,count.uuid,ElementQuantity.Range(1000,3000),302)
+        val unknown=elements.createCatalogSelection(f.element.measurementUuid,square.uuid,ElementQuantity.Unknown,301, businessRole = com.andreyceilings.shared.livepricing.BusinessRole.ADDITIONAL_WORK)
+        val counted=elements.createCatalogSelection(f.element.measurementUuid,count.uuid,ElementQuantity.Range(1000,3000),302, businessRole = com.andreyceilings.shared.livepricing.BusinessRole.ADDITIONAL_WORK)
         val store=MeasurementEditStore(db){310};var doc=store.load(f.project,f.id)
         fun tiny(id:String,element:String)=AreaFeature(id,doc.draft.recordUuid,AreaShape.rectangle(PointPositionMm(500,500),PointPositionMm(520,520)),doc.updatedAt,0,0,elementUuid=element)
         val one=tiny("tiny-one-${f.id}",unknown.uuid)

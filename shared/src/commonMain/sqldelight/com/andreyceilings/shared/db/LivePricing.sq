@@ -12,3 +12,13 @@ SELECT o.uuid, o.expectedUpdatedAt, o.payload, o.createdAt,
  r.measurementVersion, r.pointVersions, r.elementVersions, r.lineVersions, r.areaVersions
 FROM ceiling_operations o LEFT JOIN ceiling_operation_results r ON r.operationUuid = o.uuid
 WHERE o.measurementUuid = ? ORDER BY o.uuid;
+
+-- Values are never used as pricing inputs: this query supplies invalidation dependencies only.
+-- Each notification starts one fresh physical source+catalog read transaction.
+selectPricingInvalidations:
+SELECT (SELECT count(*) FROM projects), (SELECT count(*) FROM room_measurements),
+ (SELECT count(*) FROM measurement_elements), (SELECT count(*) FROM point_placements),
+ (SELECT count(*) FROM line_placements), (SELECT count(*) FROM area_features),
+ (SELECT count(*) FROM ceiling_walls), (SELECT count(*) FROM ceiling_operations),
+ (SELECT count(*) FROM ceiling_operation_results), (SELECT count(*) FROM price_items),
+ (SELECT count(*) FROM price_groups);

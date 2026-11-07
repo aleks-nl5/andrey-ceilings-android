@@ -18,11 +18,11 @@ object CeilingReceiptMigrationProof {
         override fun migrate(driver:SqlDriver,oldVersion:Long,newVersion:Long,vararg callbacks:AfterVersion):QueryResult.Value<Unit> = error("Frozen distributed v13")
     }
     fun populate(driver:SqlDriver) {
-        val db=PrototypeDatabase(driver);StarterPriceCatalog.initialize(db)
+        val db=historicalElementDatabase(driver);StarterPriceCatalog.initialize(db)
         val f=PointPlacementProof.fixture(db,"Distributed v13 AREA")
         val prices=PriceRepository(db)
         val price=prices.find(prices.createInGroup("v13.area.${newRecordUuid()}","V13 area ${newRecordUuid()}",PriceGroupRepository(db).all().first().uuid,1.0,300,"м²",QuantityMode.MANUAL,PlacementKind.AREA))!!
-        val e=MeasurementElementRepository(db).createCatalogSelection(f.element.measurementUuid,price.uuid,ElementQuantity.Unknown,301)
+        val e=MeasurementElementRepository(db).createCatalogSelection(f.element.measurementUuid,price.uuid,ElementQuantity.Unknown,301, businessRole = com.andreyceilings.shared.livepricing.BusinessRole.ADDITIONAL_WORK)
         val store=MeasurementEditStore(db){400};var doc=store.load(f.project,f.id)
         val rectangle=AreaFeature("v13-obstacle-${f.id}",doc.draft.recordUuid,AreaShape.rectangle(PointPositionMm(500,500),PointPositionMm(1500,1500)),doc.updatedAt,0,0,role=AreaRole.OBSTACLE,note="Preserve unpriced annotation")
         val circle=AreaFeature("v13-circle-${f.id}",doc.draft.recordUuid,AreaShape.Circle(PointPositionMm(2500,1500),200),doc.updatedAt,0,0,
@@ -38,7 +38,7 @@ object CeilingReceiptMigrationProof {
     fun snapshot(driver:SqlDriver):List<List<String?>> {
         val tables=MeasurementElementMigrationProof.rows(driver,"SELECT name FROM sqlite_master WHERE type='table' ORDER BY name",1).map {it.single()!!}
         return tables.flatMap {t ->
-            val columns=driver.executeQuery(null,"PRAGMA table_info($t)",{c->val names=mutableListOf<String>();while(c.next().value)names+=c.getString(1)!!;QueryResult.Value(names)},0).value
+            val columns=driver.executeQuery(null,"PRAGMA table_info($t)",{c->val names=mutableListOf<String>();while(c.next().value)if (c.getString(1) != "businessRole") names+=c.getString(1)!!;QueryResult.Value(names)},0).value
             MeasurementElementMigrationProof.rows(driver,"SELECT "+columns.joinToString {"quote($it)"}+" FROM $t ORDER BY 1",columns.size).map {listOf(t)+it}
         }
     }
@@ -56,7 +56,7 @@ object CeilingReceiptMigrationProof {
             assertEquals(before,snapshot(driver))
         } finally {driver.execute(null,"PRAGMA foreign_keys=ON",0)}
         // A legitimate fresh complete-set operation is still writable and has its full receipt.
-        val db=PrototypeDatabase(driver)
+        val db=historicalElementDatabase(driver)
         val area=AreaFeatureRepository(db).all().first {it.deletedAt==null}
         val row=MeasurementRepository(db).all().first {it.uuid==area.measurementUuid}
         val store=MeasurementEditStore(db){500};val doc=store.load(row.projectId,row.id)

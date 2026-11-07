@@ -8,6 +8,7 @@ import androidx.compose.ui.semantics.*
 import androidx.compose.ui.text.AnnotatedString
 import com.andreyceilings.shared.db.*
 import com.andreyceilings.shared.measurement.*
+import com.andreyceilings.shared.livepricing.*
 import com.andreyceilings.shared.navigation.*
 import com.andreyceilings.shared.theme.CeilingsTheme
 import kotlinx.coroutines.*
@@ -79,6 +80,7 @@ class MeasurementElementsSceneTest {
                 scene.awaitText("несумісні")
                 scene.click("Задати нову кількість"); scene.frame()
                 scene.setField("Точна кількість", "6")
+                scene.click("Інші роботи"); scene.frame()
                 scene.click("Підтвердити прив'язування"); saved(); scene.frame()
                 scene.awaitText("6 шт."); scene.awaitText("З прайсу")
                 scene.click("Редагувати"); scene.frame(); scene.setField("Примітка", "Local draft")
@@ -129,6 +131,94 @@ class MeasurementElementsSceneTest {
             assertTrue(guard.fullscreen.value); assertFalse(scene.text().contains("Елементи стелі"))
             scene.click("Згорнути"); scene.frame(); assertTrue(scene.text().contains("Додати елемент"))
         } finally { scene.close() }
+    }
+
+    @Test fun explicitMainRolesAndLiveAmountsInBothThemes(): Unit = runBlocking {
+        val ui = java.util.concurrent.Executors.newSingleThreadExecutor().asCoroutineDispatcher()
+        try { withContext(ui) {
+            for (dark in listOf(false, true)) {
+                val dir = java.nio.file.Files.createTempDirectory("calculator-cmp-").toFile()
+                val driver = if (System.getProperty("os.name").startsWith("Windows", true))
+                    SqlCipherWindowsDriverFactory.open(dir.resolve("calculator.db"), ByteArray(32) { 44 })
+                    else JdbcSqliteDriver("jdbc:sqlite:${dir.resolve("calculator.db").absolutePath}")
+                PriceCatalogSchema.create(driver)
+                val db = PrototypeDatabase(driver)
+                val fixture = MeasurementPricingFixture.seed(db)
+                val repo = MeasurementElementRepository(db)
+                val prices = PriceRepository(db)
+                val sourceCanvas = repo.find(fixture.elementUuid)!!
+                val sourceProfile = repo.find(fixture.profileUuid)!!
+                repo.delete(sourceCanvas.version, 200); repo.delete(sourceProfile.version, 200)
+                val row = MeasurementRepository(db).findByUuid(fixture.measurementUuid)!!
+                val store = MeasurementElementsStore(db, { 300 }, ui)
+                val model = store.model(ElementRoute(fixture.projectId, row.id, row.uuid))
+                val scene = ImageComposeScene(820, 1800) {
+                    CeilingsTheme(dark) {
+                        val pricing by model.pricing.collectAsState()
+                        val state by model.state.collectAsState()
+                        val editor by model.editor.collectAsState()
+                        val catalog by model.catalog.collectAsState()
+                        androidx.compose.foundation.layout.Column {
+                            MeasurementPricingSection(pricing, (state as? MeasurementElementsState.Loaded)?.items.orEmpty(),
+                                editing = editor != null, onRefresh = model::refreshPricing)
+                            MeasurementElementsSection(state, model::add, model::open, model::retry)
+                        }
+                        editor?.let { current -> MeasurementElementEditor(current, catalog, true, model::update,
+                            model::requestDismiss, model::save, model::refreshCatalog, model::continueEditing,
+                            model::discardAndExit, model::requestReload, model::cancelReload, model::reload) }
+                    }
+                }
+                try {
+                    withTimeout(10000) { model.state.first { it is MeasurementElementsState.Loaded } }
+                    withTimeout(10000) { model.catalog.first { it is ElementCatalogState.Loaded } }
+                    for ((original, role) in listOf(sourceCanvas to "Полотно", sourceProfile to "Основний профіль")) {
+                        scene.click("Додати елемент"); scene.click("З прайсу")
+                        val item = (original.source as ElementSource.CatalogSelection).priceItemUuid
+                        val selected = (model.catalog.value as ElementCatalogState.Loaded).items.single { it.uuid == item }
+                        scene.setField("Пошук за назвою", selected.title); scene.click(selected.title)
+                        assertNull(model.editor.value!!.draft.businessRole)
+                        assertNotNull(model.editor.value!!.draft.validationError)
+                        val quantity = model.editor.value!!.draft.quantity()
+                        scene.click(role)
+                        assertEquals(quantity, model.editor.value!!.draft.quantity())
+                        scene.click("Погоджено"); scene.click("Зберегти")
+                        withTimeout(10000) { model.editor.first { it == null } }
+                    }
+                    scene.awaitText("Погоджено: 120,00 грн")
+                    scene.awaitText("Можливі роботи: 0,00 грн")
+                    scene.awaitText("Готовий до майбутнього")
+                    prices.updateSalePrice(prices.find(fixture.priceId)!!, 20.0, 400)
+                    scene.awaitText("Погоджено: 240,00 грн")
+                    assertEquals(0, driver.executeQuery(null, "SELECT count(*) FROM estimate_series", { c -> c.next(); app.cash.sqldelight.db.QueryResult.Value(c.getLong(0)!!) }, 0).value)
+                } finally { scene.close(); store.closeAndAwaitWrites(); driver.close(); dir.deleteRecursively() }
+            }
+        } } finally { ui.close() }
+    }
+
+    @Test fun loadingErrorsAndUncommittedDraftNeverDisplayOldAmounts(): Unit = runBlocking {
+        var pricing by mutableStateOf<MeasurementPricingState>(MeasurementPricingState.Loading)
+        var editing by mutableStateOf(false)
+        var displayedVersion by mutableStateOf<Long?>(null)
+        val scene = ImageComposeScene(640, 900) { CeilingsTheme(false) {
+            MeasurementPricingSection(pricing, editing = editing, measurementUpdatedAt = displayedVersion)
+        } }
+        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+        try {
+            PriceCatalogSchema.create(driver)
+            val db = PrototypeDatabase(driver); val f = MeasurementPricingFixture.seed(db)
+            val reader = LivePricingReader(db)
+            val preview = assertIs<PricingReadResult.Loaded>(reader.read(f.projectId, f.measurementUuid)).buildPreview()
+            pricing = MeasurementPricingState.Loaded(preview); scene.frame()
+            assertTrue(scene.text().contains("120,00 грн"))
+            pricing = MeasurementPricingState.Loaded(preview, measurementUpdatedAt = 1)
+            displayedVersion = 2; scene.frame(); assertFalse(scene.text().contains("120,00 грн"))
+            displayedVersion = null
+            editing = true; scene.frame(); assertFalse(scene.text().contains("120,00 грн"))
+            editing = false; pricing = MeasurementPricingState.Unavailable(PricingProblemCode.DATABASE_UNAVAILABLE)
+            scene.frame(); assertFalse(scene.text().contains("120,00 грн")); assertTrue(scene.text().contains("недоступний"))
+            pricing = MeasurementPricingState.Loading; scene.frame(); assertFalse(scene.text().contains("120,00 грн"))
+            reader.closeReads()
+        } finally { scene.close(); driver.close() }
     }
 
     private fun ImageComposeScene.frame() { Snapshot.sendApplyNotifications(); render(System.nanoTime()).close() }

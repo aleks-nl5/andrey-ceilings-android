@@ -35,7 +35,7 @@ object LinePlacementFileProof {
                 val db=PrototypeDatabase(driver);val f=PointPlacementProof.fixture(db)
                 val prices=PriceRepository(db)
                 val item=prices.find(prices.createInGroup("line.race","Line",PriceGroupRepository(db).all().first().uuid,1.0,5,"м.п.",com.andreyceilings.shared.prices.QuantityMode.MANUAL,com.andreyceilings.shared.prices.PlacementKind.LINE))!!
-                val element=MeasurementElementRepository(db).createCatalogSelection(f.element.measurementUuid,item.uuid,com.andreyceilings.shared.measurement.ElementQuantity.Exact(4500),6)
+                val element=MeasurementElementRepository(db).createCatalogSelection(f.element.measurementUuid,item.uuid,com.andreyceilings.shared.measurement.ElementQuantity.Exact(4500),6, businessRole = com.andreyceilings.shared.livepricing.BusinessRole.ADDITIONAL_WORK)
                 val doc=com.andreyceilings.shared.measurement.MeasurementEditStore(db){100}.load(f.project,f.id)
                 doc to com.andreyceilings.shared.measurement.LinePlacement("concurrent-line",element.uuid,com.andreyceilings.shared.measurement.PointPositionMm(500,600),com.andreyceilings.shared.measurement.PointPositionMm(3000,600),doc.updatedAt,0,0)
             }

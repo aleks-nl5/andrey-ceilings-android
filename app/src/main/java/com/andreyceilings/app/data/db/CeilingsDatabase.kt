@@ -44,7 +44,8 @@ internal class CeilingsDatabase private constructor(
     val changeTracker = SqlDelightChangeTracker(database)
 
     override fun close() {
-        objectsClientsStore.measurementDetails.elements.close()
+        // The production restore gate has drained every outer pricing transaction before this call.
+        kotlinx.coroutines.runBlocking { objectsClientsStore.measurementDetails.elements.closePricingReads() }
         objectsClientsStore.measurementEdit.closePointReads()
         changeTracker.close()
         driver.close()

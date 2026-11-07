@@ -3,6 +3,7 @@ package com.andreyceilings.shared.db
 import app.cash.sqldelight.coroutines.asFlow
 import app.cash.sqldelight.coroutines.mapToList
 import com.andreyceilings.shared.measurement.*
+import com.andreyceilings.shared.livepricing.BusinessRole
 import com.andreyceilings.shared.prices.PlacementKind
 import com.andreyceilings.shared.prices.QuantityMode
 import kotlinx.coroutines.CancellationException
@@ -47,37 +48,40 @@ class MeasurementElementRepository(private val database: PrototypeDatabase) {
                 existing.label == name && existing.note == note && existing.approval == approval &&
                 existing.unit == ownUnit && existing.quantity == quantity)
         }
-        insert(uuid, measurementUuid, "wish", null, name, note, null, ownUnit, null, null, approval, quantity, now)
+        insert(uuid, measurementUuid, "wish", null, name, note, null, ownUnit, null, null, approval, quantity, now, null)
     }
 
     fun createCatalogSelection(
         measurementUuid: String, priceItemUuid: String, quantity: ElementQuantity, now: Long,
-        uuid: String = newRecordUuid(), note: String = "", approval: ElementApproval = ElementApproval.DISCUSSING
+        uuid: String = newRecordUuid(), note: String = "", approval: ElementApproval = ElementApproval.DISCUSSING,
+        businessRole: BusinessRole
     ): MeasurementElement = write(uuid) {
         input(uuid, measurementUuid, now)
         parent(measurementUuid)
         read(uuid)?.let { existing ->
             return@write retry(existing, measurementUuid,
                 (existing.source as? ElementSource.CatalogSelection)?.priceItemUuid == priceItemUuid &&
-                    existing.note == note && existing.approval == approval && existing.quantity == quantity)
+                    existing.note == note && existing.approval == approval && existing.quantity == quantity && existing.businessRole == businessRole)
         }
         val item = catalog(priceItemUuid)
         ElementQuantityRules.validate(quantity, item.unit, item.mode())
+        validateRole(businessRole, ElementSource.CatalogSelection(item.uuid, item.code, item.mode(),
+            PlacementKind.entries.single { it.value == item.placementKind }, CatalogAvailability.ACTIVE), item.unit, measurementUuid, uuid)
         insert(uuid, measurementUuid, "catalog_item", item.uuid, item.title, note, item.code,
-            item.unit, item.quantityMode, item.placementKind, approval, quantity, now)
+            item.unit, item.quantityMode, item.placementKind, approval, quantity, now, businessRole)
     }
 
     /** Compatibility overload: omitted/null wishUnit keeps the unit; a string sets it. */
     fun edit(
         original: ElementVersion, note: String, approval: ElementApproval, quantity: ElementQuantity,
-        now: Long, wishLabel: String? = null, wishUnit: String? = null
+        now: Long, wishLabel: String? = null, wishUnit: String? = null, businessRole: BusinessRole? = null
     ): MeasurementElement = edit(original, note, approval, quantity, now,
-        wishUnitChange = wishUnit?.let { WishUnitChange.Set(it) } ?: WishUnitChange.Keep, wishLabel = wishLabel)
+        wishUnitChange = wishUnit?.let { WishUnitChange.Set(it) } ?: WishUnitChange.Keep, wishLabel = wishLabel, businessRole = businessRole)
 
     /** Catalog identity and selection-time metadata remain immutable, including unit. */
     fun edit(
         original: ElementVersion, note: String, approval: ElementApproval, quantity: ElementQuantity,
-        now: Long, wishUnitChange: WishUnitChange, wishLabel: String? = null
+        now: Long, wishUnitChange: WishUnitChange, wishLabel: String? = null, businessRole: BusinessRole? = null
     ): MeasurementElement = write(original.uuid) {
         val current = current(original, now)
         val wish = current.source == ElementSource.Wish
@@ -102,14 +106,22 @@ class MeasurementElementRepository(private val database: PrototypeDatabase) {
         } else if (current.placedQuantityMilli > 0 &&
             (quantity !is ElementQuantity.Exact || quantity.milli < current.placedQuantityMilli))
             throw MeasurementElementFailure.PlacementsInUse()
-        val saved = queries.editElement(label, note, approval.value, unit, quantity.kind(), quantity.exact(),
+        val role = businessRole ?: current.businessRole
+        if (role != current.businessRole && current.source is ElementSource.CatalogSelection) {
+            val selection = current.source
+            val item = catalog(selection.priceItemUuid)
+            if (item.code != selection.code || item.unit != current.unit || item.quantityMode != selection.quantityMode.value ||
+                item.placementKind != selection.placementKind.value) throw MeasurementElementFailure.CatalogUnavailable()
+        }
+        validateRole(role, current.source, unit, current.measurementUuid, current.uuid)
+        val saved = queries.editElement(label, note, approval.value, role?.name, unit, quantity.kind(), quantity.exact(),
             quantity.min(), quantity.max(), now, original.uuid, original.measurementUuid, original.expectedUpdatedAt)
             .executeAsOneOrNull()
         written(saved, original.uuid)
     }
 
     fun linkWishToCatalog(
-        original: ElementVersion, priceItemUuid: String, quantity: LinkQuantity, now: Long
+        original: ElementVersion, priceItemUuid: String, quantity: LinkQuantity, now: Long, businessRole: BusinessRole
     ): MeasurementElement = write(original.uuid) {
         val current = current(original, now)
         if (current.source != ElementSource.Wish) throw MeasurementElementFailure.InvalidInput()
@@ -123,7 +135,9 @@ class MeasurementElementRepository(private val database: PrototypeDatabase) {
             }
             is LinkQuantity.Replace -> quantity.quantity.also { ElementQuantityRules.validate(it, item.unit, item.mode()) }
         }
-        val saved = queries.linkWish(item.uuid, item.title, item.code, item.unit, item.quantityMode, item.placementKind,
+        validateRole(businessRole, ElementSource.CatalogSelection(item.uuid, item.code, item.mode(),
+            PlacementKind.entries.single { it.value == item.placementKind }, CatalogAvailability.ACTIVE), item.unit, current.measurementUuid, current.uuid)
+        val saved = queries.linkWish(item.uuid, businessRole.name, item.title, item.code, item.unit, item.quantityMode, item.placementKind,
             chosen.kind(), chosen.exact(), chosen.min(), chosen.max(), now,
             original.uuid, original.measurementUuid, original.expectedUpdatedAt).executeAsOneOrNull()
         written(saved, original.uuid)
@@ -133,6 +147,14 @@ class MeasurementElementRepository(private val database: PrototypeDatabase) {
         current(original, now)
         written(queries.deleteElement(now, original.uuid, original.measurementUuid, original.expectedUpdatedAt)
             .executeAsOneOrNull(), original.uuid)
+    }
+
+    private fun validateRole(role: BusinessRole?, source: ElementSource, unit: String?, parent: String, uuid: String) {
+        ElementBusinessRoleRules.validate(role, source, unit)
+        if (role == BusinessRole.CANVAS || role == BusinessRole.PRIMARY_PROFILE) {
+            if (forMeasurement(parent).any { it.uuid != uuid && it.businessRole == role })
+                throw MeasurementElementFailure.DuplicateRole()
+        }
     }
 
     private fun current(original: ElementVersion, now: Long): MeasurementElement {
@@ -152,9 +174,9 @@ class MeasurementElementRepository(private val database: PrototypeDatabase) {
 
     private fun insert(uuid: String, parent: String, kind: String, item: String?, label: String, note: String,
         code: String?, unit: String?, mode: String?, placement: String?, approval: ElementApproval,
-        quantity: ElementQuantity, now: Long): MeasurementElement = written(
+        quantity: ElementQuantity, now: Long, role: BusinessRole?): MeasurementElement = written(
         queries.insertElement(uuid, parent, kind, item, label, note, code, unit, mode, placement, approval.value,
-            quantity.kind(), quantity.exact(), quantity.min(), quantity.max(), now).executeAsOneOrNull(), uuid)
+            quantity.kind(), quantity.exact(), quantity.min(), quantity.max(), role?.name, now).executeAsOneOrNull(), uuid)
 
     private fun written(saved: String?, uuid: String): MeasurementElement {
         if (saved == null) throw MeasurementElementFailure.StaleVersion()
@@ -205,4 +227,4 @@ private fun Measurement_element_records.model() = MeasurementElement(
         "ceiling_area" -> ElementQuantity.CeilingArea
         "ceiling_perimeter" -> ElementQuantity.CeilingPerimeter
         else -> ElementQuantity.Unknown
-    }, ElementPlacement.entries.single { it.value == placementStatus }, placedQuantityMilli, createdAt, updatedAt, deletedAt)
+    }, ElementPlacement.entries.single { it.value == placementStatus }, placedQuantityMilli, createdAt, updatedAt, deletedAt, businessRole?.let { BusinessRole.valueOf(it) })

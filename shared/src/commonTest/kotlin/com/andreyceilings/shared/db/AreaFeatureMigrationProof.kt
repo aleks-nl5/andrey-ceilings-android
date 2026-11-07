@@ -19,14 +19,14 @@ object AreaFeatureMigrationProof {
     }
     /** Real v12 journal writer, without querying any v13 table or receipt column. */
     fun populate(driver:SqlDriver) {
-        val db=PrototypeDatabase(driver)
+        val db=historicalElementDatabase(driver)
         StarterPriceCatalog.initialize(db)
         val f=PointPlacementProof.fixture(db,"Deployed v12")
         val point=PointPlacementRepository(db).addPoint(f.element.version,f.contourVersion,3500,2500,10)
         val old=HistoricalPointEditStore(db){20}.load(f.project,f.id)
         val prices=PriceRepository(db)
         val item=prices.find(prices.createInGroup("fixture.v12.line","V12 line",PriceGroupRepository(db).all().first().uuid,1.0,11,"м.п.",QuantityMode.MANUAL,PlacementKind.LINE))!!
-        val e=MeasurementElementRepository(db).createCatalogSelection(old.draft.recordUuid,item.uuid,ElementQuantity.Range(1000,4000),12)
+        val e=MeasurementElementRepository(db).createCatalogSelection(old.draft.recordUuid,item.uuid,ElementQuantity.Range(1000,4000),12, businessRole = com.andreyceilings.shared.livepricing.BusinessRole.ADDITIONAL_WORK)
         val g=validateMeasurementCreate(old.draft).geometry!!
         val drawing=old.sourceDrawingJson!!
         fun mount(x:Long,now:Long)=encodeMounting(PointMounting(anchor=WallAnchor(WallAnchor.Kind.TWO_WALLS,old.placements.walls[0].uuid,old.placements.walls[3].uuid,600,x),
@@ -64,7 +64,7 @@ object AreaFeatureMigrationProof {
             val result=mutableListOf<String>();while(c.next().value)result+=c.getString(0)!!;QueryResult.Value(result)
         },0).value
         return tables.flatMap {table ->
-            val cols=driver.executeQuery(null,"PRAGMA table_info($table)",{c ->val names=mutableListOf<String>();while(c.next().value)c.getString(1)?.takeUnless {it=="areaVersions"}?.let(names::add);QueryResult.Value(names)},0).value
+            val cols=driver.executeQuery(null,"PRAGMA table_info($table)",{c ->val names=mutableListOf<String>();while(c.next().value)c.getString(1)?.takeUnless {it=="areaVersions" || it=="businessRole"}?.let(names::add);QueryResult.Value(names)},0).value
             MeasurementElementMigrationProof.rows(driver,"SELECT "+cols.joinToString {"quote($it)"}+" FROM $table ORDER BY 1",cols.size).map {listOf(table)+it}
         }
     }

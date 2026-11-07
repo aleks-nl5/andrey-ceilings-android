@@ -37,7 +37,7 @@ class LinePlacementSceneTest {
             val row=MeasurementRepository(db).find(id)!!
             val prices=PriceRepository(db)
             val price=prices.find(prices.createInGroup("line.scene","Лінія",PriceGroupRepository(db).all().first().uuid,1.0,3,"м.п.",com.andreyceilings.shared.prices.QuantityMode.ENTERED_LENGTH,com.andreyceilings.shared.prices.PlacementKind.LINE))!!
-            val element=MeasurementElementRepository(db).createCatalogSelection(row.uuid,price.uuid,ElementQuantity.Exact(4500),4)
+            val element=MeasurementElementRepository(db).createCatalogSelection(row.uuid,price.uuid,ElementQuantity.Exact(4500),4, businessRole = com.andreyceilings.shared.livepricing.BusinessRole.ADDITIONAL_WORK)
             val store=MeasurementEditStore(db){100}
             val model=MeasurementEditModel(store,store.load(project,id))
             var fullscreen by mutableStateOf(false)

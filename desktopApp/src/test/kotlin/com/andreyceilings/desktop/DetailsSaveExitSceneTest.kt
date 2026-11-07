@@ -28,7 +28,7 @@ class DetailsSaveExitSceneTest {
     @Test fun realDetailsDialogSavesThenNavigatesAndUncertainRetryKeepsIntent():Unit=runBlocking {
         for(mode in listOf("back","edit","uncertain")) {
             val dir=java.nio.file.Files.createTempDirectory("details-exit-scene-").toFile()
-            val raw=if(System.getProperty("os.name").startsWith("Windows",true))SqlCipherWindowsDriverFactory.open(dir.resolve("scene.db"),ByteArray(32){94}) else JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+            val raw=if(System.getProperty("os.name").startsWith("Windows",true))SqlCipherWindowsDriverFactory.open(dir.resolve("scene.db"),ByteArray(32){94}) else JdbcSqliteDriver("jdbc:sqlite:${dir.resolve("scene.db").absolutePath}")
             PriceCatalogSchema.create(raw);val f=OverlayDragFixture.create(PrototypeDatabase(raw));val fault=DetailsExitFaultDriver(raw)
             val db=PrototypeDatabase(fault);val store=MeasurementEditStore(db){200};val details=MeasurementDetailsStore(db,{200},Dispatchers.Unconfined)
             val row=MeasurementRepository(db).find(f.id)!!;val guard=MeasurementCreateNavigationGuard()

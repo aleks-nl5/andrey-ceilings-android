@@ -15,7 +15,7 @@ object LegacyWallSeedProof {
     fun populate(driver:SqlDriver,includeUnsupported:Boolean=true):PointPlacementProof.Fixture {
         MeasurementElementMigrationProof.populate(driver)
         val f=WallAnchorMigrationProof.populateV9(driver)
-        val repo=MeasurementRepository(PrototypeDatabase(driver))
+        val repo=MeasurementRepository(historicalElementDatabase(driver))
         (if(includeUnsupported) unsupportedDrawings else listOf("{}")).forEachIndexed { i,source ->
             repo.createReturningId(f.project,"Legacy $i",lengthMeters=4.12345,widthMeters=3.0,
                 areaSquareMeters=12.37035,perimeterMeters=14.2469,drawingJson=source,createdAt=40+i.toLong(),recordUuid="legacy-source-$i")
@@ -23,7 +23,7 @@ object LegacyWallSeedProof {
         return f
     }
     fun decorateV10(driver:SqlDriver,f:PointPlacementProof.Fixture) {
-        val db=PrototypeDatabase(driver);val store=HistoricalPointEditStore(db){100}
+        val db=historicalElementDatabase(driver);val store=HistoricalPointEditStore(db){100}
         var document=store.load(f.project,f.id)
         val anchor=WallAnchor(WallAnchor.Kind.TWO_WALLS,document.placements.walls[0].uuid,document.placements.walls[3].uuid,600,1500)
         document=store.update(document,document.draft,mapOf("v9-point" to PointMountingEdit(anchor=anchor)),now=100)
@@ -33,7 +33,7 @@ object LegacyWallSeedProof {
         document=store.update(document,document.draft.reduce(MeasurementCreateIntent.Dimension("length","2")),now=120)
         store.update(document,document.draft,document.placements.points.associate{it.uuid to PointMountingEdit(defer=true)},now=130)
     }
-    fun snapshot(driver:SqlDriver,includeMountings:Boolean=false):List<List<String?>> = PrototypeDatabase(driver).transactionWithResult {
+    fun snapshot(driver:SqlDriver,includeMountings:Boolean=false):List<List<String?>> = historicalElementDatabase(driver).transactionWithResult {
         val old=PointPlacementMigrationProof.snapshot(driver)+MeasurementElementMigrationProof.rows(driver,
             "SELECT quote(uuid),quote(elementUuid),quote(xMm),quote(yMm),quote(contourUpdatedAt),quote(createdAt),quote(updatedAt),quote(deletedAt),quote(precision),quote(lastMoveUuid) FROM point_placements ORDER BY uuid",10)
         if(!includeMountings)old else old+
@@ -82,15 +82,15 @@ object LegacyWallSeedProof {
             assertEquals(0L,PriceNameUniquenessProof.scalar(driver,"SELECT count(*) FROM ceiling_walls WHERE measurementUuid LIKE 'legacy-source-%'"))
             if(version==9L)assertEquals(0L,PriceNameUniquenessProof.scalar(driver,"SELECT count(*) FROM point_placements WHERE mountingJson!='{}'"))
             else {
-                assertNotNull(PointPlacementRepository(PrototypeDatabase(driver)).find("v9-point")!!.mounting.anchor)
+                assertNotNull(PointPlacementRepository(historicalElementDatabase(driver)).find("v9-point")!!.mounting.anchor)
                 assertEquals(1L,PriceNameUniquenessProof.scalar(driver,"SELECT count(*) FROM point_placements WHERE json_extract(mountingJson,'$.unresolved')=1"))
             }
-            val db=PrototypeDatabase(driver);val project=ProjectRepository(db).all().first().id
+            val db=historicalElementDatabase(driver);val project=ProjectRepository(db).all().first().id
             assertTrue(ClientRepository(db).createReturningId("After migration",createdAt=500)>0)
             assertTrue(ProjectRepository(db).createReturningId(null,"After migration",createdAt=501)>0)
             assertTrue(MeasurementRepository(db).createReturningId(project,"Historical only",drawingJson=unsupportedDrawings[5],createdAt=502)>0)
             assertTrue(MeasurementElementMigrationProof.rows(driver,"PRAGMA foreign_key_check",4).isEmpty())
         }
-        open(production).use { driver -> assertTrue(ClientRepository(PrototypeDatabase(driver)).all().any {it.name=="After migration"}) }
+        open(production).use { driver -> assertTrue(ClientRepository(historicalElementDatabase(driver)).all().any {it.name=="After migration"}) }
     }
 }

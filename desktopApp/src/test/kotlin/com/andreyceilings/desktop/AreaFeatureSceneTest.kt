@@ -37,7 +37,7 @@ class AreaFeatureSceneTest {
             val row=MeasurementRepository(db).find(id)!!
             val prices=PriceRepository(db)
             val item=prices.find(prices.createInGroup("area.scene","Область UI",PriceGroupRepository(db).all().first().uuid,1.0,6,"шт.",QuantityMode.MANUAL,PlacementKind.AREA))!!
-            val element=MeasurementElementRepository(db).createCatalogSelection(row.uuid,item.uuid,ElementQuantity.Unknown,7)
+            val element=MeasurementElementRepository(db).createCatalogSelection(row.uuid,item.uuid,ElementQuantity.Unknown,7, businessRole = com.andreyceilings.shared.livepricing.BusinessRole.ADDITIONAL_WORK)
             val store=MeasurementEditStore(db){100};val model=MeasurementEditModel(store,store.load(project,id))
             var delivered=false
             val scene=ImageComposeScene(900,1400) {CeilingsTheme(dark) {MeasurementEditScreen(model,PaddingValues(0.dp),0.dp,{}, {delivered=true},null)}}

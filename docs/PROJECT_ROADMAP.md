@@ -1,3 +1,13 @@
+# Поточний зріз — P4B1 (#108 / Draft PR #109), 07.11.2026
+
+У гілці `feat/p4b1-measurement-live-calculator` реалізується явна persisted business role каталожного елемента заміру та read-only CMP калькулятор. Схема v15: legacy v14 ролі залишаються null, нові create/link потребують явного вибору; SQL CHECK + partial UNIQUE індекси захищають сумісність і максимум одне активне полотно/основний профіль. CAS, UUID, POINT/LINE/AREA та frozen history збережені.
+
+У Details заміру — «Погоджено», умовні «Можливі роботи», причини непрорахованих позицій і готовність майбутнього індивідуального кошторису. Ціни/ролі/геометрія читаються однією транзакцією; під час dirty/error/loading старі суми не видаються за чинні. Інфоблок нічого не створює в estimate tables. [Технічний handoff і перевірки](P4B1_IMPLEMENTATION.md), [контракт](P4B1_MEASUREMENT_LIVE_CALCULATOR.md).
+
+P4B2 composition/partial ack/room selection та P4C atomic Save/frozen drawing/PDF — наступні окремі зрізи. #44 залишається відкритим. Приймання #109: незалежний review, same-final-SHA CI Android/Windows/iOS, окремий owner APK smoke; merge лише власником.
+
+---
+
 # Актуальний етап — P4A, Draft PR #107 (07.11.2026)
 
 Реалізація issue #104 у наявній feat/p4a-kmp-live-pricing. [Остаточний контракт власника](https://github.com/aleks-nl5/andrey-ceilings-android/pull/107#issuecomment-6704739545) та [LIVE_ESTIMATE_P4A.md](LIVE_ESTIMATE_P4A.md), [implementation](P4A_IMPLEMENTATION.md), [handoff](P4A_CODEX_HANDOFF.md) замінюють попередні mixed live+frozen proposals.

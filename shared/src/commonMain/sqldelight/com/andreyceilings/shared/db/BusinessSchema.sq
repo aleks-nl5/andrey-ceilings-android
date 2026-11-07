@@ -146,6 +146,9 @@ CREATE TABLE measurement_elements (
     createdAt INTEGER NOT NULL CHECK(typeof(createdAt) = 'integer' AND createdAt >= 0),
     updatedAt INTEGER NOT NULL CHECK(typeof(updatedAt) = 'integer' AND updatedAt >= createdAt),
     deletedAt INTEGER CHECK(deletedAt IS NULL OR (typeof(deletedAt) = 'integer' AND deletedAt = updatedAt)),
+    businessRole TEXT CHECK(businessRole IS NULL OR (kind = 'catalog_item' AND businessRole IN ('CANVAS','PRIMARY_PROFILE','ADDITIONAL_WORK')
+        AND (businessRole != 'CANVAS' OR (quantityMode = 'ceiling_area' AND unit = 'м²'))
+        AND (businessRole != 'PRIMARY_PROFILE' OR (quantityMode = 'ceiling_perimeter' AND unit = 'м.п.')))),
     CHECK(unit IS NULL OR length(trim(unit)) > 0),
     CHECK((kind = 'wish' AND priceItemUuid IS NULL AND priceItemCode IS NULL AND quantityMode IS NULL AND placementKind IS NULL
             AND quantityKind IN ('unknown','exact','range')) OR
@@ -174,6 +177,12 @@ CREATE TABLE measurement_elements (
 );
 
 CREATE INDEX index_measurement_elements_parent_active_order ON measurement_elements(measurementUuid, deletedAt, createdAt, uuid);
+
+CREATE UNIQUE INDEX index_measurement_elements_canvas ON measurement_elements(measurementUuid)
+WHERE deletedAt IS NULL AND businessRole = 'CANVAS';
+
+CREATE UNIQUE INDEX index_measurement_elements_profile ON measurement_elements(measurementUuid)
+WHERE deletedAt IS NULL AND businessRole = 'PRIMARY_PROFILE';
 
 CREATE VIEW measurement_element_records AS
 SELECT e.*, CASE WHEN e.kind = 'wish' THEN 'not_applicable'

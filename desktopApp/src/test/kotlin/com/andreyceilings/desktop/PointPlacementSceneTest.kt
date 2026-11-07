@@ -21,7 +21,8 @@ class PointPlacementSceneTest {
             val directory = java.nio.file.Files.createTempDirectory("point-scene-").toFile()
             val driver = if (System.getProperty("os.name").startsWith("Windows", true))
                 SqlCipherWindowsDriverFactory.open(directory.resolve("scene.db"), ByteArray(32) { 79 })
-            else JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+            // Real pricing/editor transactions need separate physical connections, as in the production hosts.
+            else JdbcSqliteDriver("jdbc:sqlite:${directory.resolve("scene.db").absolutePath}")
             PriceCatalogSchema.create(driver)
             val db = PrototypeDatabase(driver)
             val project = ProjectRepository(db).createReturningId(null, "Scene", createdAt = 1)
@@ -30,7 +31,7 @@ class PointPlacementSceneTest {
             val measurement = MeasurementCreateStore(db) { 2 }.create(draft)
             val row = MeasurementRepository(db).find(measurement)!!
             val spot = PriceRepository(db).all().single { it.code == "light.spot" }
-            val element = MeasurementElementRepository(db).createCatalogSelection(row.uuid, spot.uuid, ElementQuantity.Exact(6000), 3)
+            val element = MeasurementElementRepository(db).createCatalogSelection(row.uuid, spot.uuid, ElementQuantity.Exact(6000), 3, businessRole = com.andreyceilings.shared.livepricing.BusinessRole.ADDITIONAL_WORK)
             val details = MeasurementDetailsStore(db, { 4 }, Dispatchers.Unconfined)
             val edit=MeasurementEditStore(db){20}
             val model = details.elements.model(ElementRoute(project, measurement, row.uuid))

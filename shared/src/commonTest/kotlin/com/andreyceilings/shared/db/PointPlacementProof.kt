@@ -22,7 +22,7 @@ object PointPlacementProof {
         val priceId = prices.createInGroup("fixture.${newRecordUuid()}", "Point ${newRecordUuid()}", group.uuid, 220.0, 3,
             "шт.", com.andreyceilings.shared.prices.QuantityMode.MANUAL, com.andreyceilings.shared.prices.PlacementKind.POINT)
         val spot = prices.find(priceId)!!
-        val element = MeasurementElementRepository(db).createCatalogSelection(row.uuid, spot.uuid, ElementQuantity.Exact(6000), 5)
+        val element = MeasurementElementRepository(db).createCatalogSelection(row.uuid, spot.uuid, ElementQuantity.Exact(6000), 5, businessRole = com.andreyceilings.shared.livepricing.BusinessRole.ADDITIONAL_WORK)
         return Fixture(project, id, element, row.updatedAt)
     }
 
@@ -180,15 +180,15 @@ object PointPlacementProof {
                 unit as String, com.andreyceilings.shared.prices.QuantityMode.entries.single { it.value == mode },
                 com.andreyceilings.shared.prices.PlacementKind.entries.single { it.value == placement })
             val item = prices.find(priceId)!!
-            val selected = elements.createCatalogSelection(b.element.measurementUuid, item.uuid, quantity as ElementQuantity, 31)
+            val selected = elements.createCatalogSelection(b.element.measurementUuid, item.uuid, quantity as ElementQuantity, 31, businessRole = com.andreyceilings.shared.livepricing.BusinessRole.ADDITIONAL_WORK)
             assertFailsWith<PointPlacementFailure.UnsupportedElement> { points.addPoint(selected.version, b.contourVersion, 1000, 1000, 32) }
         }
         assertFailsWith<MeasurementElementFailure.InvalidQuantity> {
-            elements.createCatalogSelection(b.element.measurementUuid, (b.element.source as ElementSource.CatalogSelection).priceItemUuid, ElementQuantity.Exact(2500), 40)
+            elements.createCatalogSelection(b.element.measurementUuid, (b.element.source as ElementSource.CatalogSelection).priceItemUuid, ElementQuantity.Exact(2500), 40, businessRole = com.andreyceilings.shared.livepricing.BusinessRole.ADDITIONAL_WORK)
         }
         val historicalId = measurements.createReturningId(b.project, "Historical", lengthMeters = 5.0, widthMeters = 4.0, createdAt = 40)
         val historical = elements.createCatalogSelection(measurements.find(historicalId)!!.uuid,
-            (b.element.source as ElementSource.CatalogSelection).priceItemUuid, ElementQuantity.Exact(6000), 41)
+            (b.element.source as ElementSource.CatalogSelection).priceItemUuid, ElementQuantity.Exact(6000), 41, businessRole = com.andreyceilings.shared.livepricing.BusinessRole.ADDITIONAL_WORK)
         assertFailsWith<PointPlacementFailure.InvalidContour> { points.addPoint(historical.version, 40, 1000, 1000, 42) }
         assertEquals(marker, points.find(marker.uuid)); assertEquals(1, points.forMeasurement(a.element.measurementUuid).size)
         driver.execute(null, "PRAGMA foreign_keys=ON", 0)

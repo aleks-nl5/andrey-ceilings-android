@@ -11,7 +11,13 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.flow.MutableStateFlow
 
 sealed interface PricingReadResult {
-    data class Loaded(val source: LiveEstimateSource, val catalog: ActiveCatalogSnapshot) : PricingReadResult
+    data class Loaded(val source: LiveEstimateSource, val catalog: ActiveCatalogSnapshot) : PricingReadResult {
+        /** Production roles originate only in this complete, coherent source document. */
+        fun buildPreview(): LiveEstimatePreview = LivePricingEngine.buildPreview(source, catalog,
+            BusinessRoleBindings(source.signature, source.elements.mapNotNull { element ->
+                element.businessRole?.let { element.uuid to it }
+            }.toMap()))
+    }
     data class Unavailable(val problem: PricingProblemCode) : PricingReadResult
 }
 
@@ -26,8 +32,10 @@ class LivePricingReader(private val database: PrototypeDatabase) {
     /** Close admission atomically, then drain every accepted physical transaction, including failures.
      * Cancellation cannot release the owner's DB replacement/restore barrier prematurely.
      */
+    fun closeAdmission() { session.update { it.copy(closed = true) } }
+
     suspend fun closeReads() {
-        session.update { it.copy(closed = true) }
+        closeAdmission()
         withContext(NonCancellable) { session.first { it.readers == 0L } }
     }
 

@@ -162,7 +162,7 @@ object WallAnchorProof {
             MeasurementOutlineDraft.Orthogonal(lengths.mapIndexed{i,v->MeasurementSideInput(v,turns[i])}))
         val id=MeasurementCreateStore(db){330}.create(draft);val row=MeasurementRepository(db).find(id)!!
         val item=(f.element.source as ElementSource.CatalogSelection).priceItemUuid
-        val element=MeasurementElementRepository(db).createCatalogSelection(row.uuid,item,ElementQuantity.Exact(6000),331)
+        val element=MeasurementElementRepository(db).createCatalogSelection(row.uuid,item,ElementQuantity.Exact(6000),331, businessRole = com.andreyceilings.shared.livepricing.BusinessRole.ADDITIONAL_WORK)
         val point=PointPlacementRepository(db).addPoint(element.version,row.updatedAt,1000,3000,340)
         val store=MeasurementEditStore(db){501};val doc=store.load(f.project,id)
         val hidden=WallAnchor(WallAnchor.Kind.TWO_WALLS,doc.placements.walls[0].uuid,doc.placements.walls[1].uuid,3000,5000)
@@ -211,7 +211,7 @@ object WallAnchorProof {
             val row=MeasurementRepository(db).find(id)!!
             fun totals()=MeasurementElementMigrationProof.rows(driver,"SELECT quote(lengthMeters),quote(widthMeters),quote(areaSquareMeters),quote(perimeterMeters) FROM room_measurements WHERE id=$id",4)
             val beforeTotals=totals()
-            val element=MeasurementElementRepository(db).createCatalogSelection(row.uuid,(f.element.source as ElementSource.CatalogSelection).priceItemUuid,ElementQuantity.Exact(6000),401)
+            val element=MeasurementElementRepository(db).createCatalogSelection(row.uuid,(f.element.source as ElementSource.CatalogSelection).priceItemUuid,ElementQuantity.Exact(6000),401, businessRole = com.andreyceilings.shared.livepricing.BusinessRole.ADDITIONAL_WORK)
             val point=PointPlacementRepository(db).addPoint(element.version,row.updatedAt,-4000,-3500,410)
             val store=MeasurementEditStore(db){500};val doc=store.load(f.project,id)
             assertIs<MeasurementOutlineDraft.Captured>(doc.draft.outline)

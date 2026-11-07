@@ -42,10 +42,11 @@ class MeasurementElementJdbcTest {
             PriceCatalogSchema.create(fresh)
             JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).use { upgraded ->
                 MeasurementElementMigrationProof.v6Schema.create(upgraded)
-                PriceCatalogSchema.migrate(upgraded, 6, 7)
+                PriceCatalogSchema.migrate(upgraded, 6, PriceCatalogSchema.version)
                 fun definitions(driver: SqlDriver) = MeasurementElementMigrationProof.rows(driver,
                     "SELECT type,name,sql FROM sqlite_master WHERE name IN ('measurement_elements','index_measurement_elements_parent_active_order','measurement_element_records') ORDER BY name", 3)
-                assertEquals(definitions(fresh), definitions(upgraded))
+                assertEquals(definitions(fresh).map { row -> row.map { it?.replace(Regex("\\s+"), " ")?.replace(Regex("\\s*([,()])\\s*"), "$1") } },
+                    definitions(upgraded).map { row -> row.map { it?.replace(Regex("\\s+"), " ")?.replace(Regex("\\s*([,()])\\s*"), "$1") } })
                 verifyMeasurementElementStructure(upgraded)
             }
         }

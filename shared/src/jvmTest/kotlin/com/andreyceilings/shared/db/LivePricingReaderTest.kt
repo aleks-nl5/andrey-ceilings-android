@@ -112,7 +112,7 @@ class LivePricingReaderTest {
                         writable.transaction {
                             val elements = MeasurementElementRepository(writable)
                             val e = elements.find(fixture.elementUuid)!!
-                            elements.edit(e.version, "simultaneous", e.approval, e.quantity, 200)
+                            elements.edit(e.version, "simultaneous", e.approval, e.quantity, 200, businessRole = BusinessRole.ADDITIONAL_WORK)
                             val prices = PriceRepository(writable)
                             prices.updateSalePrice(prices.find(fixture.priceId)!!, 20.0, 200)
                         }
@@ -121,9 +121,12 @@ class LivePricingReaderTest {
                 val during = assertIs<PricingReadResult.Loaded>(pending.get(20, TimeUnit.SECONDS))
                 assertEquals(before.source.signature, during.source.signature)
                 assertEquals(before.catalog.signature, during.catalog.signature)
+                assertEquals(BusinessRole.CANVAS, during.source.elements.first { it.uuid == fixture.elementUuid }.businessRole)
                 val after = assertIs<PricingReadResult.Loaded>(LivePricingReader(db).read(fixture.projectId, fixture.measurementUuid))
                 assertNotEquals(before.source.signature, after.source.signature)
                 assertNotEquals(before.catalog.signature, after.catalog.signature)
+                assertEquals(BusinessRole.ADDITIONAL_WORK, after.source.elements.first { it.uuid == fixture.elementUuid }.businessRole)
+                assertFalse(after.buildPreview().canFinalizeFull)
                 val closing = LivePricingReader(db)
                 runBlocking { closing.closeReads() } // JDBC may reopen a connection: session lifecycle must be explicit.
                 readDriver.close()

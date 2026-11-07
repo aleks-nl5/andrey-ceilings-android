@@ -13,7 +13,7 @@ class LinePlacementRecoveryTest {
             PriceCatalogSchema.create(raw);val db=PrototypeDatabase(raw);val f=PointPlacementProof.fixture(db)
             val prices=PriceRepository(db)
             val price=prices.find(prices.createInGroup("line.recovery","Line",PriceGroupRepository(db).all().first().uuid,1.0,5,"м.п.",QuantityMode.MANUAL,PlacementKind.LINE))!!
-            val element=MeasurementElementRepository(db).createCatalogSelection(f.element.measurementUuid,price.uuid,ElementQuantity.Exact(4500),6)
+            val element=MeasurementElementRepository(db).createCatalogSelection(f.element.measurementUuid,price.uuid,ElementQuantity.Exact(4500),6, businessRole = com.andreyceilings.shared.livepricing.BusinessRole.ADDITIONAL_WORK)
             val fail=java.util.concurrent.atomic.AtomicBoolean(false)
             val driver=object:SqlDriver by raw {
                 override fun notifyListeners(vararg queryKeys:String) {

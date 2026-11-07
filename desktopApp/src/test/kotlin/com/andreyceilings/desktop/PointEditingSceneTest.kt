@@ -29,7 +29,7 @@ class PointEditingSceneTest {
             val directory = java.nio.file.Files.createTempDirectory("point-edit-scene-").toFile()
             val driver = if (System.getProperty("os.name").startsWith("Windows", true))
                 SqlCipherWindowsDriverFactory.open(directory.resolve("scene.db"), ByteArray(32) { 83 })
-            else JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+            else JdbcSqliteDriver("jdbc:sqlite:${directory.resolve("scene.db").absolutePath}")
             PriceCatalogSchema.create(driver)
             val db = PrototypeDatabase(driver)
             val project = ProjectRepository(db).createReturningId(null, "Scene", createdAt = 1)
@@ -39,7 +39,7 @@ class PointEditingSceneTest {
             val original = MeasurementRepository(db).find(id)!!
             val elements = MeasurementElementRepository(db); val points = PointPlacementRepository(db)
             val item = PriceRepository(db).all().single { it.code == "light.spot" }
-            val element = elements.createCatalogSelection(original.uuid, item.uuid, ElementQuantity.Exact(6000), 3)
+            val element = elements.createCatalogSelection(original.uuid, item.uuid, ElementQuantity.Exact(6000), 3, businessRole = com.andreyceilings.shared.livepricing.BusinessRole.ADDITIONAL_WORK)
             val p = points.addPoint(element.version, original.updatedAt, 1000, 1000, 4)
             val legacy = points.addPoint(elements.find(element.uuid)!!.version, original.updatedAt, 3000, 1000, 5)
             val second = points.movePoint(elements.find(element.uuid)!!.version,legacy,original.updatedAt,3000,1000,PointPrecision.EXACT,6).point

@@ -14,7 +14,10 @@ class MigrationStatementFailure(val statement: Int, cause:Throwable) : IllegalSt
 /** Production schema: structure + starter rows + marker commit or roll back together. */
 object PriceCatalogSchema : SqlSchema<QueryResult.Value<Unit>> {
     /** Read-only full fingerprint audit, also used by physical platform proofs. */
-    fun verifyStructure(driver:SqlDriver,version:Long=this.version) = verifyPointPlacementStructure(driver,version)
+    fun verifyStructure(driver:SqlDriver,version:Long=this.version) {
+        verifyMeasurementElementStructure(driver, version)
+        verifyPointPlacementStructure(driver, version)
+    }
 
     override val version: Long get() = PrototypeDatabase.Schema.version
 
@@ -36,7 +39,7 @@ object PriceCatalogSchema : SqlSchema<QueryResult.Value<Unit>> {
     internal fun createInTransaction(driver: SqlDriver): QueryResult.Value<Unit> {
         PrototypeDatabase.Schema.create(driver)
         StarterPriceCatalog.initializeInTransaction(PrototypeDatabase(driver))
-        verifyPointPlacementStructure(driver)
+        verifyStructure(driver)
         return QueryResult.Unit
     }
 
@@ -44,7 +47,10 @@ object PriceCatalogSchema : SqlSchema<QueryResult.Value<Unit>> {
         vararg callbacks: AfterVersion): QueryResult.Value<Unit> {
         // Old draft APKs distributed two exact v10 schemas. Unknown/partial/hybrid schemas
         // must fail BEFORE corrective DDL can accidentally repair away their evidence.
-        if(oldVersion in 8L..13L)verifyPointPlacementStructure(driver,oldVersion)
+        if(oldVersion in 8L..14L) {
+            verifyMeasurementElementStructure(driver, oldVersion)
+            verifyPointPlacementStructure(driver,oldVersion)
+        }
         var statement=0
         val observed=object:SqlDriver by driver {
             override fun execute(identifier:Int?,sql:String,parameters:Int,binders:(app.cash.sqldelight.db.SqlPreparedStatement.()->Unit)?):QueryResult<Long> {
@@ -56,7 +62,7 @@ object PriceCatalogSchema : SqlSchema<QueryResult.Value<Unit>> {
         PrototypeDatabase.Schema.migrate(observed, oldVersion, newVersion, *callbacks)
         if (oldVersion < 6L && newVersion >= 6L) backfillPriceNameKeys(driver)
         if (newVersion >= 6L) StarterPriceCatalog.initializeInTransaction(PrototypeDatabase(driver))
-        if (newVersion >= 8L) verifyPointPlacementStructure(driver, newVersion)
+        if (newVersion >= 8L) verifyStructure(driver, newVersion)
         return QueryResult.Unit
     }
 }

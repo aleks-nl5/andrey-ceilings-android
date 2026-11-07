@@ -14,7 +14,7 @@ class LinePlacementEditModelTest {
             val price=PriceRepository(db)
             val id=price.createInGroup("line.model","Line",PriceGroupRepository(db).all().first().uuid,1.0,5,"м.п.",QuantityMode.MANUAL,PlacementKind.LINE)
             val item=price.find(id)!!
-            val element=MeasurementElementRepository(db).createCatalogSelection(f.element.measurementUuid,item.uuid,ElementQuantity.Exact(4500),6)
+            val element=MeasurementElementRepository(db).createCatalogSelection(f.element.measurementUuid,item.uuid,ElementQuantity.Exact(4500),6, businessRole = com.andreyceilings.shared.livepricing.BusinessRole.ADDITIONAL_WORK)
             val store=MeasurementEditStore(db){100}
             val model=MeasurementEditModel(store,store.load(f.project,f.id))
             model.beginLine(element.uuid);model.lineTap(500,600)

@@ -34,10 +34,10 @@ WHERE i.uuid = ? AND i.deletedAt IS NULL AND g.deletedAt IS NULL;
 insertElement:
 INSERT INTO measurement_elements(uuid, measurementUuid, kind, priceItemUuid, label, note,
     priceItemCode, unit, quantityMode, placementKind, approvalStatus, quantityKind,
-    quantityMilli, quantityMinMilli, quantityMaxMilli, createdAt, updatedAt)
+    quantityMilli, quantityMinMilli, quantityMaxMilli, businessRole, createdAt, updatedAt)
 SELECT :uuid, :measurementUuid, :kind, :priceItemUuid, :label, :note,
     :priceItemCode, :unit, :quantityMode, :placementKind, :approvalStatus, :quantityKind,
-    :quantityMilli, :quantityMinMilli, :quantityMaxMilli, :now, :now
+    :quantityMilli, :quantityMinMilli, :quantityMaxMilli, :businessRole, :now, :now
 WHERE EXISTS (SELECT 1 FROM room_measurements m JOIN projects p ON p.id = m.projectId
         WHERE m.uuid = :measurementUuid AND m.deletedAt IS NULL AND p.deletedAt IS NULL) AND (:kind = 'wish' OR EXISTS (SELECT 1 FROM price_items i JOIN price_groups g ON g.uuid = i.groupUuid
         WHERE i.uuid = :priceItemUuid AND i.deletedAt IS NULL AND g.deletedAt IS NULL))
@@ -46,7 +46,7 @@ RETURNING uuid;
 
 editElement:
 UPDATE measurement_elements SET label = CASE WHEN kind = 'wish' THEN :label ELSE label END,
-    note = :note, approvalStatus = :approvalStatus,
+    note = :note, approvalStatus = :approvalStatus, businessRole = :businessRole,
     unit = CASE WHEN kind = 'wish' THEN :unit ELSE unit END,
     quantityKind = :quantityKind, quantityMilli = :quantityMilli,
     quantityMinMilli = :quantityMinMilli, quantityMaxMilli = :quantityMaxMilli,
@@ -57,7 +57,7 @@ WHERE uuid = :uuid AND measurementUuid = :measurementUuid AND updatedAt = :expec
 RETURNING uuid;
 
 linkWish:
-UPDATE measurement_elements SET kind = 'catalog_item', priceItemUuid = :priceItemUuid,
+UPDATE measurement_elements SET kind = 'catalog_item', priceItemUuid = :priceItemUuid, businessRole = :businessRole,
     label = :label, priceItemCode = :priceItemCode, unit = :unit,
     quantityMode = :quantityMode, placementKind = :placementKind,
     quantityKind = :quantityKind, quantityMilli = :quantityMilli,
