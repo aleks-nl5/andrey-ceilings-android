@@ -7,6 +7,7 @@ import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextRange
 import com.andreyceilings.shared.input.DecimalInputField
 import com.andreyceilings.shared.measurement.parseElementMilli
@@ -27,14 +28,17 @@ class DecimalInputTouchTest {
             Text(if (PriceCatalogRules.parseSalePrice(text) == null) "Невалідна ціна" else "Валідна ціна")
         } } }
         val field = compose.onNode(hasSetTextAction())
+        // Material3 merges the label into Text; this contract concerns only the editable buffer.
+        fun assertInput(expected: String) = field.assert(
+            SemanticsMatcher.expectValue(SemanticsProperties.EditableText, AnnotatedString(expected)))
         for (theme in listOf(false, true)) {
             compose.runOnIdle { dark = theme; text = "" }
             field.performClick().performTextInput(".")
-            field.assertTextEquals(".").assertIsFocused()
+            assertInput(".").assertIsFocused()
             field.performTextInput("5")
-            field.assertTextEquals(".5").assertIsFocused()
+            assertInput(".5").assertIsFocused()
             field.performKeyInput { keyDown(Key.Backspace); keyUp(Key.Backspace) }
-            field.assertTextEquals(".").assertIsFocused()
+            assertInput(".").assertIsFocused()
             field.performTextInput("5")
             compose.runOnIdle { assertEquals(0.5, PriceCatalogRules.parseSalePrice(text)) }
             field.performTextReplacement(".007") // Paste through the real Compose text-input service.
@@ -45,20 +49,20 @@ class DecimalInputTouchTest {
             }
             field.performTextClearance()
             compose.onNodeWithContentDescription("Вставити десяткову кому").performClick()
-            field.assertTextEquals(",").assertIsFocused()
+            assertInput(",").assertIsFocused()
             field.performTextInput("5")
-            field.assertTextEquals(",5")
+            assertInput(",5")
             field.performTextReplacement("05")
             field.performTextInputSelection(TextRange(0, 1))
             compose.onNodeWithContentDescription("Вставити десяткову кому").performClick()
-            field.assertTextEquals(",5").assertIsFocused()
+            assertInput(",5").assertIsFocused()
             field.assert(SemanticsMatcher.expectValue(SemanticsProperties.TextSelectionRange, TextRange(1)))
             field.performTextReplacement("-.")
-            field.assertTextEquals("-.")
+            assertInput("-.")
             field.performTextInput("5")
-            field.assertTextEquals("-.5").assertIsFocused()
+            assertInput("-.5").assertIsFocused()
             field.performTextReplacement("..5")
-            field.assertTextEquals("..5")
+            assertInput("..5")
             compose.runOnIdle { assertNull(parseElementMilli(text, "м.п.")) }
         }
     }
