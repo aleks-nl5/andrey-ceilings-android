@@ -1,6 +1,7 @@
 package com.andreyceilings.shared.measurement
 
 import com.andreyceilings.shared.input.insertDecimalSeparator
+import com.andreyceilings.shared.input.normalizeInitialDecimalEdit
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.border
@@ -250,20 +251,19 @@ internal fun MeasurementLengthField(value: String, label: String, error: String?
                 field.selection.start.coerceIn(0, value.length), field.selection.end.coerceIn(0, value.length)))
         }
     }
-    OutlinedTextField(value = field, onValueChange = { next ->
-        field = next
-        onChange(next.text)
-    }, label = { Text(label) }, enabled = enabled, singleLine = true,
+    fun update(next: TextFieldValue) {
+        val edited = normalizeInitialDecimalEdit(field, next)
+        field = edited
+        onChange(edited.text)
+    }
+    OutlinedTextField(value = field, onValueChange = ::update, label = { Text(label) }, enabled = enabled, singleLine = true,
         modifier = modifier.fillMaxWidth().focusRequester(requester)
             .then(if (selected) Modifier.border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(4.dp)) else Modifier)
             .onFocusChanged { onFocus(it.isFocused) },
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
         trailingIcon = {
             IconButton(onClick = {
-                insertDecimalSeparator(field)?.let { next ->
-                    field = next
-                    onChange(next.text)
-                }
+                insertDecimalSeparator(field)?.let(::update)
                 requester.requestFocus()
             }, enabled = enabled, modifier = Modifier.semantics {
                 contentDescription = "Вставити десяткову кому"

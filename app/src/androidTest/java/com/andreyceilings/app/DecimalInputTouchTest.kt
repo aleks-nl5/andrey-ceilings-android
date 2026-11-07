@@ -2,6 +2,7 @@ package com.andreyceilings.app
 
 import androidx.compose.foundation.layout.Column
 import androidx.compose.material3.Text
+import androidx.compose.material3.Button
 import androidx.compose.runtime.*
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.semantics.SemanticsProperties
@@ -23,9 +24,11 @@ class DecimalInputTouchTest {
     @Test fun leadingSeparatorTypingPasteBackspaceAndCaretSurviveValidationAndTheme() {
         var text by mutableStateOf("")
         var dark by mutableStateOf(false)
+        var allowDecimal by mutableStateOf(true)
         compose.setContent { CeilingsTheme(dark) { Column {
-            DecimalInputField(text, { text = it }, "Число", signed = true)
-            Text(if (PriceCatalogRules.parseSalePrice(text) == null) "Невалідна ціна" else "Валідна ціна")
+            DecimalInputField(text, { text = it }, "Число", signed = true, allowDecimalSeparator = allowDecimal)
+            val valid = if (allowDecimal) PriceCatalogRules.parseSalePrice(text) != null else parseElementMilli(text, "шт.") != null
+            Button(onClick = {}, enabled = valid) { Text("Зберегти") }
         } } }
         val field = compose.onNode(hasSetTextAction())
         // Material3 merges the label into Text; this contract concerns only the editable buffer.
@@ -34,36 +37,55 @@ class DecimalInputTouchTest {
         for (theme in listOf(false, true)) {
             compose.runOnIdle { dark = theme; text = "" }
             field.performClick().performTextInput(".")
-            assertInput(".").assertIsFocused()
+            assertInput("0.").assertIsFocused()
+            compose.onNodeWithText("Зберегти").assertIsNotEnabled()
             field.performTextInput("5")
-            assertInput(".5").assertIsFocused()
+            assertInput("0.5").assertIsFocused()
+            compose.onNodeWithText("Зберегти").assertIsEnabled()
             field.performKeyInput { keyDown(Key.Backspace); keyUp(Key.Backspace) }
-            assertInput(".").assertIsFocused()
+            assertInput("0.").assertIsFocused()
+            compose.onNodeWithText("Зберегти").assertIsNotEnabled()
             field.performTextInput("5")
             compose.runOnIdle { assertEquals(0.5, PriceCatalogRules.parseSalePrice(text)) }
             field.performTextReplacement(".007") // Paste through the real Compose text-input service.
+            assertInput("0.007").assertIsFocused()
+            compose.onNodeWithText("Зберегти").assertIsNotEnabled()
             compose.runOnIdle {
                 assertEquals(7L, parseElementMilli(text, "м.п."))
                 assertNull(PriceCatalogRules.parseSalePrice(text))
                 assertNull(parseElementMilli(text, "шт."))
             }
             field.performTextClearance()
-            compose.onNodeWithContentDescription("Вставити десяткову кому").performClick()
-            assertInput(",").assertIsFocused()
+            field.performTextInput(",")
+            assertInput("0,").assertIsFocused()
             field.performTextInput("5")
-            assertInput(",5")
+            assertInput("0,5")
+            field.performTextClearance()
+            compose.onNodeWithContentDescription("Вставити десяткову кому").performClick()
+            assertInput("0,").assertIsFocused()
+            field.performTextInput("5")
+            assertInput("0,5")
             field.performTextReplacement("05")
             field.performTextInputSelection(TextRange(0, 1))
             compose.onNodeWithContentDescription("Вставити десяткову кому").performClick()
-            assertInput(",5").assertIsFocused()
-            field.assert(SemanticsMatcher.expectValue(SemanticsProperties.TextSelectionRange, TextRange(1)))
-            field.performTextReplacement("-.")
-            assertInput("-.")
+            assertInput("0,5").assertIsFocused()
+            field.assert(SemanticsMatcher.expectValue(SemanticsProperties.TextSelectionRange, TextRange(2)))
+            field.performTextClearance()
+            field.performTextInput("-")
+            field.performTextInput(".")
+            assertInput("-0.")
             field.performTextInput("5")
-            assertInput("-.5").assertIsFocused()
+            assertInput("-0.5").assertIsFocused()
             field.performTextReplacement("..5")
-            assertInput("..5")
+            assertInput("0..5")
             compose.runOnIdle { assertNull(parseElementMilli(text, "м.п.")) }
+            field.performTextReplacement("2.5")
+            assertInput("2.5").assertIsFocused()
         }
+        compose.runOnIdle { allowDecimal = false; text = "" }
+        compose.onNodeWithContentDescription("Вставити десяткову кому").assertDoesNotExist()
+        field.performTextInput(".5")
+        assertInput(".5")
+        compose.onNodeWithText("Зберегти").assertIsNotEnabled()
     }
 }

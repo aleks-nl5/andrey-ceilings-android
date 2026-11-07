@@ -7,23 +7,23 @@ Work stays in `fix/shared-leading-decimal-input`, based on schema v15 after #109
 `shared/commonMain/input/DecimalTextPolicy.kt` distinguishes PARTIAL, COMPLETE and
 INVALID lexical text, with explicit fractional precision, sign and whole-digit
 limits. Commit-only normalization accepts `.5`/`,5` and signed `-.5`/`-,5` where
-allowed. Editors retain raw text, selection and IME composition. Neither partial
-nor malformed text becomes zero or the preceding valid value. Domain parsers
-still decide positivity, bounds, units, geometry and save availability.
+allowed. Domain parsers still decide positivity, bounds, units, geometry and save availability.
 
-`DecimalInputField` preserves `TextFieldValue` across echo recompositions and
-inserts a separator at the selection, including an empty field. It supplies a
-decimal keyboard hint and an accessible comma action independent of the keyboard.
-Only world-coordinate controls expose sign toggling. The existing measurement
-length field uses the same separator helper. The price dialog preserves its
-field value and no longer forces select-all after every pointer gesture; users
-can place the caret and retain their selection.
+The [owner UX revision](https://github.com/aleks-nl5/andrey-ceilings-android/pull/111#issuecomment-6710030092) replaces the earlier literal-leading-separator display contract. `InitialDecimalEdit.kt::normalizeInitialDecimalEdit` inserts one display zero before a newly entered leading separator: `.` → `0.`, `,` → `0,`, paste `.007` → `0.007`; signed `-.`/`-,` → `-0.`/`-0,` where signed input is legal. This shared `TextFieldValue` transformation is independent of commit parsers and fractional precision.
+
+The normalizer uses the previous selection (including whole-value replacement) or the changed text span to detect an inserted leading separator. It maps selection and IME composition endpoints around the zero and emits only the normalized value. Echo recompositions do not rewrite it. Cursor-only changes, edits inside an existing number, and deletion/backspace do not trigger a new zero insertion. Existing `2.5` stays `2.5`.
+
+`DecimalInputField`, measurement create/edit `MeasurementLengthField`, full/quick `PriceEditorDialog`, and all legacy Android calculator decimal fields use this helper for typing/paste and separator actions. A comma replaces the current selection instead of appending behind the caret. Integer-only element quantities/ranges (`шт.`) and the four legacy piece-count fields use `allowDecimalSeparator=false`: no comma action, number keyboard, unchanged integral domain validation.
+
+Only world-coordinate controls expose sign toggling. Price selects its initial amount once and retains the user's later caret/selection. `0.`/`0,`/`-0.`/`-0,` remain uncommittable PARTIAL text; neither Save nor a previous valid total can survive them. Inserting the display zero does not round, truncate, change bounds or make `0.007` a valid price. Leading decimals remain supported directly by domain APIs.
 
 ## Numeric field audit
 
+All decimal editors above apply the initial display zero; the table describes unchanged commit rules.
+
 | Visible input | Commit policy / existing domain checks |
 | --- | --- |
-| Element create/edit/link, including P4B1 roles: exact and min/max quantity | Positive integer thousandths, up to 3 decimal digits, existing MAX_MILLI and range rules; `шт.` must be integral. Derived area/perimeter modes have no numeric editor. |
+| Element create/edit/link, including P4B1 roles: exact and min/max quantity | Positive integer thousandths, up to 3 decimal digits, existing MAX_MILLI and range rules; `шт.` must be integral and has no separator action. Derived area/perimeter modes have no numeric editor. |
 | Catalog full and quick sale price | Unsigned, zero allowed, at most 9 whole and 2 fractional digits. `.5` valid; `.007` invalid. Existing price storage and money math unchanged. |
 | POINT world X/Y | Signed exact mm from metres, up to 3 fractional digits, coordinate bound and strict polygon interior. |
 | POINT distances from wall | Same exact-metre parser; existing side bounds, nonnegative along distance and positive inward distance enforced. No sign toggle. |
@@ -43,27 +43,30 @@ Phone/contact text and read-only numeric displays are not decimal domain editors
 
 ## Verification
 
-- Common tests cover both separators, partial text, signs, malformed input,
+- Common tests cover insertion/paste/replacement, reversed selection and IME composition ranges,
+  unchanged deletion/caret events, both separators, partial text, signs, malformed input,
   price precision, integer pieces, bounds/overflow, measurement grid and circle
   even-mm rules. Existing parser regression suites remain enabled.
-- Desktop `DecimalInputSceneTest` covers raw text, selection, focus, separator
-  replacement and recomposition in both themes, plus the production price dialog
-  and its Save guard. Existing element CRUD scene now persists `.007` as exactly
+- Desktop `DecimalInputSceneTest` covers initial-zero display, selection, focus, separator
+  replacement and recomposition in both themes, the production measurement length
+  editor, both full/quick price dialogs and their partial Save guards, and integer controls. Existing element CRUD scene now persists `.007` as exactly
   7 milli; AREA scene clears and retypes a circle diameter.
 - Android `DecimalInputTouchTest` uses the Compose input service for incremental
   typing, replacement/paste, clearing, selection and focus in both themes.
   `CalculatorNumericInputTest` covers the Android legacy text boundary.
-- Independent static review: PASS after fixing raw-option memoization and the
-  disappearing empty circle-diameter editor. Reviewer did not run platform tests.
+- Baseline `54a33b8`: independent review PASS and Android #1172 / Windows+iOS #925 SUCCESS.
+  The owner then requested the initial-display-zero UX above. New final-SHA review/CI
+  and repeat owner APK acceptance are required; baseline acceptance does not cover this revision.
 - Local and final-SHA CI results are recorded in the PR description. A local
   build is not evidence of Windows SQLCipher, iOS Simulator or owner acceptance.
 
 ## Owner APK acceptance (pending)
 
-On the final PR SHA, test light/dark themes: quantity `.5` and `.007`, price
-`.5` with `.007` rejection, signed coordinates, circle clear → `.` → `.008`,
+On the new final PR SHA, test light/dark themes: typed `.`/`,` displays `0.`/`0,`,
+then `5` displays `0.5`/`0,5`; paste `.007` displays `0.007`; price rejects
+`0.007`; signed `-.` displays `-0.`; circle clear → `.` → `0.` → `0.008`,
 measurement grid/minimum rejection, comma-button insertion at a selected range,
-backspace/paste, cursor/focus/IME, invalid-text Save guards and existing normal
+backspace/paste, cursor/focus/IME, `0.` Save/total guards, hidden comma on `шт.`, and existing normal
 `0.5`/`2,5` inputs. Keep PR Draft; owner decides merge and closes #106 afterward.
 
 No schema, migration, SQLCipher/WAL/backup, pricing math, solver, immutable

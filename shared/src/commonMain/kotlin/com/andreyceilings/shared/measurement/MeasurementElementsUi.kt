@@ -206,7 +206,7 @@ private fun ElementQuantityFields(input: ElementQuantityInput, unit: String?, mo
             enabled = enabled, onClick = { onChange(input.copy(kind = kind)) }, label = { Text(kind.label) }) }
     }
     @Composable fun field(text: String, label: String, change: (String) -> Unit) {
-        DecimalInputField(text, change, label, enabled = enabled)
+        DecimalInputField(text, change, label, enabled = enabled, allowDecimalSeparator = unit?.trim() != "шт.")
     }
     when (input.kind) {
         ElementQuantityKind.UNKNOWN -> Unit

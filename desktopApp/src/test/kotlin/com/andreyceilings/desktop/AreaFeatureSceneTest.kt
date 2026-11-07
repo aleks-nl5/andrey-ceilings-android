@@ -59,7 +59,7 @@ class AreaFeatureSceneTest {
                 scene.click("Властивості фігури")
                 scene.setField("Виміряний діаметр", "")
                 scene.setField("Виміряний діаметр", ".")
-                assertEquals(".", model.state.value.area.properties?.diameter)
+                assertEquals("0.", model.state.value.area.properties?.diameter)
                 scene.setField("Виміряний діаметр", ".007")
                 model.applyAreaProperties()
                 assertNotNull(model.state.value.area.properties, "Odd millimetres cannot commit")

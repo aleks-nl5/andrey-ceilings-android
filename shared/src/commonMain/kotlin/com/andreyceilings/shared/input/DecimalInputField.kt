@@ -13,12 +13,12 @@ import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.TextFieldValue
 
-/** Raw editing state is independent of domain validation, including invalid paste and IME text. */
+/** Initial separators gain a display zero; domain validation never rewrites the editor state. */
 @Composable
 fun DecimalInputField(
     value: String, onValueChange: (String) -> Unit, label: String,
     modifier: Modifier = Modifier, enabled: Boolean = true, isError: Boolean = false,
-    signed: Boolean = false
+    signed: Boolean = false, allowDecimalSeparator: Boolean = true
 ) {
     val requester = remember { FocusRequester() }
     var field by remember { mutableStateOf(TextFieldValue(value, TextRange(value.length))) }
@@ -26,17 +26,21 @@ fun DecimalInputField(
         if (field.text != value) field = TextFieldValue(value, TextRange(
             field.selection.start.coerceIn(0, value.length), field.selection.end.coerceIn(0, value.length)))
     }
-    fun update(next: TextFieldValue) { field = next; onValueChange(next.text) }
+    fun update(next: TextFieldValue) {
+        val edited = if (allowDecimalSeparator) normalizeInitialDecimalEdit(field, next, signed) else next
+        field = edited
+        onValueChange(edited.text)
+    }
     OutlinedTextField(field, { update(it) }, label = { Text(label) },
         modifier = modifier.fillMaxWidth().focusRequester(requester), enabled = enabled,
         singleLine = true, isError = isError,
-        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-        trailingIcon = {
+        keyboardOptions = KeyboardOptions(keyboardType = if (allowDecimalSeparator) KeyboardType.Decimal else KeyboardType.Number),
+        trailingIcon = if (allowDecimalSeparator) ({
             IconButton(enabled = enabled, onClick = {
                 insertDecimalSeparator(field)?.let { update(it) }
                 requester.requestFocus()
             }, modifier = Modifier.semantics { contentDescription = "Вставити десяткову кому" }) { Text(",") }
-        },
+        }) else null,
         leadingIcon = if (signed) ({
             IconButton(enabled = enabled, onClick = {
                 val removing = field.text.startsWith('-')

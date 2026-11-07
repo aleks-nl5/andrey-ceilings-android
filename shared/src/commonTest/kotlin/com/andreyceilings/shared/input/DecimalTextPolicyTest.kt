@@ -20,7 +20,7 @@ class DecimalTextPolicyTest {
             for (text in listOf("..5", "1..2", ".,5", "+1", "--1", "NaN", "1e2", "1 2", ".0007"))
                 assertEquals(DecimalTextState.INVALID, policy.state(text), text)
         }
-        for (text in listOf("-", "-.", "-,")) {
+        for (text in listOf("-", "-.", "-,", "-0.", "-0,")) {
             assertEquals(DecimalTextState.PARTIAL, DecimalTextPolicy(3, true).state(text))
             assertNull(DecimalTextPolicy(3, true).committed(text))
             assertEquals(DecimalTextState.INVALID, DecimalTextPolicy(3).state(text))
@@ -31,7 +31,7 @@ class DecimalTextPolicyTest {
     }
 
     @Test fun unfinishedOrMalformedTextCannotBecomeADomainValue() {
-        for (text in listOf("", ".", ",", "-.", "-,", "0.", "0,", "..5", "1..2", ".,5", ".0007")) {
+        for (text in listOf("", ".", ",", "-.", "-,", "0.", "0,", "-0.", "-0,", "..5", "1..2", ".,5", ".0007")) {
             assertNull(parseElementMilli(text, "м.п."), text)
             assertNull(parsePointMetres(text), text)
             assertNull(PriceCatalogRules.parseSalePrice(text), text)

@@ -212,12 +212,12 @@ internal fun CalculatorScreen(
         DecimalInputField(curtainNicheMeters, onCurtainNicheMeters, "Ніша штор, м", modifier = Modifier.weight(1f))
     }
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        DecimalInputField(chandeliersCount, onChandeliersCount, "Люстри, шт.", modifier = Modifier.weight(1f))
-        DecimalInputField(spotCount, onSpotCount, "Точкові світильники, шт.", modifier = Modifier.weight(1f))
+        DecimalInputField(chandeliersCount, onChandeliersCount, "Люстри, шт.", modifier = Modifier.weight(1f), allowDecimalSeparator = false)
+        DecimalInputField(spotCount, onSpotCount, "Точкові світильники, шт.", modifier = Modifier.weight(1f), allowDecimalSeparator = false)
     }
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        DecimalInputField(pipePassCount, onPipePassCount, "Обхід труб, шт.", modifier = Modifier.weight(1f))
-        DecimalInputField(extraCorners, onExtraCorners, "Дод. кути, шт.", modifier = Modifier.weight(1f))
+        DecimalInputField(pipePassCount, onPipePassCount, "Обхід труб, шт.", modifier = Modifier.weight(1f), allowDecimalSeparator = false)
+        DecimalInputField(extraCorners, onExtraCorners, "Дод. кути, шт.", modifier = Modifier.weight(1f), allowDecimalSeparator = false)
     }
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         DecimalInputField(shadowProfileMeters, onShadowProfileMeters, "Тіньовий профіль, м", modifier = Modifier.weight(1f))
