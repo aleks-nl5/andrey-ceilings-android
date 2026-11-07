@@ -54,11 +54,11 @@ data class IncludedPricingWork(val sourceId: String, val origin: PricingLineOrig
 @ConsistentCopyVisibility
 data class ProjectPricingPreview internal constructor(val projectUuid: String, val signature: String,
     val included: List<IncludedPricingWork>, val excluded: List<ExcludedPricingWork>, val fatalProblems: List<PricingProblem>,
-    val confirmedTotalCents: Long, val potentialTotalCents: Long, val selectedIncludedTotalCents: Long) {
+    val confirmedTotalCents: Long, val potentialTotalCents: Long, val selectedIncludedTotalCents: Long, val mandatoryProblems: List<PricingProblem>) {
     val potentialIncomplete get() = excluded.any { it.reason == ExclusionReason.UNRESOLVED && it.bucket == PricingBucket.POTENTIAL }
     val isPartial get() = excluded.any { it.bucket == PricingBucket.CONFIRMED }
-    val canFinalizeFull get() = fatalProblems.isEmpty() && !isPartial
-    val canRequestPartialAcknowledgement get() = fatalProblems.isEmpty() && isPartial && included.any { it.selectedForDocument }
+    val canFinalizeFull get() = fatalProblems.isEmpty() && mandatoryProblems.isEmpty() && included.any { it.selectedForDocument } && !isPartial
+    val canRequestPartialAcknowledgement get() = fatalProblems.isEmpty() && mandatoryProblems.isEmpty() && isPartial && included.any { it.selectedForDocument }
 }
 
 object ProjectPricingEngine {
@@ -71,15 +71,18 @@ object ProjectPricingEngine {
         val included = mutableListOf<IncludedPricingWork>()
         val excluded = mutableListOf<ExcludedPricingWork>()
         val tokens = mutableListOf(selection.projectUuid, selection.compositionUuid)
-        val coverage = mutableSetOf<String>()
+        val documentCoverage = mutableSetOf<String>()
+        val mandatory = mutableListOf<PricingProblem>()
+        val frozenRoles = mutableMapOf<String, MutableList<BusinessRole>>()
         val revisions = mutableSetOf<String>()
         val sourceIds = mutableSetOf<String>()
         val liveIdentities = mutableSetOf<String>()
         fun fail(code: PricingProblemCode, key: String? = null) { fatal += PricingProblem(code, key) }
         fun include(id: String, origin: PricingLineOrigin, line: LiveEstimateLine, selectedForDocument: Boolean = true) {
+            // Advisory potential remains visible but never reserves documentary coverage.
             // Actual element/work identity, not the ceiling UUID alone or the catalogue code.
             val provenance = contentToken(listOf(line.measurementUuid.orEmpty(), line.sourceKey))
-            if (!coverage.add(provenance)) {
+            if (selectedForDocument && !documentCoverage.add(provenance)) {
                 fail(PricingProblemCode.PROVENANCE_OVERLAP, line.sourceKey)
                 return
             }
@@ -117,8 +120,11 @@ object ProjectPricingEngine {
                         if (source.includedSourceKeys == null || line.sourceKey in source.includedSourceKeys) include(source.sourceId, PricingLineOrigin.Live, line, line.bucket == PricingBucket.CONFIRMED || source.includedSourceKeys != null)
                         else excluded += ExcludedPricingWork(source.sourceId, line.sourceKey, ExclusionReason.USER_EXCLUDED, bucket = line.bucket)
                     }
+                    mandatory += preview.mandatoryProblems
+                    mandatory += mandatoryRoleProblems(preview.measurementUuid, preview.businessRoles.values.toList(),
+                        included.filter { it.sourceId == source.sourceId && it.selectedForDocument }.map { it.line })
                     preview.unresolvedItems.forEach {
-                        if (!coverage.add(contentToken(listOf(it.measurementUuid.orEmpty(), it.sourceKey)))) fail(PricingProblemCode.PROVENANCE_OVERLAP, it.sourceKey)
+                        if (it.bucket == PricingBucket.CONFIRMED && !documentCoverage.add(contentToken(listOf(it.measurementUuid.orEmpty(), it.sourceKey)))) fail(PricingProblemCode.PROVENANCE_OVERLAP, it.sourceKey)
                         excluded += ExcludedPricingWork(source.sourceId, it.sourceKey, ExclusionReason.UNRESOLVED, it.reasons, it.bucket) }
                 }
                 is ProjectSourceSelection.Frozen -> {
@@ -133,6 +139,10 @@ object ProjectPricingEngine {
                     if (!revision.isLeaf) fail(PricingProblemCode.AMBIGUOUS_COVERAGE, source.revisionUuid)
                     if (!revision.provenanceVerified) fail(PricingProblemCode.PROVENANCE_MISSING, source.revisionUuid)
                     tokens += revision.contentSignature
+                    revision.lines.filter { it.measurementUuid != null }.groupBy { it.measurementUuid!! }.forEach { (measurement, lines) ->
+                        frozenRoles.getOrPut(measurement) { mutableListOf() }.addAll(lines.mapNotNull { it.businessRole })
+                        if (lines.any { it.businessRole == null }) fail(PricingProblemCode.PROVENANCE_MISSING, source.revisionUuid)
+                    }
                     for (line in revision.lines.sortedBy { it.sourceKey }) {
                         if (!validProvenance(line)) {
                             fail(PricingProblemCode.PROVENANCE_MISSING, line.sourceKey)
@@ -145,7 +155,7 @@ object ProjectPricingEngine {
                         include(source.sourceId, PricingLineOrigin.Frozen(source.seriesUuid, source.revisionUuid), line)
                     }
                     revision.omitted.sortedBy { it.sourceKey }.forEach {
-                        if (!coverage.add(contentToken(listOf(it.measurementUuid.orEmpty(), it.sourceKey)))) fail(PricingProblemCode.PROVENANCE_OVERLAP, it.sourceKey)
+                        if (it.bucket == PricingBucket.CONFIRMED && !documentCoverage.add(contentToken(listOf(it.measurementUuid.orEmpty(), it.sourceKey)))) fail(PricingProblemCode.PROVENANCE_OVERLAP, it.sourceKey)
                         excluded += ExcludedPricingWork(source.sourceId, it.sourceKey, ExclusionReason.UNRESOLVED, it.reasons, it.bucket) }
                 }
             }
@@ -176,6 +186,13 @@ object ProjectPricingEngine {
                 } catch (_: PricingOverflow) { fail(PricingProblemCode.OVERFLOW, key) }
             }
         }
+        frozenRoles.forEach { (measurement, declared) ->
+            val rows = included.filter { it.selectedForDocument && it.line.measurementUuid == measurement }.map { it.line }
+            mandatory += mandatoryRoleProblems(measurement, declared + rows.mapNotNull { it.businessRole }, rows)
+        }
+        if (selection.sources.none { it is ProjectSourceSelection.Live } && frozenRoles.isEmpty())
+            mandatory += PricingProblem(PricingProblemCode.MANDATORY_BASE_REQUIRED)
+        if (included.none { it.selectedForDocument }) mandatory += PricingProblem(PricingProblemCode.EMPTY_DOCUMENT)
         var confirmed = 0L
         var potential = 0L
         var selectedTotal = 0L
@@ -189,7 +206,7 @@ object ProjectPricingEngine {
         tokens += pricingJson.encodeToString(included)
         tokens += pricingJson.encodeToString(excluded)
         return ProjectPricingPreview(selection.projectUuid, contentToken(tokens), included, excluded,
-            fatal.distinct().sortedWith(compareBy({ it.sourceKey.orEmpty() }, { it.code.name })), confirmed, potential, selectedTotal)
+            fatal.distinct().sortedWith(compareBy({ it.sourceKey.orEmpty() }, { it.code.name })), confirmed, potential, selectedTotal, mandatory.distinct().sortedWith(compareBy({ it.sourceKey.orEmpty() }, { it.code.name })))
     }
 
     private fun validProvenance(line: LiveEstimateLine): Boolean =

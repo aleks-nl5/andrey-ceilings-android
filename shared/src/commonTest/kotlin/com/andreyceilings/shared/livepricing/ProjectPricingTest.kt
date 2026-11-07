@@ -51,7 +51,7 @@ class ProjectPricingTest {
         assertEquals(0, result.confirmedTotalCents)
         assertEquals(100, result.potentialTotalCents)
         assertEquals(100, result.selectedIncludedTotalCents) // explicit potential selection, still a separate bucket
-        assertTrue(result.canRequestPartialAcknowledgement)
+        assertFalse(result.canRequestPartialAcknowledgement) // Missing mandatory base pair.
         assertEquals(ExclusionReason.USER_EXCLUDED, result.excluded.single().reason)
         val changed = selection.copy(sources = listOf((selection.sources.single() as ProjectSourceSelection.Live).copy(includedSourceKeys = null)))
         assertNotEquals(selection.scopeSignature, changed.scopeSignature)
@@ -81,7 +81,7 @@ class ProjectPricingTest {
             listOf(line.copy(measurementUuid = "m$id", sourceKey = "element:e$id", elementUuid = "e$id", totalCents = 100)), "frozen$id", true, true) }
         val selection = ProjectEstimateSelection("p", "q", listOf(2, 5).map { ProjectSourceSelection.Frozen("f$it", "series$it", "r$it", "frozen$it") })
         val result = ProjectPricingEngine.previewComposition(selection, emptyMap(), revisions, catalog.copy(items = listOf(item.copy(salePrice = 999.0))))
-        assertTrue(result.canFinalizeFull)
+        assertFalse(result.canFinalizeFull) // Extras alone cannot form a ready document.
         assertEquals(200, result.confirmedTotalCents)
         assertEquals(listOf("f2", "f5"), result.included.map { it.sourceId })
         assertFalse(ProjectPricingEngine.previewComposition(selection, emptyMap(), emptyMap()).canFinalizeFull)
@@ -97,7 +97,7 @@ class ProjectPricingTest {
         assertTrue(ProjectPricingEngine.previewComposition(selection, emptyMap(), overlap).fatalProblems.any { it.code == PricingProblemCode.PROVENANCE_OVERLAP })
         // Same ceiling, different explicit element identity is allowed.
         val sameCeiling = revisions + ("r5" to revisions.getValue("r5").copy(lines = listOf(line.copy(sourceKey = "element:other", elementUuid = "other", measurementUuid = "m2"))))
-        assertTrue(ProjectPricingEngine.previewComposition(selection, emptyMap(), sameCeiling).canFinalizeFull)
+        assertFalse(ProjectPricingEngine.previewComposition(selection, emptyMap(), sameCeiling).canFinalizeFull) // Disjoint extras still need a base pair.
     }
 
     @Test fun staleSourceSelectionCannotReuseOldReadinessOrTokens() {
@@ -122,7 +122,7 @@ class ProjectPricingTest {
         }
         val refs = selection.copy(sources = selection.sources.map { if (it is ProjectSourceSelection.Live) it.copy(expectedSignature = repriced.getValue(it.sourceId).signature) else it })
         val result = ProjectPricingEngine.previewComposition(refs, repriced, mapOf("revision" to frozen), catalog)
-        assertTrue(result.canFinalizeFull)
+        assertFalse(result.canFinalizeFull) // Extras alone cannot form a ready document.
         assertEquals(400, result.confirmedTotalCents)
         assertEquals(PricingLineOrigin.Frozen("series", "revision"), result.included.last().origin)
         val current = catalog.copy(items = listOf(item.copy(salePrice = 2.0)))

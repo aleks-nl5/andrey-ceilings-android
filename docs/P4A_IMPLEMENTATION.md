@@ -12,7 +12,7 @@ Work continues in `feat/p4a-kmp-live-pricing`, Draft PR #107, for #104/#44.
 
 ## Integration contract
 
-`LivePricingReader.read(projectId, measurementUuid, expectedSourceSignature?, expectedCatalogSignature?)` returns a fresh coherent source/catalog pair or a typed failure. Build previews only from a successful read. Retain the source basis when opening an editor and pass it to `withValidatedDraft(model, basisSourceSignature)`; source or role changes require a new binding. Capture draft state on its UI dispatcher. Always call `closeReads()` when ending/replacing the unlocked DB session: some JDBC drivers reopen after raw driver `close()`.
+`LivePricingReader.read(projectId, measurementUuid, expectedSourceSignature?, expectedCatalogSignature?)` returns a fresh coherent source/catalog pair or a typed failure. Build previews only from a successful read. Retain the source basis when opening an editor and pass it to `withValidatedDraft(model, basisSourceSignature)`; source or role changes require a new binding. Capture draft state on its UI dispatcher. Always await suspending `closeReads()` (atomic admission close + NonCancellable drain of in-flight read/verify transactions) when ending/replacing the unlocked DB session: some JDBC drivers reopen after raw driver `close()`.
 
 For composition, first define explicit ordered measurement UUIDs, source/catalog basis signatures and row scope and `compositionUuid`, obtain `selection.scopeSignature`, then build live previews with that scope and the same quote identity. Set their exact preview signatures in the selection. Scope calculation includes every selected live source/catalog basis and excludes preview signatures to avoid circular tokens. Overrides bind to the source, catalog, quote and scope signatures; copying an override to another quote without rebinding is invalid. Pass the current catalog to `previewComposition` for explicit live catalog recheck; distinct live catalog snapshots cannot be mixed. A pure function cannot discover a subsequent DB mutation: the caller must reread, and P4C must eventually recheck inside its write transaction.
 
@@ -25,3 +25,13 @@ Content signatures use versioned length-prefixed canonical content, not a trunca
 The targeted JVM pricing, composition, coherent WAL read and shared DB proof passed before the full regression run. Required final Android, Windows and iOS workflow links and results are maintained in Draft PR #107. No owner APK check or independent review is claimed here. No runnable iOS application host is added: native framework and Simulator/physical SQLCipher proof are the CI scope.
 
 Discrete pieces and комплекти require whole quantities; `послуга` retains the existing domain’s canonical milli Exact semantics, including explicit fractions. No entry parser was changed.
+
+## Review amendments (07.11.2026)
+
+Owner decision in PR #107 replaces optional-base readiness: every selected live ceiling must contain one valid financially included CONFIRMED canvas and primary profile; missing/invalid/discussing/excluded mandatory work blocks both full and partial readiness. Empty or extras/project-wide-only documents are not ready; actual zero-price bases are ready. `LiveEstimateLine.businessRole` preserves trusted role evidence for selection/frozen validation; unknown frozen roles never prove a base. `mandatoryProblems` is distinct from fatal integrity errors and omittable optional unresolved work. Source/composition tokens are now `p4a-v2` to invalidate old readiness/override bases.
+
+Advisory potential rows remain separately priced but do not reserve document coverage. Mixed live DISCUSSING and a frozen row for the same provenance is allowed unless both are selected for the document. Regression tests cover both source orders and the explicit double-selection rejection.
+
+`closeReads()` is a suspending lifecycle barrier: admission and in-flight counting share one CAS state; release is in `finally` after transaction completion/rollback. It waits even if the closing coroutine is cancelled. JDBC/physical Windows tests pause a real transaction, begin close, verify it remains suspended and new read/verify calls issue no SQL, then release the transaction (success/failure) before allowing session replacement.
+
+Review regression verification: local targeted common/JDBC tests passed; full local/CI evidence for the review-fix head is maintained in PR #107. The amended contract is LIVE_ESTIMATE_P4A.md §0.5a.

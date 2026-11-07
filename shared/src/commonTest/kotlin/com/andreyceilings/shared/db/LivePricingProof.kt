@@ -10,7 +10,7 @@ import kotlin.test.*
 
 /** Same assertions on JDBC and physical Android/Windows/iOS SQLCipher, no alternative pricing implementation. */
 object LivePricingProof {
-    data class Fixture(val projectId: Long, val measurementUuid: String, val elementUuid: String, val priceId: Long)
+    data class Fixture(val projectId: Long, val measurementUuid: String, val elementUuid: String, val priceId: Long, val profileUuid: String)
     fun seed(database: PrototypeDatabase): Fixture {
         val suffix = newRecordUuid()
         val project = ProjectRepository(database).createReturningId(null, "Pricing $suffix", createdAt = 100)
@@ -22,11 +22,15 @@ object LivePricingProof {
         val item = PriceRepository(database).find(priceId)!!
         val element = MeasurementElementRepository(database).createCatalogSelection(draft.recordUuid, item.uuid, ElementQuantity.CeilingArea, 104,
             approval = ElementApproval.APPROVED)
+        val profileId = PriceRepository(database).createInGroup("profile.$suffix", "Profile $suffix", group, 0.0, 103,
+            unit = "м.п.", quantityMode = QuantityMode.CEILING_PERIMETER)
+        val profile = MeasurementElementRepository(database).createCatalogSelection(draft.recordUuid,
+            PriceRepository(database).find(profileId)!!.uuid, ElementQuantity.CeilingPerimeter, 104, approval = ElementApproval.APPROVED)
         MeasurementElementRepository(database).createWish(draft.recordUuid, "Discuss this", 105)
-        return Fixture(project, draft.recordUuid, element.uuid, priceId)
+        return Fixture(project, draft.recordUuid, element.uuid, priceId, profile.uuid)
     }
 
-    fun run(driver: SqlDriver) {
+    suspend fun run(driver: SqlDriver) {
         val database = PrototypeDatabase(driver)
         val fixture = seed(database)
         // Reject every SQL execute on the reader's driver. SQLDelight transaction control is delegated.
@@ -41,8 +45,8 @@ object LivePricingProof {
         val beforeChanges = changes()
         val reader = LivePricingReader(PrototypeDatabase(readOnly))
         val loaded = assertIs<PricingReadResult.Loaded>(reader.read(fixture.projectId, fixture.measurementUuid))
-        assertEquals(2, loaded.source.elements.size) // NONE/unplaced plus Wish
-        val roles = BusinessRoleBindings(loaded.source.signature, mapOf(fixture.elementUuid to BusinessRole.CANVAS))
+        assertEquals(3, loaded.source.elements.size) // NONE/unplaced plus Wish
+        val roles = BusinessRoleBindings(loaded.source.signature, mapOf(fixture.elementUuid to BusinessRole.CANVAS, fixture.profileUuid to BusinessRole.PRIMARY_PROFILE))
         val preview = LivePricingEngine.buildPreview(loaded.source, loaded.catalog, roles)
         assertEquals(12000, preview.confirmedTotalCents)
         assertEquals(1, preview.unresolvedItems.size)
@@ -82,11 +86,11 @@ object LivePricingProof {
         assertEquals(PricingReadResult.Unavailable(PricingProblemCode.STALE_CATALOG), reader.read(fixture.projectId, fixture.measurementUuid, expectedCatalogSignature = loaded.catalog.signature))
         val afterPrice = assertIs<PricingReadResult.Loaded>(reader.read(fixture.projectId, fixture.measurementUuid))
         assertEquals(24000, LivePricingEngine.buildPreview(afterPrice.source, afterPrice.catalog,
-            BusinessRoleBindings(afterPrice.source.signature, mapOf(fixture.elementUuid to BusinessRole.CANVAS))).confirmedTotalCents)
+            BusinessRoleBindings(afterPrice.source.signature, mapOf(fixture.elementUuid to BusinessRole.CANVAS, fixture.profileUuid to BusinessRole.PRIMARY_PROFILE))).confirmedTotalCents)
         prices.delete(fixture.priceId)
         val afterDelete = assertIs<PricingReadResult.Loaded>(reader.read(fixture.projectId, fixture.measurementUuid))
         val deletedPreview = LivePricingEngine.buildPreview(afterDelete.source, afterDelete.catalog,
-            BusinessRoleBindings(afterDelete.source.signature, mapOf(fixture.elementUuid to BusinessRole.CANVAS)))
+            BusinessRoleBindings(afterDelete.source.signature, mapOf(fixture.elementUuid to BusinessRole.CANVAS, fixture.profileUuid to BusinessRole.PRIMARY_PROFILE)))
         assertTrue(deletedPreview.unresolvedItems.any { PricingProblemCode.CATALOG_MISSING in it.reasons })
         assertFalse(deletedPreview.canFinalizeFull)
         assertEquals(PricingReadResult.Unavailable(PricingProblemCode.PARENT_UNAVAILABLE), reader.read(-1, fixture.measurementUuid))

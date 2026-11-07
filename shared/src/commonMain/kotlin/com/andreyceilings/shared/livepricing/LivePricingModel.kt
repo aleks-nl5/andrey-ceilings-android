@@ -20,7 +20,8 @@ enum class PricingProblemCode {
     CATALOG_MISSING, METADATA_DRIFT, UNSUPPORTED_UNIT, INVALID_PRICE, UNKNOWN_QUANTITY,
     RANGE_QUANTITY, QUANTITY_PRECISION, INVALID_QUANTITY, SELECTION_MISSING, PLACEMENT_REVIEW,
     PLACEMENT_UNPLACED, PLACEMENT_APPROXIMATE, PLACEMENT_PARTIAL, INVALID_OVERRIDE, OVERFLOW, DUPLICATE_SOURCE, PROVENANCE_OVERLAP, PROVENANCE_MISSING,
-    AMBIGUOUS_COVERAGE, REVISION_UNAVAILABLE, CROSS_PROJECT, INVALID_SELECTION
+    EMPTY_DOCUMENT, MANDATORY_BASE_REQUIRED, MISSING_MANDATORY_CANVAS, MISSING_MANDATORY_PRIMARY_PROFILE,
+    INVALID_MANDATORY_CANVAS, INVALID_MANDATORY_PRIMARY_PROFILE, AMBIGUOUS_COVERAGE, REVISION_UNAVAILABLE, CROSS_PROJECT, INVALID_SELECTION
 }
 @Serializable
 data class PricingProblem(val code: PricingProblemCode, val sourceKey: String? = null)
@@ -69,7 +70,8 @@ data class LiveEstimateLine(
     val stableCode: String, val title: String, val unit: String, val sourceQuantityMilli: Long,
     val effectiveBillableQuantityMilli: Long, val unitPriceCents: Long, val totalCents: Long,
     val quantityOrigin: QuantityOrigin, val bucket: PricingBucket,
-    val reviewFlags: List<PricingProblemCode> = emptyList(), val overrideNote: String? = null
+    val reviewFlags: List<PricingProblemCode> = emptyList(), val overrideNote: String? = null,
+    val businessRole: BusinessRole? = null
 )
 
 /** Internal construction prevents callers from supplying a made-up ready preview to composition. */
@@ -79,16 +81,17 @@ data class LiveEstimatePreview internal constructor(
     val sourceSignature: String, val catalogSignature: String, val scopeSignature: String, val signature: String,
     val priceableLines: List<LiveEstimateLine>, val unresolvedItems: List<UnresolvedWork>,
     val fatalProblems: List<PricingProblem>, val warnings: List<PricingProblem>,
-    val confirmedTotalCents: Long, val potentialTotalCents: Long
+    val confirmedTotalCents: Long, val potentialTotalCents: Long,
+    val businessRoles: Map<String, BusinessRole>, val mandatoryProblems: List<PricingProblem>
 ) {
     val potentialIncomplete get() = unresolvedItems.any { it.bucket == PricingBucket.POTENTIAL }
-    val canFinalizeFull get() = fatalProblems.isEmpty() && unresolvedItems.none { it.bucket == PricingBucket.CONFIRMED }
-    val canRequestPartialAcknowledgement get() = fatalProblems.isEmpty() &&
+    val canFinalizeFull get() = fatalProblems.isEmpty() && mandatoryProblems.isEmpty() && unresolvedItems.none { it.bucket == PricingBucket.CONFIRMED }
+    val canRequestPartialAcknowledgement get() = fatalProblems.isEmpty() && mandatoryProblems.isEmpty() &&
         unresolvedItems.any { it.bucket == PricingBucket.CONFIRMED } && priceableLines.any { it.bucket == PricingBucket.CONFIRMED }
 }
 
 internal val pricingJson = Json { encodeDefaults = true; allowSpecialFloatingPointValues = true }
 /** Collision-free, versioned length-prefix encoding, NOT a hash or a write authorization. */
-internal fun contentToken(fields: List<String>): String = "p4a-v1:" + fields.joinToString("") { "${it.length}:$it" }
+internal fun contentToken(fields: List<String>): String = "p4a-v2:" + fields.joinToString("") { "${it.length}:$it" }
 internal fun elementKey(uuid: String) = "element:$uuid"
 internal fun ElementApproval.bucket() = if (this == ElementApproval.APPROVED) PricingBucket.CONFIRMED else PricingBucket.POTENTIAL

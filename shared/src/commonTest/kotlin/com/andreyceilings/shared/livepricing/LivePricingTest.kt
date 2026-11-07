@@ -20,8 +20,15 @@ class LivePricingTest {
         ElementSource.CatalogSelection(item.uuid, item.code, item.quantityMode, item.placementKind, CatalogAvailability.ACTIVE),
         id, "", item.unit, approval, quantity, ElementPlacement.UNPLACED, 0, 1, 1, null)
 
+    private val baseCanvas = item("baseCanvas", "м²", QuantityMode.CEILING_AREA, price = 0.0)
+    private val baseProfile = item("baseProfile", "м.п.", QuantityMode.CEILING_PERIMETER, price = 0.0)
+    private val baseRoles = mapOf("baseCanvas" to BusinessRole.CANVAS, "baseProfile" to BusinessRole.PRIMARY_PROFILE)
+    private fun withBases(source: LiveEstimateSource) = source.copy(elements = source.elements +
+        listOf(element(baseCanvas, ElementQuantity.CeilingArea), element(baseProfile, ElementQuantity.CeilingPerimeter)))
+    private fun withBases(catalog: ActiveCatalogSnapshot) = catalog.copy(items = catalog.items + listOf(baseCanvas, baseProfile))
+
     private fun roles(source: LiveEstimateSource, mapping: Map<String, BusinessRole> = source.elements.filter { it.source is ElementSource.CatalogSelection }
-        .associate { it.uuid to BusinessRole.ADDITIONAL_WORK }) = BusinessRoleBindings(runCatching { source.signature }.getOrDefault("invalid-geometry"), mapping)
+        .associate { it.uuid to BusinessRole.ADDITIONAL_WORK }) = BusinessRoleBindings(runCatching { source.signature }.getOrDefault("invalid-geometry"), mapping + baseRoles.filterKeys { id -> source.elements.any { it.uuid == id } })
     private fun preview(source: LiveEstimateSource, catalog: ActiveCatalogSnapshot, mapping: Map<String, BusinessRole>? = null,
         composition: String = "quote", overrides: List<EstimateQuantityOverride> = emptyList()) =
         LivePricingEngine.buildPreview(source, catalog, roles(source, mapping ?: roles(source).roles), composition, overrides)
@@ -62,14 +69,14 @@ class LivePricingTest {
         val source = LiveEstimateSource("p", "m", geometry(), listOf(element(i), element(missing),
             element(i, ElementQuantity.Unknown, "unknown"), element(i, ElementQuantity.Range(1000, 2000), "range", ElementApproval.DISCUSSING),
             element(i, id = "wish").copy(source = ElementSource.Wish)))
-        val result = preview(source, ActiveCatalogSnapshot(listOf(i)))
+        val result = preview(withBases(source), withBases(ActiveCatalogSnapshot(listOf(i))))
         assertEquals(1000, result.confirmedTotalCents)
         assertEquals(4, result.unresolvedItems.size)
         assertFalse(result.canFinalizeFull)
         assertTrue(result.canRequestPartialAcknowledgement)
         assertTrue(result.potentialIncomplete)
         assertEquals(listOf(PricingProblemCode.CATALOG_MISSING), result.unresolvedItems.single { it.elementUuid == "missing" }.reasons)
-        val onlyPotentialUnresolved = preview(source.copy(elements = source.elements.filter { it.uuid in listOf("ok", "range") }), ActiveCatalogSnapshot(listOf(i)))
+        val onlyPotentialUnresolved = preview(withBases(source.copy(elements = source.elements.filter { it.uuid in listOf("ok", "range") })), withBases(ActiveCatalogSnapshot(listOf(i))))
         assertTrue(onlyPotentialUnresolved.canFinalizeFull)
         assertFalse(onlyPotentialUnresolved.canRequestPartialAcknowledgement)
     }
@@ -80,7 +87,9 @@ class LivePricingTest {
         val s = LiveEstimateSource("p", "m", geometry(), listOf(e))
         val catalog = ActiveCatalogSnapshot(listOf(c))
         assertEquals(PricingProblemCode.ROLE_UNDETERMINED, LivePricingEngine.buildPreview(s, catalog).fatalProblems.single().code)
-        assertTrue(preview(s, catalog, mapOf("c" to BusinessRole.CANVAS)).canFinalizeFull)
+        assertFalse(preview(s, catalog, mapOf("c" to BusinessRole.CANVAS)).canFinalizeFull)
+        assertEquals(PricingProblemCode.MISSING_MANDATORY_PRIMARY_PROFILE,
+            preview(s, catalog, mapOf("c" to BusinessRole.CANVAS)).mandatoryProblems.single().code)
         val duplicate = s.copy(elements = listOf(e, e.copy(uuid = "c2", approval = ElementApproval.DISCUSSING)))
         val p = preview(duplicate, catalog, mapOf("c" to BusinessRole.CANVAS, "c2" to BusinessRole.CANVAS))
         assertTrue(p.fatalProblems.any { it.code == PricingProblemCode.DUPLICATE_MAIN_CANVAS })
@@ -105,11 +114,12 @@ class LivePricingTest {
         assertFailsWith<PricingOverflow> { PricingMath.add(Long.MAX_VALUE, 1) }
         for (unit in listOf("шт.", "компл.", "послуга", "custom")) {
             val i = item("i", unit, price = 0.0)
-            val s = LiveEstimateSource("p", "m", geometry(), listOf(element(i)))
-            val result = preview(s, ActiveCatalogSnapshot(listOf(i)))
+            val s = withBases(LiveEstimateSource("p", "m", geometry(), listOf(element(i))))
+            val catalog = withBases(ActiveCatalogSnapshot(listOf(i)))
+            val result = preview(s, catalog)
             assertEquals(unit != "custom", result.canFinalizeFull)
-            if (unit != "custom") assertEquals(0, result.priceableLines.single().totalCents)
-            assertEquals(unit == "послуга", preview(s.copy(elements = listOf(element(i, ElementQuantity.Exact(1500)))), ActiveCatalogSnapshot(listOf(i))).canFinalizeFull)
+            if (unit != "custom") assertEquals(0, result.priceableLines.single { it.elementUuid == "i" }.totalCents)
+            assertEquals(unit == "послуга", preview(withBases(LiveEstimateSource("p", "m", geometry(), listOf(element(i, ElementQuantity.Exact(1500))))), catalog).canFinalizeFull)
         }
     }
 
@@ -145,17 +155,17 @@ class LivePricingTest {
 
     @Test fun billableOverridesAreScopedValidatedAndDoNotMutateSource() {
         val c = item("c", "м²", QuantityMode.CEILING_AREA)
-        val source = LiveEstimateSource("p", "m", geometry(4600, 4000), listOf(element(c, ElementQuantity.CeilingArea)))
-        val cat = ActiveCatalogSnapshot(listOf(c))
+        val source = LiveEstimateSource("p", "m", geometry(4600, 4000), listOf(element(c, ElementQuantity.CeilingArea), element(baseProfile, ElementQuantity.CeilingPerimeter)))
+        val cat = ActiveCatalogSnapshot(listOf(c, baseProfile))
         val binding = mapOf("c" to BusinessRole.CANVAS)
         val override = EstimateQuantityOverride("quote", "p", "m", "c", BusinessRole.CANVAS, 19000, "м²", source.signature, cat.signature, true)
         val result = preview(source, cat, binding, overrides = listOf(override))
         assertTrue(result.canFinalizeFull)
-        assertEquals(18400, result.priceableLines.single().sourceQuantityMilli)
-        assertEquals(19000, result.priceableLines.single().effectiveBillableQuantityMilli)
+        assertEquals(18400, result.priceableLines.single { it.elementUuid == "c" }.sourceQuantityMilli)
+        assertEquals(19000, result.priceableLines.single { it.elementUuid == "c" }.effectiveBillableQuantityMilli)
         assertEquals(19000, result.confirmedTotalCents)
-        assertEquals(ElementQuantity.CeilingArea, source.elements.single().quantity)
-        assertEquals(QuantityOrigin.EXPLICIT_BILLABLE_OVERRIDE, result.priceableLines.single().quantityOrigin)
+        assertEquals(ElementQuantity.CeilingArea, source.elements.single { it.uuid == "c" }.quantity)
+        assertEquals(QuantityOrigin.EXPLICIT_BILLABLE_OVERRIDE, result.priceableLines.single { it.elementUuid == "c" }.quantityOrigin)
         for (bad in listOf(override.copy(compositionUuid = "other"), override.copy(projectUuid = "other"), override.copy(measurementUuid = "other"),
             override.copy(measurementElementUuid = "other"), override.copy(expectedBusinessRole = BusinessRole.ADDITIONAL_WORK), override.copy(quantityMilli = 0),
             override.copy(quantityMilli = -1), override.copy(unit = "м.п."), override.copy(basisSourceSignature = "old"),
@@ -165,22 +175,22 @@ class LivePricingTest {
             assertFalse(p.canRequestPartialAcknowledgement)
         }
         assertFalse(preview(source, cat, binding, overrides = listOf(override, override)).canFinalizeFull)
-        assertFalse(preview(source, cat.copy(items = listOf(c.copy(salePrice = 11.0))), binding, overrides = listOf(override)).canFinalizeFull)
+        assertFalse(preview(source, cat.copy(items = listOf(c.copy(salePrice = 11.0), baseProfile)), binding, overrides = listOf(override)).canFinalizeFull)
         assertEquals(18400, preview(source, cat, binding).confirmedTotalCents)
         assertEquals(20000, preview(source, cat, binding, "other", listOf(override.copy(compositionUuid = "other", basisScopeSignature = "other", quantityMilli = 20000))).confirmedTotalCents)
     }
     @Test fun profileOverrideAllowsExplicitDecreaseAndRejectsMoneyOverflow() {
         val i = item("profile", "м.п.", QuantityMode.CEILING_PERIMETER)
-        val s = LiveEstimateSource("p", "m", geometry(4000, 3125), listOf(element(i, ElementQuantity.CeilingPerimeter)))
-        val c = ActiveCatalogSnapshot(listOf(i))
+        val s = LiveEstimateSource("p", "m", geometry(4000, 3125), listOf(element(i, ElementQuantity.CeilingPerimeter), element(baseCanvas, ElementQuantity.CeilingArea)))
+        val c = ActiveCatalogSnapshot(listOf(i, baseCanvas))
         val role = mapOf("profile" to BusinessRole.PRIMARY_PROFILE)
         val override = EstimateQuantityOverride("quote", "p", "m", "profile", BusinessRole.PRIMARY_PROFILE, 15000,
             "м.п.", s.signature, c.signature, true)
         val p = preview(s, c, role, overrides = listOf(override))
-        assertEquals(14250, p.priceableLines.single().sourceQuantityMilli)
-        assertEquals(15000, p.priceableLines.single().effectiveBillableQuantityMilli)
+        assertEquals(14250, p.priceableLines.single { it.elementUuid == "profile" }.sourceQuantityMilli)
+        assertEquals(15000, p.priceableLines.single { it.elementUuid == "profile" }.effectiveBillableQuantityMilli)
         assertTrue(preview(s, c, role, overrides = listOf(override.copy(quantityMilli = 14000))).canFinalizeFull)
-        val expensive = c.copy(items = listOf(i.copy(salePrice = 999_999_999.99)))
+        val expensive = c.copy(items = listOf(i.copy(salePrice = 999_999_999.99), baseCanvas))
         val overflow = preview(s, expensive, role, overrides = listOf(override.copy(quantityMilli = ElementQuantityRules.MAX_MILLI,
             basisCatalogSignature = expensive.signature)))
         assertTrue(overflow.fatalProblems.any { it.code == PricingProblemCode.OVERFLOW })

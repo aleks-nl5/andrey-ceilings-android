@@ -20,7 +20,7 @@ Implement a **deterministic read-only KMP live-pricing engine** in shared/common
 
 - `livepricing/LivePricingModel.kt`, `PricingMath.kt`, `LivePricingEngine.kt`: all-element pricing, typed roles, exact quantities/cents, confirmed/potential, local unresolved vs fatal, source/catalog/scope-bound overrides.
 - `livepricing/ProjectPricing.kt`: explicit ordered live/frozen revision selection, omissions, typed origin refs, overlap checks, project-wide works once, content fingerprint/readiness.
-- `livepricing/LivePricingReader.kt` + `db/LivePricing.sq`: one fresh read transaction, child/receipt/catalog versions, expected-token recheck, no write/initialization. End a reader session with `closeReads()` before DB replacement.
+- `livepricing/LivePricingReader.kt` + `db/LivePricing.sq`: one fresh read transaction, child/receipt/catalog versions, expected-token recheck, no write/initialization. Await the suspending `closeReads()` admission/drain barrier before DB replacement.
 - `livepricing/LivePricingDraftAdapter.kt`: validated stable `MeasurementEditModel` against an explicit coherent source basis; no Save.
 - `commonTest/livepricing/`, `commonTest/db/LivePricingProof.kt`, `jvmTest/db/LivePricingReaderTest.kt`: pure cases and shared physical proof wired into Android/Windows/iOS suites, plus concurrent WAL snapshot test on JDBC/Windows.
 
@@ -29,7 +29,7 @@ The v14 history adapter refuses unverifiable leaf coverage with `PROVENANCE_MISS
 ## Implementation sequence
 
 1. **Model & pure engine (commonMain):** validated `LiveEstimateSource` containing **all active measurement elements including unplaced/NONE/Wish**, stable UUID identities, captured geometry, actual active catalog item+group with price/version tokens, and placement metadata for review only. Validate area/perimeter/exact/range/unknown quantity without treating overlays as additional billable rows.
-2. **Business rules:** at most one explicitly classified CANVAS and one PRIMARY_PROFILE per measurement (zero is allowed in an incomplete measurement); additional works remain independent. For derived canvas/profile quantities, use verified area/perimeter once; a **per-composition explicit billable override** may change the priced amount but never mutate measured dimensions, `ElementQuantity.CeilingArea/Perimeter`, prices or database. Expose both measured and effective quantities, typed source/origin and safety checks.
+2. **Business rules:** at most one explicitly classified CANVAS and one PRIMARY_PROFILE per measurement (zero is allowed only in an incomplete measurement; both readiness flags require a confirmed included base pair); additional works remain independent. For derived canvas/profile quantities, use verified area/perimeter once; a **per-composition explicit billable override** may change the priced amount but never mutate measured dimensions, `ElementQuantity.CeilingArea/Perimeter`, prices or database. Expose both measured and effective quantities, typed source/origin and safety checks.
 3. **Pricing buckets and problems:** APPROVED valid catalog-linked rows contribute to `confirmedTotalCents`; valid DISCUSSING only to `potentialTotalCents`. Distinguish local `OMITTABLE_UNRESOLVED` (price/quantity/item missing, with identity/reason, no silent zero) vs fatal geometry/identity/duplicate-role/stale/overflow problems. Full estimate readiness vs controlled partial **candidate** readiness. P4A does **not** record user acknowledgement: explicit inclusion/exclusion confirmation is future P4B; immutable Save/PDF is P4C.
 4. **Composition pure API:** standalone ceiling, all ceilings or explicitly selected subset of live previews and exact frozen source revision UUIDs. Retain original saved revision prices; reject cross-project, missing, overlapping/provenance-duplicate or stale sources rather than guessing/double-counting. Keep selected confirmed/potential totals separate and preserve local omissions.
 5. **Transactional read adapter:** load measurement, all children, catalog items+groups and version/receipt tokens as **one coherent SQLDelight transaction**; do not combine unrelated hot Flows, leak stale values or modify database. Version/source signature must support later P4C revalidation.
@@ -42,6 +42,14 @@ The v14 history adapter refuses unverifiable leaf coverage with `PROVENANCE_MISS
 - No automatic price lookup by title, fuzzy matching, default prices, implicit rounding, or double-counting source UUIDs.
 - Preserve previously merged P3C5 Android/Windows/iOS interactions and their CI; avoid unrelated refactors.
 - Decimal input bug [#106](https://github.com/aleks-nl5/andrey-ceilings-android/issues/106) is a **separate** shared KMP/CMP task, not scope creep in this PR. Geometry bidirectional editor remains [#70](https://github.com/aleks-nl5/andrey-ceilings-android/issues/70).
+
+## Review correction checklist (07.11.2026)
+
+- [x] Mandatory base pair per selected live ceiling; missing/invalid/discussing/excluded base blocks full and partial, zero prices valid.
+- [x] Empty/project-only/extras-only/advisory-only documents are not ready; frozen roles need verified proof.
+- [x] Close barrier read/verify concurrency + failure/cancellation regression passed on JDBC; physical Windows proof is wired into fresh CI; no new admission during drain.
+- [x] Mixed advisory live/frozen same provenance allowed; selecting both is rejected in either source order.
+- [ ] Fresh same-head Android/Windows/iOS CI and PR/issue evidence; repeat review and owner approval pending.
 
 ## Done when
 

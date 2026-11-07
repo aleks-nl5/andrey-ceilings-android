@@ -7,6 +7,7 @@ import com.andreyceilings.shared.measurement.*
 import java.nio.file.Files
 import java.util.concurrent.*
 import kotlin.test.*
+import kotlinx.coroutines.*
 
 class LivePricingReaderTest {
     @Test fun walSnapshotNeverMixesChildAndCatalogFromDifferentCommits() {
@@ -17,6 +18,64 @@ class LivePricingReaderTest {
         if (!System.getProperty("os.name").startsWith("Windows", ignoreCase = true)) return
         val key = ByteArray(32) { 37 }
         try { coherentRead { SqlCipherWindowsDriverFactory.open(it, key) } } finally { key.fill(0) }
+    }
+
+    @Test fun closeDrainsPausedTransactionsAndRejectsNewReads() {
+        closingRead { JdbcSqliteDriver("jdbc:sqlite:${it.absolutePath}") }
+    }
+
+    @Test fun windowsCipherCloseDrainsPausedTransactions() {
+        if (!System.getProperty("os.name").startsWith("Windows", ignoreCase = true)) return
+        val key = ByteArray(32) { 38 }
+        try { closingRead { SqlCipherWindowsDriverFactory.open(it, key) } } finally { key.fill(0) }
+    }
+
+    private fun closingRead(open: (java.io.File) -> SqlDriver) = runBlocking {
+        for (failRead in listOf(false, true)) for (cancelClose in listOf(false, true)) for (verify in listOf(false, true)) {
+            val directory = Files.createTempDirectory("p4a-close-").toFile()
+            val executor = Executors.newSingleThreadExecutor()
+            val entered = CountDownLatch(1)
+            val release = CountDownLatch(1)
+            try {
+                open(directory.resolve("close.db")).use { driver ->
+                    PriceCatalogSchema.create(driver)
+                    val fixture = LivePricingProof.seed(PrototypeDatabase(driver))
+                    var queries = 0
+                    val paused = object : SqlDriver by driver {
+                        override fun <R> executeQuery(identifier: Int?, sql: String, mapper: (SqlCursor) -> QueryResult<R>, parameters: Int,
+                            binders: (SqlPreparedStatement.() -> Unit)?): QueryResult<R> {
+                            queries++
+                            val value = driver.executeQuery(identifier, sql, mapper, parameters, binders)
+                            if (sql.contains("FROM projects")) {
+                                entered.countDown()
+                                check(release.await(20, TimeUnit.SECONDS))
+                                if (failRead) error("Injected read failure after close began")
+                            }
+                            return value
+                        }
+                    }
+                    val reader = LivePricingReader(PrototypeDatabase(paused))
+                    val inFlight = executor.submit<Any> {
+                        if (verify) reader.verifyFrozenRevision(fixture.projectId, "missing", "missing")
+                        else reader.read(fixture.projectId, fixture.measurementUuid)
+                    }
+                    assertTrue(entered.await(20, TimeUnit.SECONDS))
+                    val close = launch(start = CoroutineStart.UNDISPATCHED) { reader.closeReads() }
+                    assertFalse(close.isCompleted) // Admission closed, physical read still owns the DB.
+                    if (cancelClose) close.cancel()
+                    val before = queries
+                    assertEquals(PricingReadResult.Unavailable(PricingProblemCode.DATABASE_UNAVAILABLE), reader.read(fixture.projectId, fixture.measurementUuid))
+                    assertEquals(PricingProblemCode.DATABASE_UNAVAILABLE, reader.verifyFrozenRevision(fixture.projectId, "s", "r"))
+                    assertEquals(before, queries)
+                    assertFalse(close.isCompleted)
+                    release.countDown()
+                    close.join() // Owner can now replace/close the driver safely, even after cancellation.
+                    assertEquals(if (verify) PricingProblemCode.DATABASE_UNAVAILABLE else
+                        PricingReadResult.Unavailable(PricingProblemCode.DATABASE_UNAVAILABLE), inFlight.get(20, TimeUnit.SECONDS))
+                    assertEquals(PricingReadResult.Unavailable(PricingProblemCode.DATABASE_UNAVAILABLE), reader.read(fixture.projectId, fixture.measurementUuid))
+                }
+            } finally { release.countDown(); executor.shutdownNow(); directory.deleteRecursively() }
+        }
     }
 
     private fun coherentRead(open: (java.io.File) -> SqlDriver) {
@@ -66,7 +125,7 @@ class LivePricingReaderTest {
                 assertNotEquals(before.source.signature, after.source.signature)
                 assertNotEquals(before.catalog.signature, after.catalog.signature)
                 val closing = LivePricingReader(db)
-                closing.closeReads() // JDBC may reopen a connection: session lifecycle must be explicit.
+                runBlocking { closing.closeReads() } // JDBC may reopen a connection: session lifecycle must be explicit.
                 readDriver.close()
                 assertEquals(PricingReadResult.Unavailable(PricingProblemCode.DATABASE_UNAVAILABLE), closing.read(fixture.projectId, fixture.measurementUuid))
             }

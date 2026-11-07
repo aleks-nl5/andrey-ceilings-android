@@ -110,7 +110,7 @@ object LivePricingEngine {
                     ElementQuantity.CeilingArea -> QuantityOrigin.CAPTURED_AREA
                     ElementQuantity.CeilingPerimeter -> QuantityOrigin.CAPTURED_PERIMETER
                     else -> QuantityOrigin.DECLARED_EXACT
-                }, e.approval.bucket(), flags, override?.note)
+                }, e.approval.bucket(), flags, override?.note, role)
         }
         var confirmed = 0L
         var potential = 0L
@@ -118,12 +118,14 @@ object LivePricingEngine {
             priced.forEach { if (it.bucket == PricingBucket.CONFIRMED) confirmed = PricingMath.add(confirmed, it.totalCents)
                 else potential = PricingMath.add(potential, it.totalCents) }
         } catch (_: PricingOverflow) { fail(PricingProblemCode.OVERFLOW); confirmed = 0; potential = 0 }
+        val businessRoles = catalogElements.mapNotNull { e -> roles?.roles?.get(e.uuid)?.let { e.uuid to it } }.toMap()
+        val mandatory = mandatoryRoleProblems(source.measurementUuid, businessRoles.values.toList(), priced)
         val signature = contentToken(listOf(sourceSignature, catalogSignature, compositionUuid, scopeSignature,
             contentToken(roles?.roles.orEmpty().entries.sortedBy { it.key }.flatMap { listOf(it.key, it.value.name) }),
             pricingJson.encodeToString(overrides.sortedBy { it.measurementElementUuid })))
         return LiveEstimatePreview(source.projectUuid, source.measurementUuid, compositionUuid, sourceSignature, catalogSignature, scopeSignature,
             signature, priced, unresolved, fatal.distinct().sortedWith(compareBy({ it.sourceKey.orEmpty() }, { it.code.name })),
-            warnings.distinct().sortedWith(compareBy({ it.sourceKey.orEmpty() }, { it.code.name })), confirmed, potential)
+            warnings.distinct().sortedWith(compareBy({ it.sourceKey.orEmpty() }, { it.code.name })), confirmed, potential, businessRoles, mandatory)
     }
 
     private fun validatePlacements(source: LiveEstimateSource, fatal: MutableList<PricingProblem>) {
