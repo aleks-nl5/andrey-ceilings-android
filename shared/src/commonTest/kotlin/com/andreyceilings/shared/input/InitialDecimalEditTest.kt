@@ -49,16 +49,17 @@ class InitialDecimalEditTest {
         assertEquals(TextRange(0, 3), normalizeInitialDecimalEdit(TextFieldValue(""), spanning, true).composition)
     }
 
-    @Test fun deletionCaretMovementAndNoninitialEditsAreUnchanged() {
+    @Test fun deletionRestoresZeroAndCaretMovementDoesNotChangeText() {
+        assertEquals(TextFieldValue("0.5", TextRange(1)), normalizeInitialDecimalEdit(
+            TextFieldValue("0.5", TextRange(1)), TextFieldValue(".5", TextRange(0))))
+        assertEquals(TextFieldValue("-0.5", TextRange(2)), normalizeInitialDecimalEdit(
+            TextFieldValue("-0.5", TextRange(2)), TextFieldValue("-.5", TextRange(1)), true))
         for ((before, next) in listOf(
-            TextFieldValue("0.5", TextRange(1)) to TextFieldValue(".5", TextRange(0)),
-            TextFieldValue("-0.5", TextRange(2)) to TextFieldValue("-.5", TextRange(1)),
             TextFieldValue("2.5", TextRange(3)) to TextFieldValue("2.5", TextRange(1)),
             TextFieldValue("0.5", TextRange(3), TextRange(0, 3)) to
                 TextFieldValue("0.5", TextRange(2), TextRange(1, 3)),
             TextFieldValue("2.5", TextRange(2, 3)) to TextFieldValue("2.7", TextRange(3)),
-            TextFieldValue("0.", TextRange(2)) to TextFieldValue("0.5", TextRange(3)),
-            TextFieldValue(".5", TextRange(2)) to TextFieldValue(".50", TextRange(3)))) {
+            TextFieldValue("0.", TextRange(2)) to TextFieldValue("0.5", TextRange(3)))) {
             assertSame(next, normalizeInitialDecimalEdit(before, next, true))
         }
     }

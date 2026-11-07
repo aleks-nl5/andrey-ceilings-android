@@ -8,7 +8,7 @@
 
 **Owner UX revision 07.11.2026:** [approved correction](https://github.com/aleks-nl5/andrey-ceilings-android/pull/111#issuecomment-6710030092) supersedes the earlier instruction to retain a literal leading separator in the UI. Users still do not type the initial zero: entering `.` or `,` displays `0.` or `0,` immediately, then typing `5` displays `0.5` or `0,5`. Initial paste `.007`/`,007` displays `0.007`/`0,007`. Signed `-.`/`-,` displays `-0.`/`-0,` only where negatives are already legal.
 
-Apply this once to an edit that introduces a leading separator, including selection replacement and the comma action. Preserve selection/caret and map IME composition ranges around the inserted zero. Do not reinsert text after deletion, rewrite an existing number or normalize a cursor-only event. Deliver only the normalized value to the parent so its echo cannot revert the editor.
+After any text edit, including deletion and whole-value replacement, restore a display zero before a leading separator; clearing the field remains possible. Preserve selection/caret and map IME composition ranges around the inserted zero. Cursor-only events leave text untouched. Deliver only the normalized value to the parent so its echo cannot revert the editor.
 
 `0.`/`0,`/`-0.`/`-0,` remain PARTIAL, with Save/calculation disabled and no stale total. This is display normalization, not a numerical zero or a domain-parser change. Domain APIs still accept `.5`/`,5` and allowed signed/three-decimal values. Integer `шт.` controls hide the separator action and use a number keyboard; fractional quantities remain invalid.
 

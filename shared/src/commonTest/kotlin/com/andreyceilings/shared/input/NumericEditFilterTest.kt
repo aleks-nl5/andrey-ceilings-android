@@ -22,12 +22,23 @@ class NumericEditFilterTest {
         val before = TextFieldValue("12.5", TextRange(0, 2))
         assertEquals(before, filterNumericEdit(before, TextFieldValue("abc.5", TextRange(3))))
         assertEquals("3.5", filterNumericEdit(before, TextFieldValue("a3x.5", TextRange(3))).text)
-        assertEquals(".5", filterNumericEdit(before, TextFieldValue(".5", TextRange(0))).text)
+        assertEquals("0.5", filterNumericEdit(before, TextFieldValue(".5", TextRange(0))).text)
         val empty = TextFieldValue("")
         assertEquals(empty, filterNumericEdit(empty, TextFieldValue("abc", TextRange(3))))
         val signedAll = TextFieldValue("-0.5", TextRange(0, 4))
         assertEquals("0.5", filterNumericEdit(signedAll, TextFieldValue("..5", TextRange(3)), signed = true).text)
         assertEquals(signedAll, filterNumericEdit(signedAll, TextFieldValue("abc", TextRange(3)), signed = true))
+    }
+
+    @Test fun deletionAndFullReplacementKeepLeadingZeroAndAllowClearing() {
+        val deleted = filterNumericEdit(TextFieldValue("0.5", TextRange(1)), TextFieldValue(".5", TextRange(0), TextRange(0, 2)))
+        assertEquals(TextFieldValue("0.5", TextRange(1), TextRange(1, 3)), deleted)
+        assertEquals(TextFieldValue("0.5", TextRange(3)), filterNumericEdit(
+            TextFieldValue("2.5", TextRange(3)), TextFieldValue(".5", TextRange(2))))
+        assertEquals(TextFieldValue("-0.5", TextRange(2), TextRange(2, 4)), filterNumericEdit(
+            TextFieldValue("-0.5", TextRange(2)), TextFieldValue("-.5", TextRange(1), TextRange(1, 3)), signed = true))
+        assertEquals(TextFieldValue("", TextRange(0)), filterNumericEdit(
+            TextFieldValue("0.5", TextRange(0, 3)), TextFieldValue("", TextRange(0))))
     }
 
     @Test fun separatorsSignsAndUnicodeRespectTheUnselectedText() {

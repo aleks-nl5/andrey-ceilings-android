@@ -47,6 +47,11 @@ class DecimalInputTouchTest {
             field.performTextInput("5")
             assertInput("0.5").assertIsFocused()
             compose.onNodeWithText("Зберегти").assertIsEnabled()
+            field.performTextInputSelection(TextRange(1))
+            field.performKeyInput { keyDown(Key.Backspace); keyUp(Key.Backspace) }
+            assertInput("0.5").assertIsFocused()
+            field.assert(SemanticsMatcher.expectValue(SemanticsProperties.TextSelectionRange, TextRange(1)))
+            field.performTextInputSelection(TextRange(3))
             field.performKeyInput { keyDown(Key.Backspace); keyUp(Key.Backspace) }
             assertInput("0.").assertIsFocused()
             compose.onNodeWithText("Зберегти").assertIsNotEnabled()

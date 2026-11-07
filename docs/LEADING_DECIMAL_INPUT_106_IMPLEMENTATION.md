@@ -13,7 +13,7 @@ allowed. Domain parsers still decide positivity, bounds, units, geometry and sav
 
 The [owner UX revision](https://github.com/aleks-nl5/andrey-ceilings-android/pull/111#issuecomment-6710030092) replaces the earlier literal-leading-separator display contract. `InitialDecimalEdit.kt::normalizeInitialDecimalEdit` inserts one display zero before a newly entered leading separator: `.` → `0.`, `,` → `0,`, paste `.007` → `0.007`; signed `-.`/`-,` → `-0.`/`-0,` where signed input is legal. This shared `TextFieldValue` transformation is independent of commit parsers and fractional precision.
 
-The normalizer uses the previous selection (including whole-value replacement) or the changed text span to detect an inserted leading separator. It maps selection and IME composition endpoints around the zero and emits only the normalized value. Echo recompositions do not rewrite it. Cursor-only changes, edits inside an existing number, and deletion/backspace do not trigger a new zero insertion. Existing `2.5` stays `2.5`.
+The normalizer restores the display zero after any text edit that leaves a leading separator, including deletion and whole-value replacement. It maps selection and IME composition endpoints around the zero and emits only the normalized value. Echo recompositions and cursor-only changes do not rewrite it; clearing the field remains possible. Existing `2.5` stays `2.5`.
 
 `DecimalInputField`, measurement create/edit `MeasurementLengthField`, full/quick `PriceEditorDialog`, and all legacy Android calculator decimal fields use this helper for typing/paste and separator actions. A comma replaces the current selection instead of appending behind the caret. Integer-only element quantities/ranges (`шт.`) and the four legacy piece-count fields use `allowDecimalSeparator=false`: no comma action, number keyboard, unchanged integral domain validation.
 
@@ -46,7 +46,7 @@ Phone/contact text and read-only numeric displays are not decimal domain editors
 ## Verification
 
 - Common tests cover insertion/paste/replacement, reversed selection and IME composition ranges,
-  unchanged deletion/caret events, both separators, partial text, signs, malformed input,
+  deletion normalization and caret events, both separators, partial text, signs, malformed input,
   price precision, integer pieces, bounds/overflow, measurement grid and circle
   even-mm rules. Existing parser regression suites remain enabled.
 - Desktop `DecimalInputSceneTest` covers initial-zero display, selection, focus, separator
