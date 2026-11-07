@@ -1,5 +1,6 @@
 package com.andreyceilings.shared.db
 
+import app.cash.sqldelight.db.use
 import com.yet.sqlcipher.*
 import kotlinx.coroutines.runBlocking
 import kotlin.random.Random

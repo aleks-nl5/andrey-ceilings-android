@@ -70,18 +70,18 @@ class PointPlacementSqlCipherTest {
         val password = "point-backup-fixture".toCharArray()
         context.deleteDatabase(name); context.deleteDatabase(copyName)
         try {
-            for (version in listOf(8, 9, 10, 11, 12, 13, 14)) {
+            for (version in listOf(8, 9, 10, 11, 12, 13, 14, 15)) {
                 context.deleteDatabase(name); context.deleteDatabase(copyName)
                 lateinit var f: PointPlacementProof.Fixture
                 lateinit var expectedPoints: List<PointPlacement>
                 var expectedAreas=emptyList<AreaFeature>()
-                val sourceDriver = if (version < 14) AndroidSqliteDriver(when(version){8->PointPositionMigrationProof.v8Schema;9->WallAnchorMigrationProof.v9Schema;10->WallAnchorMigrationProof.v10Schema;12->AreaFeatureMigrationProof.v12Schema;13->CeilingReceiptMigrationProof.v13Schema;else->LinePlacementMigrationProof.v11Schema}, context, name,
+                val sourceDriver = if (version < 15) AndroidSqliteDriver(when(version){8->PointPositionMigrationProof.v8Schema;9->WallAnchorMigrationProof.v9Schema;10->WallAnchorMigrationProof.v10Schema;12->AreaFeatureMigrationProof.v12Schema;13->CeilingReceiptMigrationProof.v13Schema;14->BusinessRoleMigrationProof.v14Schema;else->LinePlacementMigrationProof.v11Schema}, context, name,
                     factory = SupportOpenHelperFactory(key.copyOf(), null, true))
                     else createEncryptedPrototypeDriver(context, key, name, enableWalForTesting = true, initializePriceCatalog = true)
                 sourceDriver.use { driver ->
                     driver.executeQuery(null, "SELECT count(*) FROM sqlite_master", { cursor -> cursor.next(); QueryResult.Value(cursor.getLong(0)) }, 0).value
                     assertEquals(version.toLong(), PriceNameUniquenessProof.scalar(driver, "PRAGMA user_version"))
-                    val db = PrototypeDatabase(driver)
+                    val db = if (version < 15) historicalElementDatabase(driver) else PrototypeDatabase(driver)
                     com.andreyceilings.shared.prices.StarterPriceCatalog.initialize(db)
                     f = if(version==9) WallAnchorMigrationProof.populateV9(driver) else PointPlacementProof.fixture(db)
                     if (version == 8) {
