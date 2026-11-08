@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.runtime.*
 import androidx.compose.ui.test.*
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.unit.dp
 import androidx.test.core.app.ApplicationProvider
@@ -37,7 +38,9 @@ class SavedIndividualQuoteTouchTest {
                     PaddingValues(16.dp), 0.dp, {})
             } }
             compose.waitUntil(10000) { presenter.state.value.amounts != null }
-            compose.onNode(hasSetTextAction() and hasText("Назва кошторису")).performScrollTo().assertTextContains("Room")
+            val titleField = hasSetTextAction() and hasText("Назва кошторису")
+            compose.onNode(SemanticsMatcher.keyIsDefined(SemanticsActions.ScrollToIndex)).performScrollToNode(titleField)
+            compose.onNode(titleField).assertTextContains("Room")
                 .performTextReplacement("Proposal")
             compose.onNodeWithText("Зберегти кошторис").performScrollTo().performClick()
             compose.waitUntil(10000) { presenter.saveState.value.resultSeriesUuid != null }
@@ -45,7 +48,9 @@ class SavedIndividualQuoteTouchTest {
             val history = ImmutableEstimateRepository(db)
             val before = history.frozenIndividual(id)!!
             assertEquals("Proposal", com.andreyceilings.shared.estimate.decodeFrozenIndividualEstimate(before.payload).title)
-            compose.onNodeWithText("Погоджено").performScrollTo().performClick()
+            compose.onNode(SemanticsMatcher.keyIsDefined(SemanticsActions.ScrollToIndex) and hasAnyAncestor(isDialog()))
+                .performScrollToNode(hasText("Погоджено"))
+            compose.onNodeWithText("Погоджено").performClick()
             compose.waitUntil(10000) { history.frozenIndividual(id)?.status == "APPROVED" }
             assertEquals(before.payload, history.frozenIndividual(id)!!.payload)
             assertEquals(1, history.revisions(id).size)
