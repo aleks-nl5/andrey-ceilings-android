@@ -1,11 +1,13 @@
 package com.andreyceilings.desktop
 
 import androidx.compose.runtime.*
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.ui.ImageComposeScene
 import androidx.compose.ui.semantics.*
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.dp
 import com.andreyceilings.shared.livepricing.*
 import com.andreyceilings.shared.measurement.*
 import com.andreyceilings.shared.theme.CeilingsTheme
@@ -61,7 +63,8 @@ class TransientQuoteSceneTest {
         CeilingsTheme(dark) {
             val state by presenter.state.collectAsState()
             MeasurementQuoteContent(state, {}, {}, presenter::select, presenter::editQuantity, presenter::confirmQuantity,
-                presenter::resetQuantity, presenter::editDiscount, presenter::confirmDiscount, presenter::acknowledge)
+                presenter::resetQuantity, presenter::editDiscount, presenter::confirmDiscount, presenter::acknowledge,
+                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 84.dp))
         }
     }
     private var time = 0L

@@ -10,6 +10,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
@@ -52,10 +53,13 @@ fun MeasurementQuoteContent(state: TransientQuoteState, onBack: () -> Unit, onRe
     onDiscount: (String) -> Unit, onConfirmDiscount: () -> Unit, onAcknowledge: (Boolean) -> Unit,
     contentPadding: PaddingValues = PaddingValues(16.dp), systemTopInset: Dp = 0.dp) {
     val list = rememberLazyListState()
-    val visibility by remember { derivedStateOf {
+    // Hosts reserve bottom space for their floating navigation/system bars. It is not
+    // unobscured viewport, even while a lazy item is temporarily laid out behind it.
+    val obscuredBottom = with(LocalDensity.current) { contentPadding.calculateBottomPadding().roundToPx() }
+    val visibility by remember(list, obscuredBottom) { derivedStateOf {
         val layout = list.layoutInfo
         layout.visibleItemsInfo.find { it.key == "quote-final-summary" }?.let {
-            quoteSummaryVisibility(it.offset, it.size, layout.viewportStartOffset, layout.viewportEndOffset)
+            quoteSummaryVisibility(it.offset, it.size, layout.viewportStartOffset, layout.viewportEndOffset - obscuredBottom)
         } ?: 0f
     } }
     // Compose's animation clock observes MotionDurationScale, including the platform zero-motion setting.
