@@ -48,8 +48,9 @@ class TransientQuoteSceneTest {
                 scene.reveal { it.config.getOrNull(SemanticsProperties.Text).orEmpty().any { t -> t.text == "Підсумок" } }
                 scene.frame()
                 assertEquals(1, scene.nodes().count { it.config.getOrNull(SemanticsProperties.Text).orEmpty().any { t -> t.text == amount } })
-                scene.scroll(-100000f); scene.frame()
-                assertTrue(scene.text().contains(amount))
+                scene.scroll(-100000f)
+                scene.await { scene.text().contains(amount) }
+                assertEquals(1, scene.nodes().count { it.config.getOrNull(SemanticsProperties.Text).orEmpty().any { t -> t.text == amount } })
                 presenter.acceptRead(presenter.beginRead(), PricingReadResult.Unavailable(PricingProblemCode.DATABASE_UNAVAILABLE))
                 scene.frame(); assertFalse(scene.text().contains(amount))
             } finally { scene.close() }
@@ -65,7 +66,16 @@ class TransientQuoteSceneTest {
     }
     private var time = 0L
     private fun ImageComposeScene.frame() {
-        repeat(3) { time += 250_000_000; Snapshot.sendApplyNotifications(); render(time).close() }
+        repeat(3) {
+            time += 250_000_000
+            Snapshot.sendApplyNotifications(); render(time).close()
+            // Scroll semantics and StateFlow collection dispatch work between rendered frames.
+            Thread.sleep(10)
+        }
+    }
+    private fun ImageComposeScene.await(predicate: () -> Boolean) {
+        repeat(30) { frame(); if (predicate()) return }
+        fail("Quote state did not settle after rendering queued frames")
     }
     private fun ImageComposeScene.nodes(): List<SemanticsNode> {
         fun flatten(node: SemanticsNode): List<SemanticsNode> = listOf(node) + node.children.flatMap(::flatten)

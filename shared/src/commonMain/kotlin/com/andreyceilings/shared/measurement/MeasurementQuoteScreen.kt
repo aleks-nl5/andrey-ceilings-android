@@ -60,6 +60,9 @@ fun MeasurementQuoteContent(state: TransientQuoteState, onBack: () -> Unit, onRe
     } }
     // Compose's animation clock observes MotionDurationScale, including the platform zero-motion setting.
     val handoff by animateFloatAsState(visibility, tween(180))
+    // Accessibility follows measured visibility immediately: a virtualized bottom item can
+    // disappear before the reverse fade has finished, and must not leave the total unannounced.
+    val bottomOwnsSemantics = visibility >= 0.5f
     val amount = state.amounts?.let { measurementMoney(it.finalCents) } ?: "Сума недоступна / Перевірте замір"
     val partial = state.preview?.isPartial == true
     val source = state.source
@@ -73,7 +76,7 @@ fun MeasurementQuoteContent(state: TransientQuoteState, onBack: () -> Unit, onRe
         // Reserved height prevents a scroll jump when ownership passes to the bottom summary.
         Box(Modifier.fillMaxWidth().height(80.dp).padding(horizontal = 16.dp)
             .graphicsLayer { alpha = 1f - handoff; translationY = -12f * handoff }
-            .then(if (handoff >= 0.5f) Modifier.clearAndSetSemantics {} else Modifier)) {
+            .then(if (bottomOwnsSemantics) Modifier.clearAndSetSemantics {} else Modifier)) {
             Column {
                 Text(amount, style = MaterialTheme.typography.titleLarge, maxLines = 2, overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
@@ -145,7 +148,7 @@ fun MeasurementQuoteContent(state: TransientQuoteState, onBack: () -> Unit, onRe
             }
             item(key = "quote-final-summary") {
                 Card(Modifier.fillMaxWidth().graphicsLayer { alpha = handoff; translationY = (1f - handoff) * 20f }
-                    .then(if (handoff < 0.5f) Modifier.clearAndSetSemantics {} else Modifier)) {
+                    .then(if (!bottomOwnsSemantics) Modifier.clearAndSetSemantics {} else Modifier)) {
                     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Text("Підсумок", style = MaterialTheme.typography.titleMedium)
                         state.amounts?.let {

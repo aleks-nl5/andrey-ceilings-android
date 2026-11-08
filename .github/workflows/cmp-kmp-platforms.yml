@@ -80,5 +80,8 @@ jobs:
 
       # All original targets are retained while one Gradle invocation avoids
       # redundant startup and repeated configuration.
+      - name: Verify transient quote CMP scenes
+        run: gradle --no-daemon :desktopApp:test --tests "com.andreyceilings.desktop.TransientQuoteSceneTest" --stacktrace --warning-mode all
+
       - name: Compile Windows Desktop and run shared JVM / SQLCipher CRUD tests
         run: gradle --no-daemon :desktopApp:compileKotlin :shared:jvmTest :desktopApp:test --stacktrace --warning-mode all
