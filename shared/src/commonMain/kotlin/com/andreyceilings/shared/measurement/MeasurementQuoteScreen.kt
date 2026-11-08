@@ -56,7 +56,7 @@ fun MeasurementQuoteScreen(presenter: TransientQuotePresenter, store: Measuremen
             if (!canSave && !saveState.saving) Text(when {
                 validEstimateTitle(actualTitle) == null -> "Вкажіть назву кошторису (1–160 символів)."
                 state.loading -> "Зачекайте завершення перевірки заміру та прайсу."
-                state.unavailable != null -> pricingProblemText(state.unavailable)
+                state.unavailable != null -> state.unavailable?.let(::pricingProblemText).orEmpty()
                 !state.discountConfirmed -> "Підтвердьте введену знижку."
                 state.edits.values.any { !it.confirmed } -> "Підтвердьте введені кількості."
                 state.preview?.canRequestPartialAcknowledgement == true && !state.acknowledged -> "Підтвердьте точний перелік неврахованих робіт."
