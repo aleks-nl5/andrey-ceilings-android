@@ -78,7 +78,7 @@ class PriceCatalogP1Test {
             PriceCatalogMigrationProof.assertOldPrice(driver)
             assertEquals(before, PriceCatalogMigrationProof.untouchedRows(driver))
             PriceCatalogSchema.migrate(driver, 4, 6)
-            PriceCatalogMigrationProof.assertReplaced(PrototypeDatabase(driver))
+            PriceCatalogMigrationProof.assertReplaced(historicalNumberDatabase(driver))
             assertEquals(before, PriceCatalogMigrationProof.untouchedRows(driver))
         }
     }

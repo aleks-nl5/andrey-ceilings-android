@@ -31,7 +31,7 @@ fun openDesktopPriceCatalog(driver: SqlDriver, previouslyExisting: Boolean) {
             "Існуюча SQLCipher БД має непідтримувану схему. Оновлення скасовано."
         }
         val priceColumns = columns("price_items")
-        val oldVersion = when {
+        val detectedVersion = when {
             "groupUuid" in priceColumns -> {
                 check("paymentStatus" in projectColumns && "quantityMode" in priceColumns &&
                     "placementKind" in priceColumns && "seedVersion" in columns("price_catalog_state")) {
@@ -75,6 +75,15 @@ fun openDesktopPriceCatalog(driver: SqlDriver, previouslyExisting: Boolean) {
             "category" in priceColumns -> if ("paymentStatus" in projectColumns) 4L else 3L
             else -> error("Непідтримувана структура прайсу. Оновлення скасовано.")
         }
+        val frozenParts = listOf("suffixLabel" in columns("estimate_number_settings"),
+            "publicNumber" in columns("estimate_series"), columns("estimate_v1_frozen").isNotEmpty(),
+            columns("estimate_workflow").isNotEmpty(), columns("estimate_save_receipts").isNotEmpty())
+        check(frozenParts.all { it } || frozenParts.none { it }) { "Partial frozen estimate schema" }
+        val oldVersion = if (frozenParts.all { it }) {
+            check(detectedVersion == 15L) { "Frozen estimates require business roles" }
+            verifyFrozenEstimateStructure(driver)
+            16L
+        } else detectedVersion
         check(persistedVersion < 8L || oldVersion >= persistedVersion) { "Incomplete point placement schema" }
         if (oldVersion < PriceCatalogSchema.version)
             PriceCatalogSchema.migrate(driver, oldVersion, PriceCatalogSchema.version)

@@ -17,6 +17,7 @@ object PriceCatalogSchema : SqlSchema<QueryResult.Value<Unit>> {
     fun verifyStructure(driver:SqlDriver,version:Long=this.version) {
         verifyMeasurementElementStructure(driver, version)
         verifyPointPlacementStructure(driver, version)
+        if (version >= 16) verifyFrozenEstimateStructure(driver)
     }
 
     override val version: Long get() = PrototypeDatabase.Schema.version
@@ -47,7 +48,7 @@ object PriceCatalogSchema : SqlSchema<QueryResult.Value<Unit>> {
         vararg callbacks: AfterVersion): QueryResult.Value<Unit> {
         // Old draft APKs distributed two exact v10 schemas. Unknown/partial/hybrid schemas
         // must fail BEFORE corrective DDL can accidentally repair away their evidence.
-        if(oldVersion in 8L..14L) {
+        if(oldVersion in 8L..15L) {
             verifyMeasurementElementStructure(driver, oldVersion)
             verifyPointPlacementStructure(driver,oldVersion)
         }

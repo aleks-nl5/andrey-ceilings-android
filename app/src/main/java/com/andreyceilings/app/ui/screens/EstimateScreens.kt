@@ -96,9 +96,36 @@ internal fun SaveEstimateDialog(
     )
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+/** Current documents are exclusively frozen P4C1 v1. Legacy records remain in a separate test archive. */
 @Composable
 internal fun EstimatesScreen(database: CeilingsDatabase?) {
+    var archive by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
+    EstimatesContent(database?.objectsClientsStore?.measurementDetails?.elements, onOpenArchive = { archive = true })
+    if (archive) androidx.compose.ui.window.Dialog(onDismissRequest = { archive = false },
+        properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)) {
+        Surface(Modifier.fillMaxSize()) { LegacyEstimatesArchiveScreen(database) { archive = false } }
+    }
+}
+
+@Composable
+internal fun EstimatesContent(store: com.andreyceilings.shared.measurement.MeasurementElementsStore?, onOpenArchive: () -> Unit) {
+    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(
+        start = 16.dp, end = 16.dp,
+        top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 72.dp,
+        bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 80.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        item {
+            Text("Кошториси", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+            Text("Збережені індивідуальні кошториси v1")
+        }
+        item(key = "saved-individual-v1") { com.andreyceilings.shared.estimate.SavedIndividualQuoteList(store) }
+        item { TextButton(onClick = onOpenArchive) { Text("Архів тестових кошторисів") } }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun LegacyEstimatesArchiveScreen(database: CeilingsDatabase?, onBack: () -> Unit) {
     val context = LocalContext.current
     val screenOpenedAt = remember(database) { SystemClock.elapsedRealtime() }
     val estimatesFlow = remember(database, context) {
@@ -150,9 +177,7 @@ internal fun EstimatesScreen(database: CeilingsDatabase?) {
     var previewSaving by remember(database) { mutableStateOf(false) }
     var previewLoading by remember(database) { mutableStateOf(false) }
     var renameText by remember { mutableStateOf("") }
-    val estimatesByProject = remember(estimates) { estimates.groupBy { it.projectId } }
     val projectsById = remember(projects) { projects.associateBy { it.id } }
-    val projectTotals = remember(estimatesByProject) { estimatesByProject.mapValues { (_, rows) -> rows.sumOf { it.totalCost } } }
     val pdfLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/pdf")) { uri ->
         val selected = pendingPdfEstimate
         pendingPdfEstimate = null
@@ -203,8 +228,9 @@ internal fun EstimatesScreen(database: CeilingsDatabase?) {
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         item {
-            Text("Кошториси", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-            Text("Збережені розрахунки та суми по кожному об’єкту", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            TextButton(onClick = onBack) { Text("До кошторисів") }
+            Text("Архів тестових кошторисів", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+            Text("Історичні тестові записи. Вони не входять до актуальних показників.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         if (database == null) {
             item {
@@ -212,21 +238,8 @@ internal fun EstimatesScreen(database: CeilingsDatabase?) {
                 Text("Захищена база ще відкривається або недоступна.")
             }
         } else if (estimates.isEmpty()) {
-            item { EmptyDataCard("Кошторисів поки немає. Відкрийте калькулятор, зробіть розрахунок і натисніть «Зберегти кошторис до об’єкта».") }
+            item { EmptyDataCard("Архів тестових кошторисів порожній.") }
         } else {
-            projects.forEach { project ->
-                val projectEstimates = estimatesByProject[project.id].orEmpty()
-                if (projectEstimates.isNotEmpty()) {
-                    item(key = "project-total-${project.id}") {
-                        Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
-                            Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                Text(project.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                                Text("Разом за збереженими кошторисами: ${money(projectTotals[project.id] ?: 0.0)}", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
-                            }
-                        }
-                    }
-                }
-            }
             items(estimates, key = { "estimate-${it.id}" }) { estimate ->
                 val project = projectsById[estimate.projectId]
                 Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {

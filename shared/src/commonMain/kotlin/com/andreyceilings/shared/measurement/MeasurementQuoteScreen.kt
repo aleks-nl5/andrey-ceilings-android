@@ -22,11 +22,16 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.text.style.TextOverflow
 import com.andreyceilings.shared.input.DecimalInputField
 import com.andreyceilings.shared.livepricing.*
+import com.andreyceilings.shared.estimate.*
+import androidx.compose.runtime.saveable.rememberSaveable
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.CancellationException
 
 @Composable
 fun MeasurementQuoteScreen(presenter: TransientQuotePresenter, store: MeasurementElementsStore,
     route: ElementRoute, contentPadding: PaddingValues, systemTopInset: Dp, onBack: () -> Unit) {
     var retry by remember { mutableIntStateOf(0) }
+    val saveState by presenter.saveState.collectAsState()
     // Route/configuration restoration may retain a living presenter. Invalidate readiness
     // before collecting its initial state, so its previous total cannot flash before revalidation.
     val initialRead = remember(presenter, store, route, retry) { presenter.beginRead() }
@@ -37,9 +42,34 @@ fun MeasurementQuoteScreen(presenter: TransientQuotePresenter, store: Measuremen
         }
     }
     val state by presenter.state.collectAsState()
-    MeasurementQuoteContent(state, onBack, { retry++ }, presenter::select, presenter::editQuantity,
+    MeasurementQuoteContent(state, { if (!presenter.saveState.value.saving) onBack() },
+        { if (!presenter.saveState.value.saving) retry++ }, presenter::select, presenter::editQuantity,
         presenter::confirmQuantity, presenter::resetQuantity, presenter::editDiscount,
-        presenter::confirmDiscount, presenter::acknowledge, contentPadding, systemTopInset)
+        presenter::confirmDiscount, presenter::acknowledge, contentPadding, systemTopInset,
+        editingEnabled = !saveState.saving && saveState.resultSeriesUuid == null,
+        saveFooter = {
+            val actualTitle = saveState.title.orEmpty()
+            val canSave = !saveState.saving && saveState.resultSeriesUuid == null && validEstimateTitle(actualTitle) != null && state.amounts != null &&
+                (state.preview?.canFinalizeFull == true || state.preview?.canRequestPartialAcknowledgement == true && state.acknowledged)
+            OutlinedTextField(actualTitle, presenter::editTitle, label = { Text("Назва кошторису") },
+                enabled = !saveState.saving, singleLine = true, isError = actualTitle.isNotEmpty() && validEstimateTitle(actualTitle) == null,
+                supportingText = { Text("Від 1 до 160 символів") }, modifier = Modifier.fillMaxWidth())
+            if (saveState.saving) Text("Зберігаємо зафіксований кошторис. Дочекайтеся завершення.")
+            saveState.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+            if (!canSave && !saveState.saving) Text(when {
+                validEstimateTitle(actualTitle) == null -> "Вкажіть назву кошторису (1–160 символів)."
+                state.loading -> "Зачекайте завершення перевірки заміру та прайсу."
+                state.unavailable != null -> state.unavailable?.let(::pricingProblemText).orEmpty()
+                !state.discountConfirmed -> "Підтвердьте введену знижку."
+                state.edits.values.any { !it.confirmed } -> "Підтвердьте введені кількості."
+                state.preview?.canRequestPartialAcknowledgement == true && !state.acknowledged -> "Підтвердьте точний перелік неврахованих робіт."
+                else -> "Сума недоступна. Перевірте склад і обов’язкові матеріали заміру."
+            })
+            Button(enabled = canSave, onClick = { store.submitQuote(presenter, route.projectId) }) {
+                Text(if (saveState.saving) "Зберігаю…" else "Зберегти кошторис")
+            }
+        })
+    saveState.resultSeriesUuid?.let { id -> SavedIndividualQuoteDialog(store, id) { presenter.consumeSaved(); onBack() } }
 }
 
 /** Pure visibility fraction: only the actual final-summary bounds and current viewport matter. */
@@ -54,7 +84,8 @@ fun MeasurementQuoteContent(state: TransientQuoteState, onBack: () -> Unit, onRe
     onSelect: (String, Boolean) -> Unit, onQuantity: (String, String) -> Unit,
     onConfirmQuantity: (String) -> Unit, onResetQuantity: (String) -> Unit,
     onDiscount: (String) -> Unit, onConfirmDiscount: () -> Unit, onAcknowledge: (Boolean) -> Unit,
-    contentPadding: PaddingValues = PaddingValues(16.dp), systemTopInset: Dp = 0.dp) {
+    contentPadding: PaddingValues = PaddingValues(16.dp), systemTopInset: Dp = 0.dp,
+    saveFooter: (@Composable () -> Unit)? = null, editingEnabled: Boolean = true) {
     val list = rememberLazyListState()
     // Hosts reserve bottom space for their floating navigation/system bars. It is not
     // unobscured viewport, even while a lazy item is temporarily laid out behind it.
@@ -77,7 +108,7 @@ fun MeasurementQuoteContent(state: TransientQuoteState, onBack: () -> Unit, onRe
     fun label(key: String) = source?.elements?.find { "element:${it.uuid}" == key }?.label ?: "Позиція заміру"
     Column(Modifier.fillMaxSize().padding(top = systemTopInset).imePadding()) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-            TextButton(onClick = onBack) { Text("До заміру") }
+            TextButton(onClick = onBack, enabled = editingEnabled) { Text("До заміру") }
             Text("Попередній кошторис", style = MaterialTheme.typography.titleMedium)
         }
         // Reserved height prevents a scroll jump when ownership passes to the bottom summary.
@@ -93,11 +124,11 @@ fun MeasurementQuoteContent(state: TransientQuoteState, onBack: () -> Unit, onRe
         LazyColumn(Modifier.weight(1f).fillMaxWidth(), state = list, contentPadding = contentPadding,
             verticalArrangement = Arrangement.spacedBy(12.dp)) {
             item {
-                Text("Лише для цього перегляду. Зміни зберігаються в пам’яті до виходу із заміру.")
+                Text("До явного збереження зміни залишаються в пам’яті до виходу із заміру.")
                 if (state.loading) { LinearProgressIndicator(Modifier.fillMaxWidth()); Text("Оновлення розрахунку…") }
                 state.unavailable?.let {
                     Text(pricingProblemText(it), color = MaterialTheme.colorScheme.error)
-                    TextButton(onClick = onRefresh) { Text("Оновити розрахунок") }
+                    TextButton(onClick = onRefresh, enabled = editingEnabled) { Text("Оновити розрахунок") }
                 }
                 (state.preview?.fatalProblems.orEmpty() + state.preview?.mandatoryProblems.orEmpty()).distinct().forEach {
                     Text(pricingProblemText(it.code), color = MaterialTheme.colorScheme.error)
@@ -111,7 +142,7 @@ fun MeasurementQuoteContent(state: TransientQuoteState, onBack: () -> Unit, onRe
                         Text(if (work.problems.isEmpty()) "Робота більше не доступна в цьому складі заміру."
                             else work.problems.joinToString("; ", transform = ::pricingProblemText))
                         Text("Сума недоступна до виправлення роботи або вашого явного виключення.")
-                        TextButton(onClick = { onSelect(work.sourceKey, false) }, enabled = source != null) {
+                        TextButton(onClick = { onSelect(work.sourceKey, false) }, enabled = editingEnabled && source != null) {
                             Text("Не включати «${work.label}»")
                         }
                     }
@@ -119,14 +150,14 @@ fun MeasurementQuoteContent(state: TransientQuoteState, onBack: () -> Unit, onRe
             }
             item { Text("Погоджені роботи", style = MaterialTheme.typography.titleMedium) }
             items(state.lines.filter { it.bucket == PricingBucket.CONFIRMED }, key = { it.sourceKey }) { row ->
-                QuoteLine(row, state, onSelect, onQuantity, onConfirmQuantity, onResetQuantity)
+                QuoteLine(row, state, onSelect, onQuantity, onConfirmQuantity, onResetQuantity, editingEnabled)
             }
             item {
                 Text("Обговорюється", style = MaterialTheme.typography.titleMedium)
                 Text("Додайте потрібну роботу явно. Це не змінює її погодження в замірі.")
             }
             items(state.lines.filter { it.bucket == PricingBucket.POTENTIAL }, key = { it.sourceKey }) { row ->
-                QuoteLine(row, state, onSelect, onQuantity, onConfirmQuantity, onResetQuantity)
+                QuoteLine(row, state, onSelect, onQuantity, onConfirmQuantity, onResetQuantity, editingEnabled)
             }
             val advisory = state.unresolved.filter { it.bucket == PricingBucket.POTENTIAL && it.sourceKey !in state.selected }
             if (advisory.isNotEmpty()) item {
@@ -142,7 +173,7 @@ fun MeasurementQuoteContent(state: TransientQuoteState, onBack: () -> Unit, onRe
                         else it.problems.joinToString("; ", transform = ::pricingProblemText))
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Checkbox(state.acknowledged, onAcknowledge, enabled = state.canAcknowledge,
+                    Checkbox(state.acknowledged, onAcknowledge, enabled = editingEnabled && state.canAcknowledge,
                         modifier = Modifier.semantics { contentDescription = "Підтверджую цей перелік неврахованих робіт" })
                     Text("Підтверджую цей перелік неврахованих робіт")
                 }
@@ -154,16 +185,16 @@ fun MeasurementQuoteContent(state: TransientQuoteState, onBack: () -> Unit, onRe
             }.forEach { id ->
                 item(key = "inactive-edit:$id") {
                     Text("Коригування «${label("element:$id") }» більше не відповідає включеній позиції. Приберіть його для розрахунку.")
-                    TextButton(onClick = { onResetQuantity(id) }) { Text("Прибрати коригування") }
+                    TextButton(onClick = { onResetQuantity(id) }, enabled = editingEnabled) { Text("Прибрати коригування") }
                 }
             }
             item {
                 DecimalInputField(state.discountText, onDiscount, "Загальна знижка, %",
-                    enabled = source != null, isError = QuoteDiscount.parseBasisPoints(state.discountText) == null)
+                    enabled = editingEnabled && source != null, isError = QuoteDiscount.parseBasisPoints(state.discountText) == null)
                 Text("Від 0 до 100%, до двох знаків після коми")
                 if (!state.discountConfirmed) {
                     Text("Підтвердьте знижку для нового підсумку")
-                    OutlinedButton(onClick = onConfirmDiscount, enabled = QuoteDiscount.parseBasisPoints(state.discountText) != null) {
+                    OutlinedButton(onClick = onConfirmDiscount, enabled = editingEnabled && QuoteDiscount.parseBasisPoints(state.discountText) != null) {
                         Text("Застосувати знижку")
                     }
                 }
@@ -182,6 +213,9 @@ fun MeasurementQuoteContent(state: TransientQuoteState, onBack: () -> Unit, onRe
                     }
                 }
             }
+            if (saveFooter != null) item(key = "quote-save") {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) { saveFooter() }
+            }
         }
     }
 }
@@ -189,7 +223,7 @@ fun MeasurementQuoteContent(state: TransientQuoteState, onBack: () -> Unit, onRe
 @Composable
 private fun QuoteLine(row: LiveEstimateLine, state: TransientQuoteState,
     onSelect: (String, Boolean) -> Unit, onQuantity: (String, String) -> Unit,
-    onConfirm: (String) -> Unit, onReset: (String) -> Unit) {
+    onConfirm: (String) -> Unit, onReset: (String) -> Unit, editingEnabled: Boolean) {
     val selected = row.sourceKey in state.selected
     val element = state.source?.elements?.find { it.uuid == row.elementUuid }
     val editable = element != null && state.source != null && BillableOverrideRules.eligible(state.source, element)
@@ -197,7 +231,7 @@ private fun QuoteLine(row: LiveEstimateLine, state: TransientQuoteState,
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Checkbox(selected, { onSelect(row.sourceKey, it) }, enabled = row.businessRole == BusinessRole.ADDITIONAL_WORK,
+                Checkbox(selected, { onSelect(row.sourceKey, it) }, enabled = editingEnabled && row.businessRole == BusinessRole.ADDITIONAL_WORK,
                     modifier = Modifier.semantics { contentDescription = "Включити ${element?.label ?: row.title}" })
                 Column(Modifier.weight(1f)) {
                     Text(element?.label ?: row.title, style = MaterialTheme.typography.titleSmall)
@@ -214,15 +248,16 @@ private fun QuoteLine(row: LiveEstimateLine, state: TransientQuoteState,
             if (editable && element != null && selected) {
                 DecimalInputField(edit?.text ?: formatElementMilli(row.effectiveBillableQuantityMilli),
                     { onQuantity(element.uuid, it) }, "Розрахункова кількість, ${row.unit}",
+                    enabled = editingEnabled,
                     isError = edit != null && TransientQuotePresenter.quantity(edit.text, row.unit) == null,
                     allowDecimalSeparator = row.unit !in setOf("шт.", "компл."))
                 if (edit != null) {
                     if (!edit.confirmed) {
                         Text("Підтвердьте кількість для нового підсумку")
                         OutlinedButton(onClick = { onConfirm(element.uuid) },
-                            enabled = TransientQuotePresenter.quantity(edit.text, row.unit) != null) { Text("Підтвердити кількість") }
+                            enabled = editingEnabled && TransientQuotePresenter.quantity(edit.text, row.unit) != null) { Text("Підтвердити кількість") }
                     }
-                    TextButton(onClick = { onReset(element.uuid) }) { Text("Повернути із заміру") }
+                    TextButton(onClick = { onReset(element.uuid) }, enabled = editingEnabled) { Text("Повернути із заміру") }
                 }
             } else if (selected && row.businessRole == BusinessRole.ADDITIONAL_WORK) Text("Кількість визначена заміром; коригування цієї роботи недоступне.")
         }

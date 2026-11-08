@@ -219,10 +219,42 @@ internal object PortableBackupManager {
                         "sum(lineTotalSnapshot) AS lineTotal " +
                         "FROM estimate_revision_lines GROUP BY revisionUuid) l " +
                         "ON l.revisionUuid = r.revisionUuid WHERE " +
-                        "l.lineCount IS NULL OR abs(r.totalCost - l.lineTotal) >= 0.01"
+                        "NOT EXISTS (SELECT 1 FROM estimate_v1_frozen f WHERE f.revisionUuid = r.revisionUuid) AND " +
+                        "(l.lineCount IS NULL OR abs(r.totalCost - l.lineTotal) >= 0.01)"
                 ) == 0L) {
                     "Суми або рядки історичних версій у резервній копії пошкоджені."
                 }
+
+                check(invalidRevisionRows("SELECT count(*) FROM estimate_number_settings WHERE typeof(nextSequence) != 'integer' OR nextSequence <= 0 OR typeof(sequenceWidth) != 'integer'") == 0L) {
+                    "Пошкоджені числові налаштування нумерації кошторисів."
+                }
+                com.andreyceilings.shared.db.verifyFrozenEstimateStructure(driver)
+                check(invalidRevisionRows(
+                    "SELECT count(*) FROM estimate_v1_frozen f JOIN estimate_revisions r USING(revisionUuid) " +
+                        "JOIN estimate_series s USING(seriesUuid) WHERE r.versionNumber != 1 OR s.publicNumber IS NULL " +
+                        "OR NOT EXISTS (SELECT 1 FROM estimate_workflow w WHERE w.seriesUuid = s.seriesUuid) " +
+                        "OR NOT EXISTS (SELECT 1 FROM estimate_save_receipts o WHERE o.seriesUuid = s.seriesUuid AND o.revisionUuid = r.revisionUuid)"
+                ) == 0L) { "Пошкоджені статус або квитанція кошторису v1." }
+                driver.executeQuery(null, "SELECT f.payload,f.subtotalCents,f.discountBasisPoints,f.discountCents,f.totalCents,s.publicNumber,s.projectId,s.measurementUuid " +
+                    "FROM estimate_v1_frozen f JOIN estimate_revisions r USING(revisionUuid) JOIN estimate_series s USING(seriesUuid)", { cursor ->
+                    while (cursor.next().value) {
+                        val frozen = com.andreyceilings.shared.estimate.decodeFrozenIndividualEstimate(checkNotNull(cursor.getString(0)))
+                        com.andreyceilings.shared.estimate.verifyFrozenStoredIdentity(frozen, checkNotNull(cursor.getLong(6)), cursor.getString(7), cursor.getString(5),
+                            checkNotNull(cursor.getLong(1)), checkNotNull(cursor.getLong(2)), checkNotNull(cursor.getLong(3)), checkNotNull(cursor.getLong(4)))
+                    }
+                    QueryResult.Unit
+                }, 0).value
+
+                driver.executeQuery(null, "SELECT o.operationUuid,o.command,f.payload FROM estimate_save_receipts o " +
+                    "JOIN estimate_v1_frozen f USING(revisionUuid) JOIN estimate_revisions r USING(revisionUuid) " +
+                    "WHERE o.seriesUuid = r.seriesUuid", { cursor ->
+                    while (cursor.next().value) {
+                        com.andreyceilings.shared.estimate.verifyFrozenSaveReceipt(checkNotNull(cursor.getString(0)), checkNotNull(cursor.getString(1)),
+                            com.andreyceilings.shared.estimate.decodeFrozenIndividualEstimate(checkNotNull(cursor.getString(2))))
+                    }
+                    QueryResult.Unit
+                }, 0).value
+                check(invalidRevisionRows("SELECT count(*) FROM estimate_save_receipts o JOIN estimate_revisions r USING(revisionUuid) WHERE o.seriesUuid != r.seriesUuid") == 0L)
 
                 // A valid FK can still link to a revision in a DIFFERENT
                 // document series. Require a complete parent/version chain,

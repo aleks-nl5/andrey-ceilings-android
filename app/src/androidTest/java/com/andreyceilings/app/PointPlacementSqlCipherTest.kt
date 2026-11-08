@@ -70,12 +70,12 @@ class PointPlacementSqlCipherTest {
         val password = "point-backup-fixture".toCharArray()
         context.deleteDatabase(name); context.deleteDatabase(copyName)
         try {
-            for (version in listOf(8, 9, 10, 11, 12, 13, 14, 15)) {
+            for (version in (listOf(8, 9, 10, 11, 12, 13, 14, 15) + PriceCatalogSchema.version.toInt()).distinct()) {
                 context.deleteDatabase(name); context.deleteDatabase(copyName)
                 lateinit var f: PointPlacementProof.Fixture
                 lateinit var expectedPoints: List<PointPlacement>
                 var expectedAreas=emptyList<AreaFeature>()
-                val sourceDriver = if (version < 15) AndroidSqliteDriver(when(version){8->PointPositionMigrationProof.v8Schema;9->WallAnchorMigrationProof.v9Schema;10->WallAnchorMigrationProof.v10Schema;12->AreaFeatureMigrationProof.v12Schema;13->CeilingReceiptMigrationProof.v13Schema;14->BusinessRoleMigrationProof.v14Schema;else->LinePlacementMigrationProof.v11Schema}, context, name,
+                val sourceDriver = if (version.toLong() < PriceCatalogSchema.version) AndroidSqliteDriver(when(version){8->PointPositionMigrationProof.v8Schema;9->WallAnchorMigrationProof.v9Schema;10->WallAnchorMigrationProof.v10Schema;12->AreaFeatureMigrationProof.v12Schema;13->CeilingReceiptMigrationProof.v13Schema;14->BusinessRoleMigrationProof.v14Schema;15->FrozenEstimateMigrationProof.v15Schema;11->LinePlacementMigrationProof.v11Schema;else->error("Unsupported historical fixture")}, context, name,
                     factory = SupportOpenHelperFactory(key.copyOf(), null, true))
                     else createEncryptedPrototypeDriver(context, key, name, enableWalForTesting = true, initializePriceCatalog = true)
                 sourceDriver.use { driver ->

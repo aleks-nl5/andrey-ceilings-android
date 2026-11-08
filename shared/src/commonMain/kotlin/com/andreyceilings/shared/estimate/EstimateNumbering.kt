@@ -7,21 +7,24 @@ package com.andreyceilings.shared.estimate
  * even when the printable template does not contain {uuid}. The UUID is
  * never part of the printable number or a customer-facing PDF.
  */
+@kotlinx.serialization.Serializable
 data class EstimateNumberPolicy(
-    val template: String = "{prefix}-{year}-{sequence}-{uuid}",
+    val template: String = "{prefix}-{year}-{sequence}-{suffix}",
     val prefix: String = "AC",
-    val sequenceWidth: Int = 5
+    val sequenceWidth: Int = 5,
+    val suffixLabel: String = ""
 )
 
 data class EstimateNumberContext(
     val seriesUuid: String,
     val year: Int,
-    val localSequence: Long
+    val localSequence: Long,
+    val publicToken: String = ""
 )
 
 /** Pure shared KMP numbering on Android, Windows and iOS. */
 object EstimateNumbering {
-    private val placeholders = setOf("prefix", "year", "sequence", "uuid")
+    private val placeholders = setOf("prefix", "year", "sequence", "uuid", "suffix")
     private val uuidV4 = Regex("^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
     private val uuidPart = Regex("[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}")
     private val templateToken = Regex("\\{([a-z]+)\\}")
@@ -60,12 +63,16 @@ object EstimateNumbering {
         if ("prefix" in names && !safePrefix.matches(policy.prefix)) {
             add("Prefix must contain 1–20 letters, digits, - or _")
         }
+        if (policy.suffixLabel.isNotEmpty() && !safePrefix.matches(policy.suffixLabel)) {
+            add("Suffix label must contain at most 20 letters, digits, - or _")
+        }
         if (policy.sequenceWidth !in 1..12) {
             add("Sequence width must be between 1 and 12")
         }
         val maxRenderedLength = policy.template.length - tokens.sumOf { it.value.length } +
             tokens.sumOf {
                 when (it.groupValues[1]) {
+                    "suffix" -> policy.suffixLabel.length + 11
                     "uuid" -> 36
                     "prefix" -> policy.prefix.length
                     "year" -> 4
@@ -93,7 +100,7 @@ object EstimateNumbering {
 
     /** Public preview only; it never shows or reserves an actual UUID. */
     fun preview(policy: EstimateNumberPolicy): String = printable(
-        render(policy, EstimateNumberContext("12345678-1234-4abc-8def-0123456789ab", 2026, 1))
+        render(policy, EstimateNumberContext("12345678-1234-4abc-8def-0123456789ab", 2026, 1, "K7Q2M8TR92"))
     )
 
     /**
@@ -124,8 +131,25 @@ object EstimateNumbering {
         return cleaned
     }
 
+    /** A separate random UUID, never the private series identity. 40 random bits. */
+    @OptIn(kotlin.uuid.ExperimentalUuidApi::class)
+    fun newPublicToken(): String = publicToken(kotlin.uuid.Uuid.random().toString())
+
+    fun publicToken(randomUuid: String): String {
+        require(uuidV4.matches(randomUuid.lowercase()))
+        return randomUuid.replace("-", "").take(10).uppercase()
+    }
+
+    fun validatePublic(policy: EstimateNumberPolicy): List<String> = validate(policy) + buildList {
+        if ("{suffix}" !in policy.template) add("Public template must contain {suffix}")
+        if ("{sequence}" !in policy.template) add("Public template must contain {sequence}")
+        if ("{uuid}" in policy.template) add("Public template must not contain UUID")
+    }
+
     private fun substitute(policy: EstimateNumberPolicy, context: EstimateNumberContext): String {
+        if ("{suffix}" in policy.template) require(Regex("^[A-Z0-9]{8,10}$").matches(context.publicToken))
         val values = mapOf(
+            "suffix" to listOf(policy.suffixLabel, context.publicToken).filter { it.isNotEmpty() }.joinToString("-"),
             "prefix" to policy.prefix,
             "year" to context.year.toString(),
             "sequence" to context.localSequence.toString().padStart(policy.sequenceWidth, '0'),

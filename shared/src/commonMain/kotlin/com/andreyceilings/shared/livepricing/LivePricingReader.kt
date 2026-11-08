@@ -57,23 +57,32 @@ class LivePricingReader(private val database: PrototypeDatabase) {
         return inSession<PricingReadResult>(PricingReadResult.Unavailable(PricingProblemCode.DATABASE_UNAVAILABLE)) {
             access {
                 database.transactionWithResult {
-                    if (closed) return@transactionWithResult PricingReadResult.Unavailable(PricingProblemCode.DATABASE_UNAVAILABLE)
+                    readInTransaction(projectId, measurementUuid, expectedSourceSignature, expectedCatalogSignature)
+                }
+            }
+        }
+    }
+
+    /** Caller owns physical admission, writer lock and the outer transaction. Never acquires a reader lease. */
+    internal fun readInTransaction(projectId: Long, measurementUuid: String,
+        expectedSourceSignature: String? = null, expectedCatalogSignature: String? = null): PricingReadResult = run {
+                    if (closed) return@run PricingReadResult.Unavailable(PricingProblemCode.DATABASE_UNAVAILABLE)
                     val project = ProjectRepository(database).find(projectId)
-                        ?: return@transactionWithResult PricingReadResult.Unavailable(PricingProblemCode.PARENT_UNAVAILABLE)
+                        ?: return@run PricingReadResult.Unavailable(PricingProblemCode.PARENT_UNAVAILABLE)
                     val measurement = MeasurementRepository(database).findByUuid(measurementUuid)?.takeIf { it.projectId == projectId }
-                        ?: return@transactionWithResult PricingReadResult.Unavailable(PricingProblemCode.PARENT_UNAVAILABLE)
+                        ?: return@run PricingReadResult.Unavailable(PricingProblemCode.PARENT_UNAVAILABLE)
                     val geometry = try { MeasurementGeometryCodec.read(measurement.drawingJson) }
-                        catch (_: IllegalArgumentException) { return@transactionWithResult PricingReadResult.Unavailable(PricingProblemCode.INVALID_GEOMETRY) }
+                        catch (_: IllegalArgumentException) { return@run PricingReadResult.Unavailable(PricingProblemCode.INVALID_GEOMETRY) }
                     if (geometry.shapeType != measurement.shape || geometry.areaSquareMeters != measurement.areaSquareMeters ||
                         geometry.perimeterMeters != measurement.perimeterMeters)
-                        return@transactionWithResult PricingReadResult.Unavailable(PricingProblemCode.INVALID_GEOMETRY)
+                        return@run PricingReadResult.Unavailable(PricingProblemCode.INVALID_GEOMETRY)
                     val elements = MeasurementElementRepository(database).forMeasurement(measurementUuid)
                     val walls = database.livePricingQueries.selectPricingWalls(measurementUuid).executeAsList()
                     val activeWalls = walls.filter { it.active == 1L }.sortedBy { it.ordinal }
                     if (activeWalls.size != geometry.vertices.size || activeWalls.withIndex().any { (i, wall) ->
                             val a = geometry.vertices[i]; val b = geometry.vertices[(i + 1) % geometry.vertices.size]
                             wall.ordinal != i.toLong() || wall.ax != a.xMm || wall.ay != a.yMm || wall.bx != b.xMm || wall.by_ != b.yMm || wall.geometryVersion != measurement.updatedAt
-                        }) return@transactionWithResult PricingReadResult.Unavailable(PricingProblemCode.INVALID_SOURCE)
+                        }) return@run PricingReadResult.Unavailable(PricingProblemCode.INVALID_SOURCE)
                     val receiptToken = database.livePricingQueries.selectPricingReceipts(measurementUuid).executeAsList().map { r ->
                         contentToken(listOf(r.uuid, r.expectedUpdatedAt.toString(), r.payload, r.createdAt.toString(),
                             r.measurementVersion.toString(), r.pointVersions.orEmpty(), r.elementVersions.orEmpty(), r.lineVersions.orEmpty(), r.areaVersions.orEmpty()))
@@ -82,7 +91,7 @@ class LivePricingReader(private val database: PrototypeDatabase) {
                         PointPlacementRepository(database).forMeasurement(measurementUuid),
                         LinePlacementRepository(database).forMeasurement(measurementUuid), AreaFeatureRepository(database).forMeasurement(measurementUuid),
                         activeWalls.map { CeilingWall(it.uuid, it.ordinal.toInt()) },
-                        mapOf("projectId" to projectId.toString(), "projectUpdatedAt" to project.updatedAt.toString(), "measurementUpdatedAt" to measurement.updatedAt.toString(),
+                        mapOf("measurementName" to measurement.name, "projectId" to projectId.toString(), "projectUpdatedAt" to project.updatedAt.toString(), "measurementUpdatedAt" to measurement.updatedAt.toString(),
                             "measurementMetadata" to contentToken(listOf(measurement.name, measurement.notes, measurement.drawingJson)),
                             "walls" to contentToken(walls.map { w -> contentToken(listOf(w.uuid, w.ordinal.toString(), w.ax.toString(), w.ay.toString(),
                                 w.bx.toString(), w.by_.toString(), w.geometryVersion.toString(), w.active.toString())) }),
@@ -98,9 +107,6 @@ class LivePricingReader(private val database: PrototypeDatabase) {
                         expectedCatalogSignature != null && catalog.signature != expectedCatalogSignature -> PricingReadResult.Unavailable(PricingProblemCode.STALE_CATALOG)
                         else -> PricingReadResult.Loaded(source, catalog)
                     }
-                }
-            }
-        }
     }
 
     /** Exact UUID lookup and ownership check, never latest revision and never repricing.

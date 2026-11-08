@@ -38,7 +38,7 @@ object CeilingReceiptMigrationProof {
     fun snapshot(driver:SqlDriver):List<List<String?>> {
         val tables=MeasurementElementMigrationProof.rows(driver,"SELECT name FROM sqlite_master WHERE type='table' ORDER BY name",1).map {it.single()!!}
         return tables.flatMap {t ->
-            val columns=driver.executeQuery(null,"PRAGMA table_info($t)",{c->val names=mutableListOf<String>();while(c.next().value)if (c.getString(1) != "businessRole") names+=c.getString(1)!!;QueryResult.Value(names)},0).value
+            val columns=driver.executeQuery(null,"PRAGMA table_info($t)",{c->val names=mutableListOf<String>();while(c.next().value)if (c.getString(1) != "businessRole" && !isP4C1AddedSnapshotColumn(t, c.getString(1)!!)) names+=c.getString(1)!!;QueryResult.Value(names)},0).value
             MeasurementElementMigrationProof.rows(driver,"SELECT "+columns.joinToString {"quote($it)"}+" FROM $t ORDER BY 1",columns.size).map {listOf(t)+it}
         }
     }

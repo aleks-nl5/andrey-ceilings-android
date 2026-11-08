@@ -64,7 +64,7 @@ object AreaFeatureMigrationProof {
             val result=mutableListOf<String>();while(c.next().value)result+=c.getString(0)!!;QueryResult.Value(result)
         },0).value
         return tables.flatMap {table ->
-            val cols=driver.executeQuery(null,"PRAGMA table_info($table)",{c ->val names=mutableListOf<String>();while(c.next().value)c.getString(1)?.takeUnless {it=="areaVersions" || it=="businessRole"}?.let(names::add);QueryResult.Value(names)},0).value
+            val cols=driver.executeQuery(null,"PRAGMA table_info($table)",{c ->val names=mutableListOf<String>();while(c.next().value)c.getString(1)?.takeUnless {it=="areaVersions" || it=="businessRole" || isP4C1AddedSnapshotColumn(table,it)}?.let(names::add);QueryResult.Value(names)},0).value
             MeasurementElementMigrationProof.rows(driver,"SELECT "+cols.joinToString {"quote($it)"}+" FROM $table ORDER BY 1",cols.size).map {listOf(table)+it}
         }
     }

@@ -1,0 +1,50 @@
+CREATE TABLE estimate_v1_frozen (
+    revisionUuid TEXT NOT NULL PRIMARY KEY REFERENCES estimate_revisions(revisionUuid) ON DELETE RESTRICT,
+    payload TEXT NOT NULL,
+    subtotalCents INTEGER NOT NULL CHECK (typeof(subtotalCents) = 'integer' AND subtotalCents >= 0),
+    discountBasisPoints INTEGER NOT NULL CHECK (typeof(discountBasisPoints) = 'integer' AND discountBasisPoints BETWEEN 0 AND 10000),
+    discountCents INTEGER NOT NULL CHECK (typeof(discountCents) = 'integer' AND discountCents >= 0 AND discountCents <= subtotalCents),
+    totalCents INTEGER NOT NULL CHECK (typeof(totalCents) = 'integer' AND totalCents = subtotalCents - discountCents)
+);
+CREATE TABLE estimate_workflow (
+    seriesUuid TEXT NOT NULL PRIMARY KEY REFERENCES estimate_series(seriesUuid) ON DELETE RESTRICT,
+    status TEXT NOT NULL CHECK (status IN ('DRAFT','SENT','APPROVED','REJECTED')),
+    version INTEGER NOT NULL CHECK (typeof(version) = 'integer' AND version > 0),
+    updatedAt INTEGER NOT NULL CHECK (typeof(updatedAt) = 'integer' AND updatedAt > 0)
+);
+CREATE TABLE estimate_save_receipts (
+    operationUuid TEXT NOT NULL PRIMARY KEY,
+    command TEXT NOT NULL,
+    seriesUuid TEXT NOT NULL UNIQUE REFERENCES estimate_series(seriesUuid) ON DELETE RESTRICT,
+    revisionUuid TEXT NOT NULL UNIQUE REFERENCES estimate_v1_frozen(revisionUuid) ON DELETE RESTRICT
+);
+
+insertFrozenV1:
+INSERT INTO estimate_v1_frozen VALUES (?, ?, ?, ?, ?, ?);
+insertEstimateWorkflow:
+INSERT INTO estimate_workflow VALUES (?, 'DRAFT', 1, ?);
+insertEstimateSaveReceipt:
+INSERT INTO estimate_save_receipts VALUES (?, ?, ?, ?);
+selectEstimateSaveReceipt:
+SELECT * FROM estimate_save_receipts WHERE operationUuid = ?;
+selectFrozenV1:
+SELECT f.*, r.seriesUuid, r.createdAt, s.publicNumber, s.projectId, s.measurementUuid,
+ w.status, w.version AS statusVersion, w.updatedAt AS statusUpdatedAt
+FROM estimate_v1_frozen f JOIN estimate_revisions r USING(revisionUuid)
+JOIN estimate_series s USING(seriesUuid) JOIN estimate_workflow w USING(seriesUuid)
+WHERE s.seriesUuid = ? AND s.deletedAt IS NULL AND r.versionNumber = 1;
+selectFrozenV1List:
+SELECT s.seriesUuid, s.projectId, s.measurementUuid, s.publicNumber, s.createdAt,
+ f.payload, f.subtotalCents, f.discountBasisPoints, f.discountCents, f.totalCents, w.status, w.version AS statusVersion
+FROM estimate_series s JOIN estimate_revisions r USING(seriesUuid)
+JOIN estimate_v1_frozen f USING(revisionUuid) JOIN estimate_workflow w USING(seriesUuid)
+WHERE s.deletedAt IS NULL AND r.versionNumber = 1 ORDER BY s.createdAt DESC, s.seriesUuid;
+setEstimatePublicNumber:
+UPDATE estimate_series SET publicNumber = ? WHERE seriesUuid = ? AND publicNumber IS NULL;
+selectEstimatePublicNumber:
+SELECT seriesUuid FROM estimate_series WHERE publicNumber = ?;
+updateEstimateWorkflow:
+UPDATE estimate_workflow SET status = ?, version = version + 1, updatedAt = max(updatedAt + 1, ?)
+WHERE seriesUuid = ? AND version = ? AND version < 9223372036854775807 AND updatedAt < 9223372036854775807
+AND EXISTS (SELECT 1 FROM estimate_series s WHERE s.seriesUuid = estimate_workflow.seriesUuid AND s.deletedAt IS NULL)
+RETURNING version;

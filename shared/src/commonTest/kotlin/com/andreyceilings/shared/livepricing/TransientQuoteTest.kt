@@ -6,6 +6,49 @@ import com.andreyceilings.shared.prices.*
 import kotlin.test.*
 
 class TransientQuoteTest {
+    @Test fun explicitSaveIntentSurvivesSurfaceRecreationAndRetry() {
+        val loaded = TransientQuoteFixture.loaded()
+        val p = TransientQuoteFixture.presenter(loaded)
+        p.editTitle("  Proposal  ")
+        val first = assertNotNull(p.beginSave(1))
+        assertEquals("Proposal", first.title)
+        assertNull(p.beginSave(1))
+        p.acceptRead(p.beginRead(), loaded)
+        assertTrue(p.saveState.value.saving)
+        assertEquals("  Proposal  ", p.saveState.value.title)
+        p.saveFailed("uncertain response")
+        val retry = assertNotNull(p.beginSave(1))
+        assertEquals(first, retry)
+        p.saved("saved-series")
+        assertNull(p.beginSave(1))
+        assertEquals("saved-series", p.saveState.value.resultSeriesUuid)
+        p.consumeSaved()
+        assertNotEquals(first.operationUuid, assertNotNull(p.beginSave(1)).operationUuid)
+    }
+
+    @Test fun pendingPartialSaveLocksAllInputsAndFailureRevalidatesDeferredSource() {
+        val data = TransientQuoteFixture.loaded()
+        val p = TransientQuoteFixture.presenter(data)
+        p.select("element:o0", false)
+        p.acknowledge(true)
+        p.editTitle("Partial")
+        val captured = p.state.value
+        assertNotNull(p.beginSave(1))
+        p.select("element:d", true)
+        p.editQuantity("c", "15"); p.confirmQuantity("c"); p.resetQuantity("c")
+        p.editDiscount("50"); p.confirmDiscount(); p.acknowledge(false); p.editTitle("Other")
+        assertEquals(captured, p.state.value)
+        p.acceptRead(p.beginRead(), data.copy(catalog = data.catalog.copy(versionToken = "changed")))
+        assertEquals(captured, p.state.value)
+        p.saveFailed("Stale catalog")
+        assertFalse(p.state.value.acknowledged)
+        assertNotEquals(captured.fingerprint, p.state.value.fingerprint)
+        p.editDiscount("20")
+        assertEquals("20", p.state.value.discountText)
+        p.editTitle("Retry")
+        assertEquals("Retry", p.saveState.value.title)
+    }
+
     @Test fun discountIsRoundedOnceOnAggregateAndCannotOverflowSafeResults() {
         assertEquals(QuoteAmounts(5, 1000, 1, 4), QuoteDiscount.calculate(5, 1000))
         assertEquals(QuoteAmounts(3, 5000, 2, 1), QuoteDiscount.calculate(3, 5000))

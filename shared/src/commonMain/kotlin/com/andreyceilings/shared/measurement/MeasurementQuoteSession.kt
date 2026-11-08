@@ -9,6 +9,7 @@ class MeasurementQuoteSession {
     private var store: MeasurementElementsStore? = null
     private var presenter: TransientQuotePresenter? = null
     private var phase: String? = null
+    val saving: Boolean get() = presenter?.saveState?.value?.saving == true
 
     fun navigate(next: AppNavigationState) {
         val target = next.measurementDetails?.let { it.projectId to it.measurementId }
