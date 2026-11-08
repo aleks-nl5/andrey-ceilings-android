@@ -42,9 +42,8 @@ object LivePricingEngine {
         overrides.forEach { override ->
             val e = source.elements.singleOrNull { it.uuid == override.measurementElementUuid }
             val role = roles?.roles?.get(e?.uuid)
-            val mode = (e?.source as? ElementSource.CatalogSelection)?.quantityMode
-            val validRole = role == BusinessRole.CANVAS && mode == QuantityMode.CEILING_AREA && override.unit == "м²" ||
-                role == BusinessRole.PRIMARY_PROFILE && mode == QuantityMode.CEILING_PERIMETER && override.unit == "м.п."
+            val validRole = e != null && BillableOverrideRules.eligible(source, e, role) &&
+                (override.unit !in listOf("шт.", "компл.") || override.quantityMilli % 1000L == 0L)
             if (override.compositionUuid != compositionUuid || override.basisScopeSignature != scopeSignature || override.projectUuid != source.projectUuid ||
                 override.measurementUuid != source.measurementUuid || override.expectedBusinessRole != role || !validRole ||
                 !override.explicitlyConfirmed || override.quantityMilli !in 1..ElementQuantityRules.MAX_MILLI || override.unit != e?.unit) {

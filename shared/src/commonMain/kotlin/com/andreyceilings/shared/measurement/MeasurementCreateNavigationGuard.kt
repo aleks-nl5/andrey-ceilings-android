@@ -8,6 +8,7 @@ import com.andreyceilings.shared.navigation.AppNavigationState
  * Hosts bind their current editor and pass every navigation change through transition().
  */
 class MeasurementCreateNavigationGuard {
+    val quoteSession = MeasurementQuoteSession()
     var requestedAreaPlacement: Pair<String,String>? = null
     var requestedLinePlacement: Pair<String,String>? = null
     val fullscreen = kotlinx.coroutines.flow.MutableStateFlow(false)

@@ -176,6 +176,7 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
     }
 
     fun applyNavigation(next: AppNavigationState) {
+        measurementCreateNavigationGuard.quoteSession.navigate(next)
         if (next.current != navigation.current) tabChangedAt = SystemClock.elapsedRealtime()
         navigation = next
     }
@@ -530,6 +531,8 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
                             database = database,
                             detailsProjectId = navigation.projectDetails?.projectId,
                             measurementDetails = navigation.measurementDetails,
+                            measurementQuote = navigation.measurementQuote,
+                            onOpenMeasurementQuote = { updateNavigation(navigation.openMeasurementQuote()) },
                             measurementEdit = navigation.measurementEdit,
                             onEditMeasurement = { projectId, measurementId ->
                                 updateNavigation(navigation.editMeasurement(projectId, measurementId))
@@ -743,4 +746,5 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
 /** Keep the shared navigation guard attached to an in-flight save across Activity recreation. */
 internal class MeasurementEditorSession : androidx.lifecycle.ViewModel() {
     val navigationGuard = com.andreyceilings.shared.measurement.MeasurementCreateNavigationGuard()
+    override fun onCleared() { navigationGuard.quoteSession.clear() }
 }

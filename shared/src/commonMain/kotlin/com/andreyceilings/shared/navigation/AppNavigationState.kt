@@ -44,14 +44,15 @@ data class AppNavigationState(
     val measurementDetails: MeasurementDetails? = null,
     val measurementCreate: MeasurementCreate? = null,
     val measurementEdit: MeasurementEdit? = null,
-    val measurementProjectPicker: Boolean = false
+    val measurementProjectPicker: Boolean = false,
+    val measurementQuote: Boolean = false
 ) {
     fun selectTab(target: AppRoute, available: Set<AppRoute> = allRoutes): AppNavigationState {
         if (target !in available || current == target) return this
         return copy(
             current = target,
             backStack = if (target == AppRoute.DASHBOARD) emptyList() else listOf(AppRoute.DASHBOARD),
-            pendingQuickCreate = null, projectDetails = null, measurementDetails = null, measurementCreate = null, measurementEdit = null, measurementProjectPicker = false
+            pendingQuickCreate = null, projectDetails = null, measurementDetails = null, measurementQuote = false, measurementCreate = null, measurementEdit = null, measurementProjectPicker = false
         )
     }
 
@@ -60,19 +61,19 @@ data class AppNavigationState(
         return copy(
             current = target,
             backStack = (backStack.filterNot { it == target } + current).takeLast(maxHistory),
-            pendingQuickCreate = null, projectDetails = null, measurementDetails = null, measurementCreate = null, measurementEdit = null, measurementProjectPicker = false
+            pendingQuickCreate = null, projectDetails = null, measurementDetails = null, measurementQuote = false, measurementCreate = null, measurementEdit = null, measurementProjectPicker = false
         )
     }
 
     fun replace(target: AppRoute, available: Set<AppRoute> = allRoutes): AppNavigationState {
         if (target !in available || current == target) return this
-        return copy(current = target, pendingQuickCreate = null, projectDetails = null, measurementDetails = null, measurementCreate = null, measurementEdit = null, measurementProjectPicker = false)
+        return copy(current = target, pendingQuickCreate = null, projectDetails = null, measurementDetails = null, measurementQuote = false, measurementCreate = null, measurementEdit = null, measurementProjectPicker = false)
     }
 
     fun openProject(projectId: Long): AppNavigationState =
         if (current != AppRoute.OBJECTS || projectId <= 0) this
         else if (projectDetails?.projectId == projectId && measurementDetails == null && measurementCreate == null && measurementEdit == null) this
-        else copy(projectDetails = ProjectDetails(projectId), measurementDetails = null, measurementCreate = null, measurementEdit = null, measurementProjectPicker = false, pendingQuickCreate = null)
+        else copy(projectDetails = ProjectDetails(projectId), measurementDetails = null, measurementQuote = false, measurementCreate = null, measurementEdit = null, measurementProjectPicker = false, pendingQuickCreate = null)
 
     private fun hasMeasurementParent(projectId: Long): Boolean = projectId > 0 &&
         (current == AppRoute.MEASUREMENTS ||
@@ -81,14 +82,14 @@ data class AppNavigationState(
     /** A persistent screen, with explicit selection even when there is just one project. */
     fun chooseMeasurementProject(): AppNavigationState =
         if (current != AppRoute.MEASUREMENTS) this
-        else copy(measurementProjectPicker = true, measurementDetails = null,
+        else copy(measurementProjectPicker = true, measurementDetails = null, measurementQuote = false,
             measurementCreate = null, measurementEdit = null, pendingQuickCreate = null)
 
     fun openMeasurement(projectId: Long, measurementId: Long): AppNavigationState {
         if (!hasMeasurementParent(projectId) || measurementId <= 0) return this
         val target = MeasurementDetails(projectId, measurementId)
         return if (measurementDetails == target) this
-            else copy(measurementDetails = target, measurementCreate = null, measurementEdit = null, measurementProjectPicker = false, pendingQuickCreate = null)
+            else copy(measurementDetails = target, measurementQuote = false, measurementCreate = null, measurementEdit = null, measurementProjectPicker = false, pendingQuickCreate = null)
     }
 
     fun createMeasurement(projectId: Long): AppNavigationState {
@@ -100,8 +101,12 @@ data class AppNavigationState(
 
     fun editMeasurement(projectId: Long, measurementId: Long): AppNavigationState {
         if (projectId <= 0 || measurementId <= 0 || measurementDetails != MeasurementDetails(projectId, measurementId)) return this
-        return copy(measurementDetails = null, measurementEdit = MeasurementEdit(projectId, measurementId), pendingQuickCreate = null)
+        return copy(measurementDetails = null, measurementQuote = false, measurementEdit = MeasurementEdit(projectId, measurementId), pendingQuickCreate = null)
     }
+
+    /** Quote is a child of Details; only route identity is restorable, never its financial state. */
+    fun openMeasurementQuote(): AppNavigationState =
+        if (measurementDetails == null || measurementEdit != null) this else copy(measurementQuote = true)
 
     fun measurementSaved(projectId: Long, measurementId: Long): AppNavigationState =
         if (projectId > 0 && measurementId > 0 && measurementEdit == MeasurementEdit(projectId, measurementId)) openMeasurement(projectId, measurementId) else this
@@ -113,11 +118,12 @@ data class AppNavigationState(
 
     fun back(available: Set<AppRoute> = allRoutes): AppNavigationState {
         if (current !in available) return restore(snapshot(), available)
+        if (measurementQuote) return copy(measurementQuote = false)
         if (measurementEdit != null) return copy(measurementDetails = MeasurementDetails(measurementEdit.projectId, measurementEdit.measurementId),
             measurementEdit = null, measurementProjectPicker = false, pendingQuickCreate = null)
         if (measurementCreate != null) return copy(measurementCreate = null, measurementEdit = null, measurementProjectPicker = false, pendingQuickCreate = null)
-        if (measurementDetails != null) return copy(measurementDetails = null, pendingQuickCreate = null)
-        if (projectDetails != null) return copy(projectDetails = null, measurementDetails = null, measurementCreate = null, measurementEdit = null, measurementProjectPicker = false, pendingQuickCreate = null)
+        if (measurementDetails != null) return copy(measurementDetails = null, measurementQuote = false, pendingQuickCreate = null)
+        if (projectDetails != null) return copy(projectDetails = null, measurementDetails = null, measurementQuote = false, measurementCreate = null, measurementEdit = null, measurementProjectPicker = false, pendingQuickCreate = null)
         if (measurementProjectPicker) return copy(measurementProjectPicker = false, pendingQuickCreate = null)
         val index = backStack.indexOfLast { it in available && it != current }
         if (index >= 0) {
@@ -138,7 +144,7 @@ data class AppNavigationState(
     ): AppNavigationState {
         if (action.destination !in available) return this
         val target = selectTab(action.destination, available).copy(pendingQuickCreate = action,
-            projectDetails = null, measurementDetails = null, measurementCreate = null, measurementEdit = null,
+            projectDetails = null, measurementDetails = null, measurementQuote = false, measurementCreate = null, measurementEdit = null,
             measurementProjectPicker = false)
         return if (action == AppQuickCreate.MEASUREMENT) target.chooseMeasurementProject() else target
     }

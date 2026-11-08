@@ -171,6 +171,7 @@ fun ObjectsClientsScreen(
     onProjectHeaderProgress: (Float) -> Unit = {},
     onListTabChanged: (ObjectsClientsTab) -> Unit = {},
     measurementDetails: MeasurementDetails? = null,
+    measurementQuote: Boolean = false, onOpenMeasurementQuote: (() -> Unit)? = null,
     onOpenMeasurement: (Long, Long) -> Unit = { _, _ -> },
     onCloseMeasurement: () -> Unit = onCloseProject,
     measurementEdit: com.andreyceilings.shared.navigation.MeasurementEdit? = null,
@@ -595,7 +596,8 @@ fun ObjectsClientsScreen(
             contentPadding = contentPadding, systemTopInset = systemTopInset,
             onBack = onCloseMeasurement,
             onEdit = { onEditMeasurement(measurement.projectId, measurement.measurementId) },
-            navigationGuard = measurementCreateNavigationGuard, editStore=detailsStore?.measurementEdit
+            navigationGuard = measurementCreateNavigationGuard, editStore=detailsStore?.measurementEdit,
+            quoteOpen = measurementQuote, onOpenQuote = onOpenMeasurementQuote
         )
         if (edit != null) com.andreyceilings.shared.measurement.MeasurementEditScreen(
             projectId = edit.projectId, measurementId = edit.measurementId, store = detailsStore?.measurementEdit,

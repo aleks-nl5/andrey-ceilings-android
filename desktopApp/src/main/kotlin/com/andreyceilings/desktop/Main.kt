@@ -84,7 +84,7 @@ fun main() = application {
     var navigation by remember { mutableStateOf(AppNavigationState()) }
     val availableRoutes = remember { setOf(AppRoute.DASHBOARD, AppRoute.PRICES, AppRoute.OBJECTS) }
     val measurementCreateNavigationGuard = remember { com.andreyceilings.shared.measurement.MeasurementCreateNavigationGuard() }
-    fun applyNavigation(next: AppNavigationState) { navigation = next }
+    fun applyNavigation(next: AppNavigationState) { measurementCreateNavigationGuard.quoteSession.navigate(next); navigation = next }
     fun updateNavigation(proposed: AppNavigationState) {
         applyNavigation(measurementCreateNavigationGuard.transition(navigation, proposed, ::applyNavigation))
     }
@@ -259,6 +259,8 @@ private fun DesktopPriceHost(
                     rows = objectRows,
                     detailsProjectId = navigation.projectDetails?.projectId,
                     measurementDetails = navigation.measurementDetails,
+                    measurementQuote = navigation.measurementQuote,
+                    onOpenMeasurementQuote = { onNavigate(navigation.openMeasurementQuote()) },
                     measurementEdit = navigation.measurementEdit,
                     onEditMeasurement = { projectId, measurementId -> onNavigate(navigation.editMeasurement(projectId, measurementId)) },
                     onMeasurementSaved = { projectId, measurementId ->
