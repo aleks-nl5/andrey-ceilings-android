@@ -1,4 +1,16 @@
-# CURRENT roadmap — P4B2 authorized, Draft PR #112 (08.11.2026)
+# CURRENT roadmap — P4C1 active, Draft PR #115 (08.11.2026)
+
+**Accepted baseline:** [PR #112](https://github.com/aleks-nl5/andrey-ceilings-android/pull/112) P4B2 MERGED into `main` (merge `cfe4bbc97c7503fa3e30a4de7923d7b8ca205fa8`), owner APK works, final feature SHA `42662e3` with Android #1191 and Windows/iOS #943 SUCCESS, review PASS; [#110](https://github.com/aleks-nl5/andrey-ceilings-android/issues/110) closed. [#106](https://github.com/aleks-nl5/andrey-ceilings-android/issues/106) also closed after merged PR #111. Schema is v15.
+
+**Now:** authorized [P4C1 Issue #113](https://github.com/aleks-nl5/andrey-ceilings-android/issues/113) → [Draft PR #115](https://github.com/aleks-nl5/andrey-ceilings-android/pull/115), branch `feat/p4c1-immutable-quote-v1`. Required [Codex handoff](P4C1_CODEX_HANDOFF.md). One explicit atomic individual Save from transient P4B2, one independent immutable v1, frozen source/geometry+financial exact cents/milli, full/partial omissions+one overall discount, settings-based mandatory suffix+internal UUID, idempotent number reserve, persisted four-way independent status, saved v1 read-only from measurement/object/global Quotes. No v2 editing, no PDF. Keep legacy estimate history unbroken and test real SQLCipher v15→next migration, backup/WAL/restore, Android/Windows/iOS CI.
+
+**Next independent steps:** financial edit as explicit new immutable revision v2/v3 (not P4C1); P4C2 individual PDF/reprint and frozen-only selected-room consolidated document, only after suitable frozen v1 foundation. Umbrella [#44](https://github.com/aleks-nl5/andrey-ceilings-android/issues/44) remains OPEN. Future issuer/company/initials [#114](https://github.com/aleks-nl5/andrey-ceilings-android/issues/114); other existing #70/#71/#76/#78/#95/#42 independent.
+
+**Codex delivery:** implement in #115 only. Same-final-SHA Android & Windows/iOS CI, independent review, owner APK. Owner alone merges. This documentation-only PR is **not** a completed feature and has no functional CI acceptance yet.
+
+---
+
+# HISTORICAL roadmap — P4B2 merged PR #112 (08.11.2026)
 
 - [PR #111](https://github.com/aleks-nl5/andrey-ceilings-android/pull/111) merged into `main` (SHA `2f14392e0c000aef9a8d762944a450adddb49491`), after successful same-SHA Android and Windows+iOS CI and owner APK checks. P4B1 #109 was already merged; schema remains v15.
 - **Now active:** [Issue #110](https://github.com/aleks-nl5/andrey-ceilings-android/issues/110) → [Draft PR #112](https://github.com/aleks-nl5/andrey-ceilings-android/pull/112), branch `feat/p4b2-transient-individual-estimate`. Detailed [Codex handoff](P4B2_CODEX_HANDOFF.md). This is a one-measurement transient CMP quote preview with optional+discussing selections, selected billable overrides, one global % discount, in-page partial confirmation, memory session cleanup on leaving measurement, sticky-top sum animated to full summary at scroll bottom. No Save/number/PDF/schema changes.
