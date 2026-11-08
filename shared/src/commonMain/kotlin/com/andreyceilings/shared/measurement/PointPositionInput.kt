@@ -1,6 +1,7 @@
 package com.andreyceilings.shared.measurement
 
 import com.andreyceilings.shared.calculation.CeilingPolygonCalculator
+import com.andreyceilings.shared.input.DecimalTextPolicy
 import com.andreyceilings.shared.estimate.FrozenPolygonGeometry
 import com.andreyceilings.shared.estimate.FrozenPolygonGeometryContract
 import kotlin.math.hypot
@@ -8,13 +9,13 @@ import kotlin.math.roundToLong
 
 /** Metres → signed integer mm. Incomplete text stays in the draft; never rounded or parsed as Double. */
 fun parsePointMetres(text: String, boundMm: Long = CeilingPolygonCalculator.MAX_COORDINATE_MM): Long? {
-    val input = text.trim()
-    if (!Regex("-?[0-9]+([.,][0-9]{1,3})?").matches(input)) return null
+    val input = DecimalTextPolicy(3, signed = true).committed(text.trim()) ?: return null
     val negative = input.startsWith('-')
     val parts = input.removePrefix("-").replace(',', '.').split('.')
     val whole = parts[0].toLongOrNull() ?: return null
     if (boundMm < 0 || whole > boundMm / 1000) return null
     val fraction = parts.getOrNull(1)?.padEnd(3, '0')?.toLongOrNull() ?: 0L
+    if (whole == boundMm / 1000 && fraction > boundMm % 1000) return null
     val mm = whole * 1000 + fraction
     if (mm > boundMm) return null
     return if (negative) -mm else mm

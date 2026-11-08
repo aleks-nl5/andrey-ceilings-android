@@ -37,6 +37,13 @@ class PointPositionInputTest {
         }
         for (bad in listOf("", "-", "2,", "2.", "1.0001", "--1", "1e3", "NaN", "1000.001", "-1000.001", "9223372036854775807", "9223372036854775808"))
             assertNull(parsePointMetres(bad), bad)
+        assertEquals(500L, parsePointMetres(".5"))
+        assertEquals(-500L, parsePointMetres("-,5"))
+        assertEquals(-7L, parsePointMetres("-.007"))
+        assertEquals(7L, parsePointMetres(",007"))
+        assertNull(parsePointMetres(".007", 6))
+        assertNull(parsePointMetres("9223372036854775.808", Long.MAX_VALUE))
+        assertEquals(Long.MAX_VALUE, parsePointMetres("9223372036854775.807", Long.MAX_VALUE))
         assertEquals(2500L, parsePointMetres("2,5")); assertEquals(-1L, parsePointMetres("-0.001"))
     }
 

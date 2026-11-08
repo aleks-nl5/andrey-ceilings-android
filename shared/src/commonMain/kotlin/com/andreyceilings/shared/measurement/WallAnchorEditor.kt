@@ -1,15 +1,15 @@
 package com.andreyceilings.shared.measurement
 
+import com.andreyceilings.shared.input.DecimalInputField
+
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import kotlinx.serialization.Serializable
 import kotlin.math.roundToLong
@@ -68,12 +68,10 @@ fun WallAnchorEditor(model: MeasurementEditModel) {
                         label={Text("2: ${measurementSideLabels(walls.size)[wall.ordinal]}")})
                 } }
             }
-            OutlinedTextField(input.firstText,{value->model.updateMounting { it.copy(firstText=value) }},singleLine=true,
-                keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Decimal),modifier=Modifier.fillMaxWidth(),
-                label={Text(if(input.kind==WallAnchor.Kind.TWO_WALLS) "Від першої стіни, м" else "Від початку вздовж стіни, м")})
-            OutlinedTextField(input.secondText,{value->model.updateMounting { it.copy(secondText=value) }},singleLine=true,
-                keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Decimal),modifier=Modifier.fillMaxWidth(),
-                label={Text(if(input.kind==WallAnchor.Kind.TWO_WALLS) "Від другої стіни, м" else "Відступ усередину, м")})
+            DecimalInputField(input.firstText, { value -> model.updateMounting { it.copy(firstText = value) } },
+                if (input.kind == WallAnchor.Kind.TWO_WALLS) "Від першої стіни, м" else "Від початку вздовж стіни, м")
+            DecimalInputField(input.secondText, { value -> model.updateMounting { it.copy(secondText = value) } },
+                if (input.kind == WallAnchor.Kind.TWO_WALLS) "Від другої стіни, м" else "Відступ усередину, м")
             if(solution==null) Text("Немає однозначної внутрішньої точки з проєкціями на обрані відрізки. Перевірте розміри, оберіть інші стіни або спосіб «Уздовж + усередину».",color=MaterialTheme.colorScheme.error)
             else Text("Фактично після округлення до мм: ${formatPointMetres(solution.firstActualMm.roundToLong())} м / ${formatPointMetres(solution.secondActualMm.roundToLong())} м. Похибка представлення не перевищує 1 мм.")
             state.error?.let {Text(it,color=MaterialTheme.colorScheme.error)}

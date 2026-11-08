@@ -1,5 +1,7 @@
 package com.andreyceilings.shared.measurement
 
+import com.andreyceilings.shared.input.DecimalTextPolicy
+
 import com.andreyceilings.shared.calculation.*
 import com.andreyceilings.shared.db.newRecordUuid
 import com.andreyceilings.shared.estimate.FrozenPolygonGeometry
@@ -150,10 +152,12 @@ data class MeasurementCreateValidation(
 
 /** Decimal text -> integer mm, without an intermediate floating-point or silent rounding. */
 fun measurementLengthMm(text: String, precision: MeasurementPrecision): Long {
-    val value = text.trim().replace(',', '.')
-    require(value.isNotEmpty()) { "Введіть довжину." }
-    require(value.length <= 32 && Regex("(?:[0-9]+(?:\\.[0-9]*)?|\\.[0-9]+)").matches(value)) {
-        "Введіть число в метрах, наприклад 2,5."
+    require(text.trim().isNotEmpty()) { "Введіть довжину." }
+    // Preserve the existing exact-zero suffix rule (123.001000 == 123001 mm).
+    // Only significant fractional digits consume precision; no non-zero digit is rounded.
+    val value = DecimalTextPolicy(Int.MAX_VALUE).committed(text.trim())
+    require(text.trim().length <= 32 && value != null) {
+        "Введіть число в метрах, до 3 знаків після коми/крапки, наприклад 2,5."
     }
     val whole = value.substringBefore('.').ifEmpty { "0" }.toLongOrNull()
     val fraction = value.substringAfter('.', "").trimEnd('0')
