@@ -36,7 +36,11 @@ class TransientQuotePresenter(val measurementUuid: String, val sessionId: String
     private val saveMutable = MutableStateFlow(QuoteSaveState())
     val saveState: StateFlow<QuoteSaveState> = saveMutable.asStateFlow()
     private var pendingSave: IndividualEstimateSaveRequest? = null
-    fun editTitle(value: String) { if (!saveMutable.value.saving) { saveMutable.value = saveMutable.value.copy(title = value); pendingSave = null } }
+    private val captured get() = saveMutable.value.saving || saveMutable.value.resultSeriesUuid != null
+    private val editable get() = !closed && !captured
+    private var deferredRead: PricingReadResult? = null
+    private var deferredInvalidation = false
+    fun editTitle(value: String) { if (editable) { saveMutable.value = saveMutable.value.copy(title = value); pendingSave = null } }
     fun beginSave(projectId: Long): IndividualEstimateSaveRequest? {
         if (saveMutable.value.saving || saveMutable.value.resultSeriesUuid != null) return null
         val current = saveRequest(projectId, saveMutable.value.title.orEmpty()) ?: return null
@@ -47,8 +51,16 @@ class TransientQuotePresenter(val measurementUuid: String, val sessionId: String
         return command
     }
     fun saved(seriesUuid: String) { saveMutable.value = saveMutable.value.copy(saving = false, resultSeriesUuid = seriesUuid, error = null) }
-    fun saveFailed(error: String) { saveMutable.value = saveMutable.value.copy(saving = false, error = error) }
-    fun consumeSaved() { pendingSave = null; saveMutable.value = saveMutable.value.copy(resultSeriesUuid = null) }
+    fun saveFailed(error: String) {
+        saveMutable.value = saveMutable.value.copy(saving = false, error = error)
+        releaseDeferredRead()
+    }
+    fun consumeSaved() {
+        if (saveMutable.value.saving) return
+        pendingSave = null
+        saveMutable.value = saveMutable.value.copy(resultSeriesUuid = null)
+        releaseDeferredRead()
+    }
     private var saveSelection: IndividualEstimateSelection? = null
     private var saveOverrides: List<EstimateQuantityOverride> = emptyList()
     private var loaded: PricingReadResult.Loaded? = null
@@ -61,15 +73,34 @@ class TransientQuotePresenter(val measurementUuid: String, val sessionId: String
 
     fun beginRead(): Long {
         request++
+        if (!closed && captured) {
+            deferredRead = null
+            deferredInvalidation = true
+            return request
+        }
+        invalidateRead()
+        return request
+    }
+
+    private fun invalidateRead() {
         loaded = null
         mutable.value = mutable.value.copy(loading = !closed, unavailable = if (closed) PricingProblemCode.DATABASE_UNAVAILABLE else null,
             source = null, lines = emptyList(), unresolved = emptyList(), unavailableSelectedDiscussing = emptyList(), preview = null,
             amounts = null, fingerprint = null, acknowledgedFingerprint = null)
-        return request
+    }
+
+    private fun releaseDeferredRead() {
+        val result = deferredRead
+        val invalidated = deferredInvalidation
+        deferredRead = null
+        deferredInvalidation = false
+        if (closed) return
+        if (result != null) acceptRead(request, result) else if (invalidated) invalidateRead()
     }
 
     fun acceptRead(generation: Long, result: PricingReadResult) {
         if (closed || generation != request) return
+        if (captured) { deferredRead = result; return }
         if (result is PricingReadResult.Unavailable) {
             loaded = null
             mutable.value = mutable.value.copy(loading = false, unavailable = result.problem,
@@ -97,7 +128,7 @@ class TransientQuotePresenter(val measurementUuid: String, val sessionId: String
 
     fun select(sourceKey: String, included: Boolean) {
         val s = mutable.value
-        if (s.loading || closed) return
+        if (s.loading || !editable) return
         if (!included && sourceKey in includedDiscussing) {
             includedDiscussing = includedDiscussing - sourceKey
             // A previously discussing work may have become confirmed in the refreshed source.
@@ -116,6 +147,7 @@ class TransientQuotePresenter(val measurementUuid: String, val sessionId: String
     }
 
     fun editQuantity(elementUuid: String, text: String) {
+        if (!editable) return
         val result = loaded ?: return
         val e = result.source.elements.find { it.uuid == elementUuid } ?: return
         if (!BillableOverrideRules.eligible(result.source, e) || mutable.value.lines.none { it.elementUuid == elementUuid }) return
@@ -123,6 +155,7 @@ class TransientQuotePresenter(val measurementUuid: String, val sessionId: String
         changed(); rebuild()
     }
     fun confirmQuantity(elementUuid: String) {
+        if (!editable) return
         val edit = mutable.value.edits[elementUuid] ?: return
         val e = loaded?.source?.elements?.find { it.uuid == elementUuid } ?: return
         if (quantity(edit.text, e.unit) == null) return
@@ -130,21 +163,22 @@ class TransientQuotePresenter(val measurementUuid: String, val sessionId: String
         changed(); rebuild()
     }
     fun resetQuantity(elementUuid: String) {
+        if (!editable) return
         mutable.value = mutable.value.copy(edits = mutable.value.edits - elementUuid)
         changed(); rebuild()
     }
     fun editDiscount(text: String) {
-        if (closed) return
+        if (!editable) return
         mutable.value = mutable.value.copy(discountText = text, discountConfirmed = false)
         changed(); rebuild()
     }
     fun confirmDiscount() {
-        if (QuoteDiscount.parseBasisPoints(mutable.value.discountText) == null || closed) return
+        if (QuoteDiscount.parseBasisPoints(mutable.value.discountText) == null || !editable) return
         mutable.value = mutable.value.copy(discountConfirmed = true)
         changed(); rebuild()
     }
     fun acknowledge(checked: Boolean) {
-        mutable.update { s -> if (closed) s else s.copy(
+        mutable.update { s -> if (!editable) s else s.copy(
             acknowledgedFingerprint = if (checked && s.canAcknowledge) s.fingerprint else null) }
     }
     fun close() { closedState.value = true; beginRead(); excludedConfirmed = emptySet(); includedDiscussing = emptyMap()
