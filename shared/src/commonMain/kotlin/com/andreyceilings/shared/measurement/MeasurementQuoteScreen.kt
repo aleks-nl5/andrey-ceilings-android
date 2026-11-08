@@ -22,11 +22,16 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.text.style.TextOverflow
 import com.andreyceilings.shared.input.DecimalInputField
 import com.andreyceilings.shared.livepricing.*
+import com.andreyceilings.shared.estimate.*
+import androidx.compose.runtime.saveable.rememberSaveable
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.CancellationException
 
 @Composable
 fun MeasurementQuoteScreen(presenter: TransientQuotePresenter, store: MeasurementElementsStore,
     route: ElementRoute, contentPadding: PaddingValues, systemTopInset: Dp, onBack: () -> Unit) {
     var retry by remember { mutableIntStateOf(0) }
+    val saveState by presenter.saveState.collectAsState()
     // Route/configuration restoration may retain a living presenter. Invalidate readiness
     // before collecting its initial state, so its previous total cannot flash before revalidation.
     val initialRead = remember(presenter, store, route, retry) { presenter.beginRead() }
@@ -39,7 +44,29 @@ fun MeasurementQuoteScreen(presenter: TransientQuotePresenter, store: Measuremen
     val state by presenter.state.collectAsState()
     MeasurementQuoteContent(state, onBack, { retry++ }, presenter::select, presenter::editQuantity,
         presenter::confirmQuantity, presenter::resetQuantity, presenter::editDiscount,
-        presenter::confirmDiscount, presenter::acknowledge, contentPadding, systemTopInset)
+        presenter::confirmDiscount, presenter::acknowledge, contentPadding, systemTopInset,
+        saveFooter = {
+            val actualTitle = saveState.title.orEmpty()
+            val canSave = !saveState.saving && saveState.resultSeriesUuid == null && validEstimateTitle(actualTitle) != null && state.amounts != null &&
+                (state.preview?.canFinalizeFull == true || state.preview?.canRequestPartialAcknowledgement == true && state.acknowledged)
+            OutlinedTextField(actualTitle, presenter::editTitle, label = { Text("Назва кошторису") },
+                enabled = !saveState.saving, singleLine = true, isError = actualTitle.isNotEmpty() && validEstimateTitle(actualTitle) == null,
+                supportingText = { Text("Від 1 до 160 символів") }, modifier = Modifier.fillMaxWidth())
+            saveState.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+            if (!canSave && !saveState.saving) Text(when {
+                validEstimateTitle(actualTitle) == null -> "Вкажіть назву кошторису (1–160 символів)."
+                state.loading -> "Зачекайте завершення перевірки заміру та прайсу."
+                state.unavailable != null -> pricingProblemText(state.unavailable)
+                !state.discountConfirmed -> "Підтвердьте введену знижку."
+                state.edits.values.any { !it.confirmed } -> "Підтвердьте введені кількості."
+                state.preview?.canRequestPartialAcknowledgement == true && !state.acknowledged -> "Підтвердьте точний перелік неврахованих робіт."
+                else -> "Сума недоступна. Перевірте склад і обов’язкові матеріали заміру."
+            })
+            Button(enabled = canSave, onClick = { store.submitQuote(presenter, route.projectId) }) {
+                Text(if (saveState.saving) "Зберігаю…" else "Зберегти кошторис")
+            }
+        })
+    saveState.resultSeriesUuid?.let { id -> SavedIndividualQuoteDialog(store, id) { presenter.consumeSaved(); onBack() } }
 }
 
 /** Pure visibility fraction: only the actual final-summary bounds and current viewport matter. */
@@ -54,7 +81,8 @@ fun MeasurementQuoteContent(state: TransientQuoteState, onBack: () -> Unit, onRe
     onSelect: (String, Boolean) -> Unit, onQuantity: (String, String) -> Unit,
     onConfirmQuantity: (String) -> Unit, onResetQuantity: (String) -> Unit,
     onDiscount: (String) -> Unit, onConfirmDiscount: () -> Unit, onAcknowledge: (Boolean) -> Unit,
-    contentPadding: PaddingValues = PaddingValues(16.dp), systemTopInset: Dp = 0.dp) {
+    contentPadding: PaddingValues = PaddingValues(16.dp), systemTopInset: Dp = 0.dp,
+    saveFooter: (@Composable () -> Unit)? = null) {
     val list = rememberLazyListState()
     // Hosts reserve bottom space for their floating navigation/system bars. It is not
     // unobscured viewport, even while a lazy item is temporarily laid out behind it.
@@ -93,7 +121,7 @@ fun MeasurementQuoteContent(state: TransientQuoteState, onBack: () -> Unit, onRe
         LazyColumn(Modifier.weight(1f).fillMaxWidth(), state = list, contentPadding = contentPadding,
             verticalArrangement = Arrangement.spacedBy(12.dp)) {
             item {
-                Text("Лише для цього перегляду. Зміни зберігаються в пам’яті до виходу із заміру.")
+                Text("До явного збереження зміни залишаються в пам’яті до виходу із заміру.")
                 if (state.loading) { LinearProgressIndicator(Modifier.fillMaxWidth()); Text("Оновлення розрахунку…") }
                 state.unavailable?.let {
                     Text(pricingProblemText(it), color = MaterialTheme.colorScheme.error)
@@ -181,6 +209,9 @@ fun MeasurementQuoteContent(state: TransientQuoteState, onBack: () -> Unit, onRe
                         if (partial) Text(if (state.acknowledged) "Частковий · перелік підтверджено" else "Частковий · перевірте невраховані роботи")
                     }
                 }
+            }
+            if (saveFooter != null) item(key = "quote-save") {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) { saveFooter() }
             }
         }
     }

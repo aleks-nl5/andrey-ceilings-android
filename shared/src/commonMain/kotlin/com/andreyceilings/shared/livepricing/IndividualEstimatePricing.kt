@@ -6,6 +6,7 @@ import kotlinx.serialization.encodeToString
 /** Ephemeral selection for a NEW individual estimate of exactly one measurement.
  * This is neither a saved revision nor an object-level consolidated source.
  */
+@Serializable
 data class IndividualEstimateSelection(val projectUuid: String, val measurementUuid: String,
     val compositionUuid: String, val basisSourceSignature: String, val basisCatalogSignature: String,
     val expectedPreviewSignature: String, val includedSourceKeys: Set<String>? = null) {

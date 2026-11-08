@@ -78,11 +78,11 @@ internal fun EstimateNumberSettingsSection(database: CeilingsDatabase?) {
         Triple("Рік і номер через крапку", "{year}.{sequence}", "AC")
     )
     val selectedPreset = presets.firstOrNull {
-        it.second == draft.template &&
+        it.second + "-{suffix}" == draft.template &&
             (!draft.template.contains("{prefix}") || it.third == draft.prefix)
     }?.first ?: "Власний шаблон"
     val errors = remember(draft) {
-        EstimateNumbering.validate(draft) + when {
+        EstimateNumbering.validatePublic(draft) + when {
             "{uuid}" in draft.template -> listOf("The printable number must not contain UUID")
             "{sequence}" !in draft.template -> listOf("Public template must contain {sequence}")
             else -> emptyList()
@@ -96,7 +96,8 @@ internal fun EstimateNumberSettingsSection(database: CeilingsDatabase?) {
                     EstimateNumberContext(
                         seriesUuid = "12345678-1234-4abc-8def-0123456789ab",
                         year = Calendar.getInstance().get(Calendar.YEAR),
-                        localSequence = 125L
+                        localSequence = 125L,
+                        publicToken = "K7Q2M8TR92"
                     )
                 ),
                 localSequence = 125L, prefix = draft.prefix, sequenceWidth = draft.sequenceWidth
@@ -148,7 +149,7 @@ internal fun EstimateNumberSettingsSection(database: CeilingsDatabase?) {
             ) {
                 presets.forEach { (label, template, prefix) ->
                     DropdownMenuItem(text = { Text(label) }, onClick = {
-                        draft = draft.copy(template = template, prefix = prefix, sequenceWidth = if (label.startsWith("Бізнес")) 5 else 4)
+                        draft = draft.copy(template = "$template-{suffix}", prefix = prefix, sequenceWidth = if (label.startsWith("Бізнес")) 5 else 4)
                         feedback = null
                         presetsExpanded = false
                     })
@@ -161,7 +162,7 @@ internal fun EstimateNumberSettingsSection(database: CeilingsDatabase?) {
             onValueChange = { draft = draft.copy(template = it); feedback = null },
             enabled = editable,
             label = { Text("Шаблон номера") },
-            supportingText = { Text("Доступно: {prefix}, {year}, {sequence}. UUID додається службово.") },
+            supportingText = { Text("Доступно: {prefix}, {year}, {sequence}, {suffix}. Суфікс обов’язковий.") },
             isError = errors.isNotEmpty(),
             modifier = Modifier.fillMaxWidth(),
             singleLine = false,
@@ -176,6 +177,11 @@ internal fun EstimateNumberSettingsSection(database: CeilingsDatabase?) {
             modifier = Modifier.fillMaxWidth(),
             singleLine = true
         )
+
+        OutlinedTextField(draft.suffixLabel, { draft = draft.copy(suffixLabel = it); feedback = null },
+            enabled = editable, label = { Text("Позначка суфікса (необов’язково)") },
+            supportingText = { Text("До 20 літер/цифр, - або _. Випадкова частина додається автоматично.") },
+            singleLine = true, modifier = Modifier.fillMaxWidth())
 
         if (draft.template.contains("{sequence}")) {
             Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
@@ -242,9 +248,8 @@ internal fun EstimateNumberSettingsSection(database: CeilingsDatabase?) {
                 else MaterialTheme.colorScheme.primary)
         }
         Text(
-            "Два незалежні офлайн-пристрої можуть надрукувати той самий короткий номер. " +
-                "Для їх розрізнення використовуйте різні префікси (наприклад, КШ1 і КШ2). " +
-                "Службовий повний UUID залишається в базі та забезпечує розрізнення записів.",
+            "Незалежна випадкова частина суфікса зменшує ризик збігу номерів офлайн. " +
+                "Повний службовий UUID залишається приватним; абсолютна глобальна унікальність короткого номера не гарантується.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -268,5 +273,6 @@ private fun numberPolicyErrorUa(message: String): String = when {
 /** Legacy UUID-bearing templates are displayed as customer-friendly formats. */
 private fun normalizedForCustomer(policy: EstimateNumberPolicy): EstimateNumberPolicy {
     val visible = EstimateNumbering.printableTemplate(policy.template)
-    return policy.copy(template = if ("{sequence}" in visible) visible else "{prefix}-{sequence}")
+    val sequenced = if ("{sequence}" in visible) visible else "{prefix}-{sequence}"
+    return policy.copy(template = if ("{suffix}" in sequenced) sequenced else "$sequenced-{suffix}")
 }

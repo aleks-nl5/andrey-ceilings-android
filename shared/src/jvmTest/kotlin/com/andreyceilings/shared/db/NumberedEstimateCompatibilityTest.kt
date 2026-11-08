@@ -46,7 +46,7 @@ class NumberedEstimateCompatibilityTest {
             )
             val firstId = create(1)
             val firstNumber = assertNotNull(estimates.documentNumberForId(firstId))
-            assertEquals("AC-2026-00001-${uuid(1)}", firstNumber)
+            kotlin.test.assertTrue(Regex("AC-2026-00001-[A-F0-9]{10}-" + uuid(1)).matches(firstNumber))
             assertEquals(uuid(1), estimates.find(firstId)?.seriesUuid)
             assertEquals(-1.0, history.lines(uuid(101)).last().lineTotalSnapshot)
             val copyId = create(2)

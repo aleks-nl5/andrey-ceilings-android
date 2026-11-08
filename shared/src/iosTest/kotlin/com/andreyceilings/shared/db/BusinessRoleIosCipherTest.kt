@@ -7,6 +7,13 @@ import kotlin.random.Random
 import kotlin.test.Test
 
 class BusinessRoleIosCipherTest {
+    @Test fun physicalV15ToV16RollbackReopenAndFrozenV1(): Unit = runBlocking {
+        val factory = NativeSqlCipherDriverFactory()
+        val name = "frozen-v16-${Random.nextLong()}.db"
+        val config = SqlCipherConfig(name = name, key = SqlCipherKey { ByteArray(32) { 44 } }, recovery = SqlCipherRecovery.Fail)
+        try { FrozenEstimateMigrationProof.lifecycle(IosPriceCatalogSchema) { factory.create(it, config) } }
+        finally { factory.deleteDatabase(name) }
+    }
     @Test fun physicalV14ToV15RollbackReopenRolesAndPricing(): Unit = runBlocking {
         val factory = NativeSqlCipherDriverFactory()
         val name = "business-roles-v15-${Random.nextLong()}.db"

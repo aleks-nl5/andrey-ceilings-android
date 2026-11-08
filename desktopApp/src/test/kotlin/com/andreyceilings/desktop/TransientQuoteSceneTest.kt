@@ -59,12 +59,31 @@ class TransientQuoteSceneTest {
         }
     }
 
-    private fun scene(presenter: TransientQuotePresenter, dark: Boolean) = ImageComposeScene(600, 900) {
+    @Test fun saveFooterPreservesSingleAccessibleAmountAtEndOfList() {
+        for (dark in listOf(false, true)) {
+            val presenter = TransientQuoteFixture.presenter()
+            val scene = scene(presenter, dark, footer = true)
+            try {
+                scene.frame()
+                scene.reveal { it.config.getOrNull(SemanticsProperties.Text).orEmpty().any { t -> t.text == "Зберегти кошторис" } }
+                val amount = measurementMoney(presenter.state.value.amounts!!.finalCents)
+                assertEquals(1, scene.nodes().count { it.config.getOrNull(SemanticsProperties.Text).orEmpty().any { t -> t.text == amount } })
+                scene.scroll(-100000f); scene.frame()
+                assertEquals(1, scene.nodes().count { it.config.getOrNull(SemanticsProperties.Text).orEmpty().any { t -> t.text == amount } })
+            } finally { scene.close() }
+        }
+    }
+
+    private fun scene(presenter: TransientQuotePresenter, dark: Boolean, footer: Boolean = false) = ImageComposeScene(600, 900) {
         CeilingsTheme(dark) {
             val state by presenter.state.collectAsState()
             MeasurementQuoteContent(state, {}, {}, presenter::select, presenter::editQuantity, presenter::confirmQuantity,
                 presenter::resetQuantity, presenter::editDiscount, presenter::confirmDiscount, presenter::acknowledge,
-                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 84.dp))
+                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 84.dp),
+                saveFooter = if (footer) ({
+                    androidx.compose.material3.OutlinedTextField("Кухня", {}, label = { androidx.compose.material3.Text("Назва кошторису") })
+                    androidx.compose.material3.Button(onClick = {}) { androidx.compose.material3.Text("Зберегти кошторис") }
+                }) else null)
         }
     }
     private var time = 0L

@@ -1,10 +1,12 @@
 package com.andreyceilings.shared.measurement
 
 import com.andreyceilings.shared.db.*
+import com.andreyceilings.shared.estimate.*
 import com.andreyceilings.shared.livepricing.*
 import app.cash.sqldelight.coroutines.asFlow
 import com.andreyceilings.shared.prices.*
 import kotlinx.coroutines.*
+import kotlinx.datetime.toLocalDateTime
 import kotlinx.coroutines.flow.*
 
 /** Price-free picker projection. Catalog CRUD and price calculation stay in their existing boundaries. */
@@ -55,6 +57,62 @@ class MeasurementElementsStore(private val database: PrototypeDatabase, private 
     )
     private val lifecycle = MutableStateFlow(SessionWrites())
     private val closed: Boolean get() = lifecycle.value.closed
+
+    private val estimates = ImmutableEstimateRepository(database)
+
+    suspend fun savedQuotes(projectId: Long? = null, measurementUuid: String? = null): List<SavedIndividualQuote> = estimateAccess {
+        estimates.frozenIndividuals().filter { (projectId == null || it.projectId == projectId) &&
+            (measurementUuid == null || it.measurementUuid == measurementUuid) }.map {
+            val frozen = decodeFrozenIndividualEstimate(it.payload)
+            verifyFrozenStoredIdentity(frozen, it.projectId, it.measurementUuid, it.publicNumber,
+                it.subtotalCents, it.discountBasisPoints, it.discountCents, it.totalCents)
+            SavedIndividualQuote(it.seriesUuid, it.createdAt, frozen, EstimateWorkflowStatus.valueOf(it.status), it.statusVersion)
+        }
+    }
+    suspend fun savedQuote(seriesUuid: String): SavedIndividualQuote? = estimateAccess {
+        estimates.frozenIndividual(seriesUuid)?.let {
+            val payload = decodeFrozenIndividualEstimate(it.payload)
+            verifyFrozenStoredIdentity(payload, it.projectId, it.measurementUuid, it.publicNumber,
+                it.subtotalCents, it.discountBasisPoints, it.discountCents, it.totalCents)
+            SavedIndividualQuote(it.seriesUuid, it.createdAt, payload, EstimateWorkflowStatus.valueOf(it.status), it.statusVersion)
+        }
+    }
+    suspend fun setQuoteStatus(seriesUuid: String, expectedVersion: Long, status: EstimateWorkflowStatus): Boolean = estimateAccess {
+        estimates.setWorkflowStatus(seriesUuid, expectedVersion, status, nowMillis())
+    }
+    private suspend fun <T> estimateAccess(block: () -> T): T {
+        val completion = beginWrite() ?: throw IllegalStateException("Database closed")
+        return withContext(NonCancellable + Dispatchers.Default) {
+            try { database.transactionWithResult { check(!closed); block() } }
+            finally { endWrite(completion) }
+        }
+    }
+
+    /** Session owns the command and delivery, so Activity disposal cannot lose or duplicate a Save. */
+    fun submitQuote(presenter: TransientQuotePresenter, projectId: Long) {
+        val command = presenter.beginSave(projectId) ?: return
+        val completion = beginWrite()
+        if (completion == null) { presenter.saveFailed("Захищена база недоступна."); return }
+        CoroutineScope(SupervisorJob() + modelDispatcher).launch(start = CoroutineStart.UNDISPATCHED) {
+            try {
+                val result = withContext(NonCancellable + Dispatchers.Default) {
+                    try {
+                        database.transactionWithResult {
+                            if (closed) throw IndividualEstimateSaveFailure(IndividualEstimateSaveFailure.Reason.UNAVAILABLE)
+                            estimates.saveIndividual(command, kotlin.time.Clock.System.now().toLocalDateTime(kotlinx.datetime.TimeZone.currentSystemDefault()).year, nowMillis())
+                        }
+                    } finally { endWrite(completion) }
+                }
+                presenter.saved(result.seriesUuid)
+            } catch (failure: IndividualEstimateSaveFailure) {
+                presenter.saveFailed(when (failure.reason) {
+                    IndividualEstimateSaveFailure.Reason.STALE_SOURCE, IndividualEstimateSaveFailure.Reason.STALE_CATALOG -> "Замір або прайс змінився. Перевірте оновлений розрахунок."
+                    IndividualEstimateSaveFailure.Reason.NUMBER_POLICY -> "Перевірте формат номера та суфікс у налаштуваннях."
+                    else -> "Кошторис не збережено. Перевірте склад і доступність бази."
+                })
+            } catch (_: Exception) { presenter.saveFailed("Не вдалося підтвердити збереження. Повторіть ту саму дію або перевірте список кошторисів.") }
+        }
+    }
 
     internal fun beginWrite(): CompletableDeferred<Unit>? {
         val completion = CompletableDeferred<Unit>()

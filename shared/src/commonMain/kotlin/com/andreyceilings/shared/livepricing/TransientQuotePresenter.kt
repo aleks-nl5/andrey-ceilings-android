@@ -1,11 +1,14 @@
 package com.andreyceilings.shared.livepricing
 
 import com.andreyceilings.shared.db.newRecordUuid
+import com.andreyceilings.shared.estimate.*
 import com.andreyceilings.shared.measurement.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+
+data class QuoteSaveState(val title: String? = null, val saving: Boolean = false, val resultSeriesUuid: String? = null, val error: String? = null)
 
 data class QuoteQuantityEdit(val text: String, val confirmed: Boolean = false)
 data class UnavailableSelectedWork(val sourceKey: String, val label: String,
@@ -30,6 +33,24 @@ class TransientQuotePresenter(val measurementUuid: String, val sessionId: String
     private var request = 0L
     private val closedState = MutableStateFlow(false)
     private val closed get() = closedState.value
+    private val saveMutable = MutableStateFlow(QuoteSaveState())
+    val saveState: StateFlow<QuoteSaveState> = saveMutable.asStateFlow()
+    private var pendingSave: IndividualEstimateSaveRequest? = null
+    fun editTitle(value: String) { if (!saveMutable.value.saving) { saveMutable.value = saveMutable.value.copy(title = value); pendingSave = null } }
+    fun beginSave(projectId: Long): IndividualEstimateSaveRequest? {
+        if (saveMutable.value.saving || saveMutable.value.resultSeriesUuid != null) return null
+        val current = saveRequest(projectId, saveMutable.value.title.orEmpty()) ?: return null
+        val previous = pendingSave
+        val command = if (previous != null && current.copy(operationUuid = previous.operationUuid) == previous) previous else current
+        pendingSave = command
+        saveMutable.value = saveMutable.value.copy(saving = true, error = null)
+        return command
+    }
+    fun saved(seriesUuid: String) { saveMutable.value = saveMutable.value.copy(saving = false, resultSeriesUuid = seriesUuid, error = null) }
+    fun saveFailed(error: String) { saveMutable.value = saveMutable.value.copy(saving = false, error = error) }
+    fun consumeSaved() { pendingSave = null; saveMutable.value = saveMutable.value.copy(resultSeriesUuid = null) }
+    private var saveSelection: IndividualEstimateSelection? = null
+    private var saveOverrides: List<EstimateQuantityOverride> = emptyList()
     private var loaded: PricingReadResult.Loaded? = null
     private var excludedConfirmed = emptySet<String>()
     // Explicit intent survives missing prices/quantities and even removal of the source row.
@@ -67,6 +88,7 @@ class TransientQuotePresenter(val measurementUuid: String, val sessionId: String
             lastBasis = basis
         }
         loaded = result
+        if (saveMutable.value.title == null) saveMutable.value = saveMutable.value.copy(title = result.source.versions["measurementName"].orEmpty())
         mutable.update { if (closed) it else it.copy(loading = false, unavailable = null, source = result.source,
             acknowledgedFingerprint = null) }
         rebuild()
@@ -128,6 +150,19 @@ class TransientQuotePresenter(val measurementUuid: String, val sessionId: String
     fun close() { closedState.value = true; beginRead(); excludedConfirmed = emptySet(); includedDiscussing = emptyMap()
         mutable.value = TransientQuoteState(loading = false, unavailable = PricingProblemCode.DATABASE_UNAVAILABLE) }
 
+    /** Captures one explicit intent; calling code retains this object across uncertain retries. */
+    fun saveRequest(projectId: Long, title: String): IndividualEstimateSaveRequest? {
+        val s = mutable.value
+        val selection = saveSelection ?: return null
+        val amounts = s.amounts ?: return null
+        val fingerprint = s.fingerprint ?: return null
+        if (closed || s.loading || s.unavailable != null ||
+            !(s.preview?.canFinalizeFull == true || s.preview?.canRequestPartialAcknowledgement == true && s.acknowledged)) return null
+        return IndividualEstimateSaveRequest(newRecordUuid(), projectId, validEstimateTitle(title) ?: return null,
+            sessionId, selection, saveOverrides.toList(), s.discountText, amounts, fingerprint,
+            s.acknowledgedFingerprint, s.preview.excluded.filter { it.bucket == PricingBucket.CONFIRMED })
+    }
+
     private fun changed() { mutable.value = mutable.value.copy(acknowledgedFingerprint = null, amounts = null, fingerprint = null) }
     private fun rebuild() {
         val data = loaded ?: return
@@ -162,6 +197,8 @@ class TransientQuotePresenter(val measurementUuid: String, val sessionId: String
         }
         val live = LivePricingEngine.buildPreview(source, data.catalog, roles, compositionUuid, overrides, selection.scopeSignature)
         selection = selection.copy(expectedPreviewSignature = live.signature)
+        saveSelection = selection
+        saveOverrides = overrides.toList()
         val preview = IndividualEstimatePricing.previewSelection(selection, live)
         val bp = QuoteDiscount.parseBasisPoints(s.discountText)
         val amounts = if (inputValid && bp != null && (preview.canFinalizeFull || preview.canRequestPartialAcknowledgement))

@@ -6,6 +6,26 @@ import com.andreyceilings.shared.prices.*
 import kotlin.test.*
 
 class TransientQuoteTest {
+    @Test fun explicitSaveIntentSurvivesSurfaceRecreationAndRetry() {
+        val loaded = TransientQuoteFixture.loaded()
+        val p = TransientQuoteFixture.presenter(loaded)
+        p.editTitle("  Proposal  ")
+        val first = assertNotNull(p.beginSave(1))
+        assertEquals("Proposal", first.title)
+        assertNull(p.beginSave(1))
+        p.acceptRead(p.beginRead(), loaded)
+        assertTrue(p.saveState.value.saving)
+        assertEquals("  Proposal  ", p.saveState.value.title)
+        p.saveFailed("uncertain response")
+        val retry = assertNotNull(p.beginSave(1))
+        assertEquals(first, retry)
+        p.saved("saved-series")
+        assertNull(p.beginSave(1))
+        assertEquals("saved-series", p.saveState.value.resultSeriesUuid)
+        p.consumeSaved()
+        assertNotEquals(first.operationUuid, assertNotNull(p.beginSave(1)).operationUuid)
+    }
+
     @Test fun discountIsRoundedOnceOnAggregateAndCannotOverflowSafeResults() {
         assertEquals(QuoteAmounts(5, 1000, 1, 4), QuoteDiscount.calculate(5, 1000))
         assertEquals(QuoteAmounts(3, 5000, 2, 1), QuoteDiscount.calculate(3, 5000))

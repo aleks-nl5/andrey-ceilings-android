@@ -41,10 +41,23 @@ data class CreatedEstimateSeries(
 class ImmutableEstimateRepository(private val database: PrototypeDatabase) {
     private val queries = database.estimateHistoryQueries
 
+    fun saveIndividual(request: IndividualEstimateSaveRequest, year: Int, now: Long,
+        publicToken: () -> String = EstimateNumbering::newPublicToken): CreatedEstimateSeries =
+        saveIndividual(database, request, year, now, publicToken)
+
+    fun frozenIndividual(seriesUuid: String) = database.frozenEstimateQueries.selectFrozenV1(seriesUuid).executeAsOneOrNull()
+
+    fun frozenIndividuals() = database.frozenEstimateQueries.selectFrozenV1List().executeAsList()
+
+    fun setWorkflowStatus(seriesUuid: String, expectedVersion: Long, status: EstimateWorkflowStatus, now: Long): Boolean {
+        require(now > 0 && expectedVersion > 0)
+        return database.frozenEstimateQueries.updateEstimateWorkflow(status.name, now, seriesUuid, expectedVersion).executeAsOneOrNull() != null
+    }
+
     fun numberPolicy(): EstimateNumberPolicy {
         val row = queries.selectEstimateNumberSettings().executeAsOneOrNull()
-            ?: return EstimateNumberPolicy()
-        return EstimateNumberPolicy(row.template, row.prefix, row.sequenceWidth.toInt())
+            ?: return EstimateNumberPolicy(template = "{prefix}-{year}-{sequence}-{suffix}")
+        return EstimateNumberPolicy(row.template, row.prefix, row.sequenceWidth.toInt(), row.suffixLabel)
     }
 
     /** A setting applies only to future series, never to existing stored numbers. */
@@ -52,7 +65,7 @@ class ImmutableEstimateRepository(private val database: PrototypeDatabase) {
         require(EstimateNumbering.validate(policy).isEmpty()) { "Invalid document number policy" }
         database.transaction {
             queries.insertDefaultEstimateNumberSettings()
-            queries.updateEstimateNumberSettings(policy.template, policy.prefix, policy.sequenceWidth.toLong())
+            queries.updateEstimateNumberSettings(policy.template, policy.prefix, policy.sequenceWidth.toLong(), policy.suffixLabel)
         }
     }
 
@@ -88,14 +101,17 @@ class ImmutableEstimateRepository(private val database: PrototypeDatabase) {
                 if (seriesUuid == null) {
                     val candidate = newSeriesUuid().lowercase()
                     val number = EstimateNumbering.render(
-                        policy, EstimateNumberContext(candidate, year, sequence)
+                        policy, EstimateNumberContext(candidate, year, sequence, EstimateNumbering.newPublicToken())
                     )
-                    val inserted = queries.insertEstimateSeriesIfFree(
+                    val publicNumber = EstimateNumbering.printable(number)
+                    val publicAvailable = "{suffix}" !in policy.template || database.frozenEstimateQueries.selectEstimatePublicNumber(publicNumber).executeAsOneOrNull() == null
+                    val inserted = if (publicAvailable) queries.insertEstimateSeriesIfFree(
                         candidate, number, projectId, measurementUuid,
                         policy.template, policy.prefix, policy.sequenceWidth.toLong(),
                         sequence, createdAt
-                    ).executeAsOneOrNull()
+                    ).executeAsOneOrNull() else null
                     if (inserted != null) {
+                        if ("{suffix}" in policy.template) database.frozenEstimateQueries.setEstimatePublicNumber(publicNumber, candidate)
                         seriesUuid = candidate
                         documentNumber = number
                     }

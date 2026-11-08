@@ -11,9 +11,9 @@ class EstimateNumberingTest {
 
     @Test
     fun defaultNumberIncludesAllUuidBitsAndReadableSequence() {
-        val actual = EstimateNumbering.render(EstimateNumberPolicy(), EstimateNumberContext(uuid, 2026, 125))
-        assertEquals("AC-2026-00125-$uuid", actual)
-        assertEquals(actual, EstimateNumbering.render(EstimateNumberPolicy(), EstimateNumberContext(uuid.uppercase(), 2026, 125)))
+        val actual = EstimateNumbering.render(EstimateNumberPolicy(), EstimateNumberContext(uuid, 2026, 125, "K7Q2M8TR92"))
+        assertEquals("AC-2026-00125-K7Q2M8TR92-$uuid", actual)
+        assertEquals(actual, EstimateNumbering.render(EstimateNumberPolicy(), EstimateNumberContext(uuid.uppercase(), 2026, 125, "K7Q2M8TR92")))
     }
 
     @Test
@@ -21,7 +21,7 @@ class EstimateNumberingTest {
         val policy = EstimateNumberPolicy()
         val numbers = (1..10_000).map { index ->
             val deviceUuid = "12345678-1234-4abc-8def-${index.toString(16).padStart(12, '0')}"
-            EstimateNumbering.render(policy, EstimateNumberContext(deviceUuid, 2026, 1))
+            EstimateNumbering.render(policy, EstimateNumberContext(deviceUuid, 2026, 1, "K7Q2M8TR92"))
         }
         assertEquals(numbers.size, numbers.toSet().size)
         assertTrue(numbers.all { it.contains("-2026-00001-") })
@@ -29,14 +29,14 @@ class EstimateNumberingTest {
 
     @Test
     fun templateSettingsAffectNewNumbersButNeverMutateOldOnes() {
-        val first = EstimateNumbering.render(EstimateNumberPolicy(), EstimateNumberContext(uuid, 2026, 1))
+        val first = EstimateNumbering.render(EstimateNumberPolicy(), EstimateNumberContext(uuid, 2026, 1, "K7Q2M8TR92"))
         val changed = EstimateNumbering.render(
             EstimateNumberPolicy(template = "{year}_{prefix}_{uuid}", prefix = "CEIL"),
-            EstimateNumberContext(uuid, 2026, 1)
+            EstimateNumberContext(uuid, 2026, 1, "K7Q2M8TR92")
         )
-        assertEquals("AC-2026-00001-$uuid", first)
+        assertEquals("AC-2026-00001-K7Q2M8TR92-$uuid", first)
         assertEquals("2026_CEIL_$uuid", changed)
-        assertEquals("AC-2026-00001-$uuid", first)
+        assertEquals("AC-2026-00001-K7Q2M8TR92-$uuid", first)
     }
 
     @Test
@@ -45,7 +45,7 @@ class EstimateNumberingTest {
         assertFalse(EstimateNumbering.validate(EstimateNumberPolicy(template = "{uuid}-{uuid}")).isEmpty())
         assertFalse(EstimateNumbering.validate(EstimateNumberPolicy(template = "{uuidShort}")).isEmpty())
         assertFailsWith<IllegalArgumentException> {
-            EstimateNumbering.render(EstimateNumberPolicy(), EstimateNumberContext("12345678", 2026, 1))
+            EstimateNumbering.render(EstimateNumberPolicy(), EstimateNumberContext("12345678", 2026, 1, "K7Q2M8TR92"))
         }
     }
 
@@ -67,21 +67,21 @@ class EstimateNumberingTest {
         )
         for (bad in invalid) {
             assertFailsWith<IllegalArgumentException> {
-                EstimateNumbering.render(EstimateNumberPolicy(), EstimateNumberContext(bad, 2026, 1))
+                EstimateNumbering.render(EstimateNumberPolicy(), EstimateNumberContext(bad, 2026, 1, "K7Q2M8TR92"))
             }
         }
         assertFailsWith<IllegalArgumentException> {
-            EstimateNumbering.render(EstimateNumberPolicy(), EstimateNumberContext(uuid, 2026, 0))
+            EstimateNumbering.render(EstimateNumberPolicy(), EstimateNumberContext(uuid, 2026, 0, "K7Q2M8TR92"))
         }
         assertFailsWith<IllegalArgumentException> {
-            EstimateNumbering.render(EstimateNumberPolicy(), EstimateNumberContext(uuid, 99, 1))
+            EstimateNumbering.render(EstimateNumberPolicy(), EstimateNumberContext(uuid, 99, 1, "K7Q2M8TR92"))
         }
     }
 
     @Test
     fun identicalUuidStillCollidesAndMustBeRejectedByDatabaseUniqueConstraint() {
-        val a = EstimateNumbering.render(EstimateNumberPolicy(), EstimateNumberContext(uuid, 2026, 7))
-        val b = EstimateNumbering.render(EstimateNumberPolicy(), EstimateNumberContext(uuid, 2026, 7))
+        val a = EstimateNumbering.render(EstimateNumberPolicy(), EstimateNumberContext(uuid, 2026, 7, "K7Q2M8TR92"))
+        val b = EstimateNumbering.render(EstimateNumberPolicy(), EstimateNumberContext(uuid, 2026, 7, "K7Q2M8TR92"))
         assertEquals(a, b) // No false uniqueness claim: unique indexes and retry are required at insertion.
     }
 
@@ -96,7 +96,7 @@ class EstimateNumberingTest {
         )
         for ((policy, expected) in cases) {
             assertTrue(EstimateNumbering.validate(policy).isEmpty(), policy.toString())
-            val internal = EstimateNumbering.render(policy, EstimateNumberContext(uuid, 2026, 125))
+            val internal = EstimateNumbering.render(policy, EstimateNumberContext(uuid, 2026, 125, "K7Q2M8TR92"))
             assertTrue(internal.contains(uuid), internal)
             assertEquals(expected, EstimateNumbering.printable(internal, 125, policy.prefix, policy.sequenceWidth))
             assertFalse(EstimateNumbering.printable(internal).contains(uuid), internal)
@@ -112,7 +112,7 @@ class EstimateNumberingTest {
             "{uuid}" to "AC-00125"
         )) {
             val policy = EstimateNumberPolicy(template)
-            val internal = EstimateNumbering.render(policy, EstimateNumberContext(uuid, 2026, 125))
+            val internal = EstimateNumbering.render(policy, EstimateNumberContext(uuid, 2026, 125, "K7Q2M8TR92"))
             val printed = EstimateNumbering.printable(internal, 125, policy.prefix, policy.sequenceWidth)
             assertEquals(expected, printed)
             assertFalse(printed.contains(uuid))
@@ -129,6 +129,6 @@ class EstimateNumberingTest {
     @Test
     fun previewIsDeterministicAndDoesNotAllocateNumbers() {
         assertEquals(EstimateNumbering.preview(EstimateNumberPolicy()), EstimateNumbering.preview(EstimateNumberPolicy()))
-        assertEquals("AC-2026-00001", EstimateNumbering.preview(EstimateNumberPolicy()))
+        assertEquals("AC-2026-00001-K7Q2M8TR92", EstimateNumbering.preview(EstimateNumberPolicy()))
     }
 }

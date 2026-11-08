@@ -206,6 +206,9 @@ internal fun EstimatesScreen(database: CeilingsDatabase?) {
             Text("Кошториси", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
             Text("Збережені розрахунки та суми по кожному об’єкту", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
+        item(key = "saved-individual-v1") {
+            com.andreyceilings.shared.estimate.SavedIndividualQuoteList(database?.objectsClientsStore?.measurementDetails?.elements)
+        }
         if (database == null) {
             item {
                 LinearProgressIndicator(Modifier.fillMaxWidth())

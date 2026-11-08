@@ -143,5 +143,6 @@ object LivePricingProof {
         reader.closeReads()
         assertEquals(PricingReadResult.Unavailable(PricingProblemCode.DATABASE_UNAVAILABLE), reader.read(fixture.projectId, fixture.measurementUuid))
         assertEquals(0, writeAttempts)
+        FrozenIndividualEstimateProof.run(driver)
     }
 }

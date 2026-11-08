@@ -13,6 +13,22 @@ import com.andreyceilings.shared.livepricing.*
 import kotlin.test.*
 
 class BusinessRoleSqlCipherTest {
+    @Test fun physicalV15ToV16RollbackReopenAndFrozenV1(): Unit = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        System.loadLibrary("sqlcipher")
+        val name = "frozen-estimate-v16.db"
+        val key = ByteArray(32) { 44 }
+        context.deleteDatabase(name)
+        try {
+            FrozenEstimateMigrationProof.lifecycle(PriceCatalogSchema) { schema ->
+                AndroidSqliteDriver(schema, context, name, factory = SupportOpenHelperFactory(key.copyOf(), null, true)).also { d ->
+                    try { d.executeQuery(null, "SELECT count(*) FROM sqlite_master", { c -> c.next(); app.cash.sqldelight.db.QueryResult.Value(c.getLong(0)) }, 0).value }
+                    catch (t: Throwable) { d.close(); throw t }
+                }
+            }
+        } finally { key.fill(0); context.deleteDatabase(name) }
+    }
+
     @Test fun physicalV14ToV15RollbackReopenRolesAndPricing(): Unit = runBlocking {
         val context = ApplicationProvider.getApplicationContext<Context>()
         System.loadLibrary("sqlcipher")
@@ -41,12 +57,15 @@ class BusinessRoleSqlCipherTest {
         val password = "role-backup-fixture".toCharArray()
         context.deleteDatabase(name); context.deleteDatabase(copy)
         try {
-            val fixture = createEncryptedPrototypeDriver(context, key, name, enableWalForTesting = true,
+            val (fixture, savedSeries, frozenPayload) = createEncryptedPrototypeDriver(context, key, name, enableWalForTesting = true,
                 initializePriceCatalog = true).use { d ->
                 val fixture = LivePricingProof.seed(PrototypeDatabase(d))
+                val history = com.andreyceilings.shared.estimate.ImmutableEstimateRepository(PrototypeDatabase(d))
+                val saved = history.saveIndividual(FrozenIndividualEstimateProof.command(PrototypeDatabase(d), fixture), 2026, 600)
+                val frozen = history.frozenIndividual(saved.seriesUuid)!!.payload
                 val destination = context.getDatabasePath(copy).absolutePath.replace("'", "''")
                 d.execute(null, "VACUUM INTO '$destination'", 0)
-                fixture
+                Triple(fixture, saved.seriesUuid, frozen)
             }
             val source = context.getDatabasePath(copy).readBytes()
             val payload = PortableBackupPayload.encode(source, key)
@@ -66,7 +85,8 @@ class BusinessRoleSqlCipherTest {
                 val afterRestart = LivePricingReader(restarted.database)
                 assertEquals(result.buildPreview(), assertIs<PricingReadResult.Loaded>(afterRestart.read(fixture.projectId, fixture.measurementUuid)).buildPreview())
                 afterRestart.closeReads()
-                assertEquals(0, restarted.queryLong("SELECT count(*) FROM estimate_series"))
+                assertEquals(1, restarted.queryLong("SELECT count(*) FROM estimate_series"))
+                assertEquals(frozenPayload, com.andreyceilings.shared.estimate.ImmutableEstimateRepository(restarted.database).frozenIndividual(savedSeries)!!.payload)
             } finally { contents.database.fill(0); contents.passphrase.fill(0) }
         } finally {
             try {

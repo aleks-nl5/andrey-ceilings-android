@@ -83,7 +83,7 @@ import kotlinx.coroutines.withContext
 
 fun main() = application {
     var navigation by remember { mutableStateOf(AppNavigationState()) }
-    val availableRoutes = remember { setOf(AppRoute.DASHBOARD, AppRoute.PRICES, AppRoute.OBJECTS) }
+    val availableRoutes = remember { setOf(AppRoute.DASHBOARD, AppRoute.PRICES, AppRoute.OBJECTS, AppRoute.ESTIMATES) }
     val measurementCreateNavigationGuard = remember { com.andreyceilings.shared.measurement.MeasurementCreateNavigationGuard() }
     SideEffect { measurementCreateNavigationGuard.quoteSession.navigate(navigation) }
     fun applyNavigation(next: AppNavigationState) { measurementCreateNavigationGuard.quoteSession.navigate(next); navigation = next }
@@ -200,7 +200,8 @@ private fun DesktopPriceHost(
             listOf(
                 AppDestination(AppRoute.DASHBOARD.name, "Панель", "Панель", Icons.Default.Dashboard),
                 AppDestination(AppRoute.PRICES.name, "Прайс", "Прайс", Icons.Default.ReceiptLong),
-                AppDestination(AppRoute.OBJECTS.name, "Об'єкти", "Об'єкти", Icons.Default.Business)
+                AppDestination(AppRoute.OBJECTS.name, "Об'єкти", "Об'єкти", Icons.Default.Business),
+                AppDestination(AppRoute.ESTIMATES.name, "Кошториси", "Кошториси", Icons.Default.ReceiptLong)
             )
         }
         val topScrollBehavior = key(selectedTab) {
@@ -237,7 +238,7 @@ private fun DesktopPriceHost(
                             onNewMeasurement = null,
                             onCalculator = null,
                             onObjects = { onNavigate(navigation.selectTab(AppRoute.OBJECTS, availableRoutes)) },
-                            onEstimates = null,
+                            onEstimates = { onNavigate(navigation.selectTab(AppRoute.ESTIMATES, availableRoutes)) },
                             onCalendar = null,
                             todayLabel = dashboardTodayLabel(currencyState.nowMillis),
                             nowMillis = currencyState.nowMillis,
@@ -326,6 +327,10 @@ private fun DesktopPriceHost(
                         else externalError = "Вкажіть телефон із міжнародним кодом країни."
                     }
                 )
+                AppRoute.ESTIMATES -> Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())
+                    .padding(top = AppHeaderHeight + 16.dp, bottom = FloatingBarHeight + 16.dp, start = 24.dp, end = 24.dp)) {
+                    com.andreyceilings.shared.estimate.SavedIndividualQuoteList(objectsStore.measurementDetails.elements)
+                }
                 AppRoute.PRICES -> PriceCatalogScreen(
                     items = items,
                     groups = priceGroups,

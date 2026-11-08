@@ -2,6 +2,7 @@ package com.andreyceilings.shared.livepricing
 
 import com.andreyceilings.shared.input.DecimalTextPolicy
 
+@kotlinx.serialization.Serializable
 data class QuoteAmounts(val subtotalCents: Long, val discountBasisPoints: Int,
     val discountCents: Long, val finalCents: Long)
 

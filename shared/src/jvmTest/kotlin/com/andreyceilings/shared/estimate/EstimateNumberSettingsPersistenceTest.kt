@@ -35,7 +35,7 @@ class EstimateNumberSettingsPersistenceTest {
                 projectId, 2026, 100L, frozen(),
                 newSeriesUuid = { uuid(1) }, newRevisionUuid = { uuid(11) }
             )
-            assertEquals("AC-2026-00001-${uuid(1)}", first.documentNumber)
+            kotlin.test.assertTrue(Regex("AC-2026-00001-[A-F0-9]{10}-" + uuid(1)).matches(first.documentNumber))
             val custom = EstimateNumberPolicy(
                 template = "{year}_{prefix}_{sequence}_{uuid}",
                 prefix = "NL",
@@ -102,7 +102,7 @@ class EstimateNumberSettingsPersistenceTest {
                 newSeriesUuid = { uuid(20) }, newRevisionUuid = { uuid(21) }
             )
             val before = EstimateNumbering.printable(legacy.documentNumber)
-            assertEquals("AC-2026-00001", before)
+            kotlin.test.assertTrue(Regex("AC-2026-00001-[A-F0-9]{10}").matches(before))
             val visible = EstimateNumberPolicy("{prefix}-{year}-{sequence}", "КШ", 4)
             repo.configureNumberPolicy(visible)
             val created = repo.createSeries(

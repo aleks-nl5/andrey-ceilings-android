@@ -1,0 +1,26 @@
+-- P4C1: legacy records retain their identities; only future issuance uses suffixes.
+ALTER TABLE estimate_number_settings ADD COLUMN suffixLabel TEXT NOT NULL DEFAULT '';
+UPDATE estimate_number_settings SET template = rtrim(replace(replace(replace(template, '{uuid}', ''), '--', '-'), '//', '/'), '-_./') || '-{suffix}' WHERE instr(template, '{suffix}') = 0;
+UPDATE estimate_number_settings SET template = '{prefix}-{year}-{sequence}-{suffix}' WHERE instr(template, '{sequence}') = 0;
+ALTER TABLE estimate_series ADD COLUMN publicNumber TEXT;
+CREATE UNIQUE INDEX index_estimate_series_public_number ON estimate_series(publicNumber) WHERE publicNumber IS NOT NULL;
+CREATE TABLE estimate_v1_frozen (
+    revisionUuid TEXT NOT NULL PRIMARY KEY REFERENCES estimate_revisions(revisionUuid) ON DELETE RESTRICT,
+    payload TEXT NOT NULL,
+    subtotalCents INTEGER NOT NULL CHECK (subtotalCents >= 0),
+    discountBasisPoints INTEGER NOT NULL CHECK (discountBasisPoints BETWEEN 0 AND 10000),
+    discountCents INTEGER NOT NULL CHECK (discountCents >= 0 AND discountCents <= subtotalCents),
+    totalCents INTEGER NOT NULL CHECK (totalCents = subtotalCents - discountCents)
+);
+CREATE TABLE estimate_workflow (
+    seriesUuid TEXT NOT NULL PRIMARY KEY REFERENCES estimate_series(seriesUuid) ON DELETE RESTRICT,
+    status TEXT NOT NULL CHECK (status IN ('DRAFT','SENT','APPROVED','REJECTED')),
+    version INTEGER NOT NULL CHECK (version > 0),
+    updatedAt INTEGER NOT NULL
+);
+CREATE TABLE estimate_save_receipts (
+    operationUuid TEXT NOT NULL PRIMARY KEY,
+    command TEXT NOT NULL,
+    seriesUuid TEXT NOT NULL UNIQUE REFERENCES estimate_series(seriesUuid) ON DELETE RESTRICT,
+    revisionUuid TEXT NOT NULL UNIQUE REFERENCES estimate_v1_frozen(revisionUuid) ON DELETE RESTRICT
+);

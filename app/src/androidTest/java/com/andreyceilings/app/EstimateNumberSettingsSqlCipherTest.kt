@@ -67,8 +67,7 @@ class EstimateNumberSettingsSqlCipherTest {
                     db.estimates().observeAll().first().first { it.id == firstId }.documentNumber
                 )
                 assertTrue(originalNumber.startsWith("AC-2026-00001-"))
-                assertEquals("AC-2026-00001",
-                    db.estimates().observeAll().first().first { it.id == firstId }.printableNumber)
+                assertTrue(Regex("AC-2026-00001-[A-F0-9]{10}").matches(db.estimates().observeAll().first().first { it.id == firstId }.printableNumber))
                 assertEquals(EstimateNumberPolicy(), db.estimateNumberSettings().load())
 
                 assertEquals(custom, db.estimateNumberSettings().save(custom))

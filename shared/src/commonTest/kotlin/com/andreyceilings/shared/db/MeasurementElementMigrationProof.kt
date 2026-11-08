@@ -29,7 +29,7 @@ object MeasurementElementMigrationProof {
     fun snapshot(driver: SqlDriver): List<List<String?>> = rows(driver,
         "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT IN ('measurement_elements','point_placements','ceiling_operations','ceiling_walls','ceiling_operation_results','line_placements') ORDER BY name", 1)
         .map { checkNotNull(it.single()) }.plus("sqlite_sequence").flatMap { table ->
-            val columns = rows(driver, "PRAGMA table_info($table)", 6).map { checkNotNull(it[1]) }
+            val columns = rows(driver, "PRAGMA table_info($table)", 6).map { checkNotNull(it[1]) }.filterNot { isP4C1AddedSnapshotColumn(table, it) }
             rows(driver, "SELECT " + columns.joinToString { "quote($it)" } + " FROM $table ORDER BY " +
                 columns.indices.joinToString { (it + 1).toString() }, columns.size).map { listOf(table) + it }
         }

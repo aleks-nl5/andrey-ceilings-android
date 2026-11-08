@@ -101,6 +101,8 @@ fun MeasurementDetailsScreen(
                 compact = compact, measurementUpdatedAt = data?.updatedAt, onRefresh = { model?.refreshPricing() }) },
             drawingEditor=drawingEditor,drawingEnabled=!modalOpen && (editStore==null || drawingReady) && points.available && items!=null,
             elementsContent = {
+                com.andreyceilings.shared.estimate.SavedIndividualQuoteList(store?.elements, projectId, data?.uuid)
+
                 MeasurementElementsSection(elementsState, { if(liveActionsAllowed())model?.add() },
                     { element, action -> if(liveActionsAllowed())model?.open(element, action) }, { model?.retry() },
                     onPlace = { element -> if(liveActionsAllowed())data?.let { drawingEditor?.clearDrawingSelection();model?.beginPlacement(element, it.updatedAt) } },

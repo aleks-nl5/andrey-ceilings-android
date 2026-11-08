@@ -10,6 +10,11 @@ object PriceCatalogMigrationProof {
         override val version = 4L
         override fun create(driver: SqlDriver): QueryResult.Value<Unit> {
             PrototypeDatabase.Schema.create(driver)
+            // Freeze the authentic pre-v16 numbering schema; current generated DDL includes P4C1.
+            listOf("DROP TABLE estimate_save_receipts", "DROP TABLE estimate_workflow", "DROP TABLE estimate_v1_frozen",
+                "DROP INDEX index_estimate_series_public_number", "ALTER TABLE estimate_series DROP COLUMN publicNumber",
+                "ALTER TABLE estimate_number_settings DROP COLUMN suffixLabel").forEach { driver.execute(null, it, 0) }
+
             // Reconstruct the authentic historical schema, including removal of v10-only objects.
             MeasurementElementMigrationProof.rows(driver,
                 "SELECT type,name FROM sqlite_master WHERE (name LIKE 'ceiling_%' OR name LIKE 'line_%' OR name LIKE 'area_%') AND type IN ('trigger','view','table') ORDER BY CASE type WHEN 'trigger' THEN 0 WHEN 'view' THEN 1 ELSE 2 END",2)
@@ -52,7 +57,7 @@ object PriceCatalogMigrationProof {
         EstimateRepository(db).create(project, "Preserve estimate", "PVC", "standard", "simple",
             2.0, 3.0, 6.0, 10.0, 50.0, 10.0, 0.0, 0.0, 60.0,
             detailsJson = "{\"oldPriceUuid\":\"old-uuid\",\"pdf\":\"unchanged\"}", createdAt = 13)
-        ImmutableEstimateRepository(db).createSeries(project, 2026, 13,
+        ImmutableEstimateRepository(historicalNumberDatabase(driver)).createSeries(project, 2026, 13,
             ImmutableEstimateDraft("{\"priceUuid\":\"old-uuid\"}", "{\"frozen\":true}", 0.01, "kmp-1", 9999.0,
                 listOf(ImmutableEstimateLine("canvas.pvc_matte", "OLD TEST PRICE", "м²", 1.0, 9999.0, 9999.0, priceItemUuid = "old-uuid"))))
     }
@@ -65,7 +70,7 @@ object PriceCatalogMigrationProof {
         val columns = driver.executeQuery(null, "PRAGMA table_info($table)", { cursor ->
             val names = mutableListOf<String>()
             while (cursor.next().value) names.add(checkNotNull(cursor.getString(1)))
-            QueryResult.Value(names.sorted())
+            QueryResult.Value(names.sorted().filterNot { isP4C1AddedSnapshotColumn(table, it) })
         }, 0).value
         driver.executeQuery(null, "SELECT " + columns.joinToString { "quote($it)" } +
             " FROM $table ORDER BY " + columns.indices.joinToString { (it + 1).toString() }, { cursor ->

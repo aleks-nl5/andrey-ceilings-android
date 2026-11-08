@@ -43,10 +43,10 @@ class ImmutableEstimateRepositoryTest {
             projectId, 2026, 200L, draft(),
             newSeriesUuid = { uniqueUuid(1) }, newRevisionUuid = { uniqueUuid(2) }
         )
-        assertEquals("AC-2026-00001-${uniqueUuid(1)}", first.documentNumber)
+        assertTrue(Regex("AC-2026-00001-[A-F0-9]{10}-" + uniqueUuid(1)).matches(first.documentNumber))
         val root = assertNotNull(repo.series(first.seriesUuid))
         assertEquals(first.documentNumber, root.documentNumber)
-        assertEquals("{prefix}-{year}-{sequence}-{uuid}", root.policyTemplate)
+        assertEquals("{prefix}-{year}-{sequence}-{suffix}", root.policyTemplate)
         assertEquals(1L, root.localSequence)
         val v1 = repo.revisions(first.seriesUuid).single()
         assertEquals(1L, v1.versionNumber)
