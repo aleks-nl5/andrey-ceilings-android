@@ -105,7 +105,7 @@ private tailrec fun Context.findActivity(): Activity? = when (this) {
 // Android UI remains a thin adapter over the single commonMain route enum.
 internal typealias AppTab = AppRoute
 
-private val navigationStateSaver = Saver<AppNavigationState, ArrayList<String>>(
+internal val navigationStateSaver = Saver<AppNavigationState, ArrayList<String>>(
     save = { ArrayList(it.snapshot()) },
     restore = { AppNavigationState.restore(it) }
 )

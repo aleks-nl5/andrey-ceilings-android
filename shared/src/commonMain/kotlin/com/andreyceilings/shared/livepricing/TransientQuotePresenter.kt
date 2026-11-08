@@ -8,10 +8,13 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 
 data class QuoteQuantityEdit(val text: String, val confirmed: Boolean = false)
+data class UnavailableSelectedWork(val sourceKey: String, val label: String,
+    val problems: List<PricingProblemCode> = emptyList())
 data class TransientQuoteState(
     val loading: Boolean = true, val unavailable: PricingProblemCode? = null,
     val source: LiveEstimateSource? = null, val lines: List<LiveEstimateLine> = emptyList(),
     val unresolved: List<UnresolvedWork> = emptyList(), val selected: Set<String> = emptySet(),
+    val unavailableSelectedDiscussing: List<UnavailableSelectedWork> = emptyList(),
     val edits: Map<String, QuoteQuantityEdit> = emptyMap(), val discountText: String = "0",
     val discountConfirmed: Boolean = true, val preview: IndividualEstimatePreview? = null,
     val amounts: QuoteAmounts? = null, val fingerprint: String? = null,
@@ -29,7 +32,9 @@ class TransientQuotePresenter(val measurementUuid: String, val sessionId: String
     private val closed get() = closedState.value
     private var loaded: PricingReadResult.Loaded? = null
     private var excludedConfirmed = emptySet<String>()
-    private var includedDiscussing = emptySet<String>()
+    // Explicit intent survives missing prices/quantities and even removal of the source row.
+    // Retain the last known label so the user can identify and explicitly remove a missing work.
+    private var includedDiscussing = emptyMap<String, String>()
     private val mutable = MutableStateFlow(TransientQuoteState())
     val state: StateFlow<TransientQuoteState> = mutable.asStateFlow()
 
@@ -37,7 +42,7 @@ class TransientQuotePresenter(val measurementUuid: String, val sessionId: String
         request++
         loaded = null
         mutable.value = mutable.value.copy(loading = !closed, unavailable = if (closed) PricingProblemCode.DATABASE_UNAVAILABLE else null,
-            source = null, lines = emptyList(), unresolved = emptyList(), preview = null,
+            source = null, lines = emptyList(), unresolved = emptyList(), unavailableSelectedDiscussing = emptyList(), preview = null,
             amounts = null, fingerprint = null, acknowledgedFingerprint = null)
         return request
     }
@@ -47,7 +52,7 @@ class TransientQuotePresenter(val measurementUuid: String, val sessionId: String
         if (result is PricingReadResult.Unavailable) {
             loaded = null
             mutable.value = mutable.value.copy(loading = false, unavailable = result.problem,
-                source = null, lines = emptyList(), unresolved = emptyList(), preview = null,
+                source = null, lines = emptyList(), unresolved = emptyList(), unavailableSelectedDiscussing = emptyList(), preview = null,
                 amounts = null, fingerprint = null, acknowledgedFingerprint = null)
             return
         }
@@ -70,11 +75,21 @@ class TransientQuotePresenter(val measurementUuid: String, val sessionId: String
 
     fun select(sourceKey: String, included: Boolean) {
         val s = mutable.value
+        if (s.loading || closed) return
+        if (!included && sourceKey in includedDiscussing) {
+            includedDiscussing = includedDiscussing - sourceKey
+            // A previously discussing work may have become confirmed in the refreshed source.
+            if (s.source?.elements?.any { elementKey(it.uuid) == sourceKey &&
+                    it.approval == ElementApproval.APPROVED && it.businessRole == BusinessRole.ADDITIONAL_WORK } == true)
+                excludedConfirmed = excludedConfirmed + sourceKey
+            changed(); rebuild(); return
+        }
         val row = s.lines.find { it.sourceKey == sourceKey } ?: return
-        if (row.businessRole != BusinessRole.ADDITIONAL_WORK || s.loading || closed) return
+        if (row.businessRole != BusinessRole.ADDITIONAL_WORK) return
         if (row.bucket == PricingBucket.CONFIRMED) excludedConfirmed =
             if (included) excludedConfirmed - sourceKey else excludedConfirmed + sourceKey
-        else includedDiscussing = if (included) includedDiscussing + sourceKey else includedDiscussing - sourceKey
+        else if (included) includedDiscussing = includedDiscussing + (sourceKey to
+            (s.source?.elements?.find { elementKey(it.uuid) == sourceKey }?.label ?: row.title))
         changed(); rebuild()
     }
 
@@ -110,7 +125,7 @@ class TransientQuotePresenter(val measurementUuid: String, val sessionId: String
         mutable.update { s -> if (closed) s else s.copy(
             acknowledgedFingerprint = if (checked && s.canAcknowledge) s.fingerprint else null) }
     }
-    fun close() { closedState.value = true; beginRead(); excludedConfirmed = emptySet(); includedDiscussing = emptySet()
+    fun close() { closedState.value = true; beginRead(); excludedConfirmed = emptySet(); includedDiscussing = emptyMap()
         mutable.value = TransientQuoteState(loading = false, unavailable = PricingProblemCode.DATABASE_UNAVAILABLE) }
 
     private fun changed() { mutable.value = mutable.value.copy(acknowledgedFingerprint = null, amounts = null, fingerprint = null) }
@@ -119,19 +134,23 @@ class TransientQuotePresenter(val measurementUuid: String, val sessionId: String
         val source = data.source
         val roles = BusinessRoleBindings(source.signature, source.elements.mapNotNull { e -> e.businessRole?.let { e.uuid to it } }.toMap())
         val base = LivePricingEngine.buildPreview(source, data.catalog, roles, compositionUuid)
+        val unavailableSelected = includedDiscussing.mapNotNull { (key, label) ->
+            if (base.priceableLines.any { it.sourceKey == key && it.businessRole == BusinessRole.ADDITIONAL_WORK }) null
+            else UnavailableSelectedWork(key, source.elements.find { elementKey(it.uuid) == key }?.label ?: label,
+                base.unresolvedItems.find { it.sourceKey == key }?.reasons.orEmpty())
+        }
         val keys = base.priceableLines.filter { row ->
             if (row.bucket == PricingBucket.CONFIRMED) row.businessRole != BusinessRole.ADDITIONAL_WORK || row.sourceKey !in excludedConfirmed
             else row.businessRole == BusinessRole.ADDITIONAL_WORK && row.sourceKey in includedDiscussing
-        }.map { it.sourceKey }.toSet()
+        }.map { it.sourceKey }.toSet() + includedDiscussing.keys
         // A temporarily unpriced row keeps the user's exclusion intent while its stable source still exists.
         excludedConfirmed = excludedConfirmed.intersect(source.elements.filter {
             it.approval == ElementApproval.APPROVED && it.businessRole == BusinessRole.ADDITIONAL_WORK
         }.map { elementKey(it.uuid) }.toSet())
-        includedDiscussing = includedDiscussing.intersect(base.priceableLines.filter { it.bucket == PricingBucket.POTENTIAL }.map { it.sourceKey }.toSet())
         var selection = IndividualEstimateSelection(source.projectUuid, measurementUuid, compositionUuid,
             source.signature, data.catalog.signature, "", keys)
         val s = mutable.value
-        var inputValid = s.discountConfirmed
+        var inputValid = s.discountConfirmed && unavailableSelected.isEmpty()
         val overrides = s.edits.mapNotNull { (id, edit) ->
             val element = source.elements.find { it.uuid == id }
             val value = quantity(edit.text, element?.unit)
@@ -150,7 +169,7 @@ class TransientQuotePresenter(val measurementUuid: String, val sessionId: String
         val fingerprint = amounts?.let { contentToken(listOf(sessionId, preview.signature, s.discountText, bp.toString(),
             it.subtotalCents.toString(), it.discountCents.toString(), it.finalCents.toString())) }
         mutable.update { if (closed) it else s.copy(source = source, lines = live.priceableLines, unresolved = live.unresolvedItems, selected = keys,
-            preview = preview, amounts = amounts, fingerprint = fingerprint) }
+            unavailableSelectedDiscussing = unavailableSelected, preview = preview, amounts = amounts, fingerprint = fingerprint) }
     }
     companion object {
         fun quantity(text: String, unit: String?): Long? = parseElementMilli(text, unit)?.takeIf {

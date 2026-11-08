@@ -156,7 +156,7 @@ data class AppNavigationState(
     fun snapshot(): List<String> =
         listOf(current.name) + backStack.takeLast(maxHistory).map { it.name } +
             (projectDetails?.let { listOf("PROJECT_DETAILS:${it.projectId}") } ?: emptyList()) +
-            (measurementDetails?.let { listOf("MEASUREMENT_DETAILS:${it.projectId}:${it.measurementId}") } ?: emptyList()) +
+            (measurementDetails?.let { listOf("${if (measurementQuote) "MEASUREMENT_QUOTE" else "MEASUREMENT_DETAILS"}:${it.projectId}:${it.measurementId}") } ?: emptyList()) +
             (measurementCreate?.let { listOf("MEASUREMENT_CREATE:${it.projectId}") } ?: emptyList()) +
             (measurementEdit?.let { listOf("MEASUREMENT_EDIT:${it.projectId}:${it.measurementId}") } ?: emptyList()) +
             (if (measurementProjectPicker) listOf("MEASUREMENT_PROJECT_PICKER") else emptyList())
@@ -177,10 +177,11 @@ data class AppNavigationState(
                 .filter { it in available && it != route }
             fun canonicalId(value: String?): Long? = value?.toLongOrNull()
                 ?.takeIf { it > 0 && it.toString() == value }
-            val hasMeasurementTail = snapshot.lastOrNull()?.startsWith("MEASUREMENT_DETAILS:") == true
+            val hasQuoteTail = snapshot.lastOrNull()?.startsWith("MEASUREMENT_QUOTE:") == true
+            val hasMeasurementTail = hasQuoteTail || snapshot.lastOrNull()?.startsWith("MEASUREMENT_DETAILS:") == true
             val hasCreateTail = snapshot.lastOrNull()?.startsWith("MEASUREMENT_CREATE:") == true
             val hasEditTail = snapshot.lastOrNull()?.startsWith("MEASUREMENT_EDIT:") == true
-            val childCount = snapshot.count { it.startsWith("MEASUREMENT_DETAILS:") || it.startsWith("MEASUREMENT_CREATE:") || it.startsWith("MEASUREMENT_EDIT:") }
+            val childCount = snapshot.count { it.startsWith("MEASUREMENT_DETAILS:") || it.startsWith("MEASUREMENT_QUOTE:") || it.startsWith("MEASUREMENT_CREATE:") || it.startsWith("MEASUREMENT_EDIT:") }
             val projectToken = snapshot.getOrNull(snapshot.lastIndex - if (hasMeasurementTail || hasCreateTail || hasEditTail) 1 else 0)
             val projectId = projectToken?.takeIf { it.startsWith("PROJECT_DETAILS:") }
                 ?.substringAfter(":")?.let(::canonicalId)
@@ -205,6 +206,7 @@ data class AppNavigationState(
                 canonicalId(editArgs[1])?.let { parent -> canonicalId(editArgs[2])?.let { MeasurementEdit(parent, it) } } else null
             return AppNavigationState(route, history, projectDetails = details,
                 measurementDetails = measurement, measurementCreate = create, measurementEdit = edit,
+                measurementQuote = hasQuoteTail && measurement != null,
                 measurementProjectPicker = route == AppRoute.MEASUREMENTS && childCount == 0 &&
                     snapshot.lastOrNull() == "MEASUREMENT_PROJECT_PICKER" &&
                     snapshot.count { it == "MEASUREMENT_PROJECT_PICKER" } == 1 &&

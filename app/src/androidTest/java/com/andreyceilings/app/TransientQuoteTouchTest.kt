@@ -15,6 +15,31 @@ import kotlin.test.*
 class TransientQuoteTouchTest {
     @get:Rule val compose = createComposeRule()
 
+    @Test fun unavailableSelectedDiscussingNeedsExplicitRemovalBeforeSmallerTotal() {
+        val data = TransientQuoteFixture.loaded()
+        val presenter = TransientQuoteFixture.presenter(data)
+        presenter.select("element:d", true)
+        compose.setContent { CeilingsTheme(false) {
+            val state by presenter.state.collectAsState()
+            MeasurementQuoteContent(state, {}, {}, presenter::select, presenter::editQuantity,
+                presenter::confirmQuantity, presenter::resetQuantity, presenter::editDiscount,
+                presenter::confirmDiscount, presenter::acknowledge)
+        } }
+        compose.runOnIdle {
+            val missingPrice = data.copy(catalog = data.catalog.copy(items = data.catalog.items.filter { it.uuid != "d" }))
+            presenter.acceptRead(presenter.beginRead(), missingPrice)
+            assertNull(presenter.state.value.amounts)
+            assertFalse(presenter.state.value.preview!!.canFinalizeFull)
+        }
+        compose.onNodeWithText("Вибрана робота потребує перевірки").assertExists()
+        compose.onAllNodesWithText("30,00 грн").assertCountEquals(0)
+        compose.onNodeWithText("Не включати «Можлива робота»").performScrollTo().performClick()
+        compose.runOnIdle {
+            assertEquals(2800, presenter.state.value.amounts?.subtotalCents)
+            assertFalse("element:d" in presenter.state.value.selected)
+        }
+    }
+
     @Test fun actualQuoteInputHidesOldTotalsAndSupportsBothThemes() {
         val presenter = TransientQuoteFixture.presenter()
         var dark by mutableStateOf(false)

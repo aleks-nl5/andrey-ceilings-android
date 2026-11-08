@@ -27,8 +27,11 @@ import com.andreyceilings.shared.livepricing.*
 fun MeasurementQuoteScreen(presenter: TransientQuotePresenter, store: MeasurementElementsStore,
     route: ElementRoute, contentPadding: PaddingValues, systemTopInset: Dp, onBack: () -> Unit) {
     var retry by remember { mutableIntStateOf(0) }
+    // Route/configuration restoration may retain a living presenter. Invalidate readiness
+    // before collecting its initial state, so its previous total cannot flash before revalidation.
+    val initialRead = remember(presenter, store, route, retry) { presenter.beginRead() }
     LaunchedEffect(presenter, store, route, retry) {
-        var generation = presenter.beginRead()
+        var generation = initialRead
         store.observeQuotePricing(route).collect { result ->
             if (result == null) generation = presenter.beginRead() else presenter.acceptRead(generation, result)
         }
@@ -100,6 +103,20 @@ fun MeasurementQuoteContent(state: TransientQuoteState, onBack: () -> Unit, onRe
                     Text(pricingProblemText(it.code), color = MaterialTheme.colorScheme.error)
                 }
             }
+            items(state.unavailableSelectedDiscussing, key = { "unavailable-selected:${it.sourceKey}" }) { work ->
+                Card(Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text("Вибрана робота потребує перевірки", style = MaterialTheme.typography.titleMedium)
+                        Text(work.label)
+                        Text(if (work.problems.isEmpty()) "Робота більше не доступна в цьому складі заміру."
+                            else work.problems.joinToString("; ", transform = ::pricingProblemText))
+                        Text("Сума недоступна до виправлення роботи або вашого явного виключення.")
+                        TextButton(onClick = { onSelect(work.sourceKey, false) }, enabled = source != null) {
+                            Text("Не включати «${work.label}»")
+                        }
+                    }
+                }
+            }
             item { Text("Погоджені роботи", style = MaterialTheme.typography.titleMedium) }
             items(state.lines.filter { it.bucket == PricingBucket.CONFIRMED }, key = { it.sourceKey }) { row ->
                 QuoteLine(row, state, onSelect, onQuantity, onConfirmQuantity, onResetQuantity)
@@ -111,9 +128,10 @@ fun MeasurementQuoteContent(state: TransientQuoteState, onBack: () -> Unit, onRe
             items(state.lines.filter { it.bucket == PricingBucket.POTENTIAL }, key = { it.sourceKey }) { row ->
                 QuoteLine(row, state, onSelect, onQuantity, onConfirmQuantity, onResetQuantity)
             }
-            if (state.unresolved.any { it.bucket == PricingBucket.POTENTIAL }) item {
+            val advisory = state.unresolved.filter { it.bucket == PricingBucket.POTENTIAL && it.sourceKey !in state.selected }
+            if (advisory.isNotEmpty()) item {
                 Text("Потребують уточнення — обговорюється", style = MaterialTheme.typography.titleSmall)
-                state.unresolved.filter { it.bucket == PricingBucket.POTENTIAL }.forEach {
+                advisory.forEach {
                     Text("${it.label}: ${it.reasons.joinToString("; ", transform = ::pricingProblemText)}")
                 }
             }

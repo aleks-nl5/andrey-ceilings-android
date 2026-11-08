@@ -10,6 +10,10 @@ Implements #110 under #44 in `feat/p4b2-transient-individual-estimate`.
 - Confirmed optional work starts included. Discussing work starts excluded and requires explicit
   selection. Mandatory confirmed canvas/profile cannot be deselected. Confirmed omissions list the
   actual exclusion or unresolved reasons; an inline checkbox acknowledges the exact fingerprint.
+  Explicit discussing inclusion is retained by stable source key when price/quantity/source becomes
+  unavailable. The exact intent remains in the validated scope, blocking both full/partial readiness,
+  totals and acknowledgement. The UI names the unavailable selected work and provides an explicit
+  exclusion action. Restoring that same source restores inclusion; labels never remap replacement IDs.
 - `BillableOverrideRules` isolates the removable optional-quantity experiment. Optional eligibility
   requires a validated exact MANUAL (or compatible ENTERED_LENGTH) quantity, NONE placement kind,
   no placed quantity and no point/line/area references. Derived/placed/unknown/range work is read-only.
@@ -27,8 +31,11 @@ Implements #110 under #44 in `feat/p4b2-transient-individual-estimate`.
 - `MeasurementQuoteSession` belongs to Android's living editor ViewModel / the desktop window guard.
   Accepted host navigation retains it across Details/Quote/Edit within one measurement and clears it
   when leaving or changing measurements/tabs. Reopening always reads again and clears acknowledgement.
-  Rotation retains the ViewModel's composition inputs; route restoration opens Details, from which the
-  retained quote can be reopened. New processes have a new guard and default quote inputs.
+  Rotation restores the quote route and retains the ViewModel's composition inputs. Navigation saves
+  only a `MEASUREMENT_QUOTE:projectId:measurementId` route token, never financial data. New processes
+  may restore that route but have a new guard/visit and original quantities, empty selection edits and
+  zero discount. `QuoteHostRestorationTest` exercises the production Android Saver, ViewModelStore,
+  quote screen and physical SQLCipher reader with retained versus replaced ViewModel ownership.
   DB-owner replacement and reader shutdown invalidate presenters immediately; no stale fallback.
 
 No SQL definitions, schema versions, migrations, SQLCipher/WAL/backup code, measurement writers,

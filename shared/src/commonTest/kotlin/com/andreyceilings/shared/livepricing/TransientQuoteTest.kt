@@ -164,15 +164,73 @@ class TransientQuoteTest {
         assertEquals(ExclusionReason.USER_EXCLUDED, p.state.value.preview!!.excluded.single { it.sourceKey == "element:o0" }.reason)
     }
 
-    @Test fun quoteBackReturnsToDetailsAndSnapshotsContainNoQuoteState() {
+    @Test fun selectedDiscussingUnavailableCannotBecomeSilentlyReducedReadyFull() {
+        val data = TransientQuoteFixture.loaded()
+        val variants = listOf(
+            data.copy(catalog = data.catalog.copy(items = data.catalog.items.filter { it.uuid != "d" })),
+            data.copy(source = data.source.copy(elements = data.source.elements.map { if (it.uuid == "d") it.copy(quantity = ElementQuantity.Unknown) else it })),
+            data.copy(source = data.source.copy(elements = data.source.elements.map { if (it.uuid == "d") it.copy(quantity = ElementQuantity.Range(1000, 2000)) else it })),
+            data.copy(source = data.source.copy(elements = data.source.elements.filter { it.uuid != "d" })),
+            data.copy(catalog = data.catalog.copy(items = data.catalog.items.map { if (it.uuid == "d") it.copy(unit = "м.п.") else it }))
+        )
+        for (unavailable in variants) {
+            val p = TransientQuoteFixture.presenter(data)
+            p.select("element:d", true)
+            assertEquals(3000, p.state.value.amounts?.subtotalCents)
+            repeat(2) {
+                p.acceptRead(p.beginRead(), unavailable)
+                assertTrue("element:d" in p.state.value.selected)
+                assertEquals("Можлива робота", p.state.value.unavailableSelectedDiscussing.single().label)
+                assertNull(p.state.value.amounts)
+                assertNull(p.state.value.fingerprint)
+                assertFalse(p.state.value.preview!!.canFinalizeFull)
+                assertFalse(p.state.value.preview!!.canRequestPartialAcknowledgement)
+                p.acknowledge(true); assertFalse(p.state.value.acknowledged)
+            }
+            // Correcting the same stable source restores the user's inclusion, not a smaller quote.
+            p.acceptRead(p.beginRead(), data)
+            assertEquals(3000, p.state.value.amounts?.subtotalCents)
+            assertTrue("element:d" in p.state.value.selected)
+            p.acceptRead(p.beginRead(), unavailable)
+            // Only an explicit action permits the smaller total.
+            p.select("element:d", false)
+            assertEquals(2800, p.state.value.amounts?.subtotalCents)
+            assertTrue(p.state.value.preview!!.canFinalizeFull)
+            assertTrue(p.state.value.unavailableSelectedDiscussing.isEmpty())
+        }
+    }
+
+    @Test fun selectedDiscussingFailureInvalidatesPartialAckAndCannotRemapByTitle() {
+        val data = TransientQuoteFixture.loaded()
+        val p = TransientQuoteFixture.presenter(data)
+        p.select("element:d", true); p.select("element:o0", false)
+        p.acknowledge(true); assertTrue(p.state.value.acknowledged)
+        val replacement = data.copy(source = data.source.copy(elements = data.source.elements.map {
+            if (it.uuid == "d") it.copy(uuid = "new-d") else it
+        }))
+        p.acceptRead(p.beginRead(), replacement)
+        assertNull(p.state.value.amounts); assertFalse(p.state.value.canAcknowledge)
+        assertFalse(p.state.value.acknowledged)
+        assertTrue("element:d" in p.state.value.selected)
+        assertFalse("element:new-d" in p.state.value.selected)
+        p.select("element:d", false)
+        assertEquals(2600, p.state.value.amounts?.subtotalCents)
+        assertTrue(p.state.value.canAcknowledge); assertFalse(p.state.value.acknowledged)
+    }
+
+    @Test fun quoteBackAndRestorationPreserveOnlyRouteIdentity() {
         for (base in listOf(AppNavigationState().selectTab(AppRoute.MEASUREMENTS),
             AppNavigationState().selectTab(AppRoute.OBJECTS).openProject(1))) {
             val details = base.openMeasurement(1, 2)
             val quote = details.openMeasurementQuote()
             assertTrue(quote.measurementQuote); assertEquals(details, quote.back())
-            assertEquals(details, AppNavigationState.restore(quote.snapshot()))
+            assertEquals(quote, AppNavigationState.restore(quote.snapshot()))
+            assertTrue(quote.snapshot().last().startsWith("MEASUREMENT_QUOTE:"))
             assertFalse(quote.selectTab(AppRoute.PRICES).measurementQuote)
         }
+        for (tail in listOf("MEASUREMENT_QUOTE:1:0", "MEASUREMENT_QUOTE:01:2", "MEASUREMENT_QUOTE:1:2:bad"))
+            assertFalse(AppNavigationState.restore(listOf("MEASUREMENTS", tail)).measurementQuote)
+        assertFalse(AppNavigationState.restore(listOf("MEASUREMENTS", "MEASUREMENT_DETAILS:1:2", "MEASUREMENT_QUOTE:1:2")).measurementQuote)
     }
 
     @Test fun visibilityRespondsToViewportInsteadOfScrollPercentage() {
