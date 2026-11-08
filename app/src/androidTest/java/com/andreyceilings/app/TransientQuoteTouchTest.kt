@@ -30,7 +30,9 @@ class TransientQuoteTouchTest {
             compose.runOnIdle { dark = theme; presenter.resetQuantity("c") }
             compose.onNodeWithText("Попередній кошторис").assertExists()
             val field = compose.onNode(hasSetTextAction() and hasText("Розрахункова кількість, м²"))
-            field.performScrollTo().performTextClearance().performTextInput(".")
+            field.performScrollTo()
+            field.performTextClearance()
+            field.performTextInput(".")
             field.assert(SemanticsMatcher.expectValue(SemanticsProperties.EditableText, AnnotatedString("0.")))
             compose.runOnIdle { assertNull(presenter.state.value.amounts) }
             compose.onNodeWithText("Підтвердити кількість").assertIsNotEnabled()
