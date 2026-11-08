@@ -135,7 +135,7 @@ class TransientQuotePresenter(val measurementUuid: String, val sessionId: String
         val roles = BusinessRoleBindings(source.signature, source.elements.mapNotNull { e -> e.businessRole?.let { e.uuid to it } }.toMap())
         val base = LivePricingEngine.buildPreview(source, data.catalog, roles, compositionUuid)
         val unavailableSelected = includedDiscussing.mapNotNull { (key, label) ->
-            if (base.priceableLines.any { it.sourceKey == key && it.businessRole == BusinessRole.ADDITIONAL_WORK }) null
+            if (base.priceableLines.any { it.sourceKey == key }) null
             else UnavailableSelectedWork(key, source.elements.find { elementKey(it.uuid) == key }?.label ?: label,
                 base.unresolvedItems.find { it.sourceKey == key }?.reasons.orEmpty())
         }

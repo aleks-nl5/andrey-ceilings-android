@@ -28,6 +28,7 @@ import kotlin.test.*
 /** Exercises the production Android Saver + ViewModel owner + real quote screen/SQLCipher reader.
  * Registry recreation retains the live ViewModel; a new process has a fresh ViewModelStore.
  */
+@OptIn(ExperimentalTestApi::class)
 class QuoteHostRestorationTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
     private class Owner : ViewModelStoreOwner { override val viewModelStore = ViewModelStore() }
