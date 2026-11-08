@@ -225,6 +225,9 @@ internal object PortableBackupManager {
                     "Суми або рядки історичних версій у резервній копії пошкоджені."
                 }
 
+                check(invalidRevisionRows("SELECT count(*) FROM estimate_number_settings WHERE typeof(nextSequence) != 'integer' OR nextSequence <= 0 OR typeof(sequenceWidth) != 'integer'") == 0L) {
+                    "Пошкоджені числові налаштування нумерації кошторисів."
+                }
                 com.andreyceilings.shared.db.verifyFrozenEstimateStructure(driver)
                 check(invalidRevisionRows(
                     "SELECT count(*) FROM estimate_v1_frozen f JOIN estimate_revisions r USING(revisionUuid) " +

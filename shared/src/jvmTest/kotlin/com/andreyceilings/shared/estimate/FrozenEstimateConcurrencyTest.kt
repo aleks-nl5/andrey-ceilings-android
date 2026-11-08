@@ -15,6 +15,12 @@ class FrozenEstimateConcurrencyTest {
             val command = FrozenIndividualEstimateProof.command(db, fixture)
             val history = ImmutableEstimateRepository(db)
             val first = history.saveIndividual(command, 2026, 700) { "ABCDEF1234" }
+            driver.execute(null, "UPDATE estimate_number_settings SET nextSequence=1.5", 0)
+            assertEquals(IndividualEstimateSaveFailure.Reason.SEQUENCE_EXHAUSTED,
+                assertFailsWith<IndividualEstimateSaveFailure> {
+                    history.saveIndividual(command.copy(operationUuid = newRecordUuid()), 2026, 701)
+                }.reason)
+            assertEquals("real", driver.executeQuery(null, "SELECT typeof(nextSequence) FROM estimate_number_settings", { c -> c.next(); app.cash.sqldelight.db.QueryResult.Value(c.getString(0)) }, 0).value)
             driver.execute(null, "UPDATE estimate_number_settings SET nextSequence=1", 0)
             val before = history.frozenIndividuals().size
             assertEquals(IndividualEstimateSaveFailure.Reason.NUMBER_COLLISION,

@@ -9,16 +9,16 @@ fun verifyFrozenEstimateStructure(driver: SqlDriver) {
         "estimate_v1_frozen" to """CREATE TABLE estimate_v1_frozen (
     revisionUuid TEXT NOT NULL PRIMARY KEY REFERENCES estimate_revisions(revisionUuid) ON DELETE RESTRICT,
     payload TEXT NOT NULL,
-    subtotalCents INTEGER NOT NULL CHECK (subtotalCents >= 0),
-    discountBasisPoints INTEGER NOT NULL CHECK (discountBasisPoints BETWEEN 0 AND 10000),
-    discountCents INTEGER NOT NULL CHECK (discountCents >= 0 AND discountCents <= subtotalCents),
-    totalCents INTEGER NOT NULL CHECK (totalCents = subtotalCents - discountCents)
+    subtotalCents INTEGER NOT NULL CHECK (typeof(subtotalCents) = 'integer' AND subtotalCents >= 0),
+    discountBasisPoints INTEGER NOT NULL CHECK (typeof(discountBasisPoints) = 'integer' AND discountBasisPoints BETWEEN 0 AND 10000),
+    discountCents INTEGER NOT NULL CHECK (typeof(discountCents) = 'integer' AND discountCents >= 0 AND discountCents <= subtotalCents),
+    totalCents INTEGER NOT NULL CHECK (typeof(totalCents) = 'integer' AND totalCents = subtotalCents - discountCents)
 );""",
         "estimate_workflow" to """CREATE TABLE estimate_workflow (
     seriesUuid TEXT NOT NULL PRIMARY KEY REFERENCES estimate_series(seriesUuid) ON DELETE RESTRICT,
     status TEXT NOT NULL CHECK (status IN ('DRAFT','SENT','APPROVED','REJECTED')),
-    version INTEGER NOT NULL CHECK (version > 0),
-    updatedAt INTEGER NOT NULL
+    version INTEGER NOT NULL CHECK (typeof(version) = 'integer' AND version > 0),
+    updatedAt INTEGER NOT NULL CHECK (typeof(updatedAt) = 'integer' AND updatedAt > 0)
 );""",
         "estimate_save_receipts" to """CREATE TABLE estimate_save_receipts (
     operationUuid TEXT NOT NULL PRIMARY KEY,

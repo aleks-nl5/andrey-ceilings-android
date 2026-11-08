@@ -108,6 +108,7 @@ class MeasurementElementsStore(private val database: PrototypeDatabase, private 
                 presenter.saveFailed(when (failure.reason) {
                     IndividualEstimateSaveFailure.Reason.STALE_SOURCE, IndividualEstimateSaveFailure.Reason.STALE_CATALOG -> "Замір або прайс змінився. Перевірте оновлений розрахунок."
                     IndividualEstimateSaveFailure.Reason.NUMBER_POLICY -> "Перевірте формат номера та суфікс у налаштуваннях."
+                    IndividualEstimateSaveFailure.Reason.SEQUENCE_EXHAUSTED -> "Лічильник номерів вичерпано або пошкоджено. Перевірте налаштування нумерації."
                     else -> "Кошторис не збережено. Перевірте склад і доступність бази."
                 })
             } catch (_: Exception) { presenter.saveFailed("Не вдалося підтвердити збереження. Повторіть ту саму дію або перевірте список кошторисів.") }

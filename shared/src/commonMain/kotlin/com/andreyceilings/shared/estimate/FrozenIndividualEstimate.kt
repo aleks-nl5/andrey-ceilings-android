@@ -37,7 +37,7 @@ data class FrozenIndividualLine(val uuid: String, val line: LiveEstimateLine)
 /** Exact authoritative financial record; REAL columns in legacy history are compatibility projections. */
 @Serializable
 data class FrozenIndividualEstimate(
-    val formatVersion: Int = 1, val title: String, val source: FrozenIndividualSource,
+    @kotlinx.serialization.Required val formatVersion: Int = 1, val title: String, val source: FrozenIndividualSource,
     val sourceSignature: String, val catalogSignature: String, val scopeSignature: String,
     val compositionUuid: String, val sessionId: String, val discountText: String,
     val previewSignature: String, val fingerprint: String, val acknowledgedFingerprint: String?,
@@ -89,7 +89,7 @@ data class FrozenIndividualEstimate(
 
 internal val frozenEstimateJson = Json { encodeDefaults = true }
 @Serializable
-private data class FrozenEstimateEnvelope(val version: Int = 1, val document: FrozenIndividualEstimate, val contentProof: String)
+private data class FrozenEstimateEnvelope(@kotlinx.serialization.Required val version: Int = 1, val document: FrozenIndividualEstimate, val contentProof: String)
 
 /** Exact content binding, deliberately not a cryptographic authentication claim. SQLCipher protects the DB.
  * Length-prefixed canonical content avoids accepting valid-looking field corruption or parser fallback. */

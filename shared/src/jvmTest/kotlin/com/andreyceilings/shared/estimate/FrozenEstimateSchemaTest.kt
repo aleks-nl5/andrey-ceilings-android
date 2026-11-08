@@ -6,6 +6,19 @@ import com.andreyceilings.shared.db.*
 import kotlin.test.*
 
 class FrozenEstimateSchemaTest {
+    @Test fun exactColumnsRejectFractionalSqlStorage() {
+        JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).use { driver ->
+            PriceCatalogSchema.create(driver)
+            driver.execute(null, "PRAGMA foreign_keys=OFF", 0)
+            for (values in listOf("1.5,0,0,1.5", "1,0.5,0,1", "1,0,0.5,0.5")) {
+                assertFails { driver.execute(null, "INSERT INTO estimate_v1_frozen VALUES('bad','$values',$values)", 0) }
+            }
+            driver.execute(null, "INSERT INTO estimate_v1_frozen VALUES('valid','{}',1,0,0,1)", 0)
+            assertFails { driver.execute(null, "INSERT INTO estimate_workflow VALUES('bad','DRAFT',1.5,1)", 0) }
+            assertFails { driver.execute(null, "INSERT INTO estimate_workflow VALUES('bad','DRAFT',1,1.5)", 0) }
+        }
+    }
+
     @Test fun wrongPublicNumberIndexAndMissingReceiptConstraintsAreRejected() {
         for (mutation in listOf("index", "receipt", "status")) {
             JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).use { driver ->

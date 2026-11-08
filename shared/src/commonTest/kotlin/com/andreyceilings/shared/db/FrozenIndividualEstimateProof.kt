@@ -69,6 +69,8 @@ object FrozenIndividualEstimateProof {
         // Valid-looking field corruption must fail explicitly, even when amounts still reconcile.
         val envelope = Json.parseToJsonElement(record.payload).jsonObject
         val document = envelope.getValue("document").jsonObject
+        assertFails { decodeFrozenIndividualEstimate(JsonObject(envelope - "version").toString()) }
+        assertFails { decodeFrozenIndividualEstimate(JsonObject(envelope + ("document" to JsonObject(document - "formatVersion"))).toString()) }
         for ((field, value) in listOf("title" to JsonPrimitive("Changed title"), "partial" to JsonPrimitive(true))) {
             val modified = JsonObject(envelope + ("document" to JsonObject(document + (field to value))))
             assertFails { decodeFrozenIndividualEstimate(modified.toString()) }

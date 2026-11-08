@@ -68,7 +68,7 @@ updateEstimateNumberSettings:
 UPDATE estimate_number_settings SET template = ?, prefix = ?, sequenceWidth = ?, suffixLabel = ? WHERE id = 1;
 
 allocateEstimateSequence:
-UPDATE estimate_number_settings SET nextSequence = nextSequence + 1 WHERE id = 1 AND nextSequence < 9223372036854775807
+UPDATE estimate_number_settings SET nextSequence = nextSequence + 1 WHERE id = 1 AND typeof(nextSequence) = 'integer' AND nextSequence < 9223372036854775807
 RETURNING nextSequence;
 
 -- Only a first insert may allocate a document number. Conflicting UUID/number
