@@ -65,7 +65,7 @@ class NumberedEstimateAndroidIntegrationTest {
                 val first = db.estimates().observeAll().first().single()
                 firstNumber = requireNotNull(first.documentNumber)
                 assertTrue(firstNumber.startsWith("AC-"))
-                assertTrue(Regex("AC-2026-00001-[A-F0-9]{10}").matches(first.printableNumber))
+                assertTrue(Regex("AC-2026-00001-[A-F0-9]{10}").matches(requireNotNull(first.printableNumber)))
                 assertTrue(first.printableNumber!!.length < firstNumber.length)
                 val history = ImmutableEstimateRepository(db.database)
                 firstSeries = requireNotNull(db.database.businessSchemaQueries
