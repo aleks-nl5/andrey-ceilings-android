@@ -50,15 +50,27 @@ cross-platform `LivePricingProof`, Android `TransientQuoteTouchTest`, and deskto
 Existing physical proof entry points run on JDBC plus Android/Windows/iOS SQLCipher.
 Existing coherent-read and reader-drain/restore tests remain required regressions.
 
-Local attempt:
+Initial implementation environment attempt:
 
 ```
 gradle --no-daemon :shared:jvmTest :desktopApp:test :app:testDebugUnitTest
 ```
 
-**Blocked before execution:** Gradle is absent (`command not found`); downloads of required 9.7.0
+**Initially blocked before execution:** Gradle was absent (`command not found`); downloads of required 9.7.0
 from services.gradle.org and downloads.gradle.org both returned HTTP 504. JDK 21 is installed.
-`git diff --check` passes. No local KMP/build/UI test success is claimed.
+`git diff --check` passed for the implementation changes.
+
+During the P1/P2 review corrections, official Gradle 9.7.0, Temurin JDK 21 and Android SDK 37
+were installed outside the repository. Local execution then verified:
+
+- `:shared:jvmTest --tests com.andreyceilings.shared.livepricing.TransientQuoteTest`: **15 tests,
+  zero failures/errors/skips**, including selected-discussing unavailable-intent and quote-route regressions.
+- `gradle --no-daemon :app:compileDebugAndroidTestKotlin :desktopApp:compileTestKotlin`:
+  **BUILD SUCCESSFUL**, including the production-Saver/ViewModel restoration test after choosing the
+  JUnit4 `StateRestorationTester` adapter.
+
+Local Android instrumentation and platform UI execution are not claimed. Actual Android touch/host,
+Windows SQLCipher/scenes and iOS Simulator evidence belongs to same-final-SHA CI in the PR body.
 
 CI results and exact implementation SHA belong in the PR body. Green documentation-only runs on
 `8466534` do not validate this implementation. iOS evidence is common/KMP and Simulator only;
