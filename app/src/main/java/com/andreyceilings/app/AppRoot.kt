@@ -105,7 +105,7 @@ private tailrec fun Context.findActivity(): Activity? = when (this) {
 // Android UI remains a thin adapter over the single commonMain route enum.
 internal typealias AppTab = AppRoute
 
-private val navigationStateSaver = Saver<AppNavigationState, ArrayList<String>>(
+internal val navigationStateSaver = Saver<AppNavigationState, ArrayList<String>>(
     save = { ArrayList(it.snapshot()) },
     restore = { AppNavigationState.restore(it) }
 )
@@ -118,6 +118,7 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
     }
     val editorSession: MeasurementEditorSession = androidx.lifecycle.viewmodel.compose.viewModel()
     val measurementCreateNavigationGuard = editorSession.navigationGuard
+    SideEffect { measurementCreateNavigationGuard.quoteSession.navigate(navigation) }
     val measurementFullscreen by measurementCreateNavigationGuard.fullscreen.collectAsState()
     val tab = navigation.current
     var tabChangedAt by remember { mutableLongStateOf(SystemClock.elapsedRealtime()) }
@@ -176,6 +177,7 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
     }
 
     fun applyNavigation(next: AppNavigationState) {
+        measurementCreateNavigationGuard.quoteSession.navigate(next)
         if (next.current != navigation.current) tabChangedAt = SystemClock.elapsedRealtime()
         navigation = next
     }
@@ -530,6 +532,8 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
                             database = database,
                             detailsProjectId = navigation.projectDetails?.projectId,
                             measurementDetails = navigation.measurementDetails,
+                            measurementQuote = navigation.measurementQuote,
+                            onOpenMeasurementQuote = { updateNavigation(navigation.openMeasurementQuote()) },
                             measurementEdit = navigation.measurementEdit,
                             onEditMeasurement = { projectId, measurementId ->
                                 updateNavigation(navigation.editMeasurement(projectId, measurementId))
@@ -743,4 +747,5 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
 /** Keep the shared navigation guard attached to an in-flight save across Activity recreation. */
 internal class MeasurementEditorSession : androidx.lifecycle.ViewModel() {
     val navigationGuard = com.andreyceilings.shared.measurement.MeasurementCreateNavigationGuard()
+    override fun onCleared() { navigationGuard.quoteSession.clear() }
 }

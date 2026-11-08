@@ -1,4 +1,13 @@
-# Поточний план після merged P4B1 (#109) — 07.11.2026
+# CURRENT roadmap — P4B2 authorized, Draft PR #112 (08.11.2026)
+
+- [PR #111](https://github.com/aleks-nl5/andrey-ceilings-android/pull/111) merged into `main` (SHA `2f14392e0c000aef9a8d762944a450adddb49491`), after successful same-SHA Android and Windows+iOS CI and owner APK checks. P4B1 #109 was already merged; schema remains v15.
+- **Now active:** [Issue #110](https://github.com/aleks-nl5/andrey-ceilings-android/issues/110) → [Draft PR #112](https://github.com/aleks-nl5/andrey-ceilings-android/pull/112), branch `feat/p4b2-transient-individual-estimate`. Detailed [Codex handoff](P4B2_CODEX_HANDOFF.md). This is a one-measurement transient CMP quote preview with optional+discussing selections, selected billable overrides, one global % discount, in-page partial confirmation, memory session cleanup on leaving measurement, sticky-top sum animated to full summary at scroll bottom. No Save/number/PDF/schema changes.
+- **After this, separately:** P4C1 atomic saved immutable quote/revisions/frozen drawings and status metadata; P4C2 individual PDF/reprint and selected-room frozen-only consolidated PDF. Umbrella #44 remains open; #70 solver, #95 redesign, #42 hosts and #71/#76/#78 backlog remain separate.
+- Delivery: Codex works only in #112, verifies pure+physical platform tests and same-final-SHA Android/Windows/iOS CI; independent code review and owner APK acceptance precede owner-only merge. Documentation alone is not feature implementation.
+
+---
+
+# Історичний план після merged P4B1 (#109) — 07.11.2026
 
 **Підтверджено:** [PR #107](https://github.com/aleks-nl5/andrey-ceilings-android/pull/107) P4A read-only core та [PR #109](https://github.com/aleks-nl5/andrey-ceilings-android/pull/109) P4B1 typed roles, CMP калькулятор у замірі, SQLCipher **v15** об'єднані. P4B1 merge SHA `977577f5b2739ea73c5d096009410ec1b7026615`; Android #1167 і Windows/iOS #921 SUCCESS, independent review PASS, власник підтвердив роботу APK; [issue #108](https://github.com/aleks-nl5/andrey-ceilings-android/issues/108) closed/completed.
 

@@ -26,7 +26,7 @@ fun MeasurementDetailsScreen(
     projectId: Long, measurementId: Long, store: MeasurementDetailsStore?,
     contentPadding: PaddingValues, systemTopInset: Dp, onBack: () -> Unit, onEdit: (() -> Unit)? = null,
     navigationGuard: MeasurementCreateNavigationGuard? = null, backLabel: String = "До об'єкта",
-    editStore: MeasurementEditStore? = null
+    editStore: MeasurementEditStore? = null, quoteOpen: Boolean = false, onOpenQuote: (() -> Unit)? = null
 ) {
     // Reset collector state with its route/session; never flash a previous record.
     key(projectId, measurementId, store) {
@@ -34,6 +34,18 @@ fun MeasurementDetailsScreen(
         val state = flow?.collectAsState(MeasurementDetailsState.Loading)?.value
             ?: MeasurementDetailsState.Unavailable
         val data = (state as? MeasurementDetailsState.Loaded)?.data
+        if (quoteOpen) {
+            if (store != null && data != null && data.uuid.isNotBlank() && navigationGuard != null) {
+                val presenter = remember(store, data.uuid, navigationGuard) {
+                    navigationGuard.quoteSession.acquire(projectId, measurementId, data.uuid, store.elements)
+                }
+                MeasurementQuoteScreen(presenter, store.elements, ElementRoute(projectId, measurementId, data.uuid),
+                    contentPadding, systemTopInset, onBack)
+            } else Column(Modifier.fillMaxSize().padding(contentPadding)) {
+                Text("Сума недоступна / Перевірте замір")
+                TextButton(onClick = onBack) { Text("До заміру") }
+            }
+        } else {
         val model = remember(store, data?.uuid) {
             if (store != null && data != null && data.uuid.isNotBlank())
                 store.elements.model(ElementRoute(projectId, measurementId, data.uuid)) else null
@@ -73,7 +85,14 @@ fun MeasurementDetailsScreen(
         val pointElement = (elementsState as? MeasurementElementsState.Loaded)?.items?.find {
             it.uuid == (displayedPoints.find {it.uuid==effectivePoint}?.elementUuid ?: points.modeElementUuid) }
         MeasurementDetailsScreen(state, contentPadding, systemTopInset, onBack, onEdit, navigationGuard, backLabel,
-            pricingContent = { compact -> MeasurementPricingSection(
+            pricingContent = { compact ->
+                if (!compact && onOpenQuote != null && navigationGuard != null && data?.geometry is MeasurementGeometryView.Captured) {
+                    OutlinedButton(enabled = liveActions && !modalOpen && drawingState?.error == null,
+                        onClick = { if (liveActionsAllowed() && !modalOpen && drawingState?.error == null) onOpenQuote() }) {
+                        Text("Попередній кошторис")
+                    }
+                }
+                MeasurementPricingSection(
                 if (elementsState == MeasurementElementsState.Unavailable) MeasurementPricingState.Unavailable(
                     com.andreyceilings.shared.livepricing.PricingProblemCode.DATABASE_UNAVAILABLE) else pricingState, items.orEmpty(),
                 editing = drawingState?.let { it.dirty || it.saving || it.checking || it.uncertain || it.conflict || it.error != null ||
@@ -128,6 +147,7 @@ fun MeasurementDetailsScreen(
                 elementsState is MeasurementElementsState.Loaded, model::update, model::requestDismiss, model::save,
                 model::refreshCatalog, model::continueEditing, model::discardAndExit,
                 model::requestReload, model::cancelReload, model::reload) }
+        }
         }
     }
 }

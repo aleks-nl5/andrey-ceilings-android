@@ -33,6 +33,13 @@ sealed interface MeasurementElementsState {
 /** One registry per unlocked DB session. Drafts never enter Android saved state or route snapshots. */
 class MeasurementElementsStore(private val database: PrototypeDatabase, private val nowMillis: () -> Long,
     private val modelDispatcher: CoroutineDispatcher = Dispatchers.Main.immediate) {
+    private val quotePresenters = MutableStateFlow<Set<TransientQuotePresenter>>(emptySet())
+    fun newQuote(measurementUuid: String): TransientQuotePresenter = TransientQuotePresenter(measurementUuid).also { presenter ->
+        quotePresenters.update { if (closed) it else it + presenter }
+        if (closed) releaseQuote(presenter)
+    }
+    fun releaseQuote(presenter: TransientQuotePresenter) { quotePresenters.update { it - presenter }; presenter.close() }
+    private fun closeQuotes() { quotePresenters.getAndUpdate { emptySet() }.forEach { it.close() } }
     private val pricingReader = LivePricingReader(database)
     private val repository = MeasurementElementRepository(database)
     private val points = PointPlacementRepository(database)
@@ -79,6 +86,7 @@ class MeasurementElementsStore(private val database: PrototypeDatabase, private 
     fun close() {
         pricingReader.closeAdmission()
         stopAcceptingWrites()
+        closeQuotes()
         active?.close()
         active = null
     }
@@ -89,6 +97,7 @@ class MeasurementElementsStore(private val database: PrototypeDatabase, private 
      */
     suspend fun closeAndAwaitWrites() {
         val inFlight = stopAcceptingWrites()
+        closeQuotes()
         active?.close()
         active = null
         pricingReader.closeReads()
@@ -104,11 +113,11 @@ class MeasurementElementsStore(private val database: PrototypeDatabase, private 
     }
 
     @OptIn(ExperimentalCoroutinesApi::class)
-    internal fun observePricing(route: ElementRoute): Flow<MeasurementPricingState> =
+    internal fun observeQuotePricing(route: ElementRoute): Flow<PricingReadResult?> =
         database.livePricingQueries.selectPricingInvalidations().asFlow().transformLatest {
-            emit(MeasurementPricingState.Loading)
+            emit(null)
             val completion = beginWrite()
-            if (completion == null) emit(MeasurementPricingState.Unavailable(PricingProblemCode.DATABASE_UNAVAILABLE))
+            if (completion == null) emit(PricingReadResult.Unavailable(PricingProblemCode.DATABASE_UNAVAILABLE))
             else try {
                 val result = withContext(Dispatchers.Default) {
                     // Admission to the reader happens AFTER the outer transaction/Android gate lease.
@@ -118,18 +127,22 @@ class MeasurementElementsStore(private val database: PrototypeDatabase, private 
                         else pricingReader.read(route.projectId, route.measurementUuid)
                     }
                 }
-                emit(if (closed) MeasurementPricingState.Unavailable(PricingProblemCode.DATABASE_UNAVAILABLE)
-                    else when (result) {
-                        is PricingReadResult.Loaded -> MeasurementPricingState.Loaded(result.buildPreview(),
-                            result.source.versions["measurementUpdatedAt"]?.toLongOrNull(),
-                            result.source.elements.associate { it.uuid to it.updatedAt })
-                        is PricingReadResult.Unavailable -> MeasurementPricingState.Unavailable(result.problem)
-                    })
+                emit(if (closed) PricingReadResult.Unavailable(PricingProblemCode.DATABASE_UNAVAILABLE) else result)
             } finally { endWrite(completion) }
         }.catch { failure ->
             if (failure is CancellationException) throw failure
-            emit(MeasurementPricingState.Unavailable(PricingProblemCode.DATABASE_UNAVAILABLE))
+            emit(PricingReadResult.Unavailable(PricingProblemCode.DATABASE_UNAVAILABLE))
         }.flowOn(Dispatchers.Default)
+
+    internal fun observePricing(route: ElementRoute): Flow<MeasurementPricingState> = observeQuotePricing(route).map { result ->
+        when (result) {
+            null -> MeasurementPricingState.Loading
+            is PricingReadResult.Loaded -> MeasurementPricingState.Loaded(result.buildPreview(),
+                result.source.versions["measurementUpdatedAt"]?.toLongOrNull(),
+                result.source.elements.associate { it.uuid to it.updatedAt })
+            is PricingReadResult.Unavailable -> MeasurementPricingState.Unavailable(result.problem)
+        }
+    }
 
     internal fun observe(route: ElementRoute): Flow<MeasurementElementsState> = combine(
         projects.observeById(route.projectId), measurements.observeById(route.measurementId),
