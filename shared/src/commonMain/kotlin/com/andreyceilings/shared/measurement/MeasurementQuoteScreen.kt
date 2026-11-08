@@ -18,6 +18,7 @@ import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.text.style.TextOverflow
 import com.andreyceilings.shared.input.DecimalInputField
 import com.andreyceilings.shared.livepricing.*
 
@@ -70,11 +71,12 @@ fun MeasurementQuoteContent(state: TransientQuoteState, onBack: () -> Unit, onRe
             Text("Попередній кошторис", style = MaterialTheme.typography.titleMedium)
         }
         // Reserved height prevents a scroll jump when ownership passes to the bottom summary.
-        Box(Modifier.fillMaxWidth().heightIn(min = 64.dp).padding(horizontal = 16.dp)
+        Box(Modifier.fillMaxWidth().height(80.dp).padding(horizontal = 16.dp)
             .graphicsLayer { alpha = 1f - handoff; translationY = -12f * handoff }
             .then(if (handoff >= 0.5f) Modifier.clearAndSetSemantics {} else Modifier)) {
             Column {
-                Text(amount, style = MaterialTheme.typography.titleLarge, modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
+                Text(amount, style = MaterialTheme.typography.titleLarge, maxLines = 2, overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
                 if (partial) Text("Частковий", style = MaterialTheme.typography.labelMedium)
             }
         }

@@ -152,6 +152,18 @@ class TransientQuoteTest {
         assertTrue(p.state.value.canAcknowledge)
     }
 
+    @Test fun temporarilyUnpricedOptionalDoesNotUndoExplicitExclusion() {
+        val data = TransientQuoteFixture.loaded()
+        val p = TransientQuoteFixture.presenter(data)
+        p.select("element:o0", false)
+        val unavailablePrice = data.copy(catalog = data.catalog.copy(items = data.catalog.items.filter { it.uuid != "o" }))
+        p.acceptRead(p.beginRead(), unavailablePrice)
+        assertEquals(ExclusionReason.UNRESOLVED, p.state.value.preview!!.excluded.single { it.sourceKey == "element:o0" }.reason)
+        p.acceptRead(p.beginRead(), data)
+        assertFalse("element:o0" in p.state.value.selected)
+        assertEquals(ExclusionReason.USER_EXCLUDED, p.state.value.preview!!.excluded.single { it.sourceKey == "element:o0" }.reason)
+    }
+
     @Test fun quoteBackReturnsToDetailsAndSnapshotsContainNoQuoteState() {
         for (base in listOf(AppNavigationState().selectTab(AppRoute.MEASUREMENTS),
             AppNavigationState().selectTab(AppRoute.OBJECTS).openProject(1))) {

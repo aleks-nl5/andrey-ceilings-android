@@ -123,7 +123,10 @@ class TransientQuotePresenter(val measurementUuid: String, val sessionId: String
             if (row.bucket == PricingBucket.CONFIRMED) row.businessRole != BusinessRole.ADDITIONAL_WORK || row.sourceKey !in excludedConfirmed
             else row.businessRole == BusinessRole.ADDITIONAL_WORK && row.sourceKey in includedDiscussing
         }.map { it.sourceKey }.toSet()
-        excludedConfirmed = excludedConfirmed.intersect(base.priceableLines.filter { it.bucket == PricingBucket.CONFIRMED }.map { it.sourceKey }.toSet())
+        // A temporarily unpriced row keeps the user's exclusion intent while its stable source still exists.
+        excludedConfirmed = excludedConfirmed.intersect(source.elements.filter {
+            it.approval == ElementApproval.APPROVED && it.businessRole == BusinessRole.ADDITIONAL_WORK
+        }.map { elementKey(it.uuid) }.toSet())
         includedDiscussing = includedDiscussing.intersect(base.priceableLines.filter { it.bucket == PricingBucket.POTENTIAL }.map { it.sourceKey }.toSet())
         var selection = IndividualEstimateSelection(source.projectUuid, measurementUuid, compositionUuid,
             source.signature, data.catalog.signature, "", keys)
