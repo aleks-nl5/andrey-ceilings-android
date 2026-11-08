@@ -107,8 +107,8 @@ class TransientQuotePresenter(val measurementUuid: String, val sessionId: String
         changed(); rebuild()
     }
     fun acknowledge(checked: Boolean) {
-        val s = mutable.value
-        mutable.value = s.copy(acknowledgedFingerprint = if (checked && s.canAcknowledge) s.fingerprint else null)
+        mutable.update { s -> if (closed) s else s.copy(
+            acknowledgedFingerprint = if (checked && s.canAcknowledge) s.fingerprint else null) }
     }
     fun close() { closedState.value = true; beginRead(); excludedConfirmed = emptySet(); includedDiscussing = emptySet()
         mutable.value = TransientQuoteState(loading = false, unavailable = PricingProblemCode.DATABASE_UNAVAILABLE) }

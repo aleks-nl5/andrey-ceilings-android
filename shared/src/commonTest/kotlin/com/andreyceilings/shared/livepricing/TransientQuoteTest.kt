@@ -137,6 +137,21 @@ class TransientQuoteTest {
         p.confirmQuantity("c"); assertEquals(2700, p.state.value.amounts?.subtotalCents)
     }
 
+    @Test fun ineligibleOrDisappearedOverrideMustBeExplicitlyRemovedAfterRefresh() {
+        val data = TransientQuoteFixture.loaded()
+        val p = TransientQuoteFixture.presenter(data)
+        p.editQuantity("o0", "2"); p.confirmQuantity("o0")
+        val changed = data.copy(source = data.source.copy(elements = data.source.elements.map {
+            if (it.uuid == "o0") it.copy(quantity = ElementQuantity.Unknown) else it
+        }))
+        p.acceptRead(p.beginRead(), changed)
+        assertNull(p.state.value.amounts)
+        p.confirmQuantity("o0"); assertNull(p.state.value.amounts)
+        p.resetQuantity("o0")
+        assertEquals(2600, p.state.value.amounts?.subtotalCents)
+        assertTrue(p.state.value.canAcknowledge)
+    }
+
     @Test fun quoteBackReturnsToDetailsAndSnapshotsContainNoQuoteState() {
         for (base in listOf(AppNavigationState().selectTab(AppRoute.MEASUREMENTS),
             AppNavigationState().selectTab(AppRoute.OBJECTS).openProject(1))) {

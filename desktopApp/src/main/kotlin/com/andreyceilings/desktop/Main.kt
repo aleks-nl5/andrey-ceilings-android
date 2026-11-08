@@ -84,6 +84,7 @@ fun main() = application {
     var navigation by remember { mutableStateOf(AppNavigationState()) }
     val availableRoutes = remember { setOf(AppRoute.DASHBOARD, AppRoute.PRICES, AppRoute.OBJECTS) }
     val measurementCreateNavigationGuard = remember { com.andreyceilings.shared.measurement.MeasurementCreateNavigationGuard() }
+    SideEffect { measurementCreateNavigationGuard.quoteSession.navigate(navigation) }
     fun applyNavigation(next: AppNavigationState) { measurementCreateNavigationGuard.quoteSession.navigate(next); navigation = next }
     fun updateNavigation(proposed: AppNavigationState) {
         applyNavigation(measurementCreateNavigationGuard.transition(navigation, proposed, ::applyNavigation))

@@ -12,6 +12,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.andreyceilings.shared.input.DecimalInputField
@@ -70,7 +74,7 @@ fun MeasurementQuoteContent(state: TransientQuoteState, onBack: () -> Unit, onRe
             .graphicsLayer { alpha = 1f - handoff; translationY = -12f * handoff }
             .then(if (handoff >= 0.5f) Modifier.clearAndSetSemantics {} else Modifier)) {
             Column {
-                Text(amount, style = MaterialTheme.typography.titleLarge)
+                Text(amount, style = MaterialTheme.typography.titleLarge, modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
                 if (partial) Text("Частковий", style = MaterialTheme.typography.labelMedium)
             }
         }
@@ -111,11 +115,16 @@ fun MeasurementQuoteContent(state: TransientQuoteState, onBack: () -> Unit, onRe
                         else it.problems.joinToString("; ", transform = ::pricingProblemText))
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Checkbox(state.acknowledged, onAcknowledge, enabled = state.canAcknowledge)
+                    Checkbox(state.acknowledged, onAcknowledge, enabled = state.canAcknowledge,
+                        modifier = Modifier.semantics { contentDescription = "Підтверджую цей перелік неврахованих робіт" })
                     Text("Підтверджую цей перелік неврахованих робіт")
                 }
             }
-            state.edits.keys.filter { id -> state.lines.none { it.elementUuid == id && it.sourceKey in state.selected } }.forEach { id ->
+            state.edits.keys.filter { id ->
+                val element = source?.elements?.find { it.uuid == id }
+                state.lines.none { it.elementUuid == id && it.sourceKey in state.selected } ||
+                    source == null || element == null || !BillableOverrideRules.eligible(source, element)
+            }.forEach { id ->
                 item(key = "inactive-edit:$id") {
                     Text("Коригування «${label("element:$id") }» більше не відповідає включеній позиції. Приберіть його для розрахунку.")
                     TextButton(onClick = { onResetQuantity(id) }) { Text("Прибрати коригування") }
@@ -141,7 +150,7 @@ fun MeasurementQuoteContent(state: TransientQuoteState, onBack: () -> Unit, onRe
                             Text("До знижки: ${measurementMoney(it.subtotalCents)}")
                             Text("Знижка ${state.discountText}%: ${measurementMoney(it.discountCents)}")
                         }
-                        Text(amount, style = MaterialTheme.typography.headlineSmall)
+                        Text(amount, style = MaterialTheme.typography.headlineSmall, modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
                         if (partial) Text(if (state.acknowledged) "Частковий · перелік підтверджено" else "Частковий · перевірте невраховані роботи")
                     }
                 }
@@ -161,7 +170,8 @@ private fun QuoteLine(row: LiveEstimateLine, state: TransientQuoteState,
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Checkbox(selected, { onSelect(row.sourceKey, it) }, enabled = row.businessRole == BusinessRole.ADDITIONAL_WORK)
+                Checkbox(selected, { onSelect(row.sourceKey, it) }, enabled = row.businessRole == BusinessRole.ADDITIONAL_WORK,
+                    modifier = Modifier.semantics { contentDescription = "Включити ${element?.label ?: row.title}" })
                 Column(Modifier.weight(1f)) {
                     Text(element?.label ?: row.title, style = MaterialTheme.typography.titleSmall)
                     Text(if (row.bucket == PricingBucket.POTENTIAL) "Обговорюється · ${if (selected) "включено явно" else "не включено"}"
@@ -169,7 +179,8 @@ private fun QuoteLine(row: LiveEstimateLine, state: TransientQuoteState,
                 }
             }
             Text("Із заміру: ${formatElementMilli(row.sourceQuantityMilli)} ${row.unit}")
-            Text("До оплати: ${formatElementMilli(row.effectiveBillableQuantityMilli)} ${row.unit}")
+            Text(if (edit != null && !edit.confirmed) "До оплати: очікує підтвердження кількості"
+                else "До оплати: ${formatElementMilli(row.effectiveBillableQuantityMilli)} ${row.unit}")
             Text("Ціна прайсу: ${measurementMoney(row.unitPriceCents)} / ${row.unit}")
             if (state.amounts != null && selected) Text("Сума: ${measurementMoney(row.totalCents)}")
             row.reviewFlags.forEach { Text(pricingProblemText(it)) }
