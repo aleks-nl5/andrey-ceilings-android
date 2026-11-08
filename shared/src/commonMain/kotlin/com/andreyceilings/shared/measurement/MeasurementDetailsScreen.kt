@@ -45,8 +45,7 @@ fun MeasurementDetailsScreen(
                 Text("Сума недоступна / Перевірте замір")
                 TextButton(onClick = onBack) { Text("До заміру") }
             }
-            return@key
-        }
+        } else {
         val model = remember(store, data?.uuid) {
             if (store != null && data != null && data.uuid.isNotBlank())
                 store.elements.model(ElementRoute(projectId, measurementId, data.uuid)) else null
@@ -148,6 +147,7 @@ fun MeasurementDetailsScreen(
                 elementsState is MeasurementElementsState.Loaded, model::update, model::requestDismiss, model::save,
                 model::refreshCatalog, model::continueEditing, model::discardAndExit,
                 model::requestReload, model::cancelReload, model::reload) }
+        }
         }
     }
 }

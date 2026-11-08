@@ -28,6 +28,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.key
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.LaunchedEffect
 import com.andreyceilings.shared.dashboard.CurrencyRatesStore
 import com.andreyceilings.shared.dashboard.MonobankCurrencyGateway
