@@ -106,6 +106,7 @@ object FrozenRevisionProof {
         // Receipts are primary even after mutable source/catalog changes or deletion.
         prices.updateSalePrice(prices.find(fixture.priceId)!!, 25.0, 620)
         MeasurementRepository(db).delete(m.id)
+        assertIs<PricingReadResult.Unavailable>(LivePricingReader(db).read(fixture.projectId, fixture.measurementUuid))
         assertEquals(v2, history.appendIndividual(secondCommand, 621))
         assertEquals(v3, history.appendIndividual(thirdCommand, 622))
         assertEquals(old.frozen, history.exactIndividual(first.seriesUuid, first.initialRevisionUuid)!!.frozen)

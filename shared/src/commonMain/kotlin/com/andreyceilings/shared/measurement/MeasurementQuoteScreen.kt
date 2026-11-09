@@ -276,10 +276,24 @@ private fun RevisionComparison(presenter: TransientQuotePresenter, state: Transi
     val old = base.frozen
     var confirmSelection by remember { mutableStateOf(false) }
     var carryError by remember { mutableStateOf(false) }
+    var showDrawings by remember { mutableStateOf(false) }
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("${old.publicNumber} · Нова версія v${base.versionNumber + 1}", style = MaterialTheme.typography.titleMedium)
             Text("Порівняння: збережена v${base.versionNumber} → новий розрахунок із поточного заміру та прайсу")
+            TextButton(onClick = { showDrawings = !showDrawings }, enabled = enabled) {
+                Text(if (showDrawings) "Приховати порівняння креслень" else "Порівняти креслення")
+            }
+            if (showDrawings) {
+                Text("Збережене креслення v${base.versionNumber}")
+                MeasurementDrawing(MeasurementGeometryView.Captured(MeasurementGeometryCodec.read(old.source.drawingJson)),
+                    compact = true, pointPlacements = old.source.points, linePlacements = old.source.lines, areaFeatures = old.source.areas)
+                state.source?.let { currentSource ->
+                    Text("Поточне креслення заміру")
+                    MeasurementDrawing(MeasurementGeometryView.Captured(currentSource.geometry), compact = true,
+                        pointPlacements = currentSource.points, linePlacements = currentSource.lines, areaFeatures = currentSource.areas)
+                }
+            }
             val current = state.preview?.included.orEmpty().filter { it.selectedForDocument }.map { it.line }
             (old.rows.map { it.line.elementUuid } + current.map { it.elementUuid }).distinct().forEach { id ->
                 val before = old.rows.singleOrNull { it.line.elementUuid == id }?.line

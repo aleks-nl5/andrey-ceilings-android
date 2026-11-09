@@ -40,12 +40,26 @@ class MeasurementElementsStore(private val database: PrototypeDatabase, private 
         quotePresenters.update { if (closed) it else it + presenter }
         if (closed) releaseQuote(presenter)
     }
-    private val revisionEditors = mutableMapOf<String, Pair<TransientQuotePresenter, ElementRoute>>()
-    fun retainedRevision(seriesUuid: String): Pair<TransientQuotePresenter, ElementRoute>? = revisionEditors[seriesUuid]
-    fun revisionQuote(base: SavedIndividualQuote, route: ElementRoute): TransientQuotePresenter =
-        revisionEditors.getOrPut(base.seriesUuid) { newQuote(base.frozen.source.measurementUuid, base) to route }.first
-    fun releaseQuote(presenter: TransientQuotePresenter) { quotePresenters.update { it - presenter }; revisionEditors.entries.removeAll { it.value.first === presenter }; presenter.close() }
-    private fun closeQuotes() { revisionEditors.clear(); quotePresenters.getAndUpdate { emptySet() }.forEach { it.close() } }
+    private val revisionEditors = MutableStateFlow<Map<String, Pair<TransientQuotePresenter, ElementRoute>>>(emptyMap())
+    fun retainedRevision(seriesUuid: String): Pair<TransientQuotePresenter, ElementRoute>? = revisionEditors.value[seriesUuid]
+    fun revisionQuote(base: SavedIndividualQuote, route: ElementRoute): TransientQuotePresenter {
+        retainedRevision(base.seriesUuid)?.let { return it.first }
+        val candidate = newQuote(base.frozen.source.measurementUuid, base)
+        val registered = revisionEditors.updateAndGet { current ->
+            if (closed || base.seriesUuid in current) current else current + (base.seriesUuid to (candidate to route))
+        }[base.seriesUuid]?.first
+        if (registered !== candidate) releaseQuote(candidate)
+        return registered ?: candidate
+    }
+    fun releaseQuote(presenter: TransientQuotePresenter) {
+        quotePresenters.update { it - presenter }
+        revisionEditors.update { editors -> editors.filterValues { it.first !== presenter } }
+        presenter.close()
+    }
+    private fun closeQuotes() {
+        revisionEditors.value = emptyMap()
+        quotePresenters.getAndUpdate { emptySet() }.forEach { it.close() }
+    }
     val savingQuote: Boolean get() = quotePresenters.value.any { it.saveState.value.saving }
     private val pricingReader = LivePricingReader(database)
     private val repository = MeasurementElementRepository(database)
@@ -82,7 +96,7 @@ class MeasurementElementsStore(private val database: PrototypeDatabase, private 
         val latest = estimates.frozenIndividual(seriesUuid) ?: return@estimateAccess null
         val saved = estimates.exactIndividual(seriesUuid, latest.revisionUuid) ?: return@estimateAccess null
         val m = measurements.findByUuid(saved.frozen.source.measurementUuid) ?: return@estimateAccess null
-        if (m.projectId != saved.projectId || projects.find(m.projectId) == null) return@estimateAccess null
+        if (m.deletedAt != null || m.projectId != saved.projectId || projects.find(m.projectId) == null) return@estimateAccess null
         if (pricingReader.readInTransaction(m.projectId, m.uuid) !is PricingReadResult.Loaded) return@estimateAccess null
         saved to ElementRoute(m.projectId, m.id, m.uuid)
     }
