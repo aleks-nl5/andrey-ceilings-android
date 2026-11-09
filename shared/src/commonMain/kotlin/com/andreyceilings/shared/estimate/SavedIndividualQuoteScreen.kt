@@ -40,7 +40,7 @@ fun SavedIndividualQuoteList(store: MeasurementElementsStore?, projectId: Long? 
             OutlinedCard(onClick = { selected = row.seriesUuid }, modifier = Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(12.dp)) {
                     Text(row.frozen.title, style = MaterialTheme.typography.titleSmall)
-                    Text("${row.frozen.publicNumber} · v1 · ${row.status.label}")
+                    Text("${row.frozen.publicNumber} · v${row.versionNumber} · ${row.status.label}")
                     Text("${row.frozen.source.projectTitle} / ${row.frozen.source.measurementName}")
                     Text(measurementMoney(row.frozen.amounts.finalCents))
                 }
@@ -53,14 +53,29 @@ fun SavedIndividualQuoteList(store: MeasurementElementsStore?, projectId: Long? 
 
 /** Full-window read-only route. Only its series UUID is restored; Android Dialog owns gesture Back. */
 @Composable
-fun SavedIndividualQuoteDialog(store: MeasurementElementsStore?, seriesUuid: String, onDismiss: () -> Unit) {
+fun SavedIndividualQuoteDialog(store: MeasurementElementsStore?, seriesUuid: String, revisionUuid: String? = null, onDismiss: () -> Unit) {
+    var selectedRevision by rememberSaveable(seriesUuid) { mutableStateOf(revisionUuid) }
+    var generation by remember { mutableIntStateOf(0) }
+    var history by remember { mutableStateOf<List<SavedIndividualQuote>>(emptyList()) }
+    var preparation by remember { mutableStateOf<Pair<SavedIndividualQuote, ElementRoute>?>(null) }
+    var editing by rememberSaveable(seriesUuid) { mutableStateOf(false) }
+    var editor by remember { mutableStateOf<Pair<com.andreyceilings.shared.livepricing.TransientQuotePresenter, ElementRoute>?>(null) }
     var data by remember(store, seriesUuid) { mutableStateOf<SavedIndividualQuote?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     var loading by remember { mutableStateOf(true) }
     var busy by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
-    LaunchedEffect(store, seriesUuid) {
-        try { data = checkNotNull(store).savedQuote(seriesUuid); if (data == null) error = "Документ не знайдено." }
+    LaunchedEffect(store, seriesUuid, selectedRevision, generation) {
+        loading = true; error = null; data = null; preparation = null
+        try {
+            data = checkNotNull(store).savedQuote(seriesUuid, selectedRevision)
+            if (data == null) error = "Документ не знайдено."
+            else {
+                selectedRevision = data?.revisionUuid
+                history = store.quoteHistory(seriesUuid)
+                preparation = store.prepareRevision(seriesUuid)
+            }
+        }
         catch (cancelled: CancellationException) { throw cancelled }
         catch (_: Exception) { error = "Документ недоступний або збережені дані пошкоджено." }
         finally { loading = false }
@@ -76,24 +91,43 @@ fun SavedIndividualQuoteDialog(store: MeasurementElementsStore?, seriesUuid: Str
                     val f = saved.frozen
                     item {
                         Text(f.title, style = MaterialTheme.typography.headlineSmall)
-                        Text("${f.publicNumber} · v1", style = MaterialTheme.typography.titleMedium)
+                        Text("${f.publicNumber} · v${saved.versionNumber}", style = MaterialTheme.typography.titleMedium)
                         Text("${f.source.projectTitle} / ${f.source.measurementName}")
                         Text("Створено: ${kotlin.time.Instant.fromEpochMilliseconds(saved.createdAt)}")
-                        Text("Статус: ${saved.status.label}")
+                        Text("Поточний статус серії: ${saved.status.label}")
+                        if (saved.revisionUuid != history.firstOrNull()?.revisionUuid) Text("Історична версія. Поточний статус серії не є історією погодження цього документа.")
                     }
                     items(EstimateWorkflowStatus.entries.toList()) { status ->
-                        OutlinedButton(enabled = !busy && status != saved.status, onClick = {
+                        OutlinedButton(enabled = !busy && !loading && saved.revisionUuid == history.firstOrNull()?.revisionUuid && status != saved.status, onClick = {
                             busy = true; error = null
                             scope.launch {
                                 try {
                                     val changed = checkNotNull(store).setQuoteStatus(seriesUuid, saved.statusVersion, status)
-                                    data = store.savedQuote(seriesUuid)
+                                    data = store.savedQuote(seriesUuid, saved.revisionUuid)
+                                    history = store.quoteHistory(seriesUuid)
+                                    preparation = store.prepareRevision(seriesUuid)
                                     if (!changed) error = "Статус уже змінено. Перевірте актуальне значення."
                                 } catch (cancelled: CancellationException) { throw cancelled }
                                 catch (_: Exception) { error = "Не вдалося змінити статус. Оновіть документ." }
                                 finally { busy = false }
                             }
                         }) { Text(status.label) }
+                    }
+                    item {
+                        Text("Історія версій", style = MaterialTheme.typography.titleMedium)
+                        history.forEach { revision ->
+                            TextButton(enabled = !busy && revision.revisionUuid != saved.revisionUuid,
+                                onClick = { selectedRevision = revision.revisionUuid }) {
+                                Text("v${revision.versionNumber}${if (revision == history.firstOrNull()) " · поточна" else ""} · ${revision.frozen.title} · ${measurementMoney(revision.frozen.amounts.finalCents)}")
+                            }
+                        }
+                        Button(enabled = !busy && !loading && preparation != null, onClick = {
+                            preparation?.let { (base, route) ->
+                                editing = true
+                                editor = checkNotNull(store).revisionQuote(base, route) to route
+                            }
+                        }) { Text("Створити нову версію") }
+                        if (preparation == null) Text("Нову версію неможливо створити: актуальний замір або його об’єкт недоступний. Історію збережено.")
                     }
                     item { FrozenQuoteDrawing(f.source) }
                     items(f.rows, key = { it.uuid }) { frozen ->
@@ -125,6 +159,27 @@ fun SavedIndividualQuoteDialog(store: MeasurementElementsStore?, seriesUuid: Str
             }
         }
     }
+    LaunchedEffect(editing, preparation) {
+        if (editing && editor == null) {
+            editor = store?.retainedRevision(seriesUuid)
+            if (editor == null) preparation?.let { (base, route) -> editor = checkNotNull(store).revisionQuote(base, route) to route }
+        }
+    }
+    editor?.let { (presenter, route) ->
+        val save by presenter.saveState.collectAsState()
+        fun closeEditor() {
+            if (!presenter.saveState.value.saving) {
+                store?.releaseQuote(presenter); editor = null; editing = false; generation++
+            }
+        }
+        Dialog(onDismissRequest = { closeEditor() }, properties = DialogProperties(usePlatformDefaultWidth = false,
+            dismissOnBackPress = !save.saving, dismissOnClickOutside = false)) {
+            Surface(Modifier.fillMaxSize()) {
+                MeasurementQuoteScreen(presenter, checkNotNull(store), route, PaddingValues(16.dp), 0.dp) { closeEditor() }
+            }
+        }
+    }
+
 }
 
 @Composable

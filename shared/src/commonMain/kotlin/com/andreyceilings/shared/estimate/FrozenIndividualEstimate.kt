@@ -22,6 +22,17 @@ data class IndividualEstimateSaveRequest(
 )
 
 @Serializable
+data class IndividualRevisionTarget(val seriesUuid: String, val expectedLatestRevisionUuid: String,
+    val expectedVersion: Long, val expectedStatusVersion: Long)
+
+@Serializable
+data class AppendIndividualRevisionRequest(val target: IndividualRevisionTarget, val calculation: IndividualEstimateSaveRequest)
+
+@Serializable
+data class FrozenRevisionIdentity(val seriesUuid: String, val revisionUuid: String,
+    val versionNumber: Long, val parentRevisionUuid: String)
+
+@Serializable
 data class FrozenIndividualSource(
     val projectUuid: String, val projectTitle: String, val measurementUuid: String,
     val measurementName: String, val drawingJson: String,
@@ -44,10 +55,18 @@ data class FrozenIndividualEstimate(
     val partial: Boolean, val omissions: List<ExcludedIndividualWork>,
     val rows: List<FrozenIndividualLine>, val amounts: QuoteAmounts,
     val numberPolicy: EstimateNumberPolicy, val publicNumber: String,
-    val currency: String = "UAH", val rounding: String = "HALF_UP_PER_ROW_THEN_DISCOUNT"
+    val currency: String = "UAH", val rounding: String = "HALF_UP_PER_ROW_THEN_DISCOUNT",
+    @kotlinx.serialization.EncodeDefault(kotlinx.serialization.EncodeDefault.Mode.NEVER)
+    val revisionIdentity: FrozenRevisionIdentity? = null
 ) {
     fun validate() {
-        require(formatVersion == 1 && validEstimateTitle(title) == title)
+        require(formatVersion in 1..2 && validEstimateTitle(title) == title)
+        if (formatVersion == 1) require(revisionIdentity == null)
+        else {
+            val identity = checkNotNull(revisionIdentity)
+            require(isEstimateUuid(identity.seriesUuid) && isEstimateUuid(identity.revisionUuid) && isEstimateUuid(identity.parentRevisionUuid))
+            require(identity.versionNumber > 1 && identity.revisionUuid != identity.parentRevisionUuid)
+        }
         require(currency == "UAH" && rounding == "HALF_UP_PER_ROW_THEN_DISCOUNT")
         require(source.projectUuid.isNotBlank() && source.measurementUuid.isNotBlank())
         val geometry = MeasurementGeometryCodec.read(source.drawingJson)
@@ -69,6 +88,7 @@ data class FrozenIndividualEstimate(
             require(line.totalCents == PricingMath.lineCents(line.unitPriceCents, line.effectiveBillableQuantityMilli))
             val element = source.elements.single { it.uuid == line.elementUuid }
             require(line.businessRole == element.businessRole)
+            require((element.source as? ElementSource.CatalogSelection)?.priceItemUuid == line.catalogItemUuid)
             require((line.bucket == PricingBucket.CONFIRMED) == (element.approval == ElementApproval.APPROVED))
         }
         require(rows.count { it.line.businessRole == BusinessRole.CANVAS && it.line.bucket == PricingBucket.CONFIRMED } == 1)
@@ -115,7 +135,8 @@ internal fun quoteSaveFingerprint(session: String, preview: String, discount: St
 
 /** UI projection loaded exclusively from immutable storage, including after source deletion. */
 data class SavedIndividualQuote(val seriesUuid: String, val createdAt: Long, val frozen: FrozenIndividualEstimate,
-    val status: EstimateWorkflowStatus, val statusVersion: Long)
+    val status: EstimateWorkflowStatus, val statusVersion: Long,
+    val revisionUuid: String = "", val versionNumber: Long = 1, val parentRevisionUuid: String? = null, val projectId: Long = 0)
 
 /** Shared normalized-column audit. It never consults a mutable measurement, project or catalog. */
 fun verifyFrozenStoredIdentity(frozen: FrozenIndividualEstimate, projectId: Long, measurementUuid: String?, publicNumber: String?,
@@ -137,4 +158,33 @@ fun verifyFrozenSaveReceipt(operationUuid: String, command: String, frozen: Froz
     require(request.selection.basisSourceSignature == frozen.sourceSignature && request.selection.basisCatalogSignature == frozen.catalogSignature)
     require(request.selection.scopeSignature == frozen.scopeSignature && request.selection.compositionUuid == frozen.compositionUuid)
     require(request.selection.includedSourceKeys == frozen.rows.map { it.line.sourceKey }.toSet())
+    require(request.overrides.map { it.measurementElementUuid }.toSet().size == request.overrides.size)
+    require(request.overrides.map { it.measurementElementUuid }.toSet() == frozen.rows.filter {
+        it.line.quantityOrigin == QuantityOrigin.EXPLICIT_BILLABLE_OVERRIDE
+    }.map { checkNotNull(it.line.elementUuid) }.toSet())
+    request.overrides.forEach { override ->
+        val line = frozen.rows.single { it.line.elementUuid == override.measurementElementUuid }.line
+        require(override.explicitlyConfirmed && override.quantityMilli == line.effectiveBillableQuantityMilli && override.unit == line.unit)
+        require(override.expectedBusinessRole == line.businessRole && override.note == line.overrideNote)
+        require(override.measurementUuid == frozen.source.measurementUuid && override.projectUuid == frozen.source.projectUuid)
+        require(override.basisSourceSignature == frozen.sourceSignature && override.basisCatalogSignature == frozen.catalogSignature)
+        require(override.compositionUuid == frozen.compositionUuid && override.basisScopeSignature == frozen.scopeSignature)
+    }
+}
+
+/** Bind an exact payload to the row and its parent, independent from live source/catalog. */
+fun verifyFrozenRevisionIdentity(frozen: FrozenIndividualEstimate, seriesUuid: String, revisionUuid: String,
+    versionNumber: Long, parentRevisionUuid: String?) {
+    if (versionNumber == 1L) require(frozen.formatVersion == 1 && parentRevisionUuid == null)
+    else require(frozen.formatVersion == 2 && frozen.revisionIdentity ==
+        FrozenRevisionIdentity(seriesUuid, revisionUuid, versionNumber, checkNotNull(parentRevisionUuid)))
+}
+
+fun verifyFrozenRevisionReceipt(operationUuid: String, command: String, frozen: FrozenIndividualEstimate) {
+    val append = frozenEstimateJson.decodeFromString<AppendIndividualRevisionRequest>(command)
+    val identity = checkNotNull(frozen.revisionIdentity)
+    require(append.target.seriesUuid == identity.seriesUuid && append.target.expectedLatestRevisionUuid == identity.parentRevisionUuid)
+    require(append.target.expectedVersion > 0 && append.target.expectedVersion < Long.MAX_VALUE &&
+        append.target.expectedVersion + 1 == identity.versionNumber && append.target.expectedStatusVersion > 0)
+    verifyFrozenSaveReceipt(operationUuid, frozenEstimateJson.encodeToString(append.calculation), frozen)
 }

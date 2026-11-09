@@ -45,9 +45,43 @@ class ImmutableEstimateRepository(private val database: PrototypeDatabase) {
         publicToken: () -> String = EstimateNumbering::newPublicToken): CreatedEstimateSeries =
         saveIndividual(database, request, year, now, publicToken)
 
-    fun frozenIndividual(seriesUuid: String) = database.frozenEstimateQueries.selectFrozenV1(seriesUuid).executeAsOneOrNull()
+    fun appendIndividual(request: AppendIndividualRevisionRequest, now: Long): CreatedEstimateSeries =
+        saveIndividual(database, request.calculation, 2000, now, EstimateNumbering::newPublicToken, request.target)
 
-    fun frozenIndividuals() = database.frozenEstimateQueries.selectFrozenV1List().executeAsList()
+    fun frozenIndividual(seriesUuid: String) = database.frozenRevisionQueries.selectExactLatest(seriesUuid).executeAsOneOrNull()
+
+    fun frozenIndividuals() = database.frozenRevisionQueries.selectExactLatestList().executeAsList()
+
+    fun exactIndividual(seriesUuid: String, revisionUuid: String): SavedIndividualQuote? =
+        database.frozenRevisionQueries.selectExactRevision(seriesUuid, revisionUuid).executeAsOneOrNull()?.let {
+            val f = decodeFrozenIndividualEstimate(it.payload)
+            verifyFrozenStoredIdentity(f, it.projectId, it.measurementUuid, it.publicNumber,
+                it.subtotalCents, it.discountBasisPoints, it.discountCents, it.totalCents)
+            verifyFrozenRevisionIdentity(f, it.seriesUuid, it.revisionUuid, it.versionNumber, it.parentRevisionUuid)
+            val revision = checkNotNull(revision(it.revisionUuid))
+            require(revision.detailsJson == it.payload && revision.sourceMeasurementJson == f.source.drawingJson)
+            if (it.versionNumber > 1) {
+                val parent = checkNotNull(revision(checkNotNull(it.parentRevisionUuid)))
+                require(parent.seriesUuid == seriesUuid && parent.versionNumber == it.versionNumber - 1)
+                require(database.frozenRevisionQueries.selectExactRevision(seriesUuid, parent.revisionUuid).executeAsOneOrNull() != null)
+            }
+            if (it.versionNumber == 1L) {
+                val receipt = checkNotNull(database.frozenEstimateQueries.selectV1ReceiptByRevision(it.revisionUuid).executeAsOneOrNull())
+                require(receipt.seriesUuid == it.seriesUuid)
+                verifyFrozenSaveReceipt(receipt.operationUuid, receipt.command, f)
+            } else {
+                val receipt = checkNotNull(database.frozenRevisionQueries.selectRevisionReceiptByRevision(it.revisionUuid).executeAsOneOrNull())
+                require(receipt.seriesUuid == it.seriesUuid)
+                verifyFrozenRevisionReceipt(receipt.operationUuid, receipt.command, f)
+            }
+            SavedIndividualQuote(it.seriesUuid, it.createdAt, f, EstimateWorkflowStatus.valueOf(it.status), it.statusVersion,
+                it.revisionUuid, it.versionNumber, it.parentRevisionUuid, it.projectId)
+        }
+
+    fun individualHistory(seriesUuid: String): List<SavedIndividualQuote> =
+        database.frozenRevisionQueries.selectExactHistory(seriesUuid).executeAsList().map {
+            checkNotNull(exactIndividual(seriesUuid, it.revisionUuid))
+        }
 
     fun setWorkflowStatus(seriesUuid: String, expectedVersion: Long, status: EstimateWorkflowStatus, now: Long): Boolean {
         require(now > 0 && expectedVersion > 0)
@@ -140,6 +174,9 @@ class ImmutableEstimateRepository(private val database: PrototypeDatabase) {
         return database.transactionWithResult {
             val root = checkNotNull(series(seriesUuid)) { "Estimate series not found" }
             check(root.deletedAt == null) { "Deleted estimate series cannot be revised" }
+            check(database.frozenEstimateQueries.selectFrozenV1(seriesUuid).executeAsOneOrNull() == null) {
+                "Exact individual series require the measurement-sourced writer"
+            }
             val latest = checkNotNull(queries.selectLatestEstimateRevision(seriesUuid).executeAsOneOrNull()) {
                 "Estimate series has no first revision"
             }

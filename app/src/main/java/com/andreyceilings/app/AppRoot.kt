@@ -118,7 +118,10 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
     }
     val editorSession: MeasurementEditorSession = androidx.lifecycle.viewmodel.compose.viewModel()
     val measurementCreateNavigationGuard = editorSession.navigationGuard
-    SideEffect { measurementCreateNavigationGuard.quoteSession.navigate(navigation) }
+    SideEffect {
+        measurementCreateNavigationGuard.quoteSession.navigate(navigation)
+        measurementCreateNavigationGuard.bindQuotes(database?.objectsClientsStore?.measurementDetails?.elements)
+    }
     val measurementFullscreen by measurementCreateNavigationGuard.fullscreen.collectAsState()
     val tab = navigation.current
     var tabChangedAt by remember { mutableLongStateOf(SystemClock.elapsedRealtime()) }

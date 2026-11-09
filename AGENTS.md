@@ -5,7 +5,7 @@
 - New revision v2/v3 under SAME series/printable number (no new counter/suffix), exact frozen drawing/rows/Long cents/milli and full source; unique idempotent operation receipt, latest-version/status CAS and atomic SQLDelight/SQLCipher writer transaction. Keep old versions bit-for-bit immutable. Existing legacy appendRevision(Double) is NOT the P4C2 writer. Current series workflow resets to DRAFT on successfully appended vN, not before; never misrepresent approval history of old revisions.
 - Shared CMP UI: saved quote → «Створити нову версію» → P4B2 transient quote with current measurement, old/new comparison, partial acknowledgement, guarded explicit Save → exact newly frozen revision; history opens any explicit revision UUID. Single series row in lists, no aggregate of revisions, no implicit latest when viewing an old document.
 - Add versioned v16→v17 migration, schema/import/backup verification and physical Android/Windows/iOS SQLCipher proofs; pass same-final-SHA CI, independent review and owner physical APK acceptance. **Do not merge/Ready/close #116/#44 yourself.** PDF = later P4C3, consolidated PDF = P4C4, not in this scope; #35/#70/#95/#114 independent.
-- This branch initially carries docs only, **no v2/v3 implementation or CI acceptance yet**. Do not claim otherwise.
+- The branch now includes the P4C2 implementation; see [docs/P4C2_IMPLEMENTATION.md](docs/P4C2_IMPLEMENTATION.md) for actual verification and pending gates. The original handoff records the initial docs-only state. Do not claim independent review, final CI or owner APK acceptance until recorded.
 
 ---
 
