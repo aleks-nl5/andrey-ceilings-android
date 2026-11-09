@@ -1,3 +1,15 @@
+# CURRENT roadmap — P4C2: immutable v2/v3 sourced from current measurement (09.11.2026)
+
+**Accepted baseline:** Owner merged [PR #115](https://github.com/aleks-nl5/andrey-ceilings-android/pull/115) / closed [#113](https://github.com/aleks-nl5/andrey-ceilings-android/issues/113); main merge d97d096944e946335ed3f603a06c644bb4e9aac8. P4C1 created exact frozen individual v1, settings-derived permanent public number, current status CAS and shared list/detail; SQLDelight/SQLCipher schema v16. Functional APK owner smoke and final-SHA Android/Windows/iOS CI recorded in PR #115; do not describe this as exhaustive acceptance.
+
+**Now:** [Issue #116](https://github.com/aleks-nl5/andrey-ceilings-android/issues/116) — owner-approved P4C2 new v2/v3 revisions. Canonical [developer handoff](P4C2_REVISION_HANDOFF.md), feature branch feat/p4c2-measurement-sourced-revisions; one Draft PR. Version previews use **current saved measurement + active local catalog**, not preceding frozen version; old snapshot for read-only comparison and optional **explicit validated** transfer of supported manual adjustments. Explicit atomic append under the existing series number, no counter increment; new immutable full source/drawing/rows/Long amounts, strict latest+status CAS/idempotency/rollback; revision history by exact UUID, and current status becomes DRAFT only after commit. Shared KMP/CMP and real SQLCipher v16→v17 migration/backup tests for Android/Windows/iOS. Do not use legacy Double append path for exact vN.
+
+**Following independent slices:** P4C3 — individual frozen revision PDF/reprint; P4C4 — frozen-only user-selected room/revision consolidated PDF. Previous references reserving **P4C2 for PDF** are superseded. Umbrella #44 stays open. Future catalog conflict/manual price overrides #35, issuer/company #114, UX redraw #95, arbitrary angles #70, hosts #42 remain separate.
+
+**Delivery:** This P4C2 PR starts **docs only**. Codex implements there, records real same-final-SHA Android + Windows/iOS CI, then independent review and owner APK testing. Owner alone marks Ready/Merge and handles issue closure. No new feature or CI acceptance is claimed yet.
+
+---
+
 # CURRENT roadmap — P4C1 active, Draft PR #115 (08.11.2026)
 
 **Accepted baseline:** [PR #112](https://github.com/aleks-nl5/andrey-ceilings-android/pull/112) P4B2 MERGED into `main` (merge `cfe4bbc97c7503fa3e30a4de7923d7b8ca205fa8`), owner APK works, final feature SHA `42662e3` with Android #1191 and Windows/iOS #943 SUCCESS, review PASS; [#110](https://github.com/aleks-nl5/andrey-ceilings-android/issues/110) closed. [#106](https://github.com/aleks-nl5/andrey-ceilings-android/issues/106) also closed after merged PR #111. Schema is v15.

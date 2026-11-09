@@ -48,3 +48,6 @@ UPDATE estimate_workflow SET status = ?, version = version + 1, updatedAt = max(
 WHERE seriesUuid = ? AND version = ? AND version < 9223372036854775807 AND updatedAt < 9223372036854775807
 AND EXISTS (SELECT 1 FROM estimate_series s WHERE s.seriesUuid = estimate_workflow.seriesUuid AND s.deletedAt IS NULL)
 RETURNING version;
+
+selectV1ReceiptByRevision:
+SELECT * FROM estimate_save_receipts WHERE revisionUuid = ?;

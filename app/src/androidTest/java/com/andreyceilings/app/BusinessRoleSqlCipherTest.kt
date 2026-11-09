@@ -13,6 +13,22 @@ import com.andreyceilings.shared.livepricing.*
 import kotlin.test.*
 
 class BusinessRoleSqlCipherTest {
+    @Test fun physicalV16ToV17RollbackReopenAndFrozenRevisions(): Unit = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        System.loadLibrary("sqlcipher")
+        val name = "frozen-estimate-v17.db"
+        val key = ByteArray(32) { 44 }
+        context.deleteDatabase(name)
+        try {
+            FrozenRevisionMigrationProof.lifecycle(PriceCatalogSchema) { schema ->
+                AndroidSqliteDriver(schema, context, name, factory = SupportOpenHelperFactory(key.copyOf(), null, true)).also { d ->
+                    try { d.executeQuery(null, "SELECT count(*) FROM sqlite_master", { c -> c.next(); app.cash.sqldelight.db.QueryResult.Value(c.getLong(0)) }, 0).value }
+                    catch (t: Throwable) { d.close(); throw t }
+                }
+            }
+        } finally { key.fill(0); context.deleteDatabase(name) }
+    }
+
     @Test fun physicalV15ToV16RollbackReopenAndFrozenV1(): Unit = runBlocking {
         val context = ApplicationProvider.getApplicationContext<Context>()
         System.loadLibrary("sqlcipher")
@@ -62,6 +78,8 @@ class BusinessRoleSqlCipherTest {
                 val fixture = LivePricingProof.seed(PrototypeDatabase(d))
                 val history = com.andreyceilings.shared.estimate.ImmutableEstimateRepository(PrototypeDatabase(d))
                 val saved = history.saveIndividual(FrozenIndividualEstimateProof.command(PrototypeDatabase(d), fixture), 2026, 600)
+                history.appendIndividual(FrozenRevisionProof.request(PrototypeDatabase(d), fixture, saved.seriesUuid), 601)
+                verifyFrozenEstimateContents(d)
                 val frozen = history.frozenIndividual(saved.seriesUuid)!!.payload
                 val destination = context.getDatabasePath(copy).absolutePath.replace("'", "''")
                 d.execute(null, "VACUUM INTO '$destination'", 0)
@@ -87,6 +105,7 @@ class BusinessRoleSqlCipherTest {
                 afterRestart.closeReads()
                 assertEquals(1, restarted.queryLong("SELECT count(*) FROM estimate_series"))
                 assertEquals(frozenPayload, com.andreyceilings.shared.estimate.ImmutableEstimateRepository(restarted.database).frozenIndividual(savedSeries)!!.payload)
+                assertEquals(2, com.andreyceilings.shared.estimate.ImmutableEstimateRepository(restarted.database).individualHistory(savedSeries).size)
             } finally { contents.database.fill(0); contents.passphrase.fill(0) }
         } finally {
             try {

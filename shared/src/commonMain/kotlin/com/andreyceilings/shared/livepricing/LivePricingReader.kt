@@ -69,7 +69,7 @@ class LivePricingReader(private val database: PrototypeDatabase) {
                     if (closed) return@run PricingReadResult.Unavailable(PricingProblemCode.DATABASE_UNAVAILABLE)
                     val project = ProjectRepository(database).find(projectId)
                         ?: return@run PricingReadResult.Unavailable(PricingProblemCode.PARENT_UNAVAILABLE)
-                    val measurement = MeasurementRepository(database).findByUuid(measurementUuid)?.takeIf { it.projectId == projectId }
+                    val measurement = MeasurementRepository(database).findByUuid(measurementUuid)?.takeIf { it.projectId == projectId && it.deletedAt == null }
                         ?: return@run PricingReadResult.Unavailable(PricingProblemCode.PARENT_UNAVAILABLE)
                     val geometry = try { MeasurementGeometryCodec.read(measurement.drawingJson) }
                         catch (_: IllegalArgumentException) { return@run PricingReadResult.Unavailable(PricingProblemCode.INVALID_GEOMETRY) }

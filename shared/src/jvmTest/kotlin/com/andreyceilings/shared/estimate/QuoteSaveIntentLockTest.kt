@@ -14,6 +14,58 @@ import kotlinx.coroutines.flow.first
 import kotlin.test.*
 
 class QuoteSaveIntentLockTest {
+    @Test fun revisionSaveFromGlobalEstimatesLocksHostAndRetainsExactResult() = runBlocking {
+        JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).use { driver ->
+            PriceCatalogSchema.create(driver)
+            val db = PrototypeDatabase(driver)
+            val fixture = MeasurementPricingFixture.seed(db)
+            val repo = ImmutableEstimateRepository(db)
+            val first = repo.saveIndividual(FrozenIndividualEstimateProof.command(db, fixture), 2026, 600)
+            repo.setWorkflowStatus(first.seriesUuid, 1, EstimateWorkflowStatus.APPROVED, 601)
+            val base = repo.exactIndividual(first.seriesUuid, first.initialRevisionUuid)!!
+            val loaded = LivePricingReader(db).read(fixture.projectId, fixture.measurementUuid)
+            val entered = CountDownLatch(1)
+            val release = CountDownLatch(1)
+            val armed = AtomicBoolean(true)
+            val blocked = object : SqlDriver by driver {
+                override fun execute(identifier: Int?, sql: String, parameters: Int, binders: (SqlPreparedStatement.() -> Unit)?): QueryResult<Long> {
+                    if (sql.startsWith("UPDATE price_catalog_state SET seedVersion = seedVersion") && armed.compareAndSet(true, false)) {
+                        entered.countDown(); check(release.await(15, TimeUnit.SECONDS))
+                    }
+                    return driver.execute(identifier, sql, parameters, binders)
+                }
+            }
+            val store = MeasurementElementsStore(PrototypeDatabase(blocked), { 1000 }, Dispatchers.Unconfined)
+            val m = MeasurementRepository(db).findByUuid(fixture.measurementUuid)!!
+            val route = ElementRoute(fixture.projectId, m.id, m.uuid)
+            val p = store.revisionQuote(base, route)
+            p.acceptRead(p.beginRead(), loaded)
+            val captured = p.state.value
+            val guard = MeasurementCreateNavigationGuard().also { it.bindQuotes(store) }
+            val nav = AppNavigationState().selectTab(AppRoute.ESTIMATES)
+            try {
+                store.submitQuote(p, fixture.projectId)
+                assertTrue(entered.await(10, TimeUnit.SECONDS))
+                assertTrue(guard.blocksExit(nav))
+                assertEquals(nav, guard.transition(nav, nav.selectTab(AppRoute.DASHBOARD)))
+                var exited = false
+                guard.requestClose { exited = true }
+                assertFalse(exited)
+                assertSame(p, store.retainedRevision(first.seriesUuid)!!.first)
+                assertSame(p, store.revisionQuote(base, route))
+                p.editDiscount("50"); p.confirmDiscount()
+                p.acceptRead(p.beginRead(), PricingReadResult.Unavailable(PricingProblemCode.STALE_SOURCE))
+                assertEquals(captured, p.state.value)
+                release.countDown()
+                val result = withTimeout(10000) { p.saveState.first { !it.saving } }
+                assertEquals(first.seriesUuid, result.resultSeriesUuid)
+                assertEquals(2, repo.revision(assertNotNull(result.resultRevisionUuid))!!.versionNumber)
+                assertEquals(EstimateWorkflowStatus.DRAFT, store.savedQuote(first.seriesUuid, result.resultRevisionUuid)!!.status)
+                assertFalse(guard.blocksExit(nav))
+            } finally { release.countDown(); store.closeAndAwaitWrites() }
+        }
+    }
+
     @Test fun blockedPhysicalWriterKeepsVisibleIntentAndRejectsHostExit() = runBlocking {
         JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).use { driver ->
             PriceCatalogSchema.create(driver)

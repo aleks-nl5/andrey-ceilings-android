@@ -17,7 +17,7 @@ object PriceCatalogSchema : SqlSchema<QueryResult.Value<Unit>> {
     fun verifyStructure(driver:SqlDriver,version:Long=this.version) {
         verifyMeasurementElementStructure(driver, version)
         verifyPointPlacementStructure(driver, version)
-        if (version >= 16) verifyFrozenEstimateStructure(driver)
+        if (version >= 16) verifyFrozenEstimateStructure(driver, version)
     }
 
     override val version: Long get() = PrototypeDatabase.Schema.version
@@ -52,6 +52,7 @@ object PriceCatalogSchema : SqlSchema<QueryResult.Value<Unit>> {
             verifyMeasurementElementStructure(driver, oldVersion)
             verifyPointPlacementStructure(driver,oldVersion)
         }
+        if (oldVersion >= 16) verifyFrozenEstimateStructure(driver, oldVersion)
         var statement=0
         val observed=object:SqlDriver by driver {
             override fun execute(identifier:Int?,sql:String,parameters:Int,binders:(app.cash.sqldelight.db.SqlPreparedStatement.()->Unit)?):QueryResult<Long> {
@@ -64,6 +65,7 @@ object PriceCatalogSchema : SqlSchema<QueryResult.Value<Unit>> {
         if (oldVersion < 6L && newVersion >= 6L) backfillPriceNameKeys(driver)
         if (newVersion >= 6L) StarterPriceCatalog.initializeInTransaction(PrototypeDatabase(driver))
         if (newVersion >= 8L) verifyStructure(driver, newVersion)
+        if (newVersion >= 17L) verifyFrozenEstimateContents(driver)
         return QueryResult.Unit
     }
 }

@@ -220,6 +220,7 @@ internal object PortableBackupManager {
                         "FROM estimate_revision_lines GROUP BY revisionUuid) l " +
                         "ON l.revisionUuid = r.revisionUuid WHERE " +
                         "NOT EXISTS (SELECT 1 FROM estimate_v1_frozen f WHERE f.revisionUuid = r.revisionUuid) AND " +
+                        "NOT EXISTS (SELECT 1 FROM estimate_revision_frozen f WHERE f.revisionUuid = r.revisionUuid) AND " +
                         "(l.lineCount IS NULL OR abs(r.totalCost - l.lineTotal) >= 0.01)"
                 ) == 0L) {
                     "Суми або рядки історичних версій у резервній копії пошкоджені."
@@ -229,6 +230,7 @@ internal object PortableBackupManager {
                     "Пошкоджені числові налаштування нумерації кошторисів."
                 }
                 com.andreyceilings.shared.db.verifyFrozenEstimateStructure(driver)
+                com.andreyceilings.shared.db.verifyFrozenEstimateContents(driver)
                 check(invalidRevisionRows(
                     "SELECT count(*) FROM estimate_v1_frozen f JOIN estimate_revisions r USING(revisionUuid) " +
                         "JOIN estimate_series s USING(seriesUuid) WHERE r.versionNumber != 1 OR s.publicNumber IS NULL " +

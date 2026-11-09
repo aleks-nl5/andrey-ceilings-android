@@ -1,0 +1,58 @@
+CREATE TABLE estimate_revision_frozen (
+    revisionUuid TEXT NOT NULL PRIMARY KEY REFERENCES estimate_revisions(revisionUuid) ON DELETE RESTRICT,
+    payload TEXT NOT NULL,
+    subtotalCents INTEGER NOT NULL CHECK (typeof(subtotalCents) = 'integer' AND subtotalCents >= 0),
+    discountBasisPoints INTEGER NOT NULL CHECK (typeof(discountBasisPoints) = 'integer' AND discountBasisPoints BETWEEN 0 AND 10000),
+    discountCents INTEGER NOT NULL CHECK (typeof(discountCents) = 'integer' AND discountCents >= 0 AND discountCents <= subtotalCents),
+    totalCents INTEGER NOT NULL CHECK (typeof(totalCents) = 'integer' AND totalCents = subtotalCents - discountCents)
+);
+CREATE TABLE estimate_revision_receipts (
+    operationUuid TEXT NOT NULL PRIMARY KEY,
+    command TEXT NOT NULL,
+    seriesUuid TEXT NOT NULL REFERENCES estimate_series(seriesUuid) ON DELETE RESTRICT,
+    revisionUuid TEXT NOT NULL UNIQUE REFERENCES estimate_revision_frozen(revisionUuid) ON DELETE RESTRICT
+);
+
+insertFrozenRevision:
+INSERT INTO estimate_revision_frozen VALUES (?, ?, ?, ?, ?, ?);
+insertRevisionReceipt:
+INSERT INTO estimate_revision_receipts VALUES (?, ?, ?, ?);
+selectRevisionReceipt:
+SELECT * FROM estimate_revision_receipts WHERE operationUuid = ?;
+selectWorkflow:
+SELECT * FROM estimate_workflow WHERE seriesUuid = ?;
+
+selectExactRevision:
+SELECT f.*, r.seriesUuid, r.createdAt, r.versionNumber, r.parentRevisionUuid, s.publicNumber, s.projectId, s.measurementUuid,
+ w.status, w.version AS statusVersion, w.updatedAt AS statusUpdatedAt
+FROM (SELECT * FROM estimate_v1_frozen UNION ALL SELECT * FROM estimate_revision_frozen) f
+JOIN estimate_revisions r ON r.revisionUuid = f.revisionUuid
+JOIN estimate_series s ON s.seriesUuid = r.seriesUuid JOIN estimate_workflow w ON w.seriesUuid = s.seriesUuid
+WHERE s.seriesUuid = ? AND r.revisionUuid = ? AND s.deletedAt IS NULL;
+selectExactLatest:
+SELECT f.*, r.seriesUuid, r.createdAt, r.versionNumber, r.parentRevisionUuid, s.publicNumber, s.projectId, s.measurementUuid,
+ w.status, w.version AS statusVersion, w.updatedAt AS statusUpdatedAt
+FROM (SELECT * FROM estimate_v1_frozen UNION ALL SELECT * FROM estimate_revision_frozen) f
+JOIN estimate_revisions r ON r.revisionUuid = f.revisionUuid
+JOIN estimate_series s ON s.seriesUuid = r.seriesUuid JOIN estimate_workflow w ON w.seriesUuid = s.seriesUuid
+WHERE s.seriesUuid = ? AND s.deletedAt IS NULL
+AND r.versionNumber = (SELECT max(latest.versionNumber) FROM estimate_revisions latest WHERE latest.seriesUuid = s.seriesUuid);
+selectExactLatestList:
+SELECT f.*, r.seriesUuid, r.createdAt, r.versionNumber, r.parentRevisionUuid, s.publicNumber, s.projectId, s.measurementUuid,
+ w.status, w.version AS statusVersion, w.updatedAt AS statusUpdatedAt
+FROM (SELECT * FROM estimate_v1_frozen UNION ALL SELECT * FROM estimate_revision_frozen) f
+JOIN estimate_revisions r ON r.revisionUuid = f.revisionUuid
+JOIN estimate_series s ON s.seriesUuid = r.seriesUuid JOIN estimate_workflow w ON w.seriesUuid = s.seriesUuid
+WHERE s.deletedAt IS NULL
+AND r.versionNumber = (SELECT max(latest.versionNumber) FROM estimate_revisions latest WHERE latest.seriesUuid = s.seriesUuid)
+ORDER BY s.createdAt DESC, s.seriesUuid;
+selectExactHistory:
+SELECT f.*, r.seriesUuid, r.createdAt, r.versionNumber, r.parentRevisionUuid, s.publicNumber, s.projectId, s.measurementUuid,
+ w.status, w.version AS statusVersion, w.updatedAt AS statusUpdatedAt
+FROM (SELECT * FROM estimate_v1_frozen UNION ALL SELECT * FROM estimate_revision_frozen) f
+JOIN estimate_revisions r ON r.revisionUuid = f.revisionUuid
+JOIN estimate_series s ON s.seriesUuid = r.seriesUuid JOIN estimate_workflow w ON w.seriesUuid = s.seriesUuid
+WHERE s.seriesUuid = ? AND s.deletedAt IS NULL ORDER BY r.versionNumber DESC;
+
+selectRevisionReceiptByRevision:
+SELECT * FROM estimate_revision_receipts WHERE revisionUuid = ?;

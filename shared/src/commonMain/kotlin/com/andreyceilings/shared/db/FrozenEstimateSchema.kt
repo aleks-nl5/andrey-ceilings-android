@@ -4,8 +4,8 @@ import app.cash.sqldelight.db.QueryResult
 import app.cash.sqldelight.db.SqlDriver
 
 /** Strict physical admission for encrypted reopen/import; never repair a partial v16 in place. */
-fun verifyFrozenEstimateStructure(driver: SqlDriver) {
-    val expected = mapOf(
+fun verifyFrozenEstimateStructure(driver: SqlDriver, version: Long = 17) {
+    val expected = mutableMapOf(
         "estimate_v1_frozen" to """CREATE TABLE estimate_v1_frozen (
     revisionUuid TEXT NOT NULL PRIMARY KEY REFERENCES estimate_revisions(revisionUuid) ON DELETE RESTRICT,
     payload TEXT NOT NULL,
@@ -49,6 +49,22 @@ fun verifyFrozenEstimateStructure(driver: SqlDriver) {
 );""",
         "index_estimate_series_public_number" to "CREATE UNIQUE INDEX index_estimate_series_public_number ON estimate_series(publicNumber) WHERE publicNumber IS NOT NULL;"
     )
+    if (version >= 17) {
+        expected["estimate_revision_frozen"] = """CREATE TABLE estimate_revision_frozen (
+    revisionUuid TEXT NOT NULL PRIMARY KEY REFERENCES estimate_revisions(revisionUuid) ON DELETE RESTRICT,
+    payload TEXT NOT NULL,
+    subtotalCents INTEGER NOT NULL CHECK (typeof(subtotalCents) = 'integer' AND subtotalCents >= 0),
+    discountBasisPoints INTEGER NOT NULL CHECK (typeof(discountBasisPoints) = 'integer' AND discountBasisPoints BETWEEN 0 AND 10000),
+    discountCents INTEGER NOT NULL CHECK (typeof(discountCents) = 'integer' AND discountCents >= 0 AND discountCents <= subtotalCents),
+    totalCents INTEGER NOT NULL CHECK (typeof(totalCents) = 'integer' AND totalCents = subtotalCents - discountCents)
+);"""
+        expected["estimate_revision_receipts"] = """CREATE TABLE estimate_revision_receipts (
+    operationUuid TEXT NOT NULL PRIMARY KEY,
+    command TEXT NOT NULL,
+    seriesUuid TEXT NOT NULL REFERENCES estimate_series(seriesUuid) ON DELETE RESTRICT,
+    revisionUuid TEXT NOT NULL UNIQUE REFERENCES estimate_revision_frozen(revisionUuid) ON DELETE RESTRICT
+);"""
+    }
     fun normalize(sql: String): String = Regex("'(?:''|[^'])*'|[^']+").findAll(sql.trim().trimEnd(';')).joinToString("") { token ->
         if (token.value.startsWith("'")) token.value else token.value.replace("\"", "")
             .replace(Regex("\\s+"), " ").replace(Regex("\\s*([,()])\\s*"), "$1").lowercase()

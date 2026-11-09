@@ -11,7 +11,7 @@ object PriceCatalogMigrationProof {
         override fun create(driver: SqlDriver): QueryResult.Value<Unit> {
             PrototypeDatabase.Schema.create(driver)
             // Freeze the authentic pre-v16 numbering schema; current generated DDL includes P4C1.
-            listOf("DROP TABLE estimate_save_receipts", "DROP TABLE estimate_workflow", "DROP TABLE estimate_v1_frozen",
+            listOf("DROP TABLE estimate_revision_receipts", "DROP TABLE estimate_revision_frozen", "DROP TABLE estimate_save_receipts", "DROP TABLE estimate_workflow", "DROP TABLE estimate_v1_frozen",
                 "DROP INDEX index_estimate_series_public_number", "ALTER TABLE estimate_series DROP COLUMN publicNumber",
                 "ALTER TABLE estimate_number_settings DROP COLUMN suffixLabel").forEach { driver.execute(null, it, 0) }
 

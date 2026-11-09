@@ -8,7 +8,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 
-data class QuoteSaveState(val title: String? = null, val saving: Boolean = false, val resultSeriesUuid: String? = null, val error: String? = null)
+data class QuoteSaveState(val title: String? = null, val saving: Boolean = false, val resultSeriesUuid: String? = null, val error: String? = null, val resultRevisionUuid: String? = null)
 
 data class QuoteQuantityEdit(val text: String, val confirmed: Boolean = false)
 data class UnavailableSelectedWork(val sourceKey: String, val label: String,
@@ -28,7 +28,9 @@ data class TransientQuoteState(
 }
 
 /** Main-thread confined, memory only. Every read is fenced by visit + request generation. */
-class TransientQuotePresenter(val measurementUuid: String, val sessionId: String = newRecordUuid()) {
+class TransientQuotePresenter(val measurementUuid: String, val sessionId: String = newRecordUuid(),
+    val revisionBase: SavedIndividualQuote? = null) {
+    val revisionTarget = revisionBase?.let { IndividualRevisionTarget(it.seriesUuid, it.revisionUuid, it.versionNumber, it.statusVersion) }
     val compositionUuid: String = newRecordUuid()
     private var request = 0L
     private val closedState = MutableStateFlow(false)
@@ -50,7 +52,7 @@ class TransientQuotePresenter(val measurementUuid: String, val sessionId: String
         saveMutable.value = saveMutable.value.copy(saving = true, error = null)
         return command
     }
-    fun saved(seriesUuid: String) { saveMutable.value = saveMutable.value.copy(saving = false, resultSeriesUuid = seriesUuid, error = null) }
+    fun saved(seriesUuid: String, revisionUuid: String? = null) { saveMutable.value = saveMutable.value.copy(saving = false, resultSeriesUuid = seriesUuid, resultRevisionUuid = revisionUuid, error = null) }
     fun saveFailed(error: String) {
         saveMutable.value = saveMutable.value.copy(saving = false, error = error)
         releaseDeferredRead()
@@ -58,7 +60,7 @@ class TransientQuotePresenter(val measurementUuid: String, val sessionId: String
     fun consumeSaved() {
         if (saveMutable.value.saving) return
         pendingSave = null
-        saveMutable.value = saveMutable.value.copy(resultSeriesUuid = null)
+        saveMutable.value = saveMutable.value.copy(resultSeriesUuid = null, resultRevisionUuid = null)
         releaseDeferredRead()
     }
     private var saveSelection: IndividualEstimateSelection? = null
@@ -195,6 +197,53 @@ class TransientQuotePresenter(val measurementUuid: String, val sessionId: String
         return IndividualEstimateSaveRequest(newRecordUuid(), projectId, validEstimateTitle(title) ?: return null,
             sessionId, selection, saveOverrides.toList(), s.discountText, amounts, fingerprint,
             s.acknowledgedFingerprint, s.preview.excluded.filter { it.bucket == PricingBucket.CONFIRMED })
+    }
+
+    /** Explicit, all-or-nothing import of the selected supported decision. Prices never enter this path. */
+    fun carryDiscount(): Boolean {
+        val old = revisionBase?.frozen ?: return false
+        if (!editable || loaded == null || QuoteDiscount.parseBasisPoints(old.discountText) == null) return false
+        editDiscount(old.discountText) // Requires the ordinary fresh confirmation.
+        return true
+    }
+    private fun carryMatch(id: String): LiveEstimateLine? {
+        val old = revisionBase?.frozen ?: return null
+        val current = mutable.value
+        val before = old.source.elements.singleOrNull { it.uuid == id } ?: return null
+        val after = current.source?.elements?.singleOrNull { it.uuid == id } ?: return null
+        val oldCatalog = before.source as? ElementSource.CatalogSelection ?: return null
+        val newCatalog = after.source as? ElementSource.CatalogSelection ?: return null
+        if (before.measurementUuid != measurementUuid || after.measurementUuid != measurementUuid ||
+            oldCatalog.priceItemUuid != newCatalog.priceItemUuid || oldCatalog.quantityMode != newCatalog.quantityMode ||
+            oldCatalog.placementKind != newCatalog.placementKind || before.unit != after.unit ||
+            before.businessRole != after.businessRole || before.approval != after.approval) return null
+        return current.lines.singleOrNull { it.elementUuid == id && it.sourceQuantityMilli > 0 && it.unit == after.unit && it.businessRole == after.businessRole }
+    }
+    fun carryQuantity(elementUuid: String): Boolean {
+        if (!editable) return false
+        val old = revisionBase?.frozen?.rows?.singleOrNull { it.line.elementUuid == elementUuid }?.line ?: return false
+        val current = carryMatch(elementUuid) ?: return false
+        val source = loaded?.source ?: return false
+        val e = source.elements.singleOrNull { it.uuid == elementUuid } ?: return false
+        if (old.overrideNote == null || !BillableOverrideRules.eligible(source, e) || current.sourceKey !in mutable.value.selected ||
+            quantity(formatElementMilli(old.effectiveBillableQuantityMilli), current.unit) == null) return false
+        editQuantity(elementUuid, formatElementMilli(old.effectiveBillableQuantityMilli))
+        return true // Unconfirmed until the user's ordinary quantity confirmation.
+    }
+    fun carrySelection(): Boolean {
+        if (!editable || loaded == null) return false
+        val old = revisionBase?.frozen ?: return false
+        val included = old.rows.filter { it.line.bucket == PricingBucket.POTENTIAL }.map { it.line.sourceKey }
+        val excluded = old.omissions.filter { it.reason == ExclusionReason.USER_EXCLUDED }.map { it.sourceKey }
+        val decisions = (included.map { it to true } + excluded.map { it to false })
+        if (decisions.isEmpty()) return false
+        val matched = decisions.map { (key, selected) ->
+            val row = carryMatch(key.removePrefix("element:")) ?: return false
+            if (row.sourceKey != key || row.businessRole != BusinessRole.ADDITIONAL_WORK) return false
+            row to selected
+        }
+        matched.forEach { (row, selected) -> select(row.sourceKey, selected) }
+        return true
     }
 
     private fun changed() { mutable.value = mutable.value.copy(acknowledgedFingerprint = null, amounts = null, fingerprint = null) }

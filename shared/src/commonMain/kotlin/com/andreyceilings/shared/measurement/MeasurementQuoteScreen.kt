@@ -47,6 +47,9 @@ fun MeasurementQuoteScreen(presenter: TransientQuotePresenter, store: Measuremen
         presenter::confirmQuantity, presenter::resetQuantity, presenter::editDiscount,
         presenter::confirmDiscount, presenter::acknowledge, contentPadding, systemTopInset,
         editingEnabled = !saveState.saving && saveState.resultSeriesUuid == null,
+        backLabel = if (presenter.revisionBase == null) "До заміру" else "До кошторису",
+        heading = presenter.revisionBase?.let { "Нова версія v${it.versionNumber + 1}" } ?: "Попередній кошторис",
+        comparisonContent = presenter.revisionBase?.let { { RevisionComparison(presenter, state, !saveState.saving && saveState.resultSeriesUuid == null) } },
         saveFooter = {
             val actualTitle = saveState.title.orEmpty()
             val canSave = !saveState.saving && saveState.resultSeriesUuid == null && validEstimateTitle(actualTitle) != null && state.amounts != null &&
@@ -66,10 +69,10 @@ fun MeasurementQuoteScreen(presenter: TransientQuotePresenter, store: Measuremen
                 else -> "Сума недоступна. Перевірте склад і обов’язкові матеріали заміру."
             })
             Button(enabled = canSave, onClick = { store.submitQuote(presenter, route.projectId) }) {
-                Text(if (saveState.saving) "Зберігаю…" else "Зберегти кошторис")
+                Text(if (saveState.saving) "Зберігаю…" else if (presenter.revisionBase != null) "Зберегти нову версію" else "Зберегти кошторис")
             }
         })
-    saveState.resultSeriesUuid?.let { id -> SavedIndividualQuoteDialog(store, id) { presenter.consumeSaved(); onBack() } }
+    saveState.resultSeriesUuid?.let { id -> SavedIndividualQuoteDialog(store, id, saveState.resultRevisionUuid) { presenter.consumeSaved(); onBack() } }
 }
 
 /** Pure visibility fraction: only the actual final-summary bounds and current viewport matter. */
@@ -85,7 +88,9 @@ fun MeasurementQuoteContent(state: TransientQuoteState, onBack: () -> Unit, onRe
     onConfirmQuantity: (String) -> Unit, onResetQuantity: (String) -> Unit,
     onDiscount: (String) -> Unit, onConfirmDiscount: () -> Unit, onAcknowledge: (Boolean) -> Unit,
     contentPadding: PaddingValues = PaddingValues(16.dp), systemTopInset: Dp = 0.dp,
-    saveFooter: (@Composable () -> Unit)? = null, editingEnabled: Boolean = true) {
+    saveFooter: (@Composable () -> Unit)? = null, editingEnabled: Boolean = true,
+    comparisonContent: (@Composable () -> Unit)? = null,
+    backLabel: String = "До заміру", heading: String = "Попередній кошторис") {
     val list = rememberLazyListState()
     // Hosts reserve bottom space for their floating navigation/system bars. It is not
     // unobscured viewport, even while a lazy item is temporarily laid out behind it.
@@ -108,8 +113,8 @@ fun MeasurementQuoteContent(state: TransientQuoteState, onBack: () -> Unit, onRe
     fun label(key: String) = source?.elements?.find { "element:${it.uuid}" == key }?.label ?: "Позиція заміру"
     Column(Modifier.fillMaxSize().padding(top = systemTopInset).imePadding()) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-            TextButton(onClick = onBack, enabled = editingEnabled) { Text("До заміру") }
-            Text("Попередній кошторис", style = MaterialTheme.typography.titleMedium)
+            TextButton(onClick = onBack, enabled = editingEnabled) { Text(backLabel) }
+            Text(heading, style = MaterialTheme.typography.titleMedium)
         }
         // Reserved height prevents a scroll jump when ownership passes to the bottom summary.
         Box(Modifier.fillMaxWidth().height(80.dp).padding(horizontal = 16.dp)
@@ -199,6 +204,7 @@ fun MeasurementQuoteContent(state: TransientQuoteState, onBack: () -> Unit, onRe
                     }
                 }
             }
+            if (comparisonContent != null) item(key = "revision-comparison") { comparisonContent() }
             item(key = "quote-final-summary") {
                 Card(Modifier.fillMaxWidth().graphicsLayer { alpha = handoff; translationY = (1f - handoff) * 20f }
                     .then(if (!bottomOwnsSemantics) Modifier.clearAndSetSemantics {} else Modifier)) {
@@ -262,4 +268,70 @@ private fun QuoteLine(row: LiveEstimateLine, state: TransientQuoteState,
             } else if (selected && row.businessRole == BusinessRole.ADDITIONAL_WORK) Text("Кількість визначена заміром; коригування цієї роботи недоступне.")
         }
     }
+}
+
+@Composable
+private fun RevisionComparison(presenter: TransientQuotePresenter, state: TransientQuoteState, enabled: Boolean) {
+    val base = presenter.revisionBase ?: return
+    val old = base.frozen
+    var confirmSelection by remember { mutableStateOf(false) }
+    var carryError by remember { mutableStateOf(false) }
+    var showDrawings by remember { mutableStateOf(false) }
+    Card(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("${old.publicNumber} · Нова версія v${base.versionNumber + 1}", style = MaterialTheme.typography.titleMedium)
+            Text("Порівняння: збережена v${base.versionNumber} → новий розрахунок із поточного заміру та прайсу")
+            TextButton(onClick = { showDrawings = !showDrawings }, enabled = enabled) {
+                Text(if (showDrawings) "Приховати порівняння креслень" else "Порівняти креслення")
+            }
+            if (showDrawings) {
+                Text("Збережене креслення v${base.versionNumber}")
+                MeasurementDrawing(MeasurementGeometryView.Captured(MeasurementGeometryCodec.read(old.source.drawingJson)),
+                    compact = true, pointPlacements = old.source.points, linePlacements = old.source.lines, areaFeatures = old.source.areas)
+                state.source?.let { currentSource ->
+                    Text("Поточне креслення заміру")
+                    MeasurementDrawing(MeasurementGeometryView.Captured(currentSource.geometry), compact = true,
+                        pointPlacements = currentSource.points, linePlacements = currentSource.lines, areaFeatures = currentSource.areas)
+                }
+            }
+            val current = state.preview?.included.orEmpty().filter { it.selectedForDocument }.map { it.line }
+            (old.rows.map { it.line.elementUuid } + current.map { it.elementUuid }).distinct().forEach { id ->
+                val before = old.rows.singleOrNull { it.line.elementUuid == id }?.line
+                val after = current.singleOrNull { it.elementUuid == id }
+                Text(before?.title ?: after?.title.orEmpty(), style = MaterialTheme.typography.titleSmall)
+                fun describe(row: LiveEstimateLine?) = row?.let {
+                    "${formatElementMilli(it.effectiveBillableQuantityMilli)} ${it.unit} × ${measurementMoney(it.unitPriceCents)} = ${measurementMoney(it.totalCents)}"
+                } ?: "Не включено"
+                Text("Було: ${describe(before)}")
+                Text("Зараз: ${if (state.amounts == null) "Очікує перевірки" else describe(after)}")
+                if (before?.overrideNote != null && id != null) {
+                    TextButton(enabled = enabled && state.source != null, onClick = { carryError = !presenter.carryQuantity(id) }) {
+                        Text("Перенести кількість ${formatElementMilli(before.effectiveBillableQuantityMilli)} — потім підтвердити")
+                    }
+                }
+            }
+            Text("Було: ${measurementMoney(old.amounts.finalCents)} · знижка ${old.discountText}%")
+            state.amounts?.let {
+                Text("Зараз: ${measurementMoney(it.finalCents)} · зміна: ${if (it.finalCents >= old.amounts.finalCents) "+" else "−"}${measurementMoney(kotlin.math.abs(it.finalCents - old.amounts.finalCents))}")
+            }
+            Text("Попередні ручні рішення не застосовуються автоматично.")
+            TextButton(enabled = enabled && state.source != null, onClick = { carryError = !presenter.carryDiscount() }) {
+                Text("Перенести знижку ${old.discountText}% — потім підтвердити")
+            }
+            TextButton(enabled = enabled && state.source != null, onClick = { confirmSelection = true }) { Text("Переглянути перенесення вибору робіт") }
+            if (carryError) Text("Перенесення недоступне: склад, одиниця, роль або відповідність позицій змінилися, чи немає підтримуваних ручних рішень.", color = MaterialTheme.colorScheme.error)
+        }
+    }
+    if (confirmSelection) AlertDialog(onDismissRequest = { confirmSelection = false },
+        title = { Text("Перенести вибір робіт?") },
+        text = { Column {
+            Text("До нового складу будуть застосовані лише ці попередні явні рішення після перевірки UUID, одиниці, ролі та доступності:")
+            old.rows.filter { it.line.bucket == PricingBucket.POTENTIAL }.forEach { Text("Включити: ${it.line.title}") }
+            old.omissions.filter { it.reason == ExclusionReason.USER_EXCLUDED }.forEach { omission ->
+                Text("Виключити: ${old.source.elements.find { "element:${it.uuid}" == omission.sourceKey }?.label ?: omission.sourceKey}")
+            }
+            Text("Новий склад показано вище. Пропуски потрібно буде підтвердити знову.")
+        } },
+        confirmButton = { TextButton(onClick = { carryError = !presenter.carrySelection(); confirmSelection = false }, enabled = enabled) { Text("Підтвердити перенесення") } },
+        dismissButton = { TextButton(onClick = { confirmSelection = false }) { Text("Скасувати") } })
 }

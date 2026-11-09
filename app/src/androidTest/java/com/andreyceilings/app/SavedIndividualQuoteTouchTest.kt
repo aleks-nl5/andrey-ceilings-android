@@ -48,9 +48,18 @@ class SavedIndividualQuoteTouchTest {
             val history = ImmutableEstimateRepository(db)
             val before = history.frozenIndividual(id)!!
             assertEquals("Proposal", com.andreyceilings.shared.estimate.decodeFrozenIndividualEstimate(before.payload).title)
-            compose.onNode(SemanticsMatcher.keyIsDefined(SemanticsActions.ScrollToIndex) and hasAnyAncestor(isDialog()))
-                .performScrollToNode(hasText("Погоджено"))
-            compose.onNodeWithText("Погоджено").performClick()
+            // Save completion precedes the dialog's asynchronous immutable/history reads.
+            // Retry the lookup itself while its list contains only Back + progress; then
+            // require a real enabled status action before sending the pointer click.
+            compose.waitUntil(10000) {
+                runCatching {
+                    compose.onNode(SemanticsMatcher.keyIsDefined(SemanticsActions.ScrollToIndex) and hasAnyAncestor(isDialog()))
+                        .performScrollToNode(hasText("Погоджено"))
+                    compose.onNodeWithText("Погоджено").assertIsEnabled()
+                    true
+                }.getOrDefault(false)
+            }
+            compose.onNodeWithText("Погоджено").assertIsEnabled().performClick()
             compose.waitUntil(10000) { history.frozenIndividual(id)?.status == "APPROVED" }
             assertEquals(before.payload, history.frozenIndividual(id)!!.payload)
             assertEquals(1, history.revisions(id).size)

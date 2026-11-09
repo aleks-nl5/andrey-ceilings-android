@@ -5,6 +5,26 @@ import com.andreyceilings.shared.db.*
 import kotlin.test.*
 
 class FrozenIndividualEstimateTest {
+    @Test fun windowsPhysicalV16ToV17RollbackAndReopen() = kotlinx.coroutines.runBlocking {
+        if (!System.getProperty("os.name").startsWith("Windows", true)) return@runBlocking
+        val directory = java.nio.file.Files.createTempDirectory("cipher-v17").toFile()
+        val file = directory.resolve("quote.db")
+        val key = ByteArray(32) { 44 }
+        try {
+            FrozenRevisionMigrationProof.lifecycle(PriceCatalogSchema) { schema ->
+                SqlCipherWindowsDriverFactory.open(file, key).also { d ->
+                    try {
+                        if (schema === PriceCatalogSchema) openDesktopPriceCatalog(d, file.length() > 0)
+                        else PrototypeDatabase(d).transaction {
+                            val old = PriceNameUniquenessProof.scalar(d, "PRAGMA user_version")
+                            if (old == 0L) schema.create(d) else if (old < schema.version) schema.migrate(d, old, schema.version)
+                            d.execute(null, "PRAGMA user_version=${schema.version}", 0)
+                        }
+                    } catch (failure: Throwable) { d.close(); throw failure }
+                }
+            }
+        } finally { key.fill(0); directory.deleteRecursively() }
+    }
     @Test fun windowsPhysicalV15ToV16RollbackAndReopen() = kotlinx.coroutines.runBlocking {
         if (!System.getProperty("os.name").startsWith("Windows", true)) return@runBlocking
         val directory = java.nio.file.Files.createTempDirectory("cipher-v16").toFile()
