@@ -50,7 +50,10 @@ class SavedIndividualQuoteTouchTest {
             assertEquals("Proposal", com.andreyceilings.shared.estimate.decodeFrozenIndividualEstimate(before.payload).title)
             compose.onNode(SemanticsMatcher.keyIsDefined(SemanticsActions.ScrollToIndex) and hasAnyAncestor(isDialog()))
                 .performScrollToNode(hasText("Погоджено"))
-            compose.onNodeWithText("Погоджено").performClick()
+            compose.waitUntil(10000) {
+                compose.onAllNodes(hasText("Погоджено") and isEnabled()).fetchSemanticsNodes().isNotEmpty()
+            }
+            compose.onNodeWithText("Погоджено").assertIsEnabled().performClick()
             compose.waitUntil(10000) { history.frozenIndividual(id)?.status == "APPROVED" }
             assertEquals(before.payload, history.frozenIndividual(id)!!.payload)
             assertEquals(1, history.revisions(id).size)

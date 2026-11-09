@@ -65,15 +65,20 @@ fun SavedIndividualQuoteDialog(store: MeasurementElementsStore?, seriesUuid: Str
     var loading by remember { mutableStateOf(true) }
     var busy by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
-    LaunchedEffect(store, seriesUuid, selectedRevision, generation) {
+    LaunchedEffect(store, seriesUuid, generation) {
         loading = true; error = null; data = null; preparation = null
         try {
-            data = checkNotNull(store).savedQuote(seriesUuid, selectedRevision)
-            if (data == null) error = "Документ не знайдено."
+            val loaded = checkNotNull(store).savedQuote(seriesUuid, selectedRevision)
+            if (loaded == null) error = "Документ не знайдено."
             else {
-                selectedRevision = data?.revisionUuid
-                history = store.quoteHistory(seriesUuid)
-                preparation = store.prepareRevision(seriesUuid)
+                val loadedHistory = store.quoteHistory(seriesUuid)
+                val loadedPreparation = store.prepareRevision(seriesUuid)
+                // Publish the complete card together. Pinning its UUID must not cancel
+                // this load and expose a second, temporarily disabled document frame.
+                selectedRevision = loaded.revisionUuid
+                history = loadedHistory
+                preparation = loadedPreparation
+                data = loaded
             }
         }
         catch (cancelled: CancellationException) { throw cancelled }
@@ -117,7 +122,7 @@ fun SavedIndividualQuoteDialog(store: MeasurementElementsStore?, seriesUuid: Str
                         Text("Історія версій", style = MaterialTheme.typography.titleMedium)
                         history.forEach { revision ->
                             TextButton(enabled = !busy && revision.revisionUuid != saved.revisionUuid,
-                                onClick = { selectedRevision = revision.revisionUuid }) {
+                                onClick = { selectedRevision = revision.revisionUuid; generation++ }) {
                                 Text("v${revision.versionNumber}${if (revision == history.firstOrNull()) " · поточна" else ""} · ${revision.frozen.title} · ${measurementMoney(revision.frozen.amounts.finalCents)}")
                             }
                         }

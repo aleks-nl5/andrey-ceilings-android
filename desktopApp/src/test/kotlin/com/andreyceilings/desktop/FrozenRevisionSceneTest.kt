@@ -1,6 +1,10 @@
 package com.andreyceilings.desktop
 
 import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
+import app.cash.sqldelight.db.*
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.runtime.*
 import androidx.compose.runtime.snapshots.Snapshot
@@ -17,6 +21,47 @@ import kotlinx.coroutines.*
 import kotlin.test.*
 
 class FrozenRevisionSceneTest {
+    @Test fun savedCardPublishesOnlyAfterHistoryAndActionsAreReady() {
+        JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).use { driver ->
+            PriceCatalogSchema.create(driver)
+            val db = PrototypeDatabase(driver)
+            val fixture = MeasurementPricingFixture.seed(db)
+            val repo = ImmutableEstimateRepository(db)
+            val p = TransientQuotePresenter(fixture.measurementUuid)
+            p.acceptRead(p.beginRead(), LivePricingReader(db).read(fixture.projectId, fixture.measurementUuid))
+            val first = repo.saveIndividual(checkNotNull(p.saveRequest(fixture.projectId, "Pinned card")), 2026, 600)
+            val entered = CountDownLatch(1)
+            val release = CountDownLatch(1)
+            val armed = AtomicBoolean(true)
+            val paused = object : SqlDriver by driver {
+                override fun <R> executeQuery(identifier: Int?, sql: String, mapper: (SqlCursor) -> QueryResult<R>,
+                    parameters: Int, binders: (SqlPreparedStatement.() -> Unit)?): QueryResult<R> {
+                    if (sql.contains("ORDER BY r.versionNumber DESC") && armed.compareAndSet(true, false)) {
+                        entered.countDown(); check(release.await(15, TimeUnit.SECONDS))
+                    }
+                    return driver.executeQuery(identifier, sql, mapper, parameters, binders)
+                }
+            }
+            val store = MeasurementElementsStore(PrototypeDatabase(paused), { 1000 }, Dispatchers.Unconfined)
+            val scene = ImageComposeScene(700, 1100) { CeilingsTheme(false) {
+                SavedIndividualQuoteDialog(store, first.seriesUuid) {}
+            } }
+            try {
+                scene.await { entered.count == 0L }
+                assertFalse(scene.text().contains("Pinned card"))
+                assertFalse(scene.text().contains("Поточний статус серії"))
+                release.countDown()
+                scene.await { scene.text().contains("Pinned card") }
+                scene.reveal("Погоджено")
+                scene.click("Погоджено")
+                scene.await { repo.frozenIndividual(first.seriesUuid)?.status == "APPROVED" }
+                assertEquals(1, repo.revisions(first.seriesUuid).size)
+            } finally {
+                release.countDown(); scene.close(); runBlocking { store.closeAndAwaitWrites() }
+            }
+        }
+    }
+
     @Test fun sharedRevisionPreviewComparesFrozenValuesWithoutCopyAndCancelsWithoutWrites() {
         for (dark in listOf(false, true)) JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).use { driver ->
             PriceCatalogSchema.create(driver)
