@@ -55,8 +55,13 @@ class FrozenRevisionTouchTest {
             compose.onAllNodesWithText("Назад").onLast().performClick()
             compose.waitUntil(10000) { compose.onAllNodesWithText("До кошторису").fetchSemanticsNodes().isEmpty() }
             // The original selected revision remains v1 after latest advances.
-            lastList().performScrollToNode(hasText("${decodeFrozenIndividualEstimate(original).publicNumber} · v1"))
-            compose.onNodeWithText("${decodeFrozenIndividualEstimate(original).publicNumber} · v1").assertExists()
+            val originalHeading = "${decodeFrozenIndividualEstimate(original).publicNumber} · v1"
+            // Dismissing the editor starts an asynchronous reload of the pinned card.
+            // Wait for its actual v1 content, rather than searching the temporary loading list.
+            compose.waitUntil(10000) {
+                runCatching { lastList().performScrollToNode(hasText(originalHeading)); true }.getOrDefault(false)
+            }
+            compose.onNodeWithText(originalHeading).assertExists()
             assertEquals(original, db.frozenEstimateQueries.selectFrozenV1(first.seriesUuid).executeAsOne().payload)
             assertEquals(1, history.frozenIndividuals().size)
             assertEquals(2, db.estimateHistoryQueries.selectEstimateNumberSettings().executeAsOne().nextSequence)
