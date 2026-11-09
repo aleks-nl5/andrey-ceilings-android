@@ -19,7 +19,8 @@ Save stays after the final summary and keeps the existing moving total behavior.
 ## Verification record
 
 - Targeted shared estimate JVM tests: **68 tests, 0 failures**; SQLDelight migration verification passed during implementation.
-- Full shared/Desktop/Android checks: running; final results belong below and in PR #117.
+- Full shared JVM suite: **413 tests, 0 failures**; SQLDelight migration verification passed. This full run preceded the final session/source hardening; the focused final rerun is recorded in PR #117.
+- Android unit tests: **11 tests, 0 failures**. New Desktop comparison scene passed in light/dark themes and a narrow viewport. Its scrolling/wait assertions were then hardened; final rerun, full Desktop suite, APK and instrumentation compilation results are recorded in PR #117.
 - New common proof covers current geometry/price changes, v1→v2→v3, unchanged v1 payload, numbering, CAS, receipt retry, late rollback, history and deleted source. Physical Android/Windows/iOS lifecycle tests invoke the shared v16→v17 proof. Portable snapshot tests include v2+.
 - Added separate concurrent-connection append/status tests, fail-closed selective carry and import corruption cases, Android touch revision/Cancel/history test, and Desktop revision comparison scene in light/dark themes.
 - Linux environment has no `/dev/kvm`; Android emulator instrumentation and native Windows/iOS execution require the existing CI runners. Compiling instrumentation is not a physical test pass.

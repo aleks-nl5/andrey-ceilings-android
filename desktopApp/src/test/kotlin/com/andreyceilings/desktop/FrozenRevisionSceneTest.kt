@@ -71,7 +71,7 @@ class FrozenRevisionSceneTest {
     private fun ImageComposeScene.text() = nodes().joinToString { it.config.getOrNull(SemanticsProperties.Text).orEmpty().joinToString { t -> t.text } }
     private fun ImageComposeScene.await(condition: () -> Boolean) { repeat(100) { frame(); if (condition()) return }; fail("Revision preview did not settle") }
     private fun ImageComposeScene.scroll(delta: Float) { assertTrue(nodes().first { it.config.getOrNull(SemanticsActions.ScrollBy) != null }.config.getOrNull(SemanticsActions.ScrollBy)?.action?.invoke(0f, delta) == true) }
-    private fun ImageComposeScene.reveal(expectedText: String) { repeat(100) { frame(); if (text().contains(expectedText)) return; scroll(600f) }; fail("Revision comparison was not visible") }
+    private fun ImageComposeScene.reveal(expectedText: String) { repeat(100) { frame(); if (text().contains(expectedText)) return; scroll(200f) }; fail("Revision comparison was not visible: $expectedText; ${text()}") }
     private fun ImageComposeScene.click(text: String) {
         val node = nodes().first { it.config.getOrNull(SemanticsProperties.Text).orEmpty().any { t -> t.text == text } }
         val action = generateSequence(node) { it.parent }.mapNotNull { it.config.getOrNull(SemanticsActions.OnClick)?.action }.first()

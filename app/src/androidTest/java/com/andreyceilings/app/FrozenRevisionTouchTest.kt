@@ -35,13 +35,13 @@ class FrozenRevisionTouchTest {
         fun lastList() = compose.onAllNodes(SemanticsMatcher.keyIsDefined(SemanticsActions.ScrollToIndex)).onLast()
         try {
             compose.setContent { if (mounted) CeilingsTheme(false) { SavedIndividualQuoteDialog(store, first.seriesUuid) {} } }
-            compose.waitUntil(10000) { compose.onAllNodesWithText("Створити нову версію").fetchSemanticsNodes().isNotEmpty() }
+            compose.waitUntil(10000) { compose.onAllNodes(hasText("Створити нову версію") and isEnabled()).fetchSemanticsNodes().isNotEmpty() }
             lastList().performScrollToNode(hasText("Створити нову версію"))
             compose.onNodeWithText("Створити нову версію").assertIsEnabled().performClick()
             compose.onNodeWithText("До кошторису").performClick()
             assertEquals(1, history.revisions(first.seriesUuid).size)
             assertEquals("APPROVED", history.frozenIndividual(first.seriesUuid)!!.status)
-            compose.waitForIdle()
+            compose.waitUntil(10000) { compose.onAllNodes(hasText("Створити нову версію") and isEnabled()).fetchSemanticsNodes().isNotEmpty() }
             lastList().performScrollToNode(hasText("Створити нову версію"))
             compose.onNodeWithText("Створити нову версію").performClick()
             compose.waitUntil(10000) { store.retainedRevision(first.seriesUuid)?.first?.state?.value?.amounts != null }
