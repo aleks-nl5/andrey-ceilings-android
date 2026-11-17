@@ -74,10 +74,15 @@ class MeasurementCreationPricingTouchTest {
             compose.waitUntil(10000) { nav.measurementDetails != null }
             val row = MeasurementRepository(db).all().single(); uuid = row.uuid
             for ((title, role) in listOf("Route profile" to "Основний профіль", "Route canvas" to "Полотно")) {
+                // The shared drawing editor admits actions after its async document read.
+                // Opening a draft is read-only; await the actual chooser rather than a frame.
                 compose.waitUntil(10000) {
-                    runCatching { list().performScrollToNode(hasText("Додати елемент")); compose.onNodeWithText("Додати елемент").assertIsEnabled(); true }.getOrDefault(false)
+                    if (compose.onAllNodesWithText("З прайсу").fetchSemanticsNodes().isNotEmpty()) true
+                    else {
+                        runCatching { list().performScrollToNode(hasText("Додати елемент")); compose.onNodeWithText("Додати елемент").performClick() }
+                        false
+                    }
                 }
-                compose.onNodeWithText("Додати елемент").performClick()
                 compose.onNodeWithText("З прайсу").performClick()
                 compose.waitUntil(10000) { compose.onAllNodesWithText("Пошук за назвою або кодом").fetchSemanticsNodes().isNotEmpty() }
                 compose.onNode(hasText("Пошук за назвою або кодом") and hasSetTextAction()).performTextInput(title)
