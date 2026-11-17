@@ -21,6 +21,40 @@ import kotlinx.coroutines.*
 import kotlin.test.*
 
 class FrozenRevisionSceneTest {
+    @Test fun conflictingChoiceKeepsOtherSelectionAndShowsPersistentExplanation() {
+        JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).use { driver ->
+            PriceCatalogSchema.create(driver)
+            val db = PrototypeDatabase(driver)
+            val fixture = MeasurementPricingFixture.seed(db)
+            val repo = ImmutableEstimateRepository(db)
+            fun presenter(base: SavedIndividualQuote? = null) = TransientQuotePresenter(fixture.measurementUuid, revisionBase = base).also {
+                it.acceptRead(it.beginRead(), LivePricingReader(db).read(fixture.projectId, fixture.measurementUuid))
+            }
+            val first = repo.saveIndividual(checkNotNull(presenter().saveRequest(fixture.projectId, "Choice card")), 2026, 600)
+            val draft = presenter(repo.exactIndividual(first.seriesUuid, first.initialRevisionUuid)!!)
+            val second = repo.appendIndividual(AppendIndividualRevisionRequest(checkNotNull(draft.revisionTarget),
+                checkNotNull(draft.saveRequest(fixture.projectId, "Choice card"))), 601)
+            val original = repo.frozenIndividual(first.seriesUuid)!!.payload
+            val store = MeasurementElementsStore(db, { 1000 }, Dispatchers.Unconfined)
+            val scene = ImageComposeScene(700, 1100) { CeilingsTheme(false) {
+                SavedIndividualQuoteDialog(store, first.seriesUuid, first.initialRevisionUuid) {}
+            } }
+            try {
+                scene.await { scene.text().contains("Статус пропозиції") }
+                scene.reveal("Обрати для роботи"); scene.click("Обрати для роботи"); scene.frame()
+                assertTrue(repo.selectRevision(first.seriesUuid, second.initialRevisionUuid, 1, 700))
+                scene.click("Обрати")
+                scene.await { scene.text().contains("Вибір уже змінено") }
+                repeat(3) { scene.frame() }
+                assertTrue(scene.text().contains("Вибір уже змінено"))
+                assertEquals(second.initialRevisionUuid, repo.exactIndividual(first.seriesUuid, first.initialRevisionUuid)!!.selectedRevisionUuid)
+                assertEquals(2, repo.exactIndividual(first.seriesUuid, first.initialRevisionUuid)!!.choiceVersion)
+                assertTrue(repo.individualHistory(first.seriesUuid).all { it.status == EstimateWorkflowStatus.DRAFT })
+                assertEquals(original, repo.frozenIndividual(first.seriesUuid)!!.payload)
+            } finally { scene.close(); runBlocking { store.closeAndAwaitWrites() } }
+        }
+    }
+
     @Test fun allEntryContextsExposeIndependentAlternativesAndChosenMarker() {
         JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).use { driver ->
             PriceCatalogSchema.create(driver)

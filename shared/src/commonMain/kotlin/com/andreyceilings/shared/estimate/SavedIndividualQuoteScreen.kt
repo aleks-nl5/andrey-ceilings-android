@@ -184,8 +184,10 @@ fun SavedIndividualQuoteDialog(store: MeasurementElementsStore?, seriesUuid: Str
                 scope.launch {
                     try {
                         val changed = checkNotNull(store).selectQuoteRevision(seriesUuid, saved.revisionUuid, saved.choiceVersion)
+                        data = store.savedQuote(seriesUuid, saved.revisionUuid)
+                        history = store.quoteHistory(seriesUuid)
+                        preparation = store.prepareRevision(seriesUuid)
                         confirmingChoice = false
-                        generation++
                         if (!changed) error = "Вибір уже змінено. Перевірте актуальне значення."
                     } catch (cancelled: CancellationException) { throw cancelled }
                     catch (_: Exception) { error = "Не вдалося зберегти вибір. Оновіть документ." }
