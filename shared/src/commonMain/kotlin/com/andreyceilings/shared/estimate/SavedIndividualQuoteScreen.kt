@@ -22,6 +22,7 @@ import kotlinx.coroutines.launch
 @Composable
 fun SavedIndividualQuoteList(store: MeasurementElementsStore?, projectId: Long? = null, measurementUuid: String? = null) {
     var selected by rememberSaveable(projectId, measurementUuid) { mutableStateOf<String?>(null) }
+    var selectedDocument by rememberSaveable(projectId, measurementUuid) { mutableStateOf<String?>(null) }
     var generation by remember { mutableIntStateOf(0) }
     var rows by remember(store, projectId, measurementUuid) { mutableStateOf<List<SavedIndividualQuote>?>(null) }
     var error by remember { mutableStateOf(false) }
@@ -36,19 +37,23 @@ fun SavedIndividualQuoteList(store: MeasurementElementsStore?, projectId: Long? 
         if (error) Text("Не вдалося прочитати збережені кошториси.", color = MaterialTheme.colorScheme.error)
         else if (rows == null) LinearProgressIndicator(Modifier.fillMaxWidth())
         else if (rows.isNullOrEmpty()) Text("Збережених кошторисів ще немає")
-        rows.orEmpty().forEach { row ->
-            OutlinedCard(onClick = { selected = row.seriesUuid }, modifier = Modifier.fillMaxWidth()) {
+        rows.orEmpty().groupBy { it.seriesUuid }.values.forEach { alternatives ->
+            Text("${alternatives.first().frozen.publicNumber} · варіантів: ${alternatives.size}", style = MaterialTheme.typography.titleSmall)
+            alternatives.forEach { row ->
+            OutlinedCard(onClick = { selected = row.seriesUuid; selectedDocument = row.revisionUuid }, modifier = Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(12.dp)) {
                     Text(row.frozen.title, style = MaterialTheme.typography.titleSmall)
-                    Text("${row.frozen.publicNumber} · v${row.versionNumber} · ${row.status.label}")
+                    Text("${row.frozen.publicNumber} · v${row.versionNumber} · ${row.status?.label ?: "Статус не зафіксовано"}")
                     Text("${row.frozen.source.projectTitle} / ${row.frozen.source.measurementName}")
                     Text(measurementMoney(row.frozen.amounts.finalCents))
+                    if (row.selectedRevisionUuid == row.revisionUuid) Text("Обрано для роботи")
                 }
             }
         }
+        }
         TextButton(onClick = { generation++ }) { Text("Оновити список") }
     }
-    selected?.let { id -> SavedIndividualQuoteDialog(store, id) { selected = null; generation++ } }
+    selected?.let { id -> SavedIndividualQuoteDialog(store, id, selectedDocument) { selected = null; generation++ } }
 }
 
 /** Full-window read-only route. Only its series UUID is restored; Android Dialog owns gesture Back. */
@@ -64,6 +69,7 @@ fun SavedIndividualQuoteDialog(store: MeasurementElementsStore?, seriesUuid: Str
     var error by remember { mutableStateOf<String?>(null) }
     var loading by remember { mutableStateOf(true) }
     var busy by remember { mutableStateOf(false) }
+    var confirmingChoice by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     LaunchedEffect(store, seriesUuid, generation) {
         loading = true; error = null; data = null; preparation = null
@@ -99,15 +105,15 @@ fun SavedIndividualQuoteDialog(store: MeasurementElementsStore?, seriesUuid: Str
                         Text("${f.publicNumber} · v${saved.versionNumber}", style = MaterialTheme.typography.titleMedium)
                         Text("${f.source.projectTitle} / ${f.source.measurementName}")
                         Text("Створено: ${kotlin.time.Instant.fromEpochMilliseconds(saved.createdAt)}")
-                        Text("Поточний статус серії: ${saved.status.label}")
-                        if (saved.revisionUuid != history.firstOrNull()?.revisionUuid) Text("Історична версія. Поточний статус серії не є історією погодження цього документа.")
+                        Text("Статус пропозиції: ${saved.status?.label ?: "Статус не зафіксовано"}")
+                        if (saved.selectedRevisionUuid == saved.revisionUuid) Text("Обрано для роботи")
                     }
                     items(EstimateWorkflowStatus.entries.toList()) { status ->
-                        OutlinedButton(enabled = !busy && !loading && saved.revisionUuid == history.firstOrNull()?.revisionUuid && status != saved.status, onClick = {
+                        OutlinedButton(enabled = !busy && !loading && status != saved.status, onClick = {
                             busy = true; error = null
                             scope.launch {
                                 try {
-                                    val changed = checkNotNull(store).setQuoteStatus(seriesUuid, saved.statusVersion, status)
+                                    val changed = checkNotNull(store).setQuoteStatus(saved.revisionUuid, saved.statusVersion, status)
                                     data = store.savedQuote(seriesUuid, saved.revisionUuid)
                                     history = store.quoteHistory(seriesUuid)
                                     preparation = store.prepareRevision(seriesUuid)
@@ -119,11 +125,11 @@ fun SavedIndividualQuoteDialog(store: MeasurementElementsStore?, seriesUuid: Str
                         }) { Text(status.label) }
                     }
                     item {
-                        Text("Історія версій", style = MaterialTheme.typography.titleMedium)
+                        Text("Варіанти пропозиції", style = MaterialTheme.typography.titleMedium)
                         history.forEach { revision ->
                             TextButton(enabled = !busy && revision.revisionUuid != saved.revisionUuid,
                                 onClick = { selectedRevision = revision.revisionUuid; generation++ }) {
-                                Text("v${revision.versionNumber}${if (revision == history.firstOrNull()) " · поточна" else ""} · ${revision.frozen.title} · ${measurementMoney(revision.frozen.amounts.finalCents)}")
+                                Text("v${revision.versionNumber}${if (revision == history.firstOrNull()) " · найновіша" else ""} · ${revision.status?.label ?: "Статус не зафіксовано"}${if (revision.selectedRevisionUuid == revision.revisionUuid) " · обрано для роботи" else ""} · ${revision.frozen.title} · ${measurementMoney(revision.frozen.amounts.finalCents)}")
                             }
                         }
                         Button(enabled = !busy && !loading && preparation != null, onClick = {
@@ -133,6 +139,11 @@ fun SavedIndividualQuoteDialog(store: MeasurementElementsStore?, seriesUuid: Str
                             }
                         }) { Text("Створити нову версію") }
                         if (preparation == null) Text("Нову версію неможливо створити: актуальний замір або його об’єкт недоступний. Історію збережено.")
+                    }
+                    item {
+                        OutlinedButton(enabled = !busy && saved.selectedRevisionUuid != saved.revisionUuid,
+                            onClick = { confirmingChoice = true }) { Text("Обрати для роботи") }
+                        Text("Вибір пропозиції не змінює статус інших версій.")
                     }
                     item { FrozenQuoteDrawing(f.source) }
                     items(f.rows, key = { it.uuid }) { frozen ->
@@ -163,6 +174,25 @@ fun SavedIndividualQuoteDialog(store: MeasurementElementsStore?, seriesUuid: Str
                 }
             }
         }
+    }
+    if (confirmingChoice) data?.let { saved ->
+        AlertDialog(onDismissRequest = { if (!busy) confirmingChoice = false },
+            title = { Text("Обрати v${saved.versionNumber} для роботи?") },
+            text = { Text("Ця пропозиція стане обраною замість попереднього вибору. Статуси та збережені суми всіх версій залишаться незмінними.") },
+            confirmButton = { TextButton(enabled = !busy, onClick = {
+                busy = true
+                scope.launch {
+                    try {
+                        val changed = checkNotNull(store).selectQuoteRevision(seriesUuid, saved.revisionUuid, saved.choiceVersion)
+                        confirmingChoice = false
+                        generation++
+                        if (!changed) error = "Вибір уже змінено. Перевірте актуальне значення."
+                    } catch (cancelled: CancellationException) { throw cancelled }
+                    catch (_: Exception) { error = "Не вдалося зберегти вибір. Оновіть документ." }
+                    finally { busy = false }
+                }
+            }) { Text("Обрати") } },
+            dismissButton = { TextButton(enabled = !busy, onClick = { confirmingChoice = false }) { Text("Скасувати") } })
     }
     LaunchedEffect(editing, preparation) {
         if (editing && editor == null) {

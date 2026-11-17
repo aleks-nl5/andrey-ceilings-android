@@ -1,0 +1,32 @@
+CREATE TABLE estimate_revision_workflow (
+    revisionUuid TEXT NOT NULL PRIMARY KEY REFERENCES estimate_revisions(revisionUuid) ON DELETE RESTRICT,
+    status TEXT CHECK (status IN ('DRAFT','SENT','APPROVED','REJECTED')),
+    version INTEGER NOT NULL CHECK (typeof(version) = 'integer' AND version > 0),
+    updatedAt INTEGER CHECK ((status IS NULL AND updatedAt IS NULL) OR (status IS NOT NULL AND typeof(updatedAt) = 'integer' AND updatedAt > 0))
+);
+CREATE TABLE estimate_revision_choice (
+    seriesUuid TEXT NOT NULL PRIMARY KEY REFERENCES estimate_series(seriesUuid) ON DELETE RESTRICT,
+    selectedRevisionUuid TEXT REFERENCES estimate_revisions(revisionUuid) ON DELETE RESTRICT,
+    version INTEGER NOT NULL CHECK (typeof(version) = 'integer' AND version > 0),
+    updatedAt INTEGER CHECK ((selectedRevisionUuid IS NULL AND updatedAt IS NULL) OR (selectedRevisionUuid IS NOT NULL AND typeof(updatedAt) = 'integer' AND updatedAt > 0))
+);
+
+insertRevisionWorkflow:
+INSERT INTO estimate_revision_workflow VALUES (?, 'DRAFT', 1, ?);
+insertRevisionChoice:
+INSERT INTO estimate_revision_choice VALUES (?, NULL, 1, NULL);
+updateRevisionWorkflow:
+UPDATE estimate_revision_workflow SET status = ?, version = version + 1, updatedAt = max(coalesce(updatedAt, 0) + 1, ?)
+WHERE revisionUuid = ? AND version = ? AND version < 9223372036854775807 AND coalesce(updatedAt, 0) < 9223372036854775807
+AND EXISTS (SELECT 1 FROM estimate_revisions r JOIN estimate_series s ON s.seriesUuid = r.seriesUuid
+ WHERE r.revisionUuid = estimate_revision_workflow.revisionUuid AND s.deletedAt IS NULL)
+RETURNING version;
+selectRevisionChoice:
+SELECT * FROM estimate_revision_choice WHERE seriesUuid = ?;
+updateRevisionChoice:
+UPDATE estimate_revision_choice SET selectedRevisionUuid = :revisionUuid, version = version + 1, updatedAt = max(coalesce(updatedAt, 0) + 1, :now)
+WHERE seriesUuid = :seriesUuid AND version = :expectedVersion AND version < 9223372036854775807 AND coalesce(updatedAt, 0) < 9223372036854775807
+AND EXISTS (SELECT 1 FROM estimate_revisions r JOIN estimate_series s ON s.seriesUuid = r.seriesUuid
+ WHERE r.seriesUuid = :seriesUuid AND r.revisionUuid = :revisionUuid AND s.deletedAt IS NULL
+ AND r.revisionUuid IN (SELECT revisionUuid FROM estimate_v1_frozen UNION ALL SELECT revisionUuid FROM estimate_revision_frozen))
+RETURNING version;

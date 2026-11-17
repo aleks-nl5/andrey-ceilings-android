@@ -43,6 +43,10 @@ object MeasurementCreatePersistenceProof {
                 assertEquals(row.createdAt, row.updatedAt)
                 assertTrue(Regex("[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}").matches(row.uuid))
                 assertEquals(validateMeasurementCreate(draft).geometry, MeasurementGeometryCodec.read(row.drawingJson))
+                val live = assertIs<com.andreyceilings.shared.livepricing.PricingReadResult.Loaded>(
+                    com.andreyceilings.shared.livepricing.LivePricingReader(database).read(parent, row.uuid))
+                assertEquals(live.source.geometry.vertices.size, live.source.walls.size)
+                assertFalse(live.buildPreview().fatalProblems.any { it.code == com.andreyceilings.shared.livepricing.PricingProblemCode.INVALID_SOURCE })
                 val afterProcessRestore = MeasurementCreateModel(store,
                     assertNotNull(MeasurementCreateDraft.restore(draft.snapshot(), parent)))
                 assertNull(afterProcessRestore.state.value.savedId)

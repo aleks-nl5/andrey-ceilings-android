@@ -13,6 +13,22 @@ import com.andreyceilings.shared.livepricing.*
 import kotlin.test.*
 
 class BusinessRoleSqlCipherTest {
+    @Test fun physicalV17ToV18RollbackReopenAndFrozenRevisions(): Unit = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        System.loadLibrary("sqlcipher")
+        val name = "frozen-estimate-v18.db"
+        val key = ByteArray(32) { 44 }
+        context.deleteDatabase(name)
+        try {
+            RevisionWorkflowMigrationProof.lifecycle(PriceCatalogSchema) { schema ->
+                AndroidSqliteDriver(schema, context, name, factory = SupportOpenHelperFactory(key.copyOf(), null, true)).also { d ->
+                    try { d.executeQuery(null, "SELECT count(*) FROM sqlite_master", { c -> c.next(); app.cash.sqldelight.db.QueryResult.Value(c.getLong(0)) }, 0).value }
+                    catch (t: Throwable) { d.close(); throw t }
+                }
+            }
+        } finally { key.fill(0); context.deleteDatabase(name) }
+    }
+
     @Test fun physicalV16ToV17RollbackReopenAndFrozenRevisions(): Unit = runBlocking {
         val context = ApplicationProvider.getApplicationContext<Context>()
         System.loadLibrary("sqlcipher")

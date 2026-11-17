@@ -21,7 +21,7 @@ class QuoteSaveIntentLockTest {
             val fixture = MeasurementPricingFixture.seed(db)
             val repo = ImmutableEstimateRepository(db)
             val first = repo.saveIndividual(FrozenIndividualEstimateProof.command(db, fixture), 2026, 600)
-            repo.setWorkflowStatus(first.seriesUuid, 1, EstimateWorkflowStatus.APPROVED, 601)
+            repo.setWorkflowStatus(first.initialRevisionUuid, 1, EstimateWorkflowStatus.APPROVED, 601)
             val base = repo.exactIndividual(first.seriesUuid, first.initialRevisionUuid)!!
             val loaded = LivePricingReader(db).read(fixture.projectId, fixture.measurementUuid)
             val entered = CountDownLatch(1)

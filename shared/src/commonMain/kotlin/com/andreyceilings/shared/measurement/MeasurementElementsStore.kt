@@ -100,8 +100,11 @@ class MeasurementElementsStore(private val database: PrototypeDatabase, private 
         if (pricingReader.readInTransaction(m.projectId, m.uuid) !is PricingReadResult.Loaded) return@estimateAccess null
         saved to ElementRoute(m.projectId, m.id, m.uuid)
     }
-    suspend fun setQuoteStatus(seriesUuid: String, expectedVersion: Long, status: EstimateWorkflowStatus): Boolean = estimateAccess {
-        estimates.setWorkflowStatus(seriesUuid, expectedVersion, status, nowMillis())
+    suspend fun setQuoteStatus(revisionUuid: String, expectedVersion: Long, status: EstimateWorkflowStatus): Boolean = estimateAccess {
+        estimates.setWorkflowStatus(revisionUuid, expectedVersion, status, nowMillis())
+    }
+    suspend fun selectQuoteRevision(seriesUuid: String, revisionUuid: String, expectedVersion: Long): Boolean = estimateAccess {
+        estimates.selectRevision(seriesUuid, revisionUuid, expectedVersion, nowMillis())
     }
     private suspend fun <T> estimateAccess(block: () -> T): T {
         val completion = beginWrite() ?: throw IllegalStateException("Database closed")

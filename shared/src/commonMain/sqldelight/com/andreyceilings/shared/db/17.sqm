@@ -1,0 +1,21 @@
+CREATE TABLE estimate_revision_workflow (
+    revisionUuid TEXT NOT NULL PRIMARY KEY REFERENCES estimate_revisions(revisionUuid) ON DELETE RESTRICT,
+    status TEXT CHECK (status IN ('DRAFT','SENT','APPROVED','REJECTED')),
+    version INTEGER NOT NULL CHECK (typeof(version) = 'integer' AND version > 0),
+    updatedAt INTEGER CHECK ((status IS NULL AND updatedAt IS NULL) OR (status IS NOT NULL AND typeof(updatedAt) = 'integer' AND updatedAt > 0))
+);
+CREATE TABLE estimate_revision_choice (
+    seriesUuid TEXT NOT NULL PRIMARY KEY REFERENCES estimate_series(seriesUuid) ON DELETE RESTRICT,
+    selectedRevisionUuid TEXT REFERENCES estimate_revisions(revisionUuid) ON DELETE RESTRICT,
+    version INTEGER NOT NULL CHECK (typeof(version) = 'integer' AND version > 0),
+    updatedAt INTEGER CHECK ((selectedRevisionUuid IS NULL AND updatedAt IS NULL) OR (selectedRevisionUuid IS NOT NULL AND typeof(updatedAt) = 'integer' AND updatedAt > 0))
+);
+-- Only the latest document owns the known series status; earlier metadata was never recorded.
+INSERT INTO estimate_revision_workflow
+SELECT r.revisionUuid,
+ CASE WHEN r.versionNumber = (SELECT max(n.versionNumber) FROM estimate_revisions n WHERE n.seriesUuid = r.seriesUuid) THEN w.status ELSE NULL END,
+ CASE WHEN r.versionNumber = (SELECT max(n.versionNumber) FROM estimate_revisions n WHERE n.seriesUuid = r.seriesUuid) THEN w.version ELSE 1 END,
+ CASE WHEN r.versionNumber = (SELECT max(n.versionNumber) FROM estimate_revisions n WHERE n.seriesUuid = r.seriesUuid) THEN w.updatedAt ELSE NULL END
+FROM estimate_revisions r JOIN estimate_workflow w ON w.seriesUuid = r.seriesUuid
+WHERE r.revisionUuid IN (SELECT revisionUuid FROM estimate_v1_frozen UNION ALL SELECT revisionUuid FROM estimate_revision_frozen);
+INSERT INTO estimate_revision_choice SELECT seriesUuid, NULL, 1, NULL FROM estimate_workflow;

@@ -29,9 +29,10 @@ object FrozenRevisionProof {
         val v1 = checkNotNull(history.frozenIndividual(first.seriesUuid))
         assertFalse(v1.payload.contains("revisionIdentity")) // Preserve the exact v1 codec/canonical proof.
         val sequence = db.estimateHistoryQueries.selectEstimateNumberSettings().executeAsOne().nextSequence
-        assertTrue(history.setWorkflowStatus(first.seriesUuid, 1, EstimateWorkflowStatus.APPROVED, 601))
+        assertTrue(history.setWorkflowStatus(first.initialRevisionUuid, 1, EstimateWorkflowStatus.APPROVED, 601))
+        assertTrue(history.selectRevision(first.seriesUuid, first.initialRevisionUuid, 1, 601))
         val staleStatus = request(db, fixture, first.seriesUuid)
-        assertTrue(history.setWorkflowStatus(first.seriesUuid, 2, EstimateWorkflowStatus.SENT, 602))
+        assertTrue(history.setWorkflowStatus(first.initialRevisionUuid, 2, EstimateWorkflowStatus.SENT, 602))
         assertEquals(IndividualEstimateSaveFailure.Reason.STALE_STATUS,
             assertFailsWith<IndividualEstimateSaveFailure> { history.appendIndividual(staleStatus, 603) }.reason)
         // The new draft starts with current quantities and no old discount/override.
@@ -70,7 +71,7 @@ object FrozenRevisionProof {
         assertEquals(2, second.versionNumber)
         assertEquals(first.initialRevisionUuid, second.parentRevisionUuid)
         assertEquals(EstimateWorkflowStatus.DRAFT, second.status)
-        assertEquals(4, second.statusVersion)
+        assertEquals(1, second.statusVersion)
         assertEquals(15000, second.frozen.rows.single { it.line.elementUuid == fixture.elementUuid }.line.sourceQuantityMilli)
         assertNotEquals(old.frozen.source.drawingJson, second.frozen.source.drawingJson)
         assertEquals(v1.payload, db.frozenEstimateQueries.selectFrozenV1(first.seriesUuid).executeAsOne().payload)
@@ -85,23 +86,39 @@ object FrozenRevisionProof {
             }.reason)
         // Late failure rolls back the revision, frozen values, workflow and receipt together.
         val thirdCommand = request(db, fixture, first.seriesUuid)
-        val failing = object : SqlDriver by driver {
-            override fun execute(identifier: Int?, sql: String, parameters: Int, binders: (SqlPreparedStatement.() -> Unit)?): QueryResult<Long> {
-                if (sql.startsWith("INSERT INTO estimate_revision_receipts")) error("Injected late revision receipt failure")
-                return driver.execute(identifier, sql, parameters, binders)
+        for (table in listOf("estimate_revision_receipts", "estimate_revision_workflow")) {
+            val failing = object : SqlDriver by driver {
+                override fun execute(identifier: Int?, sql: String, parameters: Int, binders: (SqlPreparedStatement.() -> Unit)?): QueryResult<Long> {
+                    val result = driver.execute(identifier, sql, parameters, binders)
+                    if (sql.startsWith("INSERT INTO $table")) error("Injected late revision failure after insert")
+                    return result
+                }
             }
+            assertFails { ImmutableEstimateRepository(PrototypeDatabase(failing)).appendIndividual(thirdCommand, 613) }
+            assertEquals(2, history.revisions(first.seriesUuid).size)
+            assertEquals(second, history.exactIndividual(first.seriesUuid, v2.initialRevisionUuid))
+            assertNull(db.frozenRevisionQueries.selectRevisionReceipt(thirdCommand.calculation.operationUuid).executeAsOneOrNull())
+            verifyFrozenEstimateContents(driver)
         }
-        assertFails { ImmutableEstimateRepository(PrototypeDatabase(failing)).appendIndividual(thirdCommand, 613) }
-        assertEquals(2, history.revisions(first.seriesUuid).size)
-        assertEquals(second, history.exactIndividual(first.seriesUuid, v2.initialRevisionUuid))
-        assertNull(db.frozenRevisionQueries.selectRevisionReceipt(thirdCommand.calculation.operationUuid).executeAsOneOrNull())
         val v3 = history.appendIndividual(thirdCommand, 614)
         assertEquals(3, history.revision(v3.initialRevisionUuid)!!.versionNumber)
         assertEquals(v2.initialRevisionUuid, history.revision(v3.initialRevisionUuid)!!.parentRevisionUuid)
-        assertEquals(previousCount + 1, history.frozenIndividuals().size)
+        assertEquals(previousCount + 3, history.frozenIndividuals().size)
         assertEquals(listOf(3L, 2L, 1L), history.individualHistory(first.seriesUuid).map { it.versionNumber })
         assertEquals(v1.payload, db.frozenEstimateQueries.selectFrozenV1(first.seriesUuid).executeAsOne().payload)
         assertFails { verifyFrozenRevisionIdentity(second.frozen, first.seriesUuid, v3.initialRevisionUuid, 3, v2.initialRevisionUuid) }
+        // Alternatives preserve independent metadata, explicit choice, exact frozen UUIDs.
+        assertEquals(EstimateWorkflowStatus.SENT, history.exactIndividual(first.seriesUuid, first.initialRevisionUuid)!!.status)
+        assertEquals(EstimateWorkflowStatus.DRAFT, history.exactIndividual(first.seriesUuid, v2.initialRevisionUuid)!!.status)
+        assertEquals(EstimateWorkflowStatus.DRAFT, history.exactIndividual(first.seriesUuid, v3.initialRevisionUuid)!!.status)
+        assertTrue(history.setWorkflowStatus(first.initialRevisionUuid, 3, EstimateWorkflowStatus.APPROVED, 615))
+        assertEquals(first.initialRevisionUuid, history.exactIndividual(first.seriesUuid, v2.initialRevisionUuid)!!.selectedRevisionUuid)
+        assertFalse(history.selectRevision(first.seriesUuid, v3.initialRevisionUuid, 1, 617))
+        assertEquals(first.initialRevisionUuid, history.exactIndividual(first.seriesUuid, v3.initialRevisionUuid)!!.selectedRevisionUuid)
+        assertTrue(history.selectRevision(first.seriesUuid, v2.initialRevisionUuid, 2, 618))
+        assertTrue(history.selectRevision(first.seriesUuid, first.initialRevisionUuid, 3, 619))
+        assertEquals(EstimateWorkflowStatus.APPROVED, history.exactIndividual(first.seriesUuid, first.initialRevisionUuid)!!.status)
+        assertEquals(EstimateWorkflowStatus.DRAFT, history.exactIndividual(first.seriesUuid, v3.initialRevisionUuid)!!.status)
         verifyFrozenEstimateContents(driver)
         // Receipts are primary even after mutable source/catalog changes or deletion.
         prices.updateSalePrice(prices.find(fixture.priceId)!!, 25.0, 620)

@@ -65,7 +65,7 @@ object PriceCatalogSchema : SqlSchema<QueryResult.Value<Unit>> {
         if (oldVersion < 6L && newVersion >= 6L) backfillPriceNameKeys(driver)
         if (newVersion >= 6L) StarterPriceCatalog.initializeInTransaction(PrototypeDatabase(driver))
         if (newVersion >= 8L) verifyStructure(driver, newVersion)
-        if (newVersion >= 17L) verifyFrozenEstimateContents(driver)
+        if (newVersion >= 17L) verifyFrozenEstimateContents(driver, newVersion)
         return QueryResult.Unit
     }
 }

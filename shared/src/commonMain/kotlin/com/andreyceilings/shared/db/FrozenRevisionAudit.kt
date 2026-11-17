@@ -5,12 +5,26 @@ import app.cash.sqldelight.db.SqlDriver
 import com.andreyceilings.shared.estimate.*
 
 /** Full import/reopen audit, including tombstones. Does not reprice any historical revision. */
-fun verifyFrozenEstimateContents(driver: SqlDriver) {
+fun verifyFrozenEstimateContents(driver: SqlDriver, version: Long = 18) {
     fun rejectRows(sql: String) {
         val invalid = driver.executeQuery(null, sql, { c -> c.next(); QueryResult.Value(c.getLong(0)) }, 0).value
         check(invalid == 0L) { "Invalid exact revision provenance" }
     }
     check(!driver.executeQuery(null, "PRAGMA foreign_key_check", { c -> QueryResult.Value(c.next().value) }, 0).value) { "Broken frozen revision foreign key" }
+    if (version >= 18) {
+        rejectRows("""SELECT count(*) FROM estimate_revision_workflow w WHERE typeof(version) != 'integer' OR version <= 0
+            OR (status IS NULL AND updatedAt IS NOT NULL) OR (status IS NOT NULL AND
+            (status NOT IN ('DRAFT','SENT','APPROVED','REJECTED') OR typeof(updatedAt) != 'integer' OR updatedAt <= 0))""")
+        rejectRows("""SELECT count(*) FROM estimate_revision_choice c WHERE typeof(version) != 'integer' OR version <= 0
+            OR (selectedRevisionUuid IS NULL AND updatedAt IS NOT NULL) OR (selectedRevisionUuid IS NOT NULL AND
+            (typeof(updatedAt) != 'integer' OR updatedAt <= 0 OR NOT EXISTS (SELECT 1 FROM estimate_revisions r
+            WHERE r.revisionUuid = c.selectedRevisionUuid AND r.seriesUuid = c.seriesUuid
+            AND r.revisionUuid IN (SELECT revisionUuid FROM estimate_v1_frozen UNION ALL SELECT revisionUuid FROM estimate_revision_frozen))))""")
+        rejectRows("""SELECT count(*) FROM estimate_revisions r WHERE r.revisionUuid IN
+            (SELECT revisionUuid FROM estimate_v1_frozen UNION ALL SELECT revisionUuid FROM estimate_revision_frozen)
+            AND (NOT EXISTS (SELECT 1 FROM estimate_revision_workflow w WHERE w.revisionUuid = r.revisionUuid)
+            OR NOT EXISTS (SELECT 1 FROM estimate_revision_choice c WHERE c.seriesUuid = r.seriesUuid))""")
+    }
     rejectRows("""SELECT count(*) FROM estimate_workflow WHERE typeof(version) != 'integer' OR version <= 0
         OR typeof(updatedAt) != 'integer' OR updatedAt <= 0 OR status NOT IN ('DRAFT','SENT','APPROVED','REJECTED')""")
     rejectRows("""SELECT count(*) FROM estimate_revisions r WHERE

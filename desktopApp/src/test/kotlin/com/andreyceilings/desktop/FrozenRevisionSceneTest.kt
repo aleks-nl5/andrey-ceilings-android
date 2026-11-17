@@ -21,6 +21,41 @@ import kotlinx.coroutines.*
 import kotlin.test.*
 
 class FrozenRevisionSceneTest {
+    @Test fun allEntryContextsExposeIndependentAlternativesAndChosenMarker() {
+        JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).use { driver ->
+            PriceCatalogSchema.create(driver)
+            val db = PrototypeDatabase(driver)
+            val fixture = MeasurementPricingFixture.seed(db)
+            val repo = ImmutableEstimateRepository(db)
+            fun presenter(base: SavedIndividualQuote? = null) = TransientQuotePresenter(fixture.measurementUuid, revisionBase = base).also {
+                it.acceptRead(it.beginRead(), LivePricingReader(db).read(fixture.projectId, fixture.measurementUuid))
+            }
+            val first = repo.saveIndividual(checkNotNull(presenter().saveRequest(fixture.projectId, "Alternative")), 2026, 600)
+            assertTrue(repo.setWorkflowStatus(first.initialRevisionUuid, 1, EstimateWorkflowStatus.APPROVED, 601))
+            assertTrue(repo.selectRevision(first.seriesUuid, first.initialRevisionUuid, 1, 602))
+            repeat(2) { index ->
+                val latest = repo.frozenIndividual(first.seriesUuid)!!
+                val draft = presenter(repo.exactIndividual(first.seriesUuid, latest.revisionUuid)!!)
+                repo.appendIndividual(AppendIndividualRevisionRequest(checkNotNull(draft.revisionTarget),
+                    checkNotNull(draft.saveRequest(fixture.projectId, "Alternative"))), 603L + index)
+            }
+            for ((project, measurement) in listOf(null to null, fixture.projectId to null, fixture.projectId to fixture.measurementUuid)) {
+                val store = MeasurementElementsStore(db, { 1000 }, Dispatchers.Unconfined)
+                val scene = ImageComposeScene(700, 1100) { CeilingsTheme(false) {
+                    SavedIndividualQuoteList(store, project, measurement)
+                } }
+                try {
+                    scene.await { scene.text().contains("варіантів: 3") }
+                    val text = scene.text()
+                    assertTrue(text.contains("v1 · Погоджено"), text)
+                    assertTrue(text.contains("v2 · Чернетка"), text)
+                    assertTrue(text.contains("v3 · Чернетка"), text)
+                    assertTrue(text.contains("Обрано для роботи"), text)
+                } finally { scene.close(); runBlocking { store.closeAndAwaitWrites() } }
+            }
+        }
+    }
+
     @Test fun savedCardPublishesOnlyAfterHistoryAndActionsAreReady() {
         JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).use { driver ->
             PriceCatalogSchema.create(driver)
@@ -49,7 +84,7 @@ class FrozenRevisionSceneTest {
             try {
                 scene.await { entered.count == 0L }
                 assertFalse(scene.text().contains("Pinned card"))
-                assertFalse(scene.text().contains("Поточний статус серії"))
+                assertFalse(scene.text().contains("Статус пропозиції"))
                 release.countDown()
                 scene.await { scene.text().contains("Pinned card") }
                 scene.reveal("Погоджено")

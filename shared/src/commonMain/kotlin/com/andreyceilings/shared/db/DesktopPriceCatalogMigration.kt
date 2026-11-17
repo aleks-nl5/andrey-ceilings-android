@@ -83,7 +83,10 @@ fun openDesktopPriceCatalog(driver: SqlDriver, previouslyExisting: Boolean) {
             check(detectedVersion == 15L) { "Frozen estimates require business roles" }
             val revisionParts = listOf(columns("estimate_revision_frozen").isNotEmpty(), columns("estimate_revision_receipts").isNotEmpty())
             check(revisionParts.all { it } || revisionParts.none { it }) { "Partial frozen revision schema" }
-            val frozenVersion = if (revisionParts.all { it }) 17L else 16L
+            val workflowParts = listOf(columns("estimate_revision_workflow").isNotEmpty(), columns("estimate_revision_choice").isNotEmpty())
+            check(workflowParts.all { it } || workflowParts.none { it }) { "Partial revision metadata schema" }
+            check(workflowParts.none { it } || revisionParts.all { it }) { "Revision metadata requires frozen revisions" }
+            val frozenVersion = if (workflowParts.all { it }) 18L else if (revisionParts.all { it }) 17L else 16L
             verifyFrozenEstimateStructure(driver, frozenVersion)
             frozenVersion
         } else detectedVersion

@@ -4,7 +4,7 @@ import app.cash.sqldelight.db.QueryResult
 import app.cash.sqldelight.db.SqlDriver
 
 /** Strict physical admission for encrypted reopen/import; never repair a partial v16 in place. */
-fun verifyFrozenEstimateStructure(driver: SqlDriver, version: Long = 17) {
+fun verifyFrozenEstimateStructure(driver: SqlDriver, version: Long = 18) {
     val expected = mutableMapOf(
         "estimate_v1_frozen" to """CREATE TABLE estimate_v1_frozen (
     revisionUuid TEXT NOT NULL PRIMARY KEY REFERENCES estimate_revisions(revisionUuid) ON DELETE RESTRICT,
@@ -68,6 +68,20 @@ fun verifyFrozenEstimateStructure(driver: SqlDriver, version: Long = 17) {
     fun normalize(sql: String): String = Regex("'(?:''|[^'])*'|[^']+").findAll(sql.trim().trimEnd(';')).joinToString("") { token ->
         if (token.value.startsWith("'")) token.value else token.value.replace("\"", "")
             .replace(Regex("\\s+"), " ").replace(Regex("\\s*([,()])\\s*"), "$1").lowercase()
+    }
+    if (version >= 18) {
+        expected["estimate_revision_workflow"] = """CREATE TABLE estimate_revision_workflow (
+    revisionUuid TEXT NOT NULL PRIMARY KEY REFERENCES estimate_revisions(revisionUuid) ON DELETE RESTRICT,
+    status TEXT CHECK (status IN ('DRAFT','SENT','APPROVED','REJECTED')),
+    version INTEGER NOT NULL CHECK (typeof(version) = 'integer' AND version > 0),
+    updatedAt INTEGER CHECK ((status IS NULL AND updatedAt IS NULL) OR (status IS NOT NULL AND typeof(updatedAt) = 'integer' AND updatedAt > 0))
+);"""
+        expected["estimate_revision_choice"] = """CREATE TABLE estimate_revision_choice (
+    seriesUuid TEXT NOT NULL PRIMARY KEY REFERENCES estimate_series(seriesUuid) ON DELETE RESTRICT,
+    selectedRevisionUuid TEXT REFERENCES estimate_revisions(revisionUuid) ON DELETE RESTRICT,
+    version INTEGER NOT NULL CHECK (typeof(version) = 'integer' AND version > 0),
+    updatedAt INTEGER CHECK ((selectedRevisionUuid IS NULL AND updatedAt IS NULL) OR (selectedRevisionUuid IS NOT NULL AND typeof(updatedAt) = 'integer' AND updatedAt > 0))
+);"""
     }
     expected.forEach { (name, definition) ->
         val actual = driver.executeQuery(null, "SELECT sql FROM sqlite_master WHERE name = ?", { cursor ->

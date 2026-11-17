@@ -28,7 +28,7 @@ class FrozenRevisionTouchTest {
         val fixture = MeasurementPricingFixture.seed(db)
         val history = ImmutableEstimateRepository(db)
         val first = history.saveIndividual(FrozenIndividualEstimateProof.command(db, fixture), 2026, 600)
-        history.setWorkflowStatus(first.seriesUuid, 1, EstimateWorkflowStatus.APPROVED, 601)
+        history.setWorkflowStatus(first.initialRevisionUuid, 1, EstimateWorkflowStatus.APPROVED, 601)
         val original = history.frozenIndividual(first.seriesUuid)!!.payload
         val store = MeasurementElementsStore(db, { 1000 })
         var mounted by mutableStateOf(true)
@@ -62,8 +62,21 @@ class FrozenRevisionTouchTest {
                 runCatching { lastList().performScrollToNode(hasText(originalHeading)); true }.getOrDefault(false)
             }
             compose.onNodeWithText(originalHeading).assertExists()
+            // The older offer is actionable and independently selectable after append.
+            compose.waitUntil(10000) {
+                runCatching { lastList().performScrollToNode(hasText("Надіслано")); compose.onNodeWithText("Надіслано").assertIsEnabled(); true }.getOrDefault(false)
+            }
+            compose.onNodeWithText("Надіслано").performClick()
+            compose.waitUntil(10000) { history.exactIndividual(first.seriesUuid, first.initialRevisionUuid)?.status == EstimateWorkflowStatus.SENT }
+            assertEquals(EstimateWorkflowStatus.DRAFT, history.exactIndividual(first.seriesUuid, latest.revisionUuid)!!.status)
+            compose.waitUntil(10000) {
+                runCatching { lastList().performScrollToNode(hasText("Обрати для роботи")); compose.onNodeWithText("Обрати для роботи").assertIsEnabled(); true }.getOrDefault(false)
+            }
+            compose.onNodeWithText("Обрати для роботи").performClick()
+            compose.onNodeWithText("Обрати").performClick()
+            compose.waitUntil(10000) { history.exactIndividual(first.seriesUuid, latest.revisionUuid)?.selectedRevisionUuid == first.initialRevisionUuid }
             assertEquals(original, db.frozenEstimateQueries.selectFrozenV1(first.seriesUuid).executeAsOne().payload)
-            assertEquals(1, history.frozenIndividuals().size)
+            assertEquals(2, history.frozenIndividuals().size)
             assertEquals(2, db.estimateHistoryQueries.selectEstimateNumberSettings().executeAsOne().nextSequence)
         } finally {
             compose.runOnIdle { mounted = false }

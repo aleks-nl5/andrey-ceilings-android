@@ -50,7 +50,7 @@ class ImmutableEstimateRepository(private val database: PrototypeDatabase) {
 
     fun frozenIndividual(seriesUuid: String) = database.frozenRevisionQueries.selectExactLatest(seriesUuid).executeAsOneOrNull()
 
-    fun frozenIndividuals() = database.frozenRevisionQueries.selectExactLatestList().executeAsList()
+    fun frozenIndividuals() = database.frozenRevisionQueries.selectExactList().executeAsList()
 
     fun exactIndividual(seriesUuid: String, revisionUuid: String): SavedIndividualQuote? =
         database.frozenRevisionQueries.selectExactRevision(seriesUuid, revisionUuid).executeAsOneOrNull()?.let {
@@ -74,8 +74,8 @@ class ImmutableEstimateRepository(private val database: PrototypeDatabase) {
                 require(receipt.seriesUuid == it.seriesUuid)
                 verifyFrozenRevisionReceipt(receipt.operationUuid, receipt.command, f)
             }
-            SavedIndividualQuote(it.seriesUuid, it.createdAt, f, EstimateWorkflowStatus.valueOf(it.status), it.statusVersion,
-                it.revisionUuid, it.versionNumber, it.parentRevisionUuid, it.projectId)
+            SavedIndividualQuote(it.seriesUuid, it.createdAt, f, it.status?.let(EstimateWorkflowStatus::valueOf), it.statusVersion,
+                it.revisionUuid, it.versionNumber, it.parentRevisionUuid, it.projectId, it.selectedRevisionUuid, it.choiceVersion)
         }
 
     fun individualHistory(seriesUuid: String): List<SavedIndividualQuote> =
@@ -83,9 +83,22 @@ class ImmutableEstimateRepository(private val database: PrototypeDatabase) {
             checkNotNull(exactIndividual(seriesUuid, it.revisionUuid))
         }
 
-    fun setWorkflowStatus(seriesUuid: String, expectedVersion: Long, status: EstimateWorkflowStatus, now: Long): Boolean {
+    /** CAS is scoped to one exact document, including an old alternative. */
+    fun setWorkflowStatus(revisionUuid: String, expectedVersion: Long, status: EstimateWorkflowStatus, now: Long): Boolean {
         require(now > 0 && expectedVersion > 0)
-        return database.frozenEstimateQueries.updateEstimateWorkflow(status.name, now, seriesUuid, expectedVersion).executeAsOneOrNull() != null
+        return database.transactionWithResult {
+            database.measurementElementsQueries.claimElementWrite("")
+            database.revisionWorkflowQueries.updateRevisionWorkflow(status.name, now, revisionUuid, expectedVersion).executeAsOneOrNull() != null
+        }
+    }
+
+    fun selectRevision(seriesUuid: String, revisionUuid: String, expectedVersion: Long, now: Long): Boolean {
+        require(now > 0 && expectedVersion > 0)
+        return database.transactionWithResult {
+            database.measurementElementsQueries.claimElementWrite("")
+            if (exactIndividual(seriesUuid, revisionUuid) == null) return@transactionWithResult false
+            database.revisionWorkflowQueries.updateRevisionChoice(revisionUuid, now, seriesUuid, expectedVersion).executeAsOneOrNull() != null
+        }
     }
 
     fun numberPolicy(): EstimateNumberPolicy {

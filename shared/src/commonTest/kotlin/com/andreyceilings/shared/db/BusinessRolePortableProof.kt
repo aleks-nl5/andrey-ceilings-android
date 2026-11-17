@@ -19,8 +19,9 @@ object BusinessRolePortableProof {
         val history = com.andreyceilings.shared.estimate.ImmutableEstimateRepository(db)
         history.configureNumberPolicy(com.andreyceilings.shared.estimate.EstimateNumberPolicy("{prefix}-{sequence}-{suffix}"))
         val saved = history.saveIndividual(FrozenIndividualEstimateProof.command(db, fixture), 2026, 600)
-        assertTrue(history.setWorkflowStatus(saved.seriesUuid, 1, com.andreyceilings.shared.estimate.EstimateWorkflowStatus.SENT, 601))
+        assertTrue(history.setWorkflowStatus(saved.initialRevisionUuid, 1, com.andreyceilings.shared.estimate.EstimateWorkflowStatus.SENT, 601))
         history.appendIndividual(FrozenRevisionProof.request(db, fixture, saved.seriesUuid), 602)
+        assertTrue(history.selectRevision(saved.seriesUuid, saved.initialRevisionUuid, 1, 603))
         verifyFrozenEstimateContents(driver)
         val evidence = Evidence(fixture.projectId, fixture.measurementUuid, source.source.elements, source.buildPreview(), frozenRows(driver))
         reader.closeReads()
@@ -39,7 +40,7 @@ object BusinessRolePortableProof {
         reader.closeReads()
         assertEquals(expected.frozenRows, frozenRows(restored))
     }
-    private fun frozenRows(driver: SqlDriver) = listOf("estimate_revision_frozen", "estimate_revision_receipts", "estimate_revisions", "estimate_v1_frozen", "estimate_workflow", "estimate_save_receipts").flatMap { table ->
+    private fun frozenRows(driver: SqlDriver) = listOf("estimate_revision_workflow", "estimate_revision_choice", "estimate_revision_frozen", "estimate_revision_receipts", "estimate_revisions", "estimate_v1_frozen", "estimate_workflow", "estimate_save_receipts").flatMap { table ->
         val columns = MeasurementElementMigrationProof.rows(driver, "PRAGMA table_info($table)", 6).map { it[1]!! }
         MeasurementElementMigrationProof.rows(driver, "SELECT " + columns.joinToString { "quote($it)" } + " FROM $table ORDER BY 1", columns.size).map { listOf(table) + it }
     }

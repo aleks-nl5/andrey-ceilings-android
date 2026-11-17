@@ -53,7 +53,7 @@ internal fun ImmutableEstimateRepository.saveIndividual(
         val frozen = exactIndividual(t.seriesUuid, t.expectedLatestRevisionUuid)
             ?: fail(IndividualEstimateSaveFailure.Reason.UNAVAILABLE)
         if (frozen.statusVersion != t.expectedStatusVersion) fail(IndividualEstimateSaveFailure.Reason.STALE_STATUS)
-        if (t.expectedVersion == Long.MAX_VALUE || t.expectedStatusVersion == Long.MAX_VALUE)
+        if (t.expectedVersion == Long.MAX_VALUE)
             fail(IndividualEstimateSaveFailure.Reason.VERSION_EXHAUSTED)
         frozen
     }
@@ -141,13 +141,13 @@ internal fun ImmutableEstimateRepository.saveIndividual(
         frozen.rounding, amounts.finalCents.toDouble() / 100)
     if (target == null) {
         q.insertFrozenV1(created.initialRevisionUuid, payload, amounts.subtotalCents, bp.toLong(), amounts.discountCents, amounts.finalCents)
-        q.insertEstimateWorkflow(created.seriesUuid, now)
+        q.insertEstimateWorkflow(created.seriesUuid, now) // Legacy archive; never used for active revision status.
+        database.revisionWorkflowQueries.insertRevisionChoice(created.seriesUuid)
         q.insertEstimateSaveReceipt(request.operationUuid, command, created.seriesUuid, created.initialRevisionUuid)
     } else {
         revisions.insertFrozenRevision(created.initialRevisionUuid, payload, amounts.subtotalCents, bp.toLong(), amounts.discountCents, amounts.finalCents)
-        if (q.updateEstimateWorkflow(EstimateWorkflowStatus.DRAFT.name, now, target.seriesUuid, target.expectedStatusVersion).executeAsOneOrNull() == null)
-            fail(IndividualEstimateSaveFailure.Reason.STALE_STATUS)
         revisions.insertRevisionReceipt(request.operationUuid, command, created.seriesUuid, created.initialRevisionUuid)
     }
+    database.revisionWorkflowQueries.insertRevisionWorkflow(created.initialRevisionUuid, now)
     created
 }

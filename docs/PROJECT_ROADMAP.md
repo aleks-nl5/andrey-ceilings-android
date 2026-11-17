@@ -1,3 +1,11 @@
+## Owner APK corrections — 17.11.2026 (supersedes older P4C2 workflow/list rules)
+
+Continue only Draft PR #117 / issue #116. Owner found two blocking defects: global Measurements creation must yield coherent live pricing, and v1/v2/v3 must remain independent client proposals. Persist workflow status and optimistic CAS per revision UUID; append creates only the new revision DRAFT and preserves older statuses. All versions must be visible/actionable in global/project/measurement lists. Persist an explicit CAS-protected selected revision separately; newest is not automatically chosen. Migrate v16/v17 losslessly to v18: only the latest revision receives the known old series status; earlier unknown metadata is shown as not recorded, never fabricated or offered as a fifth status. Preserve immutable exact financial/geometry payloads, receipts, numbering, SQLCipher/WAL/backup. Update affected common and physical platform tests with the contract.
+
+**Deletion is explicitly deferred:** no estimate delete CTA, command, migration or tests in this PR. Owner APK re-test and independent review are required after corrections. Keep Draft; owner alone chooses Ready/Merge/issue closure. Canonical updated requirements: https://github.com/aleks-nl5/andrey-ceilings-android/issues/116 and https://github.com/aleks-nl5/andrey-ceilings-android/pull/117#issuecomment-6957446280.
+
+---
+
 # CURRENT roadmap — P4C2: immutable v2/v3 sourced from current measurement (09.11.2026)
 
 **Accepted baseline:** Owner merged [PR #115](https://github.com/aleks-nl5/andrey-ceilings-android/pull/115) / closed [#113](https://github.com/aleks-nl5/andrey-ceilings-android/issues/113); main merge d97d096944e946335ed3f603a06c644bb4e9aac8. P4C1 created exact frozen individual v1, settings-derived permanent public number, current status CAS and shared list/detail; SQLDelight/SQLCipher schema v16. Functional APK owner smoke and final-SHA Android/Windows/iOS CI recorded in PR #115; do not describe this as exhaustive acceptance.

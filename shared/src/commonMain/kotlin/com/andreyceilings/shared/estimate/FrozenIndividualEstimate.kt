@@ -135,8 +135,9 @@ internal fun quoteSaveFingerprint(session: String, preview: String, discount: St
 
 /** UI projection loaded exclusively from immutable storage, including after source deletion. */
 data class SavedIndividualQuote(val seriesUuid: String, val createdAt: Long, val frozen: FrozenIndividualEstimate,
-    val status: EstimateWorkflowStatus, val statusVersion: Long,
-    val revisionUuid: String = "", val versionNumber: Long = 1, val parentRevisionUuid: String? = null, val projectId: Long = 0)
+    val status: EstimateWorkflowStatus?, val statusVersion: Long,
+    val revisionUuid: String = "", val versionNumber: Long = 1, val parentRevisionUuid: String? = null, val projectId: Long = 0,
+    val selectedRevisionUuid: String? = null, val choiceVersion: Long = 1)
 
 /** Shared normalized-column audit. It never consults a mutable measurement, project or catalog. */
 fun verifyFrozenStoredIdentity(frozen: FrozenIndividualEstimate, projectId: Long, measurementUuid: String?, publicNumber: String?,

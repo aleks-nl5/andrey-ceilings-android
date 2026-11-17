@@ -1,3 +1,18 @@
+# Owner APK corrections — 17.11.2026
+
+The owner rejected APK acceptance and superseded the old series-status/latest-only contract. Two findings remain in scope; deletion is explicitly deferred.
+
+- Schema v18 adds revision-specific workflow metadata and a separate CAS-protected chosen revision pointer. New revisions start DRAFT at version 1; prior revision statuses and explicit selection are untouched. Existing v16/v17 series status migrates only to the latest revision; earlier unknown statuses remain NULL and are shown as not recorded. No fifth selectable status and no financial payload rewrite.
+- Shared lists expose every alternative, grouped under the permanent number, with independent status/amount and an explicit chosen marker. Exact historical cards allow status changes. Choosing any version requires confirmation and selection CAS; append never chooses a version implicitly.
+- Schema/import/reopen checks cover both new tables, metadata storage classes, exact revision coverage and same-series frozen selection ownership. Native Android/Windows/iOS migration proofs include v17→v18 rollback/reopen. Portable backup proof includes statuses and selection.
+- Global Measurements INVALID_SOURCE is still under investigation. Owner's exact sequence: global Measurements → create → choose project → rectangle → wall dimensions → approved primary profile + canvas → preliminary quote; no name/drawing edit. Clean KMP creation plus both materials passes for both entry contexts; real Android UI and encrypted reopen regression has been added. The validator has not been relaxed. Do not claim this finding fixed until the actual cause is reproduced and corrected.
+- Verification checkpoint: full shared JVM suite **417 tests, 0 failures** before subsequent test additions. Current focused JVM regression run: **15 tests, 0 failures**; final rollback/migration proof rerun: **3 tests, 0 failures**. Full Desktop suite: **45 tests, 0 failures**. Android unit suite: **11 tests, 0 failures**; instrumentation compilation, APK assembly and SQLDelight migration verification passed. Native execution results belong in PR #117. Previous final SHA 4e5c4a7 completed Android #1209 and Windows/iOS #959 successfully; those results predate these corrections.
+- Independent review and owner APK re-test are required for the corrected implementation. PR remains Draft.
+
+The record below describes the previous implementation and its historical evidence; the owner corrections above supersede its series-status/latest-only rules.
+
+---
+
 # P4C2 implementation — issue #116 / Draft PR #117
 
 The feature branch now contains implementation, not only the original handoff. Owner acceptance is still pending. PDF and manual unit price editing remain outside this PR.
