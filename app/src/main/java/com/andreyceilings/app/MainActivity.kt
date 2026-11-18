@@ -17,6 +17,7 @@ import com.andreyceilings.app.data.db.DatabaseStartupDiagnostics
 import com.andreyceilings.app.data.backup.BackupPasswordStore
 import com.andreyceilings.app.data.backup.AutomaticBackupScheduler
 import com.andreyceilings.app.data.backup.AutomaticBackupSettings
+import com.andreyceilings.app.ui.screens.AndroidEstimateDocumentExport
 import com.andreyceilings.app.ui.theme.CeilingsTheme
 import com.andreyceilings.app.ui.theme.ThemeMode
 import kotlinx.coroutines.Dispatchers
@@ -82,17 +83,19 @@ class MainActivity : ComponentActivity() {
         }
         setContent {
             CeilingsTheme(mode = themeMode.value) {
-                CeilingsApp(
-                    themeMode = themeMode.value,
-                    onThemeModeChange = ::saveThemeMode,
-                    databaseStatus = databaseStatus.value,
-                    database = databaseState.value,
-                    onDatabaseReplaced = { refreshed ->
-                        databaseState.value = refreshed
-                        startupFailure.value = null
-                        databaseStatus.value = "Зашифрована база даних активна"
-                    }
-                )
+                AndroidEstimateDocumentExport {
+                    CeilingsApp(
+                        themeMode = themeMode.value,
+                        onThemeModeChange = ::saveThemeMode,
+                        databaseStatus = databaseStatus.value,
+                        database = databaseState.value,
+                        onDatabaseReplaced = { refreshed ->
+                            databaseState.value = refreshed
+                            startupFailure.value = null
+                            databaseStatus.value = "Зашифрована база даних активна"
+                        }
+                    )
+                }
                 startupFailure.value?.let { report ->
                     AlertDialog(onDismissRequest = { startupFailure.value = null },
                         title = { Text("База даних недоступна") }, text = { Text(report.status) },

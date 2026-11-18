@@ -89,6 +89,12 @@ class MeasurementElementsStore(private val database: PrototypeDatabase, private 
         val id = revisionUuid ?: estimates.frozenIndividual(seriesUuid)?.revisionUuid ?: return@estimateAccess null
         estimates.exactIndividual(seriesUuid, id)
     }
+    internal suspend fun estimateDocument(seriesUuid: String, revisionUuid: String): FrozenEstimateDocument? = estimateAccess {
+        val saved = estimates.exactIndividual(seriesUuid, revisionUuid) ?: return@estimateAccess null
+        val address = projects.find(saved.projectId)?.takeIf { it.uuid == saved.frozen.source.projectUuid }?.address
+        FrozenEstimateDocument.from(saved, address)
+    }
+
     suspend fun quoteHistory(seriesUuid: String): List<SavedIndividualQuote> = estimateAccess { estimates.individualHistory(seriesUuid) }
 
     /** Read-only admission; opening/cancelling a revision reserves no number and changes no workflow. */

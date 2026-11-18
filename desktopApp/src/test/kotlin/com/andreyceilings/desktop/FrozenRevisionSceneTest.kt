@@ -71,6 +71,19 @@ class FrozenRevisionSceneTest {
                     card.reveal("Розрахункова площа округлена до 0,001 м²")
                     assertTrue(card.text().contains("Площа заміру:"))
                     assertEquals(137610, frozen.frozen.amounts.finalCents)
+                    card.scroll(-100000f)
+                    card.reveal("Створити PDF")
+                    card.click("Створити PDF")
+                    card.await { card.pageText().contains("1376,10") }
+                    val pdfText = card.pageText()
+                    assertTrue(pdfText.contains("13,7608"), pdfText)
+                    assertTrue(pdfText.contains("13,761"), pdfText)
+                    assertTrue(pdfText.contains("Сторінка 1 /"), pdfText)
+                    assertFalse(card.text().contains("Зберегти PDF"))
+                    card.click("Оформлення")
+                    card.await { card.text().contains("Оформлення PDF") }
+                    card.click("До перегляду")
+                    card.await { card.pageText().contains("1376,10") }
                     assertEquals(drawing, MeasurementRepository(db).find(measurement.id)!!.drawingJson)
                 } finally { card.close() }
             } finally { runBlocking { store.closeAndAwaitWrites() } }
@@ -239,6 +252,8 @@ class FrozenRevisionSceneTest {
         return semanticsOwners.flatMap { flatten(it.rootSemanticsNode) }
     }
     private fun ImageComposeScene.text() = nodes().joinToString { it.config.getOrNull(SemanticsProperties.Text).orEmpty().joinToString { t -> t.text } }
+    private fun ImageComposeScene.pageText() =
+        nodes().flatMap { it.config.getOrNull(SemanticsProperties.ContentDescription).orEmpty() }.joinToString("\n")
     private fun ImageComposeScene.await(condition: () -> Boolean) { repeat(100) { frame(); if (condition()) return }; fail("Revision preview did not settle") }
     private fun ImageComposeScene.scroll(delta: Float) { assertTrue(nodes().first { it.config.getOrNull(SemanticsActions.ScrollBy) != null }.config.getOrNull(SemanticsActions.ScrollBy)?.action?.invoke(0f, delta) == true) }
     private fun ImageComposeScene.reveal(expectedText: String) { repeat(100) { frame(); if (text().contains(expectedText)) return; scroll(200f) }; fail("Revision comparison was not visible: $expectedText; ${text()}; scroll=${nodes().filter { it.config.getOrNull(SemanticsActions.ScrollBy) != null }.map { "${it.boundsInRoot} ${it.config}" }}") }

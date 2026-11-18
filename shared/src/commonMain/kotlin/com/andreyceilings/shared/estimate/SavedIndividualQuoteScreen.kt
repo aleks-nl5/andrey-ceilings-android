@@ -70,6 +70,7 @@ fun SavedIndividualQuoteDialog(store: MeasurementElementsStore?, seriesUuid: Str
     var loading by remember { mutableStateOf(true) }
     var busy by remember { mutableStateOf(false) }
     var confirmingChoice by remember { mutableStateOf(false) }
+    var pdfRevision by rememberSaveable(seriesUuid) { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
     LaunchedEffect(store, seriesUuid, generation) {
         loading = true; error = null; data = null; preparation = null
@@ -107,6 +108,8 @@ fun SavedIndividualQuoteDialog(store: MeasurementElementsStore?, seriesUuid: Str
                         Text("Створено: ${kotlin.time.Instant.fromEpochMilliseconds(saved.createdAt)}")
                         Text("Статус пропозиції: ${saved.status?.label ?: "Статус не зафіксовано"}")
                         if (saved.selectedRevisionUuid == saved.revisionUuid) Text("Обрано для роботи")
+                        OutlinedButton(enabled = !busy && !loading && store != null,
+                            onClick = { pdfRevision = saved.revisionUuid }) { Text("Створити PDF") }
                     }
                     items(EstimateWorkflowStatus.entries.toList()) { status ->
                         OutlinedButton(enabled = !busy && !loading && status != saved.status, onClick = {
@@ -179,6 +182,9 @@ fun SavedIndividualQuoteDialog(store: MeasurementElementsStore?, seriesUuid: Str
                 }
             }
         }
+    }
+    pdfRevision?.let { exactRevision ->
+        store?.let { EstimateDocumentPreview(it, seriesUuid, exactRevision) { pdfRevision = null } }
     }
     if (confirmingChoice) data?.let { saved ->
         AlertDialog(onDismissRequest = { if (!busy) confirmingChoice = false },
