@@ -257,31 +257,29 @@ internal class EstimatePrintAdapter(private val pages: EstimateDocumentPages) : 
         destination: ParcelFileDescriptor,
         cancellationSignal: CancellationSignal,
         complete: (PrintWriteResult) -> Unit
-    ) {
+    ) = scope.launch(start = CoroutineStart.UNDISPATCHED) {
         // Android invokes the adapter on main. Enter even for a late write after onFinish,
         // so every request closes its descriptor and reports its terminal result.
-        scope.launch(start = CoroutineStart.UNDISPATCHED) {
-            val result = try {
-                ensureActive()
-                if (cancellationSignal.isCanceled) throw CancellationException()
-                val indices = (0 until pages.count).filter { index -> requested.any { index in it.start..it.end } }
-                if (indices.isNotEmpty()) {
-                    writeEstimateDocumentPdf(pages, indices, { cancellationSignal.isCanceled }) {
-                        ParcelFileDescriptor.AutoCloseOutputStream(destination)
-                    }
+        val result = try {
+            ensureActive()
+            if (cancellationSignal.isCanceled) throw CancellationException()
+            val indices = (0 until pages.count).filter { index -> requested.any { index in it.start..it.end } }
+            if (indices.isNotEmpty()) {
+                writeEstimateDocumentPdf(pages, indices, { cancellationSignal.isCanceled }) {
+                    ParcelFileDescriptor.AutoCloseOutputStream(destination)
                 }
-                ensureActive()
-                if (cancellationSignal.isCanceled) PrintWriteResult.Cancelled
-                else PrintWriteResult.Finished(indices.map { PageRange(it, it) })
-            } catch (_: CancellationException) {
-                PrintWriteResult.Cancelled
-            } catch (_: Exception) {
-                if (cancellationSignal.isCanceled || !isActive) PrintWriteResult.Cancelled else PrintWriteResult.Failed
-            } finally {
-                runCatching { destination.close() }
             }
-            complete(result)
+            ensureActive()
+            if (cancellationSignal.isCanceled) PrintWriteResult.Cancelled
+            else PrintWriteResult.Finished(indices.map { PageRange(it, it) })
+        } catch (_: CancellationException) {
+            PrintWriteResult.Cancelled
+        } catch (_: Exception) {
+            if (cancellationSignal.isCanceled || !isActive) PrintWriteResult.Cancelled else PrintWriteResult.Failed
+        } finally {
+            runCatching { destination.close() }
         }
+        complete(result)
     }
 }
 

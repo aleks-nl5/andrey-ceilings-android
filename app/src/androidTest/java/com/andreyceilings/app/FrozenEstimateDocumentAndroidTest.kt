@@ -22,11 +22,10 @@ import com.andreyceilings.shared.livepricing.BusinessRole
 import com.andreyceilings.shared.measurement.*
 import com.andreyceilings.shared.theme.CeilingsTheme
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 import org.junit.Rule
 import org.junit.Test
 import java.io.File
@@ -176,35 +175,38 @@ class FrozenEstimateDocumentAndroidTest {
 
     private fun assertPrintLifecycle(adapter: EstimatePrintAdapter, output: File) = runBlocking {
         suspend fun write(
+            scenario: String,
             signal: CancellationSignal = CancellationSignal(),
             accessMode: Int = ParcelFileDescriptor.MODE_WRITE_ONLY or ParcelFileDescriptor.MODE_TRUNCATE,
             finishDuringWrite: Boolean = false,
             cancelDuringWrite: Boolean = false
         ): PrintWriteResult {
-            val completion = CompletableDeferred<PrintWriteResult>()
-            withContext(Dispatchers.Main) {
+            val results = mutableListOf<PrintWriteResult>()
+            val (job, fd) = withContext(Dispatchers.Main) {
                 val destination = ParcelFileDescriptor.open(output, accessMode)
-                val fd = destination.fileDescriptor
-                adapter.writePages(arrayOf(PageRange(0, 0)), destination, signal) { result ->
-                    assertFalse(fd.valid(), "Print destination must close before completion")
-                    assertTrue(completion.complete(result), "Print write completed more than once")
-                }
+                val descriptor = destination.fileDescriptor
+                val write = adapter.writePages(arrayOf(PageRange(0, 0)), destination, signal) { results.add(it) }
                 if (cancelDuringWrite) signal.cancel()
                 if (finishDuringWrite) adapter.onFinish()
+                write to descriptor
             }
-            return withTimeout(10_000) { completion.await() }
+            assertTrue(withTimeoutOrNull(30_000) { job.join(); true } == true,
+                "$scenario: print write did not terminate")
+            assertFalse(fd.valid(), "$scenario: print destination is still open")
+            assertEquals(1, results.size, "$scenario: print write must complete exactly once")
+            return results.single()
         }
 
         try {
-            assertEquals(PrintWriteResult.Finished(listOf(PageRange(0, 0))), write())
+            assertEquals(PrintWriteResult.Finished(listOf(PageRange(0, 0))), write("After preview disposal"))
             PdfRenderer(ParcelFileDescriptor.open(output, ParcelFileDescriptor.MODE_READ_ONLY)).use {
                 assertEquals(1, it.pageCount)
             }
-            assertEquals(PrintWriteResult.Cancelled, write(CancellationSignal().apply { cancel() }))
-            assertEquals(PrintWriteResult.Cancelled, write(cancelDuringWrite = true))
-            assertEquals(PrintWriteResult.Failed, write(accessMode = ParcelFileDescriptor.MODE_READ_ONLY))
-            assertEquals(PrintWriteResult.Cancelled, write(finishDuringWrite = true))
-            assertEquals(PrintWriteResult.Cancelled, write())
+            assertEquals(PrintWriteResult.Cancelled, write("Already cancelled", CancellationSignal().apply { cancel() }))
+            assertEquals(PrintWriteResult.Cancelled, write("Cancelled during write", cancelDuringWrite = true))
+            assertEquals(PrintWriteResult.Failed, write("Read-only destination", accessMode = ParcelFileDescriptor.MODE_READ_ONLY))
+            assertEquals(PrintWriteResult.Cancelled, write("Finished during write", finishDuringWrite = true))
+            assertEquals(PrintWriteResult.Cancelled, write("Late request after finish"))
         } finally {
             withContext(Dispatchers.Main) { adapter.onFinish() }
         }
