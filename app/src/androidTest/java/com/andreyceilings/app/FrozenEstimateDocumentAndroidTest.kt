@@ -31,6 +31,7 @@ import org.junit.Rule
 import org.junit.Test
 import java.io.File
 import java.io.IOException
+import java.io.OutputStream
 import kotlin.test.*
 
 class FrozenEstimateDocumentAndroidTest {
@@ -123,6 +124,16 @@ class FrozenEstimateDocumentAndroidTest {
                         assertFailsWith<IOException> {
                             writeEstimateDocumentPdf(pages, listOf(0)) { throw IOException("test write failure") }
                         }
+                        var closedStream = false
+                        assertFailsWith<IOException> {
+                            writeEstimateDocumentPdf(pages, listOf(0)) {
+                                object : OutputStream() {
+                                    override fun write(value: Int) { throw IOException("test destination write failure") }
+                                    override fun close() { closedStream = true }
+                                }
+                            }
+                        }
+                        assertTrue(closedStream)
                         writeEstimateDocumentPdf(pages, 0 until pages.count) { output.outputStream() }
                     }
 

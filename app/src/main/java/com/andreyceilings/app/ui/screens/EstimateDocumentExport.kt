@@ -40,6 +40,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.yield
 import java.io.File
+import java.io.IOException
 import java.io.OutputStream
 import java.nio.file.Files
 
@@ -170,10 +171,46 @@ internal suspend fun writeEstimateDocumentPdf(
             }
             yield()
         }
-        if (isCancelled()) throw CancellationException()
-        withContext(Dispatchers.IO) { output().use(pdf::writeTo) }
+        withContext(Dispatchers.IO) {
+            if (isCancelled()) throw CancellationException()
+            output().use { destination ->
+                // Android's native PDF writer can return normally after an OutputStream write fails.
+                // Check the actual destination writes before reporting success.
+                val checked = CheckedPdfOutput(destination)
+                pdf.writeTo(checked)
+                checked.finish()
+            }
+        }
     } finally {
         pdf.close()
+    }
+}
+
+private class CheckedPdfOutput(private val destination: OutputStream) : OutputStream() {
+    private var failure: Exception? = null
+    private var wroteBytes = false
+
+    override fun write(value: Int) = recordWrite { destination.write(value) }
+
+    override fun write(bytes: ByteArray, offset: Int, length: Int) {
+        if (length > 0) recordWrite { destination.write(bytes, offset, length) }
+    }
+
+    private inline fun recordWrite(write: () -> Unit) {
+        failure?.let { throw it }
+        try {
+            write()
+            wroteBytes = true
+        } catch (error: Exception) {
+            failure = error
+            throw error
+        }
+    }
+
+    fun finish() {
+        failure?.let { throw it }
+        if (!wroteBytes) throw IOException("PDF renderer produced no output")
+        destination.flush()
     }
 }
 
@@ -184,6 +221,7 @@ internal class EstimatePrintAdapter(private val pages: EstimateDocumentPages) : 
         scope.cancel()
         super.onFinish()
     }
+
     override fun onLayout(
         oldAttributes: PrintAttributes,
         newAttributes: PrintAttributes,
