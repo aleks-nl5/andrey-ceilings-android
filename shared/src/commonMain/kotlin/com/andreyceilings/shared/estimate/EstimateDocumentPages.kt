@@ -21,9 +21,13 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.sp
 import com.andreyceilings.shared.measurement.AreaShape
+import com.andreyceilings.shared.measurement.DrawingLabelBounds
+import com.andreyceilings.shared.measurement.DrawingLabelSize
 import com.andreyceilings.shared.measurement.DrawingPoint
+import com.andreyceilings.shared.measurement.MeasurementDrawingProjection
 import com.andreyceilings.shared.measurement.PointPositionMm
 import com.andreyceilings.shared.measurement.formatElementMilli
+import com.andreyceilings.shared.measurement.layoutMeasurementDrawingForProjectedPoints
 import com.andreyceilings.shared.measurement.measurementDrawingProjection
 import com.andreyceilings.shared.measurement.measurementMoney
 import kotlin.math.roundToInt
@@ -70,10 +74,13 @@ internal sealed interface DocumentMark {
         }
     }
 
-    data class Drawing(val drawing: FrozenEstimateDocument.Drawing, val y: Float) : DocumentMark {
+    data class Drawing(
+        val drawing: FrozenEstimateDocument.Drawing,
+        val projection: MeasurementDrawingProjection,
+        val labels: List<VertexLabel>,
+        val y: Float
+    ) : DocumentMark {
         override fun draw(scope: DrawScope) = with(scope) {
-            val height = 195f
-            val projection = checkNotNull(measurementDrawingProjection(drawing.contour, 515f, height))
             fun screen(p: DrawingPoint): Offset = projection.project(p).let { Offset(40f + it.x.toFloat(), y + it.y.toFloat()) }
             fun screen(p: PointPositionMm) = screen(DrawingPoint(p.xMm.toDouble(), p.yMm.toDouble()))
             fun path(points: List<Offset>) = Path().apply {
@@ -81,9 +88,10 @@ internal sealed interface DocumentMark {
                 points.drop(1).forEach { lineTo(it.x, it.y) }
                 close()
             }
-            clipRect(40f, y, 555f, y + height) {
-                val contour = path(drawing.contour.points.map { screen(it) })
-                drawRect(PaperTint, Offset(40f, y), Size(515f, height))
+            clipRect(40f, y, 40f + DrawingWidth, y + DrawingHeight) {
+                val vertices = drawing.contour.points.map { screen(it) }
+                val contour = path(vertices)
+                drawRect(PaperTint, Offset(40f, y), Size(DrawingWidth, DrawingHeight))
                 drawPath(contour, Ink, style = Stroke(1.8f))
                 drawing.areas.forEach { area ->
                     when (area) {
@@ -94,10 +102,29 @@ internal sealed interface DocumentMark {
                 }
                 drawing.lines.forEach { (start, end) -> drawLine(Accent, screen(start), screen(end), strokeWidth = 1.5f) }
                 drawing.points.forEach { drawCircle(Accent, 2.8f, screen(it)) }
+                labels.forEach { label ->
+                    val bounds = label.bounds
+                    if (bounds.needsLeader) {
+                        val center = Offset(40f + bounds.left + bounds.width / 2, y + bounds.top + bounds.height / 2)
+                        drawLine(RuleInk, vertices[bounds.sideIndex], center, strokeWidth = 0.6f)
+                    }
+                }
+                vertices.forEach { drawCircle(Ink, 1.6f, it) }
+                labels.forEach { label ->
+                    val bounds = label.bounds
+                    val topLeft = Offset(40f + bounds.left, y + bounds.top)
+                    drawRect(PaperTint, topLeft - Offset(1f, 1f), Size(bounds.width + 2f, bounds.height + 2f))
+                    drawText(label.text, topLeft = topLeft)
+                }
             }
         }
     }
+
+    data class VertexLabel(val bounds: DrawingLabelBounds, val text: TextLayoutResult)
 }
+
+private const val DrawingWidth = 515f
+private const val DrawingHeight = 195f
 
 private val Ink = Color(0xFF172D36)
 private val Accent = Color(0xFF1A5964)
@@ -240,7 +267,16 @@ private class DocumentPagination(private val document: FrozenEstimateDocument, p
 
     fun drawing(drawing: FrozenEstimateDocument.Drawing) {
         keep(205)
-        marks.add(DocumentMark.Drawing(drawing, y))
+        val contour = drawing.contour
+        val projection = checkNotNull(measurementDrawingProjection(contour, DrawingWidth, DrawingHeight))
+        val textLayouts = contour.vertexNames.map { measure(it, 10, bold = true) }
+        val layout = layoutMeasurementDrawingForProjectedPoints(
+            contour.points.map(projection::project), DrawingWidth, DrawingHeight, sizes = emptyList(),
+            vertexSizes = textLayouts.map { DrawingLabelSize(it.size.width.toFloat(), it.size.height.toFloat()) },
+            placeCrowdedVertices = true
+        )
+        val labels = layout.vertexLabels.map { DocumentMark.VertexLabel(it, textLayouts[it.sideIndex]) }
+        marks.add(DocumentMark.Drawing(drawing, projection, labels, y))
         gap(205)
     }
 

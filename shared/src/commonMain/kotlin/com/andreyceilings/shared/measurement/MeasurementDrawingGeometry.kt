@@ -70,7 +70,10 @@ fun measurementDrawingContour(view: MeasurementGeometryView): MeasurementDrawing
 }.getOrNull()
 
 data class DrawingLabelSize(val width: Float, val height: Float)
-data class DrawingLabelBounds(val sideIndex: Int, val left: Float, val top: Float, val width: Float, val height: Float) {
+data class DrawingLabelBounds(
+    val sideIndex: Int, val left: Float, val top: Float, val width: Float, val height: Float,
+    val needsLeader: Boolean = false
+) {
     val right get() = left + width
     val bottom get() = top + height
 }
@@ -112,7 +115,8 @@ fun layoutMeasurementDrawing(
 fun layoutMeasurementDrawingForProjectedPoints(
     points: List<DrawingPoint>, width: Float, height: Float,
     sizes: List<DrawingLabelSize>, density: Float = 1f,
-    vertexSizes: List<DrawingLabelSize> = emptyList()
+    vertexSizes: List<DrawingLabelSize> = emptyList(),
+    placeCrowdedVertices: Boolean = false
 ): MeasurementDrawingLayout {
     require(width > 0f && height > 0f && width.isFinite() && height.isFinite() &&
         density > 0f && density.isFinite() &&
@@ -121,7 +125,13 @@ fun layoutMeasurementDrawingForProjectedPoints(
     fun overlaps(a: DrawingLabelBounds, b: DrawingLabelBounds): Boolean =
         a.left < b.right + gap && a.right + gap > b.left && a.top < b.bottom + gap && a.bottom + gap > b.top
     val vertexLabels = mutableListOf<DrawingLabelBounds>()
-    vertexSizes.take(points.size).forEachIndexed { i, size ->
+    fun fitsVertexLabel(candidate: DrawingLabelBounds): Boolean =
+        points.none { point -> point.x >= candidate.left - gap && point.x <= candidate.right + gap &&
+            point.y >= candidate.top - gap && point.y <= candidate.bottom + gap } &&
+            vertexLabels.none { overlaps(candidate, it) }
+
+    val measuredVertices = vertexSizes.take(points.size)
+    measuredVertices.forEachIndexed { i, size ->
         if (size.width <= 0 || size.height <= 0 || size.width > width || size.height > height) return@forEachIndexed
         val point = points[i]
         // Offscreen vertices should never produce clamped labels along the border.
@@ -130,9 +140,37 @@ fun layoutMeasurementDrawingForProjectedPoints(
             val x = (point.x.toFloat() + if (dx > 0) gap * 2 else -size.width - gap * 2).coerceIn(0f, width - size.width)
             val y = (point.y.toFloat() + if (dy > 0) gap * 2 else -size.height - gap * 2).coerceIn(0f, height - size.height)
             val candidate = DrawingLabelBounds(i, x, y, size.width, size.height)
-            val touchesVertex = points.any { it.x >= x - gap && it.x <= candidate.right + gap &&
-                it.y >= y - gap && it.y <= candidate.bottom + gap }
-            if (!touchesVertex && vertexLabels.none { overlaps(candidate, it) }) { vertexLabels.add(candidate); break }
+            if (fitsVertexLabel(candidate)) { vertexLabels.add(candidate); break }
+        }
+    }
+    if (placeCrowdedVertices) {
+        val placed = vertexLabels.map { it.sideIndex }.toSet()
+        measuredVertices.forEachIndexed { i, size ->
+            if (i in placed || size.width <= 0f || size.height <= 0f) return@forEachIndexed
+            val point = points[i]
+            if (point.x !in 0.0..width.toDouble() || point.y !in 0.0..height.toDouble()) return@forEachIndexed
+            var closest: DrawingLabelBounds? = null
+            var distanceSquared = Double.POSITIVE_INFINITY
+            // Search spare slots only after trying the four adjacent positions for every vertex.
+            var y = gap
+            while (y + size.height <= height - gap) {
+                var x = gap
+                while (x + size.width <= width - gap) {
+                    val dx = point.x - (x + size.width / 2)
+                    val dy = point.y - (y + size.height / 2)
+                    val distance = dx * dx + dy * dy
+                    if (distance < distanceSquared) {
+                        val candidate = DrawingLabelBounds(i, x, y, size.width, size.height, needsLeader = true)
+                        if (fitsVertexLabel(candidate)) {
+                            closest = candidate
+                            distanceSquared = distance
+                        }
+                    }
+                    x += size.width + gap
+                }
+                y += size.height + gap
+            }
+            closest?.let(vertexLabels::add)
         }
     }
     val areaSign = if (points.indices.sumOf { i ->
