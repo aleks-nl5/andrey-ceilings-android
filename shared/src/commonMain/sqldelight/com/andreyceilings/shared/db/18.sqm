@@ -1,0 +1,3 @@
+-- v19 admits frozen format 3 with explicit area-to-milli rounding provenance.
+-- Keep every old frozen payload, workflow, choice and number bit-for-bit unchanged.
+UPDATE estimate_number_settings SET id = id WHERE 0;

@@ -60,13 +60,14 @@ data class FrozenIndividualEstimate(
     val revisionIdentity: FrozenRevisionIdentity? = null
 ) {
     fun validate() {
-        require(formatVersion in 1..2 && validEstimateTitle(title) == title)
-        if (formatVersion == 1) require(revisionIdentity == null)
+        require(formatVersion in 1..3 && validEstimateTitle(title) == title)
+        if (formatVersion == 1 || formatVersion == 3 && revisionIdentity == null) require(revisionIdentity == null)
         else {
             val identity = checkNotNull(revisionIdentity)
             require(isEstimateUuid(identity.seriesUuid) && isEstimateUuid(identity.revisionUuid) && isEstimateUuid(identity.parentRevisionUuid))
             require(identity.versionNumber > 1 && identity.revisionUuid != identity.parentRevisionUuid)
         }
+        require((formatVersion == 3) == rows.any { it.line.quantityRoundingPolicy != null })
         require(currency == "UAH" && rounding == "HALF_UP_PER_ROW_THEN_DISCOUNT")
         require(source.projectUuid.isNotBlank() && source.measurementUuid.isNotBlank())
         val geometry = MeasurementGeometryCodec.read(source.drawingJson)
@@ -87,6 +88,17 @@ data class FrozenIndividualEstimate(
             require(line.title.isNotBlank() && line.stableCode.isNotBlank() && line.unit.isNotBlank())
             require(line.totalCents == PricingMath.lineCents(line.unitPriceCents, line.effectiveBillableQuantityMilli))
             val element = source.elements.single { it.uuid == line.elementUuid }
+            if (element.quantity == ElementQuantity.CeilingArea) {
+                val exactMilli = PricingMath.capturedMilli(geometry.areaSquareMeters)
+                if (exactMilli != null) {
+                    require(line.sourceQuantityMilli == exactMilli && line.quantityRoundingPolicy == null)
+                } else {
+                    require(formatVersion == 3 && line.unit == "м²")
+                    require(line.quantityRoundingPolicy == QuantityRoundingPolicy.CAPTURED_AREA_TO_MILLI_HALF_UP_V1)
+                    require(line.sourceQuantityMilli == PricingMath.capturedAreaMilli(geometry.areaSquareMeters))
+                    require(line.quantityOrigin in listOf(QuantityOrigin.CAPTURED_AREA, QuantityOrigin.EXPLICIT_BILLABLE_OVERRIDE))
+                }
+            } else require(line.quantityRoundingPolicy == null)
             require(line.businessRole == element.businessRole)
             require((element.source as? ElementSource.CatalogSelection)?.priceItemUuid == line.catalogItemUuid)
             require((line.bucket == PricingBucket.CONFIRMED) == (element.approval == ElementApproval.APPROVED))
@@ -176,8 +188,8 @@ fun verifyFrozenSaveReceipt(operationUuid: String, command: String, frozen: Froz
 /** Bind an exact payload to the row and its parent, independent from live source/catalog. */
 fun verifyFrozenRevisionIdentity(frozen: FrozenIndividualEstimate, seriesUuid: String, revisionUuid: String,
     versionNumber: Long, parentRevisionUuid: String?) {
-    if (versionNumber == 1L) require(frozen.formatVersion == 1 && parentRevisionUuid == null)
-    else require(frozen.formatVersion == 2 && frozen.revisionIdentity ==
+    if (versionNumber == 1L) require(frozen.formatVersion in listOf(1, 3) && frozen.revisionIdentity == null && parentRevisionUuid == null)
+    else require(frozen.formatVersion in listOf(2, 3) && frozen.revisionIdentity ==
         FrozenRevisionIdentity(seriesUuid, revisionUuid, versionNumber, checkNotNull(parentRevisionUuid)))
 }
 

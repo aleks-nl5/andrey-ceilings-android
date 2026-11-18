@@ -245,7 +245,13 @@ private fun QuoteLine(row: LiveEstimateLine, state: TransientQuoteState,
                         else if (row.businessRole == BusinessRole.ADDITIONAL_WORK) "Погоджено" else "Обов’язкова основа")
                 }
             }
-            Text("Із заміру: ${formatElementMilli(row.sourceQuantityMilli)} ${row.unit}")
+            if (row.quantityRoundingPolicy != null) {
+                state.source?.geometry?.let { geometry ->
+                    Text("Площа заміру: ${formatMeasurementArea(geometry.areaSquareMeters, com.andreyceilings.shared.calculation.MeasurementPrecision.fromStep(geometry.precisionStepMeters))} м²")
+                }
+                Text("Розрахункова площа округлена до 0,001 м²")
+            }
+            Text("${if (row.quantityRoundingPolicy != null) "Із заміру (до 0,001 м²)" else "Із заміру"}: ${formatElementMilli(row.sourceQuantityMilli)} ${row.unit}")
             Text(if (edit != null && !edit.confirmed) "До оплати: очікує підтвердження кількості"
                 else "До оплати: ${formatElementMilli(row.effectiveBillableQuantityMilli)} ${row.unit}")
             Text("Ціна прайсу: ${measurementMoney(row.unitPriceCents)} / ${row.unit}")

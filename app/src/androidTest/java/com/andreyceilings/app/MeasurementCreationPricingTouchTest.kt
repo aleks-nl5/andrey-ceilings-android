@@ -68,8 +68,8 @@ class MeasurementCreationPricingTouchTest {
             }
             compose.waitUntil(10000) { compose.onAllNodesWithText("Назва заміру *").fetchSemanticsNodes().isNotEmpty() }
             fill("Назва заміру *", "Room")
-            fill(measurementTemplateFieldLabel("rectangle", "length"), "4")
-            fill(measurementTemplateFieldLabel("rectangle", "width"), "3")
+            fill(measurementTemplateFieldLabel("rectangle", "length"), if (global) "4,12" else "4.12")
+            fill(measurementTemplateFieldLabel("rectangle", "width"), if (global) "3,34" else "3.34")
             compose.onNodeWithText("Зберегти").assertIsEnabled().performClick()
             compose.waitUntil(10000) { nav.measurementDetails != null }
             val row = MeasurementRepository(db).all().single(); uuid = row.uuid
@@ -86,7 +86,7 @@ class MeasurementCreationPricingTouchTest {
                 compose.onNodeWithText("З прайсу").performClick()
                 compose.waitUntil(10000) { compose.onAllNodesWithText("Пошук за назвою або кодом").fetchSemanticsNodes().isNotEmpty() }
                 compose.onNode(hasText("Пошук за назвою або кодом") and hasSetTextAction()).performTextInput(title)
-                compose.onNodeWithText(title).performClick()
+                compose.onNode(hasText(title) and hasClickAction() and hasSetTextAction().not()).performClick()
                 compose.onNode(hasText("Погоджено") and hasClickAction()).performScrollTo().performClick()
                 compose.onNode(hasText(role) and hasClickAction()).performScrollTo().performClick()
                 compose.onNodeWithText("Зберегти").assertIsEnabled().performClick()
@@ -103,10 +103,12 @@ class MeasurementCreationPricingTouchTest {
             compose.onNodeWithText("Попередній кошторис").performClick()
             compose.waitUntil(10000) {
                 compose.onAllNodesWithText("До заміру").fetchSemanticsNodes().isNotEmpty() &&
-                    compose.onAllNodesWithText(measurementMoney(38000), substring = true).fetchSemanticsNodes().isNotEmpty()
+                    compose.onAllNodesWithText(measurementMoney(42442), substring = true).fetchSemanticsNodes().isNotEmpty()
             }
             compose.onAllNodesWithText("дані заміру несумісні", substring = true).assertCountEquals(0)
-            assertEquals(38000, loaded.buildPreview().confirmedTotalCents)
+            list().performScrollToNode(hasText("Розрахункова площа округлена до 0,001 м²"))
+            compose.onNodeWithText("Розрахункова площа округлена до 0,001 м²").assertExists()
+            assertEquals(42442, loaded.buildPreview().confirmedTotalCents)
         } finally {
             compose.runOnIdle { mounted = false }; compose.waitForIdle()
             runBlocking { details.elements.closeAndAwaitWrites(); edit.closeAndAwaitPointReads() }

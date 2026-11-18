@@ -3,6 +3,7 @@ package com.andreyceilings.shared.db
 import app.cash.sqldelight.db.SqlDriver
 import com.andreyceilings.shared.livepricing.*
 import com.andreyceilings.shared.measurement.MeasurementElement
+import com.andreyceilings.shared.measurement.reduce
 import kotlin.test.*
 
 /** Encrypted physical DB snapshot portability, independent of a future native host backup UI. */
@@ -20,10 +21,17 @@ object BusinessRolePortableProof {
         history.configureNumberPolicy(com.andreyceilings.shared.estimate.EstimateNumberPolicy("{prefix}-{sequence}-{suffix}"))
         val saved = history.saveIndividual(FrozenIndividualEstimateProof.command(db, fixture), 2026, 600)
         assertTrue(history.setWorkflowStatus(saved.initialRevisionUuid, 1, com.andreyceilings.shared.estimate.EstimateWorkflowStatus.SENT, 601))
+        val measurement = MeasurementRepository(db).findByUuid(fixture.measurementUuid)!!
+        val edit = com.andreyceilings.shared.measurement.MeasurementEditStore(db) { 602 }
+        val original = edit.load(fixture.projectId, measurement.id)
+        edit.update(original, original.draft.reduce(com.andreyceilings.shared.measurement.MeasurementCreateIntent.Dimension("length", "4.12"))
+            .reduce(com.andreyceilings.shared.measurement.MeasurementCreateIntent.Dimension("width", "3.34")))
         history.appendIndividual(FrozenRevisionProof.request(db, fixture, saved.seriesUuid), 602)
         assertTrue(history.selectRevision(saved.seriesUuid, saved.initialRevisionUuid, 1, 603))
         verifyFrozenEstimateContents(driver)
-        val evidence = Evidence(fixture.projectId, fixture.measurementUuid, source.source.elements, source.buildPreview(), frozenRows(driver))
+        val current = assertIs<PricingReadResult.Loaded>(reader.read(fixture.projectId, fixture.measurementUuid))
+        assertTrue(history.individualHistory(saved.seriesUuid).any { it.frozen.formatVersion == 3 })
+        val evidence = Evidence(fixture.projectId, fixture.measurementUuid, current.source.elements, current.buildPreview(), frozenRows(driver))
         reader.closeReads()
         // SQLite's snapshot operation includes committed WAL pages, never a raw live-file copy.
         driver.execute(null, "VACUUM INTO '${destination.replace("'", "''")}'", 0)

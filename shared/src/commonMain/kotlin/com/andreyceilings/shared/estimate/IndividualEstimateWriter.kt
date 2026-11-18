@@ -127,7 +127,8 @@ internal fun ImmutableEstimateRepository.saveIndividual(
         identity ?: fail(IndividualEstimateSaveFailure.Reason.NUMBER_COLLISION)
     }
     val version = if (target == null) 1L else target.expectedVersion + 1
-    val frozen = FrozenIndividualEstimate(formatVersion = if (target == null) 1 else 2,
+    val format = if (included.any { it.quantityRoundingPolicy != null }) 3 else if (target == null) 1 else 2
+    val frozen = FrozenIndividualEstimate(formatVersion = format,
         revisionIdentity = target?.let { FrozenRevisionIdentity(it.seriesUuid, created.initialRevisionUuid, version, it.expectedLatestRevisionUuid) }, title = request.title, source = source, sourceSignature = read.source.signature,
         catalogSignature = read.catalog.signature, scopeSignature = selection.scopeSignature, compositionUuid = selection.compositionUuid,
         sessionId = request.sessionId, discountText = request.discountText, previewSignature = preview.signature,
@@ -137,7 +138,7 @@ internal fun ImmutableEstimateRepository.saveIndividual(
     val payload = frozen.encode()
     // These REAL values support legacy history tools only. All P4C1 reads use the exact frozen table.
     history.insertImmutableEstimateRevision(created.initialRevisionUuid, created.seriesUuid, target?.expectedLatestRevisionUuid, version, now,
-        m.drawingJson, payload, read.source.geometry.precisionStepMeters, if (target == null) "individual-quote-v1" else "individual-quote-v2", "UAH",
+        m.drawingJson, payload, read.source.geometry.precisionStepMeters, if (format == 3) "individual-quote-v3-area-milli-half-up" else if (target == null) "individual-quote-v1" else "individual-quote-v2", "UAH",
         frozen.rounding, amounts.finalCents.toDouble() / 100)
     if (target == null) {
         q.insertFrozenV1(created.initialRevisionUuid, payload, amounts.subtotalCents, bp.toLong(), amounts.discountCents, amounts.finalCents)

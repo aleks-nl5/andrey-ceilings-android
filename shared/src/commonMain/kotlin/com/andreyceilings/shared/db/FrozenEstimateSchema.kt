@@ -4,7 +4,7 @@ import app.cash.sqldelight.db.QueryResult
 import app.cash.sqldelight.db.SqlDriver
 
 /** Strict physical admission for encrypted reopen/import; never repair a partial v16 in place. */
-fun verifyFrozenEstimateStructure(driver: SqlDriver, version: Long = 18) {
+fun verifyFrozenEstimateStructure(driver: SqlDriver, version: Long = 19) {
     val expected = mutableMapOf(
         "estimate_v1_frozen" to """CREATE TABLE estimate_v1_frozen (
     revisionUuid TEXT NOT NULL PRIMARY KEY REFERENCES estimate_revisions(revisionUuid) ON DELETE RESTRICT,

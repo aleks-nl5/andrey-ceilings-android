@@ -75,7 +75,7 @@ object LivePricingEngine {
                 ElementQuantity.Unknown -> { reasons += PricingProblemCode.UNKNOWN_QUANTITY; null }
                 is ElementQuantity.Range -> { reasons += PricingProblemCode.RANGE_QUANTITY; null }
                 is ElementQuantity.Exact -> q.milli
-                ElementQuantity.CeilingArea -> if (geometryValid) PricingMath.capturedMilli(source.geometry.areaSquareMeters) else null
+                ElementQuantity.CeilingArea -> if (geometryValid) PricingMath.capturedAreaMilli(source.geometry.areaSquareMeters) else null
                 ElementQuantity.CeilingPerimeter -> if (geometryValid) PricingMath.capturedMilli(source.geometry.perimeterMeters) else null
             }
             if (geometryValid && quantity == null && e.quantity in listOf(ElementQuantity.CeilingArea, ElementQuantity.CeilingPerimeter))
@@ -109,7 +109,9 @@ object LivePricingEngine {
                     ElementQuantity.CeilingArea -> QuantityOrigin.CAPTURED_AREA
                     ElementQuantity.CeilingPerimeter -> QuantityOrigin.CAPTURED_PERIMETER
                     else -> QuantityOrigin.DECLARED_EXACT
-                }, e.approval.bucket(), flags, override?.note, role)
+                }, e.approval.bucket(), flags, override?.note, role,
+                if (e.quantity == ElementQuantity.CeilingArea && PricingMath.capturedMilli(source.geometry.areaSquareMeters) == null)
+                    QuantityRoundingPolicy.CAPTURED_AREA_TO_MILLI_HALF_UP_V1 else null)
         }
         var confirmed = 0L
         var potential = 0L

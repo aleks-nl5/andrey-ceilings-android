@@ -5,7 +5,7 @@ import app.cash.sqldelight.db.SqlDriver
 import com.andreyceilings.shared.estimate.*
 
 /** Full import/reopen audit, including tombstones. Does not reprice any historical revision. */
-fun verifyFrozenEstimateContents(driver: SqlDriver, version: Long = 18) {
+fun verifyFrozenEstimateContents(driver: SqlDriver, version: Long = 19) {
     fun rejectRows(sql: String) {
         val invalid = driver.executeQuery(null, sql, { c -> c.next(); QueryResult.Value(c.getLong(0)) }, 0).value
         check(invalid == 0L) { "Invalid exact revision provenance" }

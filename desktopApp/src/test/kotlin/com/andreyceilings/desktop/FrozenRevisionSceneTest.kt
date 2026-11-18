@@ -4,6 +4,8 @@ import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
 import app.cash.sqldelight.db.*
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.ConcurrentLinkedQueue
+import kotlin.coroutines.CoroutineContext
 import java.util.concurrent.atomic.AtomicBoolean
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.runtime.*
@@ -21,6 +23,60 @@ import kotlinx.coroutines.*
 import kotlin.test.*
 
 class FrozenRevisionSceneTest {
+    // ImageComposeScene defaults to Unconfined: a completed DB read can resume
+    // composition on the DB worker while this test is rendering. Real UI hosts
+    // serialize those tasks; drain this dispatcher only on the render thread.
+    private val sceneDispatcher = object : CoroutineDispatcher() {
+        val queue = ConcurrentLinkedQueue<Runnable>()
+        override fun dispatch(context: CoroutineContext, block: Runnable) { queue.add(block) }
+        fun drain() { while (true) (queue.poll() ?: return).run() }
+    }
+
+    @Test fun roundedAreaIsExplicitInLiveAndFrozenQuoteWithoutChangingDrawing() {
+        for (dark in listOf(false, true)) JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).use { driver ->
+            PriceCatalogSchema.create(driver)
+            val db = PrototypeDatabase(driver); val fixture = MeasurementPricingFixture.seed(db)
+            val measurement = MeasurementRepository(db).findByUuid(fixture.measurementUuid)!!
+            val edit = MeasurementEditStore(db) { 603 }
+            val original = edit.load(fixture.projectId, measurement.id)
+            edit.update(original, original.draft.reduce(MeasurementCreateIntent.Dimension("length", "4.12"))
+                .reduce(MeasurementCreateIntent.Dimension("width", "3.34")))
+            val drawing = MeasurementRepository(db).find(measurement.id)!!.drawingJson
+            val prices = PriceRepository(db); prices.updateSalePrice(prices.find(fixture.priceId)!!, 100.0, 604)
+            val repo = ImmutableEstimateRepository(db)
+            val store = MeasurementElementsStore(db, { 1000 }, Dispatchers.Unconfined)
+            val presenter = store.newQuote(fixture.measurementUuid)
+            lateinit var command: IndividualEstimateSaveRequest
+            try {
+                val live = ImageComposeScene(700, 1100, coroutineContext = sceneDispatcher) { CeilingsTheme(dark) {
+                    MeasurementQuoteScreen(presenter, store, ElementRoute(fixture.projectId, measurement.id, measurement.uuid), PaddingValues(16.dp), 0.dp) {}
+                } }
+                try {
+                    live.await { presenter.state.value.amounts != null }
+                    live.reveal("Розрахункова площа округлена до 0,001 м²")
+                    assertTrue(live.text().contains("Площа заміру:"))
+                    assertEquals(137610, presenter.state.value.amounts!!.finalCents)
+                    assertTrue(repo.frozenIndividuals().isEmpty())
+                    command = checkNotNull(presenter.saveRequest(fixture.projectId, "Rounded area"))
+                } finally { live.close() }
+                val saved = repo.saveIndividual(command, 2026, 1000)
+                val frozen = repo.exactIndividual(saved.seriesUuid, saved.initialRevisionUuid)!!
+                assertEquals(3, frozen.frozen.formatVersion)
+                assertEquals(drawing, frozen.frozen.source.drawingJson)
+                val card = ImageComposeScene(700, 1100, coroutineContext = sceneDispatcher) { CeilingsTheme(dark) {
+                    SavedIndividualQuoteDialog(store, saved.seriesUuid, saved.initialRevisionUuid) {}
+                } }
+                try {
+                    card.await { card.text().contains("Статус пропозиції") }
+                    card.reveal("Розрахункова площа округлена до 0,001 м²")
+                    assertTrue(card.text().contains("Площа заміру:"))
+                    assertEquals(137610, frozen.frozen.amounts.finalCents)
+                    assertEquals(drawing, MeasurementRepository(db).find(measurement.id)!!.drawingJson)
+                } finally { card.close() }
+            } finally { runBlocking { store.closeAndAwaitWrites() } }
+        }
+    }
+
     @Test fun conflictingChoiceKeepsOtherSelectionAndShowsPersistentExplanation() {
         JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).use { driver ->
             PriceCatalogSchema.create(driver)
@@ -36,7 +92,7 @@ class FrozenRevisionSceneTest {
                 checkNotNull(draft.saveRequest(fixture.projectId, "Choice card"))), 601)
             val original = repo.frozenIndividual(first.seriesUuid)!!.payload
             val store = MeasurementElementsStore(db, { 1000 }, Dispatchers.Unconfined)
-            val scene = ImageComposeScene(700, 1100) { CeilingsTheme(false) {
+            val scene = ImageComposeScene(700, 1100, coroutineContext = sceneDispatcher) { CeilingsTheme(false) {
                 SavedIndividualQuoteDialog(store, first.seriesUuid, first.initialRevisionUuid) {}
             } }
             try {
@@ -75,7 +131,7 @@ class FrozenRevisionSceneTest {
             }
             for ((project, measurement) in listOf(null to null, fixture.projectId to null, fixture.projectId to fixture.measurementUuid)) {
                 val store = MeasurementElementsStore(db, { 1000 }, Dispatchers.Unconfined)
-                val scene = ImageComposeScene(700, 1100) { CeilingsTheme(false) {
+                val scene = ImageComposeScene(700, 1100, coroutineContext = sceneDispatcher) { CeilingsTheme(false) {
                     SavedIndividualQuoteList(store, project, measurement)
                 } }
                 try {
@@ -112,7 +168,7 @@ class FrozenRevisionSceneTest {
                 }
             }
             val store = MeasurementElementsStore(PrototypeDatabase(paused), { 1000 }, Dispatchers.Unconfined)
-            val scene = ImageComposeScene(700, 1100) { CeilingsTheme(false) {
+            val scene = ImageComposeScene(700, 1100, coroutineContext = sceneDispatcher) { CeilingsTheme(false) {
                 SavedIndividualQuoteDialog(store, first.seriesUuid) {}
             } }
             try {
@@ -147,7 +203,7 @@ class FrozenRevisionSceneTest {
             val route = ElementRoute(fixture.projectId, m.id, m.uuid)
             val presenter = store.revisionQuote(base, route)
             var back = false
-            val scene = ImageComposeScene(700, 1100) {
+            val scene = ImageComposeScene(700, 1100, coroutineContext = sceneDispatcher) {
                 CeilingsTheme(dark) { MeasurementQuoteScreen(presenter, store, route, PaddingValues(16.dp), 0.dp) { back = true } }
             }
             try {
@@ -177,7 +233,7 @@ class FrozenRevisionSceneTest {
         }
     }
     private var time = 0L
-    private fun ImageComposeScene.frame() { repeat(3) { time += 250_000_000; Snapshot.sendApplyNotifications(); render(time).close(); Thread.sleep(10) } }
+    private fun ImageComposeScene.frame() { repeat(3) { sceneDispatcher.drain(); time += 250_000_000; Snapshot.sendApplyNotifications(); render(time).close(); Thread.sleep(10) } }
     private fun ImageComposeScene.nodes(): List<SemanticsNode> {
         fun flatten(n: SemanticsNode): List<SemanticsNode> = listOf(n) + n.children.flatMap(::flatten)
         return semanticsOwners.flatMap { flatten(it.rootSemanticsNode) }
@@ -185,7 +241,7 @@ class FrozenRevisionSceneTest {
     private fun ImageComposeScene.text() = nodes().joinToString { it.config.getOrNull(SemanticsProperties.Text).orEmpty().joinToString { t -> t.text } }
     private fun ImageComposeScene.await(condition: () -> Boolean) { repeat(100) { frame(); if (condition()) return }; fail("Revision preview did not settle") }
     private fun ImageComposeScene.scroll(delta: Float) { assertTrue(nodes().first { it.config.getOrNull(SemanticsActions.ScrollBy) != null }.config.getOrNull(SemanticsActions.ScrollBy)?.action?.invoke(0f, delta) == true) }
-    private fun ImageComposeScene.reveal(expectedText: String) { repeat(100) { frame(); if (text().contains(expectedText)) return; scroll(200f) }; fail("Revision comparison was not visible: $expectedText; ${text()}") }
+    private fun ImageComposeScene.reveal(expectedText: String) { repeat(100) { frame(); if (text().contains(expectedText)) return; scroll(200f) }; fail("Revision comparison was not visible: $expectedText; ${text()}; scroll=${nodes().filter { it.config.getOrNull(SemanticsActions.ScrollBy) != null }.map { "${it.boundsInRoot} ${it.config}" }}") }
     private fun ImageComposeScene.click(text: String) {
         val node = nodes().first { it.config.getOrNull(SemanticsProperties.Text).orEmpty().any { t -> t.text == text } }
         val action = generateSequence(node) { it.parent }.mapNotNull { it.config.getOrNull(SemanticsActions.OnClick)?.action }.first()

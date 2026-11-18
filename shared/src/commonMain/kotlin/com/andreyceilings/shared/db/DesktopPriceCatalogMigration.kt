@@ -86,7 +86,7 @@ fun openDesktopPriceCatalog(driver: SqlDriver, previouslyExisting: Boolean) {
             val workflowParts = listOf(columns("estimate_revision_workflow").isNotEmpty(), columns("estimate_revision_choice").isNotEmpty())
             check(workflowParts.all { it } || workflowParts.none { it }) { "Partial revision metadata schema" }
             check(workflowParts.none { it } || revisionParts.all { it }) { "Revision metadata requires frozen revisions" }
-            val frozenVersion = if (workflowParts.all { it }) 18L else if (revisionParts.all { it }) 17L else 16L
+            val frozenVersion = if (workflowParts.all { it }) maxOf(18L, persistedVersion) else if (revisionParts.all { it }) 17L else 16L
             verifyFrozenEstimateStructure(driver, frozenVersion)
             frozenVersion
         } else detectedVersion

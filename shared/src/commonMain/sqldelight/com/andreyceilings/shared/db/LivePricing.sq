@@ -22,3 +22,10 @@ SELECT (SELECT count(*) FROM projects), (SELECT count(*) FROM room_measurements)
  (SELECT count(*) FROM ceiling_walls), (SELECT count(*) FROM ceiling_operations),
  (SELECT count(*) FROM ceiling_operation_results), (SELECT count(*) FROM price_items),
  (SELECT count(*) FROM price_groups);
+
+-- The Windows JDBC facade reads REAL via SQLite's default 15-digit text.
+-- Explicit round-trip precision preserves strict geometry equality on every host.
+selectPricingGeometryScalars:
+SELECT printf('%!.17g', areaSquareMeters) AS areaText,
+ printf('%!.17g', perimeterMeters) AS perimeterText
+FROM room_measurements WHERE uuid = ?;

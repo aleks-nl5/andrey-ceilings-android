@@ -1,3 +1,13 @@
+## Owner-approved area rounding — 17.11.2026 (current)
+
+The owner reproduced INVALID_SOURCE with two rectangle sides entered to hundredths (4.12 × 3.34 → 13.7608 m²). The coherent geometry reader succeeds; the actual blocker was CANVAS QUANTITY_PRECISION. The owner explicitly chose: round captured area HALF_UP to 0.001 m² first, then calculate row cents. For example, at 100 UAH/m²: 13.7608 → 13.761 → 1376.10 UAH. This rule applies in both creation contexts and to current-source revisions. Original dimensions/drawing/area remain unchanged; manual quantities and perimeter retain their existing precision contract.
+
+Affected new frozen documents use format 3 with an explicit versioned area quantity policy; existing format 1/2 payload bytes and content proofs remain unchanged. Schema v19 adds only a capability marker migration (18.sqm, no row changes), so older distributed clients reject unsupported documents rather than opening them as v18. Preserve per-revision status, explicit chosen pointer, operation receipts, exact Long money, backup and SQLCipher. UI shows measured area separately from rounded billable source quantity. Native v18→v19 lifecycle and encrypted snapshot proofs include legacy and format-3 documents.
+
+Deletion and workflow-policy issue #118 remain deferred. Keep PR #117 Draft for independent review and owner APK re-test. Verification results are recorded in the PR; do not infer native success from compilation.
+
+---
+
 ## Owner APK corrections — 17.11.2026 (supersedes older P4C2 workflow/list rules)
 
 Continue only Draft PR #117 / issue #116. Owner found two blocking defects: global Measurements creation must yield coherent live pricing, and v1/v2/v3 must remain independent client proposals. Persist workflow status and optimistic CAS per revision UUID; append creates only the new revision DRAFT and preserves older statuses. All versions must be visible/actionable in global/project/measurement lists. Persist an explicit CAS-protected selected revision separately; newest is not automatically chosen. Migrate v16/v17 losslessly to v18: only the latest revision receives the known old series status; earlier unknown metadata is shown as not recorded, never fabricated or offered as a fifth status. Preserve immutable exact financial/geometry payloads, receipts, numbering, SQLCipher/WAL/backup. Update affected common and physical platform tests with the contract.

@@ -152,7 +152,12 @@ fun SavedIndividualQuoteDialog(store: MeasurementElementsStore?, seriesUuid: Str
                             Column(Modifier.padding(12.dp)) {
                                 Text(row.title, style = MaterialTheme.typography.titleSmall)
                                 Text("${row.stableCode} · ${if (row.bucket == com.andreyceilings.shared.livepricing.PricingBucket.CONFIRMED) "Погоджено" else "Обговорюється — включено явно"}")
-                                Text("Із заміру: ${formatElementMilli(row.sourceQuantityMilli)} ${row.unit}")
+                                if (row.quantityRoundingPolicy != null) {
+                                    val geometry = remember(f.source.drawingJson) { MeasurementGeometryCodec.read(f.source.drawingJson) }
+                                    Text("Площа заміру: ${formatMeasurementArea(geometry.areaSquareMeters, com.andreyceilings.shared.calculation.MeasurementPrecision.fromStep(geometry.precisionStepMeters))} м²")
+                                    Text("Розрахункова площа округлена до 0,001 м²")
+                                }
+                                Text("${if (row.quantityRoundingPolicy != null) "Із заміру (до 0,001 м²)" else "Із заміру"}: ${formatElementMilli(row.sourceQuantityMilli)} ${row.unit}")
                                 Text("До оплати: ${formatElementMilli(row.effectiveBillableQuantityMilli)} ${row.unit}")
                                 row.overrideNote?.takeIf { it.isNotBlank() }?.let { Text(it) }
                                 Text("${measurementMoney(row.unitPriceCents)} / ${row.unit} · ${measurementMoney(row.totalCents)}")
@@ -226,6 +231,6 @@ private fun FrozenQuoteDrawing(source: FrozenIndividualSource) {
         Text("Збережене креслення", style = MaterialTheme.typography.titleMedium)
         MeasurementDrawing(MeasurementGeometryView.Captured(geometry),
             pointPlacements = source.points, linePlacements = source.lines, areaFeatures = source.areas)
-        Text("Площа: ${geometry.areaSquareMeters} м² · Периметр: ${geometry.perimeterMeters} м")
+        Text("Площа: ${formatMeasurementArea(geometry.areaSquareMeters, com.andreyceilings.shared.calculation.MeasurementPrecision.fromStep(geometry.precisionStepMeters))} м² · Периметр: ${formatMeasurementLength(geometry.perimeterMeters, com.andreyceilings.shared.calculation.MeasurementPrecision.fromStep(geometry.precisionStepMeters))} м")
     }
 }
