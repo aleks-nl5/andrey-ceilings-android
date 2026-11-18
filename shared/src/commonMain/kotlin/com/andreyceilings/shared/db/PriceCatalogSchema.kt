@@ -52,6 +52,7 @@ object PriceCatalogSchema : SqlSchema<QueryResult.Value<Unit>> {
             verifyMeasurementElementStructure(driver, oldVersion)
             verifyPointPlacementStructure(driver,oldVersion)
         }
+        if (oldVersion == 19L && newVersion >= 20L) verifyPointPlacementStructure(driver, oldVersion)
         if (oldVersion >= 16) verifyFrozenEstimateStructure(driver, oldVersion)
         var statement=0
         val observed=object:SqlDriver by driver {

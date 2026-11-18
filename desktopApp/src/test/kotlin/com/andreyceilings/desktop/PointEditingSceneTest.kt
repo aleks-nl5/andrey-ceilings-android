@@ -14,6 +14,8 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.ui.unit.dp
 import com.andreyceilings.shared.calculation.MeasurementPrecision
 import com.andreyceilings.shared.db.*
+import com.andreyceilings.shared.livepricing.LivePricingReader
+import com.andreyceilings.shared.livepricing.PricingReadResult
 import com.andreyceilings.shared.measurement.*
 import com.andreyceilings.shared.navigation.*
 import com.andreyceilings.shared.theme.CeilingsTheme
@@ -45,6 +47,7 @@ class PointEditingSceneTest {
             val second = points.movePoint(elements.find(element.uuid)!!.version,legacy,original.updatedAt,3000,1000,PointPrecision.EXACT,6).point
             val calls = AtomicInteger()
             val details = MeasurementDetailsStore(db, { calls.incrementAndGet(); 10L }, Dispatchers.Unconfined)
+            val pricing = LivePricingReader(db)
             val model = details.elements.model(ElementRoute(project, id, original.uuid))
             val edit = MeasurementEditStore(db) { 30 }
             val guard = MeasurementCreateNavigationGuard()
@@ -76,6 +79,7 @@ class PointEditingSceneTest {
                 scene.awaitText("Ця позначка: приблизне положення")
                 assertEquals(p.uuid, scene.canvas().config.getOrNull(MeasurementDrawingSemantics.SelectedPoint))
                 val before = points.find(p.uuid)
+                val priorPricing = assertIs<PricingReadResult.Loaded>(pricing.read(project, original.uuid))
                 val start = scene.world(original, 1000, 1000); val end = scene.world(original, 1800, 1600)
                 val inputType = if (dark) PointerType.Mouse else PointerType.Touch
                 scene.sendPointerEvent(PointerEventType.Press, start, type = inputType)
@@ -88,6 +92,9 @@ class PointEditingSceneTest {
                 assertEquals(before,points.find(p.uuid),"POINT release must stage, with no instant SQL writer")
                 assertEquals(0,calls.get())
                 scene.click("Зберегти креслення");awaitPoint(1800,PointPrecision.APPROXIMATE)
+                val savedPricing = assertIs<PricingReadResult.Loaded>(pricing.read(project, original.uuid))
+                assertNotEquals(priorPricing.source.signature, savedPricing.source.signature)
+                assertEquals(priorPricing.buildPreview().potentialTotalCents, savedPricing.buildPreview().potentialTotalCents)
                 assertEquals(0,calls.get(),"Only the common ceiling writer may save this drag")
                 assertEquals(second, points.find(second.uuid)); assertEquals(original.drawingJson, MeasurementRepository(db).find(id)!!.drawingJson)
                 assertEquals(2, points.forMeasurement(original.uuid).size)

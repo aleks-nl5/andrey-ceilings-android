@@ -12,6 +12,78 @@ import kotlin.test.*
 object LivePricingProof {
     fun seed(database: PrototypeDatabase) = MeasurementPricingFixture.seed(database)
 
+    private suspend fun pointMoveKeepsPricingAvailable(driver: SqlDriver) {
+        val database = PrototypeDatabase(driver)
+        val fixture = seed(database)
+        val measurements = MeasurementRepository(database)
+        val elements = MeasurementElementRepository(database)
+        val points = PointPlacementRepository(database)
+        val initial = assertNotNull(measurements.findByUuid(fixture.measurementUuid))
+        val reader = LivePricingReader(database)
+        fun read() = reader.read(fixture.projectId, fixture.measurementUuid)
+        fun walls() = database.livePricingQueries.selectPricingWalls(fixture.measurementUuid)
+            .executeAsList().filter { it.active == 1L }
+
+        val originalPricing = assertIs<PricingReadResult.Loaded>(read())
+        val history = ImmutableEstimateRepository(database)
+        val savedQuote = history.saveIndividual(FrozenIndividualEstimateProof.command(database, fixture), 2026, 109)
+        val frozenBefore = assertNotNull(history.frozenIndividual(savedQuote.seriesUuid))
+        val group = PriceGroupRepository(database).all().first().uuid
+        val prices = PriceRepository(database)
+        val priceId = prices.createInGroup("pricing.point", "Test chandelier", group, 25.0, 110,
+            unit = "шт.", quantityMode = QuantityMode.MANUAL, placementKind = PlacementKind.POINT)
+        val element = elements.createCatalogSelection(fixture.measurementUuid, assertNotNull(prices.find(priceId)).uuid,
+            ElementQuantity.Exact(1000), 111, approval = ElementApproval.APPROVED, businessRole = BusinessRole.ADDITIONAL_WORK)
+        val added = points.addPoint(element.version, initial.updatedAt, 500, 600, 112)
+        assertIs<PricingReadResult.Loaded>(read())
+        val direct = points.movePoint(assertNotNull(elements.find(element.uuid)).version, added, initial.updatedAt,
+            600, 700, PointPrecision.APPROXIMATE, 113).point
+        assertEquals(initial.updatedAt, assertNotNull(measurements.find(initial.id)).updatedAt)
+        val before = assertIs<PricingReadResult.Loaded>(read())
+        val beforeWalls = walls()
+        val store = MeasurementEditStore(database) { 120 }
+        val model = MeasurementEditModel(store, store.load(fixture.projectId, initial.id))
+        model.selectPoint(direct.uuid)
+        model.beginPointDrag(direct.uuid)
+        model.previewPointDrag(1000.0, 1200.0)
+        model.finishPointDrag()
+        assertTrue(model.state.value.dirty)
+        assertEquals(1000L, model.displayPoints().single().xMm)
+        assertEquals(direct, points.forMeasurement(fixture.measurementUuid).single())
+        assertEquals(before, read())
+        assertEquals(beforeWalls, walls())
+
+        model.save()
+        assertNull(model.state.value.error)
+        assertTrue(model.state.value.saved)
+        val reopened = store.load(fixture.projectId, initial.id)
+        assertEquals(initial.drawingJson, reopened.sourceDrawingJson)
+        assertEquals(120L, reopened.updatedAt)
+        assertEquals(1000L, reopened.placements.points.single().xMm)
+        assertEquals(1200L, reopened.placements.points.single().yMm)
+        val savedWalls = walls()
+        val after = assertIs<PricingReadResult.Loaded>(read(),
+            "Save advanced the measurement to ${reopened.updatedAt}, wall versions are ${savedWalls.map { it.geometryVersion }}")
+        assertEquals(beforeWalls.map { it.copy(geometryVersion = reopened.updatedAt) }, savedWalls)
+        assertEquals(before.source.geometry, after.source.geometry)
+        assertNotEquals(before.source.signature, after.source.signature)
+        assertEquals(before.buildPreview().confirmedTotalCents, after.buildPreview().confirmedTotalCents)
+        assertEquals(14500L, after.buildPreview().confirmedTotalCents)
+        assertTrue(after.buildPreview().canFinalizeFull)
+        assertTrue(after.buildPreview().fatalProblems.isEmpty())
+        assertEquals(ElementQuantity.Exact(1000), assertNotNull(elements.find(element.uuid)).quantity)
+        val quote = TransientQuotePresenter(fixture.measurementUuid)
+        quote.acceptRead(quote.beginRead(), after)
+        assertNotNull(quote.saveRequest(fixture.projectId, "After point move"))
+        quote.close()
+        assertEquals(frozenBefore, history.frozenIndividual(savedQuote.seriesUuid))
+
+        val moved = reopened.placements.points.single()
+        points.removePoint(assertNotNull(elements.find(element.uuid)).version, moved, 121)
+        assertTrue(store.load(fixture.projectId, initial.id).placements.points.isEmpty())
+        assertEquals(originalPricing.source.geometry, assertIs<PricingReadResult.Loaded>(read()).source.geometry)
+    }
+
     suspend fun run(driver: SqlDriver) {
         val database = PrototypeDatabase(driver)
         val fixture = seed(database)
@@ -144,5 +216,6 @@ object LivePricingProof {
         assertEquals(PricingReadResult.Unavailable(PricingProblemCode.DATABASE_UNAVAILABLE), reader.read(fixture.projectId, fixture.measurementUuid))
         assertEquals(0, writeAttempts)
         FrozenIndividualEstimateProof.run(driver)
+        pointMoveKeepsPricingAvailable(driver)
     }
 }

@@ -10,6 +10,59 @@ import kotlin.test.*
 import kotlinx.coroutines.*
 
 class LivePricingReaderTest {
+    @Test fun version19MigrationRepairsOnlyWallsBackedByACompletedEdit() {
+        JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).use { driver ->
+            PriceCatalogSchema.create(driver)
+            // The v20 trigger is the only structural difference from v19.
+            driver.execute(null, "DROP TRIGGER ceiling_refresh_unchanged_wall_versions", 0)
+            PriceCatalogSchema.verifyStructure(driver, 19)
+            val db = PrototypeDatabase(driver)
+            val fixture = LivePricingProof.seed(db)
+            val stale = LivePricingProof.seed(db)
+            val measurements = MeasurementRepository(db)
+            val row = assertNotNull(measurements.findByUuid(fixture.measurementUuid))
+            val staleRow = assertNotNull(measurements.findByUuid(stale.measurementUuid))
+            val reader = LivePricingReader(db)
+            assertIs<PricingReadResult.Loaded>(reader.read(fixture.projectId, fixture.measurementUuid))
+            val store = MeasurementEditStore(db) { 200 }
+            val initial = store.load(fixture.projectId, row.id)
+            val first = store.update(initial, initial.draft.copy(notes = "First edit"), now = 201)
+            val second = store.update(first, first.draft.copy(notes = "Second edit"), now = 202)
+            assertEquals(row.drawingJson, second.sourceDrawingJson)
+            val before = db.livePricingQueries.selectPricingWalls(fixture.measurementUuid).executeAsList()
+            assertTrue(before.all { it.geometryVersion == row.updatedAt })
+            val receipts = db.livePricingQueries.selectPricingReceipts(fixture.measurementUuid).executeAsList()
+            val invalidSource = PricingReadResult.Unavailable(PricingProblemCode.INVALID_SOURCE)
+            assertEquals(invalidSource, reader.read(fixture.projectId, fixture.measurementUuid))
+            driver.execute(null, "UPDATE room_measurements SET updatedAt = updatedAt + 1 WHERE id = ?", 1) {
+                bindLong(0, staleRow.id)
+            }
+            assertEquals(invalidSource, reader.read(stale.projectId, stale.measurementUuid))
+
+            PriceCatalogSchema.migrate(driver, 19, PriceCatalogSchema.version)
+            assertEquals(before.map { it.copy(geometryVersion = second.updatedAt) },
+                db.livePricingQueries.selectPricingWalls(fixture.measurementUuid).executeAsList())
+            assertEquals(receipts, db.livePricingQueries.selectPricingReceipts(fixture.measurementUuid).executeAsList())
+            assertIs<PricingReadResult.Loaded>(reader.read(fixture.projectId, fixture.measurementUuid))
+            assertEquals(invalidSource, reader.read(stale.projectId, stale.measurementUuid))
+            assertFails {
+                driver.execute(null, "UPDATE ceiling_walls SET geometryVersion = geometryVersion + 1", 0)
+            }
+            val third = store.update(second, second.draft.copy(notes = "After migration"), now = 203)
+            assertEquals(203L, third.updatedAt)
+            val after = assertIs<PricingReadResult.Loaded>(reader.read(fixture.projectId, fixture.measurementUuid))
+            driver.execute(null, """
+                CREATE TRIGGER fail_pricing_test_receipt BEFORE INSERT ON ceiling_operation_results
+                BEGIN SELECT RAISE(ABORT, 'injected receipt failure'); END
+            """.trimIndent(), 0)
+            assertFailsWith<MeasurementEditRejected> {
+                store.update(third, third.draft.copy(notes = "Rolled back"), now = 204)
+            }
+            assertEquals(third, store.load(fixture.projectId, row.id))
+            assertEquals(after, reader.read(fixture.projectId, fixture.measurementUuid))
+        }
+    }
+
     @Test fun walSnapshotNeverMixesChildAndCatalogFromDifferentCommits() {
         coherentRead { JdbcSqliteDriver("jdbc:sqlite:${it.absolutePath}") }
     }

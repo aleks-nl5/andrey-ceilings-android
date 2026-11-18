@@ -1,6 +1,8 @@
 package com.andreyceilings.shared.db
 
 import app.cash.sqldelight.db.SqlDriver
+import com.andreyceilings.shared.livepricing.LivePricingReader
+import com.andreyceilings.shared.livepricing.PricingReadResult
 import com.andreyceilings.shared.measurement.*
 import com.andreyceilings.shared.prices.*
 import kotlinx.serialization.json.*
@@ -22,6 +24,9 @@ object AreaFeatureProof {
         PointPlacementRepository(db).addPoint(f.element.version,f.contourVersion,4000,2500,10)
         val store=MeasurementEditStore(db){100}
         var doc=store.load(f.project,f.id)
+        val reader = LivePricingReader(db)
+        fun pricing() = assertIs<PricingReadResult.Loaded>(reader.read(f.project, f.element.measurementUuid))
+        val initialPricing = pricing()
         val beforeArea=MeasurementRepository(db).find(f.id)!!.areaSquareMeters
         val polygon=AreaShape.rectangle(PointPositionMm(500,500),PointPositionMm(1500,1500))
         val annotation=AreaFeature("obstacle-${f.id}",doc.draft.recordUuid,polygon,doc.updatedAt,0,0,role=AreaRole.OBSTACLE,note="Вентканал")
@@ -40,6 +45,7 @@ object AreaFeatureProof {
         assertEquals(ElementQuantity.Range(100,3000),elements.find(element.uuid)!!.quantity)
         assertEquals(beforeArea,MeasurementRepository(db).find(f.id)!!.areaSquareMeters)
         assertEquals(2,doc.placements.areas.count {it.elementUuid==null})
+        assertEquals(initialPricing.source.geometry, pricing().source.geometry)
         assertFails {store.update(original,original.draft.copy(notes="different"),operationUuid="area-create-${f.id}",now=100,areaEdits=edits)}
         val fixed=doc.placements.areas.first {it.uuid==priced.uuid}.let {area -> area.copy(mountings=area.shape.positions.map {p ->
             PointMounting(anchor=WallAnchor(WallAnchor.Kind.TWO_WALLS,doc.placements.walls[0].uuid,doc.placements.walls[3].uuid,p.yMm,p.xMm))
@@ -47,6 +53,14 @@ object AreaFeatureProof {
         doc=store.update(doc,doc.draft,now=110,areaEdits=mapOf(fixed.uuid to AreaFeatureEdit(fixed,confirm=true)))
         assertEquals(ElementPlacement.EXACT,elements.find(element.uuid)!!.placement)
         assertEquals(PointPrecision.EXACT,doc.placements.areas.first {it.uuid==fixed.uuid}.precision)
+        val pricedOnly = pricing()
+        val obstacle = doc.placements.areas.single { it.uuid == annotation.uuid }
+        val movedObstacle = obstacle.copy(shape = AreaShape.rectangle(PointPositionMm(600, 600), PointPositionMm(1600, 1600)))
+        doc = store.update(doc, doc.draft, now = 111, areaEdits = mapOf(obstacle.uuid to AreaFeatureEdit(movedObstacle)))
+        val movedPricing = pricing()
+        assertEquals(movedObstacle.shape, store.load(f.project, f.id).placements.areas.single { it.uuid == obstacle.uuid }.shape)
+        assertEquals(pricedOnly.source.geometry, movedPricing.source.geometry)
+        assertEquals(pricedOnly.buildPreview().priceableLines, movedPricing.buildPreview().priceableLines)
         // A failure after contour/point/line writes must roll the entire operation back.
         val saved=doc
         driver.execute(null,"CREATE TRIGGER reject_area_proof BEFORE UPDATE ON area_features BEGIN SELECT RAISE(ABORT,'injected_area_failure'); END",0)
@@ -64,6 +78,7 @@ object AreaFeatureProof {
         assertEquals(ElementQuantity.Exact(2000),elements.find(element.uuid)!!.quantity)
         assertFails {store.update(doc,doc.draft,now=145,areaEdits=mapOf("over-${f.id}" to AreaFeatureEdit(second.copy(uuid="over-${f.id}"))))}
         doc=store.update(doc,doc.draft.reduce(MeasurementCreateIntent.Dimension("length","1")),now=150)
+        assertNotEquals(initialPricing.source.geometry, pricing().source.geometry)
         assertTrue(doc.placements.areas.all {it.unresolved && it.needsReview})
         assertEquals(0,elements.find(element.uuid)!!.placedQuantityMilli)
         assertFails {elements.edit(elements.find(element.uuid)!!.version,"",element.approval,ElementQuantity.Exact(1000),155)}
@@ -80,6 +95,7 @@ object AreaFeatureProof {
         assertFalse(doc.placements.areas.first {it.uuid==repair.uuid}.unresolved)
         assertEquals(1000,elements.find(element.uuid)!!.placedQuantityMilli)
         doc=store.update(doc,doc.draft,now=200,areaEdits=mapOf(annotation.uuid to AreaFeatureEdit(doc.placements.areas.first {it.uuid==annotation.uuid}.copy(deletedAt=0))))
+        assertTrue(pricing().source.areas.none { it.uuid == annotation.uuid })
         assertEquals(3,doc.placements.areas.size)
         assertEquals(4,AreaFeatureRepository(db).all().count {it.measurementUuid==doc.draft.recordUuid})
         elements.delete(elements.find(element.uuid)!!.version,210)

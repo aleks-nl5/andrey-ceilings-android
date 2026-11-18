@@ -1,0 +1,55 @@
+-- Repair only walls corroborated by the current, completed unchanged-drawing operation.
+-- Require the entire active wall set, including identity and coordinates, to agree with its receipt.
+DROP TRIGGER ceiling_wall_update_guard;
+
+UPDATE ceiling_walls
+SET geometryVersion = (SELECT m.updatedAt FROM room_measurements m WHERE m.uuid = ceiling_walls.measurementUuid)
+WHERE uuid IN (
+ SELECT w.uuid
+ FROM ceiling_walls w JOIN room_measurements m ON m.uuid = w.measurementUuid
+ JOIN ceiling_operations o ON o.measurementUuid = m.uuid
+ JOIN ceiling_operation_results r ON r.operationUuid = o.uuid AND r.measurementVersion = m.updatedAt
+ WHERE w.active = 1 AND m.deletedAt IS NULL AND w.geometryVersion <= o.expectedUpdatedAt
+ AND r.measurementVersion = max(o.expectedUpdatedAt + 1, o.createdAt)
+ AND json_extract(o.payload, '$.drawingJson') = m.drawingJson
+ AND json_extract(o.payload, '$.oldDrawingJson') = m.drawingJson
+ AND (SELECT count(*) FROM ceiling_walls a WHERE a.measurementUuid = m.uuid AND a.active = 1) =
+     json_array_length(o.payload, '$.walls')
+ AND NOT EXISTS (
+  SELECT 1 FROM ceiling_walls a WHERE a.measurementUuid = m.uuid AND a.active = 1
+  AND (a.geometryVersion != w.geometryVersion OR NOT EXISTS (
+   SELECT 1 FROM ceiling_operation_edges e WHERE e.operationUuid = o.uuid
+   AND e.wallUuid = a.uuid AND e.ordinal = a.ordinal
+   AND e.ax = a.ax AND e.ay = a.ay AND e.bx = a.bx AND e.by = a.by
+  ))
+ )
+);
+
+CREATE TRIGGER ceiling_wall_update_guard BEFORE UPDATE ON ceiling_walls
+BEGIN
+ SELECT CASE WHEN new.uuid IS NOT old.uuid OR new.measurementUuid IS NOT old.measurementUuid OR (NOT EXISTS (
+ SELECT 1 FROM room_measurements m JOIN ceiling_operations o ON o.measurementUuid=m.uuid
+ WHERE m.uuid=old.measurementUuid AND NOT EXISTS(SELECT 1 FROM ceiling_operation_results WHERE operationUuid=o.uuid) AND m.updatedAt=max(o.expectedUpdatedAt+1,o.createdAt)
+ AND ((new.active=0 AND old.active=1 AND new.ordinal=old.ordinal AND new.ax=old.ax AND new.ay=old.ay AND new.bx=old.bx AND new.by=old.by AND new.geometryVersion=old.geometryVersion AND old.geometryVersion<m.updatedAt AND json_extract(o.payload,'$.drawingJson')!=json_extract(o.payload,'$.oldDrawingJson')) OR EXISTS(SELECT 1 FROM ceiling_operation_edges w WHERE w.operationUuid=o.uuid AND w.wallUuid=new.uuid
+ AND new.ordinal=w.ordinal AND new.ax=w.ax AND new.ay=w.ay AND new.bx=w.bx AND new.by=w.by AND new.geometryVersion=m.updatedAt)))
+ AND (new.active=0 AND new.ordinal=old.ordinal AND new.ax=old.ax AND new.ay=old.ay AND new.bx=old.bx AND new.by=old.by AND new.geometryVersion=old.geometryVersion AND (EXISTS(SELECT 1 FROM point_placements q JOIN measurement_elements e ON e.uuid=q.elementUuid WHERE e.measurementUuid=old.measurementUuid AND q.deletedAt IS NULL) OR EXISTS(SELECT 1 FROM area_features WHERE measurementUuid=old.measurementUuid AND deletedAt IS NULL) OR EXISTS(SELECT 1 FROM line_placements q JOIN measurement_elements e ON e.uuid=q.elementUuid WHERE e.measurementUuid=old.measurementUuid AND q.deletedAt IS NULL))=0)=0)
+ THEN RAISE(ABORT,'ceiling_wall_requires_operation') END;
+END;
+
+CREATE TRIGGER ceiling_refresh_unchanged_wall_versions AFTER UPDATE OF updatedAt ON room_measurements
+WHEN new.updatedAt > old.updatedAt AND new.drawingJson = old.drawingJson
+BEGIN
+ UPDATE ceiling_walls SET geometryVersion = new.updatedAt
+ WHERE measurementUuid = new.uuid AND active = 1 AND geometryVersion = old.updatedAt
+ AND EXISTS (
+  SELECT 1 FROM ceiling_operations o JOIN ceiling_operation_edges e ON e.operationUuid = o.uuid
+  WHERE o.measurementUuid = new.uuid AND o.expectedUpdatedAt = old.updatedAt
+  AND new.updatedAt = max(o.expectedUpdatedAt + 1, o.createdAt)
+  AND json_extract(o.payload, '$.drawingJson') = new.drawingJson
+  AND json_extract(o.payload, '$.oldDrawingJson') = old.drawingJson
+  AND NOT EXISTS (SELECT 1 FROM ceiling_operation_results WHERE operationUuid = o.uuid)
+  AND e.wallUuid = ceiling_walls.uuid AND e.ordinal = ceiling_walls.ordinal
+  AND e.ax = ceiling_walls.ax AND e.ay = ceiling_walls.ay
+  AND e.bx = ceiling_walls.bx AND e.by = ceiling_walls.by
+ );
+END;
