@@ -2,7 +2,6 @@ package com.andreyceilings.desktop
 
 import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
 import androidx.compose.runtime.*
-import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.ui.ImageComposeScene
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
@@ -30,9 +29,6 @@ class AreaFeatureSceneTest {
         override fun dispatch(context: CoroutineContext, block: Runnable) { queue.add(block) }
         fun drain() { while (true) (queue.poll() ?: return).run() }
     }
-
-    private var frameTimeNanos = 0L
-    private var pointerTimeMillis = 0L
 
     @OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class,androidx.compose.ui.InternalComposeUiApi::class)
     @Test fun productionControlsMouseSelectionAndAtomicSaveInBothThemes():Unit=runBlocking {
@@ -118,9 +114,8 @@ class AreaFeatureSceneTest {
     private fun ImageComposeScene.tapWorld(row: Room_measurements, x: Long, y: Long) {
         val p = world(row, x, y)
         assertTrue(p.x in 0f..900f && p.y in 0f..1400f, "Tap must be inside the viewport: $p")
-        pointerTimeMillis += 100
-        sendPointerEvent(PointerEventType.Press, p, timeMillis = pointerTimeMillis, type = PointerType.Touch)
-        sendPointerEvent(PointerEventType.Release, p, timeMillis = pointerTimeMillis + 25, type = PointerType.Touch)
+        sendPointerEvent(PointerEventType.Press, p, type = PointerType.Touch)
+        sendPointerEvent(PointerEventType.Release, p, type = PointerType.Touch)
         frame()
     }
     private fun ImageComposeScene.stableBounds(): Rect {
@@ -138,22 +133,21 @@ class AreaFeatureSceneTest {
             if (scrollBy != 0f) {
                 nodes().firstOrNull { it.config.getOrNull(SemanticsActions.ScrollBy) != null }
                     ?.config?.getOrNull(SemanticsActions.ScrollBy)?.action?.invoke(0f, scrollBy)
-                repeat(24) { frame() }
+                repeat(10) { frame(); Thread.sleep(15) }
                 stable = 0
             } else {
                 stable = if (bounds == previous) stable + 1 else 0
                 if (stable >= 3) return bounds
             }
             previous = bounds
+            Thread.sleep(20)
         }
         fail("Canvas did not settle inside the viewport")
     }
     private fun ImageComposeScene.canvas() = nodes().first { it.config.getOrNull(SemanticsProperties.ContentDescription).orEmpty().any { it.startsWith("Контур стелі") } }
     private fun ImageComposeScene.frame() {
         sceneDispatcher.drain()
-        Snapshot.sendApplyNotifications()
-        frameTimeNanos += 16_666_667
-        render(frameTimeNanos).close()
+        render(System.nanoTime()).close()
     }
     private fun ImageComposeScene.nodes(): List<SemanticsNode> {
         fun flatten(n: SemanticsNode): List<SemanticsNode> = listOf(n) + n.children.flatMap(::flatten)
