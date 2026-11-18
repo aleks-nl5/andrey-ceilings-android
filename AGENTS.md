@@ -1,4 +1,14 @@
-## CURRENT handoff — P4C3 frozen individual PDF (18.11.2026)
+## CURRENT handoff — #121 false INVALID_SOURCE after drawing placement (18.11.2026)
+
+**Accepted main:** PR #120/P4C3 merged 18.11.2026, main SHA `17650881737f290e0da9e07c4015faa4da8616bc`, schema v19. PDF completed; do **not** extend or modify PDF in this work.
+
+**Owner-authorized next repair:** [issue #121](https://github.com/aleks-nl5/andrey-ceilings-android/issues/121), canonical independent Codex [handoff](docs/ISSUE_121_PLACEMENT_PRICING_CODEX_HANDOFF.md), branch `fix/issue-121-placement-live-pricing` and its single **Draft PR**. User observed live-pricing unavailable after placing chandelier (example, **not** the only possible affected type); obstacle reported, exact details to verify. Check point/line/area/standalone obstacle separately. Distinguish UI `PricingReadResult.Unavailable(INVALID_SOURCE)` from `Loaded.fatalProblems`. Prove root cause through real SQLDelight writer/reader and regression before production fix. Check wall geometry/version/source signatures but **do not remove fail-closed gates**. Preserve frozen totals, v1/v2/v3, P4C3, SQLCipher/WAL, app flow. Do not merge, close #121 or mark Ready without independent review, same-SHA Android+Windows+iOS CI, owner APK acceptance.
+
+**Historical text below may contain stale "CURRENT"/"Now" wording: this top section and #121 handoff supersede it for the active task.**
+
+---
+
+## ARCHIVED handoff — P4C3 frozen individual PDF (18.11.2026)
 
 Owner merged PR #117 on 18.11.2026 (main merge SHA `132f437a6f8e5aa3f4e620e56bf1d71c038cf376`); #116 completed. **Now:** [#119](https://github.com/aleks-nl5/andrey-ceilings-android/issues/119), existing **Draft PR on `feat/p4c3-frozen-pdf-document`**, canonical [handoff](docs/P4C3_PDF_HANDOFF.md). Build a configurable *individual* PDF for an exact selected frozen revision with shared KMP document model, CMP preview, light presentation editor and safe export. **Never reprice from the live catalog, change estimate financial/status/selected state, or render new format-3 money via legacy `Double` adapters.** Preserve legacy PDF; test all platforms. Consolidated output = future P4C4.
 
