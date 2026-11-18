@@ -12,6 +12,8 @@ import com.andreyceilings.shared.measurement.MeasurementGeometryView
 import com.andreyceilings.shared.measurement.PointPositionMm
 import com.andreyceilings.shared.measurement.measurementDrawingContour
 import com.andreyceilings.shared.measurement.pricingProblemText
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.toLocalDateTime
 import kotlin.time.Instant
 
 internal enum class EstimateDocumentSection(val label: String, val editable: Boolean = false) {
@@ -73,7 +75,7 @@ internal class FrozenEstimateDocument private constructor(
         private val unsafeFileCharacters = Regex("[^\\p{L}\\p{N}._-]")
 
         /** Receives an exact repository projection after the stored proof and receipts were checked. */
-        internal fun from(saved: SavedIndividualQuote, currentAddress: String?): FrozenEstimateDocument {
+        internal fun from(saved: SavedIndividualQuote, currentAddress: String?, zone: TimeZone): FrozenEstimateDocument {
             val frozen = saved.frozen
             val source = frozen.source
             val geometry = MeasurementGeometryCodec.read(source.drawingJson)
@@ -82,7 +84,7 @@ internal class FrozenEstimateDocument private constructor(
             return FrozenEstimateDocument(
                 publicNumber = frozen.publicNumber,
                 version = saved.versionNumber,
-                createdOn = Instant.fromEpochMilliseconds(saved.createdAt).toString().substringBefore('T'),
+                createdOn = Instant.fromEpochMilliseconds(saved.createdAt).toLocalDateTime(zone).date.toString(),
                 title = frozen.title,
                 project = source.projectTitle,
                 currentAddress = currentAddress?.takeIf { it.isNotBlank() },

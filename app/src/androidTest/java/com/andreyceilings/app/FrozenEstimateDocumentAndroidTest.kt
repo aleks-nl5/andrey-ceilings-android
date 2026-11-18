@@ -2,13 +2,19 @@ package com.andreyceilings.app
 
 import android.content.Context
 import android.graphics.pdf.PdfRenderer
+import android.os.CancellationSignal
 import android.os.ParcelFileDescriptor
+import android.print.PageRange
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.filters.SdkSuppress
+import com.andreyceilings.app.ui.screens.EstimatePrintAdapter
+import com.andreyceilings.app.ui.screens.PrintWriteResult
 import com.andreyceilings.app.ui.screens.writeEstimateDocumentPdf
 import com.andreyceilings.shared.db.*
 import com.andreyceilings.shared.estimate.*
@@ -16,7 +22,11 @@ import com.andreyceilings.shared.livepricing.BusinessRole
 import com.andreyceilings.shared.measurement.*
 import com.andreyceilings.shared.theme.CeilingsTheme
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 import org.junit.Rule
 import org.junit.Test
 import java.io.File
@@ -76,11 +86,14 @@ class FrozenEstimateDocumentAndroidTest {
                 val store = MeasurementElementsStore(db, { 700 })
                 try {
                     var captured: EstimateDocumentPages? = null
+                    val mounted = mutableStateOf(true)
+                    var disposed = false
                     compose.setContent {
-                        CompositionLocalProvider(LocalEstimateDocumentExporter provides EstimateDocumentExporter { pages, _, done ->
+                        if (mounted.value) CompositionLocalProvider(LocalEstimateDocumentExporter provides EstimateDocumentExporter { pages, _, done ->
                             captured = pages
                             done(null)
                         }) {
+                            DisposableEffect(Unit) { onDispose { disposed = true } }
                             CeilingsTheme(false) { SavedIndividualQuoteDialog(store, series, revision) {} }
                         }
                     }
@@ -131,6 +144,12 @@ class FrozenEstimateDocumentAndroidTest {
                     assertTrue(text.contains("Узгоджений текст, рядок 100"), text)
                     assertFalse(text.contains("2752,20"), text)
                     assertFalse(text.contains(revision), text)
+
+                    val adapter = compose.runOnIdle {
+                        EstimatePrintAdapter(pages).also { mounted.value = false }
+                    }
+                    compose.runOnIdle { assertTrue(disposed) }
+                    assertPrintLifecycle(adapter, output)
                     assertEquals(before, history.individualHistory(series))
                 } finally {
                     runBlocking { store.closeAndAwaitWrites() }
@@ -143,4 +162,41 @@ class FrozenEstimateDocumentAndroidTest {
             context.deleteDatabase(restoredName)
         }
     }
+
+    private fun assertPrintLifecycle(adapter: EstimatePrintAdapter, output: File) = runBlocking {
+        suspend fun write(
+            signal: CancellationSignal = CancellationSignal(),
+            accessMode: Int = ParcelFileDescriptor.MODE_WRITE_ONLY or ParcelFileDescriptor.MODE_TRUNCATE,
+            finishDuringWrite: Boolean = false,
+            cancelDuringWrite: Boolean = false
+        ): PrintWriteResult {
+            val completion = CompletableDeferred<PrintWriteResult>()
+            withContext(Dispatchers.Main) {
+                val destination = ParcelFileDescriptor.open(output, accessMode)
+                val fd = destination.fileDescriptor
+                adapter.writePages(arrayOf(PageRange(0, 0)), destination, signal) { result ->
+                    assertFalse(fd.valid(), "Print destination must close before completion")
+                    assertTrue(completion.complete(result), "Print write completed more than once")
+                }
+                if (cancelDuringWrite) signal.cancel()
+                if (finishDuringWrite) adapter.onFinish()
+            }
+            return withTimeout(10_000) { completion.await() }
+        }
+
+        try {
+            assertEquals(PrintWriteResult.Finished(listOf(PageRange(0, 0))), write())
+            PdfRenderer(ParcelFileDescriptor.open(output, ParcelFileDescriptor.MODE_READ_ONLY)).use {
+                assertEquals(1, it.pageCount)
+            }
+            assertEquals(PrintWriteResult.Cancelled, write(CancellationSignal().apply { cancel() }))
+            assertEquals(PrintWriteResult.Cancelled, write(cancelDuringWrite = true))
+            assertEquals(PrintWriteResult.Failed, write(accessMode = ParcelFileDescriptor.MODE_READ_ONLY))
+            assertEquals(PrintWriteResult.Cancelled, write(finishDuringWrite = true))
+            assertEquals(PrintWriteResult.Cancelled, write())
+        } finally {
+            withContext(Dispatchers.Main) { adapter.onFinish() }
+        }
+    }
+
 }

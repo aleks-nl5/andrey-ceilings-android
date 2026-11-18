@@ -6,6 +6,7 @@ import com.andreyceilings.shared.livepricing.*
 import app.cash.sqldelight.coroutines.asFlow
 import com.andreyceilings.shared.prices.*
 import kotlinx.coroutines.*
+import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
 import kotlinx.coroutines.flow.*
 
@@ -89,10 +90,14 @@ class MeasurementElementsStore(private val database: PrototypeDatabase, private 
         val id = revisionUuid ?: estimates.frozenIndividual(seriesUuid)?.revisionUuid ?: return@estimateAccess null
         estimates.exactIndividual(seriesUuid, id)
     }
-    internal suspend fun estimateDocument(seriesUuid: String, revisionUuid: String): FrozenEstimateDocument? = estimateAccess {
+    internal suspend fun estimateDocument(
+        seriesUuid: String,
+        revisionUuid: String,
+        zone: TimeZone = TimeZone.currentSystemDefault()
+    ): FrozenEstimateDocument? = estimateAccess {
         val saved = estimates.exactIndividual(seriesUuid, revisionUuid) ?: return@estimateAccess null
         val address = projects.find(saved.projectId)?.takeIf { it.uuid == saved.frozen.source.projectUuid }?.address
-        FrozenEstimateDocument.from(saved, address)
+        FrozenEstimateDocument.from(saved, address, zone)
     }
 
     suspend fun quoteHistory(seriesUuid: String): List<SavedIndividualQuote> = estimateAccess { estimates.individualHistory(seriesUuid) }
@@ -132,7 +137,7 @@ class MeasurementElementsStore(private val database: PrototypeDatabase, private 
                         database.transactionWithResult {
                             if (closed) throw IndividualEstimateSaveFailure(IndividualEstimateSaveFailure.Reason.UNAVAILABLE)
                             presenter.revisionTarget?.let { estimates.appendIndividual(AppendIndividualRevisionRequest(it, command), nowMillis()) }
-                                ?: estimates.saveIndividual(command, kotlin.time.Clock.System.now().toLocalDateTime(kotlinx.datetime.TimeZone.currentSystemDefault()).year, nowMillis())
+                                ?: estimates.saveIndividual(command, kotlin.time.Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()).year, nowMillis())
                         }
                     } finally { endWrite(completion) }
                 }

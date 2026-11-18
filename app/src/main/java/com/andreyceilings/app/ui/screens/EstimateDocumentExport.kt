@@ -30,7 +30,12 @@ import com.andreyceilings.shared.estimate.EstimateDocumentPages
 import com.andreyceilings.shared.estimate.LocalEstimateDocumentExporter
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.yield
@@ -91,7 +96,7 @@ internal fun AndroidEstimateDocumentExport(content: @Composable () -> Unit) {
                     when (action) {
                         EstimateDocumentAction.PRINT -> {
                             val manager = context.getSystemService(PrintManager::class.java)
-                            checkNotNull(manager).print(pages.fileName, EstimatePrintAdapter(pages, scope),
+                            checkNotNull(manager).print(pages.fileName, EstimatePrintAdapter(pages),
                                 PrintAttributes.Builder().setMediaSize(PrintAttributes.MediaSize.ISO_A4)
                                     .setMinMargins(PrintAttributes.Margins.NO_MARGINS).build())
                             complete(null)
@@ -172,10 +177,13 @@ internal suspend fun writeEstimateDocumentPdf(
     }
 }
 
-private class EstimatePrintAdapter(
-    private val pages: EstimateDocumentPages,
-    private val scope: CoroutineScope
-) : PrintDocumentAdapter() {
+internal class EstimatePrintAdapter(private val pages: EstimateDocumentPages) : PrintDocumentAdapter() {
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+
+    override fun onFinish() {
+        scope.cancel()
+        super.onFinish()
+    }
     override fun onLayout(
         oldAttributes: PrintAttributes,
         newAttributes: PrintAttributes,
@@ -183,7 +191,7 @@ private class EstimatePrintAdapter(
         callback: LayoutResultCallback,
         extras: android.os.Bundle?
     ) {
-        if (cancellationSignal.isCanceled) callback.onLayoutCancelled()
+        if (!scope.isActive || cancellationSignal.isCanceled) callback.onLayoutCancelled()
         else callback.onLayoutFinished(
             PrintDocumentInfo.Builder(pages.fileName).setContentType(PrintDocumentInfo.CONTENT_TYPE_DOCUMENT)
                 .setPageCount(pages.count).build(),
@@ -197,26 +205,50 @@ private class EstimatePrintAdapter(
         cancellationSignal: CancellationSignal,
         callback: WriteResultCallback
     ) {
-        scope.launch {
-            val indices = (0 until pages.count).filter { index -> requested.any { index in it.start..it.end } }
-            try {
-                if (indices.isEmpty()) {
-                    destination.close()
-                    callback.onWriteFinished(emptyArray())
-                } else {
-                    writeEstimateDocumentPdf(pages, indices, { cancellationSignal.isCanceled }) {
-                        ParcelFileDescriptor.AutoCloseOutputStream(destination)
-                    }
-                    if (cancellationSignal.isCanceled) callback.onWriteCancelled()
-                    else callback.onWriteFinished(indices.map { PageRange(it, it) }.toTypedArray())
-                }
-            } catch (_: CancellationException) {
-                runCatching { destination.close() }
-                callback.onWriteCancelled()
-            } catch (_: Exception) {
-                runCatching { destination.close() }
-                callback.onWriteFailed(ExportFailure)
+        writePages(requested, destination, cancellationSignal) { result ->
+            when (result) {
+                is PrintWriteResult.Finished -> callback.onWriteFinished(result.pages.toTypedArray())
+                PrintWriteResult.Cancelled -> callback.onWriteCancelled()
+                PrintWriteResult.Failed -> callback.onWriteFailed(ExportFailure)
             }
         }
     }
+
+    internal fun writePages(
+        requested: Array<out PageRange>,
+        destination: ParcelFileDescriptor,
+        cancellationSignal: CancellationSignal,
+        complete: (PrintWriteResult) -> Unit
+    ) {
+        // Android invokes the adapter on main. Enter even for a late write after onFinish,
+        // so every request closes its descriptor and reports its terminal result.
+        scope.launch(start = CoroutineStart.UNDISPATCHED) {
+            val result = try {
+                ensureActive()
+                if (cancellationSignal.isCanceled) throw CancellationException()
+                val indices = (0 until pages.count).filter { index -> requested.any { index in it.start..it.end } }
+                if (indices.isNotEmpty()) {
+                    writeEstimateDocumentPdf(pages, indices, { cancellationSignal.isCanceled }) {
+                        ParcelFileDescriptor.AutoCloseOutputStream(destination)
+                    }
+                }
+                ensureActive()
+                if (cancellationSignal.isCanceled) PrintWriteResult.Cancelled
+                else PrintWriteResult.Finished(indices.map { PageRange(it, it) })
+            } catch (_: CancellationException) {
+                PrintWriteResult.Cancelled
+            } catch (_: Exception) {
+                if (cancellationSignal.isCanceled || !isActive) PrintWriteResult.Cancelled else PrintWriteResult.Failed
+            } finally {
+                runCatching { destination.close() }
+            }
+            complete(result)
+        }
+    }
+}
+
+internal sealed interface PrintWriteResult {
+    data class Finished(val pages: List<PageRange>) : PrintWriteResult
+    data object Cancelled : PrintWriteResult
+    data object Failed : PrintWriteResult
 }

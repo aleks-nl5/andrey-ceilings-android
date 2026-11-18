@@ -1,6 +1,6 @@
 # P4C3 — Codex implementation handoff
 
-> **Status:** documentation-only handoff in `feat/p4c3-frozen-pdf-document` after owner merged PR #117; actual feature not yet implemented. Canonical task: [#119](https://github.com/aleks-nl5/andrey-ceilings-android/issues/119).
+> **Status:** implementation and review follow-up in Draft PR #120 on `feat/p4c3-frozen-pdf-document`. Canonical task: [#119](https://github.com/aleks-nl5/andrey-ceilings-android/issues/119).
 >
 > **Owner decisions (18.11.2026):** one current issuer/company/logo source in future Settings; no per-document historical issuer snapshot or company profile versions. Future object photos are an extension point only. P4C3 delivers immutable single-revision PDF, light presentation editor, preview; consolidated document is separate P4C4. No deletion.
 
@@ -57,6 +57,8 @@ P4C4 consolidated PDF; issuer/company Settings UI та зберігання (#11
 
 The saved quote card opens the document by both series and revision UUID. The measurement store performs the exact repository read inside its existing session transaction, including payload, normalized totals, identity and operation-receipt validation. The same transaction may read the current address of the matching project, which the document labels as current. Document creation never invokes live pricing.
 
+The document date uses the device’s current time zone when the preview opens. It converts the stored revision timestamp once, so preview, PDF and print use the same local date. Reopening in another time zone can display a different local date for that timestamp.
+
 The shared document model keeps cents and milli-quantities as integers. Its fixed identity, item table, totals and partial-work disclosure are independent of presentation settings. The editor owns a transient ordered list of optional sections and text. Issuer and attachment hooks are optional and have no storage in this release.
 
-One A4 layout resolves text wrapping, page breaks, repeating headers, drawing projection and page numbers. The preview scales these pages to the available width. Android paints the same pages to a vector PDF canvas and hands the result to system save, share or print. Windows has the shared preview and editor. The iOS target compiles and tests the shared contract independently of a native host.
+One A4 layout resolves text wrapping, page breaks, repeating headers, drawing projection and page numbers. The preview scales these pages to the available width. Android paints the same pages to a vector PDF canvas and hands the result to system save, share or print. The print adapter owns its work through the spooler’s `onFinish` call and reports a terminal result for each write. Windows has the shared preview and editor. The iOS target compiles and tests the shared contract independently of a native host.

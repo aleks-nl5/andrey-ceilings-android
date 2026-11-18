@@ -12,16 +12,19 @@ import com.andreyceilings.shared.measurement.MeasurementCreateIntent
 import com.andreyceilings.shared.measurement.MeasurementEditStore
 import com.andreyceilings.shared.measurement.MeasurementElementsStore
 import com.andreyceilings.shared.measurement.reduce
+import kotlinx.datetime.TimeZone
 import kotlin.test.*
+import kotlin.time.Instant
 
 internal suspend fun proveExactEstimateDocuments(driver: SqlDriver) {
     val db = PrototypeDatabase(driver)
     val fixture = MeasurementPricingFixture.seed(db)
     val history = ImmutableEstimateRepository(db)
-    val first = history.saveIndividual(FrozenIndividualEstimateProof.command(db, fixture), 2026, 600)
+    val createdAt = Instant.parse("2026-11-17T23:30:00Z").toEpochMilliseconds()
+    val first = history.saveIndividual(FrozenIndividualEstimateProof.command(db, fixture), 2026, createdAt)
     val series = first.seriesUuid
-    assertTrue(history.selectRevision(series, first.initialRevisionUuid, 1, 601))
-    val second = history.appendIndividual(FrozenRevisionProof.request(db, fixture, series), 602)
+    assertTrue(history.selectRevision(series, first.initialRevisionUuid, 1, createdAt + 1))
+    val second = history.appendIndividual(FrozenRevisionProof.request(db, fixture, series), createdAt + 2)
     val measurement = assertNotNull(MeasurementRepository(db).findByUuid(fixture.measurementUuid))
     val edit = MeasurementEditStore(db) { 603 }
     val original = edit.load(fixture.projectId, measurement.id)
@@ -29,15 +32,21 @@ internal suspend fun proveExactEstimateDocuments(driver: SqlDriver) {
         .reduce(MeasurementCreateIntent.Dimension("width", "3.34")))
     val prices = PriceRepository(db)
     prices.updateSalePrice(assertNotNull(prices.find(fixture.priceId)), 100.0, 604)
-    val third = history.appendIndividual(FrozenRevisionProof.request(db, fixture, series), 605)
+    val third = history.appendIndividual(FrozenRevisionProof.request(db, fixture, series), createdAt + 5)
     val ids = listOf(first, second, third).map { it.initialRevisionUuid }
     val frozen = ids.map { assertNotNull(history.exactIndividual(series, it)) }
     assertEquals(listOf(1, 2, 3), frozen.map { it.frozen.formatVersion })
     assertEquals(first.initialRevisionUuid, frozen.last().selectedRevisionUuid)
 
-    val store = MeasurementElementsStore(db, { 610 })
+    val store = MeasurementElementsStore(db, { createdAt + 10 })
     try {
         val documents = ids.map { assertNotNull(store.estimateDocument(series, it)) }
+        val utc = assertNotNull(store.estimateDocument(series, first.initialRevisionUuid, TimeZone.UTC))
+        val stockholm = assertNotNull(store.estimateDocument(series, first.initialRevisionUuid, TimeZone.of("Europe/Stockholm")))
+        assertEquals("2026-11-17", utc.createdOn)
+        assertEquals("2026-11-18", stockholm.createdOn)
+        assertEquals(utc.fileName, stockholm.fileName)
+        assertEquals(createdAt, frozen.first().createdAt)
         assertEquals(listOf(1L, 2L, 3L), documents.map { it.version })
         assertEquals(listOf(12007L, 12000L, 137610L), documents.map { it.amounts.subtotalCents })
         assertEquals(1234, documents.first().amounts.discountBasisPoints)
