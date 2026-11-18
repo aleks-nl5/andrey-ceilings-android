@@ -63,8 +63,11 @@ class FrozenRevisionSceneTest {
                 val frozen = repo.exactIndividual(saved.seriesUuid, saved.initialRevisionUuid)!!
                 assertEquals(3, frozen.frozen.formatVersion)
                 assertEquals(drawing, frozen.frozen.source.drawingJson)
+                var cardMounted by mutableStateOf(true)
                 val card = ImageComposeScene(700, 1100, coroutineContext = sceneDispatcher) { CeilingsTheme(dark) {
-                    SavedIndividualQuoteDialog(store, saved.seriesUuid, saved.initialRevisionUuid) {}
+                    if (cardMounted) SavedIndividualQuoteDialog(store, saved.seriesUuid, saved.initialRevisionUuid) {
+                        cardMounted = false
+                    }
                 } }
                 try {
                     card.await { card.text().contains("Статус пропозиції") }
@@ -84,8 +87,16 @@ class FrozenRevisionSceneTest {
                     card.await { card.text().contains("Оформлення PDF") }
                     card.click("До перегляду")
                     card.await { card.pageText().contains("1376,10") }
+                    card.click("Назад", topmost = true)
+                    card.await { !card.text().contains("Попередній перегляд PDF") && card.text().contains("Створити PDF") }
+                    card.click("Назад")
+                    card.await { !cardMounted && !card.text().contains("Створити PDF") }
                     assertEquals(drawing, MeasurementRepository(db).find(measurement.id)!!.drawingJson)
-                } finally { card.close() }
+                } finally {
+                    cardMounted = false
+                    card.frame()
+                    card.close()
+                }
             } finally { runBlocking { store.closeAndAwaitWrites() } }
         }
     }
@@ -257,8 +268,9 @@ class FrozenRevisionSceneTest {
     private fun ImageComposeScene.await(condition: () -> Boolean) { repeat(100) { frame(); if (condition()) return }; fail("Revision preview did not settle") }
     private fun ImageComposeScene.scroll(delta: Float) { assertTrue(nodes().first { it.config.getOrNull(SemanticsActions.ScrollBy) != null }.config.getOrNull(SemanticsActions.ScrollBy)?.action?.invoke(0f, delta) == true) }
     private fun ImageComposeScene.reveal(expectedText: String) { repeat(100) { frame(); if (text().contains(expectedText)) return; scroll(200f) }; fail("Revision comparison was not visible: $expectedText; ${text()}; scroll=${nodes().filter { it.config.getOrNull(SemanticsActions.ScrollBy) != null }.map { "${it.boundsInRoot} ${it.config}" }}") }
-    private fun ImageComposeScene.click(text: String) {
-        val node = nodes().first { it.config.getOrNull(SemanticsProperties.Text).orEmpty().any { t -> t.text == text } }
+    private fun ImageComposeScene.click(text: String, topmost: Boolean = false) {
+        val candidates = nodes().filter { it.config.getOrNull(SemanticsProperties.Text).orEmpty().any { t -> t.text == text } }
+        val node = if (topmost) candidates.last() else candidates.first()
         val action = generateSequence(node) { it.parent }.mapNotNull { it.config.getOrNull(SemanticsActions.OnClick)?.action }.first()
         assertTrue(action())
     }

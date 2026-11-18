@@ -8,19 +8,16 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.input.pointer.*
 import androidx.compose.ui.semantics.*
-import androidx.compose.ui.scene.ComposeScenePointer
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.unit.toSize
 import com.andreyceilings.shared.prices.*
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.ui.unit.dp
 import com.andreyceilings.shared.calculation.MeasurementPrecision
 import com.andreyceilings.shared.db.*
 import com.andreyceilings.shared.measurement.*
-import com.andreyceilings.shared.navigation.*
 import com.andreyceilings.shared.theme.CeilingsTheme
 import kotlinx.coroutines.*
-import kotlinx.coroutines.flow.first
-import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.ConcurrentLinkedQueue
 import kotlin.coroutines.CoroutineContext
 import kotlin.test.*
@@ -33,6 +30,9 @@ class AreaFeatureSceneTest {
         override fun dispatch(context: CoroutineContext, block: Runnable) { queue.add(block) }
         fun drain() { while (true) (queue.poll() ?: return).run() }
     }
+
+    private var frameTimeNanos = 0L
+    private var pointerTimeMillis = 0L
 
     @OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class,androidx.compose.ui.InternalComposeUiApi::class)
     @Test fun productionControlsMouseSelectionAndAtomicSaveInBothThemes():Unit=runBlocking {
@@ -53,6 +53,9 @@ class AreaFeatureSceneTest {
             val scene=ImageComposeScene(900,1400,coroutineContext=sceneDispatcher) {CeilingsTheme(dark) {MeasurementEditScreen(model,PaddingValues(0.dp),0.dp,{}, {delivered=true},null)}}
             var testFailure:Throwable?=null
             try {
+                // Save becomes enabled after the point overlay loads. Its arrival also
+                // changes the canvas pointer-input keys and restarts the gesture handler.
+                scene.awaitEnabled("Зберегти")
                 scene.click("Позначити перешкоду")
                 scene.tapWorld(row,500,500)
                 assertEquals(1,model.state.value.area.vertices.size,"First area corner must be delivered in $dark theme")
@@ -60,8 +63,16 @@ class AreaFeatureSceneTest {
                 assertEquals(2,model.state.value.area.vertices.size,"Second area corner must be delivered in $dark theme")
                 scene.click("Завершити фігуру в чернетці")
                 assertEquals(1,model.displayAreas().size)
-                scene.click("Позначити отвір");scene.setField("Діаметр, м (парні мм)","0,2");scene.tapWorld(row,2500,1500);scene.click("Завершити фігуру в чернетці")
-                scene.click("Розмістити область: ${element.label}");scene.tapWorld(row,1500,500);scene.tapWorld(row,2000,1000);scene.click("Завершити фігуру в чернетці")
+                scene.click("Позначити отвір")
+                scene.setField("Діаметр, м (парні мм)", "0,2")
+                scene.tapWorld(row, 2500, 1500)
+                assertEquals(1, model.state.value.area.vertices.size, "Circle center must be delivered in $dark theme")
+                scene.click("Завершити фігуру в чернетці")
+                scene.click("Розмістити область: ${element.label}")
+                scene.tapWorld(row, 1500, 500)
+                scene.tapWorld(row, 2000, 1000)
+                assertEquals(2, model.state.value.area.vertices.size, "Catalog area corners must be delivered in $dark theme")
+                scene.click("Завершити фігуру в чернетці")
                 assertEquals(3,model.displayAreas().size)
                 assertTrue(AreaFeatureRepository(db).all().isEmpty())
                 scene.click("Скасувати дію");assertEquals(2,model.displayAreas().size);scene.click("Повторити")
@@ -107,32 +118,58 @@ class AreaFeatureSceneTest {
     private fun ImageComposeScene.tapWorld(row: Room_measurements, x: Long, y: Long) {
         val p = world(row, x, y)
         assertTrue(p.x in 0f..900f && p.y in 0f..1400f, "Tap must be inside the viewport: $p")
-        sendPointerEvent(PointerEventType.Press, p, type = PointerType.Touch); frame()
-        sendPointerEvent(PointerEventType.Release, p, type = PointerType.Touch); frame()
+        pointerTimeMillis += 100
+        sendPointerEvent(PointerEventType.Press, p, timeMillis = pointerTimeMillis, type = PointerType.Touch)
+        sendPointerEvent(PointerEventType.Release, p, timeMillis = pointerTimeMillis + 25, type = PointerType.Touch)
+        frame()
     }
     private fun ImageComposeScene.stableBounds(): Rect {
-        var previous: Rect? = null; var stable = 0
-        repeat(15) {
+        fun bounds() = canvas().let { Rect(it.positionInRoot, it.size.toSize()) }
+        var previous: Rect? = null
+        var stable = 0
+        repeat(150) {
             frame()
-            val b=canvas().boundsInRoot
-            val delta=if(b.bottom>1300)b.bottom-1200 else if(b.top<100)b.top-200 else 0f
-            if(delta==0f)return@repeat
-            nodes().firstOrNull {it.config.getOrNull(SemanticsActions.ScrollBy)!=null}?.config?.getOrNull(SemanticsActions.ScrollBy)?.action?.invoke(0f,delta)
-            repeat(5){frame();Thread.sleep(10)}
+            val bounds = bounds()
+            val scrollBy = when {
+                bounds.bottom > 1300f -> bounds.bottom - 1200f
+                bounds.top < 100f -> bounds.top - 200f
+                else -> 0f
+            }
+            if (scrollBy != 0f) {
+                nodes().firstOrNull { it.config.getOrNull(SemanticsActions.ScrollBy) != null }
+                    ?.config?.getOrNull(SemanticsActions.ScrollBy)?.action?.invoke(0f, scrollBy)
+                repeat(24) { frame() }
+                stable = 0
+            } else {
+                stable = if (bounds == previous) stable + 1 else 0
+                if (stable >= 3) return bounds
+            }
+            previous = bounds
         }
-        repeat(150) { frame(); val b = canvas().boundsInRoot; stable = if (b == previous) stable + 1 else 0
-            if (stable >= 3) return b; previous = b; Thread.sleep(20) }
-        fail("Canvas did not settle")
+        fail("Canvas did not settle inside the viewport")
     }
     private fun ImageComposeScene.canvas() = nodes().first { it.config.getOrNull(SemanticsProperties.ContentDescription).orEmpty().any { it.startsWith("Контур стелі") } }
-    private fun ImageComposeScene.frame() { sceneDispatcher.drain(); Snapshot.sendApplyNotifications(); render(System.nanoTime()).close() }
+    private fun ImageComposeScene.frame() {
+        sceneDispatcher.drain()
+        Snapshot.sendApplyNotifications()
+        frameTimeNanos += 16_666_667
+        render(frameTimeNanos).close()
+    }
     private fun ImageComposeScene.nodes(): List<SemanticsNode> {
         fun flatten(n: SemanticsNode): List<SemanticsNode> = listOf(n) + n.children.flatMap(::flatten)
         return semanticsOwners.flatMap { flatten(it.rootSemanticsNode) }
     }
     private fun SemanticsNode.textTree(): String = config.getOrNull(SemanticsProperties.Text).orEmpty().joinToString { it.text } + children.joinToString { it.textTree() }
     private fun ImageComposeScene.text() = semanticsOwners.joinToString { it.rootSemanticsNode.textTree() }
-    private fun ImageComposeScene.awaitText(label: String) { repeat(240) { frame(); if (text().contains(label)) return; Thread.sleep(25) }; fail("Missing '$label': ${text().take(2000)}") }
+    private fun ImageComposeScene.awaitEnabled(label: String) {
+        repeat(240) {
+            frame()
+            if (nodes().any { it.config.getOrNull(SemanticsActions.OnClick) != null &&
+                it.config.getOrNull(SemanticsProperties.Disabled) == null && it.textTree() == label }) return
+            Thread.sleep(25)
+        }
+        fail("Action '$label' did not become enabled: ${text().take(2000)}")
+    }
     private fun ImageComposeScene.click(label: String) {
         repeat(240) { frame(); nodes().firstOrNull { it.config.getOrNull(SemanticsActions.OnClick) != null && it.textTree() == label }?.let {
             assertNull(it.config.getOrNull(SemanticsProperties.Disabled), label)
