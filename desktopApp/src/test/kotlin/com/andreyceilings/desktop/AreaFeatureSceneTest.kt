@@ -17,18 +17,10 @@ import com.andreyceilings.shared.db.*
 import com.andreyceilings.shared.measurement.*
 import com.andreyceilings.shared.theme.CeilingsTheme
 import kotlinx.coroutines.*
-import java.util.concurrent.ConcurrentLinkedQueue
-import kotlin.coroutines.CoroutineContext
 import kotlin.test.*
 
 class AreaFeatureSceneTest {
-    // Model/database continuations must share the render thread, as in real UI hosts.
-    // ImageComposeScene otherwise defaults to Unconfined and resumes on DB workers.
-    private val sceneDispatcher = object : CoroutineDispatcher() {
-        val queue = ConcurrentLinkedQueue<Runnable>()
-        override fun dispatch(context: CoroutineContext, block: Runnable) { queue.add(block) }
-        fun drain() { while (true) (queue.poll() ?: return).run() }
-    }
+    private val sceneDispatcher = DesktopSceneDispatcher()
 
     @OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class,androidx.compose.ui.InternalComposeUiApi::class)
     @Test fun productionControlsMouseSelectionAndAtomicSaveInBothThemes():Unit=runBlocking {
@@ -145,10 +137,7 @@ class AreaFeatureSceneTest {
         fail("Canvas did not settle inside the viewport")
     }
     private fun ImageComposeScene.canvas() = nodes().first { it.config.getOrNull(SemanticsProperties.ContentDescription).orEmpty().any { it.startsWith("Контур стелі") } }
-    private fun ImageComposeScene.frame() {
-        sceneDispatcher.drain()
-        render(System.nanoTime()).close()
-    }
+    private fun ImageComposeScene.frame() = sceneDispatcher.render(this)
     private fun ImageComposeScene.nodes(): List<SemanticsNode> {
         fun flatten(n: SemanticsNode): List<SemanticsNode> = listOf(n) + n.children.flatMap(::flatten)
         return semanticsOwners.flatMap { flatten(it.rootSemanticsNode) }

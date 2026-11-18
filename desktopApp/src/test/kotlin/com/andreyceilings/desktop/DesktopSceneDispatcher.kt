@@ -1,5 +1,6 @@
 package com.andreyceilings.desktop
 
+import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.ui.ImageComposeScene
 import kotlinx.coroutines.CoroutineDispatcher
 import java.util.concurrent.ConcurrentLinkedQueue
@@ -14,6 +15,8 @@ internal class DesktopSceneDispatcher : CoroutineDispatcher() {
     }
 
     fun render(scene: ImageComposeScene, timeNanos: Long = System.nanoTime()) {
+        // Flush pending input writes and effect continuations on the host thread before layout.
+        Snapshot.sendApplyNotifications()
         while (true) (pending.poll() ?: break).run()
         scene.render(timeNanos).close()
     }

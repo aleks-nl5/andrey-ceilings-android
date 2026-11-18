@@ -4,8 +4,6 @@ import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
 import app.cash.sqldelight.db.*
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
-import java.util.concurrent.ConcurrentLinkedQueue
-import kotlin.coroutines.CoroutineContext
 import java.util.concurrent.atomic.AtomicBoolean
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.runtime.*
@@ -22,14 +20,7 @@ import kotlinx.coroutines.*
 import kotlin.test.*
 
 class FrozenRevisionSceneTest {
-    // ImageComposeScene defaults to Unconfined: a completed DB read can resume
-    // composition on the DB worker while this test is rendering. Real UI hosts
-    // serialize those tasks; drain this dispatcher only on the render thread.
-    private val sceneDispatcher = object : CoroutineDispatcher() {
-        val queue = ConcurrentLinkedQueue<Runnable>()
-        override fun dispatch(context: CoroutineContext, block: Runnable) { queue.add(block) }
-        fun drain() { while (true) (queue.poll() ?: return).run() }
-    }
+    private val sceneDispatcher = DesktopSceneDispatcher()
 
     @Test fun roundedAreaIsExplicitInLiveAndFrozenQuoteWithoutChangingDrawing() {
         for (dark in listOf(false, true)) JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).use { driver ->
@@ -92,8 +83,6 @@ class FrozenRevisionSceneTest {
                     card.await { !cardMounted && !card.text().contains("Створити PDF") }
                     assertEquals(drawing, MeasurementRepository(db).find(measurement.id)!!.drawingJson)
                 } finally {
-                    cardMounted = false
-                    card.frame()
                     card.close()
                 }
             } finally { runBlocking { store.closeAndAwaitWrites() } }
@@ -255,12 +244,9 @@ class FrozenRevisionSceneTest {
             } finally { scene.close(); runBlocking { store.closeAndAwaitWrites() } }
         }
     }
-    private var time = 0L
     private fun ImageComposeScene.frame() {
         repeat(3) {
-            sceneDispatcher.drain()
-            time += 250_000_000
-            render(time).close()
+            sceneDispatcher.render(this)
             Thread.sleep(10)
         }
     }
