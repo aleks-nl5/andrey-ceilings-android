@@ -1,12 +1,22 @@
 package com.andreyceilings.shared.db
 
 import app.cash.sqldelight.db.use
+import com.andreyceilings.shared.estimate.proveExactEstimateDocuments
 import com.yet.sqlcipher.*
 import kotlinx.coroutines.runBlocking
 import kotlin.random.Random
 import kotlin.test.Test
 
 class BusinessRoleIosCipherTest {
+    @Test fun exactFrozenDocumentOnSqlCipher(): Unit = runBlocking {
+        val factory = NativeSqlCipherDriverFactory()
+        val name = "frozen-pdf-${Random.nextLong()}.db"
+        val config = SqlCipherConfig(name = name, key = SqlCipherKey { ByteArray(32) { 0x38 } },
+            recovery = SqlCipherRecovery.Fail)
+        try { factory.create(IosPriceCatalogSchema, config).use { proveExactEstimateDocuments(it) } }
+        finally { factory.deleteDatabase(name) }
+    }
+
     @Test fun physicalV18ToV19ReopenAndAreaQuantityPolicy(): Unit = runBlocking {
         val factory = NativeSqlCipherDriverFactory()
         val name = "frozen-v19-${Random.nextLong()}.db"

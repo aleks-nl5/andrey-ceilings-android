@@ -4,6 +4,8 @@ import android.content.Context
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.runtime.*
 import androidx.compose.ui.test.*
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.unit.dp
@@ -32,19 +34,37 @@ class SavedIndividualQuoteTouchTest {
         val store = MeasurementElementsStore(db, { 1000 })
         val presenter = store.newQuote(fixture.measurementUuid)
         var mounted by mutableStateOf(true)
+        lateinit var dismissTextInput: () -> Unit
         try {
             compose.setContent { if (mounted) CeilingsTheme(false) {
+                val focus = LocalFocusManager.current
+                val keyboard = LocalSoftwareKeyboardController.current
+                SideEffect { dismissTextInput = { focus.clearFocus(force = true); keyboard?.hide() } }
                 MeasurementQuoteScreen(presenter, store, ElementRoute(fixture.projectId, measurement.id, measurement.uuid),
                     PaddingValues(16.dp), 0.dp, {})
             } }
             compose.waitUntil(10000) { presenter.state.value.amounts != null }
             val titleField = hasSetTextAction() and hasText("Назва кошторису")
-            compose.onNode(SemanticsMatcher.keyIsDefined(SemanticsActions.ScrollToIndex)).performScrollToNode(titleField)
-            compose.onNode(titleField).assertTextContains("Room")
-                .performTextReplacement("Proposal")
-            compose.onNodeWithText("Зберегти кошторис").performScrollTo().performClick()
-            compose.waitUntil(10000) { presenter.saveState.value.resultSeriesUuid != null }
-            val id = presenter.saveState.value.resultSeriesUuid!!
+            val quoteList = compose.onNode(SemanticsMatcher.keyIsDefined(SemanticsActions.ScrollToIndex))
+            quoteList.performScrollToNode(titleField)
+            compose.onNode(titleField).assertTextContains("Room").performTextReplacement("Proposal")
+            compose.runOnIdle {
+                assertEquals("Proposal", presenter.saveState.value.title)
+                dismissTextInput()
+            }
+            val save = hasText("Зберегти кошторис") and hasClickAction()
+            quoteList.performScrollToNode(save)
+            compose.onNode(save).assertIsDisplayed().assertIsEnabled().performTouchInput { click(center) }
+            compose.runOnIdle {
+                val submitted = presenter.saveState.value
+                assertTrue(submitted.saving || submitted.resultSeriesUuid != null || submitted.error != null,
+                    "The Save touch did not submit the quote. Amount available: ${presenter.state.value.amounts != null}")
+            }
+            compose.waitUntil(30_000) {
+                presenter.saveState.value.let { it.resultSeriesUuid != null || it.error != null }
+            }
+            val saved = presenter.saveState.value
+            val id = assertNotNull(saved.resultSeriesUuid, saved.error ?: "Quote save did not return a series UUID")
             val history = ImmutableEstimateRepository(db)
             val before = history.frozenIndividual(id)!!
             assertEquals("Proposal", com.andreyceilings.shared.estimate.decodeFrozenIndividualEstimate(before.payload).title)

@@ -37,6 +37,23 @@ class MeasurementDrawingLayoutTest {
             }
     }
 
+    @Test fun denseA4DrawingPlacesEveryVertexLabelWithRoomForLeaders() {
+        val points = List(126) { DrawingPoint(245.0 + it * 0.04, 90.0 + it * 0.04) } +
+            listOf(DrawingPoint(385.0, 36.0), DrawingPoint(125.0, 159.0))
+        val layout = layoutMeasurementDrawingForProjectedPoints(points, 515f, 195f, emptyList(),
+            vertexSizes = List(points.size) { DrawingLabelSize(16f, 12f) }, placeCrowdedVertices = true)
+        assertEquals(points.indices.toSet(), layout.vertexLabels.map { it.sideIndex }.toSet())
+        assertTrue(layout.vertexLabels.any { it.needsLeader })
+        layout.vertexLabels.forEachIndexed { i, a ->
+            assertTrue(a.left >= 0 && a.top >= 0 && a.right <= 515 && a.bottom <= 195)
+            assertTrue(points.none { it.x in a.left.toDouble()..a.right.toDouble() &&
+                it.y in a.top.toDouble()..a.bottom.toDouble() })
+            layout.vertexLabels.drop(i + 1).forEach { b ->
+                assertFalse(a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top)
+            }
+        }
+    }
+
     @Test fun degenerateInputsAndUnavailableGeometryCannotCrashDrawing() {
         assertNull(measurementDrawingContour(MeasurementGeometryView.Unavailable))
         val contour = assertNotNull(measurementDrawingContour(MeasurementGeometryView.HistoricalRectangle(5.0, 4.0)))

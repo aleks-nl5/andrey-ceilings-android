@@ -9,7 +9,6 @@ import kotlin.coroutines.CoroutineContext
 import java.util.concurrent.atomic.AtomicBoolean
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.runtime.*
-import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.ui.ImageComposeScene
 import androidx.compose.ui.semantics.*
 import androidx.compose.ui.unit.Constraints
@@ -63,16 +62,40 @@ class FrozenRevisionSceneTest {
                 val frozen = repo.exactIndividual(saved.seriesUuid, saved.initialRevisionUuid)!!
                 assertEquals(3, frozen.frozen.formatVersion)
                 assertEquals(drawing, frozen.frozen.source.drawingJson)
+                var cardMounted by mutableStateOf(true)
                 val card = ImageComposeScene(700, 1100, coroutineContext = sceneDispatcher) { CeilingsTheme(dark) {
-                    SavedIndividualQuoteDialog(store, saved.seriesUuid, saved.initialRevisionUuid) {}
+                    if (cardMounted) SavedIndividualQuoteDialog(store, saved.seriesUuid, saved.initialRevisionUuid) {
+                        cardMounted = false
+                    }
                 } }
                 try {
                     card.await { card.text().contains("Статус пропозиції") }
                     card.reveal("Розрахункова площа округлена до 0,001 м²")
                     assertTrue(card.text().contains("Площа заміру:"))
                     assertEquals(137610, frozen.frozen.amounts.finalCents)
+                    card.scroll(-100000f)
+                    card.reveal("Створити PDF")
+                    card.click("Створити PDF")
+                    card.await { card.pageText().contains("1376,10") }
+                    val pdfText = card.pageText()
+                    assertTrue(pdfText.contains("13,7608"), pdfText)
+                    assertTrue(pdfText.contains("13,761"), pdfText)
+                    assertTrue(pdfText.contains("Сторінка 1 /"), pdfText)
+                    assertFalse(card.text().contains("Зберегти PDF"))
+                    card.click("Оформлення")
+                    card.await { card.text().contains("Оформлення PDF") }
+                    card.click("До перегляду")
+                    card.await { card.pageText().contains("1376,10") }
+                    card.click("Назад", layerTitle = "Попередній перегляд PDF")
+                    card.await { !card.text().contains("Попередній перегляд PDF") && card.text().contains("Створити PDF") }
+                    card.click("Назад")
+                    card.await { !cardMounted && !card.text().contains("Створити PDF") }
                     assertEquals(drawing, MeasurementRepository(db).find(measurement.id)!!.drawingJson)
-                } finally { card.close() }
+                } finally {
+                    cardMounted = false
+                    card.frame()
+                    card.close()
+                }
             } finally { runBlocking { store.closeAndAwaitWrites() } }
         }
     }
@@ -233,17 +256,33 @@ class FrozenRevisionSceneTest {
         }
     }
     private var time = 0L
-    private fun ImageComposeScene.frame() { repeat(3) { sceneDispatcher.drain(); time += 250_000_000; Snapshot.sendApplyNotifications(); render(time).close(); Thread.sleep(10) } }
-    private fun ImageComposeScene.nodes(): List<SemanticsNode> {
-        fun flatten(n: SemanticsNode): List<SemanticsNode> = listOf(n) + n.children.flatMap(::flatten)
-        return semanticsOwners.flatMap { flatten(it.rootSemanticsNode) }
+    private fun ImageComposeScene.frame() {
+        repeat(3) {
+            sceneDispatcher.drain()
+            time += 250_000_000
+            render(time).close()
+            Thread.sleep(10)
+        }
     }
+
+    private fun ImageComposeScene.nodes(layerTitle: String? = null): List<SemanticsNode> {
+        fun flatten(n: SemanticsNode): List<SemanticsNode> = listOf(n) + n.children.flatMap(::flatten)
+        val layers = semanticsOwners.map { flatten(it.rootSemanticsNode) }
+        return if (layerTitle == null) layers.flatten() else layers.single { layer ->
+            layer.any { node -> node.hasText(layerTitle) }
+        }
+    }
+
+    private fun SemanticsNode.hasText(text: String): Boolean =
+        config.getOrNull(SemanticsProperties.Text).orEmpty().any { it.text == text }
     private fun ImageComposeScene.text() = nodes().joinToString { it.config.getOrNull(SemanticsProperties.Text).orEmpty().joinToString { t -> t.text } }
+    private fun ImageComposeScene.pageText() =
+        nodes().flatMap { it.config.getOrNull(SemanticsProperties.ContentDescription).orEmpty() }.joinToString("\n")
     private fun ImageComposeScene.await(condition: () -> Boolean) { repeat(100) { frame(); if (condition()) return }; fail("Revision preview did not settle") }
     private fun ImageComposeScene.scroll(delta: Float) { assertTrue(nodes().first { it.config.getOrNull(SemanticsActions.ScrollBy) != null }.config.getOrNull(SemanticsActions.ScrollBy)?.action?.invoke(0f, delta) == true) }
     private fun ImageComposeScene.reveal(expectedText: String) { repeat(100) { frame(); if (text().contains(expectedText)) return; scroll(200f) }; fail("Revision comparison was not visible: $expectedText; ${text()}; scroll=${nodes().filter { it.config.getOrNull(SemanticsActions.ScrollBy) != null }.map { "${it.boundsInRoot} ${it.config}" }}") }
-    private fun ImageComposeScene.click(text: String) {
-        val node = nodes().first { it.config.getOrNull(SemanticsProperties.Text).orEmpty().any { t -> t.text == text } }
+    private fun ImageComposeScene.click(text: String, layerTitle: String? = null) {
+        val node = nodes(layerTitle).first { it.hasText(text) }
         val action = generateSequence(node) { it.parent }.mapNotNull { it.config.getOrNull(SemanticsActions.OnClick)?.action }.first()
         assertTrue(action())
     }

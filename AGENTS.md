@@ -1,3 +1,15 @@
+## CURRENT handoff — P4C3 frozen individual PDF (18.11.2026)
+
+Owner merged PR #117 on 18.11.2026 (main merge SHA `132f437a6f8e5aa3f4e620e56bf1d71c038cf376`); #116 completed. **Now:** [#119](https://github.com/aleks-nl5/andrey-ceilings-android/issues/119), existing **Draft PR on `feat/p4c3-frozen-pdf-document`**, canonical [handoff](docs/P4C3_PDF_HANDOFF.md). Build a configurable *individual* PDF for an exact selected frozen revision with shared KMP document model, CMP preview, light presentation editor and safe export. **Never reprice from the live catalog, change estimate financial/status/selected state, or render new format-3 money via legacy `Double` adapters.** Preserve legacy PDF; test all platforms. Consolidated output = future P4C4.
+
+**Owner simplicity rule:** future company/master/contact/logo values come from one current Settings source (backlog #114). Do not persist historical issuer profile versions, per-document issuer snapshots, logos or photos in P4C3. Reserve typed optional presentation sections/providers only; no fake placeholder data. User-facing re-generation may reflect changed future contact info, but frozen financial values must not change. No estimate deletion.
+
+### Test & CI co-evolution (issue #118)
+
+For every feature/change: identify dependent common/JVM/Android/desktop/native/database/migration/backup tests **before implementation**; update changed contract and its tests/fixtures in the **same logical change** and add regressions. Run relevant local checks before push when feasible. After push classify red CI accurately (production regression, deliberate contract adjustment with properly updated assertion, flaky harness, or infrastructure); fix root cause. Do **not** skip, delete or weaken tests/CI just to make them pass; retain established integrity and security assertions. The final merge gate stays: Android + Windows/iOS CI **on the same final feature SHA**, independent code review, explicit owner APK smoke/acceptance. Codex does not merge or infer user acceptance. #118 closes only after this policy is merged into `main`.
+
+---
+
 ## Owner-approved area rounding — 17.11.2026 (current)
 
 The owner reproduced INVALID_SOURCE with two rectangle sides entered to hundredths (4.12 × 3.34 → 13.7608 m²). The coherent geometry reader succeeds; the actual blocker was CANVAS QUANTITY_PRECISION. The owner explicitly chose: round captured area HALF_UP to 0.001 m² first, then calculate row cents. For example, at 100 UAH/m²: 13.7608 → 13.761 → 1376.10 UAH. This rule applies in both creation contexts and to current-source revisions. Original dimensions/drawing/area remain unchanged; manual quantities and perimeter retain their existing precision contract.

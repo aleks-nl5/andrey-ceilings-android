@@ -2,15 +2,12 @@ package com.andreyceilings.desktop
 
 import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
 import androidx.compose.runtime.*
-import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.ui.ImageComposeScene
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.input.pointer.*
 import androidx.compose.ui.semantics.*
-import androidx.compose.ui.scene.ComposeScenePointer
 import androidx.compose.ui.text.AnnotatedString
-import com.andreyceilings.shared.prices.*
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.ui.unit.dp
 import com.andreyceilings.shared.calculation.MeasurementPrecision
@@ -19,11 +16,11 @@ import com.andreyceilings.shared.measurement.*
 import com.andreyceilings.shared.navigation.*
 import com.andreyceilings.shared.theme.CeilingsTheme
 import kotlinx.coroutines.*
-import kotlinx.coroutines.flow.first
-import java.util.concurrent.atomic.AtomicInteger
 import kotlin.test.*
 
 class DetailsSaveExitSceneTest {
+    private val sceneDispatcher = DesktopSceneDispatcher()
+
     @OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class,androidx.compose.ui.InternalComposeUiApi::class)
     @Test fun realDetailsDialogSavesThenNavigatesAndUncertainRetryKeepsIntent():Unit=runBlocking {
         for(mode in listOf("back","edit","uncertain")) {
@@ -37,7 +34,7 @@ class DetailsSaveExitSceneTest {
                 assertEquals(PointPositionMm(800,1200),store.load(f.project,f.id).placements.areas.first {it.uuid==f.polygon}.shape.positions.first())
                 navigations++;destination=target
             }
-            val scene=ImageComposeScene(900,1400) {CeilingsTheme(mode!="back") {
+            val scene=ImageComposeScene(900, 1400, coroutineContext = sceneDispatcher) {CeilingsTheme(mode!="back") {
                 if(destination==null)MeasurementDetailsScreen(f.project,f.id,details,PaddingValues(0.dp),0.dp,
                     onBack={navigate("back")},onEdit={navigate("edit")},navigationGuard=guard,editStore=store)
                 else androidx.compose.material3.Text("Destination $destination")
@@ -56,12 +53,12 @@ class DetailsSaveExitSceneTest {
                 if(mode=="uncertain")fault.failNext(DetailsExitFaultDriver.Fault.LOST_RESPONSE)
                 scene.click(if(mode=="edit")"Редагувати" else "До об'єкта")
                 scene.awaitText("Незбережені зміни креслення")
-                scene.click("Зберегти креслення")
+                scene.click("Зберегти креслення", layerTitle = "Незбережені зміни креслення")
                 if(mode=="uncertain") {
                     scene.awaitText("Повторити ту саму спробу")
                     assertEquals(0,navigations);assertNull(destination)
                     val committed=OverlayDragFixture.snapshot(raw)
-                    scene.click("Повторити ту саму спробу")
+                    scene.click("Повторити ту саму спробу", layerTitle = "Незбережені зміни креслення")
                     withTimeout(15000){while(destination==null){scene.frame();delay(20)}}
                     assertEquals(committed,OverlayDragFixture.snapshot(raw))
                 } else withTimeout(15000){while(destination==null){scene.frame();delay(20)}}
@@ -115,17 +112,20 @@ class DetailsSaveExitSceneTest {
         fail("Canvas did not settle")
     }
     private fun ImageComposeScene.canvas() = nodes().first { it.config.getOrNull(SemanticsProperties.ContentDescription).orEmpty().any { it.startsWith("Контур стелі") } }
-    private fun ImageComposeScene.frame() { Snapshot.sendApplyNotifications(); render(System.nanoTime()).close() }
-    private fun ImageComposeScene.nodes(): List<SemanticsNode> {
+    private fun ImageComposeScene.frame() = sceneDispatcher.render(this)
+    private fun ImageComposeScene.nodes(layerTitle: String? = null): List<SemanticsNode> {
         fun flatten(n: SemanticsNode): List<SemanticsNode> = listOf(n) + n.children.flatMap(::flatten)
-        return semanticsOwners.flatMap { flatten(it.rootSemanticsNode) }
+        val layers = semanticsOwners.map { flatten(it.rootSemanticsNode) }
+        return if (layerTitle == null) layers.flatten() else layers.firstOrNull { layer ->
+            layer.any { it.config.getOrNull(SemanticsProperties.Text).orEmpty().any { text -> text.text == layerTitle } }
+        }.orEmpty()
     }
     private fun SemanticsNode.textTree(): String = config.getOrNull(SemanticsProperties.Text).orEmpty().joinToString { it.text } + children.joinToString { it.textTree() }
     private fun ImageComposeScene.text() = semanticsOwners.joinToString { it.rootSemanticsNode.textTree() }
     private fun ImageComposeScene.awaitText(label: String) { repeat(240) { frame(); if (text().contains(label)) return; Thread.sleep(25) }; fail("Missing '$label': ${text().take(2000)}") }
-    private fun ImageComposeScene.click(label: String) {
+    private fun ImageComposeScene.click(label: String, layerTitle: String? = null) {
         var searchedTop=false
-        repeat(240) { frame(); nodes().filter { it.config.getOrNull(SemanticsActions.OnClick) != null && (it.textTree() == label || it.config.getOrNull(SemanticsActions.OnClick)?.label==label) }.let {matches -> if(label=="Зберегти креслення" || label=="Повторити ту саму спробу")matches.lastOrNull() else matches.firstOrNull()}?.let {
+        repeat(240) { frame(); nodes(layerTitle).firstOrNull { it.config.getOrNull(SemanticsActions.OnClick) != null && (it.textTree() == label || it.config.getOrNull(SemanticsActions.OnClick)?.label==label) }?.let {
             assertNull(it.config.getOrNull(SemanticsProperties.Disabled), label)
             assertTrue(it.config.getOrNull(SemanticsActions.OnClick)?.action?.invoke() == true); frame(); return }
             nodes().firstOrNull {it.config.getOrNull(SemanticsActions.ScrollToIndex)!=null}?.config?.getOrNull(SemanticsActions.ScrollBy)?.action?.invoke(0f,if(!searchedTop)-10000f else 150f)

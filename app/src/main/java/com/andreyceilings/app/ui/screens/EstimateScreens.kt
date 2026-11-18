@@ -116,7 +116,7 @@ internal fun EstimatesContent(store: com.andreyceilings.shared.measurement.Measu
         verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item {
             Text("Кошториси", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-            Text("Збережені індивідуальні кошториси v1")
+            Text("Збережені індивідуальні кошториси")
         }
         item(key = "saved-individual-v1") { com.andreyceilings.shared.estimate.SavedIndividualQuoteList(store) }
         item { TextButton(onClick = onOpenArchive) { Text("Архів тестових кошторисів") } }

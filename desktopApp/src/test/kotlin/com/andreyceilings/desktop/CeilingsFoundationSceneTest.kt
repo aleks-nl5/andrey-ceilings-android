@@ -280,7 +280,8 @@ class CeilingsFoundationSceneTest {
                 ClientListEntry(it.toLong(), "Клієнт $it", "", "", "", 0)
             }
         )
-        val scene = ImageComposeScene(360, 640) {
+        val dispatcher = DesktopSceneDispatcher()
+        val scene = ImageComposeScene(360, 640, coroutineContext = dispatcher) {
             CeilingsTheme(false) {
                 ObjectsClientsScreen(
                     rows = rows,
@@ -306,7 +307,7 @@ class CeilingsFoundationSceneTest {
             }
         }
         try {
-            scene.render().close()
+            dispatcher.render(scene, 0)
             scene.sendPointerEvent(PointerEventType.Press, Offset(140f, 480f),
                 timeMillis = 1000, type = PointerType.Touch)
             scene.sendPointerEvent(PointerEventType.Move, Offset(140f, 260f),
@@ -315,12 +316,11 @@ class CeilingsFoundationSceneTest {
                 timeMillis = 1100, type = PointerType.Touch)
             header.heightOffset = -56f
             header.contentOffset = -220f
-            Snapshot.sendApplyNotifications()
-            scene.render(120_000_000).close()
+            dispatcher.render(scene, 120_000_000)
 
             // A collapsed header places the pinned tabs near the top.
             scene.tap(260f, 30f) // Clients
-            scene.render(150_000_000).close()
+            dispatcher.render(scene, 150_000_000)
             assertEquals(listOf(ObjectsClientsTab.CLIENTS), switched)
             assertEquals(0f, header.heightOffset)
             assertEquals(0f, header.contentOffset)
@@ -328,10 +328,9 @@ class CeilingsFoundationSceneTest {
             // The next switch must not inherit either client scroll or host chrome.
             header.heightOffset = -56f
             header.contentOffset = -350f
-            Snapshot.sendApplyNotifications()
-            scene.render(200_000_000).close()
+            dispatcher.render(scene, 200_000_000)
             scene.tap(85f, 30f) // Projects
-            scene.render(220_000_000).close()
+            dispatcher.render(scene, 220_000_000)
             assertEquals(listOf(ObjectsClientsTab.CLIENTS, ObjectsClientsTab.PROJECTS), switched)
             assertEquals(0f, header.heightOffset)
             assertEquals(0f, header.contentOffset)

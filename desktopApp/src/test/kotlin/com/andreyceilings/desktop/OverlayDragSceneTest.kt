@@ -2,7 +2,6 @@ package com.andreyceilings.desktop
 
 import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
 import androidx.compose.runtime.*
-import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.ui.ImageComposeScene
 import androidx.compose.ui.platform.LocalViewConfiguration
 import androidx.compose.ui.platform.ViewConfiguration
@@ -10,9 +9,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.input.pointer.*
 import androidx.compose.ui.semantics.*
-import androidx.compose.ui.scene.ComposeScenePointer
 import androidx.compose.ui.text.AnnotatedString
-import com.andreyceilings.shared.prices.*
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.ui.unit.dp
 import com.andreyceilings.shared.calculation.MeasurementPrecision
@@ -21,11 +18,11 @@ import com.andreyceilings.shared.measurement.*
 import com.andreyceilings.shared.navigation.*
 import com.andreyceilings.shared.theme.CeilingsTheme
 import kotlinx.coroutines.*
-import kotlinx.coroutines.flow.first
-import java.util.concurrent.atomic.AtomicInteger
 import kotlin.test.*
 
 class OverlayDragSceneTest {
+    private val sceneDispatcher = DesktopSceneDispatcher()
+
     private var activeTouchSlop = 0f
     @OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class,androidx.compose.ui.InternalComposeUiApi::class)
     @Test fun realMouseDragDetailsAndEditorNormalFullscreenKeepOneAtomicDraft():Unit=runBlocking {
@@ -36,7 +33,8 @@ class OverlayDragSceneTest {
             val store=MeasurementEditStore(db){200};val doc=store.load(f.project,f.id);val model=MeasurementEditModel(store,doc)
             val row=MeasurementRepository(db).find(f.id)!!
             val before=OverlayDragFixture.snapshot(driver)
-            val scene=ImageComposeScene(if(mode=="phone")420 else 900,if(mode=="phone")900 else 1600) {
+            val scene=ImageComposeScene(if (mode == "phone") 420 else 900, if (mode == "phone") 900 else 1600,
+                coroutineContext = sceneDispatcher) {
                 val platformConfiguration = LocalViewConfiguration.current
                 // A compact canvas can project a real world move below the platform's
                 // gesture threshold. Exercise that case on every CI host explicitly.
@@ -57,9 +55,19 @@ class OverlayDragSceneTest {
             }}}
             try {
                 scene.awaitText("Вписати креслення")
+                // The editor installs point gesture keys only after loading its SQLCipher overlay.
+                if (mode != "details") scene.awaitEnabled("Зберегти")
                 if(mode=="fullscreen")scene.click("На весь екран")
                 // Selected polygon owns the drag even inside an unrelated LINE's halo.
-                scene.tapWorld(row,1000,1500);assertEquals(f.polygon,model.state.value.area.selected,"$mode selection; bounds=${scene.canvas().boundsInRoot}; size=${scene.canvas().size}; root=${scene.semanticsOwners.first().rootSemanticsNode.size}");scene.dragWorld(row,1000,1050,1300,1250)
+                scene.tapWorld(row, 1000, 1500)
+                assertEquals(f.polygon, model.state.value.area.selected, "$mode polygon selection")
+                withTimeout(5000) {
+                    while (scene.canvas().config.getOrNull(MeasurementDrawingSemantics.SelectedArea) != f.polygon) {
+                        scene.frame()
+                        delay(20)
+                    }
+                }
+                scene.dragWorld(row, 1000, 1050, 1300, 1250)
                 var polygon=model.displayAreas().first {it.uuid==f.polygon}
                 assertEquals(PointPositionMm(800,1200),polygon.shape.positions.first(),"$mode bounds=${scene.canvas().boundsInRoot}; pos=${scene.canvas().positionInRoot}; size=${scene.canvas().size}; error=${model.state.value.error}")
                 assertEquals(doc.placements.areas.first {it.uuid==f.polygon}.twiceAreaMm2,polygon.twiceAreaMm2)
@@ -103,10 +111,11 @@ class OverlayDragSceneTest {
         // The excursion stays in the same gesture; release at the exact requested world point.
         val activation = if (distance <= activeTouchSlop)
             start + (end - start) * ((activeTouchSlop + 2f) / distance) else end
-        sendPointerEvent(PointerEventType.Press,start,type=PointerType.Mouse);frame()
-        sendPointerEvent(PointerEventType.Move,activation,type=PointerType.Mouse);frame()
-        if (activation != end) { sendPointerEvent(PointerEventType.Move,end,type=PointerType.Mouse);frame() }
-        sendPointerEvent(PointerEventType.Release,end,type=PointerType.Mouse);frame()
+        sendPointerEvent(PointerEventType.Press, start, type = PointerType.Mouse)
+        sendPointerEvent(PointerEventType.Move, activation, type = PointerType.Mouse)
+        if (activation != end) sendPointerEvent(PointerEventType.Move, end, type = PointerType.Mouse)
+        sendPointerEvent(PointerEventType.Release, end, type = PointerType.Mouse)
+        frame()
     }
     private fun ImageComposeScene.world(row: Room_measurements, x: Long, y: Long): Offset {
         stableBounds()
@@ -137,7 +146,7 @@ class OverlayDragSceneTest {
         fail("Canvas did not settle")
     }
     private fun ImageComposeScene.canvas() = nodes().first { it.config.getOrNull(SemanticsProperties.ContentDescription).orEmpty().any { it.startsWith("Контур стелі") } }
-    private fun ImageComposeScene.frame() { Snapshot.sendApplyNotifications(); render(System.nanoTime()).close() }
+    private fun ImageComposeScene.frame() = sceneDispatcher.render(this)
     private fun ImageComposeScene.nodes(): List<SemanticsNode> {
         fun flatten(n: SemanticsNode): List<SemanticsNode> = listOf(n) + n.children.flatMap(::flatten)
         return semanticsOwners.flatMap { flatten(it.rootSemanticsNode) }
@@ -145,6 +154,17 @@ class OverlayDragSceneTest {
     private fun SemanticsNode.textTree(): String = config.getOrNull(SemanticsProperties.Text).orEmpty().joinToString { it.text } + children.joinToString { it.textTree() }
     private fun ImageComposeScene.text() = semanticsOwners.joinToString { it.rootSemanticsNode.textTree() }
     private fun ImageComposeScene.awaitText(label: String) { repeat(240) { frame(); if (text().contains(label)) return; Thread.sleep(25) }; fail("Missing '$label': ${text().take(2000)}") }
+    private fun ImageComposeScene.awaitEnabled(label: String) {
+        repeat(240) {
+            frame()
+            if (nodes().any { it.textTree() == label &&
+                it.config.getOrNull(SemanticsActions.OnClick) != null &&
+                it.config.getOrNull(SemanticsProperties.Disabled) == null }) return
+            Thread.sleep(25)
+        }
+        fail("Action '$label' did not become enabled")
+    }
+
     private fun ImageComposeScene.click(label: String) {
         var searchedTop=false
         repeat(240) { frame(); nodes().firstOrNull { it.config.getOrNull(SemanticsActions.OnClick) != null && it.textTree() == label }?.let {
