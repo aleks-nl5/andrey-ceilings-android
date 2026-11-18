@@ -52,3 +52,11 @@ P4C4 consolidated PDF; issuer/company Settings UI та зберігання (#11
 2. Work **only in this existing Draft PR branch**, do not open a second implementation PR. Start with written design describing trusted frozen source, render model, section registry, provider interfaces, preview-vs-PDF parity and platform adapter boundaries. If existing architecture has a better module split, implement equivalent safe semantics, not named interfaces by rote.
 3. Implement in small logical commits; update impacted tests **with the code** (#118), run local checks, then final-SHA native CI. Report evidence honestly, including host limits. Do not mark owner APK approval yourself.
 4. Leave #44 open until P4C4, #114 future issuer settings, #95 UX, #42 hosts; do not implement deferred requests in this PR.
+
+## Implementation design
+
+The saved quote card opens the document by both series and revision UUID. The measurement store performs the exact repository read inside its existing session transaction, including payload, normalized totals, identity and operation-receipt validation. The same transaction may read the current address of the matching project, which the document labels as current. Document creation never invokes live pricing.
+
+The shared document model keeps cents and milli-quantities as integers. Its fixed identity, item table, totals and partial-work disclosure are independent of presentation settings. The editor owns a transient ordered list of optional sections and text. Issuer and attachment hooks are optional and have no storage in this release.
+
+One A4 layout resolves text wrapping, page breaks, repeating headers, drawing projection and page numbers. The preview scales these pages to the available width. Android paints the same pages to a vector PDF canvas and hands the result to system save, share or print. Windows has the shared preview and editor. The iOS target compiles and tests the shared contract independently of a native host.
