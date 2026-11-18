@@ -12,6 +12,8 @@ The Desktop scene harness now serializes UI continuation/render work, matching r
 
 Verification on `fdcb840`: full shared JVM **424 tests, 0 failures**, full Desktop **47 tests, 0 failures**, Android unit **11 tests, 0 failures**; APK assembly, instrumentation compilation and SQLDelight migration verification passed. The subsequent numeric-storage guard passed all **3 MeasurementCreationPricingTest** cases, instrumentation compilation and migration verification. Final native CI results are tracked in PR #117; compilation is not native acceptance.
 
+At `f3cad04`, full local shared JVM **424/424**, Android unit **11/11** and APK assembly passed. Native [Android #1214](https://github.com/aleks-nl5/andrey-ceilings-android/actions/runs/44247664613) completed **SUCCESS**, including emulator SQLCipher/UI and signed release startup/recovery. The iOS job in [#964](https://github.com/aleks-nl5/andrey-ceilings-android/actions/runs/44247664575) completed **SUCCESS**. Windows failed the existing `AreaFeatureSceneTest`: the finish action remained disabled after synthetic corner taps. Its follow-up serializes scene continuations on the render thread and separates press/release by a frame, with explicit first/second corner assertions and viewport checks. The targeted both-theme case and full **47/47 Desktop** suite pass locally. Production geometry/money code and existing acceptance assertions are unchanged by this follow-up. New same-SHA native CI remains required.
+
 ---
 
 # Owner APK corrections — 17.11.2026
