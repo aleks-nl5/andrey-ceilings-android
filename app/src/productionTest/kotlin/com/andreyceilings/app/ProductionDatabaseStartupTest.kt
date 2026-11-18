@@ -36,7 +36,7 @@ class ProductionDatabaseStartupTest {
             val schema=when(variant){"v9"->WallAnchorMigrationProof.v9Schema;"v10-initial"->InitialV10MigrationProof.schema;"v11"->LinePlacementMigrationProof.v11Schema;"v12"->AreaFeatureMigrationProof.v12Schema;"v13"->CeilingReceiptMigrationProof.v13Schema;else->WallAnchorMigrationProof.v10Schema}
             val name="production-upgrade-$variant.db";context.deleteDatabase(name)
             try {
-                val before=historical(context,name,key,schema).use { driver ->
+                val expected=historical(context,name,key,schema).use { driver ->
                     val f=LegacyWallSeedProof.populate(driver,version==9L)
                     if(version>=10L)LegacyWallSeedProof.decorateV10(driver,f)
                     if(version>=12L)AreaFeatureMigrationProof.populate(driver)
@@ -44,13 +44,13 @@ class ProductionDatabaseStartupTest {
                     driver.executeQuery(null,"PRAGMA wal_autocheckpoint=0",{c->c.next();QueryResult.Value(c.getLong(0))},0).value
                     ProjectRepository(PrototypeDatabase(driver)).createReturningId(null,"Committed v$version WAL row",createdAt=600)
                     assertEquals("wal",driver.executeQuery(null,"PRAGMA journal_mode",{ c->c.next();QueryResult.Value(c.getString(0)) },0).value)
-                    LegacyWallSeedProof.snapshot(driver,version>=10L)
+                    LegacyWallSeedProof.snapshot(driver,version>=10L,expectWallVersionRepair=true)
                 }
                 replaceClosedProduction(context,context.getDatabasePath(name))
                 val upgraded=CeilingsDatabase.get(context)
                 assertEquals(context.getDatabasePath(CeilingsDatabase.DATABASE_NAME).absolutePath,upgraded.path)
                 assertEquals(PriceCatalogSchema.version,upgraded.queryLong("PRAGMA user_version"))
-                assertEquals(before,LegacyWallSeedProof.snapshot(upgraded.driver,version>=10L))
+                assertEquals(expected,LegacyWallSeedProof.snapshot(upgraded.driver,version>=10L))
                 assertEquals(0L,upgraded.queryLong("SELECT count(*) FROM ceiling_walls WHERE measurementUuid LIKE 'legacy-source-%'"))
                 if(version==9L)assertEquals(0L,upgraded.queryLong("SELECT count(*) FROM point_placements WHERE mountingJson!='{}'"))
                 else {

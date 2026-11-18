@@ -6,6 +6,16 @@ import com.andreyceilings.shared.prices.*
 import kotlinx.serialization.json.*
 import kotlin.test.*
 
+// The populated historical fixtures contain a complete, coherent active wall set.
+// Snapshot comparisons still include the wall version alongside every preserved field.
+internal fun migrationSnapshotColumn(table: String, column: String, expectWallVersionRepair: Boolean): String =
+    if (expectWallVersionRepair && table == "ceiling_walls" && column == "geometryVersion")
+        """CASE WHEN active = 1 THEN coalesce((
+            SELECT m.updatedAt FROM room_measurements m
+            WHERE m.uuid = ceiling_walls.measurementUuid AND m.deletedAt IS NULL
+        ), geometryVersion) ELSE geometryVersion END""".trimIndent()
+    else column
+
 object AreaFeatureMigrationProof {
     val v12Schema=object:SqlSchema<QueryResult.Value<Unit>> {
         override val version=12L
@@ -65,14 +75,7 @@ object AreaFeatureMigrationProof {
         },0).value
         return tables.flatMap {table ->
             val cols=driver.executeQuery(null,"PRAGMA table_info($table)",{c ->val names=mutableListOf<String>();while(c.next().value)c.getString(1)?.takeUnless {it=="areaVersions" || it=="businessRole" || isP4C1AddedSnapshotColumn(table,it)}?.let(names::add);QueryResult.Value(names)},0).value
-            val fields = cols.map { column ->
-                if (expectWallVersionRepair && table == "ceiling_walls" && column == "geometryVersion")
-                    """CASE WHEN active = 1 THEN coalesce((
-                        SELECT m.updatedAt FROM room_measurements m
-                        WHERE m.uuid = ceiling_walls.measurementUuid AND m.deletedAt IS NULL
-                    ), geometryVersion) ELSE geometryVersion END""".trimIndent()
-                else column
-            }
+            val fields = cols.map { migrationSnapshotColumn(table, it, expectWallVersionRepair) }
             MeasurementElementMigrationProof.rows(driver,"SELECT "+fields.joinToString {"quote($it)"}+" FROM $table ORDER BY 1",cols.size).map {listOf(table)+it}
         }
     }
