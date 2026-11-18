@@ -10,6 +10,26 @@ import kotlin.test.*
 import kotlinx.coroutines.*
 
 class LivePricingReaderTest {
+    @Test fun wallVersionMigrationRejectsAnUnknownLegacyGuardBeforeRepair() {
+        JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).use { driver ->
+            PriceCatalogSchema.create(driver)
+            driver.execute(null, "DROP TRIGGER ceiling_refresh_unchanged_wall_versions", 0)
+            driver.execute(null, "DROP TRIGGER ceiling_wall_update_guard", 0)
+            driver.execute(null, """
+                CREATE TRIGGER ceiling_wall_update_guard BEFORE UPDATE ON ceiling_walls
+                BEGIN SELECT 1; END
+            """.trimIndent(), 0)
+            val before = PriceNameMigrationProof.schema(driver)
+            for (legacyVersion in 16L..19L) {
+                val failure = assertFailsWith<SchemaFingerprintMismatch> {
+                    PriceCatalogSchema.migrate(driver, legacyVersion, PriceCatalogSchema.version)
+                }
+                assertEquals("ceiling_wall_update_guard", failure.objectId)
+                assertEquals(before, PriceNameMigrationProof.schema(driver))
+            }
+        }
+    }
+
     @Test fun version19MigrationRepairsOnlyWallsBackedByACompletedEdit() {
         JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).use { driver ->
             PriceCatalogSchema.create(driver)
