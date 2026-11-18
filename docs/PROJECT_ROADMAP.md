@@ -1,3 +1,15 @@
+# CURRENT — owner merged P4C2; P4C3 frozen individual PDF next (18.11.2026)
+
+**Accepted main:** [PR #117](https://github.com/aleks-nl5/andrey-ceilings-android/pull/117) merged 18.11.2026, main `132f437a6f8e5aa3f4e620e56bf1d71c038cf376`, SQLDelight/SQLCipher schema v19; completed [#116](https://github.com/aleks-nl5/andrey-ceilings-android/issues/116). Independent editable client proposals v1/v2/v3 preserve per-revision workflow status and separately explicit chosen pointer; format-3 area quantity policy rounds `13.7608 → 13.761 m²` HALF_UP before line cents. Final PR evidence: Android #1215, Windows/iOS #965 succeeded on final feature SHA, independent static review PASS and owner APK positive smoke. Prior “keep PR #117 Draft” statements below are historical and superseded.
+
+**Next approved independent slice:** [P4C3 issue #119](https://github.com/aleks-nl5/andrey-ceilings-android/issues/119) / [Codex handoff](P4C3_PDF_HANDOFF.md), implementation in existing `feat/p4c3-frozen-pdf-document` Draft PR. Individual selected frozen revision PDF, shared KMP document model + CMP preview and limited presentation editor, save/share via safe thin adapters; no financial edits/current repricing/latest inference. Future current issuer/company/logo from Settings (#114) and object photos get optional hook only; **no extra historical issuer profile/photo storage**. Existing legacy Android PDF path must remain functional, format-3 exact money not through legacy Double. No auto-delete, no P4C4 in this slice.
+
+**Following:** P4C4 selected-room frozen-only consolidated PDF with one explicit revision per selected room, same document-section model. Umbrella #44 remains open until P4C4 acceptance. #118 permanent test/CI co-evolution policy included in this planning branch's `AGENTS.md`; close #118 only after merge. #95 redraw, #42 hosts, #70 arbitrary-angle geometry, #114 full Settings profile stay separate.
+
+**Gate:** Codex implementation, shared/native SQLCipher + PDF checks, final same-SHA Android/Windows/iOS CI, independent code review, physical owner APK acceptance. Owner alone merges. No implementation/CI success claimed by docs-only handoff.
+
+---
+
 ## Owner-approved area rounding — 17.11.2026 (current)
 
 The owner reproduced INVALID_SOURCE with two rectangle sides entered to hundredths (4.12 × 3.34 → 13.7608 m²). The coherent geometry reader succeeds; the actual blocker was CANVAS QUANTITY_PRECISION. The owner explicitly chose: round captured area HALF_UP to 0.001 m² first, then calculate row cents. For example, at 100 UAH/m²: 13.7608 → 13.761 → 1376.10 UAH. This rule applies in both creation contexts and to current-source revisions. Original dimensions/drawing/area remain unchanged; manual quantities and perimeter retain their existing precision contract.
