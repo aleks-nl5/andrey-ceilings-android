@@ -65,13 +65,18 @@ data class EstimateQuantityOverride(
 )
 
 @Serializable
+enum class QuantityRoundingPolicy { CAPTURED_AREA_TO_MILLI_HALF_UP_V1 }
+
+@Serializable
 data class LiveEstimateLine(
     val sourceKey: String, val measurementUuid: String?, val elementUuid: String?, val catalogItemUuid: String,
     val stableCode: String, val title: String, val unit: String, val sourceQuantityMilli: Long,
     val effectiveBillableQuantityMilli: Long, val unitPriceCents: Long, val totalCents: Long,
     val quantityOrigin: QuantityOrigin, val bucket: PricingBucket,
     val reviewFlags: List<PricingProblemCode> = emptyList(), val overrideNote: String? = null,
-    val businessRole: BusinessRole? = null
+    val businessRole: BusinessRole? = null,
+    @kotlinx.serialization.EncodeDefault(kotlinx.serialization.EncodeDefault.Mode.NEVER)
+    val quantityRoundingPolicy: QuantityRoundingPolicy? = null
 )
 
 /** Internal construction prevents callers from supplying a made-up ready preview to composition. */

@@ -22,6 +22,22 @@ object PricingMath {
         return integer.toLong().takeIf { it > 0 && abs(scaled - integer) <= 0.000001 }
     }
 
+    /** Integer-mm vertices have at most half-square-mm area precision. Recover
+     * tenths of square millimetres through binary noise, then apply the owner's area-to-milli HALF_UP policy.
+     * The exact saved geometry is never changed; monetary multiplication stays Long-only.
+     */
+    fun capturedAreaMilli(value: Double): Long? {
+        // Validated polygons are bounded by coordinates +/-1,000,000 mm.
+        if (!value.isFinite() || value <= 0 || value > 4_000_000.0) return null
+        capturedMilli(value)?.let { return it }
+        val scaled = value * 10_000_000
+        val tenthsSquareMillimetres = round(scaled)
+        val noise = maxOf(0.000001, abs(scaled) * 0.000000000000001)
+        if (abs(scaled - tenthsSquareMillimetres) > noise) return null
+        val milli = (tenthsSquareMillimetres.toLong() + 5000L) / 10000L
+        return milli.takeIf { it > 0 }
+    }
+
     fun add(a: Long, b: Long): Long {
         require(a >= 0 && b >= 0)
         if (a > Long.MAX_VALUE - b) throw PricingOverflow()

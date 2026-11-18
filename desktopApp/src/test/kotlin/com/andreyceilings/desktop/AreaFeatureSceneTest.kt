@@ -21,9 +21,19 @@ import com.andreyceilings.shared.theme.CeilingsTheme
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.first
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.ConcurrentLinkedQueue
+import kotlin.coroutines.CoroutineContext
 import kotlin.test.*
 
 class AreaFeatureSceneTest {
+    // Model/database continuations must share the render thread, as in real UI hosts.
+    // ImageComposeScene otherwise defaults to Unconfined and resumes on DB workers.
+    private val sceneDispatcher = object : CoroutineDispatcher() {
+        val queue = ConcurrentLinkedQueue<Runnable>()
+        override fun dispatch(context: CoroutineContext, block: Runnable) { queue.add(block) }
+        fun drain() { while (true) (queue.poll() ?: return).run() }
+    }
+
     @OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class,androidx.compose.ui.InternalComposeUiApi::class)
     @Test fun productionControlsMouseSelectionAndAtomicSaveInBothThemes():Unit=runBlocking {
         for(dark in listOf(false,true)) {
@@ -40,11 +50,14 @@ class AreaFeatureSceneTest {
             val element=MeasurementElementRepository(db).createCatalogSelection(row.uuid,item.uuid,ElementQuantity.Unknown,7, businessRole = com.andreyceilings.shared.livepricing.BusinessRole.ADDITIONAL_WORK)
             val store=MeasurementEditStore(db){100};val model=MeasurementEditModel(store,store.load(project,id))
             var delivered=false
-            val scene=ImageComposeScene(900,1400) {CeilingsTheme(dark) {MeasurementEditScreen(model,PaddingValues(0.dp),0.dp,{}, {delivered=true},null)}}
+            val scene=ImageComposeScene(900,1400,coroutineContext=sceneDispatcher) {CeilingsTheme(dark) {MeasurementEditScreen(model,PaddingValues(0.dp),0.dp,{}, {delivered=true},null)}}
             var testFailure:Throwable?=null
             try {
                 scene.click("Позначити перешкоду")
-                scene.tapWorld(row,500,500);scene.tapWorld(row,1000,1000)
+                scene.tapWorld(row,500,500)
+                assertEquals(1,model.state.value.area.vertices.size,"First area corner must be delivered in $dark theme")
+                scene.tapWorld(row,1000,1000)
+                assertEquals(2,model.state.value.area.vertices.size,"Second area corner must be delivered in $dark theme")
                 scene.click("Завершити фігуру в чернетці")
                 assertEquals(1,model.displayAreas().size)
                 scene.click("Позначити отвір");scene.setField("Діаметр, м (парні мм)","0,2");scene.tapWorld(row,2500,1500);scene.click("Завершити фігуру в чернетці")
@@ -93,7 +106,8 @@ class AreaFeatureSceneTest {
     }
     private fun ImageComposeScene.tapWorld(row: Room_measurements, x: Long, y: Long) {
         val p = world(row, x, y)
-        sendPointerEvent(PointerEventType.Press, p, type = PointerType.Touch)
+        assertTrue(p.x in 0f..900f && p.y in 0f..1400f, "Tap must be inside the viewport: $p")
+        sendPointerEvent(PointerEventType.Press, p, type = PointerType.Touch); frame()
         sendPointerEvent(PointerEventType.Release, p, type = PointerType.Touch); frame()
     }
     private fun ImageComposeScene.stableBounds(): Rect {
@@ -111,7 +125,7 @@ class AreaFeatureSceneTest {
         fail("Canvas did not settle")
     }
     private fun ImageComposeScene.canvas() = nodes().first { it.config.getOrNull(SemanticsProperties.ContentDescription).orEmpty().any { it.startsWith("Контур стелі") } }
-    private fun ImageComposeScene.frame() { Snapshot.sendApplyNotifications(); render(System.nanoTime()).close() }
+    private fun ImageComposeScene.frame() { sceneDispatcher.drain(); Snapshot.sendApplyNotifications(); render(System.nanoTime()).close() }
     private fun ImageComposeScene.nodes(): List<SemanticsNode> {
         fun flatten(n: SemanticsNode): List<SemanticsNode> = listOf(n) + n.children.flatMap(::flatten)
         return semanticsOwners.flatMap { flatten(it.rootSemanticsNode) }

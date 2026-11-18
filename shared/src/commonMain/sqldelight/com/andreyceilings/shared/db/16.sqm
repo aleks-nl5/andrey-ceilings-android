@@ -1,0 +1,14 @@
+CREATE TABLE estimate_revision_frozen (
+    revisionUuid TEXT NOT NULL PRIMARY KEY REFERENCES estimate_revisions(revisionUuid) ON DELETE RESTRICT,
+    payload TEXT NOT NULL,
+    subtotalCents INTEGER NOT NULL CHECK (typeof(subtotalCents) = 'integer' AND subtotalCents >= 0),
+    discountBasisPoints INTEGER NOT NULL CHECK (typeof(discountBasisPoints) = 'integer' AND discountBasisPoints BETWEEN 0 AND 10000),
+    discountCents INTEGER NOT NULL CHECK (typeof(discountCents) = 'integer' AND discountCents >= 0 AND discountCents <= subtotalCents),
+    totalCents INTEGER NOT NULL CHECK (typeof(totalCents) = 'integer' AND totalCents = subtotalCents - discountCents)
+);
+CREATE TABLE estimate_revision_receipts (
+    operationUuid TEXT NOT NULL PRIMARY KEY,
+    command TEXT NOT NULL,
+    seriesUuid TEXT NOT NULL REFERENCES estimate_series(seriesUuid) ON DELETE RESTRICT,
+    revisionUuid TEXT NOT NULL UNIQUE REFERENCES estimate_revision_frozen(revisionUuid) ON DELETE RESTRICT
+);

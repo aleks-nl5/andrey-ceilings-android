@@ -69,12 +69,14 @@ class LivePricingReader(private val database: PrototypeDatabase) {
                     if (closed) return@run PricingReadResult.Unavailable(PricingProblemCode.DATABASE_UNAVAILABLE)
                     val project = ProjectRepository(database).find(projectId)
                         ?: return@run PricingReadResult.Unavailable(PricingProblemCode.PARENT_UNAVAILABLE)
-                    val measurement = MeasurementRepository(database).findByUuid(measurementUuid)?.takeIf { it.projectId == projectId }
+                    val measurement = MeasurementRepository(database).findByUuid(measurementUuid)?.takeIf { it.projectId == projectId && it.deletedAt == null }
                         ?: return@run PricingReadResult.Unavailable(PricingProblemCode.PARENT_UNAVAILABLE)
                     val geometry = try { MeasurementGeometryCodec.read(measurement.drawingJson) }
                         catch (_: IllegalArgumentException) { return@run PricingReadResult.Unavailable(PricingProblemCode.INVALID_GEOMETRY) }
-                    if (geometry.shapeType != measurement.shape || geometry.areaSquareMeters != measurement.areaSquareMeters ||
-                        geometry.perimeterMeters != measurement.perimeterMeters)
+                    val scalars = database.livePricingQueries.selectPricingGeometryScalars(measurementUuid).executeAsOneOrNull()
+                        ?: return@run PricingReadResult.Unavailable(PricingProblemCode.INVALID_GEOMETRY)
+                    if (geometry.shapeType != measurement.shape || geometry.areaSquareMeters != scalars.areaText?.toDoubleOrNull() ||
+                        geometry.perimeterMeters != scalars.perimeterText?.toDoubleOrNull())
                         return@run PricingReadResult.Unavailable(PricingProblemCode.INVALID_GEOMETRY)
                     val elements = MeasurementElementRepository(database).forMeasurement(measurementUuid)
                     val walls = database.livePricingQueries.selectPricingWalls(measurementUuid).executeAsList()

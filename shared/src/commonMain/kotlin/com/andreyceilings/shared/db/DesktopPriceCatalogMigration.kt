@@ -81,14 +81,20 @@ fun openDesktopPriceCatalog(driver: SqlDriver, previouslyExisting: Boolean) {
         check(frozenParts.all { it } || frozenParts.none { it }) { "Partial frozen estimate schema" }
         val oldVersion = if (frozenParts.all { it }) {
             check(detectedVersion == 15L) { "Frozen estimates require business roles" }
-            verifyFrozenEstimateStructure(driver)
-            16L
+            val revisionParts = listOf(columns("estimate_revision_frozen").isNotEmpty(), columns("estimate_revision_receipts").isNotEmpty())
+            check(revisionParts.all { it } || revisionParts.none { it }) { "Partial frozen revision schema" }
+            val workflowParts = listOf(columns("estimate_revision_workflow").isNotEmpty(), columns("estimate_revision_choice").isNotEmpty())
+            check(workflowParts.all { it } || workflowParts.none { it }) { "Partial revision metadata schema" }
+            check(workflowParts.none { it } || revisionParts.all { it }) { "Revision metadata requires frozen revisions" }
+            val frozenVersion = if (workflowParts.all { it }) maxOf(18L, persistedVersion) else if (revisionParts.all { it }) 17L else 16L
+            verifyFrozenEstimateStructure(driver, frozenVersion)
+            frozenVersion
         } else detectedVersion
         check(persistedVersion < 8L || oldVersion >= persistedVersion) { "Incomplete point placement schema" }
         if (oldVersion < PriceCatalogSchema.version)
             PriceCatalogSchema.migrate(driver, oldVersion, PriceCatalogSchema.version)
-        verifyMeasurementElementStructure(driver)
-        verifyPointPlacementStructure(driver)
+        PriceCatalogSchema.verifyStructure(driver)
+        verifyFrozenEstimateContents(driver)
         StarterPriceCatalog.initialize(database)
         driver.execute(null, "PRAGMA user_version = ${PriceCatalogSchema.version}", 0)
     }

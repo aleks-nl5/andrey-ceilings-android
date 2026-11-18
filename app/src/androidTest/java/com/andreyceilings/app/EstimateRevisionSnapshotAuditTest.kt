@@ -1,6 +1,12 @@
 package com.andreyceilings.app
 
 import android.content.Context
+import app.cash.sqldelight.driver.android.AndroidSqliteDriver
+import net.zetetic.database.sqlcipher.SupportOpenHelperFactory
+import com.andreyceilings.shared.db.EncryptedDatabaseOpenFailure
+import com.andreyceilings.shared.db.EncryptedDatabaseOpenStage
+import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.andreyceilings.app.data.security.PortableBackupManager
@@ -115,10 +121,15 @@ class EstimateRevisionSnapshotAuditTest {
                     PortableBackupManager.verifyEncryptedSnapshot(context, file, key)
                 }.isFailure)
 
-            // Correcting the bad link makes the image valid again.
-            createEncryptedPrototypeDriver(
-                context, key, filename, enableWalForTesting = true
-            ).use { driver ->
+            // Production admission now rejects the corrupt parent before exposing a driver.
+            assertEquals(EncryptedDatabaseOpenStage.SCHEMA,
+                assertFailsWith<EncryptedDatabaseOpenFailure> {
+                    createEncryptedPrototypeDriver(context, key, filename, enableWalForTesting = true)
+                }.stage)
+            // Repair only this synthetic fixture through a raw test driver. Never weaken
+            // production admission just to reopen a deliberately invalid database.
+            AndroidSqliteDriver(PrototypeDatabase.Schema, context, filename,
+                factory = SupportOpenHelperFactory(key.copyOf(), null, true)).use { driver ->
                 driver.execute(null,
                     "UPDATE estimate_revisions SET parentRevisionUuid = " +
                         "'$parentA' WHERE revisionUuid = '$v2'", 0

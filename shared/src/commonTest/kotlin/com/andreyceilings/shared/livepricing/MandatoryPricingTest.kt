@@ -94,12 +94,17 @@ class MandatoryPricingTest {
             val valid = ceiling(extra = true)
             assertBlocked(individual(valid, valid.source.elements.filter { it.uuid != key }.map { elementKey(it.uuid) }.toSet()))
         }
-        // Valid captured fine geometry, but its area cannot be represented exactly in milli.
+        // Owner policy: valid sub-milli captured area is rounded explicitly before row money.
         val c = ceiling(extra = true)
         val fine = validateMeasurementCreate(MeasurementCreateDraft(1, MeasurementPrecision.ONE_MILLIMETER, "Fine", "",
             MeasurementOutlineDraft.Template("rectangle", mapOf("length" to "4.001", "width" to "3.001")), "m")).geometry!!
-        val unresolvedArea = c.copy(source = c.source.copy(geometry = fine))
-        assertBlocked(preview(unresolvedArea)); assertBlocked(individual(unresolvedArea))
+        val roundedArea = c.copy(source = c.source.copy(geometry = fine))
+        assertTrue(preview(roundedArea).canFinalizeFull)
+        assertTrue(individual(roundedArea).canFinalizeFull)
+        val canvas = preview(roundedArea).priceableLines.single { it.businessRole == BusinessRole.CANVAS }
+        assertEquals(12007, canvas.sourceQuantityMilli)
+        assertEquals(QuantityRoundingPolicy.CAPTURED_AREA_TO_MILLI_HALF_UP_V1, canvas.quantityRoundingPolicy)
+        assertEquals(fine, roundedArea.source.geometry)
     }
 
     @Test fun optionalOmissionsAllowPartialOnlyAfterEachCeilingHasItsOwnPair() {

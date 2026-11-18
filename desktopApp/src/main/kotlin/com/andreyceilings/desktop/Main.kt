@@ -164,6 +164,7 @@ private fun DesktopPriceHost(
         val items by store.items.collectAsState(initial = emptyList())
         val priceGroups by store.groups.collectAsState(initial = emptyList())
         val objectsStore = remember(database) { database.objects }
+        SideEffect { measurementCreateNavigationGuard.bindQuotes(objectsStore.measurementDetails.elements) }
         val objectRows by objectsStore.rows.collectAsState(initial =
             ObjectsClientsRows(emptyList(), emptyList()))
         var externalError by remember { mutableStateOf<String?>(null) }

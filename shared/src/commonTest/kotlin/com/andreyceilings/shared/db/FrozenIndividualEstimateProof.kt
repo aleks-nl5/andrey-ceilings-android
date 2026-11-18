@@ -43,8 +43,8 @@ object FrozenIndividualEstimateProof {
         val revisionRows = history.revisions(saved.seriesUuid)
         var statusVersion = 1L
         for (status in EstimateWorkflowStatus.entries.reversed()) {
-            assertTrue(history.setWorkflowStatus(saved.seriesUuid, statusVersion, status, 350))
-            assertFalse(history.setWorkflowStatus(saved.seriesUuid, statusVersion, EstimateWorkflowStatus.DRAFT, 350))
+            assertTrue(history.setWorkflowStatus(saved.initialRevisionUuid, statusVersion, status, 350))
+            assertFalse(history.setWorkflowStatus(saved.initialRevisionUuid, statusVersion, EstimateWorkflowStatus.DRAFT, 350))
             statusVersion++
             assertEquals(revisionRows, history.revisions(saved.seriesUuid))
             assertEquals(record.payload, history.frozenIndividual(saved.seriesUuid)!!.payload)

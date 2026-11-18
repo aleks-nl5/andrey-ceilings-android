@@ -1,3 +1,32 @@
+## Owner-approved area rounding — 17.11.2026 (current)
+
+The owner reproduced INVALID_SOURCE with two rectangle sides entered to hundredths (4.12 × 3.34 → 13.7608 m²). The coherent geometry reader succeeds; the actual blocker was CANVAS QUANTITY_PRECISION. The owner explicitly chose: round captured area HALF_UP to 0.001 m² first, then calculate row cents. For example, at 100 UAH/m²: 13.7608 → 13.761 → 1376.10 UAH. This rule applies in both creation contexts and to current-source revisions. Original dimensions/drawing/area remain unchanged; manual quantities and perimeter retain their existing precision contract.
+
+Affected new frozen documents use format 3 with an explicit versioned area quantity policy; existing format 1/2 payload bytes and content proofs remain unchanged. Schema v19 adds only a capability marker migration (18.sqm, no row changes), so older distributed clients reject unsupported documents rather than opening them as v18. Preserve per-revision status, explicit chosen pointer, operation receipts, exact Long money, backup and SQLCipher. UI shows measured area separately from rounded billable source quantity. Native v18→v19 lifecycle and encrypted snapshot proofs include legacy and format-3 documents.
+
+Deletion and workflow-policy issue #118 remain deferred. Keep PR #117 Draft for independent review and owner APK re-test. Verification results are recorded in the PR; do not infer native success from compilation.
+
+---
+
+## Owner APK corrections — 17.11.2026 (supersedes older P4C2 workflow/list rules)
+
+Continue only Draft PR #117 / issue #116. Owner found two blocking defects: global Measurements creation must yield coherent live pricing, and v1/v2/v3 must remain independent client proposals. Persist workflow status and optimistic CAS per revision UUID; append creates only the new revision DRAFT and preserves older statuses. All versions must be visible/actionable in global/project/measurement lists. Persist an explicit CAS-protected selected revision separately; newest is not automatically chosen. Migrate v16/v17 losslessly to v18: only the latest revision receives the known old series status; earlier unknown metadata is shown as not recorded, never fabricated or offered as a fifth status. Preserve immutable exact financial/geometry payloads, receipts, numbering, SQLCipher/WAL/backup. Update affected common and physical platform tests with the contract.
+
+**Deletion is explicitly deferred:** no estimate delete CTA, command, migration or tests in this PR. Owner APK re-test and independent review are required after corrections. Keep Draft; owner alone chooses Ready/Merge/issue closure. Canonical updated requirements: https://github.com/aleks-nl5/andrey-ceilings-android/issues/116 and https://github.com/aleks-nl5/andrey-ceilings-android/pull/117#issuecomment-6957446280.
+
+---
+
+## CURRENT milestone — P4C2 immutable revisions from the CURRENT measurement (09.11.2026)
+
+- **PR #115 P4C1 is MERGED; accepted base main d97d096944e946335ed3f603a06c644bb4e9aac8; schema v16.** Next [Issue #116](https://github.com/aleks-nl5/andrey-ceilings-android/issues/116) is owner-approved for development. Work ONLY in feature branch feat/p4c2-measurement-sourced-revisions and its linked Draft PR. Read **[docs/P4C2_REVISION_HANDOFF.md](docs/P4C2_REVISION_HANDOFF.md)** first. Earlier P4C1 directions below are HISTORICAL and superseded.
+- Core source: **CURRENT saved measurement + CURRENT active local catalog**, freshly and coherently validated for a new live preview. Earlier frozen v1/vN is read-only comparison, NEVER the financial/geometry source for vN. Supported old manual selection, quantity or discount may transfer only on explicit user request and verified eligibility; no automatic carry or manual price-conflict resolver.
+- New revision v2/v3 under SAME series/printable number (no new counter/suffix), exact frozen drawing/rows/Long cents/milli and full source; unique idempotent operation receipt, latest-version/status CAS and atomic SQLDelight/SQLCipher writer transaction. Keep old versions bit-for-bit immutable. Existing legacy appendRevision(Double) is NOT the P4C2 writer. Current series workflow resets to DRAFT on successfully appended vN, not before; never misrepresent approval history of old revisions.
+- Shared CMP UI: saved quote → «Створити нову версію» → P4B2 transient quote with current measurement, old/new comparison, partial acknowledgement, guarded explicit Save → exact newly frozen revision; history opens any explicit revision UUID. Single series row in lists, no aggregate of revisions, no implicit latest when viewing an old document.
+- Add versioned v16→v17 migration, schema/import/backup verification and physical Android/Windows/iOS SQLCipher proofs; pass same-final-SHA CI, independent review and owner physical APK acceptance. **Do not merge/Ready/close #116/#44 yourself.** PDF = later P4C3, consolidated PDF = P4C4, not in this scope; #35/#70/#95/#114 independent.
+- The branch now includes the P4C2 implementation; see [docs/P4C2_IMPLEMENTATION.md](docs/P4C2_IMPLEMENTATION.md) for actual verification and pending gates. The original handoff records the initial docs-only state. Do not claim independent review, final CI or owner APK acceptance until recorded.
+
+---
+
 ## CURRENT active milestone — P4C1 (#113 / Draft PR #115), owner authorized 08.11.2026
 
 - **Work ONLY in branch `feat/p4c1-immutable-quote-v1` / [Draft PR #115](https://github.com/aleks-nl5/andrey-ceilings-android/pull/115)** from `main` after merged #112 (merge `cfe4bbc97c7503fa3e30a4de7923d7b8ca205fa8`). **Read [docs/P4C1_CODEX_HANDOFF.md](docs/P4C1_CODEX_HANDOFF.md) first** and full product decisions [#113](https://github.com/aleks-nl5/andrey-ceilings-android/issues/113). Historical P4B2/#112 work instructions below are superseded; do not create a competing PR.

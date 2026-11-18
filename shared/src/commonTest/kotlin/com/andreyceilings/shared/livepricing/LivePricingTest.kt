@@ -141,14 +141,17 @@ class LivePricingTest {
         assertNotEquals(catalog.signature, catalog.copy(items = listOf(i.copy(groupUpdatedAt = 2))).signature)
     }
 
-    @Test fun capturedPrecisionPolygonAndSubMilliAreaAreNeverSilentlyRounded() {
+    @Test fun capturedPrecisionPolygonAndSubMilliAreaHasExplicitRoundingPolicy() {
         val c = item("c", "м²", QuantityMode.CEILING_AREA)
         val e = element(c, ElementQuantity.CeilingArea)
         val polygon = FrozenPolygonGeometryContract.capture("polygon", listOf(CeilingPointMm(0, 0), CeilingPointMm(4000, 0), CeilingPointMm(3000, 3000), CeilingPointMm(0, 3000)), emptyMap(), 0.001)
         val s = LiveEstimateSource("p", "m", polygon, listOf(e))
         assertEquals(10500, preview(s, ActiveCatalogSnapshot(listOf(c))).priceableLines.single().sourceQuantityMilli)
         val fine = s.copy(geometry = geometry(4001, 3001))
-        assertTrue(preview(fine, ActiveCatalogSnapshot(listOf(c))).unresolvedItems.single().reasons.contains(PricingProblemCode.QUANTITY_PRECISION))
+        val rounded = preview(fine, ActiveCatalogSnapshot(listOf(c))).priceableLines.single()
+        assertEquals(12007, rounded.sourceQuantityMilli)
+        assertEquals(QuantityRoundingPolicy.CAPTURED_AREA_TO_MILLI_HALF_UP_V1, rounded.quantityRoundingPolicy)
+        assertEquals(12.007001, fine.geometry.areaSquareMeters, 0.000000000001)
         val coarse = s.copy(geometry = geometry(4100, 3100, 0.1))
         assertEquals(12710, preview(coarse, ActiveCatalogSnapshot(listOf(c))).priceableLines.single().sourceQuantityMilli)
     }

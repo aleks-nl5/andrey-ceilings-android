@@ -7,6 +7,27 @@ import kotlin.random.Random
 import kotlin.test.Test
 
 class BusinessRoleIosCipherTest {
+    @Test fun physicalV18ToV19ReopenAndAreaQuantityPolicy(): Unit = runBlocking {
+        val factory = NativeSqlCipherDriverFactory()
+        val name = "frozen-v19-${Random.nextLong()}.db"
+        val config = SqlCipherConfig(name = name, key = SqlCipherKey { ByteArray(32) { 44 } }, recovery = SqlCipherRecovery.Fail)
+        try { RoundedAreaPolicyProof.lifecycle(IosPriceCatalogSchema) { factory.create(it, config) } }
+        finally { factory.deleteDatabase(name) }
+    }
+    @Test fun physicalV17ToV18RollbackReopenAndFrozenRevisions(): Unit = runBlocking {
+        val factory = NativeSqlCipherDriverFactory()
+        val name = "frozen-v18-${Random.nextLong()}.db"
+        val config = SqlCipherConfig(name = name, key = SqlCipherKey { ByteArray(32) { 44 } }, recovery = SqlCipherRecovery.Fail)
+        try { RevisionWorkflowMigrationProof.lifecycle(IosPriceCatalogSchema) { factory.create(it, config) } }
+        finally { factory.deleteDatabase(name) }
+    }
+    @Test fun physicalV16ToV17RollbackReopenAndFrozenRevisions(): Unit = runBlocking {
+        val factory = NativeSqlCipherDriverFactory()
+        val name = "frozen-v17-${Random.nextLong()}.db"
+        val config = SqlCipherConfig(name = name, key = SqlCipherKey { ByteArray(32) { 44 } }, recovery = SqlCipherRecovery.Fail)
+        try { FrozenRevisionMigrationProof.lifecycle(IosPriceCatalogSchema) { factory.create(it, config) } }
+        finally { factory.deleteDatabase(name) }
+    }
     @Test fun physicalV15ToV16RollbackReopenAndFrozenV1(): Unit = runBlocking {
         val factory = NativeSqlCipherDriverFactory()
         val name = "frozen-v16-${Random.nextLong()}.db"

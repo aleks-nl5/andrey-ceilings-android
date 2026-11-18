@@ -4,6 +4,8 @@ import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
 import androidx.compose.runtime.*
 import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.ui.ImageComposeScene
+import androidx.compose.ui.platform.LocalViewConfiguration
+import androidx.compose.ui.platform.ViewConfiguration
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.input.pointer.*
@@ -24,6 +26,7 @@ import java.util.concurrent.atomic.AtomicInteger
 import kotlin.test.*
 
 class OverlayDragSceneTest {
+    private var activeTouchSlop = 0f
     @OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class,androidx.compose.ui.InternalComposeUiApi::class)
     @Test fun realMouseDragDetailsAndEditorNormalFullscreenKeepOneAtomicDraft():Unit=runBlocking {
         for(mode in listOf("details","editor","fullscreen","phone")) {
@@ -33,7 +36,17 @@ class OverlayDragSceneTest {
             val store=MeasurementEditStore(db){200};val doc=store.load(f.project,f.id);val model=MeasurementEditModel(store,doc)
             val row=MeasurementRepository(db).find(f.id)!!
             val before=OverlayDragFixture.snapshot(driver)
-            val scene=ImageComposeScene(if(mode=="phone")420 else 900,if(mode=="phone")900 else 1600) {CeilingsTheme(mode!="editor") {
+            val scene=ImageComposeScene(if(mode=="phone")420 else 900,if(mode=="phone")900 else 1600) {
+                val platformConfiguration = LocalViewConfiguration.current
+                // A compact canvas can project a real world move below the platform's
+                // gesture threshold. Exercise that case on every CI host explicitly.
+                val testedConfiguration = remember(platformConfiguration, mode) {
+                    if (mode == "editor") object : ViewConfiguration by platformConfiguration {
+                        override val touchSlop = maxOf(platformConfiguration.touchSlop, 64f)
+                    } else platformConfiguration
+                }
+                activeTouchSlop = testedConfiguration.touchSlop
+                CompositionLocalProvider(LocalViewConfiguration provides testedConfiguration) { CeilingsTheme(mode!="editor") {
                 val s by model.state.collectAsState()
                 if(mode=="details")MeasurementDetailsScreen(MeasurementDetailsState.Loaded(MeasurementDetailsData(row.id,row.projectId,row.name,"Drag","",row.shape,row.areaSquareMeters,row.perimeterMeters,row.notes,
                     measurementGeometryForViewing(row.shape,row.drawingJson,row.lengthMeters,row.widthMeters),row.uuid,row.updatedAt)),PaddingValues(0.dp),0.dp,{},drawingEditor=model,
@@ -41,7 +54,7 @@ class OverlayDragSceneTest {
                     linePlacements=model.displayLines(),selectedLineUuid=s.selectedLineUuid,onSelectLine=model::selectLine,
                     pointState=PointPlacementState(points=doc.placements.points,available=true))
                 else MeasurementEditScreen(model,PaddingValues(0.dp),0.dp,{}, {},null)
-            }}
+            }}}
             try {
                 scene.awaitText("Вписати креслення")
                 if(mode=="fullscreen")scene.click("На весь екран")
@@ -84,9 +97,15 @@ class OverlayDragSceneTest {
         val projection=measurementDrawingProjection(contour,b.width,b.height)!!
         fun project(px:Long,py:Long):Offset {val p=projection.project(DrawingPoint(px.toDouble(),py.toDouble()));return Offset(b.left+p.x.toFloat(),b.top+p.y.toFloat())}
         val start=project(x,y);val end=project(toX,toY)
-        sendPointerEvent(PointerEventType.Press,start,type=PointerType.Mouse)
-        sendPointerEvent(PointerEventType.Move,end,type=PointerType.Mouse)
-        frame()
+        val distance = (end - start).getDistance()
+        check(distance > 0f)
+        // Begin a genuine drag even when its precise final adjustment is sub-slop.
+        // The excursion stays in the same gesture; release at the exact requested world point.
+        val activation = if (distance <= activeTouchSlop)
+            start + (end - start) * ((activeTouchSlop + 2f) / distance) else end
+        sendPointerEvent(PointerEventType.Press,start,type=PointerType.Mouse);frame()
+        sendPointerEvent(PointerEventType.Move,activation,type=PointerType.Mouse);frame()
+        if (activation != end) { sendPointerEvent(PointerEventType.Move,end,type=PointerType.Mouse);frame() }
         sendPointerEvent(PointerEventType.Release,end,type=PointerType.Mouse);frame()
     }
     private fun ImageComposeScene.world(row: Room_measurements, x: Long, y: Long): Offset {

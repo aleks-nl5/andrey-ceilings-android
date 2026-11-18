@@ -9,6 +9,9 @@ import com.andreyceilings.shared.navigation.AppNavigationState
  */
 class MeasurementCreateNavigationGuard {
     val quoteSession = MeasurementQuoteSession()
+    private var quoteStore: MeasurementElementsStore? = null
+    fun bindQuotes(store: MeasurementElementsStore?) { quoteStore = store }
+    private val quoteSaving: Boolean get() = quoteSession.saving || quoteStore?.savingQuote == true
     var requestedAreaPlacement: Pair<String,String>? = null
     var requestedLinePlacement: Pair<String,String>? = null
     val fullscreen = kotlinx.coroutines.flow.MutableStateFlow(false)
@@ -31,7 +34,7 @@ class MeasurementCreateNavigationGuard {
     fun bindSurface(back: () -> Boolean) { surfaceBack = back }
     fun unbindSurface(back: () -> Boolean) { if (surfaceBack === back) surfaceBack = null }
     fun requestClose(close: () -> Unit) {
-        if (quoteSession.saving) return
+        if (quoteSaving) return
         val elementModel = elements
         if (elementModel?.points?.value?.positionEditor != null) { elementModel.requestPositionExit(close); return }
         if (elementModel != null && !elementModel.finishPlacement()) return
@@ -48,7 +51,7 @@ class MeasurementCreateNavigationGuard {
     }
 
     fun blocksExit(current: AppNavigationState): Boolean {
-        if (quoteSession.saving) return true
+        if (quoteSaving) return true
         if (elements?.editor?.value?.saving == true || elements?.points?.value?.saving == true) return true
         val editState = edit?.state?.value
         if (editState != null && (current.measurementEdit?.measurementId == editState.original.measurementId && current.measurementEdit.projectId == editState.draft.projectId ||
@@ -82,7 +85,7 @@ class MeasurementCreateNavigationGuard {
 
     fun transition(current: AppNavigationState, proposed: AppNavigationState,
         applyApproved: (AppNavigationState) -> Unit = {}): AppNavigationState {
-        if (proposed == current || quoteSession.saving) return current
+        if (proposed == current || quoteSaving) return current
         val elementModel = elements
         if (elementModel?.points?.value?.saving == true) return current
         if (elementModel?.points?.value?.positionEditor != null) {
