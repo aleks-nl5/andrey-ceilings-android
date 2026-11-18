@@ -1,4 +1,14 @@
-# CURRENT — owner merged P4C2; P4C3 frozen individual PDF next (18.11.2026)
+# CURRENT — repair live pricing after placement (#121), 18.11.2026
+
+**Accepted main:** [PR #120](https://github.com/aleks-nl5/andrey-ceilings-android/pull/120) was MERGED by the owner on 18.11.2026, merge SHA `17650881737f290e0da9e07c4015faa4da8616bc`. P4C3's individual frozen-vN A4 PDF + CMP preview + Android Save/Share/Print and polygon vertex letters are completed; Android/Windows/iOS same-SHA CI, code review and owner APK acceptance passed. Schema remains v19.
+
+**Now authorized:** [issue #121](https://github.com/aleks-nl5/andrey-ceilings-android/issues/121), an **independent bug-fix** for `INVALID_SOURCE` after drawing placement. [Standalone Codex handoff](ISSUE_121_PLACEMENT_PRICING_CODEX_HANDOFF.md); one Draft PR on `fix/issue-121-placement-live-pricing` from current merged main. Chandelier is the actual POINT example the owner tested; other point objects and line/area/obstacle must be independently checked, not assumed broken. Work only on diagnosed KMP live pricing/measurement/SQLDelight integration, preserving actual invalid-data rejection, frozen finance and PDF. Do not merge until same final-SHA Android/Windows/iOS CI, independent review and physical owner APK acceptance.
+
+**Following (independent):** P4C4 selected-room frozen consolidated PDF, then further umbrella #44 work. Separate roadmap/backlog: #95 drawing redesign, #114 Settings issuer, #42 hosts. [#118](https://github.com/aleks-nl5/andrey-ceilings-android/issues/118) permanent Test & CI co-evolution policy now lives in `AGENTS.md` as merged P4C3. The preceding P4C2→P4C3 roadmap section below is historical, not the active handoff.
+
+---
+
+# ARCHIVED — after merged P4C2, P4C3 PDF plan (18.11.2026)
 
 **Accepted main:** [PR #117](https://github.com/aleks-nl5/andrey-ceilings-android/pull/117) merged 18.11.2026, main `132f437a6f8e5aa3f4e620e56bf1d71c038cf376`, SQLDelight/SQLCipher schema v19; completed [#116](https://github.com/aleks-nl5/andrey-ceilings-android/issues/116). Independent editable client proposals v1/v2/v3 preserve per-revision workflow status and separately explicit chosen pointer; format-3 area quantity policy rounds `13.7608 → 13.761 m²` HALF_UP before line cents. Final PR evidence: Android #1215, Windows/iOS #965 succeeded on final feature SHA, independent static review PASS and owner APK positive smoke. Prior “keep PR #117 Draft” statements below are historical and superseded.
 
