@@ -28,4 +28,6 @@ SELECT (SELECT count(*) FROM projects), (SELECT count(*) FROM room_measurements)
 selectPricingGeometryScalars:
 SELECT printf('%!.17g', areaSquareMeters) AS areaText,
  printf('%!.17g', perimeterMeters) AS perimeterText
-FROM room_measurements WHERE uuid = ?;
+FROM room_measurements WHERE uuid = ?
+ AND typeof(areaSquareMeters) IN ('integer', 'real')
+ AND typeof(perimeterMeters) IN ('integer', 'real');

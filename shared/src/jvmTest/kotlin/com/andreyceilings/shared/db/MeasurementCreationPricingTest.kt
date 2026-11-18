@@ -25,8 +25,9 @@ class MeasurementCreationPricingTest {
                     driver.executeQuery(identifier, sql, { cursor -> mapper(object : SqlCursor by cursor {
                         // SQLite columnText uses 15 significant digits by default;
                         // Xerial getString uses Java's round-trip representation instead.
-                        override fun getDouble(index: Int) = cursor.getDouble(index)?.let {
-                            String.format(java.util.Locale.ROOT, "%.15g", it).toDouble()
+                        override fun getDouble(index: Int) = cursor.getString(index)?.let { text ->
+                            val value = text.toDoubleOrNull() ?: 0.0
+                            String.format(java.util.Locale.ROOT, "%.15g", value).toDouble()
                         }
                     }) }, parameters, binders)
             }
@@ -37,6 +38,10 @@ class MeasurementCreationPricingTest {
             assertIs<PricingReadResult.Loaded>(reader.read(project, saved.uuid))
             driver.execute(null, "UPDATE room_measurements SET areaSquareMeters = areaSquareMeters + 0.000001 WHERE id = $id", 0)
             assertEquals(PricingReadResult.Unavailable(PricingProblemCode.INVALID_GEOMETRY), reader.read(project, saved.uuid))
+            val invalidScalar = MeasurementGeometryCodec.read(saved.drawingJson).areaSquareMeters.toString() + "junk"
+            driver.execute(null, "UPDATE room_measurements SET areaSquareMeters = ? WHERE id = $id", 1) { bindString(0, invalidScalar) }
+            assertEquals(PricingReadResult.Unavailable(PricingProblemCode.INVALID_GEOMETRY), reader.read(project, saved.uuid),
+                "SQLite printf must not coerce malformed TEXT into valid geometry")
         }
     }
 

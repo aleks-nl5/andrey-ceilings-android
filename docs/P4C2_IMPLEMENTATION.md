@@ -6,9 +6,11 @@ Affected new frozen documents use format 3 with an explicit versioned area quant
 
 Deletion and workflow-policy issue #118 remain deferred. Keep PR #117 Draft for independent review and owner APK re-test. Verification results are recorded in the PR; do not infer native success from compilation.
 
-Windows CI also exposed JDBC core 0.2.13's `getDouble` implementation: it parses SQLite `columnText`, whose default REAL conversion drops low bits. The reader now obtains area/perimeter using explicit round-trip decimal precision before the existing exact equality checks. It does not add a geometry tolerance or disable walls/source validation. A JVM cursor adapter reproduces the native conversion and asserts a genuine scalar change still fails closed. The physical Windows all-shapes creation proof remains enabled.
+Windows CI also exposed JDBC core 0.2.13's `getDouble` implementation: it parses SQLite `columnText`, whose default REAL conversion drops low bits. The reader now obtains area/perimeter using explicit round-trip decimal precision before the existing exact equality checks. It does not add a geometry tolerance or disable walls/source validation. A JVM cursor adapter reproduces the native conversion and asserts a genuine scalar change still fails closed. SQLite storage types must be numeric before formatting; malformed TEXT with a numeric prefix is rejected instead of being coerced by printf. The physical Windows all-shapes creation proof remains enabled.
 
 The Desktop scene harness now serializes UI continuation/render work, matching real hosts. ImageComposeScene defaults to Unconfined, which can resume a database completion on a worker concurrently with rendering and corrupt the lazy layout. The queued render-thread dispatcher keeps all comparison/selection/area assertions enabled.
+
+Verification on `fdcb840`: full shared JVM **424 tests, 0 failures**, full Desktop **47 tests, 0 failures**, Android unit **11 tests, 0 failures**; APK assembly, instrumentation compilation and SQLDelight migration verification passed. The subsequent numeric-storage guard passed all **3 MeasurementCreationPricingTest** cases, instrumentation compilation and migration verification. Final native CI results are tracked in PR #117; compilation is not native acceptance.
 
 ---
 

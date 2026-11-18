@@ -73,7 +73,8 @@ class LivePricingReader(private val database: PrototypeDatabase) {
                         ?: return@run PricingReadResult.Unavailable(PricingProblemCode.PARENT_UNAVAILABLE)
                     val geometry = try { MeasurementGeometryCodec.read(measurement.drawingJson) }
                         catch (_: IllegalArgumentException) { return@run PricingReadResult.Unavailable(PricingProblemCode.INVALID_GEOMETRY) }
-                    val scalars = database.livePricingQueries.selectPricingGeometryScalars(measurementUuid).executeAsOne()
+                    val scalars = database.livePricingQueries.selectPricingGeometryScalars(measurementUuid).executeAsOneOrNull()
+                        ?: return@run PricingReadResult.Unavailable(PricingProblemCode.INVALID_GEOMETRY)
                     if (geometry.shapeType != measurement.shape || geometry.areaSquareMeters != scalars.areaText?.toDoubleOrNull() ||
                         geometry.perimeterMeters != scalars.perimeterText?.toDoubleOrNull())
                         return@run PricingReadResult.Unavailable(PricingProblemCode.INVALID_GEOMETRY)
