@@ -190,7 +190,7 @@ class FrozenEstimateDocumentAndroidTest {
                 val living = MeasurementPricingFixture.seed(db, roomName = "Вітальня")
                 val kitchen = MeasurementPricingFixture.seed(db, living.projectId, "Кухня")
                 MeasurementPricingFixture.seed(db, living.projectId, "Спальня")
-                val group = PriceGroupRepository(db).create("Додаткові роботи", 110, "шт.")
+                val group = PriceGroupRepository(db).create("Позиції для тесту зведеного PDF", 110, "шт.")
                 val prices = PriceRepository(db)
                 val item = prices.createInGroup("consolidated.extra",
                     "Монтаж декоративного освітлення з окремим ізольованим кріпленням", group, 0.0, 111)
