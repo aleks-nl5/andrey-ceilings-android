@@ -179,35 +179,49 @@ class TransientQuoteSceneTest {
                     assertTrue(choice.config.getOrNull(SemanticsActions.OnClick)?.action?.invoke() == true)
                     scene.await { find(preview)?.config?.contains(SemanticsProperties.Disabled) == false }
                 }
+                fun previewPages(): List<String> {
+                    click(preview)
+                    scene.await { find("Збереження, надсилання й друк PDF доступні на Android.") != null }
+                    assertNull(find("Зберегти PDF"))
+                    assertNull(find("Поділитися"))
+                    assertNull(find("Друк"))
+                    fun pageDescriptions() = scene.nodes().flatMap { node ->
+                        node.config.getOrNull(SemanticsProperties.ContentDescription).orEmpty()
+                    }
+                    val first = assertNotNull(pageDescriptions().firstOrNull { "Сторінка 1 / " in it })
+                    val count = first.substringAfterLast("Сторінка 1 / ").toInt()
+                    val scrollToPage = assertNotNull(scene.nodes().lastOrNull {
+                        it.config.getOrNull(SemanticsActions.ScrollToIndex) != null
+                    }?.config?.getOrNull(SemanticsActions.ScrollToIndex)?.action)
+                    return listOf(first) + (1 until count).map { index ->
+                        assertTrue(scrollToPage(index))
+                        val footer = "Сторінка ${index + 1} / $count"
+                        scene.await { pageDescriptions().any { footer in it } }
+                        pageDescriptions().first { footer in it }
+                    }
+                }
+
                 choose("Кухня", kitchenNumber)
+                val singlePages = previewPages()
+                assertEquals(1, singlePages.size, singlePages.joinToString("\n\n"))
+                val single = singlePages.single()
+                assertEquals(listOf("Зведений кошторис", "Об’єкт · Квартира / Центр", "$kitchenNumber · v1"),
+                    single.lines().take(3))
+                assertTrue("Позиція" in single && "Збережене креслення" in single && "Загалом до оплати" in single)
+                click("Назад")
+                scene.await { find(preview)?.config?.contains(SemanticsProperties.Disabled) == false }
+
                 choose("Вітальня", livingNumber)
-                click(preview)
-                scene.await { find("Збереження, надсилання й друк PDF доступні на Android.") != null }
-                assertNull(find("Зберегти PDF"))
-                assertNull(find("Поділитися"))
-                assertNull(find("Друк"))
-                fun pageDescriptions() = scene.nodes().flatMap { node ->
-                    node.config.getOrNull(SemanticsProperties.ContentDescription).orEmpty()
-                }
-                val cover = assertNotNull(pageDescriptions().firstOrNull { "Сторінка 1 / " in it })
-                assertEquals(listOf("Зведений кошторис", "Об’єкт · Квартира / Центр"), cover.lines().dropLast(1))
-                assertFalse(livingNumber in cover || kitchenNumber in cover, cover)
-                val pageCount = cover.substringAfterLast("Сторінка 1 / ").toInt()
-                val scrollToPage = assertNotNull(scene.nodes().lastOrNull {
-                    it.config.getOrNull(SemanticsActions.ScrollToIndex) != null
-                }?.config?.getOrNull(SemanticsActions.ScrollToIndex)?.action)
-                val sections = (1 until pageCount).map { index ->
-                    assertTrue(scrollToPage(index))
-                    val footer = "Сторінка ${index + 1} / $pageCount"
-                    scene.await { pageDescriptions().any { footer in it } }
-                    pageDescriptions().first { footer in it }
-                }
-                assertTrue(sections.all { it.lines().first() == "Зведений кошторис" })
-                val historicalPages = sections.dropLast(1)
-                assertTrue(historicalPages.any { "$kitchenNumber · v1" in it && "Об’єкт · Оселя після ремонту" in it })
-                assertTrue(historicalPages.any { "$livingNumber · v1" in it && "Об’єкт · Оселя до змін" in it })
-                assertTrue(historicalPages.none { "Квартира / Центр" in it })
-                assertTrue("Загалом до оплати" in sections.last())
+                val pages = previewPages()
+                assertEquals(2, pages.size, pages.joinToString("\n\n"))
+                assertEquals(listOf("Зведений кошторис", "Об’єкт · Квартира / Центр", "$kitchenNumber · v1"),
+                    pages.first().lines().take(3))
+                assertTrue(pages.all { it.lines().first() == "Зведений кошторис" })
+                assertTrue(pages.any { "$kitchenNumber · v1" in it && "Об’єкт · Оселя після ремонту" in it && "Позиція" in it })
+                assertTrue(pages.any { "$livingNumber · v1" in it && "Об’єкт · Оселя до змін" in it && "Позиція" in it })
+                val last = pages.last()
+                assertTrue("Збережене креслення" in last || "Позиція" in last, last)
+                assertTrue("Підсумок об’єкта\nЗагалом до оплати" in last, last)
                 click("Назад")
                 scene.await { find(preview)?.config?.contains(SemanticsProperties.Disabled) == false }
                 click("Скасувати")

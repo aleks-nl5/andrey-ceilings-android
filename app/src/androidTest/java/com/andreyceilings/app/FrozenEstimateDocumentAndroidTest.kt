@@ -268,45 +268,61 @@ class FrozenEstimateDocumentAndroidTest {
                         compose.onNode(exact).assertIsSelected()
                         waitForPreview(room)
                     }
-                    choose("Вітальня", first)
-                    choose("Кухня", partial)
-                    for ((name, quote) in additional) choose(name, quote)
-                    preview.performClick()
-                    compose.waitUntil(60_000) { compose.onAllNodesWithText("Зберегти PDF").fetchSemanticsNodes().isNotEmpty() }
-                    compose.onNodeWithText("Зберегти PDF").performClick()
-                    compose.waitUntil(60_000) { compose.runOnIdle { captured != null } }
-                    val pages = compose.runOnIdle { assertNotNull(captured) }
-                    runBlocking { writeEstimateDocumentPdf(pages, 0 until pages.count) { output.outputStream() } }
-                    val text = PdfRenderer(ParcelFileDescriptor.open(output, ParcelFileDescriptor.MODE_READ_ONLY)).use { pdf ->
-                        assertEquals(pages.count, pdf.pageCount)
-                        assertTrue(pdf.pageCount > 11)
-                        (0 until pdf.pageCount).joinToString("\n") { index ->
-                            pdf.openPage(index).use { page ->
-                                assertEquals(595, page.width)
-                                assertEquals(842, page.height)
-                                page.textContents.joinToString(" ") { it.text }.also { pageText ->
-                                    // PdfRenderer can split a single printed heading into separate glyph runs.
-                                    val compactText = pageText.filterNot(Char::isWhitespace)
-                                    assertTrue("Зведенийкошторис" in compactText, pageText)
-                                    if (index == 0) {
-                                        assertTrue("Квартира/Центр" in compactText, pageText)
-                                        assertFalse(publicNumber(first) in compactText || publicNumber(partial) in compactText, pageText)
-                                    }
+                    fun exportPages(): Pair<EstimateDocumentPages, List<String>> {
+                        compose.runOnIdle { captured = null }
+                        preview.performClick()
+                        compose.waitUntil(60_000) { compose.onAllNodesWithText("Зберегти PDF").fetchSemanticsNodes().isNotEmpty() }
+                        compose.onNodeWithText("Зберегти PDF").performClick()
+                        compose.waitUntil(60_000) { compose.runOnIdle { captured != null } }
+                        val pages = compose.runOnIdle { assertNotNull(captured) }
+                        runBlocking { writeEstimateDocumentPdf(pages, 0 until pages.count) { output.outputStream() } }
+                        val pageText = PdfRenderer(ParcelFileDescriptor.open(output, ParcelFileDescriptor.MODE_READ_ONLY)).use { pdf ->
+                            assertEquals(pages.count, pdf.pageCount)
+                            List(pdf.pageCount) { index ->
+                                pdf.openPage(index).use { page ->
+                                    assertEquals(595, page.width)
+                                    assertEquals(842, page.height)
+                                    page.textContents.joinToString(" ") { it.text }.filterNot(Char::isWhitespace)
                                 }
                             }
                         }
+                        assertTrue(pageText.all { "Зведенийкошторис" in it }, pageText.joinToString("\n"))
+                        return pages to pageText
                     }
+
+                    val shortQuotes = additional.entries.take(2)
+                    for ((name, quote) in shortQuotes) choose(name, quote)
+                    val shortQuote = shortQuotes.last().value
+                    val (_, smallPages) = exportPages()
+                    assertEquals(2, smallPages.size, smallPages.joinToString("\n"))
+                    assertTrue("Квартира/Центр" in smallPages.first() &&
+                        "${publicNumber(shortQuote)}·v1" in smallPages.first() && "Позиція" in smallPages.first())
+                    assertTrue("Підсумокоб’єктаЗагаломдооплати" in smallPages.last())
+                    assertTrue("Збереженекреслення" in smallPages.last() || "Позиція" in smallPages.last())
+                    compose.onNodeWithText("Назад").performClick()
+
+                    choose("Кухня", partial)
+                    choose("Вітальня", first)
+                    for ((name, quote) in additional.entries.drop(2)) choose(name, quote)
+                    val (pages, renderedPages) = exportPages()
+                    assertTrue("Квартира/Центр" in renderedPages.first() &&
+                        "${publicNumber(additional.values.last())}·v1" in renderedPages.first() &&
+                        "Позиція" in renderedPages.first())
+                    val text = renderedPages.joinToString("\n")
                     val compactText = text.filterNot(Char::isWhitespace)
                     assertTrue("${publicNumber(first)}·v1" in compactText, text)
                     assertTrue("${publicNumber(partial)}·v1" in compactText, text)
                     assertTrue("Частковийкошторис" in compactText, text)
                     assertTrue("Монтажліхтаря" in compactText, text)
                     assertTrue("Загаломдооплати" in compactText, text)
-                    assertTrue(Regex("Кількість").findAll(compactText).count() >= 3, text)
+                    assertTrue(Regex("Кількість").findAll(compactText).count() > 10, text)
+                    assertEquals(10, Regex("Збереженекреслення").findAll(compactText).count(), text)
+                    assertEquals(40, Regex("декоративного").findAll(compactText).count(), text)
                     val total = (listOf(first, partial) + additional.values).sumOf {
                         assertNotNull(history.exactIndividual(it.seriesUuid, it.initialRevisionUuid)).frozen.amounts.finalCents
                     }
-                    assertTrue(measurementMoney(total).filterNot(Char::isWhitespace) in compactText, text)
+                    val payable = measurementMoney(total).filterNot(Char::isWhitespace)
+                    assertTrue(renderedPages.any { "Підсумокоб’єктаЗагаломдооплати·$payable" in it }, text)
                     assertEquals("zvedenyi-koshtorys-Квартира-Центр.pdf", pages.fileName)
                     additional.values.forEach { assertTrue("${publicNumber(it)}·v1" in compactText, text) }
                     assertFalse("${publicNumber(first)}·v2" in compactText, text)
