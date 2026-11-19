@@ -1,3 +1,13 @@
+## CURRENT — P4 closed; P5 UX discovery only (#95), 19.11.2026
+
+**Main baseline:** owner merged [PR #129](https://github.com/aleks-nl5/andrey-ceilings-android/pull/129) 19.11.2026, merge SHA `8e2aac33775ff5843febabbcaf9d31be32362945`. P4C4 [#128](https://github.com/aleks-nl5/andrey-ceilings-android/issues/128) completed; P4 umbrella [#44](https://github.com/aleks-nl5/andrey-ceilings-android/issues/44) closed/completed after [evidence-based audit](https://github.com/aleks-nl5/andrey-ceilings-android/issues/44#issuecomment-7019985840). SQLCipher schema v20 remains.
+
+**Next workflow:** owner-led product/UX discovery [#95](https://github.com/aleks-nl5/andrey-ceilings-android/issues/95). Read [docs/P5_UX_DISCOVERY.md](docs/P5_UX_DISCOVERY.md) before proposing anything. **No implementation authorization yet**; do not create a feature branch or write UI code in response to this planning document without explicit owner approval of a bounded slice. Preserve live KMP price, exact saved frozen vN/PDF, DB, cross-platform tests, and owner-only merge gate.
+
+**Historical handoffs below** remain documentation of completed P4 milestones, not current tasks. #42 runnable hosts, #70 arbitrary angles, #114 issuer, #78 catalog and #123–127 sync remain separate open directions.
+
+---
+
 ## CURRENT handoff — P4C4 selected-room consolidated frozen PDF (#128), 19.11.2026
 
 **Accepted main:** [PR #122](https://github.com/aleks-nl5/andrey-ceilings-android/pull/122) merged by owner 19.11.2026, merge SHA `ecfc028c00d374ae90796b58a0a26d3bb0110e83`, SQLDelight/SQLCipher **v20**. [Issue #121](https://github.com/aleks-nl5/andrey-ceilings-android/issues/121) closed. P4C3 [PR #120](https://github.com/aleks-nl5/andrey-ceilings-android/pull/120) remains accepted baseline for **individual frozen PDF**.
