@@ -1,3 +1,15 @@
+# CURRENT — P4 completed; P5 UX discovery (#95), 19.11.2026
+
+**P4 closed:** owner merged [PR #129](https://github.com/aleks-nl5/andrey-ceilings-android/pull/129) on 19.11.2026 (merge SHA `8e2aac33775ff5843febabbcaf9d31be32362945`). [#128](https://github.com/aleks-nl5/andrey-ceilings-android/issues/128) completed; umbrella [#44](https://github.com/aleks-nl5/andrey-ceilings-android/issues/44) closed/completed after [final audit](https://github.com/aleks-nl5/andrey-ceilings-android/issues/44#issuecomment-7019985840). Frozen individual and selected-room PDF remain working baseline; SQLDelight/SQLCipher schema **v20**.
+
+**NEXT — PRODUCT/UX PLANNING, NOT IMPLEMENTATION:** [#95](https://github.com/aleks-nl5/andrey-ceilings-android/issues/95) and [P5 UX discovery brief](P5_UX_DISCOVERY.md). Work with owner to review current real master flows: one ceiling → contour/measurement → optional placement/work items → live price → explicit saved immutable estimates. Resolve documented LINE complexity, contextual controls, preview feedback, reliable hit testing and real touch E2E. Compare practical phone and desktop UX before choosing a design. Only after owner approves an explicit narrow interaction slice should Codex start implementation.
+
+**Unchanged scope boundaries:** no reinterpretation of immutable financial revisions, public numbers, historical drawings/PDF or SQLCipher backups through UX work; no unapproved new DB/data model. [#70](https://github.com/aleks-nl5/andrey-ceilings-android/issues/70) arbitrary-angle solver, [#71](https://github.com/aleks-nl5/andrey-ceilings-android/issues/71)/[#76](https://github.com/aleks-nl5/andrey-ceilings-android/issues/76) broader ceiling concepts, [#78](https://github.com/aleks-nl5/andrey-ceilings-android/issues/78) catalog, [#114](https://github.com/aleks-nl5/andrey-ceilings-android/issues/114) Settings issuer, [#42](https://github.com/aleks-nl5/andrey-ceilings-android/issues/42) runnable hosts, [#123](https://github.com/aleks-nl5/andrey-ceilings-android/issues/123) colleague sync remain independently planned.
+
+**Process:** docs-only discovery PR; later bounded developer-ready issues and Draft PRs; co-evolve tests, same-final-SHA Android + Windows/iOS CI, independent code review, owner APK acceptance; owner alone merges.
+
+---
+
 # CURRENT — P4C4 selected-room consolidated frozen PDF (#128), 19.11.2026
 
 **Accepted main:** [PR #122](https://github.com/aleks-nl5/andrey-ceilings-android/pull/122) **MERGED by owner** 19.11.2026, merge SHA `ecfc028c00d374ae90796b58a0a26d3bb0110e83`. #121 completed/closed; previous bug repaired with SQLCipher schema **v20**. P4C3 individual frozen-vN PDF [PR #120](https://github.com/aleks-nl5/andrey-ceilings-android/pull/120) accepted; never regress individual PDF.
