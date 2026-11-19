@@ -9,11 +9,16 @@ import kotlin.test.*
 
 /** Runs unchanged on SQLite JDBC and real Android/Windows/iOS SQLCipher drivers. */
 object FrozenIndividualEstimateProof {
-    fun command(db: PrototypeDatabase, fixture: MeasurementPricingFixture.Fixture, partial: Boolean = false): IndividualEstimateSaveRequest {
+    fun command(
+        db: PrototypeDatabase,
+        fixture: MeasurementPricingFixture.Fixture,
+        partial: Boolean = false,
+        discount: String = "12,34"
+    ): IndividualEstimateSaveRequest {
         val presenter = TransientQuotePresenter(fixture.measurementUuid)
         presenter.acceptRead(presenter.beginRead(), LivePricingReader(db).read(fixture.projectId, fixture.measurementUuid))
         presenter.editQuantity(fixture.elementUuid, "12.007"); presenter.confirmQuantity(fixture.elementUuid)
-        presenter.editDiscount("12,34"); presenter.confirmDiscount()
+        presenter.editDiscount(discount); presenter.confirmDiscount()
         if (partial) { assertTrue(presenter.state.value.canAcknowledge); presenter.acknowledge(true) }
         return assertNotNull(presenter.saveRequest(fixture.projectId, "  Kitchen v1  "))
     }

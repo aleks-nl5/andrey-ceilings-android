@@ -20,6 +20,9 @@ import com.andreyceilings.shared.db.*
 import com.andreyceilings.shared.estimate.*
 import com.andreyceilings.shared.livepricing.BusinessRole
 import com.andreyceilings.shared.measurement.*
+import com.andreyceilings.shared.objects.ObjectsClientsRows
+import com.andreyceilings.shared.objects.ObjectsClientsScreen
+import com.andreyceilings.shared.objects.ObjectsClientsStore
 import com.andreyceilings.shared.theme.CeilingsTheme
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -170,6 +173,140 @@ class FrozenEstimateDocumentAndroidTest {
             output.delete()
             context.deleteDatabase(databaseName)
             context.deleteDatabase(restoredName)
+        }
+    }
+
+    @SdkSuppress(minSdkVersion = 35)
+    @Test fun selectedRoomsExportOnePdfWithExactFrozenVersions() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val databaseName = "consolidated-pdf.db"
+        val key = ByteArray(32) { 0x63 }
+        val output = File.createTempFile("consolidated-pdf", ".pdf", context.cacheDir)
+        context.deleteDatabase(databaseName)
+        try {
+            createEncryptedPrototypeDriver(context, key, databaseName, enableWalForTesting = true,
+                initializePriceCatalog = true).use { driver ->
+                val db = PrototypeDatabase(driver)
+                val living = MeasurementPricingFixture.seed(db, roomName = "Вітальня")
+                val kitchen = MeasurementPricingFixture.seed(db, living.projectId, "Кухня")
+                MeasurementPricingFixture.seed(db, living.projectId, "Спальня")
+                val group = PriceGroupRepository(db).create("Додаткові роботи", 110, "шт.")
+                val prices = PriceRepository(db)
+                val item = prices.createInGroup("consolidated.extra",
+                    "Монтаж декоративного освітлення з окремим ізольованим кріпленням", group, 0.0, 111)
+                val itemUuid = assertNotNull(prices.find(item)).uuid
+                val elements = MeasurementElementRepository(db)
+                repeat(40) { index ->
+                    elements.createCatalogSelection(living.measurementUuid, itemUuid, ElementQuantity.Exact(1000),
+                        120L + index, approval = ElementApproval.APPROVED, businessRole = BusinessRole.ADDITIONAL_WORK)
+                }
+                elements.createWish(kitchen.measurementUuid, "Монтаж ліхтаря", 560, approval = ElementApproval.APPROVED)
+                val history = ImmutableEstimateRepository(db)
+                val first = history.saveIndividual(FrozenIndividualEstimateProof.command(db, living), 2026, 600)
+                val latest = history.appendIndividual(FrozenRevisionProof.request(db, living, first.seriesUuid), 601)
+                assertTrue(history.selectRevision(first.seriesUuid, latest.initialRevisionUuid, 1, 602))
+                val partial = history.saveIndividual(FrozenIndividualEstimateProof.command(db, kitchen, partial = true), 2026, 603)
+                val additional = (1..8).associate { index ->
+                    val name = "Кімната ${index.toString().padStart(2, '0')}"
+                    val room = MeasurementPricingFixture.seed(db, living.projectId, name)
+                    name to history.saveIndividual(FrozenIndividualEstimateProof.command(db, room, discount = "$index"),
+                        2026, 610L + index)
+                }
+                val before = history.frozenIndividuals()
+                val sequence = db.estimateHistoryQueries.selectEstimateNumberSettings().executeAsOne().nextSequence
+                val objects = ObjectsClientsStore(db) { 700 }
+                val store = objects.measurementDetails.elements
+                try {
+                    var captured: EstimateDocumentPages? = null
+                    val mounted = mutableStateOf(true)
+                    compose.setContent {
+                        if (mounted.value) CompositionLocalProvider(LocalEstimateDocumentExporter provides EstimateDocumentExporter { pages, _, done ->
+                            captured = pages
+                            done(null)
+                        }) {
+                            CeilingsTheme(false) {
+                                ObjectsClientsScreen(
+                                    rows = ObjectsClientsRows(emptyList(), emptyList()),
+                                    detailsProjectId = living.projectId, detailsStore = objects,
+                                    onOpenProject = {}, onCloseProject = {}, databaseAvailable = true,
+                                    onSaveClient = { _, _ -> }, onSaveProject = { _, _ -> },
+                                    onDeleteClient = {}, onDeleteProject = {}, onDial = {},
+                                    onExternalAction = { _, _ -> }
+                                )
+                            }
+                        }
+                    }
+                    compose.waitUntil(10000) { compose.onAllNodesWithText("Зведений кошторис").fetchSemanticsNodes().isNotEmpty() }
+                    compose.onNodeWithText("Зведений кошторис").performClick()
+                    compose.waitUntil(10000) { compose.onAllNodesWithText("Переглянути зведений PDF").fetchSemanticsNodes().isNotEmpty() }
+                    val preview = compose.onNodeWithText("Переглянути зведений PDF")
+                    preview.assertIsNotEnabled()
+                    val list = compose.onAllNodes(SemanticsMatcher.keyIsDefined(SemanticsActions.ScrollToIndex)).onLast()
+                    val noQuote = hasText("Спальня") and isToggleable()
+                    list.performScrollToNode(noQuote)
+                    compose.onNode(noQuote).assertIsNotEnabled()
+                    fun publicNumber(document: CreatedEstimateSeries) = EstimateNumbering.printable(document.documentNumber)
+                    fun choose(room: String, document: CreatedEstimateSeries) {
+                        list.performScrollToNode(hasText(room))
+                        compose.onNode(hasText(room) and isToggleable()).performClick()
+                        preview.assertIsNotEnabled()
+                        val exact = hasText("${publicNumber(document)} · v1", substring = true) and isSelectable()
+                        list.performScrollToNode(exact)
+                        compose.onNode(exact).assertIsNotSelected().performClick()
+                    }
+                    choose("Вітальня", first)
+                    choose("Кухня", partial)
+                    for ((name, quote) in additional) choose(name, quote)
+                    compose.waitUntil(10000) {
+                        compose.onAllNodes(hasText("Переглянути зведений PDF") and isEnabled()).fetchSemanticsNodes().isNotEmpty()
+                    }
+                    preview.performClick()
+                    compose.waitUntil(10000) { compose.onAllNodesWithText("Зберегти PDF").fetchSemanticsNodes().isNotEmpty() }
+                    compose.onNodeWithText("Зберегти PDF").performClick()
+                    compose.waitUntil(10000) { compose.runOnIdle { captured != null } }
+                    val pages = compose.runOnIdle { assertNotNull(captured) }
+                    runBlocking { writeEstimateDocumentPdf(pages, 0 until pages.count) { output.outputStream() } }
+                    val text = PdfRenderer(ParcelFileDescriptor.open(output, ParcelFileDescriptor.MODE_READ_ONLY)).use { pdf ->
+                        assertEquals(pages.count, pdf.pageCount)
+                        assertTrue(pdf.pageCount > 11)
+                        (0 until pdf.pageCount).joinToString("\n") { index ->
+                            pdf.openPage(index).use { page ->
+                                assertEquals(595, page.width)
+                                assertEquals(842, page.height)
+                                page.textContents.joinToString(" ") { it.text }
+                            }
+                        }
+                    }
+                    assertTrue(text.contains("${publicNumber(first)} · v1"), text)
+                    assertTrue(text.contains("${publicNumber(partial)} · v1"), text)
+                    assertTrue(text.contains("Частковий кошторис"), text)
+                    assertTrue(text.contains("Монтаж ліхтаря"), text)
+                    assertTrue(text.contains("Загалом до оплати"), text)
+                    assertTrue(Regex("Кількість").findAll(text).count() >= 3, text)
+                    val total = (listOf(first, partial) + additional.values).sumOf {
+                        assertNotNull(history.exactIndividual(it.seriesUuid, it.initialRevisionUuid)).frozen.amounts.finalCents
+                    }
+                    assertTrue(text.contains(measurementMoney(total)), text)
+                    assertEquals("zvedenyi-koshtorys.pdf", pages.fileName)
+                    additional.values.forEach { assertTrue(text.contains("${publicNumber(it)} · v1"), text) }
+                    assertFalse(text.contains("${publicNumber(first)} · v2"), text)
+                    assertFalse(text.contains(first.initialRevisionUuid), text)
+                    assertFalse(text.contains(first.seriesUuid), text)
+                    assertFalse(text.contains("Спальня"), text)
+                    compose.onNodeWithText("Назад").performClick()
+                    compose.onNodeWithText("Скасувати").performClick()
+                    compose.runOnIdle { mounted.value = false }
+                    compose.waitForIdle()
+                    assertEquals(before, history.frozenIndividuals())
+                    assertEquals(sequence, db.estimateHistoryQueries.selectEstimateNumberSettings().executeAsOne().nextSequence)
+                } finally {
+                    runBlocking { store.closeAndAwaitWrites() }
+                }
+            }
+        } finally {
+            key.fill(0)
+            output.delete()
+            context.deleteDatabase(databaseName)
         }
     }
 

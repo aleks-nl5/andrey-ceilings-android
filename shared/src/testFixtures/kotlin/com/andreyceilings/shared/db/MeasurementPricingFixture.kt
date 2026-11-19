@@ -8,10 +8,10 @@ import com.andreyceilings.shared.prices.*
 /** Explicit per-measurement main selections, reused by common, native and CMP scene proofs. */
 object MeasurementPricingFixture {
     data class Fixture(val projectId: Long, val measurementUuid: String, val elementUuid: String, val priceId: Long, val profileUuid: String)
-    fun seed(database: PrototypeDatabase): Fixture {
+    fun seed(database: PrototypeDatabase, projectId: Long? = null, roomName: String = "Room"): Fixture {
         val suffix = newRecordUuid()
-        val project = ProjectRepository(database).createReturningId(null, "Pricing $suffix", createdAt = 100)
-        val draft = MeasurementCreateDraft(project, MeasurementPrecision.ONE_MILLIMETER, "Room", "",
+        val project = projectId ?: ProjectRepository(database).createReturningId(null, "Pricing $suffix", createdAt = 100)
+        val draft = MeasurementCreateDraft(project, MeasurementPrecision.ONE_MILLIMETER, roomName, "",
             MeasurementOutlineDraft.Template("rectangle", mapOf("length" to "4", "width" to "3")), newRecordUuid())
         MeasurementCreateStore(database) { 101 }.create(draft)
         val group = PriceGroupRepository(database).create("Pricing $suffix", 102, "м²", QuantityMode.CEILING_AREA)

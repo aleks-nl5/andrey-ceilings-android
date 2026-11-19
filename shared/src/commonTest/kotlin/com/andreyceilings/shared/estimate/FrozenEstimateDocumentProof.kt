@@ -34,12 +34,64 @@ internal suspend fun proveExactEstimateDocuments(driver: SqlDriver) {
     prices.updateSalePrice(assertNotNull(prices.find(fixture.priceId)), 100.0, 604)
     val third = history.appendIndividual(FrozenRevisionProof.request(db, fixture, series), createdAt + 5)
     val ids = listOf(first, second, third).map { it.initialRevisionUuid }
+    assertTrue(history.setWorkflowStatus(ids[0], 1, EstimateWorkflowStatus.APPROVED, createdAt + 6))
+    assertTrue(history.setWorkflowStatus(ids[1], 1, EstimateWorkflowStatus.REJECTED, createdAt + 6))
+    assertTrue(history.setWorkflowStatus(ids[2], 1, EstimateWorkflowStatus.SENT, createdAt + 6))
     val frozen = ids.map { assertNotNull(history.exactIndividual(series, it)) }
     assertEquals(listOf(1, 2, 3), frozen.map { it.frozen.formatVersion })
     assertEquals(first.initialRevisionUuid, frozen.last().selectedRevisionUuid)
 
     val store = MeasurementElementsStore(db, { createdAt + 10 })
     try {
+        val rooms = store.consolidatedRooms(fixture.projectId).rooms
+        val refs = rooms.single().revisions.associateBy { it.ref.revisionUuid }
+        assertEquals(ids.reversed(), rooms.single().revisions.map { it.ref.revisionUuid })
+        val projectUuid = frozen.first().frozen.source.projectUuid
+        val old = refs.getValue(ids.first()).ref
+        val secondRoom = MeasurementPricingFixture.seed(db, fixture.projectId)
+        val secondRoomQuote = history.saveIndividual(FrozenIndividualEstimateProof.command(db, secondRoom), 2026, createdAt + 7)
+        val secondSeries = history.saveIndividual(FrozenIndividualEstimateProof.command(db, secondRoom), 2026, createdAt + 8)
+        val foreignRoom = MeasurementPricingFixture.seed(db)
+        val foreignQuote = history.saveIndividual(FrozenIndividualEstimateProof.command(db, foreignRoom), 2026, createdAt + 9)
+        val foreign = store.consolidatedRooms(foreignRoom.projectId).rooms.single().revisions.single().ref
+        val secondOptions = store.consolidatedRooms(fixture.projectId).rooms
+            .single { it.uuid == secondRoom.measurementUuid }.revisions
+        assertEquals(setOf(secondRoomQuote.seriesUuid, secondSeries.seriesUuid), secondOptions.map { it.ref.seriesUuid }.toSet())
+        val other = secondOptions.single { it.ref.seriesUuid == secondRoomQuote.seriesUuid }.ref
+        val secondRoomFrozen = assertNotNull(history.exactIndividual(other.seriesUuid, other.revisionUuid)).frozen
+        for ((index, id) in ids.withIndex()) {
+            val selected = refs.getValue(id).ref
+            val result = assertIs<ConsolidatedDocumentResult.Ready>(
+                store.consolidatedDocument(fixture.projectId, projectUuid, listOf(selected, other))
+            ).document
+            val chosen = result.sections.single { it.document.publicNumber == frozen[index].frozen.publicNumber }
+            assertEquals(index + 1L, chosen.document.version)
+            assertEquals(frozen[index].status, chosen.status)
+            assertEquals(frozen[index].frozen.amounts, chosen.document.amounts)
+            assertEquals(listOf(secondRoomFrozen.publicNumber, frozen[index].frozen.publicNumber),
+                result.sections.map { it.document.publicNumber })
+            assertEquals(frozen[index].frozen.amounts.finalCents +
+                secondRoomFrozen.amounts.finalCents,
+                result.totalCents)
+        }
+        suspend fun checkRejected(problem: ConsolidatedDocumentProblem, vararg selection: ConsolidatedDocumentRef) {
+            assertEquals(ConsolidatedDocumentResult.Rejected(problem),
+                store.consolidatedDocument(fixture.projectId, projectUuid, selection.toList()))
+        }
+        checkRejected(ConsolidatedDocumentProblem.EMPTY)
+        checkRejected(ConsolidatedDocumentProblem.DUPLICATE, old, old)
+        checkRejected(ConsolidatedDocumentProblem.FOREIGN_REVISION, old.copy(measurementUuid = secondRoom.measurementUuid))
+        checkRejected(ConsolidatedDocumentProblem.FOREIGN_REVISION, foreign)
+        checkRejected(ConsolidatedDocumentProblem.FOREIGN_REVISION, foreign.copy(measurementUuid = fixture.measurementUuid))
+        assertEquals(foreignQuote.initialRevisionUuid, foreign.revisionUuid)
+        checkRejected(ConsolidatedDocumentProblem.DUPLICATE, *secondOptions.map { it.ref }.toTypedArray())
+        checkRejected(ConsolidatedDocumentProblem.STALE, old.copy(fingerprint = "invalid"))
+        checkRejected(ConsolidatedDocumentProblem.REVISION_MISSING, old.copy(revisionUuid = fixture.elementUuid))
+        driver.execute(null, "DELETE FROM estimate_save_receipts WHERE revisionUuid = ?", 1) { bindString(0, other.revisionUuid) }
+        checkRejected(ConsolidatedDocumentProblem.INVALID_REVISION, old, other)
+        assertIs<ConsolidatedDocumentResult.Ready>(store.consolidatedDocument(fixture.projectId, projectUuid, listOf(old)))
+        assertTrue(store.consolidatedRooms(fixture.projectId).rooms.single { it.uuid == secondRoom.measurementUuid }.unavailableRevisions)
+
         val documents = ids.map { assertNotNull(store.estimateDocument(series, it)) }
         val utc = assertNotNull(store.estimateDocument(series, first.initialRevisionUuid, TimeZone.UTC))
         val stockholm = assertNotNull(store.estimateDocument(series, first.initialRevisionUuid, TimeZone.of("Europe/Stockholm")))
@@ -65,6 +117,7 @@ internal suspend fun proveExactEstimateDocuments(driver: SqlDriver) {
             project.status, project.notes, 608)
         prices.updateSalePrice(assertNotNull(prices.find(fixture.priceId)), 150.0, 609)
         MeasurementRepository(db).delete(measurement.id)
+        checkRejected(ConsolidatedDocumentProblem.ROOM_MISSING, old)
         val printedAgain = ids.map { assertNotNull(store.estimateDocument(series, it)) }
         assertEquals(documents.map { it.rows }, printedAgain.map { it.rows })
         assertEquals(documents.map { it.drawing }, printedAgain.map { it.drawing })

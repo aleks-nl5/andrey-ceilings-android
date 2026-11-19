@@ -57,6 +57,7 @@ import com.andreyceilings.shared.theme.CeilingsEdgeGradient
 import com.andreyceilings.shared.calculation.CeilingShapeTemplates
 import com.andreyceilings.shared.domain.ClientListEntry
 import com.andreyceilings.shared.domain.ProjectListEntry
+import com.andreyceilings.shared.estimate.ConsolidatedEstimateScreen
 import com.andreyceilings.shared.domain.ProjectStatusRules
 import com.andreyceilings.shared.domain.ProjectWorkStage
 import com.andreyceilings.shared.domain.ProjectPaymentStatus
@@ -151,6 +152,23 @@ internal fun ProjectDetailsScreen(
         else flow.collectAsState(initial = DetailsState.Loading).value
     val uriHandler = LocalUriHandler.current
     val visibleProject = (state as? DetailsState.Loaded)?.data?.project
+    val elements = store?.measurementDetails?.elements
+    val composer = elements?.consolidatedSession?.collectAsState()?.value
+    LaunchedEffect(active, composer, projectId, visibleProject?.id) {
+        if (elements != null && composer != null) {
+            val belongsHere = composer.projectId == projectId
+            if ((active && !belongsHere) ||
+                (belongsHere && (!active || state is DetailsState.Loaded && visibleProject == null))) {
+                elements.closeConsolidatedComposer(composer)
+            }
+        }
+    }
+    if (active && elements != null && visibleProject != null && composer?.projectId == projectId) {
+        key(composer) {
+            ConsolidatedEstimateScreen(elements, composer, onClose = { elements.closeConsolidatedComposer(composer) },
+                onOpenMeasurement = onOpenMeasurement)
+        }
+    }
     val detailsListState = rememberSaveable(projectId, saver = LazyListState.Saver) {
         LazyListState()
     }
@@ -369,7 +387,12 @@ internal fun ProjectDetailsScreen(
                     if (project == null) item { Text("Об'єкт не знайдено або його видалено.") }
                     else {
                         item(key = "saved-estimates") {
-                            com.andreyceilings.shared.estimate.SavedIndividualQuoteList(store?.measurementDetails?.elements, projectId)
+                            Column {
+                                com.andreyceilings.shared.estimate.SavedIndividualQuoteList(elements, projectId)
+                                if (elements != null) {
+                                    OutlinedButton(onClick = { elements.openConsolidatedComposer(projectId) }) { Text("Зведений кошторис") }
+                                }
+                            }
                         }
                         item(key = "status") {
                             DetailsCard {

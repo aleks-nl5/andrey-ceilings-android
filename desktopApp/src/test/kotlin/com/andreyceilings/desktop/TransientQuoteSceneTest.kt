@@ -1,5 +1,6 @@
 package com.andreyceilings.desktop
 
+import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
 import androidx.compose.runtime.*
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.runtime.snapshots.Snapshot
@@ -8,9 +9,18 @@ import androidx.compose.ui.semantics.*
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
+import com.andreyceilings.shared.db.MeasurementPricingFixture
+import com.andreyceilings.shared.db.PriceCatalogSchema
+import com.andreyceilings.shared.db.PrototypeDatabase
+import com.andreyceilings.shared.estimate.EstimateNumbering
+import com.andreyceilings.shared.estimate.ImmutableEstimateRepository
 import com.andreyceilings.shared.livepricing.*
 import com.andreyceilings.shared.measurement.*
+import com.andreyceilings.shared.objects.ObjectsClientsRows
+import com.andreyceilings.shared.objects.ObjectsClientsScreen
+import com.andreyceilings.shared.objects.ObjectsClientsStore
 import com.andreyceilings.shared.theme.CeilingsTheme
+import kotlinx.coroutines.runBlocking
 import kotlin.test.*
 
 class TransientQuoteSceneTest {
@@ -106,6 +116,71 @@ class TransientQuoteSceneTest {
             scene.frame()
             assertEquals("20", presenter.state.value.discountText)
         } finally { scene.close() }
+    }
+
+    @Test fun projectConsolidatedPreviewRequiresExplicitRevisionAndHasNoDesktopExportButtons() {
+        JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).use { driver ->
+            PriceCatalogSchema.create(driver)
+            val db = PrototypeDatabase(driver)
+            val room = MeasurementPricingFixture.seed(db, roomName = "Вітальня")
+            val presenter = TransientQuotePresenter(room.measurementUuid)
+            val store = ObjectsClientsStore(db) { 700 }
+            presenter.acceptRead(presenter.beginRead(), LivePricingReader(db).read(room.projectId, room.measurementUuid))
+            val saved = ImmutableEstimateRepository(db).saveIndividual(
+                assertNotNull(presenter.saveRequest(room.projectId, "Кошторис вітальні")), 2026, 600
+            )
+            val publicNumber = EstimateNumbering.printable(saved.documentNumber)
+            val scene = ImageComposeScene(640, 750) {
+                CeilingsTheme(false) {
+                    ObjectsClientsScreen(
+                        rows = ObjectsClientsRows(emptyList(), emptyList()),
+                        detailsProjectId = room.projectId, detailsStore = store,
+                        onOpenProject = {}, onCloseProject = {}, databaseAvailable = true,
+                        onSaveClient = { _, _ -> }, onSaveProject = { _, _ -> },
+                        onDeleteClient = {}, onDeleteProject = {}, onDial = {}, onExternalAction = { _, _ -> }
+                    )
+                }
+            }
+            fun find(text: String) = scene.nodes().firstOrNull { node ->
+                node.config.getOrNull(SemanticsProperties.Text).orEmpty().any { it.text.startsWith(text) }
+            }
+            fun click(text: String) {
+                val node = assertNotNull(find(text), text)
+                val action = generateSequence(node) { it.parent }
+                    .firstNotNullOfOrNull { it.config.getOrNull(SemanticsActions.OnClick)?.action }
+                assertTrue(action?.invoke() == true, text)
+                scene.frame()
+            }
+            val preview = "Переглянути зведений PDF"
+            try {
+                scene.await { find("Зведений кошторис") != null }
+                click("Зведений кошторис")
+                scene.await { find("Вітальня") != null }
+                assertTrue(SemanticsProperties.Disabled in assertNotNull(find(preview)).config)
+                click("Вітальня")
+                assertTrue(SemanticsProperties.Disabled in assertNotNull(find(preview)).config)
+                click("${publicNumber} · v1")
+                scene.await { find(preview)?.config?.contains(SemanticsProperties.Disabled) == false }
+                click(preview)
+                scene.await { find("Збереження, надсилання й друк PDF доступні на Android.") != null }
+                assertNull(find("Зберегти PDF"))
+                assertNull(find("Поділитися"))
+                assertNull(find("Друк"))
+                assertTrue(scene.nodes().any { node ->
+                    node.config.getOrNull(SemanticsProperties.ContentDescription).orEmpty()
+                        .any { it.contains(publicNumber) && it.contains("Збережене креслення") }
+                })
+                click("Назад")
+                scene.await { find(preview)?.config?.contains(SemanticsProperties.Disabled) == false }
+                click("Скасувати")
+                click("Зведений кошторис")
+                scene.await { find(preview) != null }
+                assertTrue(SemanticsProperties.Disabled in assertNotNull(find(preview)).config)
+            } finally {
+                scene.close()
+                runBlocking { store.measurementDetails.elements.closeAndAwaitWrites() }
+            }
+        }
     }
 
     private fun scene(presenter: TransientQuotePresenter, dark: Boolean, footer: Boolean = false) = ImageComposeScene(600, 900) {
