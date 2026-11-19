@@ -285,31 +285,34 @@ class FrozenEstimateDocumentAndroidTest {
                                 assertEquals(595, page.width)
                                 assertEquals(842, page.height)
                                 page.textContents.joinToString(" ") { it.text }.also { pageText ->
-                                    assertTrue("Зведений кошторис" in pageText, pageText)
+                                    // PdfRenderer can split a single printed heading into separate glyph runs.
+                                    val compactText = pageText.filterNot(Char::isWhitespace)
+                                    assertTrue("Зведенийкошторис" in compactText, pageText)
                                     if (index == 0) {
-                                        assertTrue("Квартира / Центр" in pageText, pageText)
-                                        assertFalse(publicNumber(first) in pageText || publicNumber(partial) in pageText, pageText)
+                                        assertTrue("Квартира/Центр" in compactText, pageText)
+                                        assertFalse(publicNumber(first) in compactText || publicNumber(partial) in compactText, pageText)
                                     }
                                 }
                             }
                         }
                     }
-                    assertTrue(text.contains("${publicNumber(first)} · v1"), text)
-                    assertTrue(text.contains("${publicNumber(partial)} · v1"), text)
-                    assertTrue(text.contains("Частковий кошторис"), text)
-                    assertTrue(text.contains("Монтаж ліхтаря"), text)
-                    assertTrue(text.contains("Загалом до оплати"), text)
-                    assertTrue(Regex("Кількість").findAll(text).count() >= 3, text)
+                    val compactText = text.filterNot(Char::isWhitespace)
+                    assertTrue("${publicNumber(first)}·v1" in compactText, text)
+                    assertTrue("${publicNumber(partial)}·v1" in compactText, text)
+                    assertTrue("Частковийкошторис" in compactText, text)
+                    assertTrue("Монтажліхтаря" in compactText, text)
+                    assertTrue("Загаломдооплати" in compactText, text)
+                    assertTrue(Regex("Кількість").findAll(compactText).count() >= 3, text)
                     val total = (listOf(first, partial) + additional.values).sumOf {
                         assertNotNull(history.exactIndividual(it.seriesUuid, it.initialRevisionUuid)).frozen.amounts.finalCents
                     }
-                    assertTrue(text.contains(measurementMoney(total)), text)
+                    assertTrue(measurementMoney(total).filterNot(Char::isWhitespace) in compactText, text)
                     assertEquals("zvedenyi-koshtorys-Квартира-Центр.pdf", pages.fileName)
-                    additional.values.forEach { assertTrue(text.contains("${publicNumber(it)} · v1"), text) }
-                    assertFalse(text.contains("${publicNumber(first)} · v2"), text)
-                    assertFalse(text.contains(first.initialRevisionUuid), text)
-                    assertFalse(text.contains(first.seriesUuid), text)
-                    assertFalse(text.contains("Спальня"), text)
+                    additional.values.forEach { assertTrue("${publicNumber(it)}·v1" in compactText, text) }
+                    assertFalse("${publicNumber(first)}·v2" in compactText, text)
+                    assertFalse(first.initialRevisionUuid in compactText, text)
+                    assertFalse(first.seriesUuid in compactText, text)
+                    assertFalse("Спальня" in compactText, text)
                     compose.onNodeWithText("Назад").performClick()
                     compose.onNodeWithText("Скасувати").performClick()
                     compose.runOnIdle { mounted.value = false }
