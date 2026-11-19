@@ -41,6 +41,8 @@ object MeasurementDrawingSemantics {
     val SelectedLine=SemanticsPropertyKey<String>("Selected measurement line")
     val SelectedArea=SemanticsPropertyKey<String>("Selected measurement area")
     val PointDrag=SemanticsPropertyKey<PointDragPreview>("Measurement point drag")
+    val Viewport = SemanticsPropertyKey<MeasurementViewport>("Measurement viewport")
+    val SelectedWall = SemanticsPropertyKey<Int>("Selected measurement wall")
     val EditingEnabled=SemanticsPropertyKey<Boolean>("Measurement overlay editing enabled")
 }
 
@@ -79,7 +81,9 @@ fun MeasurementDrawing(
     areaPlacementMode: Boolean = false, onAreaTap: (Long,Long)->Unit = {_,_->}, onSelectArea: (String)->Unit = {},
     areaEditingEnabled: Boolean = false, areaDrag: AreaFeature? = null, areaCreationPoints: List<PointPositionMm> = emptyList(),
     onBeginAreaDrag: (String)->Unit = {}, onPreviewAreaDrag: (Double,Double)->Unit = {_,_->},
-    onFinishAreaDrag: ()->Unit = {}, onCancelAreaDrag: ()->Unit = {}
+    onFinishAreaDrag: ()->Unit = {}, onCancelAreaDrag: ()->Unit = {},
+    fillAvailableHeight: Boolean = fullscreen,
+    showSideLegend: Boolean = !fullscreen
 ) {
     val contour = remember(geometry) { measurementDrawingContour(geometry) }
     if (contour == null) {
@@ -312,13 +316,15 @@ fun MeasurementDrawing(
                     }
                 }
             }
-        Canvas(Modifier.fillMaxWidth().then(if (fullscreen) Modifier.weight(1f) else Modifier.height(if (compact) 155.dp else 235.dp))
+        Canvas(Modifier.fillMaxWidth().then(if (fillAvailableHeight) Modifier.weight(1f) else Modifier.height(if (compact) 155.dp else 235.dp))
             .clipToBounds().onSizeChanged { canvasSize = it }.then(inputModifier)
             .semantics {
                 contentDescription = "Контур стелі, ${contour.points.size} вершин, позначок: ${pointPlacements.size}, ліній: ${linePlacements.size}, площинних об’єктів: ${areaFeatures.size}"
                 this[MeasurementDrawingSemantics.Points]=pointPlacements
                 this[MeasurementDrawingSemantics.Lines]=linePlacements
                 this[MeasurementDrawingSemantics.Areas]=areaFeatures
+                this[MeasurementDrawingSemantics.Viewport] = viewport
+                selectedSide?.let { this[MeasurementDrawingSemantics.SelectedWall] = it }
                 this[MeasurementDrawingSemantics.EditingEnabled]=pointEditingEnabled || lineEditingEnabled || areaEditingEnabled
                 selectedPointUuid?.let {this[MeasurementDrawingSemantics.SelectedPoint]=it}
                 selectedLineUuid?.let {this[MeasurementDrawingSemantics.SelectedLine]=it}
@@ -438,7 +444,7 @@ fun MeasurementDrawing(
                 drawText(textLayouts[label.sideIndex], topLeft = Offset(label.left, label.top))
             }
         }
-        if (!fullscreen) {
+        if (showSideLegend) {
         Text(if (contour.measuredSides) "Виміряні сторони" else "Сторони за збереженим контуром",
             style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         // Always include every side in normal wrapping text. Narrow/dense

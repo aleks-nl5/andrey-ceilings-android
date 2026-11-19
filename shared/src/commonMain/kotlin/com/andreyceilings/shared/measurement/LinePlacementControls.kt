@@ -16,21 +16,6 @@ internal fun LinePlacementControls(model:MeasurementEditModel,enabled:Boolean) {
     val lines=model.displayLines()
     Column(Modifier.fillMaxWidth(),verticalArrangement=Arrangement.spacedBy(4.dp)) {
         if(state.original.lineElements.isNotEmpty())Text("Елементи стелі · Лінії",style=MaterialTheme.typography.titleMedium)
-        state.original.lineElements.forEach {element ->
-            val placed=lines.filter {it.elementUuid==element.uuid && !it.unresolved}.sumOf {it.lengthMm}
-            val unresolved=lines.count {it.elementUuid==element.uuid && it.unresolved}
-            val declared=state.declaredLengths[element.uuid]?.let {ElementQuantity.Exact(it)} ?: element.quantity
-            Text(element.label,style=MaterialTheme.typography.titleSmall,color=if(lines.any {it.elementUuid==element.uuid && it.uuid==state.selectedLineUuid})MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface)
-            Text("Заявлено ${formatElementQuantity(declared,element.unit)} · На кресленні ${formatElementMilli(placed)} м · Потребує уточнення: $unresolved")
-            FlowRow(horizontalArrangement=Arrangement.spacedBy(4.dp)) {
-                TextButton(enabled=enabled && state.linePreview==null,onClick={model.beginLine(element.uuid)}) {Text("Розмістити лінію")}
-                TextButton(enabled=enabled && placed>0 && unresolved==0,onClick={model.requestDeclaredLength(element.uuid)}) {Text("Взяти довжину з креслення")}
-            }
-            FlowRow {lines.filter {it.elementUuid==element.uuid}.forEachIndexed {i,line ->
-                FilterChip(state.selectedLineUuid==line.uuid,onClick={model.selectLine(line.uuid)},enabled=enabled,
-                    label={Text("Сегмент ${i+1}: ${formatElementMilli(line.lengthMm)} м")})
-            }}
-        }
         if(state.lineElementUuid!=null) {
             Text(if(state.lineStart==null)"Торкніться початку лінії." else if(state.linePreview==null)"Торкніться кінця лінії." else "Приблизна лінія: ${formatElementMilli(state.linePreview!!.lengthMm)} м")
             FlowRow {
@@ -63,6 +48,21 @@ internal fun LinePlacementControls(model:MeasurementEditModel,enabled:Boolean) {
                     Text("$title: ${wall(a.firstWall)} ${formatPointMetres(a.firstMm)} м · ${if(a.kind==WallAnchor.Kind.ALONG_INWARD) "усередину" else wall(a.secondWall)} ${formatPointMetres(a.secondMm)} м")
                 } ?: Text("$title: виміряних прив'язок немає")
             }
+        }
+        state.original.lineElements.forEach {element ->
+            val placed=lines.filter {it.elementUuid==element.uuid && !it.unresolved}.sumOf {it.lengthMm}
+            val unresolved=lines.count {it.elementUuid==element.uuid && it.unresolved}
+            val declared=state.declaredLengths[element.uuid]?.let {ElementQuantity.Exact(it)} ?: element.quantity
+            Text(element.label,style=MaterialTheme.typography.titleSmall,color=if(lines.any {it.elementUuid==element.uuid && it.uuid==state.selectedLineUuid})MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface)
+            Text("Заявлено ${formatElementQuantity(declared,element.unit)} · На кресленні ${formatElementMilli(placed)} м · Потребує уточнення: $unresolved")
+            FlowRow(horizontalArrangement=Arrangement.spacedBy(4.dp)) {
+                TextButton(enabled=enabled && state.linePreview==null,onClick={model.beginLine(element.uuid)}) {Text("Розмістити лінію")}
+                TextButton(enabled=enabled && placed>0 && unresolved==0,onClick={model.requestDeclaredLength(element.uuid)}) {Text("Взяти довжину з креслення")}
+            }
+            FlowRow {lines.filter {it.elementUuid==element.uuid}.forEachIndexed {i,line ->
+                FilterChip(state.selectedLineUuid==line.uuid,onClick={model.selectLine(line.uuid)},enabled=enabled,
+                    label={Text("Сегмент ${i+1}: ${formatElementMilli(line.lengthMm)} м")})
+            }}
         }
         val review=lines.count {it.needsReview}
         if(review>0)TextButton(enabled=enabled,onClick=model::reviewNow){Text("Перевірити лінії ($review)")}

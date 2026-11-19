@@ -59,7 +59,7 @@ class OverlayDragTouchTest {
             }
         }
         fun canvas()=compose.onNode(matcher).also {
-            if(mode!="fullscreen")it.performScrollTo()
+            if (mode == "details") it.performScrollTo()
             compose.waitForIdle()
         }
         fun position(x:Long,y:Long):Offset {
@@ -77,6 +77,33 @@ class OverlayDragTouchTest {
             val initialPricing = pricing(db)
             if(mode=="fullscreen")compose.onNodeWithText("На весь екран").performClick()
             val before=OverlayDragFixture.snapshot(driver)
+            if (mode != "details") {
+                val point = doc.placements.points.single()
+                tap(point.xMm, point.yMm)
+                val selected = canvas().fetchSemanticsNode()
+                assertEquals(point.uuid, selected.config[MeasurementDrawingSemantics.SelectedPoint])
+                click("Задати розміри від стін")
+                compose.onNode(hasText("Скасувати") and hasClickAction() and hasAnyAncestor(isDialog())).performClick()
+                canvas().performTouchInput {
+                    pinch(center - Offset(25f, 0f), center + Offset(25f, 0f),
+                        center - Offset(45f, 0f), center + Offset(45f, 0f))
+                }
+                val viewport = canvas().fetchSemanticsNode().config[MeasurementDrawingSemantics.Viewport]
+                assertTrue(viewport.zoom > 1f)
+                click("Контур")
+                click("Вартість")
+                compose.onNodeWithText("Розрахунок за останнім збереженим заміром").assertIsDisplayed()
+                compose.onNodeWithTag("measurement-edit-panel").performClick()
+                click("Елементи")
+                val restored = canvas().fetchSemanticsNode()
+                assertEquals(selected.id, restored.id)
+                assertEquals(point.uuid, restored.config[MeasurementDrawingSemantics.SelectedPoint])
+                assertEquals(viewport, restored.config[MeasurementDrawingSemantics.Viewport])
+                compose.onNodeWithTag("measurement-edit-panel").performClick()
+                click("Вписати креслення")
+                click("Зняти виділення")
+                assertEquals(before, OverlayDragFixture.snapshot(driver))
+            }
             tap(1000,1500);drag(1000,1050,1300,1250) // selected AREA takes priority over LINE halo
             if(mode!="details")compose.runOnIdle {
                 assertEquals(PointPositionMm(800,1200),m.displayAreas().first {it.uuid==f.polygon}.shape.positions.first(),"Canvas must move the selected polygon")
@@ -101,6 +128,12 @@ class OverlayDragTouchTest {
             drag(3100,1800,4500,1800)
             compose.onNodeWithText("Фігура перетинає стіну або себе. Положення не змінено.").assertExists()
             assertEquals(before,OverlayDragFixture.snapshot(driver))
+            if (mode != "details") {
+                click("Вартість")
+                compose.onNodeWithText("Розрахунок за останнім збереженим заміром").assertIsDisplayed()
+                compose.onNodeWithText("Відкрити замір із калькулятором").assertDoesNotExist()
+                click("Елементи")
+            }
             // Pinch cancels object ownership; empty-space pan affects only the viewport.
             canvas().performTouchInput {pinch(center-Offset(25f,0f),center+Offset(25f,0f),center-Offset(45f,0f),center+Offset(45f,0f))}
             click("Вписати креслення")

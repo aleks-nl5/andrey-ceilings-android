@@ -37,15 +37,22 @@ class AreaFeatureTouchTest {
         val model=MeasurementEditModel(store,store.load(f.project,f.id))
         compose.setContent {CeilingsTheme(dark) {MeasurementEditScreen(model,PaddingValues(0.dp),0.dp,{}, {},null)}}
         val matcher=SemanticsMatcher("ceiling canvas") {n->n.config.getOrNull(SemanticsProperties.ContentDescription).orEmpty().any {it.startsWith("Контур стелі")}}
-        fun click(text:String)=compose.onNodeWithText(text).performScrollTo().performClick()
+        fun click(text: String) {
+            val action = hasText(text) and hasClickAction()
+            if (compose.onAllNodes(action and hasAnyAncestor(hasScrollAction())).fetchSemanticsNodes().isNotEmpty()) {
+                compose.onNode(action).performScrollTo()
+            }
+            compose.onNode(action).performClick()
+        }
         fun tap(x:Long,y:Long) {
-            val canvas=compose.onNode(matcher).performScrollTo()
+            val canvas=compose.onNode(matcher)
             val bounds=canvas.fetchSemanticsNode().boundsInRoot
             val contour=measurementDrawingContour(MeasurementGeometryView.Captured(validateMeasurementCreate(model.state.value.draft).geometry!!))!!
             val p=measurementDrawingProjection(contour,bounds.width,bounds.height,compose.density.density)!!.project(DrawingPoint(x.toDouble(),y.toDouble()))
             canvas.performTouchInput {click(Offset(p.x.toFloat(),p.y.toFloat()))}
         }
         try {
+            click("Елементи")
             click("Позначити перешкоду");tap(500,500);tap(1000,1000);click("Завершити фігуру в чернетці")
             compose.runOnIdle {assertEquals(1,model.displayAreas().size);assertEquals(0,AreaFeatureRepository(db).all().size)}
             click("Позначити отвір");compose.onNodeWithText("Діаметр, м (парні мм)").performScrollTo().performTextInput("0,2");tap(2000,1500);click("Завершити фігуру в чернетці")

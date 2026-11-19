@@ -631,6 +631,9 @@ class MeasurementEditModel(
         put("wallGeneration",state.value.wallGeneration)
         put("lineElements",encodeAreaElementSnapshots(state.value.original.lineElements))
         put("areaElements",encodeAreaElementSnapshots(state.value.original.areaElements))
+        if (state.value.original.pointElements.isNotEmpty()) {
+            put("pointElements", mountingCodec.encodeToJsonElement(state.value.original.pointElements))
+        }
         put("areaEditor",mountingCodec.encodeToString(state.value.area.copy(drag=null)))
         put("placements",mountingCodec.encodeToString(state.value.original.placements))
         state.value.lineProperties?.let {put("lineProperties",mountingCodec.encodeToString(it))}
@@ -676,7 +679,12 @@ class MeasurementEditModel(
             require(original.precision == draft.precision && original.recordUuid == draft.recordUuid)
             MeasurementEditModel(store, MeasurementEditDocument(measurementId, json.getValue("version").jsonPrimitive.long, original,
                 json["placements"]?.jsonPrimitive?.content?.let { mountingCodec.decodeFromString<CeilingPlacementDocument>(it) } ?: CeilingPlacementDocument(),
-                json["sourceDrawingJson"]?.jsonPrimitive?.content,lineElements=decodeAreaElementSnapshots(json["lineElements"]),areaElements=decodeAreaElementSnapshots(json["areaElements"])), token).also {
+                json["sourceDrawingJson"]?.jsonPrimitive?.content,
+                lineElements = decodeAreaElementSnapshots(json["lineElements"]),
+                areaElements = decodeAreaElementSnapshots(json["areaElements"]),
+                pointElements = json["pointElements"]?.let {
+                    mountingCodec.decodeFromJsonElement<List<MeasurementElement>>(it)
+                }.orEmpty()), token).also {
                 it.mutableState.value = it.state.value.copy(draft = draft,
                     area=json["areaEditor"]?.jsonPrimitive?.content?.let {mountingCodec.decodeFromString<AreaEditorState>(it)} ?: AreaEditorState(),
                     lineProperties=json["lineProperties"]?.jsonPrimitive?.content?.let {mountingCodec.decodeFromString<LinePropertiesInput>(it)},

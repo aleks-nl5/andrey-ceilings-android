@@ -73,7 +73,7 @@ class MeasurementEditSceneTest {
                 scene.click("Скасувати дію"); scene.frame(); assertEquals("Кухня", model.state.value.draft.name)
                 scene.click("Повторити"); scene.frame(); assertEquals("Нова кухня", model.state.value.draft.name)
                 scene.click("На весь екран"); scene.frame(); assertTrue(guard.fullscreen.value)
-                assertFalse(scene.text().contains("Назва заміру"))
+                assertTrue(scene.text().contains("Назва заміру"))
                 scene.click("Відхилити"); scene.frame()
                 assertTrue(scene.text().contains("Незбережені зміни")); assertEquals(0, backs)
                 scene.click("Продовжити"); scene.frame(); assertTrue(model.state.value.dirty)
@@ -124,6 +124,69 @@ class MeasurementEditSceneTest {
             scene.frame()
             scene.click("Вписати креслення")
             assertEquals(wire, MeasurementGeometryCodec.write(geometry))
+        } finally { scene.close() }
+    }
+
+    @Test fun workspaceRetainsTheDrawingAndDraftAcrossContextsAndPanelSizes() {
+        val model = MeasurementEditModel(null, MeasurementEditDocument(3, 1, draft()))
+        val scene = ImageComposeScene(720, 420) {
+            CeilingsTheme(false) { MeasurementEditScreen(model, onBack = {}, onSaved = {}) }
+        }
+        fun drawing() = scene.nodes().single { it.config.getOrNull(MeasurementDrawingSemantics.Viewport) != null }
+        fun panel() = scene.nodes().single {
+            it.config.getOrNull(SemanticsProperties.TestTag) == "measurement-edit-context-panel"
+        }
+        try {
+            scene.frame()
+            val initial = drawing()
+            val bounds = initial.boundsInRoot
+            val geometry = assertNotNull(validateMeasurementCreate(draft()).geometry)
+            val contour = assertNotNull(measurementDrawingContour(MeasurementGeometryView.Captured(geometry)))
+            val projection = assertNotNull(measurementDrawingProjection(contour, bounds.width, bounds.height))
+            val a = projection.project(contour.points[0])
+            val b = projection.project(contour.points[1])
+            val wall = Offset(bounds.left + ((a.x + b.x) / 2).toFloat(), bounds.top + ((a.y + b.y) / 2).toFloat())
+            scene.sendPointerEvent(PointerEventType.Press, wall, type = PointerType.Mouse)
+            scene.sendPointerEvent(PointerEventType.Release, wall, type = PointerType.Mouse)
+            scene.frame()
+            assertEquals(0, drawing().config[MeasurementDrawingSemantics.SelectedWall])
+            scene.sendPointerEvent(PointerEventType.Scroll, wall, scrollDelta = Offset(0f, -2f))
+            scene.frame()
+            val zoomed = drawing().config[MeasurementDrawingSemantics.Viewport]
+            assertTrue(zoomed.zoom > 1f)
+            val field = scene.nodes().single { it.config.getOrNull(SemanticsProperties.EditableText)?.text == "5" }
+            assertTrue(field.config[SemanticsActions.SetText].action?.invoke(AnnotatedString("5,25")) == true)
+            scene.frame()
+            scene.click("Елементи")
+            scene.frame()
+            scene.click("Вартість")
+            scene.frame()
+            assertTrue(scene.text().contains("Розрахунок за останнім збереженим заміром"))
+            assertFalse(scene.text().contains("Відкрити замір із калькулятором"))
+            scene.click("Контур")
+            scene.frame()
+            val panelBefore = panel().boundsInRoot.height
+            val toggle = scene.nodes().single { it.config.getOrNull(SemanticsProperties.TestTag) == "measurement-edit-panel" }
+            assertTrue(toggle.config[SemanticsActions.OnClick].action?.invoke() == true)
+            scene.frame()
+            assertTrue(panel().boundsInRoot.height < panelBefore)
+            scene.click("На весь екран")
+            scene.frame()
+            assertTrue(drawing().boundsInRoot.height > 0)
+            assertEquals(initial.id, drawing().id)
+            assertEquals(zoomed, drawing().config[MeasurementDrawingSemantics.Viewport])
+            assertEquals(0, drawing().config[MeasurementDrawingSemantics.SelectedWall])
+            assertTrue(scene.nodes().any { it.config.getOrNull(SemanticsProperties.EditableText)?.text == "5,25" })
+            val scrollAxis = panel().config[SemanticsProperties.VerticalScrollAxisRange]
+            assertTrue(scrollAxis.maxValue() > 0)
+            val panelBounds = panel().boundsInRoot
+            scene.sendPointerEvent(PointerEventType.Scroll, panelBounds.center, scrollDelta = Offset(0f, 2f))
+            repeat(12) { scene.frame(); Thread.sleep(10) }
+            assertTrue(scrollAxis.value() > 0f)
+            assertEquals(zoomed, drawing().config[MeasurementDrawingSemantics.Viewport])
+            scene.click("Вписати креслення")
+            scene.frame()
+            assertEquals(MeasurementViewport(), drawing().config[MeasurementDrawingSemantics.Viewport])
         } finally { scene.close() }
     }
 

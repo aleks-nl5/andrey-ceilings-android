@@ -20,19 +20,6 @@ fun AreaFeatureControls(model: MeasurementEditModel, enabled: Boolean) {
     val areas=model.displayAreas()
     Column(Modifier.fillMaxWidth(),verticalArrangement=Arrangement.spacedBy(4.dp)) {
         Text("Площинні об'єкти",style=MaterialTheme.typography.titleMedium)
-        Text("Перешкоди й отвори — геометричні позначки. Не віднімаються від площі стелі. Сума площ може містити перекриття.",style=MaterialTheme.typography.bodySmall)
-        FlowRow {
-            TextButton(enabled=enabled,onClick={model.beginArea(AreaRole.OBSTACLE)}) {Text("Позначити перешкоду")}
-            TextButton(enabled=enabled,onClick={model.beginArea(AreaRole.VOID_MARKER,tool=AreaTool.CIRCLE)}) {Text("Позначити отвір")}
-        }
-        state.original.areaElements.forEach {e ->
-            val linked=areas.filter {it.elementUuid==e.uuid}
-            Text("${e.label} · Заявлено: ${formatElementQuantity(e.quantity,e.unit)} · На кресленні: ${formatElementMilli(areaQuantityMilli(linked,e.unit!!))} ${e.unit} · Нерозв'язаних: ${linked.count {it.unresolved}}")
-            FlowRow {
-                TextButton(enabled=enabled,onClick={model.beginArea(AreaRole.GENERAL_AREA,e.uuid)}) {Text("Розмістити область: ${e.label}")}
-                TextButton(enabled=enabled && areaQuantityMilli(linked,e.unit!!)>0,onClick={model.requestAreaQuantity(e.uuid)}) {Text("Взяти кількість з креслення: ${e.label}")}
-            }
-        }
         if(a.tool!=null) {
             FlowRow {AreaTool.entries.forEach {tool -> FilterChip(a.tool==tool,enabled=enabled,onClick={model.setAreaTool(tool)},label={Text(when(tool) {
                 AreaTool.RECTANGLE -> "Прямокутник";AreaTool.POLYGON -> "Багатокутник";AreaTool.CIRCLE -> "Коло"
@@ -44,11 +31,6 @@ fun AreaFeatureControls(model: MeasurementEditModel, enabled: Boolean) {
                 TextButton(enabled=enabled && model.areaCreationShape()!=null,onClick=model::acceptAreaCreation) {Text("Завершити фігуру в чернетці")}
                 TextButton(enabled=enabled,onClick=model::cancelAreaCreation) {Text("Скасувати фігуру")}
             }
-        }
-        areas.forEachIndexed {i,feature ->
-            FilterChip(a.selected==feature.uuid,onClick={model.selectArea(feature.uuid)},enabled=enabled,
-                label={Text("Фігура ${i+1}: ${areaDescription(feature)}")})
-            if(feature.note.isNotBlank())Text(feature.note)
         }
         val selected=areas.find {it.uuid==a.selected}
         if(selected!=null) {
@@ -66,6 +48,24 @@ fun AreaFeatureControls(model: MeasurementEditModel, enabled: Boolean) {
                 TextButton(enabled=enabled,onClick=model::confirmArea) {Text("Підтвердити фігуру")}
                 TextButton(enabled=enabled,onClick=model::requestAreaDelete) {Text("Видалити фігуру")}
             }
+        }
+        Text("Перешкоди й отвори — геометричні позначки. Не віднімаються від площі стелі. Сума площ може містити перекриття.",style=MaterialTheme.typography.bodySmall)
+        FlowRow {
+            TextButton(enabled=enabled,onClick={model.beginArea(AreaRole.OBSTACLE)}) {Text("Позначити перешкоду")}
+            TextButton(enabled=enabled,onClick={model.beginArea(AreaRole.VOID_MARKER,tool=AreaTool.CIRCLE)}) {Text("Позначити отвір")}
+        }
+        state.original.areaElements.forEach {e ->
+            val linked=areas.filter {it.elementUuid==e.uuid}
+            Text("${e.label} · Заявлено: ${formatElementQuantity(e.quantity,e.unit)} · На кресленні: ${formatElementMilli(areaQuantityMilli(linked,e.unit!!))} ${e.unit} · Нерозв'язаних: ${linked.count {it.unresolved}}")
+            FlowRow {
+                TextButton(enabled=enabled,onClick={model.beginArea(AreaRole.GENERAL_AREA,e.uuid)}) {Text("Розмістити область: ${e.label}")}
+                TextButton(enabled=enabled && areaQuantityMilli(linked,e.unit!!)>0,onClick={model.requestAreaQuantity(e.uuid)}) {Text("Взяти кількість з креслення: ${e.label}")}
+            }
+        }
+        areas.forEachIndexed {i,feature ->
+            FilterChip(a.selected==feature.uuid,onClick={model.selectArea(feature.uuid)},enabled=enabled,
+                label={Text("Фігура ${i+1}: ${areaDescription(feature)}")})
+            if(feature.note.isNotBlank())Text(feature.note)
         }
         if(areas.any {it.needsReview})FlowRow {
             TextButton(enabled=enabled && !state.dirty,onClick=model::reviewNow) {Text("Перевірити площинні об'єкти")}
