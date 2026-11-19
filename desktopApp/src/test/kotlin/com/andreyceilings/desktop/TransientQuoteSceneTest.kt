@@ -170,10 +170,17 @@ class TransientQuoteSceneTest {
                 assertNull(find("Зберегти PDF"))
                 assertNull(find("Поділитися"))
                 assertNull(find("Друк"))
-                assertTrue(scene.nodes().any { node ->
+                fun pageDescriptions() = scene.nodes().flatMap { node ->
                     node.config.getOrNull(SemanticsProperties.ContentDescription).orEmpty()
-                        .any { it.contains(publicNumber) && it.contains("Збережене креслення") }
-                })
+                }
+                val firstPage = pageDescriptions().firstOrNull { "Зведений кошторис" in it }
+                assertNotNull(firstPage, pageDescriptions().joinToString("\n"))
+                assertTrue(publicNumber in firstPage, firstPage)
+                val scroll = assertNotNull(scene.nodes().lastOrNull {
+                    it.config.getOrNull(SemanticsActions.ScrollBy) != null
+                }?.config?.getOrNull(SemanticsActions.ScrollBy)?.action)
+                assertTrue(scroll(0f, 5000f))
+                scene.await { pageDescriptions().any { "Загалом до оплати" in it } }
                 click("Назад")
                 scene.await { find(preview)?.config?.contains(SemanticsProperties.Disabled) == false }
                 click("Скасувати")
