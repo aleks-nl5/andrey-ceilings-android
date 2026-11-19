@@ -212,6 +212,9 @@ class FrozenEstimateDocumentAndroidTest {
                     name to history.saveIndividual(FrozenIndividualEstimateProof.command(db, room, discount = "$index"),
                         2026, 610L + index)
                 }
+                val projects = ProjectRepository(db)
+                val project = assertNotNull(projects.find(living.projectId))
+                projects.update(project.id, project.clientId, "Квартира / Центр", project.address, project.status, project.notes, 630)
                 val before = history.frozenIndividuals()
                 val sequence = db.estimateHistoryQueries.selectEstimateNumberSettings().executeAsOne().nextSequence
                 val objects = ObjectsClientsStore(db) { 700 }
@@ -281,7 +284,13 @@ class FrozenEstimateDocumentAndroidTest {
                             pdf.openPage(index).use { page ->
                                 assertEquals(595, page.width)
                                 assertEquals(842, page.height)
-                                page.textContents.joinToString(" ") { it.text }
+                                page.textContents.joinToString(" ") { it.text }.also { pageText ->
+                                    assertTrue("Зведений кошторис" in pageText, pageText)
+                                    if (index == 0) {
+                                        assertTrue("Квартира / Центр" in pageText, pageText)
+                                        assertFalse(publicNumber(first) in pageText || publicNumber(partial) in pageText, pageText)
+                                    }
+                                }
                             }
                         }
                     }
@@ -295,7 +304,7 @@ class FrozenEstimateDocumentAndroidTest {
                         assertNotNull(history.exactIndividual(it.seriesUuid, it.initialRevisionUuid)).frozen.amounts.finalCents
                     }
                     assertTrue(text.contains(measurementMoney(total)), text)
-                    assertEquals("zvedenyi-koshtorys.pdf", pages.fileName)
+                    assertEquals("zvedenyi-koshtorys-Квартира-Центр.pdf", pages.fileName)
                     additional.values.forEach { assertTrue(text.contains("${publicNumber(it)} · v1"), text) }
                     assertFalse(text.contains("${publicNumber(first)} · v2"), text)
                     assertFalse(text.contains(first.initialRevisionUuid), text)

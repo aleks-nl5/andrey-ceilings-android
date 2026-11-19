@@ -16,6 +16,11 @@ import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
 import kotlin.time.Instant
 
+private val unsafeFileCharacters = Regex("[^\\p{L}\\p{N}._-]")
+
+internal fun sanitizeEstimateFileStem(value: String, replacement: String): String =
+    value.replace(unsafeFileCharacters, replacement)
+
 internal enum class EstimateDocumentSection(val label: String, val editable: Boolean = false) {
     ROOM("Параметри приміщення"),
     DRAWING("Збережене креслення"),
@@ -69,11 +74,9 @@ internal class FrozenEstimateDocument private constructor(
         val areas: List<AreaShape>
     )
 
-    val fileName: String get() = "${publicNumber.replace(unsafeFileCharacters, "_").trim('.', '_').ifEmpty { "koshtorys" }}-v$version.pdf"
+    val fileName: String get() = "${sanitizeEstimateFileStem(publicNumber, "_").trim('.', '_').ifEmpty { "koshtorys" }}-v$version.pdf"
 
     companion object {
-        private val unsafeFileCharacters = Regex("[^\\p{L}\\p{N}._-]")
-
         /** Receives an exact repository projection after the stored proof and receipts were checked. */
         internal fun from(saved: SavedIndividualQuote, currentAddress: String?, zone: TimeZone): FrozenEstimateDocument {
             val frozen = saved.frozen

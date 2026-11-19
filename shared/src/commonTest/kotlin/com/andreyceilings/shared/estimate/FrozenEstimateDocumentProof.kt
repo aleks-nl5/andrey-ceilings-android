@@ -48,6 +48,10 @@ internal suspend fun proveExactEstimateDocuments(driver: SqlDriver) {
         assertEquals(ids.reversed(), rooms.single().revisions.map { it.ref.revisionUuid })
         val projectUuid = frozen.first().frozen.source.projectUuid
         val old = refs.getValue(ids.first()).ref
+        val projects = ProjectRepository(db)
+        val project = assertNotNull(projects.find(fixture.projectId))
+        projects.update(project.id, project.clientId, "Назва другої ревізії", project.address,
+            project.status, project.notes, 606)
         val secondRoom = MeasurementPricingFixture.seed(db, fixture.projectId)
         val secondRoomQuote = history.saveIndividual(FrozenIndividualEstimateProof.command(db, secondRoom), 2026, createdAt + 7)
         val secondSeries = history.saveIndividual(FrozenIndividualEstimateProof.command(db, secondRoom), 2026, createdAt + 8)
@@ -59,11 +63,16 @@ internal suspend fun proveExactEstimateDocuments(driver: SqlDriver) {
         assertEquals(setOf(secondRoomQuote.seriesUuid, secondSeries.seriesUuid), secondOptions.map { it.ref.seriesUuid }.toSet())
         val other = secondOptions.single { it.ref.seriesUuid == secondRoomQuote.seriesUuid }.ref
         val secondRoomFrozen = assertNotNull(history.exactIndividual(other.seriesUuid, other.revisionUuid)).frozen
+        projects.update(project.id, project.clientId, "Квартира / Центр", project.address,
+            project.status, project.notes, 607)
         for ((index, id) in ids.withIndex()) {
             val selected = refs.getValue(id).ref
             val result = assertIs<ConsolidatedDocumentResult.Ready>(
                 store.consolidatedDocument(fixture.projectId, projectUuid, listOf(selected, other))
             ).document
+            assertEquals("Квартира / Центр", result.currentProjectTitle)
+            assertEquals("zvedenyi-koshtorys-Квартира-Центр.pdf", result.fileName)
+            assertEquals(listOf("Назва другої ревізії", project.title), result.sections.map { it.document.project })
             val chosen = result.sections.single { it.document.publicNumber == frozen[index].frozen.publicNumber }
             assertEquals(index + 1L, chosen.document.version)
             assertEquals(frozen[index].status, chosen.status)
@@ -112,8 +121,7 @@ internal suspend fun proveExactEstimateDocuments(driver: SqlDriver) {
         assertNotEquals(documents.first().drawing.contour, documents.last().drawing.contour)
         assertNull(store.estimateDocument(first.seriesUuid, fixture.elementUuid))
 
-        val project = assertNotNull(ProjectRepository(db).find(fixture.projectId))
-        ProjectRepository(db).update(project.id, project.clientId, "Renamed project", "Changed address",
+        projects.update(project.id, project.clientId, "Renamed project", "Changed address",
             project.status, project.notes, 608)
         prices.updateSalePrice(assertNotNull(prices.find(fixture.priceId)), 150.0, 609)
         MeasurementRepository(db).delete(measurement.id)

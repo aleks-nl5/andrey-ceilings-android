@@ -147,18 +147,17 @@ internal fun layoutConsolidatedEstimateDocument(
     options: DocumentPresentationOptions,
     measurer: TextMeasurer
 ): EstimateDocumentPages = DocumentPagination(
-    document.fileName, document.sections.first().document.revisionHeading, measurer
+    document.fileName, "Зведений кошторис", measurer
 ).apply {
-    paragraph("Зведений кошторис", 25, bold = true)
-    paragraph("Об’єкт · ${document.project}", 15, bold = true)
+    paragraph("Об’єкт · ${document.currentProjectTitle}", 21, bold = true)
     document.currentAddress?.let { paragraph("Актуальна адреса · $it") }
-    gap(12)
     val roomOptions = DocumentPresentationOptions(listOf(EstimateDocumentSection.ROOM, EstimateDocumentSection.DRAWING))
-    document.sections.forEachIndexed { index, section ->
-        if (index > 0) startSection(section.document.revisionHeading)
+    document.sections.forEach { section ->
+        startSection()
+        paragraph(section.document.revisionHeading, 18, bold = true)
         roomSection(section.document, roomOptions, null, null, section.status?.label ?: "Статус не зафіксовано")
     }
-    startSection("Зведений кошторис")
+    startSection()
     paragraph("Підсумок об’єкта", 25, bold = true)
     document.sections.forEach {
         val room = it.document
@@ -247,7 +246,7 @@ private fun DocumentPagination.roomSection(
 /** Fixed units are PDF points, independent of screen density and font scaling. */
 private class DocumentPagination(
     private val fileName: String,
-    private var pageHeading: String,
+    private val pageHeading: String,
     private val measurer: TextMeasurer
 ) {
     private val pages = mutableListOf<MutableList<DocumentMark>>()
@@ -257,10 +256,7 @@ private class DocumentPagination(
 
     init { newPage() }
 
-    fun startSection(heading: String) {
-        pageHeading = heading
-        newPage()
-    }
+    fun startSection() = newPage()
 
     private fun newPage() {
         marks = mutableListOf()

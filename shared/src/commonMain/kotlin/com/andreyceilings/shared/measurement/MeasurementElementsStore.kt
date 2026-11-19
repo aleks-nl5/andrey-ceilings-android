@@ -192,7 +192,7 @@ class MeasurementElementsStore(private val database: PrototypeDatabase, private 
             ConsolidatedEstimateDocument.Section(document, saved.status)
         }
         ConsolidatedDocumentResult.Ready(
-            ConsolidatedEstimateDocument(sections.first().document.project, project.address.takeIf { it.isNotBlank() },
+            ConsolidatedEstimateDocument(project.title, project.address.takeIf { it.isNotBlank() },
                 sections, total)
         )
     }

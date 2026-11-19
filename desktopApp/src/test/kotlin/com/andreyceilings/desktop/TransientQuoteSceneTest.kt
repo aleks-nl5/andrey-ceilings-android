@@ -11,6 +11,7 @@ import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import com.andreyceilings.shared.db.MeasurementPricingFixture
 import com.andreyceilings.shared.db.PriceCatalogSchema
+import com.andreyceilings.shared.db.ProjectRepository
 import com.andreyceilings.shared.db.PrototypeDatabase
 import com.andreyceilings.shared.estimate.EstimateNumbering
 import com.andreyceilings.shared.estimate.ImmutableEstimateRepository
@@ -123,13 +124,24 @@ class TransientQuoteSceneTest {
             PriceCatalogSchema.create(driver)
             val db = PrototypeDatabase(driver)
             val room = MeasurementPricingFixture.seed(db, roomName = "Вітальня")
-            val presenter = TransientQuotePresenter(room.measurementUuid)
+            val kitchen = MeasurementPricingFixture.seed(db, room.projectId, "Кухня")
+            val projects = ProjectRepository(db)
+            val project = assertNotNull(projects.find(room.projectId))
             val store = ObjectsClientsStore(db) { 700 }
-            presenter.acceptRead(presenter.beginRead(), LivePricingReader(db).read(room.projectId, room.measurementUuid))
-            val saved = ImmutableEstimateRepository(db).saveIndividual(
-                assertNotNull(presenter.saveRequest(room.projectId, "Кошторис вітальні")), 2026, 600
-            )
-            val publicNumber = EstimateNumbering.printable(saved.documentNumber)
+            val history = ImmutableEstimateRepository(db)
+            fun rename(title: String, now: Long) =
+                projects.update(project.id, project.clientId, title, project.address, project.status, project.notes, now)
+            fun save(fixture: MeasurementPricingFixture.Fixture, title: String, now: Long): String {
+                val presenter = TransientQuotePresenter(fixture.measurementUuid)
+                presenter.acceptRead(presenter.beginRead(), LivePricingReader(db).read(fixture.projectId, fixture.measurementUuid))
+                val saved = history.saveIndividual(assertNotNull(presenter.saveRequest(fixture.projectId, title)), 2026, now)
+                return EstimateNumbering.printable(saved.documentNumber)
+            }
+            rename("Оселя до змін", 598)
+            val livingNumber = save(room, "Кошторис вітальні", 600)
+            rename("Оселя після ремонту", 602)
+            val kitchenNumber = save(kitchen, "Кошторис кухні", 604)
+            rename("Квартира / Центр", 606)
             val scene = ImageComposeScene(640, 750) {
                 CeilingsTheme(false) {
                     ObjectsClientsScreen(
@@ -157,14 +169,18 @@ class TransientQuoteSceneTest {
                 click("Зведений кошторис")
                 scene.await { find("Вітальня") != null }
                 assertTrue(SemanticsProperties.Disabled in assertNotNull(find(preview)).config)
-                click("Вітальня")
-                assertTrue(SemanticsProperties.Disabled in assertNotNull(find(preview)).config)
-                val option = assertNotNull(find("$publicNumber · v1"))
-                val choice = assertNotNull(generateSequence(option) { it.parent }.firstOrNull {
-                    it.config.getOrNull(SemanticsProperties.Selected) == false
-                })
-                assertTrue(choice.config.getOrNull(SemanticsActions.OnClick)?.action?.invoke() == true)
-                scene.await { find(preview)?.config?.contains(SemanticsProperties.Disabled) == false }
+                fun choose(roomName: String, number: String) {
+                    click(roomName)
+                    assertTrue(SemanticsProperties.Disabled in assertNotNull(find(preview)).config)
+                    val option = assertNotNull(find("$number · v1"))
+                    val choice = assertNotNull(generateSequence(option) { it.parent }.firstOrNull {
+                        it.config.getOrNull(SemanticsProperties.Selected) == false
+                    })
+                    assertTrue(choice.config.getOrNull(SemanticsActions.OnClick)?.action?.invoke() == true)
+                    scene.await { find(preview)?.config?.contains(SemanticsProperties.Disabled) == false }
+                }
+                choose("Кухня", kitchenNumber)
+                choose("Вітальня", livingNumber)
                 click(preview)
                 scene.await { find("Збереження, надсилання й друк PDF доступні на Android.") != null }
                 assertNull(find("Зберегти PDF"))
@@ -173,14 +189,25 @@ class TransientQuoteSceneTest {
                 fun pageDescriptions() = scene.nodes().flatMap { node ->
                     node.config.getOrNull(SemanticsProperties.ContentDescription).orEmpty()
                 }
-                val firstPage = pageDescriptions().firstOrNull { "Зведений кошторис" in it }
-                assertNotNull(firstPage, pageDescriptions().joinToString("\n"))
-                assertTrue(publicNumber in firstPage, firstPage)
-                val scroll = assertNotNull(scene.nodes().lastOrNull {
-                    it.config.getOrNull(SemanticsActions.ScrollBy) != null
-                }?.config?.getOrNull(SemanticsActions.ScrollBy)?.action)
-                assertTrue(scroll(0f, 5000f))
-                scene.await { pageDescriptions().any { "Загалом до оплати" in it } }
+                val cover = assertNotNull(pageDescriptions().firstOrNull { "Сторінка 1 / " in it })
+                assertEquals(listOf("Зведений кошторис", "Об’єкт · Квартира / Центр"), cover.lines().dropLast(1))
+                assertFalse(livingNumber in cover || kitchenNumber in cover, cover)
+                val pageCount = cover.substringAfterLast("Сторінка 1 / ").toInt()
+                val scrollToPage = assertNotNull(scene.nodes().lastOrNull {
+                    it.config.getOrNull(SemanticsActions.ScrollToIndex) != null
+                }?.config?.getOrNull(SemanticsActions.ScrollToIndex)?.action)
+                val sections = (1 until pageCount).map { index ->
+                    assertTrue(scrollToPage(index))
+                    val footer = "Сторінка ${index + 1} / $pageCount"
+                    scene.await { pageDescriptions().any { footer in it } }
+                    pageDescriptions().first { footer in it }
+                }
+                assertTrue(sections.all { it.lines().first() == "Зведений кошторис" })
+                val historicalPages = sections.dropLast(1)
+                assertTrue(historicalPages.any { "$kitchenNumber · v1" in it && "Об’єкт · Оселя після ремонту" in it })
+                assertTrue(historicalPages.any { "$livingNumber · v1" in it && "Об’єкт · Оселя до змін" in it })
+                assertTrue(historicalPages.none { "Квартира / Центр" in it })
+                assertTrue("Загалом до оплати" in sections.last())
                 click("Назад")
                 scene.await { find(preview)?.config?.contains(SemanticsProperties.Disabled) == false }
                 click("Скасувати")

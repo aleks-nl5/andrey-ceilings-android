@@ -36,14 +36,26 @@ internal data class ConsolidatedRoomOption(
 )
 
 internal data class ConsolidatedEstimateDocument(
-    val project: String,
+    val currentProjectTitle: String,
     val currentAddress: String?,
     val sections: List<Section>,
     val totalCents: Long
 ) {
     data class Section(val document: FrozenEstimateDocument, val status: EstimateWorkflowStatus?)
 
-    val fileName: String get() = "zvedenyi-koshtorys.pdf"
+    val fileName: String
+        get() {
+            // Bound the Unicode slug well below the usual 255-byte filename limit.
+            val slug = sanitizeEstimateFileStem(projectTitleUuid.replace(currentProjectTitle, ""), "-")
+                .replace(slugSeparators, "-").trim('-').take(56)
+                .trimEnd { it == '-' || it.isHighSurrogate() }
+            return if (slug.isEmpty()) "zvedenyi-koshtorys.pdf" else "zvedenyi-koshtorys-$slug.pdf"
+        }
+
+    private companion object {
+        val projectTitleUuid = Regex("[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}", RegexOption.IGNORE_CASE)
+        val slugSeparators = Regex("[._-]+")
+    }
 }
 
 internal enum class ConsolidatedDocumentProblem(val label: String) {
