@@ -10,6 +10,39 @@ import kotlin.test.*
 import kotlinx.coroutines.*
 
 class LivePricingReaderTest {
+    @Test fun deployedV19FileUpgradeRepairsOnlyTheProvenWallSet() =
+        physicalWallRepair { file -> JdbcSqliteDriver("jdbc:sqlite:${file.absolutePath}") }
+
+    @Test fun deployedV19WindowsCipherUpgradeRepairsOnlyTheProvenWallSet() {
+        if (!System.getProperty("os.name").startsWith("Windows", ignoreCase = true)) return
+        val key = ByteArray(32) { 46 }
+        try { physicalWallRepair { file -> SqlCipherWindowsDriverFactory.open(file, key) } }
+        finally { key.fill(0) }
+    }
+
+    private fun physicalWallRepair(open: (java.io.File) -> SqlDriver) {
+        val dir = Files.createTempDirectory("wall-migration-").toFile()
+        val file = dir.resolve("v19.db")
+        try {
+            WallVersionMigrationProof.lifecycle(PriceCatalogSchema) { schema ->
+                val driver = open(file)
+                try {
+                    if (schema === PriceCatalogSchema) openDesktopPriceCatalog(driver, true)
+                    else PrototypeDatabase(driver).transaction {
+                        val version = PriceNameUniquenessProof.scalar(driver, "PRAGMA user_version")
+                        if (version == 0L) schema.create(driver)
+                        else if (version < schema.version) schema.migrate(driver, version, schema.version)
+                        driver.execute(null, "PRAGMA user_version = ${schema.version}", 0)
+                    }
+                    driver
+                } catch (failure: Throwable) {
+                    driver.close()
+                    throw failure
+                }
+            }
+        } finally { dir.deleteRecursively() }
+    }
+
     @Test fun wallVersionMigrationRejectsAnUnknownLegacyGuardBeforeRepair() {
         JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).use { driver ->
             PriceCatalogSchema.create(driver)
