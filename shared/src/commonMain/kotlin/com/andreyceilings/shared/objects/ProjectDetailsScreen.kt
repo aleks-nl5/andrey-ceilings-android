@@ -386,13 +386,13 @@ internal fun ProjectDetailsScreen(
                     val project = state.data.project
                     if (project == null) item { Text("Об'єкт не знайдено або його видалено.") }
                     else {
-                        item(key = "saved-estimates") {
-                            Column {
-                                com.andreyceilings.shared.estimate.SavedIndividualQuoteList(elements, projectId)
-                                if (elements != null) {
-                                    OutlinedButton(onClick = { elements.openConsolidatedComposer(projectId) }) { Text("Зведений кошторис") }
-                                }
+                        if (elements != null) item(key = "consolidated-estimate") {
+                            OutlinedButton(onClick = { elements.openConsolidatedComposer(projectId) }) {
+                                Text("Зведений кошторис")
                             }
+                        }
+                        item(key = "saved-estimates") {
+                            com.andreyceilings.shared.estimate.SavedIndividualQuoteList(elements, projectId)
                         }
                         item(key = "status") {
                             DetailsCard {

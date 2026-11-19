@@ -141,7 +141,7 @@ class TransientQuoteSceneTest {
                     )
                 }
             }
-            fun find(text: String) = scene.nodes().firstOrNull { node ->
+            fun find(text: String) = scene.nodes().lastOrNull { node ->
                 node.config.getOrNull(SemanticsProperties.Text).orEmpty().any { it.text.startsWith(text) }
             }
             fun click(text: String) {
@@ -159,7 +159,11 @@ class TransientQuoteSceneTest {
                 assertTrue(SemanticsProperties.Disabled in assertNotNull(find(preview)).config)
                 click("Вітальня")
                 assertTrue(SemanticsProperties.Disabled in assertNotNull(find(preview)).config)
-                click("${publicNumber} · v1")
+                val option = assertNotNull(find("$publicNumber · v1"))
+                val choice = assertNotNull(generateSequence(option) { it.parent }.firstOrNull {
+                    it.config.getOrNull(SemanticsProperties.Selected) == false
+                })
+                assertTrue(choice.config.getOrNull(SemanticsActions.OnClick)?.action?.invoke() == true)
                 scene.await { find(preview)?.config?.contains(SemanticsProperties.Disabled) == false }
                 click(preview)
                 scene.await { find("Збереження, надсилання й друк PDF доступні на Android.") != null }
