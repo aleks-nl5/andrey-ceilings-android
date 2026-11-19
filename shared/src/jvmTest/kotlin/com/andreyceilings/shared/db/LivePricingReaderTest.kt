@@ -20,7 +20,7 @@ class LivePricingReaderTest {
         finally { key.fill(0) }
     }
 
-    private fun physicalWallRepair(open: (java.io.File) -> SqlDriver) {
+    private fun physicalWallRepair(open: (java.io.File) -> SqlDriver): Unit = runBlocking {
         val dir = Files.createTempDirectory("wall-migration-").toFile()
         val file = dir.resolve("v19.db")
         try {

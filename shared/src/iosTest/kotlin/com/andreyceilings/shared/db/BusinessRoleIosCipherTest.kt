@@ -8,7 +8,7 @@ import kotlin.random.Random
 import kotlin.test.Test
 
 class BusinessRoleIosCipherTest {
-    @Test fun physicalV19ToV20RollbackAndWallRepair() {
+    @Test fun physicalV19ToV20RollbackAndWallRepair(): Unit = runBlocking {
         val factory = NativeSqlCipherDriverFactory()
         val name = "walls-v19-${Random.nextLong()}.db"
         val config = SqlCipherConfig(name = name, key = SqlCipherKey { ByteArray(32) { 46 } },

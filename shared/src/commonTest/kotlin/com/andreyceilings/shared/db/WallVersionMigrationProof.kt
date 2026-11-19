@@ -144,7 +144,8 @@ object WallVersionMigrationProof {
             }
         }
 
-    fun lifecycle(production: SqlSchema<QueryResult.Value<Unit>>, open: (SqlSchema<QueryResult.Value<Unit>>) -> SqlDriver) {
+    suspend fun lifecycle(production: SqlSchema<QueryResult.Value<Unit>>,
+        open: suspend (SqlSchema<QueryResult.Value<Unit>>) -> SqlDriver) {
         val evidence = open(v19Schema).use { driver ->
             move(driver, seed(driver)).also { verify(driver, it, migrated = false) }
         }
