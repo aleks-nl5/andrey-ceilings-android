@@ -18,6 +18,7 @@ import androidx.compose.ui.window.DialogProperties
 import com.andreyceilings.shared.measurement.MeasurementElementsStore
 import com.andreyceilings.shared.measurement.measurementMoney
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.flow.update
 
 @Composable
 internal fun ConsolidatedEstimateScreen(
@@ -100,7 +101,7 @@ internal fun ConsolidatedEstimateScreen(
                             Text(ConsolidatedDocumentProblem.ROOM_MISSING.label, color = MaterialTheme.colorScheme.error)
                             TextButton(onClick = {
                                 session.previewing.value = false
-                                session.selection.value = selected - missing
+                                session.selection.update { it - missing }
                             }) { Text("Скинути недоступний вибір") }
                         }
                         LazyColumn(Modifier.weight(1f), state = listState, verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -108,12 +109,13 @@ internal fun ConsolidatedEstimateScreen(
                             items(rooms, key = { it.uuid }) { room ->
                                 ConsolidatedRoomCard(room, room.uuid in selected, selected[room.uuid], onToggle = {
                                     session.previewing.value = false
-                                    if (room.uuid in selected) {
-                                        session.selection.value = selected - room.uuid
-                                    } else session.selection.value = selected + (room.uuid to null)
-                                }, onRevision = {
+                                    session.selection.update { current ->
+                                        if (room.uuid in current) current - room.uuid
+                                        else current + (room.uuid to null)
+                                    }
+                                }, onRevision = { revision ->
                                     session.previewing.value = false
-                                    session.selection.value = selected + (room.uuid to it)
+                                    session.selection.update { it + (room.uuid to revision) }
                                 }, onOpenMeasurement = {
                                     onClose()
                                     onOpenMeasurement(room.id)

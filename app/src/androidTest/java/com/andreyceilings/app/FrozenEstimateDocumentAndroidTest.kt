@@ -246,6 +246,15 @@ class FrozenEstimateDocumentAndroidTest {
                     list.performScrollToNode(noQuote)
                     compose.onNode(noQuote).assertIsNotEnabled()
                     fun publicNumber(document: CreatedEstimateSeries) = EstimateNumbering.printable(document.documentNumber)
+                    fun waitForPreview(room: String) {
+                        val enabled = hasText("Переглянути зведений PDF") and isEnabled()
+                        try {
+                            compose.waitUntil(60_000) { compose.onAllNodes(enabled).fetchSemanticsNodes().isNotEmpty() }
+                        } catch (timeout: ComposeTimeoutException) {
+                            val dialog = compose.onAllNodes(isRoot(), useUnmergedTree = true).onLast().printToString()
+                            fail("Preview unavailable after choosing $room\n$dialog", timeout)
+                        }
+                    }
                     fun choose(room: String, document: CreatedEstimateSeries) {
                         list.performScrollToNode(hasText(room))
                         compose.onNode(hasText(room) and isToggleable()).performClick()
@@ -253,17 +262,16 @@ class FrozenEstimateDocumentAndroidTest {
                         val exact = hasText("${publicNumber(document)} · v1", substring = true) and isSelectable()
                         list.performScrollToNode(exact)
                         compose.onNode(exact).assertIsNotSelected().performClick()
+                        compose.onNode(exact).assertIsSelected()
+                        waitForPreview(room)
                     }
                     choose("Вітальня", first)
                     choose("Кухня", partial)
                     for ((name, quote) in additional) choose(name, quote)
-                    compose.waitUntil(10000) {
-                        compose.onAllNodes(hasText("Переглянути зведений PDF") and isEnabled()).fetchSemanticsNodes().isNotEmpty()
-                    }
                     preview.performClick()
-                    compose.waitUntil(10000) { compose.onAllNodesWithText("Зберегти PDF").fetchSemanticsNodes().isNotEmpty() }
+                    compose.waitUntil(60_000) { compose.onAllNodesWithText("Зберегти PDF").fetchSemanticsNodes().isNotEmpty() }
                     compose.onNodeWithText("Зберегти PDF").performClick()
-                    compose.waitUntil(10000) { compose.runOnIdle { captured != null } }
+                    compose.waitUntil(60_000) { compose.runOnIdle { captured != null } }
                     val pages = compose.runOnIdle { assertNotNull(captured) }
                     runBlocking { writeEstimateDocumentPdf(pages, 0 until pages.count) { output.outputStream() } }
                     val text = PdfRenderer(ParcelFileDescriptor.open(output, ParcelFileDescriptor.MODE_READ_ONLY)).use { pdf ->

@@ -9,6 +9,7 @@ import kotlinx.coroutines.*
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
 import kotlinx.coroutines.flow.*
+import kotlin.coroutines.CoroutineContext
 
 /** Price-free picker projection. Catalog CRUD and price calculation stay in their existing boundaries. */
 data class ElementCatalogItem(val uuid: String, val groupUuid: String, val title: String,
@@ -114,13 +115,14 @@ class MeasurementElementsStore(private val database: PrototypeDatabase, private 
     }
 
     internal suspend fun consolidatedRooms(projectId: Long): ConsolidatedRoomCatalog =
-        estimateAccess {
+        consolidatedRead { request ->
             val projectUuid = checkNotNull(projects.find(projectId)).uuid
             val revisionsByRoom = estimates.frozenIndividuals()
                 .filter { it.projectId == projectId }.groupBy { it.measurementUuid }
             val rooms = orderedConsolidatedRooms(projectId).map { room ->
                 val candidates = revisionsByRoom[room.uuid].orEmpty()
                 val options = candidates.mapNotNull { row ->
+                    request.ensureActive()
                     val (saved, _) = readConsolidatedRevision(row.seriesUuid, row.revisionUuid)
                     if (saved == null) return@mapNotNull null
                     val frozen = saved.frozen
@@ -144,47 +146,48 @@ class MeasurementElementsStore(private val database: PrototypeDatabase, private 
         projectUuid: String,
         selection: List<ConsolidatedDocumentRef>,
         zone: TimeZone = TimeZone.currentSystemDefault()
-    ): ConsolidatedDocumentResult = estimateAccess {
+    ): ConsolidatedDocumentResult = consolidatedRead { request ->
         fun reject(problem: ConsolidatedDocumentProblem) = ConsolidatedDocumentResult.Rejected(problem)
-        if (selection.isEmpty()) return@estimateAccess reject(ConsolidatedDocumentProblem.EMPTY)
+        if (selection.isEmpty()) return@consolidatedRead reject(ConsolidatedDocumentProblem.EMPTY)
         val refs = selection.associateBy { it.measurementUuid }
         if (refs.size != selection.size || selection.distinctBy { it.revisionUuid }.size != selection.size) {
-            return@estimateAccess reject(ConsolidatedDocumentProblem.DUPLICATE)
+            return@consolidatedRead reject(ConsolidatedDocumentProblem.DUPLICATE)
         }
         val project = projects.find(projectId)?.takeIf { it.uuid == projectUuid }
-            ?: return@estimateAccess reject(ConsolidatedDocumentProblem.PROJECT_MISSING)
+            ?: return@consolidatedRead reject(ConsolidatedDocumentProblem.PROJECT_MISSING)
         val rooms = orderedConsolidatedRooms(projectId).filter { it.uuid in refs }
         if (rooms.size != refs.size) {
             val activeIds = rooms.map { it.uuid }.toSet()
             val foreign = (refs.keys - activeIds).any {
                 measurements.findByUuid(it)?.let { row -> row.deletedAt == null && row.projectId != projectId } == true
             }
-            return@estimateAccess reject(if (foreign) ConsolidatedDocumentProblem.FOREIGN_REVISION
+            return@consolidatedRead reject(if (foreign) ConsolidatedDocumentProblem.FOREIGN_REVISION
                 else ConsolidatedDocumentProblem.ROOM_MISSING)
         }
 
         var total = 0L
         val sections = rooms.map { room ->
+            request.ensureActive()
             val ref = refs.getValue(room.uuid)
             val (saved, problem) = readConsolidatedRevision(ref.seriesUuid, ref.revisionUuid)
-            if (saved == null) return@estimateAccess reject(problem)
+            if (saved == null) return@consolidatedRead reject(problem)
             val frozen = saved.frozen
             if (saved.projectId != projectId || frozen.source.projectUuid != projectUuid ||
                 frozen.source.measurementUuid != room.uuid) {
-                return@estimateAccess reject(ConsolidatedDocumentProblem.FOREIGN_REVISION)
+                return@consolidatedRead reject(ConsolidatedDocumentProblem.FOREIGN_REVISION)
             }
-            if (frozen.fingerprint != ref.fingerprint) return@estimateAccess reject(ConsolidatedDocumentProblem.STALE)
+            if (frozen.fingerprint != ref.fingerprint) return@consolidatedRead reject(ConsolidatedDocumentProblem.STALE)
             val document = try {
                 FrozenEstimateDocument.from(saved, currentAddress = null, zone = zone)
             } catch (_: IllegalArgumentException) {
-                return@estimateAccess reject(ConsolidatedDocumentProblem.INVALID_DRAWING)
+                return@consolidatedRead reject(ConsolidatedDocumentProblem.INVALID_DRAWING)
             } catch (_: IllegalStateException) {
-                return@estimateAccess reject(ConsolidatedDocumentProblem.INVALID_DRAWING)
+                return@consolidatedRead reject(ConsolidatedDocumentProblem.INVALID_DRAWING)
             }
             total = try {
                 PricingMath.add(total, document.amounts.finalCents)
             } catch (_: ArithmeticException) {
-                return@estimateAccess reject(ConsolidatedDocumentProblem.OVERFLOW)
+                return@consolidatedRead reject(ConsolidatedDocumentProblem.OVERFLOW)
             }
             ConsolidatedEstimateDocument.Section(document, saved.status)
         }
@@ -192,6 +195,14 @@ class MeasurementElementsStore(private val database: PrototypeDatabase, private 
             ConsolidatedEstimateDocument(sections.first().document.project, project.address.takeIf { it.isNotBlank() },
                 sections, total)
         )
+    }
+
+    private suspend fun <T> consolidatedRead(block: (CoroutineContext) -> T): T {
+        val request = currentCoroutineContext()
+        return estimateAccess {
+            request.ensureActive()
+            block(request)
+        }
     }
 
     private fun orderedConsolidatedRooms(projectId: Long) =
