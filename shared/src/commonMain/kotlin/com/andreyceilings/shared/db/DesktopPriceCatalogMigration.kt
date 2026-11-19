@@ -26,6 +26,12 @@ fun openDesktopPriceCatalog(driver: SqlDriver, previouslyExisting: Boolean) {
             // A competing opener may have created it while we waited for the lock.
             if (columns("projects").isEmpty()) PriceCatalogSchema.create(driver)
         }
+        // A competing opener may also have upgraded the structure while we waited for the lock.
+        val wallVersionSchema = driver.executeQuery(null,
+            "SELECT count(*) FROM sqlite_master WHERE name = 'ceiling_refresh_unchanged_wall_versions'", { cursor ->
+                cursor.next(); QueryResult.Value(cursor.getLong(0) == 1L)
+            }, 0).value
+        val versionFloor = if (wallVersionSchema) maxOf(20L, persistedVersion) else persistedVersion
         val projectColumns = columns("projects")
         check("status" in projectColumns && "seriesUuid" in columns("estimates")) {
             "Існуюча SQLCipher БД має непідтримувану схему. Оновлення скасовано."
@@ -63,7 +69,7 @@ fun openDesktopPriceCatalog(driver: SqlDriver, previouslyExisting: Boolean) {
                                 else if("lineVersions" in columns("ceiling_operation_results") || columns("line_placements").isNotEmpty()) 12L
                                 else if(runCatching { verifyPointPlacementStructure(driver,11L) }.isSuccess) 11L else 10L
                             } else if ("precision" in pointColumns) 9L else 8L
-                            verifyPointPlacementStructure(driver, detected)
+                            verifyPointPlacementStructure(driver, maxOf(detected, versionFloor))
                             detected
                         }
                     }
@@ -86,11 +92,11 @@ fun openDesktopPriceCatalog(driver: SqlDriver, previouslyExisting: Boolean) {
             val workflowParts = listOf(columns("estimate_revision_workflow").isNotEmpty(), columns("estimate_revision_choice").isNotEmpty())
             check(workflowParts.all { it } || workflowParts.none { it }) { "Partial revision metadata schema" }
             check(workflowParts.none { it } || revisionParts.all { it }) { "Revision metadata requires frozen revisions" }
-            val frozenVersion = if (workflowParts.all { it }) maxOf(18L, persistedVersion) else if (revisionParts.all { it }) 17L else 16L
+            val frozenVersion = if (workflowParts.all { it }) maxOf(18L, versionFloor) else if (revisionParts.all { it }) 17L else 16L
             verifyFrozenEstimateStructure(driver, frozenVersion)
             frozenVersion
         } else detectedVersion
-        check(persistedVersion < 8L || oldVersion >= persistedVersion) { "Incomplete point placement schema" }
+        check(versionFloor < 8L || oldVersion >= versionFloor) { "Incomplete point placement schema" }
         if (oldVersion < PriceCatalogSchema.version)
             PriceCatalogSchema.migrate(driver, oldVersion, PriceCatalogSchema.version)
         PriceCatalogSchema.verifyStructure(driver)

@@ -6,6 +6,16 @@ import com.andreyceilings.shared.prices.*
 import kotlinx.serialization.json.*
 import kotlin.test.*
 
+// The populated historical fixtures contain a complete, coherent active wall set.
+// Snapshot comparisons still include the wall version alongside every preserved field.
+internal fun migrationSnapshotColumn(table: String, column: String, expectWallVersionRepair: Boolean): String =
+    if (expectWallVersionRepair && table == "ceiling_walls" && column == "geometryVersion")
+        """CASE WHEN active = 1 THEN coalesce((
+            SELECT m.updatedAt FROM room_measurements m
+            WHERE m.uuid = ceiling_walls.measurementUuid AND m.deletedAt IS NULL
+        ), geometryVersion) ELSE geometryVersion END""".trimIndent()
+    else column
+
 object AreaFeatureMigrationProof {
     val v12Schema=object:SqlSchema<QueryResult.Value<Unit>> {
         override val version=12L
@@ -59,17 +69,21 @@ object AreaFeatureMigrationProof {
     fun fingerprint(driver:SqlDriver)=PriceNameMigrationProof.schema(driver).map {row -> row.mapIndexed {i,value ->
         if(i==3)value?.trim()?.trimEnd(';')?.replace(Regex("\\s+")," ")?.replace(Regex("\\s*([,()])\\s*"),"$1")?.lowercase() else value
     } }
-    fun snapshot(driver:SqlDriver):List<List<String?>> {
+    fun snapshot(driver:SqlDriver, expectWallVersionRepair: Boolean = false):List<List<String?>> {
         val tables=driver.executeQuery(null,"SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'area_%' AND name NOT LIKE 'sqlite_autoindex%' ORDER BY name",{c ->
             val result=mutableListOf<String>();while(c.next().value)result+=c.getString(0)!!;QueryResult.Value(result)
         },0).value
         return tables.flatMap {table ->
             val cols=driver.executeQuery(null,"PRAGMA table_info($table)",{c ->val names=mutableListOf<String>();while(c.next().value)c.getString(1)?.takeUnless {it=="areaVersions" || it=="businessRole" || isP4C1AddedSnapshotColumn(table,it)}?.let(names::add);QueryResult.Value(names)},0).value
-            MeasurementElementMigrationProof.rows(driver,"SELECT "+cols.joinToString {"quote($it)"}+" FROM $table ORDER BY 1",cols.size).map {listOf(table)+it}
+            val fields = cols.map { migrationSnapshotColumn(table, it, expectWallVersionRepair) }
+            MeasurementElementMigrationProof.rows(driver,"SELECT "+fields.joinToString {"quote($it)"}+" FROM $table ORDER BY 1",cols.size).map {listOf(table)+it}
         }
     }
     suspend fun lifecycle(production:SqlSchema<QueryResult.Value<Unit>>,open:suspend(SqlSchema<QueryResult.Value<Unit>>)->SqlDriver) {
-        val (before,schema)=open(v12Schema).use {driver ->populate(driver);snapshot(driver) to PriceNameMigrationProof.schema(driver)}
+        val (before, expected, schema) = open(v12Schema).use { driver ->
+            populate(driver)
+            Triple(snapshot(driver), snapshot(driver, expectWallVersionRepair = true), PriceNameMigrationProof.schema(driver))
+        }
         val failed=object:SqlSchema<QueryResult.Value<Unit>> by production {
             override fun migrate(driver:SqlDriver,oldVersion:Long,newVersion:Long,vararg callbacks:AfterVersion):QueryResult.Value<Unit> {
                 val injected=object:SqlDriver by driver {
@@ -84,7 +98,7 @@ object AreaFeatureMigrationProof {
         assertFails {open(failed).close()}
         open(v12Schema).use {driver ->assertEquals(before,snapshot(driver));assertEquals(schema,PriceNameMigrationProof.schema(driver));PriceCatalogSchema.verifyStructure(driver,12)}
         open(production).use {driver ->
-            PriceCatalogSchema.verifyStructure(driver);assertEquals(before,snapshot(driver))
+            PriceCatalogSchema.verifyStructure(driver);assertEquals(expected,snapshot(driver))
             assertEquals(0,PriceNameUniquenessProof.scalar(driver,"SELECT count(*) FROM area_features"))
             AreaFeatureProof.run(driver)
         }

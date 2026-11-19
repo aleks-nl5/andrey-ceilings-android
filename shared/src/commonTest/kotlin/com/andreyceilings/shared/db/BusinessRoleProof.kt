@@ -101,11 +101,14 @@ object BusinessRoleMigrationProof {
         override fun migrate(driver: SqlDriver, oldVersion: Long, newVersion: Long, vararg callbacks: AfterVersion): QueryResult.Value<Unit> = error("Frozen v14 fixture")
     }
     suspend fun lifecycle(production: SqlSchema<QueryResult.Value<Unit>>, open: suspend (SqlSchema<QueryResult.Value<Unit>>) -> SqlDriver) {
-        val (fixture, before, structure) = open(v14Schema).use { d ->
+        val (fixture, snapshots, structure) = open(v14Schema).use { d ->
             val fixture = LivePricingProof.seed(historicalElementDatabase(d))
             CeilingReceiptMigrationProof.populate(d)
-            Triple(fixture, CeilingReceiptMigrationProof.snapshot(d), PriceNameMigrationProof.schema(d))
+            val before = CeilingReceiptMigrationProof.snapshot(d)
+            val expected = CeilingReceiptMigrationProof.snapshot(d, expectWallVersionRepair = true)
+            Triple(fixture, before to expected, PriceNameMigrationProof.schema(d))
         }
+        val (before, expected) = snapshots
         val interrupted = object : SqlSchema<QueryResult.Value<Unit>> by production {
             override fun migrate(driver: SqlDriver, oldVersion: Long, newVersion: Long, vararg callbacks: AfterVersion): QueryResult.Value<Unit> {
                 val fail = object : SqlDriver by driver {
@@ -125,7 +128,7 @@ object BusinessRoleMigrationProof {
         }
         open(production).use { d ->
             PriceCatalogSchema.verifyStructure(d)
-            assertEquals(before, CeilingReceiptMigrationProof.snapshot(d))
+            assertEquals(expected, CeilingReceiptMigrationProof.snapshot(d))
             val db = PrototypeDatabase(d)
             val reader = LivePricingReader(db)
             val legacy = assertIs<PricingReadResult.Loaded>(reader.read(fixture.projectId, fixture.measurementUuid))

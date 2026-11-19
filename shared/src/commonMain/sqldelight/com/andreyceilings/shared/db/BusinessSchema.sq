@@ -1104,6 +1104,24 @@ BEGIN
  THEN RAISE(ABORT,'ceiling_wall_requires_operation') END;
 END;
 
+CREATE TRIGGER ceiling_refresh_unchanged_wall_versions AFTER UPDATE OF updatedAt ON room_measurements
+WHEN new.updatedAt > old.updatedAt AND new.drawingJson = old.drawingJson
+BEGIN
+ UPDATE ceiling_walls SET geometryVersion = new.updatedAt
+ WHERE measurementUuid = new.uuid AND active = 1 AND geometryVersion = old.updatedAt
+ AND EXISTS (
+  SELECT 1 FROM ceiling_operations o JOIN ceiling_operation_edges e ON e.operationUuid = o.uuid
+  WHERE o.measurementUuid = new.uuid AND o.expectedUpdatedAt = old.updatedAt
+  AND new.updatedAt = max(o.expectedUpdatedAt + 1, o.createdAt)
+  AND json_extract(o.payload, '$.drawingJson') = new.drawingJson
+  AND json_extract(o.payload, '$.oldDrawingJson') = old.drawingJson
+  AND NOT EXISTS (SELECT 1 FROM ceiling_operation_results WHERE operationUuid = o.uuid)
+  AND e.wallUuid = ceiling_walls.uuid AND e.ordinal = ceiling_walls.ordinal
+  AND e.ax = ceiling_walls.ax AND e.ay = ceiling_walls.ay
+  AND e.bx = ceiling_walls.bx AND e.by = ceiling_walls.by
+ );
+END;
+
 CREATE TRIGGER ceiling_wall_delete_guard BEFORE DELETE ON ceiling_walls BEGIN SELECT RAISE(ABORT,'ceiling_wall_identity_immutable'); END;
 
 CREATE TRIGGER ceiling_wall_insert_guard BEFORE INSERT ON ceiling_walls

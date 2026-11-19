@@ -6,7 +6,7 @@ import app.cash.sqldelight.db.SqlDriver
 /** Diagnostic identifiers are restricted to application-owned objects, never SQL or user values. */
 class SchemaFingerprintMismatch(val objectId: String) : IllegalStateException("Unsupported schema fingerprint") {
     init { require(objectId=="point_objects" || objectId in pointV8SchemaDefinitions || objectId in pointV9SchemaDefinitions ||
-        objectId in pointV11SchemaDefinitions || objectId in pointV10SchemaDefinitions || objectId in pointSchemaDefinitions) { "Unknown schema diagnostic identifier" } }
+        objectId in pointV11SchemaDefinitions || objectId in pointV10SchemaDefinitions || objectId in pointV20SchemaDefinitions) { "Unknown schema diagnostic identifier" } }
 }
 
 /** Strict source fingerprints, including both deployed v10 lineages and v12/v13/v14. */
@@ -26,7 +26,7 @@ internal fun verifyPointPlacementStructure(driver: SqlDriver, version: Long = Pr
             while (cursor.next().value) found.add(checkNotNull(cursor.getString(0)))
             QueryResult.Value(found)
         }, 0).value
-    val definitions = when(version) { 8L -> pointV8SchemaDefinitions; 9L -> pointV9SchemaDefinitions; 10L -> pointV10SchemaDefinitions; 11L -> pointV11SchemaDefinitions; 12L -> pointV12SchemaDefinitions; 13L -> pointV13SchemaDefinitions; else -> pointSchemaDefinitions }
+    val definitions = when(version) { 8L -> pointV8SchemaDefinitions; 9L -> pointV9SchemaDefinitions; 10L -> pointV10SchemaDefinitions; 11L -> pointV11SchemaDefinitions; 12L -> pointV12SchemaDefinitions; 13L -> pointV13SchemaDefinitions; in 14L..19L -> pointSchemaDefinitions; else -> pointV20SchemaDefinitions }
     if(names!=definitions.keys)throw SchemaFingerprintMismatch("point_objects")
     val actual = definitions.mapValues { (name, _) ->
         val actual = driver.executeQuery(null, "SELECT sql FROM sqlite_master WHERE name = '$name'", { cursor ->
@@ -387,3 +387,23 @@ BEGIN
 END;
 """.trimIndent()
 )
+
+private val pointV20SchemaDefinitions = pointSchemaDefinitions + ("ceiling_refresh_unchanged_wall_versions" to """
+CREATE TRIGGER ceiling_refresh_unchanged_wall_versions AFTER UPDATE OF updatedAt ON room_measurements
+WHEN new.updatedAt > old.updatedAt AND new.drawingJson = old.drawingJson
+BEGIN
+ UPDATE ceiling_walls SET geometryVersion = new.updatedAt
+ WHERE measurementUuid = new.uuid AND active = 1 AND geometryVersion = old.updatedAt
+ AND EXISTS (
+  SELECT 1 FROM ceiling_operations o JOIN ceiling_operation_edges e ON e.operationUuid = o.uuid
+  WHERE o.measurementUuid = new.uuid AND o.expectedUpdatedAt = old.updatedAt
+  AND new.updatedAt = max(o.expectedUpdatedAt + 1, o.createdAt)
+  AND json_extract(o.payload, '$.drawingJson') = new.drawingJson
+  AND json_extract(o.payload, '$.oldDrawingJson') = old.drawingJson
+  AND NOT EXISTS (SELECT 1 FROM ceiling_operation_results WHERE operationUuid = o.uuid)
+  AND e.wallUuid = ceiling_walls.uuid AND e.ordinal = ceiling_walls.ordinal
+  AND e.ax = ceiling_walls.ax AND e.ay = ceiling_walls.ay
+  AND e.bx = ceiling_walls.bx AND e.by = ceiling_walls.by
+ );
+END;
+""".trimIndent())

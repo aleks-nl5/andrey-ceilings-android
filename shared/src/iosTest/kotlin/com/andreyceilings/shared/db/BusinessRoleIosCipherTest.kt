@@ -8,6 +8,15 @@ import kotlin.random.Random
 import kotlin.test.Test
 
 class BusinessRoleIosCipherTest {
+    @Test fun physicalV19ToV20RollbackAndWallRepair(): Unit = runBlocking {
+        val factory = NativeSqlCipherDriverFactory()
+        val name = "walls-v19-${Random.nextLong()}.db"
+        val config = SqlCipherConfig(name = name, key = SqlCipherKey { ByteArray(32) { 46 } },
+            recovery = SqlCipherRecovery.Fail)
+        try { WallVersionMigrationProof.lifecycle(IosPriceCatalogSchema) { factory.create(it, config) } }
+        finally { factory.deleteDatabase(name) }
+    }
+
     @Test fun exactFrozenDocumentOnSqlCipher(): Unit = runBlocking {
         val factory = NativeSqlCipherDriverFactory()
         val name = "frozen-pdf-${Random.nextLong()}.db"

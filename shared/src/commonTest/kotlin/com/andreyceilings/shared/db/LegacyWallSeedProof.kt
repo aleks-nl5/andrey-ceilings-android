@@ -33,14 +33,15 @@ object LegacyWallSeedProof {
         document=store.update(document,document.draft.reduce(MeasurementCreateIntent.Dimension("length","2")),now=120)
         store.update(document,document.draft,document.placements.points.associate{it.uuid to PointMountingEdit(defer=true)},now=130)
     }
-    fun snapshot(driver:SqlDriver,includeMountings:Boolean=false):List<List<String?>> = historicalElementDatabase(driver).transactionWithResult {
+    fun snapshot(driver:SqlDriver,includeMountings:Boolean=false,expectWallVersionRepair:Boolean=false):List<List<String?>> = historicalElementDatabase(driver).transactionWithResult {
         val old=PointPlacementMigrationProof.snapshot(driver)+MeasurementElementMigrationProof.rows(driver,
             "SELECT quote(uuid),quote(elementUuid),quote(xMm),quote(yMm),quote(contourUpdatedAt),quote(createdAt),quote(updatedAt),quote(deletedAt),quote(precision),quote(lastMoveUuid) FROM point_placements ORDER BY uuid",10)
+        val wallVersion = migrationSnapshotColumn("ceiling_walls", "geometryVersion", expectWallVersionRepair)
         if(!includeMountings)old else old+
             MeasurementElementMigrationProof.rows(driver,"SELECT quote(uuid),quote(mountingJson),quote(lastCeilingEditUuid) FROM point_placements ORDER BY uuid",3)+
             MeasurementElementMigrationProof.rows(driver,"SELECT quote(uuid),quote(measurementUuid),quote(expectedUpdatedAt),quote(payload),quote(createdAt) FROM ceiling_operations ORDER BY uuid",5)+
             MeasurementElementMigrationProof.rows(driver,"SELECT quote(operationUuid),quote(measurementVersion),quote(pointVersions),quote(elementVersions) FROM ceiling_operation_results ORDER BY operationUuid",4)+
-            MeasurementElementMigrationProof.rows(driver,"SELECT quote(uuid),quote(measurementUuid),quote(ordinal),quote(ax),quote(ay),quote(bx),quote(by),quote(geometryVersion),quote(active) FROM ceiling_walls ORDER BY uuid",9)
+            MeasurementElementMigrationProof.rows(driver,"SELECT quote(uuid),quote(measurementUuid),quote(ordinal),quote(ax),quote(ay),quote(bx),quote(by),quote($wallVersion),quote(active) FROM ceiling_walls ORDER BY uuid",9)
     }
 
     suspend fun lifecycle(production:SqlSchema<QueryResult.Value<Unit>>,version:Long,
@@ -53,12 +54,17 @@ object LegacyWallSeedProof {
     private suspend fun lifecycleWithSchema(production:SqlSchema<QueryResult.Value<Unit>>,historical:SqlSchema<QueryResult.Value<Unit>>,
         open:suspend(SqlSchema<QueryResult.Value<Unit>>)->SqlDriver) {
         val version=historical.version
-        val(before,oldSchema,oldWalls)=open(historical).use { driver ->
+        val(snapshots,oldSchema,expectedWalls)=open(historical).use { driver ->
             val f=populate(driver,version==9L)
             if(version==10L)decorateV10(driver,f)
-            Triple(snapshot(driver,version==10L),PriceNameMigrationProof.schema(driver),
-                if(version==10L)MeasurementElementMigrationProof.rows(driver,"SELECT * FROM ceiling_walls ORDER BY uuid",9) else emptyList())
+            val before = snapshot(driver, version == 10L)
+            val expected = snapshot(driver, version == 10L, expectWallVersionRepair = true)
+            val wallVersion = migrationSnapshotColumn("ceiling_walls", "geometryVersion", expectWallVersionRepair = true)
+            Triple(before to expected, PriceNameMigrationProof.schema(driver),
+                if(version==10L)MeasurementElementMigrationProof.rows(driver,
+                    "SELECT uuid,measurementUuid,ordinal,ax,ay,bx,by,$wallVersion,active FROM ceiling_walls ORDER BY uuid",9) else emptyList())
         }
+        val (before, expected) = snapshots
         val interrupted=object:SqlSchema<QueryResult.Value<Unit>> by production {
             override fun migrate(driver:SqlDriver,oldVersion:Long,newVersion:Long,vararg callbacks:AfterVersion):QueryResult.Value<Unit> {
                 val failing=object:SqlDriver by driver {
@@ -77,8 +83,8 @@ object LegacyWallSeedProof {
         }
         open(production).use { driver ->
             assertEquals(production.version,PriceNameUniquenessProof.scalar(driver,"PRAGMA user_version"))
-            assertEquals(before,snapshot(driver,version==10L))
-            if(version==10L)assertEquals(oldWalls,MeasurementElementMigrationProof.rows(driver,"SELECT * FROM ceiling_walls ORDER BY uuid",9))
+            assertEquals(expected,snapshot(driver,version==10L))
+            if(version==10L)assertEquals(expectedWalls,MeasurementElementMigrationProof.rows(driver,"SELECT * FROM ceiling_walls ORDER BY uuid",9))
             assertEquals(0L,PriceNameUniquenessProof.scalar(driver,"SELECT count(*) FROM ceiling_walls WHERE measurementUuid LIKE 'legacy-source-%'"))
             if(version==9L)assertEquals(0L,PriceNameUniquenessProof.scalar(driver,"SELECT count(*) FROM point_placements WHERE mountingJson!='{}'"))
             else {

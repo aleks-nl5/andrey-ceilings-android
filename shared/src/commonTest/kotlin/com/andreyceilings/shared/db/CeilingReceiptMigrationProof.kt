@@ -35,11 +35,12 @@ object CeilingReceiptMigrationProof {
         store.update(doc,doc.draft,now=430,areaEdits=doc.placements.areas.associate {it.uuid to AreaFeatureEdit(it,defer=true)})
     }
     /** Every old table/column, including AREA geometry/provenance and receipt areaVersions. */
-    fun snapshot(driver:SqlDriver):List<List<String?>> {
+    fun snapshot(driver:SqlDriver, expectWallVersionRepair: Boolean = false):List<List<String?>> {
         val tables=MeasurementElementMigrationProof.rows(driver,"SELECT name FROM sqlite_master WHERE type='table' ORDER BY name",1).map {it.single()!!}
         return tables.flatMap {t ->
             val columns=driver.executeQuery(null,"PRAGMA table_info($t)",{c->val names=mutableListOf<String>();while(c.next().value)if (c.getString(1) != "businessRole" && !isP4C1AddedSnapshotColumn(t, c.getString(1)!!)) names+=c.getString(1)!!;QueryResult.Value(names)},0).value
-            MeasurementElementMigrationProof.rows(driver,"SELECT "+columns.joinToString {"quote($it)"}+" FROM $t ORDER BY 1",columns.size).map {listOf(t)+it}
+            val fields = columns.map { migrationSnapshotColumn(t, it, expectWallVersionRepair) }
+            MeasurementElementMigrationProof.rows(driver,"SELECT "+fields.joinToString {"quote($it)"}+" FROM $t ORDER BY 1",columns.size).map {listOf(t)+it}
         }
     }
     fun rejectReplace(driver:SqlDriver) {
@@ -64,7 +65,10 @@ object CeilingReceiptMigrationProof {
         assertTrue(store.operationCommitted("v14-receipt-${row.id}",row.uuid,saved.updatedAt))
     }
     suspend fun lifecycle(production:SqlSchema<QueryResult.Value<Unit>>,open:suspend(SqlSchema<QueryResult.Value<Unit>>)->SqlDriver) {
-        val (before,oldSchema)=open(v13Schema).use {d ->populate(d);snapshot(d) to PriceNameMigrationProof.schema(d)}
+        val (before, expected, oldSchema) = open(v13Schema).use { driver ->
+            populate(driver)
+            Triple(snapshot(driver), snapshot(driver, expectWallVersionRepair = true), PriceNameMigrationProof.schema(driver))
+        }
         val failed=object:SqlSchema<QueryResult.Value<Unit>> by production {
             override fun migrate(driver:SqlDriver,oldVersion:Long,newVersion:Long,vararg callbacks:AfterVersion):QueryResult.Value<Unit> {
                 val injected=object:SqlDriver by driver {
@@ -80,7 +84,7 @@ object CeilingReceiptMigrationProof {
         assertFails {open(failed).close()}
         open(v13Schema).use {d ->assertEquals(before,snapshot(d));assertEquals(oldSchema,PriceNameMigrationProof.schema(d));PriceCatalogSchema.verifyStructure(d,13)}
         open(production).use {d ->
-            assertEquals(before,snapshot(d));PriceCatalogSchema.verifyStructure(d)
+            assertEquals(expected,snapshot(d));PriceCatalogSchema.verifyStructure(d)
             rejectReplace(d)
         }
         open(production).use {d ->PriceCatalogSchema.verifyStructure(d);assertTrue(AreaFeatureRepository(PrototypeDatabase(d)).all().isNotEmpty())}

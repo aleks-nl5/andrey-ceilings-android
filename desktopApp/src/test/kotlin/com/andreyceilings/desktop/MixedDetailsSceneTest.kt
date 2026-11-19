@@ -5,7 +5,6 @@ import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
-import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.ui.ImageComposeScene
 import androidx.compose.ui.geometry.*
 import androidx.compose.ui.input.pointer.*
@@ -16,24 +15,37 @@ import com.andreyceilings.shared.measurement.*
 import com.andreyceilings.shared.navigation.*
 import com.andreyceilings.shared.theme.CeilingsTheme
 import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.first
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
-import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicReference
 import kotlin.test.*
 
 class MixedDetailsSceneTest {
-    @Test fun delayedLineObserverCannotResetSelectionOrCancelAcceptedPointDrag()=runBlocking {
+    private val sceneDispatcher = DesktopSceneDispatcher()
+
+    @Test fun delayedLineObserverCannotResetSelectionOrCancelAcceptedPointDrag() =
+        lateReadDuringPointDrag(delayLine = true)
+
+    @Test fun delayedDrawingDocumentCannotResetSelectionOrCancelAcceptedPointDrag() =
+        lateReadDuringPointDrag(delayLine = false)
+
+    private fun lateReadDuringPointDrag(delayLine: Boolean): Unit = runBlocking {
         val dir=java.nio.file.Files.createTempDirectory("late-details-").toFile();val raw=open(dir.resolve("scene.db"))
-        PriceCatalogSchema.create(raw);val f=MixedOverlayProof.create(PrototypeDatabase(raw));val before=OverlayDragFixture.snapshot(raw)
-        val slow=LateOverlayDriver(raw);val db=PrototypeDatabase(slow);val store=MeasurementEditStore(db){200}
+        PriceCatalogSchema.create(raw);val rawDb=PrototypeDatabase(raw);val f=MixedOverlayProof.create(rawDb)
+        fun snapshot() = rawDb.transactionWithResult { OverlayDragFixture.snapshot(raw) }
+        val originalRows = snapshot()
+        val slow=LateOverlayDriver(raw, delayLine);val db=PrototypeDatabase(slow);val store=MeasurementEditStore(db){200}
         val details=MeasurementDetailsStore(db,{200},Dispatchers.Unconfined);val row=MeasurementRepository(db).find(f.overlay.id)!!
+        val lines = details.elements.model(ElementRoute(row.projectId, row.id, row.uuid)).lines
         var mounted by mutableStateOf(true)
-        val scene=ImageComposeScene(900,1500) {CeilingsTheme(true) {
+        val scene=ImageComposeScene(900,1500,coroutineContext=sceneDispatcher) {CeilingsTheme(true) {
             if(mounted)MeasurementDetailsScreen(f.overlay.project,f.overlay.id,details,PaddingValues(0.dp),0.dp,{},editStore=store)
         }}
         try {
-            withTimeout(15000){while(!slow.waiting.get() || scene.canvasOrNull()?.config?.getOrNull(MeasurementDrawingSemantics.EditingEnabled)!=true){scene.frame();delay(20)}}
+            withTimeout(15000){while(delayLine && !slow.waiting.get() || scene.canvasOrNull()?.config?.getOrNull(MeasurementDrawingSemantics.EditingEnabled)!=true){scene.frame();delay(20)}}
+            if (delayLine) assertTrue(lines.value.isEmpty(), "The independent LINE observer is still waiting")
             scene.tap(row,1000,1100);assertEquals(f.point,scene.canvas().config.getOrNull(MeasurementDrawingSemantics.SelectedPoint))
             repeat(6){scene.frame();delay(20)}
             val b=scene.bounds();val contour=measurementDrawingContour(measurementGeometryForViewing(row.shape,row.drawingJson,row.lengthMeters,row.widthMeters))!!
@@ -43,7 +55,24 @@ class MixedDetailsSceneTest {
             scene.sendPointerEvent(PointerEventType.Press,from,type=PointerType.Mouse)
             scene.sendPointerEvent(PointerEventType.Move,to,type=PointerType.Mouse);scene.frame()
             assertNotNull(scene.canvas().config.getOrNull(MeasurementDrawingSemantics.PointDrag))
+            val addedPoint = if (delayLine) null else {
+                // This writer uses the unwrapped driver. Its committed point invalidates the
+                // drawing document, while the scene keeps the accepted editor and pointer.
+                val elementId = f.original.placements.points.single().elementUuid
+                val element = assertNotNull(MeasurementElementRepository(rawDb).find(elementId))
+                val uuid = newRecordUuid()
+                slow.armDocument(uuid)
+                PointPlacementRepository(rawDb).addPoint(element.version, f.original.updatedAt, 3100, 2100, 175, uuid).also {
+                    withTimeout(15000) { while (!slow.waiting.get()) { scene.frame(); delay(20) } }
+                    assertNotNull(scene.canvas().config.getOrNull(MeasurementDrawingSemantics.PointDrag))
+                }
+            }
+            val before = if (addedPoint == null) originalRows else snapshot()
             slow.release.countDown()
+            withTimeout(15000) {
+                if (delayLine) lines.first { rows -> rows.any { it.uuid == f.overlay.line } }
+                else slow.documentRead.await()
+            }
             repeat(8){scene.frame();delay(20)}
             val canvas=scene.canvas()
             assertEquals(b,Rect(canvas.positionInRoot,Size(canvas.size.width.toFloat(),canvas.size.height.toFloat())),"A delayed display list cannot move the Canvas during a gesture")
@@ -51,27 +80,55 @@ class MixedDetailsSceneTest {
             assertNotNull(scene.canvas().config.getOrNull(MeasurementDrawingSemantics.PointDrag),"Late display streams cannot cancel an accepted gesture")
             scene.sendPointerEvent(PointerEventType.Release,to,type=PointerType.Mouse);scene.frame()
             val staged=scene.canvas().config[MeasurementDrawingSemantics.Points].single()
-            assertEquals(PointPositionMm(1300,1400),PointPositionMm(staged.xMm,staged.yMm));assertEquals(before,OverlayDragFixture.snapshot(raw))
-            scene.click("Зберегти креслення")
-            withTimeout(15000){while(PointPlacementRepository(db).find(f.point)!!.xMm!=1300L){scene.frame();delay(20)}}
+            assertEquals(PointPositionMm(1300,1400),PointPositionMm(staged.xMm,staged.yMm));assertEquals(before,snapshot())
+            if (addedPoint == null) {
+                scene.click("Зберегти креслення")
+                withTimeout(15000){while(PointPlacementRepository(db).find(f.point)!!.xMm!=1300L){scene.frame();delay(20)}}
+            } else {
+                // Once the editor is clean, the same late document must become visible.
+                // This also verifies that the test exercised a materially different document.
+                scene.click("Скасувати дію")
+                withTimeout(15000) {
+                    while (scene.canvas().config[MeasurementDrawingSemantics.Points].none { it.uuid == addedPoint.uuid }) {
+                        scene.frame()
+                        delay(20)
+                    }
+                }
+                assertEquals(f.original.placements.points.single(),
+                    scene.canvas().config[MeasurementDrawingSemantics.Points].single { it.uuid == f.point })
+                assertEquals(before, snapshot())
+            }
         } finally {
             slow.release.countDown();mounted=false;repeat(4){scene.frame();delay(20)}
             details.elements.closeAndAwaitWrites();store.closeAndAwaitPointReads();scene.close();raw.close();dir.deleteRecursively()
         }
     }
 
-    /** The ordinary LINE list is delayed; redundant full-document reloads are also
-     * held so a fast local read cannot conceal an enabled→disabled startup race.
-     */
-    private class LateOverlayDriver(private val raw:SqlDriver):SqlDriver by raw {
+    private class LateOverlayDriver(private val raw:SqlDriver, delayLine: Boolean):SqlDriver by raw {
         val waiting=AtomicBoolean();val release=CountDownLatch(1)
-        private val first=AtomicBoolean(true);private val transactions=AtomicInteger()
+        val documentRead = CompletableDeferred<Unit>()
+        private val lineArmed = AtomicBoolean(delayLine)
+        private val expectedPoint = AtomicReference<String?>(null)
+        fun armDocument(pointUuid: String) { check(expectedPoint.compareAndSet(null, pointUuid)) }
+
         override fun <R> executeQuery(identifier:Int?,sql:String,mapper:(SqlCursor)->QueryResult<R>,parameters:Int,binders:(SqlPreparedStatement.()->Unit)?):QueryResult<R> {
-            val line=sql.contains("FROM line_placements",ignoreCase=true)
-            val transaction=raw.currentTransaction()!=null
-            val hold=line && if(transaction)transactions.incrementAndGet()>1 else first.compareAndSet(true,false)
+            val transaction = raw.currentTransaction()
+            val holdLine = transaction == null && sql.contains("FROM line_placements l JOIN measurement_elements") &&
+                lineArmed.compareAndSet(true, false)
+            // This projection is used at the end of MeasurementEditStore.loadDocument.
+            // Pricing reads a different projection. Only pause a snapshot with the new point.
+            val point = expectedPoint.get()
+            val holdDocument = point != null && transaction != null &&
+                sql.startsWith("SELECT uuid,ordinal FROM ceiling_walls") &&
+                raw.executeQuery(null, "SELECT 1 FROM point_placements WHERE uuid = ?",
+                    { cursor -> cursor.next() }, 1) { bindString(0, point) }.value &&
+                expectedPoint.compareAndSet(point, null)
             val result=raw.executeQuery(identifier,sql,mapper,parameters,binders)
-            if(hold){waiting.set(true);check(release.await(30,TimeUnit.SECONDS)){"Delayed observer was not released"}}
+            if (holdLine || holdDocument) {
+                if (holdDocument) checkNotNull(transaction).afterCommit { documentRead.complete(Unit) }
+                waiting.set(true)
+                check(release.await(30, TimeUnit.SECONDS)) { "Delayed observer was not released" }
+            }
             return result
         }
     }
@@ -86,7 +143,7 @@ class MixedDetailsSceneTest {
             var nav by mutableStateOf(initial);var transitions=0;val guard=MeasurementCreateNavigationGuard()
             fun apply(next:AppNavigationState){if(next!=nav){transitions++;nav=next}}
             fun navigate(next:AppNavigationState){val current=nav;val accepted=guard.transition(current,next,::apply);if(accepted!=current)apply(accepted)}
-            val scene=ImageComposeScene(900,1500) {CeilingsTheme(index!=0 && index!=3) {
+            val scene=ImageComposeScene(900,1500,coroutineContext=sceneDispatcher) {CeilingsTheme(index!=0 && index!=3) {
                 if(nav.measurementDetails!=null)MeasurementDetailsScreen(f.overlay.project,f.overlay.id,details,PaddingValues(0.dp),0.dp,
                     onBack={navigate(nav.back())},navigationGuard=guard,editStore=store)
                 else Text("Destination")
@@ -138,7 +195,7 @@ class MixedDetailsSceneTest {
         SqlCipherWindowsDriverFactory.open(file,ByteArray(32){97}) else JdbcSqliteDriver("jdbc:sqlite:${file.absolutePath}")
     private fun scalar(d:SqlDriver,sql:String)=d.executeQuery(null,sql,{c->c.next();QueryResult.Value(c.getLong(0)!!)},0).value
     private fun operations(d:SqlDriver)=scalar(d,"SELECT count(*) FROM ceiling_operations")
-    private fun ImageComposeScene.frame(){Snapshot.sendApplyNotifications();render(System.nanoTime()).close()}
+    private fun ImageComposeScene.frame() = sceneDispatcher.render(this)
     private fun ImageComposeScene.nodes():List<SemanticsNode>{
         fun all(n:SemanticsNode):List<SemanticsNode> = listOf(n)+n.children.flatMap(::all)
         return semanticsOwners.flatMap {all(it.rootSemanticsNode)}

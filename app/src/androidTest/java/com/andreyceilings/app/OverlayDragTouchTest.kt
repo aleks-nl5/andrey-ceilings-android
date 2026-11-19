@@ -12,6 +12,8 @@ import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.unit.dp
 import com.andreyceilings.shared.db.*
+import com.andreyceilings.shared.livepricing.LivePricingReader
+import com.andreyceilings.shared.livepricing.PricingReadResult
 import com.andreyceilings.shared.measurement.*
 import com.andreyceilings.shared.theme.CeilingsTheme
 import kotlinx.coroutines.runBlocking
@@ -32,6 +34,8 @@ class OverlayDragTouchTest {
         var driver=createEncryptedPrototypeDriver(context,key,name,enableWalForTesting=true,initializePriceCatalog=true)
         val db=PrototypeDatabase(driver);val f=OverlayDragFixture.create(db);val store=MeasurementEditStore(db){200}
         val details=MeasurementDetailsStore(db);val doc=store.load(f.project,f.id)
+        fun pricing(database: PrototypeDatabase) = assertIs<PricingReadResult.Loaded>(
+            LivePricingReader(database).read(f.project, doc.draft.recordUuid))
         val m=MeasurementEditModel(store,doc)
         var mounted by mutableStateOf(true)
         compose.setContent {CeilingsTheme(dark) {if(mounted) {
@@ -70,6 +74,7 @@ class OverlayDragTouchTest {
         }
         try {
             compose.waitUntil(15000){compose.onAllNodes(matcher).fetchSemanticsNodes().any {it.config.getOrNull(MeasurementDrawingSemantics.EditingEnabled)==true}}
+            val initialPricing = pricing(db)
             if(mode=="fullscreen")compose.onNodeWithText("На весь екран").performClick()
             val before=OverlayDragFixture.snapshot(driver)
             tap(1000,1500);drag(1000,1050,1300,1250) // selected AREA takes priority over LINE halo
@@ -102,7 +107,7 @@ class OverlayDragTouchTest {
             val empty=position(3500,500);canvas().performTouchInput {swipe(empty,empty+Offset(35f,20f))};click("Вписати креслення")
             click(if(mode=="details")"Зберегти креслення" else "Зберегти")
             compose.waitUntil(15000){AreaFeatureRepository(db).forMeasurement(doc.draft.recordUuid).first {it.uuid==f.circle}.shape.positions.single().xMm==3100L}
-            val saved=store.load(f.project,f.id)
+            var saved=store.load(f.project,f.id)
             val line=saved.placements.lines.single();assertEquals(1600,line.lengthMm);assertEquals(PointPositionMm(800,750),line.start)
             assertEquals(PointPositionMm(2400,750),line.end);assertNull(line.startMounting.anchor);assertNull(line.endMounting.anchor)
             val area=saved.placements.areas.first {it.uuid==f.polygon}
@@ -112,11 +117,38 @@ class OverlayDragTouchTest {
             val circle=saved.placements.areas.first {it.uuid==f.circle};assertEquals(AreaShape.Circle(PointPositionMm(3100,1800),200),circle.shape)
             assertEquals(PointPrecision.APPROXIMATE,circle.precision);assertEquals(doc.placements.points,saved.placements.points)
             assertEquals(doc.draft,saved.draft)
+            var savedPricing = pricing(db)
+            assertEquals(initialPricing.source.geometry, savedPricing.source.geometry)
+            if (mode == "details") {
+                val point = saved.placements.points.single()
+                compose.waitUntil(15000) {
+                    compose.onAllNodes(matcher).fetchSemanticsNodes().any {
+                        it.config.getOrNull(MeasurementDrawingSemantics.EditingEnabled) == true
+                    }
+                }
+                tap(point.xMm, point.yMm)
+                assertEquals(point.uuid, canvas().fetchSemanticsNode().config.getOrNull(MeasurementDrawingSemantics.SelectedPoint))
+                drag(point.xMm, point.yMm, 3200, 2200)
+                assertEquals(point, PointPlacementRepository(db).find(point.uuid))
+                click("Зберегти креслення")
+                compose.waitUntil(15000) { PointPlacementRepository(db).find(point.uuid)?.xMm == 3200L }
+                saved = store.load(f.project, f.id)
+                val pointPricing = pricing(db)
+                assertNotEquals(savedPricing.source.signature, pointPricing.source.signature)
+                assertEquals(savedPricing.buildPreview().potentialTotalCents, pointPricing.buildPreview().potentialTotalCents)
+                savedPricing = pointPricing
+                val calculator = hasText("Калькулятор заміру")
+                compose.onNode(hasScrollToIndexAction()).performScrollToNode(calculator)
+                compose.waitUntil(15000) {
+                    compose.onAllNodesWithText("Погоджено:", substring = true).fetchSemanticsNodes().isNotEmpty()
+                }
+            }
             compose.runOnIdle {mounted=false};compose.waitForIdle()
             runBlocking {details.elements.closeAndAwaitWrites();store.closeAndAwaitPointReads()};driver.close()
             driver=createEncryptedPrototypeDriver(context,key,name,enableWalForTesting=true,initializePriceCatalog=true)
             val reopened=MeasurementEditStore(PrototypeDatabase(driver)){300}.load(f.project,f.id)
             assertEquals(saved.placements,reopened.placements)
+            assertEquals(savedPricing, pricing(PrototypeDatabase(driver)))
         } finally {
             compose.runOnIdle {mounted=false};compose.waitForIdle()
             runBlocking {details.elements.closeAndAwaitWrites();store.closeAndAwaitPointReads()}

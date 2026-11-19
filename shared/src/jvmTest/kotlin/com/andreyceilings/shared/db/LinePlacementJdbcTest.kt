@@ -13,11 +13,11 @@ class LinePlacementJdbcTest {
             java.io.File("src/commonMain/sqldelight/11.db").copyTo(file,overwrite=true)
             JdbcSqliteDriver("jdbc:sqlite:${file.absolutePath}").use {driver ->
                 PriceCatalogSchema.verifyStructure(driver,11)
-                val before=LegacyWallSeedProof.snapshot(driver,true)
+                val expected=LegacyWallSeedProof.snapshot(driver,true,expectWallVersionRepair=true)
                 assertTrue(PriceNameUniquenessProof.scalar(driver,"SELECT count(*) FROM point_placements")>0)
                 assertTrue(PriceNameUniquenessProof.scalar(driver,"SELECT count(*) FROM ceiling_operations")>0)
                 openDesktopPriceCatalog(driver,true)
-                assertEquals(before,LegacyWallSeedProof.snapshot(driver,true))
+                assertEquals(expected,LegacyWallSeedProof.snapshot(driver,true))
                 PriceCatalogSchema.verifyStructure(driver)
             }
         } finally {file.delete()}

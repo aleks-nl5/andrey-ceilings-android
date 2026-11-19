@@ -41,9 +41,9 @@ class AreaFeatureJdbcTest {
                 PriceCatalogSchema.verifyStructure(d,12)
                 assertTrue(PriceNameUniquenessProof.scalar(d,"SELECT count(*) FROM line_placements WHERE deletedAt IS NULL")>0)
                 assertTrue(PriceNameUniquenessProof.scalar(d,"SELECT count(*) FROM line_placements WHERE deletedAt IS NOT NULL")>0)
-                val before=AreaFeatureMigrationProof.snapshot(d)
+                val expected = AreaFeatureMigrationProof.snapshot(d, expectWallVersionRepair = true)
                 openDesktopPriceCatalog(d,true)
-                assertEquals(before,AreaFeatureMigrationProof.snapshot(d))
+                assertEquals(expected,AreaFeatureMigrationProof.snapshot(d))
                 PriceCatalogSchema.verifyStructure(d)
             }
             JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).use {d ->
@@ -73,9 +73,9 @@ class AreaFeatureJdbcTest {
             val legacy=LegacyWallSeedProof.populate(d,false)
             LegacyWallSeedProof.decorateV10(d,legacy)
             AreaFeatureMigrationProof.populate(d)
-            val before=AreaFeatureMigrationProof.snapshot(d)
+            val expected = AreaFeatureMigrationProof.snapshot(d, expectWallVersionRepair = true)
             PriceCatalogSchema.migrate(d,12,PriceCatalogSchema.version)
-            assertEquals(before,AreaFeatureMigrationProof.snapshot(d))
+            assertEquals(expected,AreaFeatureMigrationProof.snapshot(d))
             assertEquals(2,PriceNameUniquenessProof.scalar(d,"SELECT count(*) FROM line_placements"))
             PriceCatalogSchema.verifyStructure(d)
         }

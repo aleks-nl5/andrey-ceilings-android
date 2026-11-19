@@ -9,6 +9,7 @@ import app.cash.sqldelight.driver.android.AndroidSqliteDriver
 import com.andreyceilings.app.data.db.*
 import com.andreyceilings.app.data.security.*
 import com.andreyceilings.shared.db.*
+import com.andreyceilings.shared.measurement.MeasurementEditStore
 import net.zetetic.database.sqlcipher.SupportOpenHelperFactory
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -36,7 +37,7 @@ class ProductionDatabaseStartupTest {
             val schema=when(variant){"v9"->WallAnchorMigrationProof.v9Schema;"v10-initial"->InitialV10MigrationProof.schema;"v11"->LinePlacementMigrationProof.v11Schema;"v12"->AreaFeatureMigrationProof.v12Schema;"v13"->CeilingReceiptMigrationProof.v13Schema;else->WallAnchorMigrationProof.v10Schema}
             val name="production-upgrade-$variant.db";context.deleteDatabase(name)
             try {
-                val before=historical(context,name,key,schema).use { driver ->
+                val expected=historical(context,name,key,schema).use { driver ->
                     val f=LegacyWallSeedProof.populate(driver,version==9L)
                     if(version>=10L)LegacyWallSeedProof.decorateV10(driver,f)
                     if(version>=12L)AreaFeatureMigrationProof.populate(driver)
@@ -44,13 +45,13 @@ class ProductionDatabaseStartupTest {
                     driver.executeQuery(null,"PRAGMA wal_autocheckpoint=0",{c->c.next();QueryResult.Value(c.getLong(0))},0).value
                     ProjectRepository(PrototypeDatabase(driver)).createReturningId(null,"Committed v$version WAL row",createdAt=600)
                     assertEquals("wal",driver.executeQuery(null,"PRAGMA journal_mode",{ c->c.next();QueryResult.Value(c.getString(0)) },0).value)
-                    LegacyWallSeedProof.snapshot(driver,version>=10L)
+                    LegacyWallSeedProof.snapshot(driver,version>=10L,expectWallVersionRepair=true)
                 }
                 replaceClosedProduction(context,context.getDatabasePath(name))
                 val upgraded=CeilingsDatabase.get(context)
                 assertEquals(context.getDatabasePath(CeilingsDatabase.DATABASE_NAME).absolutePath,upgraded.path)
                 assertEquals(PriceCatalogSchema.version,upgraded.queryLong("PRAGMA user_version"))
-                assertEquals(before,LegacyWallSeedProof.snapshot(upgraded.driver,version>=10L))
+                assertEquals(expected,LegacyWallSeedProof.snapshot(upgraded.driver,version>=10L))
                 assertEquals(0L,upgraded.queryLong("SELECT count(*) FROM ceiling_walls WHERE measurementUuid LIKE 'legacy-source-%'"))
                 if(version==9L)assertEquals(0L,upgraded.queryLong("SELECT count(*) FROM point_placements WHERE mountingJson!='{}'"))
                 else {
@@ -63,6 +64,87 @@ class ProductionDatabaseStartupTest {
                 CeilingsDatabase.closeAndReset()
                 assertTrue(CeilingsDatabase.get(context).checkIntegrity())
             } finally {context.deleteDatabase(name)}
+        }
+    }
+
+    @Test fun deployedV19WalPointMoveSurvivesColdUpgradeRollbackAndRestore() = preserveProduction { context, key ->
+        val sourceName = "wall-versions-v19.db"
+        val rollbackName = "wall-versions-v19-rollback.db"
+        val checkpointName = "wall-versions-v19-checkpoint.db"
+        val source = context.getDatabasePath(sourceName)
+        val image = File(context.cacheDir, "wall-versions-v19-${java.util.UUID.randomUUID()}.db")
+        val imageWal = File(image.path + "-wal")
+        val schema = WallVersionMigrationProof.v19Schema
+        fun open(name: String, target: SqlSchema<QueryResult.Value<Unit>> = schema) =
+            historical(context, name, key, target)
+        fun installImage(name: String) {
+            context.deleteDatabase(name)
+            val target = context.getDatabasePath(name)
+            image.copyTo(target)
+            imageWal.copyTo(File(target.path + "-wal"))
+        }
+        try {
+            context.deleteDatabase(sourceName)
+            val evidence = open(sourceName).use { driver ->
+                val seed = WallVersionMigrationProof.seed(driver)
+                assertEquals(0L, PriceNameUniquenessProof.scalar(driver, "PRAGMA wal_autocheckpoint=0"))
+                val checkpoint = driver.executeQuery(null, "PRAGMA wal_checkpoint(TRUNCATE)", { cursor ->
+                    check(cursor.next().value)
+                    QueryResult.Value(cursor.getLong(0))
+                }, 0).value
+                assertEquals(0L, checkpoint)
+                val evidence = WallVersionMigrationProof.move(driver, seed)
+                WallVersionMigrationProof.verify(driver, evidence, migrated = false)
+                val wal = File(source.path + "-wal")
+                assertTrue(wal.length() > 32, "The committed move must have WAL frames")
+                // Capture the quiescent main file and WAL before the last close can checkpoint them.
+                // The installed copy has no open handle. SQLite rebuilds its shared-memory index.
+                source.copyTo(image)
+                wal.copyTo(imageWal)
+                evidence
+            }
+            context.deleteDatabase(checkpointName)
+            image.copyTo(context.getDatabasePath(checkpointName))
+            open(checkpointName).use { driver ->
+                val seed = evidence.seed
+                val store = MeasurementEditStore(PrototypeDatabase(driver)) { 0 }
+                assertEquals(seed.document, store.load(seed.projectId, seed.document.measurementId))
+            }
+            installImage(rollbackName)
+            var reached = false
+            val failing = WallVersionMigrationProof.failingSchema(PriceCatalogSchema, evidence) { reached = true }
+            assertFails {
+                open(rollbackName, failing).use { driver -> PriceNameUniquenessProof.scalar(driver, "PRAGMA user_version") }
+            }
+            assertTrue(reached)
+            open(rollbackName).use { WallVersionMigrationProof.verify(it, evidence, migrated = false) }
+
+            CeilingsDatabase.withExclusiveRestoreLock {
+                CeilingsDatabase.closeAndReset()
+                installImage(CeilingsDatabase.DATABASE_NAME)
+            }
+            fun verify(db: CeilingsDatabase) {
+                assertEquals("wal", db.queryText("PRAGMA journal_mode"))
+                assertTrue(db.checkIntegrity())
+                WallVersionMigrationProof.verify(db.driver, evidence, migrated = true)
+                val currentKey = DatabaseKeyManager.getOrCreatePassphrase(context)
+                try { assertTrue(key.contentEquals(currentKey), "Keystore key changed") }
+                finally { currentKey.fill(0) }
+            }
+            verify(CeilingsDatabase.get(context))
+            CeilingsDatabase.closeAndReset()
+            val reopened = CeilingsDatabase.get(context)
+            verify(reopened)
+            val envelope = PortableBackupManager.create(context, reopened, "wall-version-round-trip".toCharArray())
+            try {
+                val contents = PortableBackupManager.validate(context, envelope, "wall-version-round-trip".toCharArray())
+                try { verify(SqlCipherRestoreManager.restore(context, contents)) }
+                finally { contents.database.fill(0); contents.passphrase.fill(0) }
+            } finally { envelope.fill(0) }
+        } finally {
+            listOf(sourceName, rollbackName, checkpointName).forEach { context.deleteDatabase(it) }
+            image.delete()
+            imageWal.delete()
         }
     }
 

@@ -15,10 +15,11 @@ object LinePlacementMigrationProof {
         override fun migrate(driver:SqlDriver,oldVersion:Long,newVersion:Long,vararg callbacks:AfterVersion):QueryResult.Value<Unit> = error("Historical v11 fixture")
     }
     suspend fun lifecycle(production:SqlSchema<QueryResult.Value<Unit>>,open:suspend(SqlSchema<QueryResult.Value<Unit>>)->SqlDriver) {
-        val (before,schema)=open(v11Schema).use {driver ->
+        val (before, expected, schema)=open(v11Schema).use {driver ->
             val f=LegacyWallSeedProof.populate(driver)
             LegacyWallSeedProof.decorateV10(driver,f)
-            LegacyWallSeedProof.snapshot(driver,true) to PriceNameMigrationProof.schema(driver)
+            Triple(LegacyWallSeedProof.snapshot(driver,true),
+                LegacyWallSeedProof.snapshot(driver,true,expectWallVersionRepair=true), PriceNameMigrationProof.schema(driver))
         }
         val failed=object:SqlSchema<QueryResult.Value<Unit>> by production {
             override fun migrate(driver:SqlDriver,oldVersion:Long,newVersion:Long,vararg callbacks:AfterVersion):QueryResult.Value<Unit> {
@@ -39,7 +40,7 @@ object LinePlacementMigrationProof {
         }
         open(production).use {driver ->
             PriceCatalogSchema.verifyStructure(driver)
-            assertEquals(before,LegacyWallSeedProof.snapshot(driver,true))
+            assertEquals(expected,LegacyWallSeedProof.snapshot(driver,true))
             assertEquals(production.version,PriceNameUniquenessProof.scalar(driver,"PRAGMA user_version"))
             assertEquals(0,PriceNameUniquenessProof.scalar(driver,"SELECT count(*) FROM line_placements"))
             LinePlacementProof.run(driver)
