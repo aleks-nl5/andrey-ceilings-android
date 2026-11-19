@@ -9,6 +9,7 @@ import kotlinx.coroutines.*
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
 import kotlinx.coroutines.flow.*
+import kotlin.coroutines.CoroutineContext
 
 /** Price-free picker projection. Catalog CRUD and price calculation stay in their existing boundaries. */
 data class ElementCatalogItem(val uuid: String, val groupUuid: String, val title: String,
@@ -100,6 +101,136 @@ class MeasurementElementsStore(private val database: PrototypeDatabase, private 
         FrozenEstimateDocument.from(saved, address, zone)
     }
 
+    private val consolidatedComposer = MutableStateFlow<ConsolidatedComposerSession?>(null)
+    internal val consolidatedSession = consolidatedComposer.asStateFlow()
+
+    internal fun openConsolidatedComposer(projectId: Long) {
+        if (closed) return
+        consolidatedComposer.value = ConsolidatedComposerSession(projectId)
+        if (closed) consolidatedComposer.value = null
+    }
+
+    internal fun closeConsolidatedComposer(session: ConsolidatedComposerSession) {
+        consolidatedComposer.compareAndSet(session, null)
+    }
+
+    internal suspend fun consolidatedRooms(projectId: Long): ConsolidatedRoomCatalog =
+        consolidatedRead { request ->
+            val projectUuid = checkNotNull(projects.find(projectId)).uuid
+            val revisionsByRoom = estimates.frozenIndividuals()
+                .filter { it.projectId == projectId }.groupBy { it.measurementUuid }
+            val rooms = orderedConsolidatedRooms(projectId).map { room ->
+                val candidates = revisionsByRoom[room.uuid].orEmpty()
+                val options = candidates.mapNotNull { row ->
+                    request.ensureActive()
+                    val (saved, _) = readConsolidatedRevision(row.seriesUuid, row.revisionUuid)
+                    if (saved == null) return@mapNotNull null
+                    val frozen = saved.frozen
+                    if (frozen.source.projectUuid != projectUuid || frozen.source.measurementUuid != room.uuid) {
+                        return@mapNotNull null
+                    }
+                    ConsolidatedRevisionOption(
+                        ConsolidatedDocumentRef(room.uuid, saved.seriesUuid, saved.revisionUuid, frozen.fingerprint),
+                        frozen.publicNumber, saved.versionNumber, frozen.title, saved.status, frozen.amounts.finalCents,
+                        saved.selectedRevisionUuid == saved.revisionUuid
+                    )
+                }
+                ConsolidatedRoomOption(room.id, room.uuid, room.name, options, candidates.size != options.size)
+            }
+            ConsolidatedRoomCatalog(projectUuid, rooms)
+        }
+
+    /** The active rooms, exact revisions and their receipts are read under one session and transaction. */
+    internal suspend fun consolidatedDocument(
+        projectId: Long,
+        projectUuid: String,
+        selection: List<ConsolidatedDocumentRef>,
+        zone: TimeZone = TimeZone.currentSystemDefault()
+    ): ConsolidatedDocumentResult = consolidatedRead { request ->
+        fun reject(problem: ConsolidatedDocumentProblem) = ConsolidatedDocumentResult.Rejected(problem)
+        if (selection.isEmpty()) return@consolidatedRead reject(ConsolidatedDocumentProblem.EMPTY)
+        val refs = selection.associateBy { it.measurementUuid }
+        if (refs.size != selection.size || selection.distinctBy { it.revisionUuid }.size != selection.size) {
+            return@consolidatedRead reject(ConsolidatedDocumentProblem.DUPLICATE)
+        }
+        val project = projects.find(projectId)?.takeIf { it.uuid == projectUuid }
+            ?: return@consolidatedRead reject(ConsolidatedDocumentProblem.PROJECT_MISSING)
+        val rooms = orderedConsolidatedRooms(projectId).filter { it.uuid in refs }
+        if (rooms.size != refs.size) {
+            val activeIds = rooms.map { it.uuid }.toSet()
+            val foreign = (refs.keys - activeIds).any {
+                measurements.findByUuid(it)?.let { row -> row.deletedAt == null && row.projectId != projectId } == true
+            }
+            return@consolidatedRead reject(if (foreign) ConsolidatedDocumentProblem.FOREIGN_REVISION
+                else ConsolidatedDocumentProblem.ROOM_MISSING)
+        }
+
+        var total = 0L
+        val sections = rooms.map { room ->
+            request.ensureActive()
+            val ref = refs.getValue(room.uuid)
+            val (saved, problem) = readConsolidatedRevision(ref.seriesUuid, ref.revisionUuid)
+            if (saved == null) return@consolidatedRead reject(problem)
+            val frozen = saved.frozen
+            if (saved.projectId != projectId || frozen.source.projectUuid != projectUuid ||
+                frozen.source.measurementUuid != room.uuid) {
+                return@consolidatedRead reject(ConsolidatedDocumentProblem.FOREIGN_REVISION)
+            }
+            if (frozen.fingerprint != ref.fingerprint) return@consolidatedRead reject(ConsolidatedDocumentProblem.STALE)
+            val document = try {
+                FrozenEstimateDocument.from(saved, currentAddress = null, zone = zone)
+            } catch (_: IllegalArgumentException) {
+                return@consolidatedRead reject(ConsolidatedDocumentProblem.INVALID_DRAWING)
+            } catch (_: IllegalStateException) {
+                return@consolidatedRead reject(ConsolidatedDocumentProblem.INVALID_DRAWING)
+            }
+            total = try {
+                PricingMath.add(total, document.amounts.finalCents)
+            } catch (_: ArithmeticException) {
+                return@consolidatedRead reject(ConsolidatedDocumentProblem.OVERFLOW)
+            }
+            ConsolidatedEstimateDocument.Section(document, saved.status)
+        }
+        ConsolidatedDocumentResult.Ready(
+            ConsolidatedEstimateDocument(project.title, project.address.takeIf { it.isNotBlank() },
+                sections, total)
+        )
+    }
+
+    private suspend fun <T> consolidatedRead(block: (CoroutineContext) -> T): T {
+        val request = currentCoroutineContext()
+        return estimateAccess {
+            request.ensureActive()
+            block(request)
+        }
+    }
+
+    private fun orderedConsolidatedRooms(projectId: Long) =
+        measurements.forProject(projectId).sortedWith(compareByDescending<Room_measurements> { it.createdAt }
+            .thenByDescending { it.id })
+
+    private fun readConsolidatedRevision(seriesUuid: String, revisionUuid: String):
+        Pair<SavedIndividualQuote?, ConsolidatedDocumentProblem> {
+        val saved = try {
+            estimates.exactIndividual(seriesUuid, revisionUuid)
+        } catch (_: UnsupportedFrozenEstimateFormat) {
+            return null to ConsolidatedDocumentProblem.UNSUPPORTED_FORMAT
+        } catch (_: UnsupportedFrozenEstimateCurrency) {
+            return null to ConsolidatedDocumentProblem.CURRENCY
+        } catch (_: InvalidFrozenEstimateDrawing) {
+            return null to ConsolidatedDocumentProblem.INVALID_DRAWING
+        } catch (_: IllegalArgumentException) {
+            return null to ConsolidatedDocumentProblem.INVALID_REVISION
+        } catch (_: IllegalStateException) {
+            return null to ConsolidatedDocumentProblem.INVALID_REVISION
+        } catch (_: NoSuchElementException) {
+            return null to ConsolidatedDocumentProblem.INVALID_REVISION
+        } catch (_: ArithmeticException) {
+            return null to ConsolidatedDocumentProblem.INVALID_REVISION
+        }
+        return saved to ConsolidatedDocumentProblem.REVISION_MISSING
+    }
+
     suspend fun quoteHistory(seriesUuid: String): List<SavedIndividualQuote> = estimateAccess { estimates.individualHistory(seriesUuid) }
 
     /** Read-only admission; opening/cancelling a revision reserves no number and changes no workflow. */
@@ -169,8 +300,11 @@ class MeasurementElementsStore(private val database: PrototypeDatabase, private 
         lifecycle.update { it.copy(pending = it.pending - completion) }
     }
 
-    private fun stopAcceptingWrites(): List<CompletableDeferred<Unit>> =
-        lifecycle.updateAndGet { it.copy(closed = true) }.pending.toList()
+    private fun stopAcceptingWrites(): List<CompletableDeferred<Unit>> {
+        val pending = lifecycle.updateAndGet { it.copy(closed = true) }.pending
+        consolidatedComposer.value = null
+        return pending.toList()
+    }
 
     fun model(route: ElementRoute): MeasurementElementsModel {
         if (closed) return MeasurementElementsModel(this, route, modelDispatcher).also { it.close() }

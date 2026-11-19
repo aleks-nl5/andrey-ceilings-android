@@ -1,3 +1,17 @@
+# CURRENT — P4C4 selected-room consolidated frozen PDF (#128), 19.11.2026
+
+**Accepted main:** [PR #122](https://github.com/aleks-nl5/andrey-ceilings-android/pull/122) **MERGED by owner** 19.11.2026, merge SHA `ecfc028c00d374ae90796b58a0a26d3bb0110e83`. #121 completed/closed; previous bug repaired with SQLCipher schema **v20**. P4C3 individual frozen-vN PDF [PR #120](https://github.com/aleks-nl5/andrey-ceilings-android/pull/120) accepted; never regress individual PDF.
+
+**Now authorized:** [Issue #128 P4C4](https://github.com/aleks-nl5/andrey-ceilings-android/issues/128): select explicitly one persisted saved immutable revision per chosen room in project Details, compose frozen-only per-room sections with existing P4C3 A4 document model and a final aggregated payable total; support preview/presentation on shared CMP + Android PDF Save/Share/Print. Use [independent Codex handoff](P4C4_CONSOLIDATED_PDF_HANDOFF.md), branch `feat/p4c4-consolidated-frozen-pdf`, **one Draft PR**. The first commits contain planning docs only; implementation/CI/owner APK approval must still be obtained in this new PR.
+
+**Invariants:** project total = checked SUM of each selected revision's saved **finalCents after its individual discount** (do not confuse existing `ConsolidatedEstimateEngine.FrozenIndividualDocument.subtotalCents` with `QuoteAmounts.finalCents`). No current repricing, number allocation, consolidated estimate DB writer, hidden latest/selected revision, new SQL schema, selected pointer/status changes or fallback to unverified DTO receipts. Wrong/missing/duplicate/cross-project/overflow/failed proof sources block export. Use existing frozen format 1/2/3 exact Long money and P4C3 draw/layout; no issuer/photo storage (#114).
+
+**Gates:** common + Android SQLCipher/WAL/backup + Windows Desktop + iOS native tests on same final commit; independent code review; owner APK acceptance; owner alone Ready/Merge. Umbrella #44 remains OPEN through P4C4 development; after accepted merge review whether P4 is complete and close #44 if all contract items satisfied.
+
+**After P4C4:** #95 comprehensive drawing/placement UX (future owner planning); independent backlog #114 Settings issuer, #78 price catalog, #42 hosts, #70 angle solver and low-priority #123–127 offline colleague synchronization. No scope bleed into P4C4.
+
+---
+
 # CURRENT — repair live pricing after placement (#121), 18.11.2026
 
 **Accepted main:** [PR #120](https://github.com/aleks-nl5/andrey-ceilings-android/pull/120) was MERGED by the owner on 18.11.2026, merge SHA `17650881737f290e0da9e07c4015faa4da8616bc`. P4C3's individual frozen-vN A4 PDF + CMP preview + Android Save/Share/Print and polygon vertex letters are completed; Android/Windows/iOS same-SHA CI, code review and owner APK acceptance passed. Schema remains v19.

@@ -45,6 +45,10 @@ data class FrozenIndividualSource(
 @Serializable
 data class FrozenIndividualLine(val uuid: String, val line: LiveEstimateLine)
 
+internal class UnsupportedFrozenEstimateFormat : IllegalArgumentException()
+internal class UnsupportedFrozenEstimateCurrency : IllegalArgumentException()
+internal class InvalidFrozenEstimateDrawing(cause: IllegalArgumentException) : IllegalArgumentException(cause)
+
 /** Exact authoritative financial record; REAL columns in legacy history are compatibility projections. */
 @Serializable
 data class FrozenIndividualEstimate(
@@ -60,7 +64,8 @@ data class FrozenIndividualEstimate(
     val revisionIdentity: FrozenRevisionIdentity? = null
 ) {
     fun validate() {
-        require(formatVersion in 1..3 && validEstimateTitle(title) == title)
+        if (formatVersion !in 1..3) throw UnsupportedFrozenEstimateFormat()
+        require(validEstimateTitle(title) == title)
         if (formatVersion == 1 || formatVersion == 3 && revisionIdentity == null) require(revisionIdentity == null)
         else {
             val identity = checkNotNull(revisionIdentity)
@@ -68,9 +73,14 @@ data class FrozenIndividualEstimate(
             require(identity.versionNumber > 1 && identity.revisionUuid != identity.parentRevisionUuid)
         }
         require((formatVersion == 3) == rows.any { it.line.quantityRoundingPolicy != null })
-        require(currency == "UAH" && rounding == "HALF_UP_PER_ROW_THEN_DISCOUNT")
+        if (currency != "UAH") throw UnsupportedFrozenEstimateCurrency()
+        require(rounding == "HALF_UP_PER_ROW_THEN_DISCOUNT")
         require(source.projectUuid.isNotBlank() && source.measurementUuid.isNotBlank())
-        val geometry = MeasurementGeometryCodec.read(source.drawingJson)
+        val geometry = try {
+            MeasurementGeometryCodec.read(source.drawingJson)
+        } catch (invalid: IllegalArgumentException) {
+            throw InvalidFrozenEstimateDrawing(invalid)
+        }
         require(geometry.vertices.isNotEmpty())
         val reconstructed = LiveEstimateSource(source.projectUuid, source.measurementUuid, geometry,
             source.elements, source.points, source.lines, source.areas,
@@ -132,7 +142,7 @@ internal fun FrozenIndividualEstimate.encode(): String {
 }
 fun decodeFrozenIndividualEstimate(payload: String): FrozenIndividualEstimate {
     val envelope = frozenEstimateJson.decodeFromString<FrozenEstimateEnvelope>(payload)
-    require(envelope.version == 1)
+    if (envelope.version != 1) throw UnsupportedFrozenEstimateFormat()
     require(envelope.contentProof == contentToken(listOf(frozenEstimateJson.encodeToString(envelope.document))))
     return envelope.document.also { it.validate() }
 }

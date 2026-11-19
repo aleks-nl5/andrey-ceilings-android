@@ -1,3 +1,17 @@
+## CURRENT handoff — P4C4 selected-room consolidated frozen PDF (#128), 19.11.2026
+
+**Accepted main:** [PR #122](https://github.com/aleks-nl5/andrey-ceilings-android/pull/122) merged by owner 19.11.2026, merge SHA `ecfc028c00d374ae90796b58a0a26d3bb0110e83`, SQLDelight/SQLCipher **v20**. [Issue #121](https://github.com/aleks-nl5/andrey-ceilings-android/issues/121) closed. P4C3 [PR #120](https://github.com/aleks-nl5/andrey-ceilings-android/pull/120) remains accepted baseline for **individual frozen PDF**.
+
+**Next owner-approved milestone:** [Issue #128](https://github.com/aleks-nl5/andrey-ceilings-android/issues/128), **canonical independent [P4C4 Codex handoff](docs/P4C4_CONSOLIDATED_PDF_HANDOFF.md)**. Work ONLY in existing `feat/p4c4-consolidated-frozen-pdf` branch and its linked Draft PR. This handoff is docs-only until Codex implements it; do NOT claim code/CI/owner acceptance from the handoff.
+
+**Business contract:** Project Details → explicit selection of rooms AND exact persisted independent frozen series+revision per selected room; no auto-latest/auto-selected. Compose **only verified immutable saved individual revisions** into a grouped multi-room PDF with full frozen drawings/details/rows/partial omissions/individual discounts. Project grand payable = **checked SUM of individual frozen final payable cents after each room discount**, NOT sum of pre-discount subtotals and no new discount. Existing `ConsolidatedEstimateEngine` is a pure DTO engine, NOT a verified production `SavedIndividualQuote` bridge: prove trusted proof issuance, do not fabricate verification or silently bypass fail-closed checks. Extend shared P4C3 `FrozenEstimateDocument`/`EstimateDocumentPages` renderer, not parallel PDF engine. **No consolidated estimate persistence, new number, DB schema/migrations, deletion, status changes or implicit save**. Preserve v1/v2/v3 frozen bytes, exact Long money, current source isolation, P4C3 individual PDF and SQLCipher/WAL/backup.
+
+**Required gates:** update dependent tests together (#118), negative provenance/cross-project/duplicate tests, multi-page PDF golden and exact discount tests, physical Android SQLCipher + user gesture/export, Windows Desktop and iOS native. Final **same SHA Android + Windows + iOS CI**, independent review and explicit owner APK acceptance before owner alone marks Ready/merges. Keep umbrella #44 OPEN until accepted merge; keep #95/#114/#42/#70/#123+ independent.
+
+**Older sections below (including “CURRENT #121”) are archived and superseded for P4C4.**
+
+---
+
 ## CURRENT handoff — #121 false INVALID_SOURCE after drawing placement (18.11.2026)
 
 **Accepted main:** PR #120/P4C3 merged 18.11.2026, main SHA `17650881737f290e0da9e07c4015faa4da8616bc`, schema v19. PDF completed; do **not** extend or modify PDF in this work.

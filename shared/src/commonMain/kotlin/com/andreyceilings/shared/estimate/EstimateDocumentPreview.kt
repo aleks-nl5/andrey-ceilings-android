@@ -10,12 +10,14 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.andreyceilings.shared.measurement.MeasurementElementsStore
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.launch
 
 enum class EstimateDocumentAction(val label: String) {
     SAVE("Зберегти PDF"), SHARE("Поділитися"), PRINT("Друк")
@@ -28,42 +30,63 @@ fun interface EstimateDocumentExporter {
 
 val LocalEstimateDocumentExporter = staticCompositionLocalOf<EstimateDocumentExporter?> { null }
 
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun EstimateDocumentPreview(
     store: MeasurementElementsStore,
     seriesUuid: String,
     revisionUuid: String,
     onClose: () -> Unit
+) = key(store, seriesUuid, revisionUuid) {
+    EstimateDocumentPreviewDialog(
+        load = { checkNotNull(store.estimateDocument(seriesUuid, revisionUuid)) },
+        layout = { document, options, measurer -> layoutEstimateDocument(document, options, measurer) },
+        onClose = onClose
+    )
+}
+
+internal class EstimatePreviewLoadFailure(message: String) : IllegalStateException(message)
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+internal fun <T : Any> EstimateDocumentPreviewDialog(
+    load: suspend () -> T,
+    layout: (T, DocumentPresentationOptions, TextMeasurer) -> EstimateDocumentPages,
+    onClose: () -> Unit,
+    beforeExport: (suspend () -> Unit)? = null,
+    editRoomSections: Boolean = true
 ) {
     val exporter = LocalEstimateDocumentExporter.current
     val measurer = rememberTextMeasurer()
-    var document by remember(store, seriesUuid, revisionUuid) { mutableStateOf<FrozenEstimateDocument?>(null) }
-    var loading by remember(store, seriesUuid, revisionUuid) { mutableStateOf(true) }
+    val scope = rememberCoroutineScope()
+    var document by remember { mutableStateOf<T?>(null) }
+    var loading by remember { mutableStateOf(true) }
     var exporting by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
     var editor by remember { mutableStateOf(false) }
     var zoomed by remember { mutableStateOf(false) }
     val horizontalScroll = rememberScrollState()
-    var options by remember(store, seriesUuid, revisionUuid) {
+    var options by remember {
         mutableStateOf(DocumentPresentationOptions(EstimateDocumentSection.entries.filter {
-            it != EstimateDocumentSection.ISSUER && it != EstimateDocumentSection.PHOTOS
+            if (editRoomSections) it != EstimateDocumentSection.ISSUER && it != EstimateDocumentSection.PHOTOS
+            else it.editable
         }))
     }
-    LaunchedEffect(store, seriesUuid, revisionUuid) {
+    LaunchedEffect(Unit) {
         try {
-            document = checkNotNull(store.estimateDocument(seriesUuid, revisionUuid))
+            document = load()
         } catch (cancelled: CancellationException) {
             throw cancelled
+        } catch (failure: EstimatePreviewLoadFailure) {
+            message = failure.message
         } catch (_: Exception) {
-            message = "Не вдалося прочитати збережену версію. Перевірте, чи доступний кошторис."
+            message = "Не вдалося прочитати збережені дані. Перевірте доступ до кошторисів."
         } finally {
             loading = false
         }
     }
     // Resolve the page snapshot only while previewing. Keystrokes in the editor do not repaginate.
     val pages = if (editor) null else remember(document, options, measurer) {
-        document?.let { layoutEstimateDocument(it, options, measurer) }
+        document?.let { layout(it, options, measurer) }
     }
     Dialog(
         onDismissRequest = { if (!exporting) { if (editor) editor = false else onClose() } },
@@ -93,9 +116,22 @@ internal fun EstimateDocumentPreview(
                                 OutlinedButton(enabled = !exporting, onClick = {
                                     exporting = true
                                     message = null
-                                    exporter.export(pages, action) { result ->
-                                        message = result
-                                        exporting = false
+                                    scope.launch {
+                                        try {
+                                            beforeExport?.invoke()
+                                            exporter.export(pages, action) { result ->
+                                                message = result
+                                                exporting = false
+                                            }
+                                        } catch (cancelled: CancellationException) {
+                                            throw cancelled
+                                        } catch (failure: EstimatePreviewLoadFailure) {
+                                            message = failure.message
+                                            exporting = false
+                                        } catch (_: Exception) {
+                                            message = "Не вдалося підготувати PDF до експорту."
+                                            exporting = false
+                                        }
                                     }
                                 }) { Text(action.label) }
                             }

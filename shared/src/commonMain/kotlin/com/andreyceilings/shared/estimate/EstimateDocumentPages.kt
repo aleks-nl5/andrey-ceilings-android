@@ -137,25 +137,85 @@ internal fun layoutEstimateDocument(
     measurer: TextMeasurer,
     issuerProvider: DocumentIssuerProvider? = null,
     photoProvider: DocumentPhotoProvider? = null
-): EstimateDocumentPages = DocumentPagination(document, measurer).apply {
+): EstimateDocumentPages = DocumentPagination(document.fileName, "${document.publicNumber} · v${document.version}", measurer).apply {
     paragraph("Кошторис робіт", 25, bold = true)
-    paragraph(document.title, 15, bold = true)
-    paragraph("Об’єкт · ${document.project}")
-    document.currentAddress?.let { paragraph("Актуальна адреса · $it") }
-    paragraph("Приміщення · ${document.room}")
-    paragraph("Дата версії · ${document.createdOn}")
-    paragraph(if (document.omissions.isEmpty()) "Повний кошторис" else "Частковий кошторис", bold = true)
-    gap(12)
+    roomSection(document, options, issuerProvider, photoProvider)
+}.finish()
 
-    table(document.rows)
+internal fun layoutConsolidatedEstimateDocument(
+    document: ConsolidatedEstimateDocument,
+    options: DocumentPresentationOptions,
+    measurer: TextMeasurer
+): EstimateDocumentPages = DocumentPagination(
+    document.fileName, "Зведений кошторис", measurer
+).apply {
+    paragraph("Об’єкт · ${document.currentProjectTitle}", 21, bold = true)
+    document.currentAddress?.let { paragraph("Актуальна адреса · $it") }
+    val roomOptions = DocumentPresentationOptions(listOf(EstimateDocumentSection.ROOM, EstimateDocumentSection.DRAWING))
+    document.sections.forEach { section ->
+        roomSection(section.document, roomOptions, null, null, section.status?.label ?: "Статус не зафіксовано")
+    }
+    flowGroup(listOf(
+        DocumentParagraph("Підсумок об’єкта", 18, bold = true),
+        DocumentParagraph("Загалом до оплати · ${measurementMoney(document.totalCents)}", 16, bold = true)
+    ))
+    document.sections.forEach {
+        val room = it.document
+        paragraph("${room.room} · ${room.revisionHeading} · ${measurementMoney(room.amounts.finalCents)}")
+    }
+    options.order.filter { it.editable && it !in options.hidden }.forEach { section ->
+        options.text[section]?.trim()?.takeIf(String::isNotEmpty)?.let {
+            heading(section.label)
+            paragraph(it)
+        }
+    }
+}.finish()
+
+private val FrozenEstimateDocument.revisionHeading get() = "$publicNumber · v$version"
+
+private fun DocumentPagination.roomSection(
+    document: FrozenEstimateDocument,
+    options: DocumentPresentationOptions,
+    issuerProvider: DocumentIssuerProvider?,
+    photoProvider: DocumentPhotoProvider?,
+    status: String? = null
+) {
+    val metadata = buildList {
+        add(DocumentParagraph(document.title, 15, bold = true))
+        add(DocumentParagraph("Об’єкт · ${document.project}"))
+        document.currentAddress?.let { add(DocumentParagraph("Актуальна адреса · $it")) }
+        add(DocumentParagraph("Приміщення · ${document.room}"))
+        val date = "Дата версії · ${document.createdOn}"
+        val completeness = if (document.omissions.isEmpty()) "Повний кошторис" else "Частковий кошторис"
+        if (status == null) {
+            add(DocumentParagraph(date))
+            add(DocumentParagraph(completeness, bold = true))
+        } else {
+            add(DocumentParagraph("$date  ·  Статус · $status  ·  $completeness"))
+        }
+    }
+    if (status == null) {
+        metadata.forEach { paragraph(it.text, it.font, it.bold) }
+        gap(12)
+        table(document.rows, document.measuredArea)
+    } else {
+        val introduction = listOf(DocumentParagraph(document.revisionHeading, 18, bold = true)) + metadata
+        table(document.rows, document.measuredArea, introduction)
+    }
 
     val amounts = document.amounts
     val discount = amounts.discountBasisPoints
     val discountText = (discount / 100).toString() +
         (discount % 100).takeIf { it != 0 }?.let { "," + it.toString().padStart(2, '0').trimEnd('0') }.orEmpty()
     keep(75)
-    paragraph("До знижки · ${measurementMoney(amounts.subtotalCents)}")
-    paragraph("Знижка $discountText % · ${measurementMoney(amounts.discountCents)}")
+    val subtotal = "До знижки · ${measurementMoney(amounts.subtotalCents)}"
+    val discountLine = "Знижка $discountText % · ${measurementMoney(amounts.discountCents)}"
+    if (status == null) {
+        paragraph(subtotal)
+        paragraph(discountLine)
+    } else {
+        paragraph("$subtotal  ·  $discountLine")
+    }
     paragraph("Разом до оплати · ${measurementMoney(amounts.finalCents)}", 16, bold = true)
 
     if (document.omissions.isNotEmpty()) {
@@ -165,9 +225,15 @@ internal fun layoutEstimateDocument(
     options.order.filterNot { it in options.hidden }.forEach { section ->
         when (section) {
             EstimateDocumentSection.ROOM -> {
-                heading(section.label)
-                paragraph("Площа заміру · ${document.measuredArea} м²")
-                paragraph("Периметр · ${document.perimeter} м")
+                val area = "Площа заміру · ${document.measuredArea} м²"
+                val perimeter = "Периметр · ${document.perimeter} м"
+                if (status == null) {
+                    heading(section.label)
+                    paragraph(area)
+                    paragraph(perimeter)
+                } else {
+                    paragraph("$area  ·  $perimeter")
+                }
             }
             EstimateDocumentSection.DRAWING -> {
                 keep(250)
@@ -197,13 +263,20 @@ internal fun layoutEstimateDocument(
             }
         }
     }
-}.finish()
+}
+
+private data class DocumentParagraph(val text: String, val font: Int = 11, val bold: Boolean = false)
 
 /** Fixed units are PDF points, independent of screen density and font scaling. */
-private class DocumentPagination(private val document: FrozenEstimateDocument, private val measurer: TextMeasurer) {
+private class DocumentPagination(
+    private val fileName: String,
+    private val pageHeading: String,
+    private val measurer: TextMeasurer
+) {
     private val pages = mutableListOf<MutableList<DocumentMark>>()
     private var marks = mutableListOf<DocumentMark>()
     private var y = 0f
+    private var pageTop = 0f
     private val bottom = 795f
 
     init { newPage() }
@@ -212,10 +285,11 @@ private class DocumentPagination(private val document: FrozenEstimateDocument, p
         marks = mutableListOf()
         pages.add(marks)
         y = 35f
-        val header = lines("${document.publicNumber} · v${document.version}", 515, 12, bold = true)
+        val header = lines(pageHeading, 515, 12, bold = true)
         header.forEach { place(it, 40f); y += it.size.height + 2 }
         rule()
         gap(12)
+        pageTop = y
     }
 
     fun keep(height: Int) {
@@ -249,14 +323,38 @@ private class DocumentPagination(private val document: FrozenEstimateDocument, p
         return lines(text, width, 6)
     }
 
-    fun paragraph(text: String, font: Int = 11, bold: Boolean = false) {
-        lines(text, 515, font, bold).forEach {
+    private fun renderParagraph(layout: List<TextLayoutResult>) {
+        layout.forEach {
             val step = it.size.height + 3
             keep(step)
             place(it, 40f)
             gap(step)
         }
         gap(3)
+    }
+
+    fun paragraph(text: String, font: Int = 11, bold: Boolean = false) =
+        renderParagraph(lines(text, 515, font, bold))
+
+    private fun measureParagraphs(paragraphs: List<DocumentParagraph>) =
+        paragraphs.map { lines(it.text, 515, it.font, it.bold) }
+
+    private fun paragraphHeight(layout: List<TextLayoutResult>) = layout.sumOf { it.size.height + 3 } + 3
+
+    private fun sectionBoundary(height: Int) {
+        val spacing = if (y > pageTop) 17 else 0
+        keep(height + spacing)
+        if (y > pageTop) {
+            gap(7)
+            rule()
+            gap(10)
+        }
+    }
+
+    fun flowGroup(paragraphs: List<DocumentParagraph>) {
+        val layouts = measureParagraphs(paragraphs)
+        sectionBoundary(layouts.sumOf(::paragraphHeight))
+        layouts.forEach(::renderParagraph)
     }
 
     fun heading(text: String) {
@@ -289,7 +387,11 @@ private class DocumentPagination(private val document: FrozenEstimateDocument, p
         gap(height + 8)
     }
 
-    fun table(rows: List<FrozenEstimateDocument.Row>) {
+    fun table(
+        rows: List<FrozenEstimateDocument.Row>,
+        measuredArea: String,
+        introduction: List<DocumentParagraph> = emptyList()
+    ) {
         val widths = listOf(172, 63, 73, 103, 104)
         val offsets = widths.runningFold(40, Int::plus)
         val header = listOf("Позиція", "Од.", "Кількість", "Ціна, грн", "Сума, грн")
@@ -308,13 +410,15 @@ private class DocumentPagination(private val document: FrozenEstimateDocument, p
             rule()
             gap(4)
         }
-        keep(46)
-        tableHeader()
-        rows.forEach { row ->
+        if (introduction.isEmpty()) {
+            keep(46)
+            tableHeader()
+        }
+        rows.forEachIndexed { index, row ->
             val name = buildString {
                 append(row.title)
                 row.roundedAreaMilli?.let {
-                    append("\nПлоща заміру · ${document.measuredArea} м²")
+                    append("\nПлоща заміру · $measuredArea м²")
                     append("\nДо 0,001 м² · ${formatElementMilli(it)} м²")
                 }
             }
@@ -329,7 +433,27 @@ private class DocumentPagination(private val document: FrozenEstimateDocument, p
             val steps = (0 until lineCount).map { line -> cells.maxOf { it.getOrNull(line)?.size?.height ?: 0 } + 3 }
             // Keep ordinary rows whole. Oversized titles continue under the repeated header.
             val height = steps.sum() + 7
-            if (y + minOf(height, 60) > bottom || height < 650 && y + height > bottom) {
+            if (index == 0 && introduction.isNotEmpty()) {
+                val layouts = measureParagraphs(introduction)
+                val headerHeight = headerCells.maxOf { it.first().size.height } + 7
+                val tableStart = headerHeight + steps.first() + 7
+                val introHeight = layouts.sumOf(::paragraphHeight) + 12
+                val pageCapacity = (bottom - pageTop).toInt()
+                if (introHeight + tableStart <= pageCapacity) {
+                    sectionBoundary(introHeight + tableStart)
+                    layouts.forEach(::renderParagraph)
+                } else {
+                    // Oversized metadata can wrap across pages. Keep the revision and
+                    // the start of its title together, and the status with the table.
+                    val openingHeight = paragraphHeight(layouts.first()) + layouts[1].first().size.height + 3
+                    sectionBoundary(openingHeight)
+                    layouts.dropLast(1).forEach(::renderParagraph)
+                    keep(paragraphHeight(layouts.last()) + 12 + tableStart)
+                    renderParagraph(layouts.last())
+                }
+                gap(12)
+                tableHeader()
+            } else if (y + minOf(height, 60) > bottom || height < 650 && y + height > bottom) {
                 newPage()
                 tableHeader()
             }
@@ -353,6 +477,6 @@ private class DocumentPagination(private val document: FrozenEstimateDocument, p
             val footer = lines("Сторінка ${index + 1} / ${pages.size}", 130, 10).single()
             page.add(DocumentMark.Text(footer, 555f - footer.size.width, 809f))
         }
-        return EstimateDocumentPages(document.fileName, pages)
+        return EstimateDocumentPages(fileName, pages)
     }
 }
