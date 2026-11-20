@@ -75,6 +75,20 @@ class OverlayDragTouchTest {
             return Offset(p.x.toFloat(),p.y.toFloat())
         }
         fun tap(x:Long,y:Long){val p=position(x,y);canvas().performTouchInput {click(p)}}
+        fun clearSelectionByTappingCanvas() {
+            val before = canvas().fetchSemanticsNode().config[MeasurementDrawingSemantics.Viewport]
+            val draft = m.state.value
+            tap(3450, 550)
+            val after = canvas().fetchSemanticsNode().config
+            assertNull(after.getOrNull(MeasurementDrawingSemantics.SelectedPoint))
+            assertNull(after.getOrNull(MeasurementDrawingSemantics.SelectedLine))
+            assertNull(after.getOrNull(MeasurementDrawingSemantics.SelectedArea))
+            assertEquals(before, after[MeasurementDrawingSemantics.Viewport])
+            assertEquals(draft.draft, m.state.value.draft)
+            assertEquals(draft.area.edits, m.state.value.area.edits)
+            assertEquals(draft.lineEdits, m.state.value.lineEdits)
+            assertEquals(draft.pointEdits, m.state.value.pointEdits)
+        }
         fun drag(x:Long,y:Long,toX:Long,toY:Long) {
             val a=position(x,y);val b=position(toX,toY);canvas().performTouchInput {swipe(a,b,500)}
         }
@@ -92,6 +106,8 @@ class OverlayDragTouchTest {
                 click("Задати розміри від стін")
                 captureSelected("point-dialog")
                 compose.onNode(hasText("Скасувати") and hasClickAction() and hasAnyAncestor(isDialog())).performClick()
+                clearSelectionByTappingCanvas()
+                tap(point.xMm, point.yMm)
                 canvas().performTouchInput {
                     pinch(center - Offset(25f, 0f), center + Offset(25f, 0f),
                         center - Offset(45f, 0f), center + Offset(45f, 0f))
@@ -133,6 +149,8 @@ class OverlayDragTouchTest {
                     captureSelected("area-dialog")
                     compose.onNode(hasText("Скасувати") and hasClickAction() and hasAnyAncestor(isDialog())).performClick()
                 }
+                clearSelectionByTappingCanvas()
+                tap(1000, 1500)
             }
             click("Скасувати дію");click("Повторити");click("Скасувати дію")
             click("Вершина 1");if (mode == "fullscreen") click("Закрити панель")
@@ -155,6 +173,8 @@ class OverlayDragTouchTest {
                     captureSelected("line-dialog")
                     compose.onNode(hasText("Скасувати") and hasClickAction() and hasAnyAncestor(isDialog())).performClick()
                 }
+                clearSelectionByTappingCanvas()
+                tap(1000, 950)
             }
             drag(1000,950,1300,750)
             if(mode!="details")compose.runOnIdle {

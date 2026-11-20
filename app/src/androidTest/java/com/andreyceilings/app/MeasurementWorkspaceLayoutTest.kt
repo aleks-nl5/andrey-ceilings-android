@@ -11,8 +11,11 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.semantics.getOrNull
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.text.AnnotatedString
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
@@ -38,6 +41,79 @@ class MeasurementWorkspaceLayoutTest {
     @Test fun objectsPortraitDark() = exercise(AppRoute.OBJECTS, ThemeMode.DARK, false)
     @Test fun measurementsLandscapeDark() = exercise(AppRoute.MEASUREMENTS, ThemeMode.DARK, true)
     @Test fun objectsLandscapeLight() = exercise(AppRoute.OBJECTS, ThemeMode.LIGHT, true)
+
+    @Test fun lShapeGridAndErrorLeaveTheHeaderAndCameraStable() {
+        val args = InstrumentationRegistry.getArguments()
+        val display = args.getString("p5aDisplay", "default")
+        val screenshots = args.getString("p5aScreenshots") == "true"
+        val context = compose.activity.applicationContext
+        val databaseName = "sqldelight_test_p5a_l_shape.db"
+        val key = ByteArray(32) { 49 }
+        System.loadLibrary("sqlcipher")
+        context.deleteDatabase(databaseName)
+        compose.runOnUiThread {
+            compose.activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+            compose.activity.enableEdgeToEdge()
+            compose.activity.window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
+        }
+        compose.waitUntil(15000) { compose.activity.resources.configuration.orientation == Configuration.ORIENTATION_PORTRAIT }
+        try {
+            CeilingsDatabase.openIsolatedForTesting(context, databaseName, key).use { database ->
+                val project = ProjectRepository(database.database).createReturningId(null, "Квартира", createdAt = 1)
+                val draft = MeasurementCreateDraft(project, MeasurementPrecision.ONE_MILLIMETER, "L-подібна стеля", "",
+                    MeasurementOutlineDraft.Template("l_shaped", mapOf("A" to "5", "B" to "4", "C" to "2", "D" to "2")))
+                val id = MeasurementCreateStore(database.database) { 2 }.create(draft)
+                val start = AppNavigationState().selectTab(AppRoute.MEASUREMENTS).openMeasurement(project, id).editMeasurement(project, id)
+                var theme by mutableStateOf(ThemeMode.LIGHT)
+                var mounted by mutableStateOf(true)
+                compose.setContent {
+                    if (mounted) CeilingsTheme(theme) {
+                        CeilingsApp("Готово", database, {}, theme, {}, initialNavigation = start)
+                    }
+                }
+                fun field(label: String) = compose.onNode(hasSetTextAction() and hasText(label))
+                fun capture(stage: String) {
+                    if (screenshots) {
+                        compose.waitForIdle()
+                        captureMeasurementWorkspaceScreenshot("$display-measurements-${theme.name.lowercase()}-portrait-l-shape-$stage")
+                    }
+                }
+                try {
+                    compose.waitUntil(15000) { compose.onAllNodes(hasSetTextAction() and hasText("AB, м")).fetchSemanticsNodes().isNotEmpty() }
+                    val drawing = compose.onNode(SemanticsMatcher("drawing projection") {
+                        it.config.getOrNull(MeasurementDrawingSemantics.Projection) != null
+                    })
+                    val fields = listOf("AB, м", "BC+DE, м", "EF, м", "BC, м").map(::field)
+                    val status = compose.onNodeWithTag("measurement-edit-status")
+                    for (mode in listOf(ThemeMode.LIGHT, ThemeMode.DARK)) {
+                        compose.runOnIdle { theme = mode }
+                        val bounds = fields.map { it.fetchSemanticsNode().boundsInRoot }
+                        assertEquals(bounds[0].top, bounds[1].top, 1f)
+                        assertEquals(bounds[2].top, bounds[3].top, 1f)
+                        assertTrue(bounds[0].right < bounds[1].left)
+                        val canvas = drawing.fetchSemanticsNode().boundsInRoot
+                        val header = compose.onNodeWithTag("measurement-edit-header").fetchSemanticsNode().boundsInRoot
+                        capture("normal")
+                        fields.first().performSemanticsAction(SemanticsActions.SetText) { set -> assertTrue(set(AnnotatedString(""))) }
+                        status.assertExists()
+                        assertEquals(header, compose.onNodeWithTag("measurement-edit-header").fetchSemanticsNode().boundsInRoot)
+                        assertEquals(canvas, drawing.fetchSemanticsNode().boundsInRoot)
+                        capture("validation")
+                        status.performClick()
+                        compose.onNodeWithTag("measurement-edit-status-details").assertExists()
+                        compose.onNodeWithText("Закрити").performClick()
+                        fields.first().performSemanticsAction(SemanticsActions.SetText) { set -> assertTrue(set(AnnotatedString("5"))) }
+                    }
+                } finally {
+                    compose.runOnIdle { mounted = false }
+                    compose.waitForIdle()
+                }
+            }
+        } finally {
+            context.deleteDatabase(databaseName)
+            key.fill(0)
+        }
+    }
 
     private fun exercise(route: AppRoute, theme: ThemeMode, landscape: Boolean) {
         val configuration = if (landscape) Configuration.ORIENTATION_LANDSCAPE else Configuration.ORIENTATION_PORTRAIT
@@ -110,14 +186,15 @@ class MeasurementWorkspaceLayoutTest {
                 compose.onNode(edit).performClick()
                 compose.waitUntil(15000) {
                     compose.onAllNodes(drawing).fetchSemanticsNodes().isNotEmpty() &&
-                        compose.onAllNodesWithText("Завантаження збережених позначок…").fetchSemanticsNodes().isEmpty()
+                        compose.onAllNodes(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription,
+                            "Завантаження збережених позначок…")).fetchSemanticsNodes().isEmpty()
                 }
                 compose.onNodeWithTag("global-bottom-navigation").assertDoesNotExist()
             }
             fun field(label: String) = compose.onNode(hasSetTextAction() and hasText(label, substring = true))
-            fun showAllContourDimensions() {
-                if (compose.onAllNodesWithText("Усі розміри").fetchSemanticsNodes().isNotEmpty()) {
-                    compose.onNodeWithText("Усі розміри").performScrollTo().performClick()
+            fun showContourDetails() {
+                if (compose.onAllNodes(hasSetTextAction() and hasText("Назва заміру", substring = true)).fetchSemanticsNodes().isEmpty()) {
+                    compose.onNodeWithText("Деталі заміру").performScrollTo().performClick()
                 }
             }
             try {
@@ -139,6 +216,14 @@ class MeasurementWorkspaceLayoutTest {
                 action("Повторити").assertIsNotEnabled()
                 capture("normal-contour")
                 assertDrawingFit()
+                val initialProjection = canvas().config[MeasurementDrawingSemantics.Projection]
+                val wall = initialProjection.project(DrawingPoint(1000.0, 0.0))
+                val drawingInput = compose.onNode(drawing)
+                drawingInput.performTouchInput { click(Offset(wall.x.toFloat(), wall.y.toFloat())) }
+                assertEquals(0, canvas().config[MeasurementDrawingSemantics.SelectedWall])
+                drawingInput.performTouchInput { click(Offset(width * 0.05f, centerY)) }
+                assertNull(canvas().config.getOrNull(MeasurementDrawingSemantics.SelectedWall))
+                assertEquals(initialProjection, canvas().config[MeasurementDrawingSemantics.Projection])
                 val normal = canvas().boundsInRoot
                 val initialCanvas = canvas()
                 for (mode in listOf(ThemeMode.SYSTEM, ThemeMode.DARK, theme)) {
@@ -192,7 +277,7 @@ class MeasurementWorkspaceLayoutTest {
                 contextTab("contour").performClick()
                 val fullscreenBounds = canvas().boundsInRoot
                 capture("fullscreen-contour")
-                showAllContourDimensions()
+                showContourDetails()
                 val compactHeight = panel.fetchSemanticsNode().size.height
                 val handle = compose.onNodeWithTag("measurement-edit-sheet-handle")
                 val handleBounds = handle.fetchSemanticsNode().boundsInRoot
@@ -230,7 +315,7 @@ class MeasurementWorkspaceLayoutTest {
                 if (capture && !landscape) {
                     val scaleBeforeKeyboard = scale()
                     compose.onNodeWithTag("measurement-edit-context-contour").performClick()
-                    showAllContourDimensions()
+                    showContourDetails()
                     fun imeVisible() = compose.runOnIdle {
                         ViewCompat.getRootWindowInsets(compose.activity.window.decorView)
                             ?.isVisible(WindowInsetsCompat.Type.ime()) == true
@@ -249,13 +334,13 @@ class MeasurementWorkspaceLayoutTest {
                         assertTrue(bounds.top >= panel.top - 2 && bounds.bottom <= minOf(panel.bottom, keyboardTop.toFloat()) + 2)
                     }
 
-                    val length = field("Сторона AB")
+                    val length = field("AB, м")
                     length.performScrollTo().performClick()
                     compose.waitUntil(15000) { imeVisible() }
                     length.assertIsFocused()
                     assertAboveKeyboard(length)
                     length.performImeAction()
-                    val width = field("Сторона BC")
+                    val width = field("BC, м")
                     width.assertIsFocused()
                     assertAboveKeyboard(width)
                     capture("normal-ime-next")
@@ -300,7 +385,10 @@ class MeasurementWorkspaceLayoutTest {
                 val notes = field("Примітки")
                 fun saveInPlace() {
                     save.assertIsEnabled().performClick()
-                    compose.waitUntil(15000) { compose.onAllNodesWithText("Збережено").fetchSemanticsNodes().isNotEmpty() }
+                    compose.waitUntil(15000) {
+                        compose.onAllNodes(hasTestTag("measurement-edit-save") and
+                            SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Збережено")).fetchSemanticsNodes().isNotEmpty()
+                    }
                     action("На весь екран").assertExists()
                     action("Скасувати дію").assertIsNotEnabled()
                     save.assertIsNotEnabled()

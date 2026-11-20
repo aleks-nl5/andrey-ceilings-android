@@ -43,12 +43,6 @@ fun DecimalInputField(
             imeAction = if (onNext == null) ImeAction.Default else ImeAction.Next
         ),
         keyboardActions = KeyboardActions(onNext = onNext?.let { next -> { next() } }),
-        trailingIcon = if (allowDecimalSeparator) ({
-            IconButton(enabled = enabled, onClick = {
-                insertDecimalSeparator(field)?.let { update(it) }
-                requester.requestFocus()
-            }, modifier = Modifier.semantics { contentDescription = "Вставити десяткову кому" }) { Text(",") }
-        }) else null,
         leadingIcon = if (signed) ({
             IconButton(enabled = enabled, onClick = {
                 val removing = field.text.startsWith('-')

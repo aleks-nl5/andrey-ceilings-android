@@ -116,7 +116,8 @@ fun MeasurementDrawing(
     cameraFitReady: Boolean = true,
     showWorkspaceGrid: Boolean = false,
     fitTop: Dp = 0.dp,
-    fitBottom: Dp = 0.dp
+    fitBottom: Dp = 0.dp,
+    onEmptyTap: () -> Unit = {}
 ) {
     val contour = remember(geometry) { measurementDrawingContour(geometry) }
     if (contour == null) {
@@ -136,6 +137,7 @@ fun MeasurementDrawing(
     var markerGesture by remember { mutableStateOf(false) }
     var cameraAdjusted by rememberSaveable { mutableStateOf(false) }
     val currentSelection by rememberUpdatedState(onSelectSide)
+    val currentEmptyTap by rememberUpdatedState(onEmptyTap)
     val currentPoints by rememberUpdatedState(pointPlacements)
     val currentPointSelection by rememberUpdatedState(onSelectPoint)
     val currentPointTap by rememberUpdatedState(onPlacePoint)
@@ -385,7 +387,9 @@ fun MeasurementDrawing(
                                             currentPointTap(target.x.roundToLong(), target.y.roundToLong())
                                     } else {
                                         val points = contour.points.map(projection::project)
-                                        measurementWallAt(points, position.x, position.y, 24.dp.toPx())?.let(currentSelection)
+                                        val wall = measurementWallAt(points, position.x, position.y, 24.dp.toPx())
+                                        if (wall != null) currentSelection(wall)
+                                        else if (!currentMode && marker == null) currentEmptyTap()
                                     }
                                     focusRequester.requestFocus()
                                 }
@@ -529,7 +533,7 @@ fun MeasurementDrawing(
             }
             if (interactive && verticalViewControls) {
                 val actions: @Composable () -> Unit = {
-                    MeasurementIconAction("Вписати креслення", Icons.Default.CenterFocusStrong, !markerGesture, true, ::fit)
+                    MeasurementIconAction("Вписати креслення", Icons.Default.CenterFocusStrong, !markerGesture, true, onClick = ::fit)
                     MeasurementIconAction("Збільшити масштаб", Icons.Default.ZoomIn, !markerGesture, true) {
                         move(0f, 0f, 1.25f)
                     }

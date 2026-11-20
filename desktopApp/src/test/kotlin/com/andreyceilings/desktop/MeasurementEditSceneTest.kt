@@ -98,7 +98,9 @@ class MeasurementEditSceneTest {
                 scene.render().close()
                 scene.click("Деталі заміру")
                 scene.frame()
-                val name = scene.nodes().first { it.config.getOrNull(SemanticsActions.SetText) != null }
+                val name = scene.nodes().single {
+                    it.config.getOrNull(SemanticsActions.SetText) != null && it.textTree().contains("Назва заміру")
+                }
                 assertTrue(name.config.getOrNull(SemanticsActions.SetText)?.action?.invoke(AnnotatedString("Нова кухня")) == true)
                 model.commitInput(); scene.frame()
                 assertTrue(model.state.value.dirty)
@@ -380,10 +382,11 @@ class MeasurementEditSceneTest {
                 val colors = ceilingsColorScheme(theme)
                 val clear = sample(14, 730)
                 val normalFade = sample(14, 22)
+                closeColor(sample(2, 22), normalFade)
                 closeColor(clear, colors.background)
-                closeColor(normalFade, colors.surfaceBright.copy(alpha = 0.50f).compositeOver(clear))
+                closeColor(normalFade, (if (theme) colors.surfaceBright else colors.surfaceDim).copy(alpha = 0.50f).compositeOver(clear))
                 assertNotEquals(normalFade, clear)
-                assertNotEquals(normalFade, colors.surfaceBright)
+                assertNotEquals(normalFade, if (theme) colors.surfaceBright else colors.surfaceDim)
                 val title = scene.nodes().single { it.textTree() == "Кухня" && it.config.getOrNull(SemanticsActions.GetTextLayoutResult) != null }
                 val layout = mutableListOf<TextLayoutResult>()
                 assertTrue(title.config[SemanticsActions.GetTextLayoutResult].action?.invoke(layout) == true)
@@ -398,9 +401,9 @@ class MeasurementEditSceneTest {
                 closeColor(sample(19, 25, 3), colors.surface.copy(alpha = 0.50f).compositeOver(clear))
                 scene.click("Контур")
                 scene.finishSheetMotion()
-                assertTrue(contrast(colors.onSurface, colors.surfaceContainer) >= 4.5f)
-                assertTrue(contrast(colors.onSurfaceVariant, colors.surfaceContainer) >= 4.5f)
-                assertTrue(contrast(colors.error, colors.surfaceContainer) >= 4.5f)
+                assertTrue(contrast(colors.onBackground, colors.background) >= 4.5f)
+                assertTrue(contrast(colors.onSurfaceVariant, colors.background) >= 4.5f)
+                assertTrue(contrast(colors.error, colors.background) >= 4.5f)
                 scene.click("Згорнути")
                 scene.finishSheetMotion()
                 val current = scene.projectedDrawing()
@@ -446,7 +449,7 @@ class MeasurementEditSceneTest {
             val entering = y()
             tick(22)
             assertBetween(closed, entering, y())
-            scene.click("Усі розміри")
+            scene.click("Деталі заміру")
             tick(24)
             val compact = y()
 
@@ -665,8 +668,6 @@ class MeasurementEditSceneTest {
         fun canvas() = scene.projectedDrawing()
         try {
             scene.frame()
-            scene.click("Усі розміри")
-            scene.frame()
             val field = scene.nodes().single { it.config.getOrNull(SemanticsProperties.EditableText)?.text == "5" }
             assertTrue(field.config[SemanticsActions.SetText].action?.invoke(AnnotatedString("")) == true)
             scene.frame()
@@ -688,36 +689,87 @@ class MeasurementEditSceneTest {
         } finally { scene.close() }
     }
 
-    @Test fun explicitDecimalSeparatorWorksWhenTheImeHasNoCommaKey() {
+    @Test fun contourAcceptsBothKeyboardSeparatorsWithoutAShortcut() {
         val model = MeasurementEditModel(null, MeasurementEditDocument(3, 1, draft()))
         val image = ImageComposeScene(600, 900) {
             CeilingsTheme(false) { MeasurementEditScreen(model, onBack = {}) }
         }
         try {
-            image.render().close()
-            image.reveal {it.config.getOrNull(SemanticsActions.OnClick)!=null && it.textTree().contains("Усі розміри")}
-            image.click("Усі розміри"); image.frame()
-            image.reveal {it.config.getOrNull(SemanticsProperties.EditableText)?.text=="5"}
-            val field = image.nodes().first {
-                it.config.getOrNull(SemanticsProperties.EditableText)?.text == "5"
-            }
-            assertTrue(field.config.getOrNull(SemanticsActions.SetText)?.action?.invoke(AnnotatedString("2")) == true)
             image.frame()
-            val button = image.nodes().first {
-                it.config.getOrNull(SemanticsProperties.ContentDescription).orEmpty()
-                    .contains("Вставити десяткову кому")
+            assertFalse(image.nodes().any { "Вставити десяткову кому" in it.config.getOrNull(SemanticsProperties.ContentDescription).orEmpty() })
+            fun field() = image.nodes().single { it.config.getOrNull(SemanticsActions.SetText) != null && it.textTree().contains("AB, м") }
+            for ((typed, shown) in listOf(".5" to "0.5", ",5" to "0,5", "0.5" to "0.5", "0,5" to "0,5")) {
+                assertTrue(field().config[SemanticsActions.SetText].action?.invoke(AnnotatedString(typed)) == true)
+                image.frame()
+                val value = (model.state.value.draft.outline as MeasurementOutlineDraft.Template).fields.getValue("length")
+                assertEquals(shown, value)
+                assertEquals(500L, measurementLengthMm(value, model.state.value.draft.precision))
             }
-            assertTrue(button.config.getOrNull(SemanticsActions.OnClick)?.action?.invoke() == true)
-            image.frame()
-            assertEquals("2,", (model.state.value.draft.outline as MeasurementOutlineDraft.Template).fields["length"])
-            val nextField = image.nodes().first {
-                it.config.getOrNull(SemanticsProperties.EditableText)?.text == "2,"
-            }
-            assertTrue(nextField.config.getOrNull(SemanticsActions.SetText)?.action?.invoke(AnnotatedString("2,5")) == true)
-            image.frame()
-            val metres = (model.state.value.draft.outline as MeasurementOutlineDraft.Template).fields.getValue("length")
-            assertEquals(2500L, measurementLengthMm(metres, model.state.value.draft.precision))
         } finally { image.close() }
+    }
+
+    @Test fun lShapeFieldsKeepTwoColumnsAndFocusDoesNotSelectAWall() {
+        val source = draft().copy(outline = MeasurementOutlineDraft.Template("l_shaped",
+            mapOf("A" to "5", "B" to "4", "C" to "2", "D" to "2")))
+        val model = MeasurementEditModel(null, MeasurementEditDocument(3, 1, source))
+        val scene = ImageComposeScene(360, 740) { CeilingsTheme(false) { MeasurementEditScreen(model, onBack = {}) } }
+        fun field(label: String) = scene.nodes().single {
+            it.config.getOrNull(SemanticsActions.SetText) != null && it.textTree().contains(label)
+        }
+        fun tap(point: Offset) {
+            scene.sendPointerEvent(PointerEventType.Press, point, type = PointerType.Mouse)
+            scene.sendPointerEvent(PointerEventType.Release, point, type = PointerType.Mouse)
+            scene.frame()
+        }
+        try {
+            repeat(6) { scene.frame() }
+            scene.click("Вписати креслення")
+            val canvas = scene.projectedDrawing()
+            val project = canvas.config[MeasurementDrawingSemantics.Projection]
+            val contour = assertNotNull(measurementDrawingContour(MeasurementGeometryView.Captured(
+                assertNotNull(validateMeasurementCreate(source).geometry))))
+            val wallStart = project.project(contour.points[0])
+            val wallEnd = project.project(contour.points[1])
+            val bounds = listOf("AB, м", "BC+DE, м", "EF, м", "BC, м").map { field(it).boundsInRoot }
+            assertEquals(bounds[0].top, bounds[1].top, 1f)
+            assertEquals(bounds[2].top, bounds[3].top, 1f)
+            assertTrue(bounds[0].right < bounds[1].left)
+            tap(Offset(canvas.boundsInRoot.left + ((wallStart.x + wallEnd.x) / 2).toFloat(),
+                canvas.boundsInRoot.top + ((wallStart.y + wallEnd.y) / 2).toFloat()))
+            assertEquals(0, scene.projectedDrawing().config[MeasurementDrawingSemantics.SelectedWall])
+            assertTrue(field("EF, м").config[SemanticsActions.RequestFocus].action?.invoke() == true)
+            scene.frame()
+            assertEquals(0, scene.projectedDrawing().config[MeasurementDrawingSemantics.SelectedWall])
+            tap(Offset(canvas.boundsInRoot.left + 4f, canvas.boundsInRoot.center.y))
+            assertNull(scene.projectedDrawing().config.getOrNull(MeasurementDrawingSemantics.SelectedWall))
+            assertEquals(project, scene.projectedDrawing().config[MeasurementDrawingSemantics.Projection])
+            assertFalse(model.state.value.dirty)
+        } finally { scene.close() }
+    }
+
+    @Test fun orthogonalTurnsStayAvailableUnderAdvancedAndUseHistory() {
+        val source = draft().copy(outline = MeasurementOutlineDraft.Orthogonal(
+            listOf("5", "4", "5", "4").map { MeasurementSideInput(it) }))
+        val model = MeasurementEditModel(null, MeasurementEditDocument(3, 1, source))
+        val scene = ImageComposeScene(600, 840) { CeilingsTheme(false) { MeasurementEditScreen(model, onBack = {}) } }
+        try {
+            scene.frame()
+            assertFalse(scene.text().contains("Додати сторону"))
+            scene.click("Додатково")
+            scene.frame()
+            assertTrue(scene.text().contains("Додати сторону"))
+            val initial = (source.outline as MeasurementOutlineDraft.Orthogonal).sides.first().turn
+            val replacement = if (initial == OrthogonalTurn.LEFT) OrthogonalTurn.RIGHT else OrthogonalTurn.LEFT
+            scene.click(if (replacement == OrthogonalTurn.LEFT) "↶ 90°" else "↷ 90°")
+            scene.frame()
+            fun turn() = (model.state.value.draft.outline as MeasurementOutlineDraft.Orthogonal).sides.first().turn
+            assertEquals(replacement, turn())
+            scene.click("Скасувати дію")
+            assertEquals(initial, turn())
+            scene.frame()
+            scene.click("Повторити")
+            assertEquals(replacement, turn())
+        } finally { scene.close() }
     }
 
     private fun ImageComposeScene.projectedDrawing(): SemanticsNode {
@@ -735,16 +787,6 @@ class MeasurementEditSceneTest {
     }
     private fun SemanticsNode.textTree(): String = config.getOrNull(SemanticsProperties.Text).orEmpty().joinToString { it.text } + children.joinToString { it.textTree() }
     private fun ImageComposeScene.text() = semanticsOwners.joinToString { it.rootSemanticsNode.textTree() }
-    private fun ImageComposeScene.reveal(predicate:(SemanticsNode)->Boolean) {
-        repeat(30) {
-            frame()
-            if(nodes().any(predicate))return
-            val scroll=nodes().firstOrNull {it.config.getOrNull(SemanticsActions.ScrollBy)!=null}
-            assertTrue(scroll?.config?.getOrNull(SemanticsActions.ScrollBy)?.action?.invoke(0f,160f)==true,"Editor must remain scrollable")
-            repeat(4){frame();Thread.sleep(10)}
-        }
-        fail("Editor control did not become available by scrolling")
-    }
     private fun ImageComposeScene.click(label: String) {
         val node = nodes().first { it.config.getOrNull(SemanticsActions.OnClick) != null && (it.textTree().contains(label) || label in it.config.getOrNull(SemanticsProperties.ContentDescription).orEmpty()) }
         assertTrue(node.config.getOrNull(SemanticsActions.OnClick)?.action?.invoke() == true)

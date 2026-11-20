@@ -37,9 +37,9 @@ adb shell am instrument -w \
   -e p5aSelectedScreenshots true "$app.test/androidx.test.runner.AndroidJUnitRunner" \
   | tee "$artifact_dir/instrumentation-selections.txt"
 adb exec-out run-as "$app" tar -C "$device_dir" -cf - . | tar -xf - -C "$artifact_dir"
-grep -q 'OK (4 tests)' "$artifact_dir/instrumentation-short.txt"
-grep -q 'OK (4 tests)' "$artifact_dir/instrumentation-tall.txt"
+grep -q 'OK (5 tests)' "$artifact_dir/instrumentation-short.txt"
+grep -q 'OK (5 tests)' "$artifact_dir/instrumentation-tall.txt"
 grep -q 'OK (2 tests)' "$artifact_dir/instrumentation-selections.txt"
 shopt -s nullglob
 images=("$artifact_dir"/*.png)
-[[ "${#images[@]}" == 96 ]]
+[[ "${#images[@]}" == 104 ]]

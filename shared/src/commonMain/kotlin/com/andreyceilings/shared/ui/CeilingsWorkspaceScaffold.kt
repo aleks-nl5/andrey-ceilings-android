@@ -6,6 +6,8 @@ import androidx.compose.foundation.layout.BoxWithConstraintsScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.consumeWindowInsets
+import androidx.compose.foundation.layout.calculateStartPadding
+import androidx.compose.foundation.layout.calculateEndPadding
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -20,6 +22,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.layout.layout
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.Dp
@@ -43,6 +48,8 @@ internal fun CeilingsWorkspaceScaffold(
     content: @Composable BoxWithConstraintsScope.(Dp) -> Unit
 ) {
     val density = LocalDensity.current
+    val direction = LocalLayoutDirection.current
+    val colors = MaterialTheme.colorScheme
     var measuredHeader by remember { mutableIntStateOf(0) }
     CeilingsScreenSurface {
         BoxWithConstraints(
@@ -54,9 +61,20 @@ internal fun CeilingsWorkspaceScaffold(
             if (fullscreen) {
                 CeilingsEdgeGradient(CeilingsEdge.TOP, Modifier.fillMaxWidth().height(headerHeight + CeilingsEdgeDefaults.FadeHeight))
             } else {
-                CeilingsEdgeGradient(CeilingsEdge.TOP, Modifier.fillMaxWidth().height(headerHeight + 56.dp)
-                    .testTag("ceilings-workspace-normal-gradient"),
-                    color = MaterialTheme.colorScheme.surfaceBright)
+                val top = safePadding.calculateTopPadding()
+                val start = safePadding.calculateStartPadding(direction)
+                val end = safePadding.calculateEndPadding(direction)
+                CeilingsEdgeGradient(CeilingsEdge.TOP, Modifier.fillMaxWidth().layout { measurable, constraints ->
+                    val horizontal = start.roundToPx() + end.roundToPx()
+                    val layer = measurable.measure(constraints.copy(
+                        minWidth = constraints.minWidth + horizontal,
+                        maxWidth = constraints.maxWidth + horizontal
+                    ))
+                    layout(constraints.maxWidth, (layer.height - top.roundToPx()).coerceAtLeast(0)) {
+                        layer.placeRelative(-start.roundToPx(), -top.roundToPx())
+                    }
+                }.height(top + headerHeight + 72.dp).testTag("ceilings-workspace-normal-gradient"),
+                    color = if (colors.background.luminance() < 0.5f) colors.surfaceBright else colors.surfaceDim)
             }
             Box(Modifier.fillMaxWidth().align(Alignment.TopCenter).onSizeChanged { measuredHeader = it.height }) {
                 header(workspace, headerHeight)

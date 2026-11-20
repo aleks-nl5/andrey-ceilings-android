@@ -1,11 +1,9 @@
 package com.andreyceilings.shared.measurement
 
-import com.andreyceilings.shared.input.insertDecimalSeparator
 import com.andreyceilings.shared.input.filterNumericEdit
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.border
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.text.KeyboardActions
@@ -24,8 +22,6 @@ import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.input.ImeAction
@@ -244,9 +240,6 @@ fun MeasurementCreateScreen(
 internal fun MeasurementLengthField(value: String, label: String, error: String?, enabled: Boolean,
     modifier: Modifier = Modifier, selected: Boolean = false, onFocus: (Boolean) -> Unit = {},
     onNext: (() -> Unit)? = null, onChange: (String) -> Unit) {
-    // A decimal IME hint does not guarantee the user's keyboard offers comma or dot.
-    // Keep an accessible separator action and preserve the actual caret selection.
-    val requester = remember { FocusRequester() }
     var field by remember { mutableStateOf(TextFieldValue(value, selection = TextRange(value.length))) }
     LaunchedEffect(value) {
         if (field.text != value) {
@@ -261,22 +254,14 @@ internal fun MeasurementLengthField(value: String, label: String, error: String?
         if (changed) onChange(edited.text)
     }
     OutlinedTextField(value = field, onValueChange = ::update, label = { Text(label) }, enabled = enabled, singleLine = true,
-        modifier = modifier.then(measurementFieldFocusModifier()).fillMaxWidth().focusRequester(requester)
-            .then(if (selected) Modifier.border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(4.dp)) else Modifier)
+        modifier = modifier.then(measurementFieldFocusModifier()).fillMaxWidth()
+            .then(if (selected) Modifier.background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f), MaterialTheme.shapes.extraSmall) else Modifier)
             .onFocusChanged { onFocus(it.isFocused) },
         keyboardOptions = KeyboardOptions(
             keyboardType = KeyboardType.Decimal,
             imeAction = if (onNext == null) ImeAction.Default else ImeAction.Next
         ),
         keyboardActions = KeyboardActions(onNext = onNext?.let { next -> { next() } }),
-        trailingIcon = {
-            IconButton(onClick = {
-                insertDecimalSeparator(field)?.let(::update)
-                requester.requestFocus()
-            }, enabled = enabled, modifier = Modifier.semantics {
-                contentDescription = "Вставити десяткову кому"
-            }) { Text(",") }
-        },
         isError = value.isNotEmpty() && error != null,
         supportingText = { error?.let { Text(it) } })
 }
