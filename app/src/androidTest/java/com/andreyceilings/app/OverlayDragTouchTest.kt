@@ -186,7 +186,12 @@ class OverlayDragTouchTest {
             tap(2800,1500);if (mode == "fullscreen") click("Закрити панель")
             drag(2800,1500,3100,1800)
             drag(3100,1800,4500,1800)
-            compose.onNodeWithText("Фігура перетинає стіну або себе. Положення не змінено.").assertExists()
+            val invalidDrag = "Фігура перетинає стіну або себе. Положення не змінено."
+            if (mode != "details") {
+                compose.onNodeWithTag("measurement-edit-status").performClick()
+                compose.onNodeWithTag("measurement-edit-status-details").assertTextEquals(invalidDrag)
+                compose.onNodeWithText("Закрити").performClick()
+            } else compose.onNodeWithText(invalidDrag).assertExists()
             assertEquals(before,OverlayDragFixture.snapshot(driver))
             if (mode == "editor") {
                 click("Вартість")

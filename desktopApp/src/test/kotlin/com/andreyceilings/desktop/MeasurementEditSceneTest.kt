@@ -712,7 +712,7 @@ class MeasurementEditSceneTest {
         val source = draft().copy(outline = MeasurementOutlineDraft.Template("l_shaped",
             mapOf("A" to "5", "B" to "4", "C" to "2", "D" to "2")))
         val model = MeasurementEditModel(null, MeasurementEditDocument(3, 1, source))
-        val scene = ImageComposeScene(360, 740) { CeilingsTheme(false) { MeasurementEditScreen(model, onBack = {}) } }
+        val scene = ImageComposeScene(361, 740) { CeilingsTheme(false) { MeasurementEditScreen(model, onBack = {}) } }
         fun field(label: String) = scene.nodes().single {
             it.config.getOrNull(SemanticsActions.SetText) != null && it.textTree().contains(label)
         }

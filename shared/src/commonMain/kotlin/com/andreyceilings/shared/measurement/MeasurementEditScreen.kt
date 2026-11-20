@@ -874,8 +874,6 @@ private fun MeasurementSelectedFields(
     }
     BoxWithConstraints(Modifier.fillMaxWidth()) {
         val columns = if (maxWidth < 240.dp || density.fontScale >= 1.45f) 1 else 2
-        val gap = 8.dp
-        val fieldWidth = (maxWidth - gap * (columns - 1)) / columns
         when (val outline = draft.outline) {
             is MeasurementOutlineDraft.Captured -> Column {
                 Text("Контур за вершинами · виміряних сторін немає", style = MaterialTheme.typography.bodySmall)
@@ -886,36 +884,34 @@ private fun MeasurementSelectedFields(
             is MeasurementOutlineDraft.Template -> {
                 val keys = CeilingShapeTemplates.template(outline.shape)!!.parameterKeys
                 val requesters = remember(keys) { List(keys.size) { FocusRequester() } }
-                FlowRow(maxItemsInEachRow = columns, horizontalArrangement = Arrangement.spacedBy(gap)) {
-                    keys.forEachIndexed { index, key ->
-                        val wall = when (outline.shape to key) {
-                            "rectangle" to "length", "l_shaped" to "A" -> "AB"
-                            "rectangle" to "width", "l_shaped" to "D" -> "BC"
-                            "l_shaped" to "B" -> "BC+DE"
-                            "l_shaped" to "C" -> "EF"
-                            else -> key
-                        }
-                        MeasurementLengthField(outline.fields.getValue(key), "$wall, м", validation.fieldErrors[key], enabled,
-                            modifier = Modifier.width(fieldWidth).focusRequester(requesters[index]),
-                            onNext = (requesters.getOrNull(index + 1) ?: followingField)?.let { next -> { next.requestFocus() } },
-                            selected = selected != null && key in measurementWallParameters(draft.shape, selected),
-                            onFocus = inputFocus, onChange = { model.accept(MeasurementCreateIntent.Dimension(key, it), grouped = true) })
+                MeasurementDimensionRows(keys.size, columns) { index, cell ->
+                    val key = keys[index]
+                    val wall = when (outline.shape to key) {
+                        "rectangle" to "length", "l_shaped" to "A" -> "AB"
+                        "rectangle" to "width", "l_shaped" to "D" -> "BC"
+                        "l_shaped" to "B" -> "BC+DE"
+                        "l_shaped" to "C" -> "EF"
+                        else -> key
                     }
+                    MeasurementLengthField(outline.fields.getValue(key), "$wall, м", validation.fieldErrors[key], enabled,
+                        modifier = cell.focusRequester(requesters[index]),
+                        onNext = (requesters.getOrNull(index + 1) ?: followingField)?.let { next -> { next.requestFocus() } },
+                        selected = selected != null && key in measurementWallParameters(draft.shape, selected),
+                        onFocus = inputFocus, onChange = { model.accept(MeasurementCreateIntent.Dimension(key, it), grouped = true) })
                 }
             }
             is MeasurementOutlineDraft.Orthogonal -> {
                 val labels = measurementSideLabels(outline.sides.size)
                 val ids = outline.sides.map { it.inputId }
                 val requesters = remember(ids) { List(ids.size) { FocusRequester() } }
-                FlowRow(maxItemsInEachRow = columns, horizontalArrangement = Arrangement.spacedBy(gap)) {
-                    outline.sides.forEachIndexed { i, side ->
-                        key(side.inputId) {
-                            MeasurementLengthField(side.length, "${labels[i]}, м", validation.fieldErrors[side.inputId], enabled,
-                                modifier = Modifier.width(fieldWidth).focusRequester(requesters[i]),
-                                onNext = (requesters.getOrNull(i + 1) ?: followingField)?.let { next -> { next.requestFocus() } },
-                                selected = selected == i, onFocus = inputFocus,
-                                onChange = { model.accept(MeasurementCreateIntent.SideLength(i, it), grouped = true) })
-                        }
+                MeasurementDimensionRows(outline.sides.size, columns) { i, cell ->
+                    val side = outline.sides[i]
+                    key(side.inputId) {
+                        MeasurementLengthField(side.length, "${labels[i]}, м", validation.fieldErrors[side.inputId], enabled,
+                            modifier = cell.focusRequester(requesters[i]),
+                            onNext = (requesters.getOrNull(i + 1) ?: followingField)?.let { next -> { next.requestFocus() } },
+                            selected = selected == i, onFocus = inputFocus,
+                            onChange = { model.accept(MeasurementCreateIntent.SideLength(i, it), grouped = true) })
                     }
                 }
             }
@@ -945,6 +941,20 @@ private fun MeasurementSelectedFields(
                 focus.clearFocus()
                 model.accept(MeasurementCreateIntent.AddSide)
             }, enabled = enabled && outline.sides.size < CeilingPolygonCalculator.MAX_VERTICES) { Text("Додати сторону") }
+        }
+    }
+}
+
+@Composable
+private fun MeasurementDimensionRows(count: Int, columns: Int, field: @Composable (Int, Modifier) -> Unit) {
+    Column(Modifier.fillMaxWidth()) {
+        for (start in 0 until count step columns) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                for (index in start until start + columns) {
+                    val cell = Modifier.weight(1f)
+                    if (index < count) field(index, cell) else Spacer(cell)
+                }
+            }
         }
     }
 }
