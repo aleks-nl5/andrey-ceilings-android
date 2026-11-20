@@ -47,6 +47,7 @@ class AreaFeatureSceneTest {
                     }
                 }
                 scene.click("Елементи")
+                scene.click("Площинні об’єкти · 0")
                 scene.click("Позначити перешкоду")
                 scene.tapWorld(500,500)
                 assertEquals(1,model.state.value.area.vertices.size,"First area corner must be delivered in $dark theme")

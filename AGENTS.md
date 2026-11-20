@@ -161,6 +161,8 @@ Continue only Draft PR #117 / issue #116. Owner found two blocking defects: glob
 - Keep platform-specific capabilities (e.g. Android gesture bridge, Keystore, PDF, storage permissions) in platform modules, with shared contracts where appropriate.
 
 ## Implementation and verification
+
+- New CMP screens must use the shared scaffold or workspace chrome and theme-matched `Surface` content roles. Follow the [CMP UI Foundation checklist](docs/CMP_UI_FOUNDATION.md) for inset ownership and integration evidence in light and dark themes.
 - Prefer small, focused changes with matching `commonTest`/JVM tests and platform checks. Preserve currently working behavior on Android and Windows.
 - The repo uses JDK 21 and Gradle 9.7.0 in CI (no checked-in Gradle wrapper). Example local checks, when tools are present: `gradle --no-daemon :shared:jvmTest :app:testDebugUnitTest` and `gradle --no-daemon :desktopApp:compileKotlin`.
 - GitHub Actions `Build Android APK` and `Verify CMP KMP platforms` are mandatory before merge: Android build, unit/instrumentation tests, Windows/JVM, and iOS Simulator. Never claim a platform or smoke test passed unless it actually ran successfully.

@@ -61,6 +61,7 @@ class LinePlacementTouchTest {
                 }
                 if (theme) click("На весь екран")
                 click("Елементи")
+                compose.onNodeWithTag("measurement-edit-section-lines").performScrollTo().performClick()
                 click("Розмістити лінію")
                 val canvas=compose.onNode(matcher)
                 fun world(x:Long,y:Long):Offset {

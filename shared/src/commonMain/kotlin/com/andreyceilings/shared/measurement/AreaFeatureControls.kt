@@ -24,7 +24,7 @@ fun AreaFeatureControls(model: MeasurementEditModel, enabled: Boolean, inWorkspa
     val a=state.area
     val areas=model.displayAreas()
     Column(Modifier.fillMaxWidth(),verticalArrangement=Arrangement.spacedBy(4.dp)) {
-        Text("Площинні об'єкти",style=MaterialTheme.typography.titleMedium)
+        if (!inWorkspace) Text("Площинні об'єкти",style=MaterialTheme.typography.titleMedium)
         if(a.tool!=null) {
             FlowRow {AreaTool.entries.forEach {tool -> FilterChip(a.tool==tool,enabled=enabled,onClick={model.setAreaTool(tool)},label={Text(when(tool) {
                 AreaTool.RECTANGLE -> "Прямокутник";AreaTool.POLYGON -> "Багатокутник";AreaTool.CIRCLE -> "Коло"
@@ -40,7 +40,11 @@ fun AreaFeatureControls(model: MeasurementEditModel, enabled: Boolean, inWorkspa
         val selected=areas.find {it.uuid==a.selected}
         if(selected!=null) {
             Text(areaDescription(selected))
-            Text(if(selected.unresolved)"Остання відома геометрія збережена. Виміряйте всі опори й радіус та явно підтвердьте." else "Перетягування змінює лише приблизне положення; опори задаються виміряними відстанями.")
+            if (selected.unresolved) Text(
+                if (inWorkspace) "Виміряйте опори й радіус, потім підтвердьте фігуру."
+                else "Остання відома геометрія збережена. Виміряйте всі опори й радіус та явно підтвердьте.",
+                color = if (inWorkspace) MaterialTheme.colorScheme.error else LocalContentColor.current)
+            else if (!inWorkspace) Text("Перетягування змінює лише приблизне положення; опори задаються виміряними відстанями.")
             FlowRow {
                 FilterChip(a.moveVertex==null,onClick={model.setAreaMoveVertex(null)},label={Text("Переміщати всю фігуру")})
                 selected.shape.positions.indices.forEach {index ->
@@ -54,7 +58,10 @@ fun AreaFeatureControls(model: MeasurementEditModel, enabled: Boolean, inWorkspa
                 TextButton(enabled=enabled,onClick=model::requestAreaDelete) {Text("Видалити фігуру")}
             }
         }
-        Text("Перешкоди й отвори — геометричні позначки. Не віднімаються від площі стелі. Сума площ може містити перекриття.",style=MaterialTheme.typography.bodySmall)
+        if (!inWorkspace || a.tool != null) Text(
+            if (inWorkspace) "Позначки не віднімаються від площі стелі."
+            else "Перешкоди й отвори — геометричні позначки. Не віднімаються від площі стелі. Сума площ може містити перекриття.",
+            style = MaterialTheme.typography.bodySmall)
         FlowRow {
             TextButton(enabled=enabled,onClick={model.beginArea(AreaRole.OBSTACLE)}) {Text("Позначити перешкоду")}
             TextButton(enabled=enabled,onClick={model.beginArea(AreaRole.VOID_MARKER,tool=AreaTool.CIRCLE)}) {Text("Позначити отвір")}
@@ -70,7 +77,7 @@ fun AreaFeatureControls(model: MeasurementEditModel, enabled: Boolean, inWorkspa
         areas.forEachIndexed {i,feature ->
             FilterChip(a.selected==feature.uuid,onClick={model.selectArea(feature.uuid)},enabled=enabled,
                 label={Text("Фігура ${i+1}: ${areaDescription(feature)}")})
-            if(feature.note.isNotBlank())Text(feature.note)
+            if (feature.note.isNotBlank() && (!inWorkspace || a.selected == feature.uuid)) Text(feature.note)
         }
         if(areas.any {it.needsReview})FlowRow {
             TextButton(enabled=enabled && !state.dirty,onClick=model::reviewNow) {Text("Перевірити площинні об'єкти")}

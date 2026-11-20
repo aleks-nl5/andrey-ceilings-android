@@ -14,12 +14,12 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 
 @Composable
-internal fun LinePlacementControls(model:MeasurementEditModel,enabled:Boolean) {
+internal fun LinePlacementControls(model:MeasurementEditModel,enabled:Boolean,inWorkspace:Boolean=false) {
     val state by model.state.collectAsState()
     val scope=rememberCoroutineScope()
     val lines=model.displayLines()
     Column(Modifier.fillMaxWidth(),verticalArrangement=Arrangement.spacedBy(4.dp)) {
-        if(state.original.lineElements.isNotEmpty())Text("Елементи стелі · Лінії",style=MaterialTheme.typography.titleMedium)
+        if(!inWorkspace && state.original.lineElements.isNotEmpty())Text("Елементи стелі · Лінії",style=MaterialTheme.typography.titleMedium)
         if(state.lineElementUuid!=null) {
             Text(if(state.lineStart==null)"Торкніться початку лінії." else if(state.linePreview==null)"Торкніться кінця лінії." else "Приблизна лінія: ${formatElementMilli(state.linePreview!!.lengthMm)} м")
             FlowRow {
@@ -29,14 +29,16 @@ internal fun LinePlacementControls(model:MeasurementEditModel,enabled:Boolean) {
         }
         val selected=lines.find {it.uuid==state.selectedLineUuid}
         if(selected!=null) {
-            Text(when {selected.unresolved->"Потребує уточнення";selected.needsReview->"Перевірити розміщення";selected.precision==PointPrecision.EXACT->"За виміряними відступами";else->"Приблизно"})
-            Text("Довжина ${formatElementMilli(selected.lengthMm)} м. Це центральна монтажна вісь; ширина не змінює площу й не перевіряє геометрію вирізу.")
+            Text(when {selected.unresolved->"Потребує уточнення";selected.needsReview->"Перевірити розміщення";selected.precision==PointPrecision.EXACT->"За виміряними відступами";else->"Приблизно"},
+                color = if (inWorkspace && (selected.unresolved || selected.needsReview)) MaterialTheme.colorScheme.error else LocalContentColor.current)
+            Text(if (inWorkspace) "Довжина · ${formatElementMilli(selected.lengthMm)} м"
+                else "Довжина ${formatElementMilli(selected.lengthMm)} м. Це центральна монтажна вісь; ширина не змінює площу й не перевіряє геометрію вирізу.")
             FlowRow {
                 listOf("Перемістити сегмент","Початок","Кінець").forEachIndexed {i,label ->
                     FilterChip(state.lineMoveTarget==i,onClick={model.setLineMoveTarget(i)},enabled=enabled,label={Text(label)})
                 }
             }
-            Text("Перетягніть вибрану лінію. Змінені кінці стануть приблизними, їх активні прив'язки буде скинуто.")
+            if (!inWorkspace) Text("Перетягніть вибрану лінію. Змінені кінці стануть приблизними, їх активні прив'язки буде скинуто.")
             FlowRow {
                 TextButton(enabled=enabled,onClick={model.openLineMounting(true)}){Text("Розміри початку від стін")}
                 TextButton(enabled=enabled,onClick={model.openLineMounting(false)}){Text("Розміри кінця від стін")}
@@ -44,7 +46,7 @@ internal fun LinePlacementControls(model:MeasurementEditModel,enabled:Boolean) {
                 TextButton(enabled=enabled,onClick=model::openLineProperties){Text("Параметри лінії")}
                 TextButton(enabled=enabled,onClick=model::requestLineDelete){Text("Видалити лінію")}
             }
-            selected.widthMm?.let {Text("Ширина: $it мм (без перевірки оболонки)")}
+            selected.widthMm?.let { Text(if (inWorkspace) "Ширина · $it мм" else "Ширина: $it мм (без перевірки оболонки)") }
             if(selected.note.isNotBlank())Text(selected.note)
             listOf("Початок" to selected.startMounting,"Кінець" to selected.endMounting).forEach {(title,m) ->
                 m.anchor?.let {a ->
@@ -85,7 +87,8 @@ internal fun LinePlacementControls(model:MeasurementEditModel,enabled:Boolean) {
                     onNext = { noteFocus.requestFocus() })
                 OutlinedTextField(input.note, { model.changeLineProperties(note = it) }, label = { Text("Примітка сегмента") },
                     modifier = measurementFieldFocusModifier().focusRequester(noteFocus), maxLines = 3)
-                Text("Ширина є довідковим параметром. Площу не віднімаємо; допустимість отвору чи оболонки не перевірена.")
+                Text(if (inWorkspace) "Лінія показує монтажну вісь. Ширина довідкова й не змінює площу. Перетягування кінця скидає його прив’язку."
+                    else "Ширина є довідковим параметром. Площу не віднімаємо; допустимість отвору чи оболонки не перевірена.")
             }},confirmButton={TextButton(enabled=input.valid,onClick=model::applyLineProperties){Text("Застосувати параметри")}},
             dismissButton={TextButton(onClick=model::dismissLineProperties){Text("Скасувати")}})
     }

@@ -52,6 +52,7 @@ class AreaFeatureTouchTest {
         }
         try {
             click("Елементи")
+            compose.onNodeWithTag("measurement-edit-section-areas").performScrollTo().performClick()
             click("Позначити перешкоду");tap(500,500);tap(1000,1000);click("Завершити фігуру в чернетці")
             compose.runOnIdle {assertEquals(1,model.displayAreas().size);assertEquals(0,AreaFeatureRepository(db).all().size)}
             click("Позначити отвір");compose.onNodeWithText("Діаметр, м (парні мм)").performScrollTo().performTextInput("0,2");tap(2000,1500);click("Завершити фігуру в чернетці")

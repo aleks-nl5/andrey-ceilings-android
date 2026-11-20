@@ -14,13 +14,18 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.ui.Modifier
 import org.jetbrains.skia.Bitmap
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.compositeOver
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.semantics.*
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.unit.dp
 import com.andreyceilings.shared.calculation.*
 import com.andreyceilings.shared.measurement.*
 import com.andreyceilings.shared.navigation.*
 import com.andreyceilings.shared.theme.CeilingsTheme
+import com.andreyceilings.shared.theme.ceilingsColorScheme
 import kotlin.test.*
 
 class MeasurementEditSceneTest {
@@ -70,6 +75,8 @@ class MeasurementEditSceneTest {
             }
             try {
                 scene.render().close()
+                scene.click("Деталі заміру")
+                scene.frame()
                 val name = scene.nodes().first { it.config.getOrNull(SemanticsActions.SetText) != null }
                 assertTrue(name.config.getOrNull(SemanticsActions.SetText)?.action?.invoke(AnnotatedString("Нова кухня")) == true)
                 model.commitInput(); scene.frame()
@@ -78,8 +85,10 @@ class MeasurementEditSceneTest {
                 scene.click("Повторити"); scene.frame(); assertEquals("Нова кухня", model.state.value.draft.name)
                 scene.click("На весь екран"); scene.frame(); assertTrue(guard.fullscreen.value)
                 scene.click("Контур"); scene.frame()
+                scene.click("Деталі заміру"); scene.frame()
                 assertTrue(scene.text().contains("Назва заміру"))
-                scene.click("До заміру"); scene.frame()
+                scene.click("До заміру")
+                scene.finishSheetMotion()
                 assertTrue(guard.fullscreen.value)
                 assertFalse(scene.text().contains("Назва заміру"))
                 scene.click("До заміру"); scene.frame()
@@ -184,8 +193,10 @@ class MeasurementEditSceneTest {
             assertEquals(0, drawing().config[MeasurementDrawingSemantics.SelectedWall])
             assertFalse(scene.text().contains("Вартість"))
             scene.click("Контур")
-            scene.frame()
+            scene.finishSheetMotion()
             assertTrue(scene.nodes().any { it.config.getOrNull(SemanticsProperties.EditableText)?.text == "5,25" })
+            scene.click("Деталі заміру")
+            scene.finishSheetMotion()
             val scrollAxis = panel().config[SemanticsProperties.VerticalScrollAxisRange]
             assertTrue(scrollAxis.maxValue() > 0)
             val panelBounds = panel().boundsInRoot
@@ -311,34 +322,148 @@ class MeasurementEditSceneTest {
         } finally { scene.close() }
     }
 
-    @Test fun fullscreenFabAndHandleSwipeChangeOnlyTheOverlay() {
+    @Test fun workspaceCompositesTheSharedFadeAndReadableForegroundInBothThemes() {
+        var dark by mutableStateOf(false)
+        val model = MeasurementEditModel(null, MeasurementEditDocument(3, 1, draft()))
+        val scene = ImageComposeScene(360, 740) {
+            CeilingsTheme(dark) { MeasurementEditScreen(model, PaddingValues(12.dp, 20.dp, 12.dp, 24.dp), onBack = {}) }
+        }
+        fun contrast(first: Color, second: Color): Float {
+            val low = minOf(first.luminance(), second.luminance())
+            val high = maxOf(first.luminance(), second.luminance())
+            return (high + 0.05f) / (low + 0.05f)
+        }
+        fun sample(x: Int, y: Int, radius: Int = 0): Color {
+            val rendered = scene.render(System.nanoTime())
+            val bitmap = Bitmap.makeFromImage(rendered)
+            try {
+                val pixels = (y - radius..y + radius).flatMap { row ->
+                    (x - radius..x + radius).map { column -> Color(bitmap.getColor(column, row)) }
+                }.sortedBy { it.luminance() }
+                return pixels[pixels.size / 2]
+            }
+            finally { bitmap.close(); rendered.close() }
+        }
+        fun closeColor(actual: Color, expected: Color) {
+            assertEquals(expected.red, actual.red, 0.045f)
+            assertEquals(expected.green, actual.green, 0.045f)
+            assertEquals(expected.blue, actual.blue, 0.045f)
+        }
+        try {
+            repeat(5) { scene.frame() }
+            val initial = scene.projectedDrawing()
+            for (theme in listOf(false, true)) {
+                dark = theme
+                repeat(5) { scene.frame() }
+                val colors = ceilingsColorScheme(theme)
+                val clear = sample(14, 730)
+                val normalFade = sample(14, 22)
+                closeColor(clear, colors.background)
+                closeColor(normalFade, colors.surfaceBright.copy(alpha = 0.50f).compositeOver(clear))
+                assertNotEquals(normalFade, clear)
+                assertNotEquals(normalFade, colors.surfaceBright)
+                val title = scene.nodes().single { it.textTree() == "Кухня" && it.config.getOrNull(SemanticsActions.GetTextLayoutResult) != null }
+                val layout = mutableListOf<TextLayoutResult>()
+                assertTrue(title.config[SemanticsActions.GetTextLayoutResult].action?.invoke(layout) == true)
+                assertTrue(contrast(layout.single().layoutInput.style.color, normalFade) >= 4.5f)
+
+                val fit = scene.nodes().single { "Вписати креслення" in it.config.getOrNull(SemanticsProperties.ContentDescription).orEmpty() }
+                val center = fit.boundsInRoot.center
+                assertTrue(contrast(sample(center.x.toInt(), center.y.toInt()), colors.surface) >= 3f)
+                scene.click("На весь екран")
+                scene.finishSheetMotion()
+                // A small region excludes an individual major grid stroke under the fullscreen fade.
+                closeColor(sample(19, 25, 3), colors.surface.copy(alpha = 0.50f).compositeOver(clear))
+                scene.click("Контур")
+                scene.finishSheetMotion()
+                assertTrue(contrast(colors.onSurface, colors.surfaceContainer) >= 4.5f)
+                assertTrue(contrast(colors.onSurfaceVariant, colors.surfaceContainer) >= 4.5f)
+                assertTrue(contrast(colors.error, colors.surfaceContainer) >= 4.5f)
+                scene.click("Згорнути")
+                scene.finishSheetMotion()
+                val current = scene.projectedDrawing()
+                assertEquals(initial.id, current.id)
+                assertEquals(initial.config[MeasurementDrawingSemantics.Projection], current.config[MeasurementDrawingSemantics.Projection])
+            }
+        } finally { scene.close() }
+    }
+
+    @Test fun fullscreenFabMovesThroughIntermediateBoundsAndTheHandleOwnsOnlyItsTarget() {
         val model = MeasurementEditModel(null, MeasurementEditDocument(3, 1, draft()))
         val scene = ImageComposeScene(600, 740) { CeilingsTheme(false) { MeasurementEditScreen(model, onBack = {}) } }
+        var time = System.nanoTime()
+        fun tick(frames: Int = 1) {
+            repeat(frames) {
+                Snapshot.sendApplyNotifications()
+                time += 16_000_000
+                scene.render(time).close()
+            }
+        }
         fun tagged(tag: String) = scene.nodes().single { it.config.getOrNull(SemanticsProperties.TestTag) == tag }
+        fun y() = tagged("measurement-edit-context-contour").positionInRoot.y
         fun drag(start: Offset, distance: Float) {
             val end = start + Offset(0f, distance)
             scene.sendPointerEvent(PointerEventType.Press, start, type = PointerType.Mouse)
             scene.sendPointerEvent(PointerEventType.Move, end, type = PointerType.Mouse)
             scene.sendPointerEvent(PointerEventType.Release, end, type = PointerType.Mouse)
-            scene.frame()
+        }
+        fun assertBetween(a: Float, mid: Float, b: Float) {
+            assertTrue(mid > minOf(a, b) + 2 && mid < maxOf(a, b) - 2, "Expected movement through $a → $mid → $b")
         }
         try {
-            scene.frame(); scene.click("На весь екран")
-            repeat(5) { scene.frame(); Thread.sleep(25) }
-            val initial = scene.projectedDrawing()
-            val context = tagged("measurement-edit-context-contour")
-            assertNotNull(context.config.getOrNull(SemanticsActions.CustomActions))
-            drag(context.boundsInRoot.center, -92f)
-            val expanded = tagged("measurement-edit-context-panel").size.height
-            drag(tagged("measurement-edit-sheet-handle").boundsInRoot.center, 92f)
-            assertFalse(scene.nodes().any { it.config.getOrNull(SemanticsProperties.TestTag) == "measurement-edit-context-panel" })
+            tick(5)
+            scene.click("На весь екран")
+            tick(25)
+            val initial = scene.nodes().single { it.config.getOrNull(MeasurementDrawingSemantics.Projection) != null }
+            val closed = y()
+            val fab = tagged("measurement-edit-context-contour")
+            assertNotNull(fab.config.getOrNull(SemanticsActions.CustomActions))
+
             scene.click("Контур")
-            scene.frame()
-            assertTrue(tagged("measurement-edit-context-panel").size.height < expanded)
-            val current = scene.projectedDrawing()
+            tick(8)
+            val entering = y()
+            tick(22)
+            assertBetween(closed, entering, y())
+            scene.click("Усі розміри")
+            tick(24)
+            val compact = y()
+
+            val handle = tagged("measurement-edit-sheet-handle")
+            assertEquals(48, handle.size.width)
+            assertEquals(48, handle.size.height)
+            assertEquals(300f, handle.boundsInRoot.center.x, 1f)
+            fun viewport() = scene.nodes().single { it.config.getOrNull(MeasurementDrawingSemantics.Projection) != null }
+                .config[MeasurementDrawingSemantics.Viewport]
+            val beforePan = viewport()
+            val outside = handle.boundsInRoot.center + Offset(85f, 0f)
+            drag(outside, -90f)
+            tick(22)
+            assertEquals(compact, y(), 1f)
+            assertEquals(handle.id, tagged("measurement-edit-sheet-handle").id)
+            assertNotEquals(beforePan, viewport())
+
+            drag(handle.boundsInRoot.center, -92f)
+            tick(8)
+            val expanding = y()
+            tick(22)
+            val expanded = y()
+            assertBetween(compact, expanding, expanded)
+            assertEquals(fab.id, tagged("measurement-edit-context-contour").id)
+
+            drag(tagged("measurement-edit-sheet-handle").boundsInRoot.center, 92f)
+            tick(8)
+            val leaving = y()
+            tick(22)
+            assertBetween(expanded, leaving, y())
+            assertEquals(closed, y(), 1f)
+            assertFalse(scene.nodes().any { it.config.getOrNull(SemanticsProperties.TestTag) == "measurement-edit-context-panel" })
+            drag(tagged("measurement-edit-context-contour").boundsInRoot.center, -92f)
+            tick(24)
+            assertEquals(expanded, y(), 1f)
+            val current = scene.nodes().single { it.config.getOrNull(MeasurementDrawingSemantics.Projection) != null }
             assertEquals(initial.id, current.id)
             assertEquals(initial.boundsInRoot, current.boundsInRoot)
-            assertEquals(initial.config[MeasurementDrawingSemantics.Projection], current.config[MeasurementDrawingSemantics.Projection])
+            assertEquals(initial.config[MeasurementDrawingSemantics.Projection].scale, current.config[MeasurementDrawingSemantics.Projection].scale)
         } finally { scene.close() }
     }
 
@@ -405,6 +530,16 @@ class MeasurementEditSceneTest {
             assertNull(tagged("measurement-edit-save").config.getOrNull(SemanticsActions.OnClick))
             val contourHeight = fittedHeight()
             val canvasHeight = scene.projectedDrawing().size.height
+            val normalPanel = tagged("measurement-edit-normal-panel")
+            assertEquals(canvasHeight.toFloat(), normalPanel.size.height.toFloat(), 1f)
+            val fade = tagged("ceilings-workspace-normal-gradient").boundsInRoot
+            assertTrue(fade.top < scene.projectedDrawing().boundsInRoot.top && fade.bottom > scene.projectedDrawing().boundsInRoot.top)
+            val discs = scene.nodes(unmerged = true).filter { it.config.getOrNull(SemanticsProperties.TestTag) == "measurement-edit-zoom-disc" }
+            assertEquals(3, discs.size)
+            assertTrue(discs.all { it.size.width == 36 && it.size.height == 36 })
+            val targets = scene.nodes().filter { it.config.getOrNull(SemanticsProperties.TestTag) == "measurement-edit-zoom-target" }
+            assertEquals(3, targets.size)
+            assertTrue(targets.all { it.size.width == 48 && it.size.height == 48 && it.config.getOrNull(SemanticsActions.OnClick) != null })
             assertTrue(contourHeight > canvasHeight * 0.54, "The fitted contour should occupy most of the available height")
             scene.click("Вартість")
             repeat(4) { scene.frame() }
@@ -451,6 +586,8 @@ class MeasurementEditSceneTest {
         try {
             repeat(4) { scene.frame() }
             val scale = scene.projectedDrawing().config[MeasurementDrawingSemantics.Projection].scale
+            scene.click("Деталі заміру")
+            scene.frame()
             assertTrue(field("Назва заміру").config[SemanticsActions.RequestFocus].action?.invoke() == true)
             keyboardInset = 228
             assertFocusedAboveKeyboard("Назва заміру")
@@ -482,6 +619,8 @@ class MeasurementEditSceneTest {
         try {
             repeat(4) { scene.frame() }
             val scale = scene.projectedDrawing().config[MeasurementDrawingSemantics.Projection].scale
+            scene.click("Деталі заміру")
+            scene.frame()
             assertTrue(notes().config[SemanticsActions.RequestFocus].action?.invoke() == true)
             keyboardInset = 220
             repeat(25) { scene.frame(); Thread.sleep(10) }
@@ -565,10 +704,12 @@ class MeasurementEditSceneTest {
         return nodes().single { it.config.getOrNull(MeasurementDrawingSemantics.Projection) != null }
     }
 
+    private fun ImageComposeScene.finishSheetMotion() { repeat(22) { frame(); Thread.sleep(16) } }
+
     private fun ImageComposeScene.frame() { Snapshot.sendApplyNotifications(); render(System.nanoTime()).close() }
-    private fun ImageComposeScene.nodes(): List<SemanticsNode> {
+    private fun ImageComposeScene.nodes(unmerged: Boolean = false): List<SemanticsNode> {
         fun flatten(node: SemanticsNode): List<SemanticsNode> = listOf(node) + node.children.flatMap(::flatten)
-        return semanticsOwners.flatMap { flatten(it.rootSemanticsNode) }
+        return semanticsOwners.flatMap { flatten(if (unmerged) it.unmergedRootSemanticsNode else it.rootSemanticsNode) }
     }
     private fun SemanticsNode.textTree(): String = config.getOrNull(SemanticsProperties.Text).orEmpty().joinToString { it.text } + children.joinToString { it.textTree() }
     private fun ImageComposeScene.text() = semanticsOwners.joinToString { it.rootSemanticsNode.textTree() }

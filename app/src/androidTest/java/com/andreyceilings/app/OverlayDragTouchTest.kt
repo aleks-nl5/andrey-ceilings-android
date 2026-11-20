@@ -2,6 +2,7 @@ package com.andreyceilings.app
 
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
+import androidx.test.platform.app.InstrumentationRegistry
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.runtime.*
 import androidx.compose.ui.geometry.Offset
@@ -34,6 +35,12 @@ class OverlayDragTouchTest {
         var driver=createEncryptedPrototypeDriver(context,key,name,enableWalForTesting=true,initializePriceCatalog=true)
         val db=PrototypeDatabase(driver);val f=OverlayDragFixture.create(db);val store=MeasurementEditStore(db){200}
         val details=MeasurementDetailsStore(db);val doc=store.load(f.project,f.id)
+        fun captureSelected(stage: String) {
+            if (InstrumentationRegistry.getArguments().getString("p5aSelectedScreenshots") == "true") {
+                compose.waitForIdle()
+                captureMeasurementWorkspaceScreenshot("short-${if (dark) "dark" else "light"}-$mode-$stage")
+            }
+        }
         fun pricing(database: PrototypeDatabase) = assertIs<PricingReadResult.Loaded>(
             LivePricingReader(database).read(f.project, doc.draft.recordUuid))
         val m=MeasurementEditModel(store,doc)
@@ -81,7 +88,9 @@ class OverlayDragTouchTest {
                 tap(point.xMm, point.yMm)
                 val selected = canvas().fetchSemanticsNode()
                 assertEquals(point.uuid, selected.config[MeasurementDrawingSemantics.SelectedPoint])
+                captureSelected("selected-point")
                 click("Задати розміри від стін")
+                captureSelected("point-dialog")
                 compose.onNode(hasText("Скасувати") and hasClickAction() and hasAnyAncestor(isDialog())).performClick()
                 canvas().performTouchInput {
                     pinch(center - Offset(25f, 0f), center + Offset(25f, 0f),
@@ -117,6 +126,14 @@ class OverlayDragTouchTest {
             if(mode!="details")compose.runOnIdle {
                 assertEquals(PointPositionMm(800,1200),m.displayAreas().first {it.uuid==f.polygon}.shape.positions.first(),"Canvas must move the selected polygon")
             }
+            if (mode != "details") {
+                captureSelected("selected-area")
+                if (InstrumentationRegistry.getArguments().getString("p5aSelectedScreenshots") == "true") {
+                    click("Властивості фігури")
+                    captureSelected("area-dialog")
+                    compose.onNode(hasText("Скасувати") and hasClickAction() and hasAnyAncestor(isDialog())).performClick()
+                }
+            }
             click("Скасувати дію");click("Повторити");click("Скасувати дію")
             click("Вершина 1");if (mode == "fullscreen") click("Закрити панель")
             drag(500,1000,800,1200)
@@ -131,6 +148,14 @@ class OverlayDragTouchTest {
             if (mode == "fullscreen") click("Закрити панель")
             tap(1000,950)
             if(mode!="details")compose.runOnIdle {assertEquals(f.line,m.state.value.selectedLineUuid,"Canvas tap must select LINE UUID before pointer drag; area=${m.state.value.area.selected}; error=${m.state.value.error}")}
+            if (mode != "details") {
+                captureSelected("selected-line")
+                if (InstrumentationRegistry.getArguments().getString("p5aSelectedScreenshots") == "true") {
+                    click("Параметри лінії")
+                    captureSelected("line-dialog")
+                    compose.onNode(hasText("Скасувати") and hasClickAction() and hasAnyAncestor(isDialog())).performClick()
+                }
+            }
             drag(1000,950,1300,750)
             if(mode!="details")compose.runOnIdle {
                 assertEquals(f.line,m.state.value.selectedLineUuid,"Drag must retain LINE selection: ${m.state.value.error}")

@@ -96,6 +96,7 @@ class DetailsSaveExitSceneTest {
                     scene.frame(); delay(20)
                 }
             }
+            scene.click("Деталі заміру")
             scene.setField("Назва заміру", "Перший запис")
             fault.failNext(DetailsExitFaultDriver.Fault.LOST_RESPONSE)
             scene.click("Зберегти замір")

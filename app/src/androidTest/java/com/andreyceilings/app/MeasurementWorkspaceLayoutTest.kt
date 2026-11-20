@@ -59,7 +59,12 @@ class MeasurementWorkspaceLayoutTest {
         val capture = arguments.getString("p5aScreenshots") == "true"
         val display = arguments.getString("p5aDisplay", "default")
         val prefix = "$display-${route.name.lowercase()}-${theme.name.lowercase()}-${if (landscape) "landscape" else "portrait"}"
-        fun capture(stage: String) { if (capture) screenshot("$prefix-$stage") }
+        fun capture(stage: String) {
+            if (capture) {
+                compose.waitForIdle()
+                captureMeasurementWorkspaceScreenshot("$prefix-$stage")
+            }
+        }
 
         CeilingsDatabase.openIsolatedForTesting(context, name, key).use { database ->
             val project = ProjectRepository(database.database).createReturningId(null, "Квартира", createdAt = 1)
@@ -70,9 +75,10 @@ class MeasurementWorkspaceLayoutTest {
                 if (route == AppRoute.OBJECTS) it.openProject(project) else it
             }.openMeasurement(project, id)
             var mounted by mutableStateOf(true)
+            var appliedTheme by mutableStateOf(theme)
             compose.setContent {
-                if (mounted) CeilingsTheme(theme) {
-                    CeilingsApp("Готово", database, {}, theme, {}, initialNavigation = start)
+                if (mounted) CeilingsTheme(appliedTheme) {
+                    CeilingsApp("Готово", database, {}, appliedTheme, {}, initialNavigation = start)
                 }
             }
             val drawing = SemanticsMatcher("laid-out measurement drawing") {
@@ -109,6 +115,11 @@ class MeasurementWorkspaceLayoutTest {
                 compose.onNodeWithTag("global-bottom-navigation").assertDoesNotExist()
             }
             fun field(label: String) = compose.onNode(hasSetTextAction() and hasText(label, substring = true))
+            fun showAllContourDimensions() {
+                if (compose.onAllNodesWithText("Усі розміри").fetchSemanticsNodes().isNotEmpty()) {
+                    compose.onNodeWithText("Усі розміри").performScrollTo().performClick()
+                }
+            }
             try {
                 enterEditor()
                 save.assertIsNotEnabled()
@@ -129,7 +140,28 @@ class MeasurementWorkspaceLayoutTest {
                 capture("normal-contour")
                 assertDrawingFit()
                 val normal = canvas().boundsInRoot
+                val initialCanvas = canvas()
+                for (mode in listOf(ThemeMode.SYSTEM, ThemeMode.DARK, theme)) {
+                    compose.runOnIdle { appliedTheme = mode }
+                    assertEquals(initialCanvas.id, canvas().id)
+                    assertEquals(normal, canvas().boundsInRoot)
+                    assertEquals(initialCanvas.config[MeasurementDrawingSemantics.Projection],
+                        canvas().config[MeasurementDrawingSemantics.Projection])
+                }
                 val normalPanel = panel.fetchSemanticsNode().boundsInRoot
+                val panelHeight = compose.onNodeWithTag("measurement-edit-normal-panel").fetchSemanticsNode().size.height
+                assertEquals(normal.height, panelHeight.toFloat(), 1f)
+                compose.onNodeWithTag("ceilings-workspace-normal-gradient").assertExists()
+                fun assertZoomTargets() {
+                    val targets = compose.onAllNodesWithTag("measurement-edit-zoom-target", useUnmergedTree = true).fetchSemanticsNodes()
+                    val discs = compose.onAllNodesWithTag("measurement-edit-zoom-disc", useUnmergedTree = true).fetchSemanticsNodes()
+                    val density = compose.density.density
+                    assertEquals(3, targets.size)
+                    assertEquals(3, discs.size)
+                    targets.forEach { assertEquals(48 * density, it.size.width.toFloat(), 1f) }
+                    discs.forEach { assertEquals(36 * density, it.size.width.toFloat(), 1f) }
+                }
+                assertZoomTargets()
                 val rail = compose.onNodeWithTag("measurement-edit-zoom-rail").fetchSemanticsNode()
                 assertEquals(canvas().boundsInRoot.right, rail.boundsInRoot.right, 1f)
 
@@ -147,13 +179,20 @@ class MeasurementWorkspaceLayoutTest {
                 assertTrue(canvas().size.height > normal.height)
                 assertEquals(unzoomed, scale(), 0.0001)
                 contextTab("cost").assertDoesNotExist()
+                compose.onNodeWithTag("ceilings-workspace-normal-gradient").assertDoesNotExist()
+                assertZoomTargets()
                 panel.assertDoesNotExist()
                 capture("fullscreen")
                 contextTab("contour").performClick()
-                val compactHeight = panel.fetchSemanticsNode().size.height
                 val fullscreenBounds = canvas().boundsInRoot
                 capture("fullscreen-contour")
-                compose.onNodeWithTag("measurement-edit-sheet-handle").performTouchInput { swipeUp(durationMillis = 220,
+                showAllContourDimensions()
+                val compactHeight = panel.fetchSemanticsNode().size.height
+                val handle = compose.onNodeWithTag("measurement-edit-sheet-handle")
+                val handleBounds = handle.fetchSemanticsNode().boundsInRoot
+                assertEquals(48 * compose.density.density, handleBounds.width, 1f)
+                assertEquals(fullscreenBounds.center.x, handleBounds.center.x, 2f)
+                handle.performTouchInput { swipeUp(durationMillis = 220,
                     startY = centerY, endY = centerY - 85f * density) }
                 assertTrue(panel.fetchSemanticsNode().size.height > compactHeight)
                 assertEquals(fullscreenBounds, canvas().boundsInRoot)
@@ -185,7 +224,7 @@ class MeasurementWorkspaceLayoutTest {
                 if (capture && !landscape) {
                     val scaleBeforeKeyboard = scale()
                     compose.onNodeWithTag("measurement-edit-context-contour").performClick()
-                    compose.onNodeWithText("Усі розміри").performScrollTo().performClick()
+                    showAllContourDimensions()
                     fun imeVisible() = compose.runOnIdle {
                         ViewCompat.getRootWindowInsets(compose.activity.window.decorView)
                             ?.isVisible(WindowInsetsCompat.Type.ime()) == true
@@ -248,6 +287,9 @@ class MeasurementWorkspaceLayoutTest {
                 }
 
                 contextTab("contour").performClick()
+                if (compose.onAllNodes(hasSetTextAction() and hasText("Назва заміру", substring = true)).fetchSemanticsNodes().isEmpty()) {
+                    compose.onNodeWithText("Деталі заміру").performScrollTo().performClick()
+                }
                 val nameField = field("Назва заміру")
                 val notes = field("Примітки")
                 fun saveInPlace() {
@@ -270,7 +312,9 @@ class MeasurementWorkspaceLayoutTest {
                 contextTab("cost").performClick()
                 compose.onNodeWithText("Переглянути збережений розрахунок у картці заміру").performScrollTo().performClick()
                 enterEditor()
+                compose.onNodeWithText("Деталі заміру").performScrollTo().performClick()
                 field("Назва заміру").assertTextContains("Кухня після збереження")
+                field("Примітки").assertTextContains("Другий запис")
                 field("Примітки").performScrollTo().performTextReplacement("Збережено перед виходом")
                 compose.onNodeWithTag("measurement-edit-back").performClick()
                 compose.onNodeWithText("Продовжити редагування").performClick()
@@ -291,18 +335,18 @@ class MeasurementWorkspaceLayoutTest {
         key.fill(0)
     }
 
-    private fun screenshot(name: String) {
-        compose.waitForIdle()
-        val instrumentation = InstrumentationRegistry.getInstrumentation()
-        val bitmap = checkNotNull(instrumentation.uiAutomation.takeScreenshot()) { "Unable to capture $name" }
-        try {
-            val directory = File(instrumentation.targetContext.cacheDir, "p5a-workspace")
-            check(directory.isDirectory || directory.mkdirs()) { "Unable to create $directory" }
-            File(directory, "$name.png").outputStream().buffered().use { output ->
-                check(bitmap.compress(Bitmap.CompressFormat.PNG, 100, output)) { "Unable to encode $name.png" }
-            }
-        } finally {
-            bitmap.recycle()
+}
+
+internal fun captureMeasurementWorkspaceScreenshot(name: String) {
+    val instrumentation = InstrumentationRegistry.getInstrumentation()
+    val bitmap = checkNotNull(instrumentation.uiAutomation.takeScreenshot()) { "Unable to capture $name" }
+    try {
+        val directory = File(instrumentation.targetContext.cacheDir, "p5a-workspace")
+        check(directory.isDirectory || directory.mkdirs()) { "Unable to create $directory" }
+        File(directory, "$name.png").outputStream().buffered().use { output ->
+            check(bitmap.compress(Bitmap.CompressFormat.PNG, 100, output)) { "Unable to encode $name.png" }
         }
+    } finally {
+        bitmap.recycle()
     }
 }

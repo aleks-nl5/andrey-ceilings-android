@@ -186,6 +186,7 @@ class PointEditingSceneTest {
                 scene.click("Перевірити (2)")
                 scene.awaitDrawingPoints(pointIds)
                 scene.click("Елементи")
+                scene.click("Точкові позначки · 2")
                 scene.click("Перевірити (2)");scene.click("Розміщення перевірено")
                 scene.awaitText("Перевірити (1)");scene.click("Розміщення перевірено")
                 repeat(150) {scene.frame();if(points.forMeasurement(original.uuid).any{it.mounting.needsReview})delay(25)}
@@ -193,6 +194,7 @@ class PointEditingSceneTest {
                 val beforeName=points.forMeasurement(original.uuid)
                 val geometryBeforeName=MeasurementRepository(db).find(id)!!.drawingJson
                 scene.click("Контур")
+                scene.click("Деталі заміру")
                 scene.setField("Назва заміру","Нова назва");scene.click("Зберегти замір")
                 scene.awaitText("Збережено")
                 assertTrue(editing)

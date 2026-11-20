@@ -79,6 +79,7 @@ class OverlayDragSceneTest {
                 assertEquals(before,OverlayDragFixture.snapshot(driver))
                 scene.click("Скасувати дію");assertEquals(doc.placements.areas.first {it.uuid==f.polygon},model.displayAreas().first {it.uuid==f.polygon})
                 scene.click("Повторити");assertEquals(polygon,model.displayAreas().first {it.uuid==f.polygon})
+                if (mode != "details") scene.click("Лінії · 1")
                 scene.click("Сегмент 1: 1 м");assertEquals(f.line,model.state.value.selectedLineUuid,"$mode must select LINE before drag");scene.dragWorld(1000,950,1300,750)
                 val line=model.displayLines().single();assertEquals(PointPositionMm(800,750),line.start);assertEquals(1000,line.lengthMm)
                 assertNull(line.startMounting.anchor);assertNull(line.endMounting.anchor)

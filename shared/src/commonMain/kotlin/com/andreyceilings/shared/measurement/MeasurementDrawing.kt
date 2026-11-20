@@ -235,6 +235,8 @@ fun MeasurementDrawing(
     val ink = MaterialTheme.colorScheme.primary
     val surface = MaterialTheme.colorScheme.surface
     val gridInk = MaterialTheme.colorScheme.onSurface
+    val warningInk = if (showWorkspaceGrid) MaterialTheme.colorScheme.error else Color(0xFFB3261E)
+    val areaWarningInk = if (showWorkspaceGrid) warningInk else Color(0xFFD34C44)
     val labelStyle = MaterialTheme.typography.labelSmall.copy(color = MaterialTheme.colorScheme.onSurface)
     val measurer = rememberTextMeasurer()
     // The contour already has vertex letters A/B/C; draw only dimensions
@@ -458,7 +460,7 @@ fun MeasurementDrawing(
                 points.forEach { drawCircle(ink, 3.dp.toPx(), it) }
                 areaFeatures.forEach {saved ->
                     val feature=areaDrag?.takeIf {it.uuid==saved.uuid} ?: saved
-                    val color=if(feature.unresolved) androidx.compose.ui.graphics.Color(0xFFD34C44) else ink
+                    val color = if (feature.unresolved) areaWarningInk else ink
                     val width=if(feature.uuid==selectedAreaUuid)4.dp.toPx() else 2.dp.toPx()
                     when(val shape=feature.shape) {
                         is AreaShape.Circle -> {
@@ -493,7 +495,7 @@ fun MeasurementDrawing(
                     val visible = lineDrag?.takeIf { it.uuid == line.uuid } ?: line
                     val a = screenPosition(visible.start)
                     val b = screenPosition(visible.end)
-                    val color=if(visible.unresolved)androidx.compose.ui.graphics.Color(0xffb3261e) else ink
+                    val color = if (visible.unresolved) warningInk else ink
                     if(line.uuid==selectedLineUuid)drawLine(color.copy(alpha=0.25f),a,b,strokeWidth=14.dp.toPx())
                     drawLine(color,a,b,strokeWidth=if(visible.precision==PointPrecision.EXACT)3.dp.toPx() else 2.dp.toPx())
                     listOf(a,b).forEach {drawCircle(surface,5.dp.toPx(),it);drawCircle(color,5.dp.toPx(),it,style=Stroke(2.dp.toPx()))}
@@ -503,7 +505,7 @@ fun MeasurementDrawing(
                     val preview = pointDrag?.takeIf { it.point.uuid == marker.uuid }
                     val center = screen(DrawingPoint(preview?.xMm ?: marker.xMm.toDouble(), preview?.yMm ?: marker.yMm.toDouble()))
                     drawCircle(surface, 7.dp.toPx(), center)
-                    val markerInk=if(marker.mounting.unresolved) androidx.compose.ui.graphics.Color(0xffb3261e) else ink
+                    val markerInk = if (marker.mounting.unresolved) warningInk else ink
                     drawCircle(markerInk, 7.dp.toPx(), center, style = Stroke(if (marker.precision == PointPrecision.EXACT) 3.dp.toPx() else 2.dp.toPx()))
                     drawCircle(markerInk, 2.dp.toPx(), center)
                     if(marker.mounting.needsReview) drawCircle(markerInk,10.dp.toPx(),center,style=Stroke(1.dp.toPx()))
@@ -529,12 +531,11 @@ fun MeasurementDrawing(
                     Modifier.align(Alignment.CenterEnd).width(48.dp)
                         .testTag("measurement-edit-zoom-rail")
                 ) {
-                    val buttonColor = surface.copy(alpha = 0.90f)
-                    MeasurementIconAction("Вписати креслення", Icons.Default.CenterFocusStrong, !markerGesture, buttonColor, ::fit)
-                    MeasurementIconAction("Збільшити масштаб", Icons.Default.ZoomIn, !markerGesture, buttonColor) {
+                    MeasurementIconAction("Вписати креслення", Icons.Default.CenterFocusStrong, !markerGesture, true, ::fit)
+                    MeasurementIconAction("Збільшити масштаб", Icons.Default.ZoomIn, !markerGesture, true) {
                         move(0f, 0f, 1.25f)
                     }
-                    MeasurementIconAction("Зменшити масштаб", Icons.Default.ZoomOut, !markerGesture, buttonColor) {
+                    MeasurementIconAction("Зменшити масштаб", Icons.Default.ZoomOut, !markerGesture, true) {
                         move(0f, 0f, 1 / 1.25f)
                     }
                 }
