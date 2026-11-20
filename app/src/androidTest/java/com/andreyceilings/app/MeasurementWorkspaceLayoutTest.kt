@@ -158,8 +158,14 @@ class MeasurementWorkspaceLayoutTest {
                     val density = compose.density.density
                     assertEquals(3, targets.size)
                     assertEquals(3, discs.size)
-                    targets.forEach { assertEquals(48 * density, it.size.width.toFloat(), 1f) }
-                    discs.forEach { assertEquals(36 * density, it.size.width.toFloat(), 1f) }
+                    targets.forEach {
+                        assertEquals(48 * density, it.size.width.toFloat(), 1f)
+                        assertEquals(48 * density, it.size.height.toFloat(), 1f)
+                    }
+                    discs.forEach {
+                        assertEquals(36 * density, it.size.width.toFloat(), 1f)
+                        assertEquals(36 * density, it.size.height.toFloat(), 1f)
+                    }
                 }
                 assertZoomTargets()
                 val rail = compose.onNodeWithTag("measurement-edit-zoom-rail").fetchSemanticsNode()

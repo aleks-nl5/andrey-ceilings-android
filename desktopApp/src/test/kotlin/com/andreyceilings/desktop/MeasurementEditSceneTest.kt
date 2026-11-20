@@ -60,6 +60,27 @@ class MeasurementEditSceneTest {
             } finally { scene.close() }
         }
     }
+
+    @Test fun shortCanvasKeepsThreeFullSizedZoomTargets() {
+        val geometry = assertNotNull(validateMeasurementCreate(draft()).geometry)
+        val scene = ImageComposeScene(640, 120) {
+            CeilingsTheme(false) {
+                MeasurementDrawing(MeasurementGeometryView.Captured(geometry), Modifier.fillMaxSize(),
+                    interactive = true, fillAvailableHeight = true, showSideLegend = false,
+                    retainCameraOnResize = true, verticalViewControls = true)
+            }
+        }
+        try {
+            repeat(4) { scene.frame() }
+            val targets = scene.nodes(unmerged = true).filter {
+                it.config.getOrNull(SemanticsProperties.TestTag) == "measurement-edit-zoom-target"
+            }
+            assertEquals(3, targets.size)
+            assertTrue(targets.all { it.size.width == 48 && it.size.height == 48 })
+            assertEquals(1, targets.map { it.positionInRoot.y }.toSet().size)
+            assertEquals(640f, targets.maxOf { it.boundsInRoot.right }, 1f)
+        } finally { scene.close() }
+    }
     @Test fun editFieldsHistoryDirtyDialogAndFullscreenAreRealActions() {
         for (dark in listOf(false, true)) {
             val model = MeasurementEditModel(null, MeasurementEditDocument(3, 1, draft()))

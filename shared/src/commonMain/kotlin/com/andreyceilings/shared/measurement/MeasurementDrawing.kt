@@ -166,7 +166,8 @@ fun MeasurementDrawing(
     val isRtl = LocalLayoutDirection.current == LayoutDirection.Rtl
 
     fun fitProjection(width: Float, height: Float): MeasurementDrawingProjection? {
-        val rail = if (interactive && verticalViewControls) minOf(48f * density, width * 0.30f) else 0f
+        val railWidth = if (height >= 144f * density) 48f else 144f
+        val rail = if (interactive && verticalViewControls) minOf(railWidth * density, width * 0.30f) else 0f
         val top = minOf(fitTop.value * density, height * 0.28f)
         val bottom = minOf(fitBottom.value * density, height * 0.28f)
         val fitted = measurementDrawingProjection(currentContour, width - rail, height - top - bottom, density, currentFitPoints)
@@ -413,7 +414,7 @@ fun MeasurementDrawing(
                     }
                 }
             }
-        Box(Modifier.fillMaxWidth().then(
+        BoxWithConstraints(Modifier.fillMaxWidth().then(
             if (fillAvailableHeight) Modifier.weight(1f) else Modifier.height(if (compact) 155.dp else 235.dp)
         )) {
             Canvas(Modifier.fillMaxSize()
@@ -527,10 +528,7 @@ fun MeasurementDrawing(
                 }
             }
             if (interactive && verticalViewControls) {
-                Column(
-                    Modifier.align(Alignment.CenterEnd).width(48.dp)
-                        .testTag("measurement-edit-zoom-rail")
-                ) {
+                val actions: @Composable () -> Unit = {
                     MeasurementIconAction("Вписати креслення", Icons.Default.CenterFocusStrong, !markerGesture, true, ::fit)
                     MeasurementIconAction("Збільшити масштаб", Icons.Default.ZoomIn, !markerGesture, true) {
                         move(0f, 0f, 1.25f)
@@ -539,6 +537,9 @@ fun MeasurementDrawing(
                         move(0f, 0f, 1 / 1.25f)
                     }
                 }
+                val rail = Modifier.align(Alignment.CenterEnd).testTag("measurement-edit-zoom-rail")
+                if (maxHeight >= 144.dp) Column(rail.width(48.dp)) { actions() }
+                else Row(rail) { actions() }
             }
         }
         if (showSideLegend) {
