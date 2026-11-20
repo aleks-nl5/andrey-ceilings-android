@@ -37,13 +37,15 @@ class AreaFeatureSceneTest {
             val item=prices.find(prices.createInGroup("area.scene","Область UI",PriceGroupRepository(db).all().first().uuid,1.0,6,"шт.",QuantityMode.MANUAL,PlacementKind.AREA))!!
             val element=MeasurementElementRepository(db).createCatalogSelection(row.uuid,item.uuid,ElementQuantity.Unknown,7, businessRole = com.andreyceilings.shared.livepricing.BusinessRole.ADDITIONAL_WORK)
             val store=MeasurementEditStore(db){100};val model=MeasurementEditModel(store,store.load(project,id))
-            var delivered=false
-            val scene=ImageComposeScene(900,1400,coroutineContext=sceneDispatcher) {CeilingsTheme(dark) {MeasurementEditScreen(model,PaddingValues(0.dp),0.dp,{}, {delivered=true},null)}}
+            var exited=false
+            val scene=ImageComposeScene(900,1400,coroutineContext=sceneDispatcher) {CeilingsTheme(dark) {MeasurementEditScreen(model,PaddingValues(0.dp),0.dp,{exited=true},null)}}
             var testFailure:Throwable?=null
             try {
-                // Save becomes enabled after the point overlay loads. Its arrival also
-                // changes the canvas pointer-input keys and restarts the gesture handler.
-                scene.awaitEnabled("Зберегти замір")
+                withTimeout(15000) {
+                    while (scene.canvas().config.getOrNull(MeasurementDrawingSemantics.EditingEnabled) != true) {
+                        scene.frame(); delay(20)
+                    }
+                }
                 scene.click("Елементи")
                 scene.click("Позначити перешкоду")
                 scene.tapWorld(500,500)
@@ -83,8 +85,9 @@ class AreaFeatureSceneTest {
                 scene.click("Скасувати дію");assertEquals(3,model.displayAreas().size)
                 val ids=model.displayAreas().map {it.uuid}.toSet()
                 scene.click("Зберегти замір")
-                withTimeout(15000){while(!delivered && model.state.value.error==null){scene.frame();delay(20)}}
-                assertTrue(delivered,model.state.value.error)
+                withTimeout(15000){while(model.state.value.dirty && model.state.value.error==null){scene.frame();delay(20)}}
+                assertFalse(model.state.value.dirty, model.state.value.error)
+                assertFalse(exited)
                 assertEquals(ids,store.load(project,id).placements.areas.map {it.uuid}.toSet())
             } catch(t:Throwable) {testFailure=t;throw t}
             finally {
@@ -135,15 +138,6 @@ class AreaFeatureSceneTest {
     }
     private fun SemanticsNode.textTree(): String = config.getOrNull(SemanticsProperties.Text).orEmpty().joinToString { it.text } + children.joinToString { it.textTree() }
     private fun ImageComposeScene.text() = semanticsOwners.joinToString { it.rootSemanticsNode.textTree() }
-    private fun ImageComposeScene.awaitEnabled(label: String) {
-        repeat(240) {
-            frame()
-            if (nodes().any { it.config.getOrNull(SemanticsActions.OnClick) != null &&
-                it.config.getOrNull(SemanticsProperties.Disabled) == null && (it.textTree() == label || label in it.config.getOrNull(SemanticsProperties.ContentDescription).orEmpty()) }) return
-            Thread.sleep(25)
-        }
-        fail("Action '$label' did not become enabled: ${text().take(2000)}")
-    }
     private fun ImageComposeScene.click(label: String) {
         repeat(240) { frame(); nodes().firstOrNull { it.config.getOrNull(SemanticsActions.OnClick) != null && (it.textTree() == label || label in it.config.getOrNull(SemanticsProperties.ContentDescription).orEmpty()) }?.let {
             assertNull(it.config.getOrNull(SemanticsProperties.Disabled), label)

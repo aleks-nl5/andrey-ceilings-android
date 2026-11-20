@@ -34,7 +34,6 @@ class MeasurementsSceneTest {
                     MeasurementsScreen(store, createStore, detailsStore, editStore,
                         navigation.value, MeasurementPrecision.ONE_CENTIMETER, PaddingValues(16.dp), 0.dp, guard,
                         onNavigate = { navigation.value = guard.transition(navigation.value, it) },
-                        onEditSaved = { _, _ -> fail("Picker cannot save an edit") },
                         onUseMeasurement = { fail("Picker cannot calculate") }, onOpenEstimates = {},
                         onCreateProject = { createProjectRequests++ })
                 }

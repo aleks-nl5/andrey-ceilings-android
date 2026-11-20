@@ -113,7 +113,7 @@ class MeasurementCreateNavigationGuard {
         if(proposed==current.back() && editState?.let {!it.dirty && (it.drag!=null || it.lineDrag!=null || it.area.drag!=null)}==true)return current
         if (!blocksExit(current)) {
             if (proposed == current.back() && surfaceBack?.invoke() == true) return current
-            if (editState?.dirty == true) {
+            if (editState != null && (editState.dirty || editState.uncertain)) {
                 editModel.requestExit { applyApproved(approved(proposed)) }
                 return current
             }

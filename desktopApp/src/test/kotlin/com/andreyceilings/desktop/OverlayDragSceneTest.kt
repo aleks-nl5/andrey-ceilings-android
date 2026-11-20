@@ -51,12 +51,16 @@ class OverlayDragSceneTest {
                     areaFeatures=model.displayAreas(),selectedAreaUuid=s.area.selected,onSelectArea=model::selectArea,
                     linePlacements=model.displayLines(),selectedLineUuid=s.selectedLineUuid,onSelectLine=model::selectLine,
                     pointState=PointPlacementState(points=doc.placements.points,available=true))
-                else MeasurementEditScreen(model,PaddingValues(0.dp),0.dp,{}, {},null)
+                else MeasurementEditScreen(model,PaddingValues(0.dp),0.dp,{},null)
             }}}
             try {
                 scene.awaitEnabled("Вписати креслення")
                 // The editor installs point gesture keys only after loading its SQLCipher overlay.
-                if (mode != "details") scene.awaitEnabled("Зберегти замір")
+                if (mode != "details") withTimeout(15000) {
+                    while (scene.canvas().config.getOrNull(MeasurementDrawingSemantics.EditingEnabled) != true) {
+                        scene.frame(); delay(20)
+                    }
+                }
                 if(mode=="fullscreen")scene.click("На весь екран")
                 // Selected polygon owns the drag even inside an unrelated LINE's halo.
                 scene.tapWorld(1000, 1500)
@@ -78,9 +82,13 @@ class OverlayDragSceneTest {
                 scene.click("Сегмент 1: 1 м");assertEquals(f.line,model.state.value.selectedLineUuid,"$mode must select LINE before drag");scene.dragWorld(1000,950,1300,750)
                 val line=model.displayLines().single();assertEquals(PointPositionMm(800,750),line.start);assertEquals(1000,line.lengthMm)
                 assertNull(line.startMounting.anchor);assertNull(line.endMounting.anchor)
-                scene.click("Кінець");assertEquals(2,model.state.value.lineMoveTarget);scene.dragWorld(1800,750,2400,750)
+                scene.click("Кінець");assertEquals(2,model.state.value.lineMoveTarget)
+                if (mode == "fullscreen") scene.click("Закрити панель")
+                scene.dragWorld(1800,750,2400,750)
                 assertEquals(1600,model.displayLines().single().lengthMm,"$mode: ${model.state.value.lineDrag} ${model.state.value.selectedLineUuid} ${model.state.value.error} ${model.displayLines().single()}")
-                scene.tapWorld(2800,1500);scene.dragWorld(2800,1500,3100,1800)
+                scene.tapWorld(2800,1500)
+                if (mode == "fullscreen") scene.click("Закрити панель")
+                scene.dragWorld(2800,1500,3100,1800)
                 val circle=model.displayAreas().first {it.uuid==f.circle};assertEquals(AreaShape.Circle(PointPositionMm(3100,1800),200),circle.shape)
                 assertEquals(doc.placements.areas.first {it.uuid==f.circle}.twiceAreaMm2,circle.twiceAreaMm2)
                 // Invalid full transform leaves the previous valid draft and every DB row intact.

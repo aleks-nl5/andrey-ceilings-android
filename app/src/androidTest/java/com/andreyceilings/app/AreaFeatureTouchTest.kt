@@ -35,7 +35,7 @@ class AreaFeatureTouchTest {
         val element=MeasurementElementRepository(db).createCatalogSelection(f.element.measurementUuid,price.uuid,ElementQuantity.Unknown,7, businessRole = com.andreyceilings.shared.livepricing.BusinessRole.ADDITIONAL_WORK)
         val store=MeasurementEditStore(db){100}
         val model=MeasurementEditModel(store,store.load(f.project,f.id))
-        compose.setContent {CeilingsTheme(dark) {MeasurementEditScreen(model,PaddingValues(0.dp),0.dp,{}, {},null)}}
+        compose.setContent {CeilingsTheme(dark) {MeasurementEditScreen(model,PaddingValues(0.dp),0.dp,{},null)}}
         val matcher=SemanticsMatcher("ceiling canvas") {n->n.config.getOrNull(SemanticsProperties.ContentDescription).orEmpty().any {it.startsWith("Контур стелі")}}
         fun click(text: String) {
             val action = (hasText(text) or hasContentDescription(text)) and hasClickAction()
@@ -76,8 +76,8 @@ class AreaFeatureTouchTest {
             click("Скасувати дію")
             val ids=model.displayAreas().map {it.uuid}.toSet()
             compose.onNodeWithTag("measurement-edit-save").performClick()
-            compose.waitUntil(15000) {model.state.value.saved || model.state.value.error!=null}
-            compose.runOnIdle {assertTrue(model.state.value.saved,model.state.value.error);assertEquals(ids,store.load(f.project,f.id).placements.areas.map {it.uuid}.toSet())}
+            compose.waitUntil(15000) {!model.state.value.dirty && !model.state.value.saving || model.state.value.error!=null}
+            compose.runOnIdle {assertTrue(!model.state.value.dirty && !model.state.value.saving,model.state.value.error);assertEquals(ids,store.load(f.project,f.id).placements.areas.map {it.uuid}.toSet())}
         } finally {store.closePointReads();driver.close();context.deleteDatabase(name);key.fill(0)}
     }
 }

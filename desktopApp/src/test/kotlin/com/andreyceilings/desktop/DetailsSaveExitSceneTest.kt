@@ -72,6 +72,58 @@ class DetailsSaveExitSceneTest {
             }
         }
     }
+
+    @Test fun workspaceRetriesAnUnconfirmedSaveInPlaceAndOnlyExitsAfterExplicitSave(): Unit = runBlocking {
+        val dir = java.nio.file.Files.createTempDirectory("workspace-save-scene-").toFile()
+        val raw = if (System.getProperty("os.name").startsWith("Windows", true))
+            SqlCipherWindowsDriverFactory.open(dir.resolve("scene.db"), ByteArray(32) { 94 })
+        else JdbcSqliteDriver("jdbc:sqlite:${dir.resolve("scene.db").absolutePath}")
+        PriceCatalogSchema.create(raw)
+        val fixture = OverlayDragFixture.create(PrototypeDatabase(raw))
+        val fault = DetailsExitFaultDriver(raw)
+        val store = MeasurementEditStore(PrototypeDatabase(fault)) { 200 }
+        val model = MeasurementEditModel(store, store.load(fixture.project, fixture.id))
+        var exits by mutableIntStateOf(0)
+        val scene = ImageComposeScene(720, 1000, coroutineContext = sceneDispatcher) {
+            CeilingsTheme(false) {
+                if (exits == 0) MeasurementEditScreen(model, onBack = { exits++ })
+                else androidx.compose.material3.Text("Картка заміру")
+            }
+        }
+        try {
+            withTimeout(15000) {
+                while (scene.nodes().none { it.config.getOrNull(MeasurementDrawingSemantics.EditingEnabled) == true }) {
+                    scene.frame(); delay(20)
+                }
+            }
+            scene.setField("Назва заміру", "Перший запис")
+            fault.failNext(DetailsExitFaultDriver.Fault.LOST_RESPONSE)
+            scene.click("Зберегти замір")
+            scene.awaitText("Повторити ту саму спробу")
+            assertEquals(0, exits)
+            assertFalse(model.state.value.workspaceSaveConfirmed)
+            val committed = OverlayDragFixture.snapshot(raw)
+            scene.click("Повторити ту саму спробу")
+            scene.awaitText("Збережено")
+            assertEquals(committed, OverlayDragFixture.snapshot(raw))
+            assertFalse(model.state.value.dirty)
+            assertEquals(0, exits)
+            scene.setField("Примітки", "Другий запис")
+            scene.click("До заміру")
+            scene.click("Зберегти й вийти", layerTitle = "Незбережені зміни")
+            scene.awaitText("Картка заміру")
+            assertEquals(1, exits)
+            assertEquals(3L, operationCount(raw))
+            val saved = store.load(fixture.project, fixture.id)
+            assertEquals("Перший запис", saved.draft.name)
+            assertEquals("Другий запис", saved.draft.notes)
+        } finally {
+            scene.close()
+            store.closeAndAwaitPointReads()
+            raw.close()
+            dir.deleteRecursively()
+        }
+    }
     private fun ImageComposeScene.dragWorld(row:Room_measurements,x:Long,y:Long,toX:Long,toY:Long) {
         val b=stableBounds()
         val contour=measurementDrawingContour(measurementGeometryForViewing(row.shape,row.drawingJson,row.lengthMeters,row.widthMeters))!!

@@ -18,7 +18,7 @@ import kotlinx.coroutines.launch
 
 /** Functional controls shared by Android touch and Windows mouse hosts. */
 @Composable
-fun AreaFeatureControls(model: MeasurementEditModel, enabled: Boolean) {
+fun AreaFeatureControls(model: MeasurementEditModel, enabled: Boolean, inWorkspace: Boolean = false) {
     val state by model.state.collectAsState()
     val scope=rememberCoroutineScope()
     val a=state.area
@@ -74,7 +74,7 @@ fun AreaFeatureControls(model: MeasurementEditModel, enabled: Boolean) {
         }
         if(areas.any {it.needsReview})FlowRow {
             TextButton(enabled=enabled && !state.dirty,onClick=model::reviewNow) {Text("Перевірити площинні об'єкти")}
-            TextButton(enabled=enabled && !state.dirty,onClick={scope.launch {model.reviewLater()}}) {Text("Площинні об'єкти: пізніше")}
+            TextButton(enabled=enabled && !state.dirty,onClick={scope.launch {model.reviewLater(inWorkspace)}}) {Text("Площинні об'єкти: пізніше")}
         }
         model.areaCapacityError()?.let {Text(it,color=MaterialTheme.colorScheme.error)}
     }

@@ -40,7 +40,7 @@ class OverlayDragTouchTest {
         var mounted by mutableStateOf(true)
         compose.setContent {CeilingsTheme(dark) {if(mounted) {
             if(mode=="details")MeasurementDetailsScreen(f.project,f.id,details,PaddingValues(0.dp),0.dp,{},editStore=store)
-            else MeasurementEditScreen(m,PaddingValues(0.dp),0.dp,{}, {},null)
+            else MeasurementEditScreen(m,PaddingValues(0.dp),0.dp,{},null)
         }}}
         val matcher=SemanticsMatcher("ceiling canvas") {n -> n.config.getOrNull(SemanticsProperties.ContentDescription).orEmpty().any {it.startsWith("Контур стелі")}}
         fun click(label:String) {
@@ -95,18 +95,22 @@ class OverlayDragTouchTest {
                     projection.project(secondWorldPoint).x - projection.project(firstWorldPoint).x
                 val baselineDistance = pixelDistance(canvas().fetchSemanticsNode().config[MeasurementDrawingSemantics.Projection])
                 click("Контур")
-                click("Вартість")
-                compose.onNodeWithText("Розрахунок за останнім збереженим заміром").assertIsDisplayed()
-                compose.onNodeWithTag("measurement-edit-panel").performClick()
+                if (mode == "fullscreen") {
+                    compose.onNodeWithTag("measurement-edit-context-cost").assertDoesNotExist()
+                    click("Закрити панель")
+                } else {
+                    click("Вартість")
+                    compose.onNodeWithText("Розрахунок за останнім збереженим заміром").assertExists()
+                }
                 click("Елементи")
                 val restored = canvas().fetchSemanticsNode()
                 assertEquals(selected.id, restored.id)
                 assertEquals(point.uuid, restored.config[MeasurementDrawingSemantics.SelectedPoint])
                 assertEquals(viewport, restored.config[MeasurementDrawingSemantics.Viewport])
                 assertEquals(baselineDistance, pixelDistance(restored.config[MeasurementDrawingSemantics.Projection]), 0.01)
-                compose.onNodeWithTag("measurement-edit-panel").performClick()
                 click("Вписати креслення")
                 click("Зняти виділення")
+                if (mode == "fullscreen") click("Закрити панель")
                 assertEquals(before, OverlayDragFixture.snapshot(driver))
             }
             tap(1000,1500);drag(1000,1050,1300,1250) // selected AREA takes priority over LINE halo
@@ -114,29 +118,35 @@ class OverlayDragTouchTest {
                 assertEquals(PointPositionMm(800,1200),m.displayAreas().first {it.uuid==f.polygon}.shape.positions.first(),"Canvas must move the selected polygon")
             }
             click("Скасувати дію");click("Повторити");click("Скасувати дію")
-            click("Вершина 1");drag(500,1000,800,1200)
+            click("Вершина 1");if (mode == "fullscreen") click("Закрити панель")
+            drag(500,1000,800,1200)
             if(mode!="details")compose.runOnIdle {
                 val polygon=m.displayAreas().first {it.uuid==f.polygon}
                 assertEquals(PointPositionMm(800,1200),polygon.shape.positions.first(),"Canvas must move the explicit vertex")
                 assertNull(polygon.mountings.first().anchor)
                 assertTrue(polygon.mountings.drop(1).all {it.anchor!=null})
             }
-            click("Зняти виділення");tap(1000,950)
+            if (mode == "fullscreen") click("Елементи")
+            click("Зняти виділення")
+            if (mode == "fullscreen") click("Закрити панель")
+            tap(1000,950)
             if(mode!="details")compose.runOnIdle {assertEquals(f.line,m.state.value.selectedLineUuid,"Canvas tap must select LINE UUID before pointer drag; area=${m.state.value.area.selected}; error=${m.state.value.error}")}
             drag(1000,950,1300,750)
             if(mode!="details")compose.runOnIdle {
                 assertEquals(f.line,m.state.value.selectedLineUuid,"Drag must retain LINE selection: ${m.state.value.error}")
                 assertEquals(PointPositionMm(800,750),m.displayLines().single().start,"The injected gesture must move the selected LINE")
             }
-            click("Кінець");drag(1800,750,2400,750)
-            tap(2800,1500);drag(2800,1500,3100,1800)
+            click("Кінець");if (mode == "fullscreen") click("Закрити панель")
+            drag(1800,750,2400,750)
+            tap(2800,1500);if (mode == "fullscreen") click("Закрити панель")
+            drag(2800,1500,3100,1800)
             drag(3100,1800,4500,1800)
             compose.onNodeWithText("Фігура перетинає стіну або себе. Положення не змінено.").assertExists()
             assertEquals(before,OverlayDragFixture.snapshot(driver))
-            if (mode != "details") {
+            if (mode == "editor") {
                 click("Вартість")
-                compose.onNodeWithText("Розрахунок за останнім збереженим заміром").assertIsDisplayed()
-                compose.onNodeWithText("Відкрити замір із калькулятором").assertDoesNotExist()
+                compose.onNodeWithText("Розрахунок за останнім збереженим заміром").assertExists()
+                compose.onNodeWithText("Переглянути збережений розрахунок у картці заміру").assertDoesNotExist()
                 click("Елементи")
             }
             // Pinch cancels object ownership; empty-space pan affects only the viewport.

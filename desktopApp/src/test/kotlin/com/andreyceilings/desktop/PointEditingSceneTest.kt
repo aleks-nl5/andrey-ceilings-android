@@ -59,7 +59,7 @@ class PointEditingSceneTest {
                 CeilingsTheme(dark) {
                     if (editing) MeasurementEditScreen(project, id, edit, PaddingValues(), 0.dp, {
                         nav = guard.transition(nav, nav.back()); editing = nav.measurementEdit != null
-                    }, { guard.deliverEditResult(nav, project, id) { nav = it; editing = false } }, guard)
+                    }, guard)
                     else MeasurementDetailsScreen(project, id, details, PaddingValues(), 0.dp, {}, onEdit = {
                         nav = guard.transition(nav, nav.editMeasurement(project, id)); editing = nav.measurementEdit != null
                     }, navigationGuard = guard,editStore=edit)
@@ -143,12 +143,15 @@ class PointEditingSceneTest {
                 scene.click("Скасувати дію");scene.click("Повторити")
                 scene.click("На весь екран")
                 scene.awaitDrawingPoints(pointIds)
+                scene.click("Елементи")
                 scene.awaitText("Точкові позначки")
+                scene.click("Закрити панель")
                 val fsStart=scene.world(1500,600);val fsEnd=scene.world(1700,900)
                 scene.sendPointerEvent(PointerEventType.Press,fsStart,type=inputType)
                 scene.sendPointerEvent(PointerEventType.Move,fsEnd,type=inputType)
                 scene.sendPointerEvent(PointerEventType.Release,fsEnd,type=inputType)
                 scene.frame();assertEquals(saved,points.find(p.uuid))
+                scene.click("Елементи")
                 scene.awaitText("Виміряних прив'язок немає")
                 scene.click("Скасувати дію");scene.click("Згорнути")
                 scene.click("Контур")
@@ -169,11 +172,17 @@ class PointEditingSceneTest {
                 assertEquals(600L,anchor.firstMm);assertEquals(1500L,anchor.secondMm)
                 assertNull(points.find(second.uuid)!!.mounting.anchor)
                 scene.click("Пізніше")
-                repeat(200) {if(editing){scene.frame();delay(25)}}
-                assertFalse(editing);scene.awaitText("Перевірити (2)")
+                withTimeout(15000) {
+                    while (points.forMeasurement(original.uuid).any { it.mounting.deferredAt == null }) {
+                        scene.frame(); delay(20)
+                    }
+                }
+                assertTrue(editing)
+                scene.click("До заміру")
+                assertFalse(editing)
+                scene.awaitText("Перевірити (2)")
                 scene.tapWorld(1500,600)
                 scene.awaitText("Ця позначка: положення за виміряними відстанями")
-                assertTrue(points.forMeasurement(original.uuid).all {it.mounting.deferredAt!=null})
                 scene.click("Перевірити (2)")
                 scene.awaitDrawingPoints(pointIds)
                 scene.click("Елементи")
@@ -181,16 +190,18 @@ class PointEditingSceneTest {
                 scene.awaitText("Перевірити (1)");scene.click("Розміщення перевірено")
                 repeat(150) {scene.frame();if(points.forMeasurement(original.uuid).any{it.mounting.needsReview})delay(25)}
                 assertTrue(points.forMeasurement(original.uuid).none {it.mounting.needsReview})
-                scene.click("Зберегти замір")
-                repeat(150) {if(editing){scene.frame();delay(25)}}
-                assertFalse(editing)
                 val beforeName=points.forMeasurement(original.uuid)
                 val geometryBeforeName=MeasurementRepository(db).find(id)!!.drawingJson
-                scene.click("Редагувати")
-                scene.awaitDrawingPoints(pointIds)
+                scene.click("Контур")
                 scene.setField("Назва заміру","Нова назва");scene.click("Зберегти замір")
-                repeat(150) {if(editing){scene.frame();delay(25)}}
-                assertFalse(editing);assertEquals("Нова назва",MeasurementRepository(db).find(id)!!.name)
+                scene.awaitText("Збережено")
+                assertTrue(editing)
+                scene.setField("Примітки", "Другий запис")
+                scene.click("До заміру")
+                scene.click("Зберегти й вийти")
+                withTimeout(15000) { while (editing) { scene.frame(); delay(20) } }
+                assertEquals("Нова назва",MeasurementRepository(db).find(id)!!.name)
+                assertEquals("Другий запис",MeasurementRepository(db).find(id)!!.notes)
                 assertEquals(geometryBeforeName,MeasurementRepository(db).find(id)!!.drawingJson)
                 assertEquals(beforeName,points.forMeasurement(original.uuid))
                 assertEquals(2000L,elements.find(element.uuid)!!.placedQuantityMilli)

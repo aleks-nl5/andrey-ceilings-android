@@ -16,7 +16,7 @@ import com.andreyceilings.shared.navigation.AppNavigationState
 internal fun MeasurementsHost(
     database: CeilingsDatabase?, navigation: AppNavigationState, precision: MeasurementPrecision,
     navigationGuard: MeasurementCreateNavigationGuard,
-    onNavigate: (AppNavigationState) -> Unit, onEditSaved: (Long, Long) -> Unit,
+    onNavigate: (AppNavigationState) -> Unit,
     onUseMeasurement: (FrozenPolygonGeometry) -> Unit,
     onOpenEstimates: () -> Unit, onCreateProject: () -> Unit
 ) {
@@ -32,7 +32,7 @@ internal fun MeasurementsHost(
                 if (navigation.measurementCreate != null)
                     WindowInsets.ime.asPaddingValues().calculateBottomPadding() else 0.dp)),
         systemTopInset = WindowInsets.statusBars.asPaddingValues().calculateTopPadding(),
-        navigationGuard = navigationGuard, onNavigate = onNavigate, onEditSaved = onEditSaved,
+        navigationGuard = navigationGuard, onNavigate = onNavigate,
         onUseMeasurement = onUseMeasurement, onOpenEstimates = onOpenEstimates, onCreateProject = onCreateProject)
 }
 

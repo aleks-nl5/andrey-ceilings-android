@@ -45,6 +45,30 @@ class DetailsSaveExitTest {
             m.deliverPendingExit();assertEquals(1,calls)
         }
     }
+    @Test fun workspaceRestorationConfirmsTheExistingReceiptAndKeepsTheSelectedPlacement() = runBlocking {
+        JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).use { raw ->
+            PriceCatalogSchema.create(raw)
+            val db = PrototypeDatabase(raw)
+            val fixture = OverlayDragFixture.create(db)
+            val fault = DetailsExitFaultDriver(raw)
+            val model = dirty(MeasurementEditStore(PrototypeDatabase(fault)) { 200 }, fixture)
+            fault.failNext(DetailsExitFaultDriver.Fault.LOST_RESPONSE)
+            model.saveInWorkspace()
+            assertTrue(model.state.value.uncertain)
+            val committed = OverlayDragFixture.snapshot(raw)
+            val restored = assertNotNull(MeasurementEditModel.restore(MeasurementEditStore(db) { 220 },
+                model.snapshot(), fixture.project, fixture.id))
+            restored.reconcile(keepEditing = true)
+            assertEquals(committed, OverlayDragFixture.snapshot(raw))
+            assertTrue(restored.state.value.workspaceSaveConfirmed)
+            assertFalse(restored.state.value.saved || restored.state.value.dirty || restored.state.value.uncertain)
+            assertEquals(fixture.polygon, restored.state.value.area.selected)
+            restored.accept(MeasurementCreateIntent.Notes("Наступний запис"))
+            restored.saveInWorkspace()
+            assertEquals("Наступний запис", restored.state.value.original.draft.notes)
+            assertEquals(3, PriceNameUniquenessProof.scalar(raw, "SELECT count(*) FROM ceiling_operations"))
+        }
+    }
     @Test fun conflictAndContinueDoNotLoseDraftOrRunCancelledActionAndDiscardStaysSeparate()=runBlocking {
         JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).use {raw ->
             PriceCatalogSchema.create(raw);val db=PrototypeDatabase(raw);val f=OverlayDragFixture.create(db)

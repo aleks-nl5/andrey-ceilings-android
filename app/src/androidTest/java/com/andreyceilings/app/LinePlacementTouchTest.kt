@@ -40,7 +40,7 @@ class LinePlacementTouchTest {
         compose.setContent {
             CeilingsTheme(dark) {
                 key(shown) {
-                    MeasurementEditScreen(shown, PaddingValues(0.dp), onBack = {}, onSaved = {})
+                    MeasurementEditScreen(shown, PaddingValues(0.dp), onBack = {})
                 }
             }
         }
@@ -105,8 +105,8 @@ class LinePlacementTouchTest {
                         } && compose.onAllNodes(hasTestTag("measurement-edit-save") and isEnabled()).fetchSemanticsNodes().isNotEmpty()
                     }
                     compose.onNodeWithTag("measurement-edit-save").performClick()
-                    compose.waitUntil(15000) { model.state.value.saved || model.state.value.error != null }
-                    assertTrue(model.state.value.saved, model.state.value.error)
+                    compose.waitUntil(15000) { !model.state.value.dirty && !model.state.value.saving || model.state.value.error != null }
+                    assertTrue(!model.state.value.dirty && !model.state.value.saving, model.state.value.error)
                     assertEquals(uuid,LinePlacementRepository(db).forMeasurement(element.measurementUuid).single().uuid)
                     // Remove via atomic editor to run the other theme against the same empty ceiling.
                     val clean=MeasurementEditModel(store,store.load(f.project,f.id))

@@ -2,8 +2,6 @@ package com.andreyceilings.shared.measurement
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.focusable
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CenterFocusStrong
 import androidx.compose.material.icons.filled.ZoomIn
@@ -16,6 +14,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.input.pointer.*
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.input.key.*
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.material3.TextButton
@@ -23,6 +22,7 @@ import androidx.compose.ui.unit.IntSize
 import kotlin.math.pow
 import kotlin.math.hypot
 import kotlin.math.roundToLong
+import kotlin.math.ceil
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -34,6 +34,8 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -41,6 +43,8 @@ import androidx.compose.ui.semantics.SemanticsPropertyKey
 import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.LayoutDirection
 
 /** Typed Canvas state for interaction verification; never persisted or spoken as labels. */
 object MeasurementDrawingSemantics {
@@ -109,7 +113,10 @@ fun MeasurementDrawing(
     showSideLegend: Boolean = !fullscreen,
     retainCameraOnResize: Boolean = false,
     verticalViewControls: Boolean = false,
-    cameraFitReady: Boolean = true
+    cameraFitReady: Boolean = true,
+    showWorkspaceGrid: Boolean = false,
+    fitTop: Dp = 0.dp,
+    fitBottom: Dp = 0.dp
 ) {
     val contour = remember(geometry) { measurementDrawingContour(geometry) }
     if (contour == null) {
@@ -128,7 +135,6 @@ fun MeasurementDrawing(
     val focusRequester = remember { FocusRequester() }
     var markerGesture by remember { mutableStateOf(false) }
     var cameraAdjusted by rememberSaveable { mutableStateOf(false) }
-    var fittedForFullscreen by rememberSaveable { mutableStateOf(fullscreen) }
     val currentSelection by rememberUpdatedState(onSelectSide)
     val currentPoints by rememberUpdatedState(pointPlacements)
     val currentPointSelection by rememberUpdatedState(onSelectPoint)
@@ -157,27 +163,32 @@ fun MeasurementDrawing(
     val currentFitPoints by rememberUpdatedState(fitPoints)
     val currentContour by rememberUpdatedState(contour)
     val density = LocalDensity.current.density
+    val isRtl = LocalLayoutDirection.current == LayoutDirection.Rtl
+
+    fun fitProjection(width: Float, height: Float): MeasurementDrawingProjection? {
+        val rail = if (interactive && verticalViewControls) minOf(48f * density, width * 0.30f) else 0f
+        val top = minOf(fitTop.value * density, height * 0.28f)
+        val bottom = minOf(fitBottom.value * density, height * 0.28f)
+        val fitted = measurementDrawingProjection(currentContour, width - rail, height - top - bottom, density, currentFitPoints)
+            ?: return null
+        return fitted.copy(offsetX = fitted.offsetX + if (isRtl) rail else 0f, offsetY = fitted.offsetY + top)
+    }
 
     fun fitCamera(size: IntSize): MeasurementDrawingCamera? {
         val width = size.width.toFloat()
         val height = size.height.toFloat()
-        val projection = measurementDrawingProjection(currentContour, width, height, density, currentFitPoints)
-            ?: return null
+        val projection = fitProjection(width, height) ?: return null
         return MeasurementDrawingCamera(projection.inverse(DrawingPoint(width / 2.0, height / 2.0)), projection.scale)
     }
 
-    LaunchedEffect(canvasSize, fullscreen, cameraFitReady) {
-        if (retainCameraOnResize && cameraFitReady && !cameraAdjusted &&
-            (fittedCamera == null || fittedForFullscreen != fullscreen)) {
+    LaunchedEffect(canvasSize, cameraFitReady, fitTop, fitBottom) {
+        if (retainCameraOnResize && cameraFitReady && !cameraAdjusted && fittedCamera == null) {
             // A readiness change can remove the loading row in this same frame.
             // Wait for its layout and let a subsequent size change restart the fit.
             withFrameNanos { }
             withFrameNanos { }
             val camera = fitCamera(canvasSize)
-            if (!cameraAdjusted && camera != null) {
-                fittedCamera = camera
-                fittedForFullscreen = fullscreen
-            }
+            if (!cameraAdjusted && camera != null) fittedCamera = camera
         }
     }
 
@@ -208,7 +219,7 @@ fun MeasurementDrawing(
     fun projectDrawing(width: Float, height: Float): MeasurementDrawingProjection? {
         if (width <= 0f || height <= 0f) return null
         val base = fittedCamera?.takeIf { retainCameraOnResize }?.projection(width, height)
-            ?: measurementDrawingProjection(currentContour, width, height, density, currentFitPoints)
+            ?: fitProjection(width, height)
             ?: return null
         if (!interactive) return base
         val viewport = MeasurementViewport(zoom, panX, panY)
@@ -223,6 +234,7 @@ fun MeasurementDrawing(
     val currentCancelDrag by rememberUpdatedState(onCancelPointDrag)
     val ink = MaterialTheme.colorScheme.primary
     val surface = MaterialTheme.colorScheme.surface
+    val gridInk = MaterialTheme.colorScheme.onSurface
     val labelStyle = MaterialTheme.typography.labelSmall.copy(color = MaterialTheme.colorScheme.onSurface)
     val measurer = rememberTextMeasurer()
     // The contour already has vertex letters A/B/C; draw only dimensions
@@ -402,8 +414,7 @@ fun MeasurementDrawing(
         Box(Modifier.fillMaxWidth().then(
             if (fillAvailableHeight) Modifier.weight(1f) else Modifier.height(if (compact) 155.dp else 235.dp)
         )) {
-            val railWidth = if (interactive && verticalViewControls) 48.dp else 0.dp
-            Canvas(Modifier.fillMaxSize().padding(end = railWidth)
+            Canvas(Modifier.fillMaxSize()
                 .clipToBounds().onSizeChanged { canvasSize = it }.then(inputModifier)
                 .semantics {
                     contentDescription = "Контур стелі, ${contour.points.size} вершин, позначок: ${pointPlacements.size}, ліній: ${linePlacements.size}, площинних об’єктів: ${areaFeatures.size}"
@@ -422,6 +433,7 @@ fun MeasurementDrawing(
                     pointDrag?.let {this[MeasurementDrawingSemantics.PointDrag]=it}
                 }) {
                 val projection = projectDrawing(size.width, size.height) ?: return@Canvas
+                if (showWorkspaceGrid) drawMeasurementGrid(projection, gridInk)
                 val projectedPoints = contour.points.map(projection::project)
                 val points = projectedPoints.map { Offset(it.x.toFloat(), it.y.toFloat()) }
                 fun screen(point: DrawingPoint): Offset {
@@ -515,13 +527,14 @@ fun MeasurementDrawing(
             if (interactive && verticalViewControls) {
                 Column(
                     Modifier.align(Alignment.CenterEnd).width(48.dp)
-                        .verticalScroll(rememberScrollState()).testTag("measurement-edit-zoom-rail")
+                        .testTag("measurement-edit-zoom-rail")
                 ) {
-                    MeasurementIconAction("Вписати креслення", Icons.Default.CenterFocusStrong, !markerGesture, ::fit)
-                    MeasurementIconAction("Збільшити масштаб", Icons.Default.ZoomIn, !markerGesture) {
+                    val buttonColor = surface.copy(alpha = 0.90f)
+                    MeasurementIconAction("Вписати креслення", Icons.Default.CenterFocusStrong, !markerGesture, buttonColor, ::fit)
+                    MeasurementIconAction("Збільшити масштаб", Icons.Default.ZoomIn, !markerGesture, buttonColor) {
                         move(0f, 0f, 1.25f)
                     }
-                    MeasurementIconAction("Зменшити масштаб", Icons.Default.ZoomOut, !markerGesture) {
+                    MeasurementIconAction("Зменшити масштаб", Icons.Default.ZoomOut, !markerGesture, buttonColor) {
                         move(0f, 0f, 1 / 1.25f)
                     }
                 }
@@ -535,4 +548,22 @@ fun MeasurementDrawing(
         Text(labelText.joinToString(" · "), style = MaterialTheme.typography.bodySmall)
         }
     }
+}
+
+private fun DrawScope.drawMeasurementGrid(projection: MeasurementDrawingProjection, ink: Color) {
+    val minimumSpacing = 16.dp.toPx()
+    var majorMm = 500.0
+    while (majorMm * projection.scale / 5 < minimumSpacing) majorMm *= 2
+    val spacing = majorMm * projection.scale / 5
+    fun gridLines(origin: Double, extent: Float, line: (Float, Color) -> Unit) {
+        var index = ceil(-origin / spacing).toLong()
+        var coordinate = origin + index * spacing
+        while (coordinate < extent) {
+            line(coordinate.toFloat(), ink.copy(alpha = if (index % 5 == 0L) 0.15f else 0.065f))
+            index++
+            coordinate = origin + index * spacing
+        }
+    }
+    gridLines(projection.offsetX, size.width) { x, color -> drawLine(color, Offset(x, 0f), Offset(x, size.height), 1.dp.toPx()) }
+    gridLines(projection.offsetY, size.height) { y, color -> drawLine(color, Offset(0f, y), Offset(size.width, y), 1.dp.toPx()) }
 }

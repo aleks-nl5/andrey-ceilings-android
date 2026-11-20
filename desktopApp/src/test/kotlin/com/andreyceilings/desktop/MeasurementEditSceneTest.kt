@@ -66,7 +66,7 @@ class MeasurementEditSceneTest {
                     val next = guard.transition(route, route.back())
                     if (next != route) backs++
                     route = next
-                }, onSaved = {}, navigationGuard = guard) }
+                }, navigationGuard = guard) }
             }
             try {
                 scene.render().close()
@@ -77,12 +77,16 @@ class MeasurementEditSceneTest {
                 scene.click("Скасувати дію"); scene.frame(); assertEquals("Кухня", model.state.value.draft.name)
                 scene.click("Повторити"); scene.frame(); assertEquals("Нова кухня", model.state.value.draft.name)
                 scene.click("На весь екран"); scene.frame(); assertTrue(guard.fullscreen.value)
+                scene.click("Контур"); scene.frame()
                 assertTrue(scene.text().contains("Назва заміру"))
+                scene.click("До заміру"); scene.frame()
+                assertTrue(guard.fullscreen.value)
+                assertFalse(scene.text().contains("Назва заміру"))
                 scene.click("До заміру"); scene.frame()
                 assertFalse(guard.fullscreen.value)
                 scene.click("До заміру"); scene.frame()
                 assertTrue(scene.text().contains("Незбережені зміни")); assertEquals(0, backs)
-                scene.click("Продовжити"); scene.frame(); assertTrue(model.state.value.dirty)
+                scene.click("Продовжити редагування"); scene.frame(); assertTrue(model.state.value.dirty)
                 scene.click("До заміру"); scene.frame(); scene.click("Відхилити зміни")
                 assertEquals(1, backs); assertFalse(model.state.value.dirty)
                 assertEquals(MeasurementDetails(7, 3), route.measurementDetails)
@@ -136,7 +140,7 @@ class MeasurementEditSceneTest {
     @Test fun workspaceRetainsTheDrawingAndDraftAcrossContextsAndPanelSizes() {
         val model = MeasurementEditModel(null, MeasurementEditDocument(3, 1, draft()))
         val scene = ImageComposeScene(720, 420) {
-            CeilingsTheme(false) { MeasurementEditScreen(model, onBack = {}, onSaved = {}) }
+            CeilingsTheme(false) { MeasurementEditScreen(model, onBack = {}) }
         }
         fun drawing() = scene.projectedDrawing()
         fun panel() = scene.nodes().single {
@@ -163,25 +167,24 @@ class MeasurementEditSceneTest {
             val field = scene.nodes().single { it.config.getOrNull(SemanticsProperties.EditableText)?.text == "5" }
             assertTrue(field.config[SemanticsActions.SetText].action?.invoke(AnnotatedString("5,25")) == true)
             scene.frame()
+            val panelBefore = panel().boundsInRoot
             scene.click("Елементи")
             scene.frame()
+            assertEquals(panelBefore, panel().boundsInRoot)
             scene.click("Вартість")
             scene.frame()
+            assertEquals(panelBefore, panel().boundsInRoot)
             assertTrue(scene.text().contains("Розрахунок за останнім збереженим заміром"))
-            assertFalse(scene.text().contains("Відкрити замір із калькулятором"))
-            scene.click("Контур")
-            scene.frame()
-            val panelBefore = panel().boundsInRoot.height
-            val toggle = scene.nodes().single { it.config.getOrNull(SemanticsProperties.TestTag) == "measurement-edit-panel" }
-            assertTrue(toggle.config[SemanticsActions.OnClick].action?.invoke() == true)
-            scene.frame()
-            assertTrue(panel().boundsInRoot.height < panelBefore)
+            assertFalse(scene.text().contains("Переглянути збережений розрахунок у картці заміру"))
             scene.click("На весь екран")
             scene.frame()
             assertTrue(drawing().boundsInRoot.height > 0)
             assertEquals(initial.id, drawing().id)
             assertEquals(zoomed, drawing().config[MeasurementDrawingSemantics.Viewport])
             assertEquals(0, drawing().config[MeasurementDrawingSemantics.SelectedWall])
+            assertFalse(scene.text().contains("Вартість"))
+            scene.click("Контур")
+            scene.frame()
             assertTrue(scene.nodes().any { it.config.getOrNull(SemanticsProperties.EditableText)?.text == "5,25" })
             val scrollAxis = panel().config[SemanticsProperties.VerticalScrollAxisRange]
             assertTrue(scrollAxis.maxValue() > 0)
@@ -202,16 +205,11 @@ class MeasurementEditSceneTest {
             val model = MeasurementEditModel(null, MeasurementEditDocument(3, 1, draft()))
             val scene = ImageComposeScene(width, height) {
                 CeilingsTheme(false) {
-                    MeasurementEditScreen(model, onBack = {}, onSaved = {},
+                    MeasurementEditScreen(model, onBack = {},
                         imeInsets = WindowInsets(0, 0, 0, keyboardInset))
                 }
             }
             fun drawing() = scene.projectedDrawing()
-            fun togglePanel() {
-                val toggle = scene.nodes().single { it.config.getOrNull(SemanticsProperties.TestTag) == "measurement-edit-panel" }
-                assertTrue(toggle.config[SemanticsActions.OnClick].action?.invoke() == true)
-                scene.frame()
-            }
             val first = DrawingPoint(1000.0, 1500.0)
             val second = DrawingPoint(4000.0, 1500.0)
             fun pixelDistance(node: SemanticsNode): Double {
@@ -244,16 +242,19 @@ class MeasurementEditSceneTest {
                     assertEquals(expectedCenter.x, worldCenter(current).x, 0.01)
                     assertEquals(expectedCenter.y, worldCenter(current).y, 0.01)
                 }
-                togglePanel()
-                assertTrue(drawing().size.height > normalExpandedHeight)
+                scene.click("Елементи")
+                scene.frame()
+                assertEquals(normalExpandedHeight, drawing().size.height)
                 assertCamera()
-                togglePanel()
+                scene.click("Вартість")
+                scene.frame()
+                assertEquals(normalExpandedHeight, drawing().size.height)
                 assertCamera()
                 scene.click("На весь екран")
                 scene.frame()
                 val fullscreenHeight = drawing().size.height
                 assertTrue(fullscreenHeight > normalExpandedHeight * 1.3, "Fullscreen should give the drawing substantially more room")
-                assertTrue(scene.nodes().any { it.config.getOrNull(SemanticsProperties.ContentDescription).orEmpty().contains("Розгорнути панель") })
+                assertFalse(scene.text().contains("Вартість"))
                 assertTrue(scene.nodes().any { it.config.getOrNull(SemanticsProperties.TestTag) == "measurement-edit-save" })
                 assertCamera()
                 keyboardInset = if (height > width) 208 else 72
@@ -262,8 +263,9 @@ class MeasurementEditSceneTest {
                 assertCamera()
                 keyboardInset = 0
                 scene.frame()
-                togglePanel()
-                assertTrue(drawing().size.height < fullscreenHeight)
+                scene.click("Елементи")
+                scene.frame()
+                assertEquals(fullscreenHeight, drawing().size.height)
                 assertCamera()
                 scene.click("Згорнути")
                 scene.frame()
@@ -274,6 +276,70 @@ class MeasurementEditSceneTest {
                 assertTrue(kotlin.math.abs(expectedDistance - pixelDistance(drawing())) > 1.0)
             } finally { scene.close() }
         }
+    }
+
+    @Test fun drawingGridUsesTheWorldProjectionAndLeavesTheContourUnchanged() {
+        val geometry = assertNotNull(validateMeasurementCreate(draft()).geometry)
+        val wire = MeasurementGeometryCodec.write(geometry)
+        var grid by mutableStateOf(false)
+        val scene = ImageComposeScene(640, 480) {
+            CeilingsTheme(true) {
+                MeasurementDrawing(MeasurementGeometryView.Captured(geometry), Modifier.fillMaxSize(),
+                    interactive = true, fillAvailableHeight = true, showSideLegend = false,
+                    retainCameraOnResize = true, verticalViewControls = true, showWorkspaceGrid = grid)
+            }
+        }
+        fun pixel(x: Float, y: Float): Int {
+            val rendered = scene.render(System.nanoTime())
+            val bitmap = Bitmap.makeFromImage(rendered)
+            try { return bitmap.getColor(x.toInt(), y.toInt()) }
+            finally { bitmap.close(); rendered.close() }
+        }
+        try {
+            repeat(4) { scene.frame() }
+            val initial = scene.projectedDrawing().config[MeasurementDrawingSemantics.Projection]
+            val origin = initial.project(DrawingPoint(0.0, 0.0))
+            val blank = pixel(origin.x.toFloat(), 10f)
+            grid = true
+            scene.frame()
+            assertNotEquals(blank, pixel(origin.x.toFloat(), 10f))
+            assertEquals(initial, scene.projectedDrawing().config[MeasurementDrawingSemantics.Projection])
+            scene.click("Збільшити масштаб")
+            val zoomed = scene.projectedDrawing().config[MeasurementDrawingSemantics.Projection]
+            assertTrue(zoomed.scale > initial.scale)
+            assertEquals(wire, MeasurementGeometryCodec.write(geometry))
+        } finally { scene.close() }
+    }
+
+    @Test fun fullscreenFabAndHandleSwipeChangeOnlyTheOverlay() {
+        val model = MeasurementEditModel(null, MeasurementEditDocument(3, 1, draft()))
+        val scene = ImageComposeScene(600, 740) { CeilingsTheme(false) { MeasurementEditScreen(model, onBack = {}) } }
+        fun tagged(tag: String) = scene.nodes().single { it.config.getOrNull(SemanticsProperties.TestTag) == tag }
+        fun drag(start: Offset, distance: Float) {
+            val end = start + Offset(0f, distance)
+            scene.sendPointerEvent(PointerEventType.Press, start, type = PointerType.Mouse)
+            scene.sendPointerEvent(PointerEventType.Move, end, type = PointerType.Mouse)
+            scene.sendPointerEvent(PointerEventType.Release, end, type = PointerType.Mouse)
+            scene.frame()
+        }
+        try {
+            scene.frame(); scene.click("На весь екран")
+            repeat(5) { scene.frame(); Thread.sleep(25) }
+            val initial = scene.projectedDrawing()
+            val context = tagged("measurement-edit-context-contour")
+            assertNotNull(context.config.getOrNull(SemanticsActions.CustomActions))
+            drag(context.boundsInRoot.center, -92f)
+            val expanded = tagged("measurement-edit-context-panel").size.height
+            drag(tagged("measurement-edit-sheet-handle").boundsInRoot.center, 92f)
+            assertFalse(scene.nodes().any { it.config.getOrNull(SemanticsProperties.TestTag) == "measurement-edit-context-panel" })
+            scene.click("Контур")
+            scene.frame()
+            assertTrue(tagged("measurement-edit-context-panel").size.height < expanded)
+            val current = scene.projectedDrawing()
+            assertEquals(initial.id, current.id)
+            assertEquals(initial.boundsInRoot, current.boundsInRoot)
+            assertEquals(initial.config[MeasurementDrawingSemantics.Projection], current.config[MeasurementDrawingSemantics.Projection])
+        } finally { scene.close() }
     }
 
     @Test fun firstFitUsesTheSettledLayoutAfterTheLoadingRowDisappears() {
@@ -309,13 +375,13 @@ class MeasurementEditSceneTest {
         } finally { scene.close() }
     }
 
-    @Test fun compactWorkspaceFitsARealTwoByThreeContourAndSizesCostToItsContent() {
+    @Test fun compactWorkspaceFitsARealTwoByThreeContourAndKeepsThePanelBoundary() {
         val source = draft().copy(outline = MeasurementOutlineDraft.Template("rectangle", mapOf("length" to "2", "width" to "3")))
         val model = MeasurementEditModel(null, MeasurementEditDocument(3, 1, source))
         val scene = ImageComposeScene(360, 580) {
             CeilingsTheme(true) {
                 MeasurementEditScreen(model, PaddingValues(12.dp, 24.dp, 12.dp, 24.dp), 24.dp,
-                    onBack = {}, onSaved = {})
+                    onBack = {})
             }
         }
         fun tagged(tag: String) = scene.nodes().single { it.config.getOrNull(SemanticsProperties.TestTag) == tag }
@@ -326,7 +392,7 @@ class MeasurementEditSceneTest {
             val b = projection.project(DrawingPoint(2000.0, 3000.0))
             assertTrue(a.x >= 0 && a.y >= 0 && b.x <= canvas.size.width && b.y <= canvas.size.height)
             assertEquals(1.5, (b.y - a.y) / (b.x - a.x), 0.001)
-            assertTrue(canvas.boundsInRoot.right <= tagged("measurement-edit-zoom-rail").boundsInRoot.left + 1)
+            assertEquals(canvas.boundsInRoot.right, tagged("measurement-edit-zoom-rail").boundsInRoot.right, 1f)
             return b.y - a.y
         }
         try {
@@ -342,13 +408,13 @@ class MeasurementEditSceneTest {
             assertTrue(contourHeight > canvasHeight * 0.54, "The fitted contour should occupy most of the available height")
             scene.click("Вартість")
             repeat(4) { scene.frame() }
-            assertTrue(tagged("measurement-edit-context-panel").size.height < 120)
-            assertTrue(scene.projectedDrawing().size.height > canvasHeight)
+            assertEquals(canvasHeight, scene.projectedDrawing().size.height)
             scene.click("Контур")
             scene.frame()
             scene.click("На весь екран")
             repeat(4) { scene.frame() }
-            assertTrue(fittedHeight() > contourHeight + 35.0)
+            assertTrue(scene.projectedDrawing().size.height > canvasHeight + 35)
+            assertEquals(contourHeight, fittedHeight(), 0.1)
             scene.click("До заміру")
             repeat(4) { scene.frame() }
             assertEquals(contourHeight, fittedHeight(), 0.1)
@@ -360,7 +426,7 @@ class MeasurementEditSceneTest {
         val model = MeasurementEditModel(null, MeasurementEditDocument(3, 1, draft()))
         val scene = ImageComposeScene(360, 640) {
             CeilingsTheme(false) {
-                MeasurementEditScreen(model, onBack = {}, onSaved = {},
+                MeasurementEditScreen(model, onBack = {},
                     imeInsets = WindowInsets(0, 0, 0, keyboardInset))
             }
         }
@@ -400,10 +466,40 @@ class MeasurementEditSceneTest {
         } finally { scene.close() }
     }
 
+    @Test fun shortLandscapeKeyboardLeavesSpaceForTheFocusedFieldAndBothFabs() {
+        var keyboardInset by mutableIntStateOf(0)
+        val model = MeasurementEditModel(null, MeasurementEditDocument(3, 1, draft()))
+        val scene = ImageComposeScene(640, 320) {
+            CeilingsTheme(false) {
+                MeasurementEditScreen(model, PaddingValues(0.dp), onBack = {},
+                    imeInsets = WindowInsets(0, 0, 0, keyboardInset))
+            }
+        }
+        fun tagged(tag: String) = scene.nodes().single { it.config.getOrNull(SemanticsProperties.TestTag) == tag }
+        fun notes() = scene.nodes().single {
+            it.config.getOrNull(SemanticsActions.SetText) != null && it.textTree().contains("Примітки")
+        }
+        try {
+            repeat(4) { scene.frame() }
+            val scale = scene.projectedDrawing().config[MeasurementDrawingSemantics.Projection].scale
+            assertTrue(notes().config[SemanticsActions.RequestFocus].action?.invoke() == true)
+            keyboardInset = 220
+            repeat(25) { scene.frame(); Thread.sleep(10) }
+            val field = notes()
+            assertTrue(field.config.getOrNull(SemanticsProperties.Focused) == true)
+            assertTrue(field.boundsInRoot.height >= 48f && field.boundsInRoot.bottom <= 101f)
+            assertTrue(tagged("measurement-edit-back").boundsInRoot.right < field.boundsInRoot.left)
+            assertTrue(tagged("measurement-edit-save").boundsInRoot.left > field.boundsInRoot.right)
+            keyboardInset = 0
+            repeat(4) { scene.frame() }
+            assertEquals(scale, scene.projectedDrawing().config[MeasurementDrawingSemantics.Projection].scale, 0.0001)
+        } finally { scene.close() }
+    }
+
     @Test fun narrowWorkspaceShowsTheCompleteValidationErrorWithoutResizingTheCanvasWhileReading() {
         val model = MeasurementEditModel(null, MeasurementEditDocument(3, 1, draft()))
         val scene = ImageComposeScene(300, 580) {
-            CeilingsTheme(false) { MeasurementEditScreen(model, onBack = {}, onSaved = {}) }
+            CeilingsTheme(false) { MeasurementEditScreen(model, onBack = {}) }
         }
         fun canvas() = scene.projectedDrawing()
         try {
@@ -434,7 +530,7 @@ class MeasurementEditSceneTest {
     @Test fun explicitDecimalSeparatorWorksWhenTheImeHasNoCommaKey() {
         val model = MeasurementEditModel(null, MeasurementEditDocument(3, 1, draft()))
         val image = ImageComposeScene(600, 900) {
-            CeilingsTheme(false) { MeasurementEditScreen(model, onBack = {}, onSaved = {}) }
+            CeilingsTheme(false) { MeasurementEditScreen(model, onBack = {}) }
         }
         try {
             image.render().close()

@@ -547,10 +547,6 @@ internal fun CeilingsApp(
                             onEditMeasurement = { projectId, measurementId ->
                                 updateNavigation(navigation.editMeasurement(projectId, measurementId))
                             },
-                            onMeasurementSaved = { projectId, measurementId ->
-                                measurementCreateNavigationGuard.deliverEditResult(
-                                    navigation, projectId, measurementId, ::applyNavigation)
-                            },
                             measurementCreate = navigation.measurementCreate,
                             measurementCreateNavigationGuard = measurementCreateNavigationGuard,
                             measurementPrecision = measurementPrecision,
@@ -580,10 +576,6 @@ internal fun CeilingsApp(
                             database = database, navigation = navigation, precision = measurementPrecision,
                             navigationGuard = measurementCreateNavigationGuard,
                             onNavigate = ::updateNavigation,
-                            onEditSaved = { projectId, measurementId ->
-                                measurementCreateNavigationGuard.deliverEditResult(
-                                    navigation, projectId, measurementId, ::applyNavigation)
-                            },
                             onOpenEstimates = { navigateTo(AppTab.ESTIMATES) },
                             onUseMeasurement = { source ->
                                 // Copy validated saved inputs; neither the source row nor preferences are written.

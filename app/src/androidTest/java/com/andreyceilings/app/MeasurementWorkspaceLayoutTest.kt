@@ -9,6 +9,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
@@ -21,6 +22,7 @@ import com.andreyceilings.app.ui.theme.CeilingsTheme
 import com.andreyceilings.app.ui.theme.ThemeMode
 import com.andreyceilings.shared.calculation.MeasurementPrecision
 import com.andreyceilings.shared.db.ProjectRepository
+import com.andreyceilings.shared.db.MeasurementRepository
 import com.andreyceilings.shared.measurement.*
 import com.andreyceilings.shared.navigation.AppNavigationState
 import com.andreyceilings.shared.navigation.AppRoute
@@ -53,8 +55,10 @@ class MeasurementWorkspaceLayoutTest {
         val key = ByteArray(32) { 44 }
         System.loadLibrary("sqlcipher")
         context.deleteDatabase(name)
-        val capture = InstrumentationRegistry.getArguments().getString("p5aScreenshots") == "true"
-        val prefix = "${route.name.lowercase()}-${theme.name.lowercase()}-${if (landscape) "landscape" else "portrait"}"
+        val arguments = InstrumentationRegistry.getArguments()
+        val capture = arguments.getString("p5aScreenshots") == "true"
+        val display = arguments.getString("p5aDisplay", "default")
+        val prefix = "$display-${route.name.lowercase()}-${theme.name.lowercase()}-${if (landscape) "landscape" else "portrait"}"
         fun capture(stage: String) { if (capture) screenshot("$prefix-$stage") }
 
         CeilingsDatabase.openIsolatedForTesting(context, name, key).use { database ->
@@ -90,16 +94,24 @@ class MeasurementWorkspaceLayoutTest {
                 assertTrue(a.x >= 0 && a.y >= 0 && b.x <= node.size.width && b.y <= node.size.height,
                     "Projected contour $a–$b must fit ${node.size}")
             }
-            try {
-                compose.waitUntil(15000) { compose.onAllNodes(hasText("Редагувати") and hasClickAction()).fetchSemanticsNodes().isNotEmpty() }
+            fun contextTab(name: String) = compose.onNodeWithTag("measurement-edit-context-$name")
+            val panel = compose.onNodeWithTag("measurement-edit-context-panel")
+            fun scale() = canvas().config[MeasurementDrawingSemantics.Projection].scale
+            fun enterEditor() {
+                val edit = hasText("Редагувати") and hasClickAction()
+                compose.waitUntil(15000) { compose.onAllNodes(edit).fetchSemanticsNodes().isNotEmpty() }
                 compose.onNodeWithTag("global-bottom-navigation").assertExists()
-                compose.onNode(hasText("Редагувати") and hasClickAction()).performClick()
+                compose.onNode(edit).performClick()
                 compose.waitUntil(15000) {
-                    compose.onAllNodes(hasTestTag("measurement-edit-save") and isEnabled()).fetchSemanticsNodes().isNotEmpty() &&
-                        compose.onAllNodes(drawing).fetchSemanticsNodes().isNotEmpty()
+                    compose.onAllNodes(drawing).fetchSemanticsNodes().isNotEmpty() &&
+                        compose.onAllNodesWithText("Завантаження збережених позначок…").fetchSemanticsNodes().isEmpty()
                 }
                 compose.onNodeWithTag("global-bottom-navigation").assertDoesNotExist()
-                save.assertHasClickAction()
+            }
+            fun field(label: String) = compose.onNode(hasSetTextAction() and hasText(label, substring = true))
+            try {
+                enterEditor()
+                save.assertIsNotEnabled()
                 val header = compose.onNodeWithTag("measurement-edit-header").fetchSemanticsNode()
                 val statusBar = compose.runOnIdle {
                     ViewCompat.getRootWindowInsets(compose.activity.window.decorView)!!
@@ -116,44 +128,64 @@ class MeasurementWorkspaceLayoutTest {
                 action("Повторити").assertIsNotEnabled()
                 capture("normal-contour")
                 assertDrawingFit()
-                val normal = canvas().size.height
+                val normal = canvas().boundsInRoot
+                val normalPanel = panel.fetchSemanticsNode().boundsInRoot
                 val rail = compose.onNodeWithTag("measurement-edit-zoom-rail").fetchSemanticsNode()
-                assertTrue(canvas().boundsInRoot.right <= rail.boundsInRoot.left + 1)
+                assertEquals(canvas().boundsInRoot.right, rail.boundsInRoot.right, 1f)
 
-                compose.onNodeWithTag("measurement-edit-context-cost").performClick()
-                val cost = compose.onNodeWithTag("measurement-edit-context-panel").fetchSemanticsNode()
-                assertTrue(cost.size.height <= 120 * compose.density.density)
-                assertTrue(canvas().size.height > normal)
+                contextTab("cost").performClick()
+                assertEquals(normalPanel, panel.fetchSemanticsNode().boundsInRoot)
+                assertEquals(normal, canvas().boundsInRoot)
                 capture("normal-cost")
-                compose.onNodeWithTag("measurement-edit-context-elements").performClick()
+                contextTab("elements").performClick()
+                assertEquals(normalPanel, panel.fetchSemanticsNode().boundsInRoot)
                 capture("normal-elements")
-                compose.onNodeWithTag("measurement-edit-context-contour").performClick()
+                contextTab("cost").performClick()
+                val unzoomed = scale()
                 action("На весь екран").performClick()
-                compose.waitForIdle()
                 compose.onNodeWithTag("global-bottom-navigation").assertDoesNotExist()
-                assertTrue(canvas().size.height > normal)
-                assertDrawingFit()
+                assertTrue(canvas().size.height > normal.height)
+                assertEquals(unzoomed, scale(), 0.0001)
+                contextTab("cost").assertDoesNotExist()
+                panel.assertDoesNotExist()
+                capture("fullscreen")
+                contextTab("contour").performClick()
+                val compactHeight = panel.fetchSemanticsNode().size.height
+                val fullscreenBounds = canvas().boundsInRoot
                 capture("fullscreen-contour")
-                compose.onNodeWithTag("measurement-edit-context-cost").performClick()
-                capture("fullscreen-cost")
-                compose.onNodeWithTag("measurement-edit-context-elements").performClick()
+                compose.onNodeWithTag("measurement-edit-sheet-handle").performTouchInput { swipeUp(durationMillis = 220,
+                    startY = centerY, endY = centerY - 85f * density) }
+                assertTrue(panel.fetchSemanticsNode().size.height > compactHeight)
+                assertEquals(fullscreenBounds, canvas().boundsInRoot)
+                assertEquals(unzoomed, scale(), 0.0001)
+                capture("fullscreen-expanded")
+                contextTab("elements").performClick()
                 capture("fullscreen-elements")
+                compose.runOnUiThread { compose.activity.onBackPressedDispatcher.onBackPressed() }
+                panel.assertDoesNotExist()
+                action("Згорнути").assertExists()
+                val beforePan = canvas().config[MeasurementDrawingSemantics.Viewport]
+                compose.onNode(drawing).performTouchInput {
+                    val x = right - 8f * density
+                    val y = bottom - 18f * density
+                    swipe(Offset(x, y), Offset(x - 70f * density, y), durationMillis = 200)
+                }
+                assertNotEquals(beforePan, canvas().config[MeasurementDrawingSemantics.Viewport])
+                panel.assertDoesNotExist()
+                action("Збільшити масштаб").performClick()
+                val zoomed = scale()
+                capture("fullscreen-zoom")
                 compose.onNodeWithTag("measurement-edit-back").performClick()
                 action("На весь екран").assertExists()
-
-                action("Збільшити масштаб").performClick()
-                val zoomed = canvas().config[MeasurementDrawingSemantics.Projection].scale
-                action("На весь екран").performClick()
-                assertEquals(zoomed, canvas().config[MeasurementDrawingSemantics.Projection].scale, 0.0001)
-                action("Згорнути").performClick()
+                assertEquals(zoomed, scale(), 0.0001)
+                compose.onNodeWithText("Розрахунок за останнім збереженим заміром").assertExists()
                 action("Зменшити масштаб").performClick()
                 action("Вписати креслення").performClick()
 
                 if (capture && !landscape) {
-                    val scale = canvas().config[MeasurementDrawingSemantics.Projection].scale
+                    val scaleBeforeKeyboard = scale()
                     compose.onNodeWithTag("measurement-edit-context-contour").performClick()
                     compose.onNodeWithText("Усі розміри").performScrollTo().performClick()
-                    fun field(label: String) = compose.onNode(hasSetTextAction() and hasText(label, substring = true))
                     fun imeVisible() = compose.runOnIdle {
                         ViewCompat.getRootWindowInsets(compose.activity.window.decorView)
                             ?.isVisible(WindowInsetsCompat.Type.ime()) == true
@@ -190,18 +222,66 @@ class MeasurementWorkspaceLayoutTest {
                     notes.performTextInput("Перевірка клавіатури")
                     notes.assertTextContains("Перевірка клавіатури")
                     assertAboveKeyboard(notes)
-                    assertEquals(scale, canvas().config[MeasurementDrawingSemantics.Projection].scale, 0.0001)
+                    assertEquals(scaleBeforeKeyboard, scale(), 0.0001)
                     save.assertIsDisplayed()
                     capture("normal-ime")
 
-                    compose.runOnIdle {
-                        val window = compose.activity.window
-                        WindowInsetsControllerCompat(window, window.decorView).hide(WindowInsetsCompat.Type.ime())
+                    fun hideKeyboard() {
+                        compose.runOnIdle {
+                            val window = compose.activity.window
+                            WindowInsetsControllerCompat(window, window.decorView).hide(WindowInsetsCompat.Type.ime())
+                        }
+                        compose.waitUntil(15000) { !imeVisible() }
                     }
-                    compose.waitUntil(15000) { !imeVisible() }
+                    hideKeyboard()
                     notes.assertIsFocused()
-                    assertEquals(scale, canvas().config[MeasurementDrawingSemantics.Projection].scale, 0.0001)
+                    assertEquals(scaleBeforeKeyboard, scale(), 0.0001)
+
+                    action("На весь екран").performClick()
+                    contextTab("contour").performClick()
+                    notes.performScrollTo().performClick()
+                    compose.waitUntil(15000) { imeVisible() }
+                    assertAboveKeyboard(notes)
+                    capture("fullscreen-ime")
+                    hideKeyboard()
+                    action("Згорнути").performClick()
                 }
+
+                contextTab("contour").performClick()
+                val nameField = field("Назва заміру")
+                val notes = field("Примітки")
+                fun saveInPlace() {
+                    save.assertIsEnabled().performClick()
+                    compose.waitUntil(15000) { compose.onAllNodesWithText("Збережено").fetchSemanticsNodes().isNotEmpty() }
+                    action("На весь екран").assertExists()
+                    action("Скасувати дію").assertIsNotEnabled()
+                    save.assertIsNotEnabled()
+                }
+                val scaleBeforeSave = scale()
+                nameField.performScrollTo().performTextReplacement("Кухня після збереження")
+                saveInPlace()
+                assertEquals(scaleBeforeSave, scale(), 0.0001)
+                capture("normal-save")
+                notes.performScrollTo().performTextReplacement("Другий запис")
+                saveInPlace()
+                val saved = MeasurementRepository(database.database).find(id)!!
+                assertEquals("Кухня після збереження", saved.name)
+                assertEquals("Другий запис", saved.notes)
+                contextTab("cost").performClick()
+                compose.onNodeWithText("Переглянути збережений розрахунок у картці заміру").performScrollTo().performClick()
+                enterEditor()
+                field("Назва заміру").assertTextContains("Кухня після збереження")
+                field("Примітки").performScrollTo().performTextReplacement("Збережено перед виходом")
+                compose.onNodeWithTag("measurement-edit-back").performClick()
+                compose.onNodeWithText("Продовжити редагування").performClick()
+                action("На весь екран").assertExists()
+                compose.onNodeWithTag("measurement-edit-back").performClick()
+                compose.onNodeWithText("Зберегти й вийти").performClick()
+                compose.waitUntil(15000) {
+                    compose.onAllNodes(hasText("Редагувати") and hasClickAction()).fetchSemanticsNodes().isNotEmpty()
+                }
+                save.assertDoesNotExist()
+                assertEquals("Збережено перед виходом", MeasurementRepository(database.database).find(id)!!.notes)
             } finally {
                 compose.runOnIdle { mounted = false }
                 compose.waitForIdle()

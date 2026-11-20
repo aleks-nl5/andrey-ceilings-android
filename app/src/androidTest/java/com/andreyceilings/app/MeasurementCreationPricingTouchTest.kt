@@ -53,7 +53,7 @@ class MeasurementCreationPricingTouchTest {
             compose.setContent { if (mounted) CeilingsTheme(false) {
                 if (global) MeasurementsScreen(measurements, create, details, edit, nav,
                     MeasurementPrecision.ONE_CENTIMETER, PaddingValues(8.dp), 0.dp, guard,
-                    onNavigate = { nav = guard.transition(nav, it) }, onEditSaved = { _, _ -> },
+                    onNavigate = { nav = guard.transition(nav, it) },
                     onUseMeasurement = {}, onOpenEstimates = {}, onCreateProject = {})
                 else nav.measurementCreate?.let { route -> MeasurementCreateScreen(route.projectId,
                     MeasurementPrecision.ONE_CENTIMETER, create, PaddingValues(8.dp), 0.dp,
