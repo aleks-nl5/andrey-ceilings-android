@@ -90,6 +90,9 @@ jobs:
       # is ever cached, because this snapshot is created BEFORE running tests.
       # The first cache miss initializes a snapshot; subsequent CI runs restore
       # it and still execute every SQLCipher/WAL instrumentation test.
+      # Use the software GLES path consistently. The previous snapshot could
+      # not load after the emulator update, and the Vulkan-enabled AVD then
+      # disconnected during instrumentation on consecutive runners.
       - name: Cache clean Android emulator boot snapshot
         uses: actions/cache@v5
         id: avd-cache
@@ -97,7 +100,7 @@ jobs:
           path: |
             ~/.android/avd/*
             ~/.android/adb*
-          key: avd-ubuntu-api35-x86_64-pixel6-cleanboot-v1
+          key: avd-ubuntu-api35-x86_64-pixel6-swiftshader-gles-cleanboot-v2
 
       - name: Initialize clean Android emulator snapshot
         if: steps.avd-cache.outputs.cache-hit != 'true'
@@ -107,7 +110,7 @@ jobs:
           arch: x86_64
           profile: pixel_6
           force-avd-creation: false
-          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          emulator-options: -no-window -gpu swiftshader -feature -Vulkan -noaudio -no-boot-anim -camera-back none
           disable-animations: false
           script: echo "Clean AVD boot snapshot created before test execution"
 
@@ -118,7 +121,7 @@ jobs:
           arch: x86_64
           profile: pixel_6
           force-avd-creation: false
-          emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          emulator-options: -no-snapshot-save -no-window -gpu swiftshader -feature -Vulkan -noaudio -no-boot-anim -camera-back none
           disable-animations: true
           # android-emulator-runner invokes each script line as a separate
           # shell command. Keep multiline logic inside our own Bash process.
@@ -188,6 +191,6 @@ jobs:
           arch: x86_64
           profile: pixel_6
           force-avd-creation: false
-          emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          emulator-options: -no-snapshot-save -no-window -gpu swiftshader -feature -Vulkan -noaudio -no-boot-anim -camera-back none
           disable-animations: true
           script: bash ci/verify-production-release.sh
