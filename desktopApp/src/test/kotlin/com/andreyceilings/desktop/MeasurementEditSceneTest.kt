@@ -177,7 +177,8 @@ class MeasurementEditSceneTest {
             it.config.getOrNull(SemanticsProperties.TestTag) == "measurement-edit-context-panel"
         }
         try {
-            scene.frame()
+            repeat(6) { scene.frame() }
+            scene.click("Вписати креслення")
             val initial = drawing()
             val bounds = initial.boundsInRoot
             val geometry = assertNotNull(validateMeasurementCreate(draft()).geometry)
