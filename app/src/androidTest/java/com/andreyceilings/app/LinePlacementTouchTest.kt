@@ -64,9 +64,8 @@ class LinePlacementTouchTest {
                 click("Розмістити лінію")
                 val canvas=compose.onNode(matcher)
                 fun world(x:Long,y:Long):Offset {
-                    val bounds=canvas.fetchSemanticsNode().boundsInRoot
-                    val contour=measurementDrawingContour(MeasurementGeometryView.Captured(validateMeasurementCreate(model.state.value.draft).geometry!!))!!
-                    val p=measurementDrawingProjection(contour,bounds.width,bounds.height,compose.density.density)!!.project(DrawingPoint(x.toDouble(),y.toDouble()))
+                    val projection = canvas.fetchSemanticsNode().config[MeasurementDrawingSemantics.Projection]
+                    val p = projection.project(DrawingPoint(x.toDouble(), y.toDouble()))
                     return Offset(p.x.toFloat(),p.y.toFloat())
                 }
                 fun tap(x:Long,y:Long) {val p=world(x,y);canvas.performTouchInput {click(p)}}

@@ -63,9 +63,8 @@ class OverlayDragTouchTest {
             compose.waitForIdle()
         }
         fun position(x:Long,y:Long):Offset {
-            val size=canvas().fetchSemanticsNode().size
-            val contour=measurementDrawingContour(MeasurementGeometryView.Captured(validateMeasurementCreate(doc.draft).geometry!!))!!
-            val p=measurementDrawingProjection(contour,size.width.toFloat(),size.height.toFloat(),compose.density.density)!!.project(DrawingPoint(x.toDouble(),y.toDouble()))
+            val projection = canvas().fetchSemanticsNode().config[MeasurementDrawingSemantics.Projection]
+            val p = projection.project(DrawingPoint(x.toDouble(), y.toDouble()))
             return Offset(p.x.toFloat(),p.y.toFloat())
         }
         fun tap(x:Long,y:Long){val p=position(x,y);canvas().performTouchInput {click(p)}}
@@ -90,6 +89,11 @@ class OverlayDragTouchTest {
                 }
                 val viewport = canvas().fetchSemanticsNode().config[MeasurementDrawingSemantics.Viewport]
                 assertTrue(viewport.zoom > 1f)
+                val firstWorldPoint = DrawingPoint(1000.0, 1500.0)
+                val secondWorldPoint = DrawingPoint(3000.0, 1500.0)
+                fun pixelDistance(projection: MeasurementDrawingProjection) =
+                    projection.project(secondWorldPoint).x - projection.project(firstWorldPoint).x
+                val baselineDistance = pixelDistance(canvas().fetchSemanticsNode().config[MeasurementDrawingSemantics.Projection])
                 click("Контур")
                 click("Вартість")
                 compose.onNodeWithText("Розрахунок за останнім збереженим заміром").assertIsDisplayed()
@@ -99,6 +103,7 @@ class OverlayDragTouchTest {
                 assertEquals(selected.id, restored.id)
                 assertEquals(point.uuid, restored.config[MeasurementDrawingSemantics.SelectedPoint])
                 assertEquals(viewport, restored.config[MeasurementDrawingSemantics.Viewport])
+                assertEquals(baselineDistance, pixelDistance(restored.config[MeasurementDrawingSemantics.Projection]), 0.01)
                 compose.onNodeWithTag("measurement-edit-panel").performClick()
                 click("Вписати креслення")
                 click("Зняти виділення")

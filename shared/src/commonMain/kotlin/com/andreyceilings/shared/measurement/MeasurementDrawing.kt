@@ -4,10 +4,12 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.input.pointer.*
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.input.key.*
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.material3.TextButton
@@ -42,9 +44,22 @@ object MeasurementDrawingSemantics {
     val SelectedArea=SemanticsPropertyKey<String>("Selected measurement area")
     val PointDrag=SemanticsPropertyKey<PointDragPreview>("Measurement point drag")
     val Viewport = SemanticsPropertyKey<MeasurementViewport>("Measurement viewport")
+    val Projection = SemanticsPropertyKey<MeasurementDrawingProjection>("Measurement world-to-screen projection")
     val SelectedWall = SemanticsPropertyKey<Int>("Selected measurement wall")
     val EditingEnabled=SemanticsPropertyKey<Boolean>("Measurement overlay editing enabled")
 }
+
+/** The fitted world center and physical scale are independent of the live Canvas bounds. */
+private data class MeasurementDrawingCamera(val center: DrawingPoint, val pixelsPerMm: Double) {
+    fun projection(width: Float, height: Float) = MeasurementDrawingProjection(
+        pixelsPerMm, width / 2.0 - center.x * pixelsPerMm, height / 2.0 - center.y * pixelsPerMm
+    )
+}
+
+private val measurementCameraSaver = listSaver<MeasurementDrawingCamera?, Double>(
+    save = { it?.let { camera -> listOf(camera.center.x, camera.center.y, camera.pixelsPerMm) }.orEmpty() },
+    restore = { MeasurementDrawingCamera(DrawingPoint(it[0], it[1]), it[2]) }
+)
 
 /**
  * Outline renderer only: all lengths come from world geometry. Optional ceiling features
@@ -83,7 +98,8 @@ fun MeasurementDrawing(
     onBeginAreaDrag: (String)->Unit = {}, onPreviewAreaDrag: (Double,Double)->Unit = {_,_->},
     onFinishAreaDrag: ()->Unit = {}, onCancelAreaDrag: ()->Unit = {},
     fillAvailableHeight: Boolean = fullscreen,
-    showSideLegend: Boolean = !fullscreen
+    showSideLegend: Boolean = !fullscreen,
+    retainCameraOnResize: Boolean = false
 ) {
     val contour = remember(geometry) { measurementDrawingContour(geometry) }
     if (contour == null) {
@@ -96,6 +112,9 @@ fun MeasurementDrawing(
     var panY by rememberSaveable { mutableStateOf(0f) }
     val viewport = MeasurementViewport(zoom, panX, panY)
     var canvasSize by remember { mutableStateOf(IntSize.Zero) }
+    var fittedCamera by rememberSaveable(stateSaver = measurementCameraSaver) {
+        mutableStateOf<MeasurementDrawingCamera?>(null)
+    }
     val focusRequester = remember { FocusRequester() }
     var markerGesture by remember { mutableStateOf(false) }
     fun move(dx: Float, dy: Float, factor: Float = 1f) {
@@ -103,8 +122,6 @@ fun MeasurementDrawing(
         val next = MeasurementViewport(zoom, panX, panY).move(dx, dy, factor)
         zoom = next.zoom; panX = next.panX; panY = next.panY
     }
-    fun fit() { zoom = 1f; panX = 0f; panY = 0f }
-    val currentViewport by rememberUpdatedState(viewport)
     val currentSelection by rememberUpdatedState(onSelectSide)
     val currentPoints by rememberUpdatedState(pointPlacements)
     val currentPointSelection by rememberUpdatedState(onSelectPoint)
@@ -131,6 +148,35 @@ fun MeasurementDrawing(
     val currentFinishLineDrag by rememberUpdatedState(onFinishLineDrag)
     val currentCancelLineDrag by rememberUpdatedState(onCancelLineDrag)
     val currentFitPoints by rememberUpdatedState(fitPoints)
+    val currentContour by rememberUpdatedState(contour)
+    val density = LocalDensity.current.density
+
+    fun fitCamera(size: IntSize): MeasurementDrawingCamera? {
+        val width = size.width.toFloat()
+        val height = size.height.toFloat()
+        val projection = measurementDrawingProjection(currentContour, width, height, density, currentFitPoints)
+            ?: return null
+        return MeasurementDrawingCamera(projection.inverse(DrawingPoint(width / 2.0, height / 2.0)), projection.scale)
+    }
+
+    fun fit() {
+        if (retainCameraOnResize) fittedCamera = fitCamera(canvasSize) ?: fittedCamera
+        zoom = 1f
+        panX = 0f
+        panY = 0f
+    }
+
+    fun projectDrawing(width: Float, height: Float): MeasurementDrawingProjection? {
+        if (width <= 0f || height <= 0f) return null
+        val base = fittedCamera?.takeIf { retainCameraOnResize }?.projection(width, height)
+            ?: measurementDrawingProjection(currentContour, width, height, density, currentFitPoints)
+            ?: return null
+        if (!interactive) return base
+        val viewport = MeasurementViewport(zoom, panX, panY)
+        val origin = viewport.transform(DrawingPoint(base.offsetX, base.offsetY), width, height)
+        return MeasurementDrawingProjection(base.scale * viewport.zoom, origin.x, origin.y)
+    }
+    val semanticsProjection = projectDrawing(canvasSize.width.toFloat(), canvasSize.height.toFloat())
     val currentSelectedPoint by rememberUpdatedState(selectedPointUuid)
     val currentBeginDrag by rememberUpdatedState(onBeginPointDrag)
     val currentPreviewDrag by rememberUpdatedState(onPreviewPointDrag)
@@ -172,19 +218,17 @@ fun MeasurementDrawing(
                 awaitEachGesture {
                     val down = awaitFirstDown(requireUnconsumed = false)
                     val width = canvasSize.width.toFloat(); val height = canvasSize.height.toFloat()
-                    val projection = measurementDrawingProjection(contour, width, height, density, currentFitPoints) ?: return@awaitEachGesture
-                    val initialView = currentViewport
-                    fun world(position: Offset) = projection.inverse(initialView.inverse(
-                        DrawingPoint(position.x.toDouble(), position.y.toDouble()), width, height))
+                    val projection = projectDrawing(width, height) ?: return@awaitEachGesture
+                    fun world(position: Offset) = projection.inverse(DrawingPoint(position.x.toDouble(), position.y.toDouble()))
                     fun hit(position: Offset): PointPlacement? = currentPoints.minByOrNull { marker ->
-                        val p = currentViewport.transform(projection.project(DrawingPoint(marker.xMm.toDouble(), marker.yMm.toDouble())), width, height)
+                        val p = projection.project(DrawingPoint(marker.xMm.toDouble(), marker.yMm.toDouble()))
                         hypot(p.x - position.x, p.y - position.y)
                     }?.takeIf { marker ->
-                        val p = currentViewport.transform(projection.project(DrawingPoint(marker.xMm.toDouble(), marker.yMm.toDouble())), width, height)
+                        val p = projection.project(DrawingPoint(marker.xMm.toDouble(), marker.yMm.toDouble()))
                         hypot(p.x - position.x, p.y - position.y) <= 24.dp.toPx()
                     }
                     fun lineDistance(line:LinePlacement,position:Offset):Double {
-                        fun screen(p:PointPositionMm)=currentViewport.transform(projection.project(DrawingPoint(p.xMm.toDouble(),p.yMm.toDouble())),width,height)
+                        fun screen(p:PointPositionMm)=projection.project(DrawingPoint(p.xMm.toDouble(),p.yMm.toDouble()))
                         val a=screen(line.start);val b=screen(line.end)
                         val dx=b.x-a.x;val dy=b.y-a.y
                         val square=dx*dx+dy*dy
@@ -192,7 +236,7 @@ fun MeasurementDrawing(
                         return hypot(position.x-a.x-t*dx,position.y-a.y-t*dy)
                     }
                     fun areaDistance(feature:AreaFeature) = areaHitDistance(feature.shape,DrawingPoint(down.position.x.toDouble(),down.position.y.toDouble())) {p ->
-                        currentViewport.transform(projection.project(DrawingPoint(p.xMm.toDouble(),p.yMm.toDouble())),width,height)
+                        projection.project(DrawingPoint(p.xMm.toDouble(),p.yMm.toDouble()))
                     }
                     val halo=24.dp.toPx()
                     // A selected target owns its halo before unrelated overlays. Otherwise
@@ -200,7 +244,7 @@ fun MeasurementDrawing(
                     val selectedArea=currentAreas.find {it.uuid==currentSelectedArea && areaDistance(it)<=halo}
                     val selectedLine=currentLines.find {it.uuid==currentSelectedLine && lineDistance(it,down.position)<=halo}
                     val selectedMarker=currentPoints.find {it.uuid==currentSelectedPoint}?.takeIf {p ->
-                        val screen=currentViewport.transform(projection.project(DrawingPoint(p.xMm.toDouble(),p.yMm.toDouble())),width,height)
+                        val screen=projection.project(DrawingPoint(p.xMm.toDouble(),p.yMm.toDouble()))
                         hypot(screen.x-down.position.x,screen.y-down.position.y)<=halo
                     }
                     val creating=currentAreaMode || currentLineMode || currentMode
@@ -286,7 +330,7 @@ fun MeasurementDrawing(
                                         if (target.x.isFinite() && target.y.isFinite() && target.x in -bound..bound && target.y in -bound..bound)
                                             currentPointTap(target.x.roundToLong(), target.y.roundToLong())
                                     } else {
-                                        val points = contour.points.map { currentViewport.transform(projection.project(it), width, height) }
+                                        val points = contour.points.map(projection::project)
                                         measurementWallAt(points, position.x, position.y, 24.dp.toPx())?.let(currentSelection)
                                     }
                                     focusRequester.requestFocus()
@@ -317,13 +361,19 @@ fun MeasurementDrawing(
                 }
             }
         Canvas(Modifier.fillMaxWidth().then(if (fillAvailableHeight) Modifier.weight(1f) else Modifier.height(if (compact) 155.dp else 235.dp))
-            .clipToBounds().onSizeChanged { canvasSize = it }.then(inputModifier)
+            .clipToBounds().onSizeChanged { size ->
+                canvasSize = size
+                if (retainCameraOnResize && fittedCamera == null) fittedCamera = fitCamera(size)
+            }.then(inputModifier)
             .semantics {
                 contentDescription = "Контур стелі, ${contour.points.size} вершин, позначок: ${pointPlacements.size}, ліній: ${linePlacements.size}, площинних об’єктів: ${areaFeatures.size}"
                 this[MeasurementDrawingSemantics.Points]=pointPlacements
                 this[MeasurementDrawingSemantics.Lines]=linePlacements
                 this[MeasurementDrawingSemantics.Areas]=areaFeatures
                 this[MeasurementDrawingSemantics.Viewport] = viewport
+                semanticsProjection?.let {
+                    this[MeasurementDrawingSemantics.Projection] = it
+                }
                 selectedSide?.let { this[MeasurementDrawingSemantics.SelectedWall] = it }
                 this[MeasurementDrawingSemantics.EditingEnabled]=pointEditingEnabled || lineEditingEnabled || areaEditingEnabled
                 selectedPointUuid?.let {this[MeasurementDrawingSemantics.SelectedPoint]=it}
@@ -331,14 +381,15 @@ fun MeasurementDrawing(
                 selectedAreaUuid?.let {this[MeasurementDrawingSemantics.SelectedArea]=it}
                 pointDrag?.let {this[MeasurementDrawingSemantics.PointDrag]=it}
             }) {
-            val layout = layoutMeasurementDrawing(contour, size.width, size.height,
-                textLayouts.map { DrawingLabelSize(it.size.width.toFloat(), it.size.height.toFloat()) }, density,
-                vertexLayouts.map { DrawingLabelSize(it.size.width.toFloat(), it.size.height.toFloat()) }, extraWorldPoints = fitPoints)
-                ?: return@Canvas
-            val points = layout.points.map { point ->
-                val transformed = if (interactive) viewport.transform(point, size.width, size.height) else point
-                Offset(transformed.x.toFloat(), transformed.y.toFloat())
+            val projection = projectDrawing(size.width, size.height) ?: return@Canvas
+            val projectedPoints = contour.points.map(projection::project)
+            val points = projectedPoints.map { Offset(it.x.toFloat(), it.y.toFloat()) }
+            fun screen(point: DrawingPoint): Offset {
+                val projected = projection.project(point)
+                return Offset(projected.x.toFloat(), projected.y.toFloat())
             }
+            fun screenPosition(point: PointPositionMm) =
+                screen(DrawingPoint(point.xMm.toDouble(), point.yMm.toDouble()))
             val path = Path().apply {
                 moveTo(points.first().x, points.first().y)
                 points.drop(1).forEach { lineTo(it.x, it.y) }
@@ -353,41 +404,28 @@ fun MeasurementDrawing(
                 drawLine(ink.copy(alpha=0.65f),points[i],points[(i+1)%points.size],strokeWidth=6.dp.toPx())
             }
             points.forEach { drawCircle(ink, 3.dp.toPx(), it) }
-            val projection = measurementDrawingProjection(contour, size.width, size.height, density, fitPoints)
-            if(projection!=null) {
-                fun screenArea(p:PointPositionMm):Offset {
-                    val fitted=projection.project(DrawingPoint(p.xMm.toDouble(),p.yMm.toDouble()))
-                    val transformed=if(interactive)viewport.transform(fitted,size.width,size.height) else fitted
-                    return Offset(transformed.x.toFloat(),transformed.y.toFloat())
-                }
-                areaFeatures.forEach {saved ->
-                    val feature=areaDrag?.takeIf {it.uuid==saved.uuid} ?: saved
-                    val color=if(feature.unresolved) androidx.compose.ui.graphics.Color(0xFFD34C44) else ink
-                    val width=if(feature.uuid==selectedAreaUuid)4.dp.toPx() else 2.dp.toPx()
-                    when(val shape=feature.shape) {
-                        is AreaShape.Circle -> {
-                            val center=screenArea(shape.center)
-                            val radius=(screenArea(PointPositionMm(shape.center.xMm+shape.radiusMm,shape.center.yMm))-center).getDistance()
-                            drawCircle(color.copy(alpha=0.16f),radius,center)
-                            drawCircle(color,radius,center,style=Stroke(width))
-                        }
-                        is AreaShape.Polygon -> {
-                            val vertices=shape.vertices.map(::screenArea)
-                            val areaPath=Path().apply {moveTo(vertices.first().x,vertices.first().y);vertices.drop(1).forEach {lineTo(it.x,it.y)};close()}
-                            drawPath(areaPath,color.copy(alpha=0.16f));drawPath(areaPath,color,style=Stroke(width))
-                        }
+            areaFeatures.forEach {saved ->
+                val feature=areaDrag?.takeIf {it.uuid==saved.uuid} ?: saved
+                val color=if(feature.unresolved) androidx.compose.ui.graphics.Color(0xFFD34C44) else ink
+                val width=if(feature.uuid==selectedAreaUuid)4.dp.toPx() else 2.dp.toPx()
+                when(val shape=feature.shape) {
+                    is AreaShape.Circle -> {
+                        val center=screenPosition(shape.center)
+                        val radius=(screenPosition(PointPositionMm(shape.center.xMm+shape.radiusMm,shape.center.yMm))-center).getDistance()
+                        drawCircle(color.copy(alpha=0.16f),radius,center)
+                        drawCircle(color,radius,center,style=Stroke(width))
                     }
-                    if(feature.uuid==selectedAreaUuid)feature.shape.positions.forEach {drawCircle(color,5.dp.toPx(),screenArea(it))}
+                    is AreaShape.Polygon -> {
+                        val vertices=shape.vertices.map(::screenPosition)
+                        val areaPath=Path().apply {moveTo(vertices.first().x,vertices.first().y);vertices.drop(1).forEach {lineTo(it.x,it.y)};close()}
+                        drawPath(areaPath,color.copy(alpha=0.16f));drawPath(areaPath,color,style=Stroke(width))
+                    }
                 }
-                areaCreationPoints.forEach {drawCircle(ink,5.dp.toPx(),screenArea(it))}
-                areaCreationPoints.zipWithNext().forEach {(a,b)->drawLine(ink.copy(alpha=0.6f),screenArea(a),screenArea(b),strokeWidth=2.dp.toPx())}
+                if(feature.uuid==selectedAreaUuid)feature.shape.positions.forEach {drawCircle(color,5.dp.toPx(),screenPosition(it))}
             }
-            if (projection != null) mountingDimensions.forEachIndexed { index, dimension ->
-                fun screen(p: DrawingPoint): Offset {
-                    val fitted=projection.project(p)
-                    val transformed=if(interactive) viewport.transform(fitted,size.width,size.height) else fitted
-                    return Offset(transformed.x.toFloat(),transformed.y.toFloat())
-                }
+            areaCreationPoints.forEach {drawCircle(ink,5.dp.toPx(),screenPosition(it))}
+            areaCreationPoints.zipWithNext().forEach {(a,b)->drawLine(ink.copy(alpha=0.6f),screenPosition(a),screenPosition(b),strokeWidth=2.dp.toPx())}
+            mountingDimensions.forEachIndexed { index, dimension ->
                 val a=screen(dimension.start);val b=screen(dimension.end)
                 drawLine(ink,a,b,strokeWidth=1.dp.toPx())
                 drawCircle(ink,2.dp.toPx(),b)
@@ -396,30 +434,22 @@ fun MeasurementDrawing(
                 drawRect(surface.copy(alpha=0.96f),mid,Size(label.size.width.toFloat(),label.size.height.toFloat()))
                 drawText(label,topLeft=mid)
             }
-            if(projection!=null)lineStartPoint?.let {start ->
-                val p=projection.project(DrawingPoint(start.xMm.toDouble(),start.yMm.toDouble()))
-                val v=if(interactive)viewport.transform(p,size.width,size.height) else p
-                drawCircle(ink,6.dp.toPx(),Offset(v.x.toFloat(),v.y.toFloat()),style=Stroke(2.dp.toPx()))
+            lineStartPoint?.let { start ->
+                drawCircle(ink, 6.dp.toPx(), screenPosition(start), style = Stroke(2.dp.toPx()))
             }
-            if(projection!=null)linePlacements.forEach {line ->
-                val visible=lineDrag?.takeIf {it.uuid==line.uuid} ?: line
-                fun screen(p:PointPositionMm):Offset {
-                    val fitted=projection.project(DrawingPoint(p.xMm.toDouble(),p.yMm.toDouble()))
-                    val v=if(interactive)viewport.transform(fitted,size.width,size.height) else fitted
-                    return Offset(v.x.toFloat(),v.y.toFloat())
-                }
-                val a=screen(visible.start);val b=screen(visible.end)
+            linePlacements.forEach { line ->
+                val visible = lineDrag?.takeIf { it.uuid == line.uuid } ?: line
+                val a = screenPosition(visible.start)
+                val b = screenPosition(visible.end)
                 val color=if(visible.unresolved)androidx.compose.ui.graphics.Color(0xffb3261e) else ink
                 if(line.uuid==selectedLineUuid)drawLine(color.copy(alpha=0.25f),a,b,strokeWidth=14.dp.toPx())
                 drawLine(color,a,b,strokeWidth=if(visible.precision==PointPrecision.EXACT)3.dp.toPx() else 2.dp.toPx())
                 listOf(a,b).forEach {drawCircle(surface,5.dp.toPx(),it);drawCircle(color,5.dp.toPx(),it,style=Stroke(2.dp.toPx()))}
                 if(visible.needsReview)drawCircle(color,8.dp.toPx(),a,style=Stroke(1.dp.toPx()))
             }
-            if (projection != null) pointPlacements.forEach { marker ->
+            pointPlacements.forEach { marker ->
                 val preview = pointDrag?.takeIf { it.point.uuid == marker.uuid }
-                val fitted = projection.project(DrawingPoint(preview?.xMm ?: marker.xMm.toDouble(), preview?.yMm ?: marker.yMm.toDouble()))
-                val projected = if (interactive) viewport.transform(fitted, size.width, size.height) else fitted
-                val center = Offset(projected.x.toFloat(), projected.y.toFloat())
+                val center = screen(DrawingPoint(preview?.xMm ?: marker.xMm.toDouble(), preview?.yMm ?: marker.yMm.toDouble()))
                 drawCircle(surface, 7.dp.toPx(), center)
                 val markerInk=if(marker.mounting.unresolved) androidx.compose.ui.graphics.Color(0xffb3261e) else ink
                 drawCircle(markerInk, 7.dp.toPx(), center, style = Stroke(if (marker.precision == PointPrecision.EXACT) 3.dp.toPx() else 2.dp.toPx()))
@@ -427,13 +457,11 @@ fun MeasurementDrawing(
                 if(marker.mounting.needsReview) drawCircle(markerInk,10.dp.toPx(),center,style=Stroke(1.dp.toPx()))
                 if (marker.uuid == selectedPointUuid) drawCircle(ink, 12.dp.toPx(), center, style = Stroke(3.dp.toPx()))
             }
-            val visibleLabels = if (interactive && (zoom != 1f || panX != 0f || panY != 0f))
-                layoutMeasurementDrawingForProjectedPoints(
-                    points.map { DrawingPoint(it.x.toDouble(), it.y.toDouble()) },
-                    size.width, size.height,
-                    textLayouts.map { DrawingLabelSize(it.size.width.toFloat(), it.size.height.toFloat()) }, density,
-                    vertexLayouts.map { DrawingLabelSize(it.size.width.toFloat(), it.size.height.toFloat()) })
-            else layout
+            val visibleLabels = layoutMeasurementDrawingForProjectedPoints(
+                projectedPoints, size.width, size.height,
+                textLayouts.map { DrawingLabelSize(it.size.width.toFloat(), it.size.height.toFloat()) }, density,
+                vertexLayouts.map { DrawingLabelSize(it.size.width.toFloat(), it.size.height.toFloat()) }
+            )
             visibleLabels.vertexLabels.forEach { label ->
                 drawText(vertexLayouts[label.sideIndex], topLeft = Offset(label.left, label.top))
             }

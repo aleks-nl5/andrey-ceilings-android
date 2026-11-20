@@ -46,20 +46,20 @@ class AreaFeatureSceneTest {
                 scene.awaitEnabled("Зберегти")
                 scene.click("Елементи")
                 scene.click("Позначити перешкоду")
-                scene.tapWorld(row,500,500)
+                scene.tapWorld(500,500)
                 assertEquals(1,model.state.value.area.vertices.size,"First area corner must be delivered in $dark theme")
-                scene.tapWorld(row,1000,1000)
+                scene.tapWorld(1000,1000)
                 assertEquals(2,model.state.value.area.vertices.size,"Second area corner must be delivered in $dark theme")
                 scene.click("Завершити фігуру в чернетці")
                 assertEquals(1,model.displayAreas().size)
                 scene.click("Позначити отвір")
                 scene.setField("Діаметр, м (парні мм)", "0,2")
-                scene.tapWorld(row, 2500, 1500)
+                scene.tapWorld(2500, 1500)
                 assertEquals(1, model.state.value.area.vertices.size, "Circle center must be delivered in $dark theme")
                 scene.click("Завершити фігуру в чернетці")
                 scene.click("Розмістити область: ${element.label}")
-                scene.tapWorld(row, 1500, 500)
-                scene.tapWorld(row, 2000, 1000)
+                scene.tapWorld(1500, 500)
+                scene.tapWorld(2000, 1000)
                 assertEquals(2, model.state.value.area.vertices.size, "Catalog area corners must be delivered in $dark theme")
                 scene.click("Завершити фігуру в чернетці")
                 assertEquals(3,model.displayAreas().size)
@@ -67,7 +67,7 @@ class AreaFeatureSceneTest {
                 scene.click("Скасувати дію");assertEquals(2,model.displayAreas().size);scene.click("Повторити")
                 scene.click("На весь екран");scene.click("Вписати креслення")
                 scene.click("Згорнути")
-                scene.tapWorld(row,2500,1500)
+                scene.tapWorld(2500,1500)
                 assertEquals(AreaRole.VOID_MARKER,model.displayAreas().first {it.uuid==model.state.value.area.selected}.role)
                 scene.click("Властивості фігури")
                 scene.setField("Виміряний діаметр", "")
@@ -98,14 +98,13 @@ class AreaFeatureSceneTest {
             }
         }
     }
-    private fun ImageComposeScene.world(row: Room_measurements, x: Long, y: Long): Offset {
+    private fun ImageComposeScene.world(x: Long, y: Long): Offset {
         val b = stableBounds()
-        val contour = measurementDrawingContour(measurementGeometryForViewing(row.shape, row.drawingJson, row.lengthMeters, row.widthMeters))!!
-        val p = measurementDrawingProjection(contour, b.width, b.height)!!.project(DrawingPoint(x.toDouble(), y.toDouble()))
+        val p = canvas().config[MeasurementDrawingSemantics.Projection].project(DrawingPoint(x.toDouble(), y.toDouble()))
         return Offset(b.left + p.x.toFloat(), b.top + p.y.toFloat())
     }
-    private fun ImageComposeScene.tapWorld(row: Room_measurements, x: Long, y: Long) {
-        val p = world(row, x, y)
+    private fun ImageComposeScene.tapWorld(x: Long, y: Long) {
+        val p = world(x, y)
         assertTrue(p.x in 0f..900f && p.y in 0f..1400f, "Tap must be inside the viewport: $p")
         sendPointerEvent(PointerEventType.Press, p, type = PointerType.Touch)
         sendPointerEvent(PointerEventType.Release, p, type = PointerType.Touch)

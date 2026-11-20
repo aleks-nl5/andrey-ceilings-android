@@ -74,14 +74,14 @@ class PointEditingSceneTest {
             var testFailure: Throwable? = null
             try {
                 scene.awaitText("Розміщено: 2 з 6")
-                scene.tapWorld(original,second.xMm,second.yMm)
+                scene.tapWorld(second.xMm,second.yMm)
                 scene.awaitText("Ця позначка: точне числове положення без виміряних стінних прив'язок")
-                scene.tapWorld(original, 1000, 1000)
+                scene.tapWorld(1000, 1000)
                 scene.awaitText("Ця позначка: приблизне положення")
                 assertEquals(p.uuid, scene.canvas().config.getOrNull(MeasurementDrawingSemantics.SelectedPoint))
                 val before = points.find(p.uuid)
                 val priorPricing = assertIs<PricingReadResult.Loaded>(pricing.read(project, original.uuid))
-                val start = scene.world(original, 1000, 1000); val end = scene.world(original, 1800, 1600)
+                val start = scene.world(1000, 1000); val end = scene.world(1800, 1600)
                 val inputType = if (dark) PointerType.Mouse else PointerType.Touch
                 scene.sendPointerEvent(PointerEventType.Press, start, type = inputType)
                 scene.sendPointerEvent(PointerEventType.Move, end, type = inputType)
@@ -101,7 +101,7 @@ class PointEditingSceneTest {
                 assertEquals(2, points.forMeasurement(original.uuid).size)
                 val saved = points.find(p.uuid)!!
                 val afterPointSave=MeasurementRepository(db).find(id)
-                val pinch = scene.world(original, saved.xMm, saved.yMm)
+                val pinch = scene.world(saved.xMm, saved.yMm)
                 fun pointer(id: Long, offset: Offset, pressed: Boolean) = ComposeScenePointer(PointerId(id), offset, pressed, PointerType.Touch)
                 val callsBeforePinch = calls.get()
                 scene.sendPointerEvent(PointerEventType.Press, pointers = listOf(pointer(0, pinch, true)))
@@ -110,30 +110,30 @@ class PointEditingSceneTest {
                 scene.sendPointerEvent(PointerEventType.Release, pointers = listOf(pointer(0, pinch - Offset(20f, 0f), false), pointer(1, pinch + Offset(100f, 0f), false)))
                 scene.frame(); assertNull(scene.canvas().config.getOrNull(MeasurementDrawingSemantics.PointDrag)); assertEquals(callsBeforePinch, calls.get())
                 assertEquals(saved, points.find(p.uuid)); scene.click("Вписати креслення")
-                val canceledStart = scene.world(original, saved.xMm, saved.yMm)
-                val canceledEnd = scene.world(original, saved.xMm + 1000, saved.yMm + 500)
+                val canceledStart = scene.world(saved.xMm, saved.yMm)
+                val canceledEnd = scene.world(saved.xMm + 1000, saved.yMm + 500)
                 scene.sendPointerEvent(PointerEventType.Press, canceledStart, type = PointerType.Touch)
                 scene.sendPointerEvent(PointerEventType.Move, canceledEnd, type = PointerType.Touch)
                 scene.frame(); assertNotNull(scene.canvas().config.getOrNull(MeasurementDrawingSemantics.PointDrag))
                 assertEquals(nav, guard.transition(nav, nav.back()))
                 scene.sendPointerEvent(PointerEventType.Release, canceledEnd, type = PointerType.Touch)
                 scene.frame(); assertEquals(saved, points.find(p.uuid)); assertEquals(callsBeforePinch, calls.get())
-                scene.tapWorld(original, saved.xMm, saved.yMm)
-                val outside = scene.world(original, -500, saved.yMm)
-                val from = scene.world(original, saved.xMm, saved.yMm)
+                scene.tapWorld(saved.xMm, saved.yMm)
+                val outside = scene.world(-500, saved.yMm)
+                val from = scene.world(saved.xMm, saved.yMm)
                 scene.sendPointerEvent(PointerEventType.Press, from, type = PointerType.Touch)
                 scene.sendPointerEvent(PointerEventType.Move, outside, type = PointerType.Touch)
                 scene.sendPointerEvent(PointerEventType.Release, outside, type = PointerType.Touch)
                 scene.awaitText("Позначка має бути строго всередині контуру.")
                 assertEquals(saved, points.find(p.uuid))
-                val empty = scene.world(original, 4000, 3000)
+                val empty = scene.world(4000, 3000)
                 scene.sendPointerEvent(PointerEventType.Press, empty, type = PointerType.Touch)
                 scene.sendPointerEvent(PointerEventType.Move, empty + Offset(50f, 30f), type = PointerType.Touch)
                 scene.sendPointerEvent(PointerEventType.Release, empty + Offset(50f, 30f), type = PointerType.Touch)
                 scene.frame(); assertEquals(saved, points.find(p.uuid)); scene.click("Вписати креслення")
                 scene.click("Задати розміри від стін")
                 scene.awaitDrawingPoints(pointIds)
-                scene.tapWorld(original,saved.xMm,saved.yMm)
+                scene.tapWorld(saved.xMm,saved.yMm)
                 scene.click("Задати розміри від стін")
                 scene.setField("Від першої стіни, м","0,")
                 assertEquals(saved,points.find(p.uuid))
@@ -144,7 +144,7 @@ class PointEditingSceneTest {
                 scene.click("На весь екран")
                 scene.awaitDrawingPoints(pointIds)
                 scene.awaitText("Точкові позначки")
-                val fsStart=scene.world(original,1500,600);val fsEnd=scene.world(original,1700,900)
+                val fsStart=scene.world(1500,600);val fsEnd=scene.world(1700,900)
                 scene.sendPointerEvent(PointerEventType.Press,fsStart,type=inputType)
                 scene.sendPointerEvent(PointerEventType.Move,fsEnd,type=inputType)
                 scene.sendPointerEvent(PointerEventType.Release,fsEnd,type=inputType)
@@ -171,7 +171,7 @@ class PointEditingSceneTest {
                 scene.click("Пізніше")
                 repeat(200) {if(editing){scene.frame();delay(25)}}
                 assertFalse(editing);scene.awaitText("Перевірити (2)")
-                scene.tapWorld(MeasurementRepository(db).find(id)!!,1500,600)
+                scene.tapWorld(1500,600)
                 scene.awaitText("Ця позначка: положення за виміряними відстанями")
                 assertTrue(points.forMeasurement(original.uuid).all {it.mounting.deferredAt!=null})
                 scene.click("Перевірити (2)")
@@ -203,19 +203,18 @@ class PointEditingSceneTest {
             }
         }
     }
-    private fun ImageComposeScene.world(row: Room_measurements, x: Long, y: Long): Offset {
+    private fun ImageComposeScene.world(x: Long, y: Long): Offset {
         val b = stableBounds()
-        val contour = measurementDrawingContour(measurementGeometryForViewing(row.shape, row.drawingJson, row.lengthMeters, row.widthMeters))!!
-        val p = measurementDrawingProjection(contour, b.width, b.height)!!.project(DrawingPoint(x.toDouble(), y.toDouble()))
+        val p = canvas().config[MeasurementDrawingSemantics.Projection].project(DrawingPoint(x.toDouble(), y.toDouble()))
         return Offset(b.left + p.x.toFloat(), b.top + p.y.toFloat())
     }
-    private fun ImageComposeScene.tapWorld(row: Room_measurements, x: Long, y: Long) {
+    private fun ImageComposeScene.tapWorld(x: Long, y: Long) {
         val deadline=System.nanoTime()+15_000_000_000L
         while(canvas().config.getOrNull(MeasurementDrawingSemantics.EditingEnabled)!=true && System.nanoTime()<deadline) {
             frame();Thread.sleep(20)
         }
         assertEquals(true,canvas().config.getOrNull(MeasurementDrawingSemantics.EditingEnabled),"Wait for the actual drawing editor")
-        val p = world(row, x, y)
+        val p = world(x, y)
         sendPointerEvent(PointerEventType.Press, p, type = PointerType.Touch)
         sendPointerEvent(PointerEventType.Release, p, type = PointerType.Touch); frame()
     }

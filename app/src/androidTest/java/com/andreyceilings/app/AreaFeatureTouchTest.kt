@@ -46,9 +46,8 @@ class AreaFeatureTouchTest {
         }
         fun tap(x:Long,y:Long) {
             val canvas=compose.onNode(matcher)
-            val bounds=canvas.fetchSemanticsNode().boundsInRoot
-            val contour=measurementDrawingContour(MeasurementGeometryView.Captured(validateMeasurementCreate(model.state.value.draft).geometry!!))!!
-            val p=measurementDrawingProjection(contour,bounds.width,bounds.height,compose.density.density)!!.project(DrawingPoint(x.toDouble(),y.toDouble()))
+            val projection = canvas.fetchSemanticsNode().config[MeasurementDrawingSemantics.Projection]
+            val p = projection.project(DrawingPoint(x.toDouble(), y.toDouble()))
             canvas.performTouchInput {click(Offset(p.x.toFloat(),p.y.toFloat()))}
         }
         try {

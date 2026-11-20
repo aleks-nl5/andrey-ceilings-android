@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material3.*
@@ -78,7 +79,8 @@ fun MeasurementEditScreen(
 fun MeasurementEditScreen(
     model: MeasurementEditModel, contentPadding: PaddingValues = PaddingValues(16.dp),
     systemTopInset: Dp = 0.dp, onBack: () -> Unit, onSaved: () -> Unit,
-    navigationGuard: MeasurementCreateNavigationGuard? = null
+    navigationGuard: MeasurementCreateNavigationGuard? = null,
+    imeInsets: WindowInsets? = null
 ) {
     val state by model.state.collectAsState()
     val validation = remember(state.draft) { validateMeasurementCreate(state.draft) }
@@ -103,7 +105,10 @@ fun MeasurementEditScreen(
         if (state.lineElementUuid != null || state.area.tool != null) MeasurementEditContext.ELEMENTS
         else MeasurementEditContext.CONTOUR
     ) }
-    var panelExpanded by rememberSaveable(measurementUuid) { mutableStateOf(true) }
+    var normalPanelExpanded by rememberSaveable(measurementUuid) { mutableStateOf(true) }
+    var fullscreenPanelExpanded by rememberSaveable(measurementUuid) { mutableStateOf(false) }
+    val panelExpanded = if (fullscreen) fullscreenPanelExpanded else normalPanelExpanded
+    var statusDetails by rememberSaveable(measurementUuid) { mutableStateOf<String?>(null) }
     val panelState = rememberSaveableStateHolder()
     val contourScroll = rememberScrollState()
     var reloadConfirm by remember { mutableStateOf(false) }
@@ -173,14 +178,17 @@ fun MeasurementEditScreen(
         state.dirty -> "Є незбережені зміни"
         else -> null
     }
+    val statusIsProblem = state.error != null || geometryWarning != null || state.uncertain || state.conflict ||
+        overlay is PointOverlayState.Missing || overlay is PointOverlayState.Unavailable
     val panelFraction = when {
+        fullscreen && !panelExpanded -> 0.18f
         !panelExpanded -> 0.24f
-        fullscreen -> 0.40f
         else -> 0.47f
     }
 
+    val keyboardPadding = if (imeInsets == null) Modifier.imePadding() else Modifier.windowInsetsPadding(imeInsets)
     Column(
-        Modifier.fillMaxSize().padding(contentPadding).padding(top = systemTopInset).imePadding(),
+        Modifier.fillMaxSize().padding(contentPadding).padding(top = systemTopInset).then(keyboardPadding),
         verticalArrangement = Arrangement.spacedBy(2.dp)
     ) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -207,6 +215,7 @@ fun MeasurementEditScreen(
                 model.redo()
             }
             if (!fullscreen) MeasurementEditAction("На весь екран", enabled, Modifier.weight(1f)) {
+                fullscreenPanelExpanded = false
                 fullscreen = true
             }
             MeasurementEditAction("Відхилити", enabled, Modifier.weight(1f)) {
@@ -216,13 +225,18 @@ fun MeasurementEditScreen(
                 }
             }
         }
-        Box(Modifier.fillMaxWidth().height(34.dp), contentAlignment = Alignment.CenterStart) {
-            if (status != null) Text(status,
-                modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+        Row(Modifier.fillMaxWidth().height(48.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(status.orEmpty(),
+                modifier = Modifier.weight(1f).semantics { liveRegion = LiveRegionMode.Polite },
                 maxLines = 2, overflow = TextOverflow.Ellipsis,
                 style = MaterialTheme.typography.bodySmall,
-                color = if (state.error != null || geometryWarning != null) MaterialTheme.colorScheme.error
+                color = if (statusIsProblem) MaterialTheme.colorScheme.error
                     else MaterialTheme.colorScheme.onSurfaceVariant)
+            if (statusIsProblem && status != null) {
+                IconButton(onClick = { statusDetails = status }) {
+                    Icon(Icons.Default.Info, contentDescription = "Показати повне повідомлення")
+                }
+            }
         }
         if (state.uncertain || state.conflict) FlowRow {
             if (state.uncertain) TextButton(enabled = !state.saving, onClick = { scope.launch { model.save() } }) {
@@ -234,6 +248,7 @@ fun MeasurementEditScreen(
             if (geometry == null) Text("Креслення недоступне: ${validation.geometryError.orEmpty()}")
             else MeasurementDrawing(MeasurementGeometryView.Captured(geometry),
                 Modifier.fillMaxSize(), interactive = true, fillAvailableHeight = true, showSideLegend = false,
+                retainCameraOnResize = true,
                 selectedSide = selected, onSelectSide = ::select, fullscreen = fullscreen,
                 pointPlacements = if(overlay is PointOverlayState.Loaded) model.displayPoints() else emptyList(), fitPointPlacements = true,
                 selectedPointUuid=state.selectedPointUuid,onSelectPoint = { model.selectPoint(it); showElements() },
@@ -267,7 +282,13 @@ fun MeasurementEditScreen(
                     modifier = Modifier.weight(1f).testTag("measurement-edit-context-${mode.name.lowercase()}")
                 )
             }
-            IconButton(onClick = { panelExpanded = !panelExpanded }, modifier = Modifier.testTag("measurement-edit-panel")) {
+            IconButton(
+                onClick = {
+                    if (fullscreen) fullscreenPanelExpanded = !fullscreenPanelExpanded
+                    else normalPanelExpanded = !normalPanelExpanded
+                },
+                modifier = Modifier.testTag("measurement-edit-panel")
+            ) {
                 Icon(
                     if (panelExpanded) Icons.Default.KeyboardArrowDown else Icons.Default.KeyboardArrowUp,
                     contentDescription = if (panelExpanded) "Згорнути панель" else "Розгорнути панель"
@@ -358,6 +379,14 @@ fun MeasurementEditScreen(
                 }
             }
         }
+    }
+    statusDetails?.let { message ->
+        AlertDialog(
+            onDismissRequest = { statusDetails = null },
+            title = { Text("Стан заміру") },
+            text = { Text(message, Modifier.verticalScroll(rememberScrollState()).testTag("measurement-edit-status-details")) },
+            confirmButton = { TextButton(onClick = { statusDetails = null }) { Text("Закрити") } }
+        )
     }
     WallAnchorEditor(model)
     if(state.reviewPrompt) AlertDialog(onDismissRequest={},title={Text("Потрібно перевірити розміщення")},

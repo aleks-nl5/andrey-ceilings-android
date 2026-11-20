@@ -59,7 +59,7 @@ class OverlayDragSceneTest {
                 if (mode != "details") scene.awaitEnabled("Зберегти")
                 if(mode=="fullscreen")scene.click("На весь екран")
                 // Selected polygon owns the drag even inside an unrelated LINE's halo.
-                scene.tapWorld(row, 1000, 1500)
+                scene.tapWorld(1000, 1500)
                 assertEquals(f.polygon, model.state.value.area.selected, "$mode polygon selection")
                 withTimeout(5000) {
                     while (scene.canvas().config.getOrNull(MeasurementDrawingSemantics.SelectedArea) != f.polygon) {
@@ -67,7 +67,7 @@ class OverlayDragSceneTest {
                         delay(20)
                     }
                 }
-                scene.dragWorld(row, 1000, 1050, 1300, 1250)
+                scene.dragWorld(1000, 1050, 1300, 1250)
                 var polygon=model.displayAreas().first {it.uuid==f.polygon}
                 assertEquals(PointPositionMm(800,1200),polygon.shape.positions.first(),"$mode bounds=${scene.canvas().boundsInRoot}; pos=${scene.canvas().positionInRoot}; size=${scene.canvas().size}; error=${model.state.value.error}")
                 assertEquals(doc.placements.areas.first {it.uuid==f.polygon}.twiceAreaMm2,polygon.twiceAreaMm2)
@@ -75,16 +75,16 @@ class OverlayDragSceneTest {
                 assertEquals(before,OverlayDragFixture.snapshot(driver))
                 scene.click("Скасувати дію");assertEquals(doc.placements.areas.first {it.uuid==f.polygon},model.displayAreas().first {it.uuid==f.polygon})
                 scene.click("Повторити");assertEquals(polygon,model.displayAreas().first {it.uuid==f.polygon})
-                scene.click("Сегмент 1: 1 м");assertEquals(f.line,model.state.value.selectedLineUuid,"$mode must select LINE before drag");scene.dragWorld(row,1000,950,1300,750)
+                scene.click("Сегмент 1: 1 м");assertEquals(f.line,model.state.value.selectedLineUuid,"$mode must select LINE before drag");scene.dragWorld(1000,950,1300,750)
                 val line=model.displayLines().single();assertEquals(PointPositionMm(800,750),line.start);assertEquals(1000,line.lengthMm)
                 assertNull(line.startMounting.anchor);assertNull(line.endMounting.anchor)
-                scene.click("Кінець");assertEquals(2,model.state.value.lineMoveTarget);scene.dragWorld(row,1800,750,2400,750)
+                scene.click("Кінець");assertEquals(2,model.state.value.lineMoveTarget);scene.dragWorld(1800,750,2400,750)
                 assertEquals(1600,model.displayLines().single().lengthMm,"$mode: ${model.state.value.lineDrag} ${model.state.value.selectedLineUuid} ${model.state.value.error} ${model.displayLines().single()}")
-                scene.tapWorld(row,2800,1500);scene.dragWorld(row,2800,1500,3100,1800)
+                scene.tapWorld(2800,1500);scene.dragWorld(2800,1500,3100,1800)
                 val circle=model.displayAreas().first {it.uuid==f.circle};assertEquals(AreaShape.Circle(PointPositionMm(3100,1800),200),circle.shape)
                 assertEquals(doc.placements.areas.first {it.uuid==f.circle}.twiceAreaMm2,circle.twiceAreaMm2)
                 // Invalid full transform leaves the previous valid draft and every DB row intact.
-                scene.dragWorld(row,3100,1800,4500,1800)
+                scene.dragWorld(3100,1800,4500,1800)
                 assertEquals(circle,model.displayAreas().first {it.uuid==f.circle});assertNotNull(model.state.value.error)
                 assertEquals(before,OverlayDragFixture.snapshot(driver))
                 val expectedLines=model.displayLines();val expectedAreas=model.displayAreas()
@@ -99,10 +99,9 @@ class OverlayDragSceneTest {
             } finally {store.closeAndAwaitPointReads();repeat(5){scene.frame();delay(10)};scene.close();driver.close();dir.deleteRecursively()}
         }
     }
-    private fun ImageComposeScene.dragWorld(row:Room_measurements,x:Long,y:Long,toX:Long,toY:Long) {
+    private fun ImageComposeScene.dragWorld(x:Long,y:Long,toX:Long,toY:Long) {
         val b=stableBounds()
-        val contour=measurementDrawingContour(measurementGeometryForViewing(row.shape,row.drawingJson,row.lengthMeters,row.widthMeters))!!
-        val projection=measurementDrawingProjection(contour,b.width,b.height)!!
+        val projection=canvas().config[MeasurementDrawingSemantics.Projection]
         fun project(px:Long,py:Long):Offset {val p=projection.project(DrawingPoint(px.toDouble(),py.toDouble()));return Offset(b.left+p.x.toFloat(),b.top+p.y.toFloat())}
         val start=project(x,y);val end=project(toX,toY)
         val distance = (end - start).getDistance()
@@ -117,16 +116,15 @@ class OverlayDragSceneTest {
         sendPointerEvent(PointerEventType.Release, end, type = PointerType.Mouse)
         frame()
     }
-    private fun ImageComposeScene.world(row: Room_measurements, x: Long, y: Long): Offset {
+    private fun ImageComposeScene.world(x: Long, y: Long): Offset {
         stableBounds()
         val node=canvas()
         val b=Rect(node.positionInRoot,androidx.compose.ui.geometry.Size(node.size.width.toFloat(),node.size.height.toFloat()))
-        val contour = measurementDrawingContour(measurementGeometryForViewing(row.shape, row.drawingJson, row.lengthMeters, row.widthMeters))!!
-        val p = measurementDrawingProjection(contour, b.width, b.height)!!.project(DrawingPoint(x.toDouble(), y.toDouble()))
+        val p = canvas().config[MeasurementDrawingSemantics.Projection].project(DrawingPoint(x.toDouble(), y.toDouble()))
         return Offset(b.left + p.x.toFloat(), b.top + p.y.toFloat())
     }
-    private fun ImageComposeScene.tapWorld(row: Room_measurements, x: Long, y: Long) {
-        val p = world(row, x, y)
+    private fun ImageComposeScene.tapWorld(x: Long, y: Long) {
+        val p = world(x, y)
         sendPointerEvent(PointerEventType.Press, p, type = PointerType.Touch)
         sendPointerEvent(PointerEventType.Release, p, type = PointerType.Touch); frame()
     }
