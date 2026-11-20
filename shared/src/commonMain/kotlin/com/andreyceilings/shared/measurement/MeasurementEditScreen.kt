@@ -3,6 +3,8 @@ package com.andreyceilings.shared.measurement
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Redo
@@ -20,7 +22,10 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.graphics.Color
@@ -30,6 +35,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -194,14 +200,21 @@ fun MeasurementEditScreen(
         overlay is PointOverlayState.Missing || overlay is PointOverlayState.Unavailable
     val editorPadding = measurementEditorPadding(contentPadding, systemTopInset)
     val keyboardPadding = if (imeInsets == null) Modifier.imePadding() else Modifier.windowInsetsPadding(imeInsets)
+    val keyboard = imeInsets ?: WindowInsets.ime
+    val keyboardVisible = keyboard.getBottom(LocalDensity.current) > 0
+    val inputFocus = remember(imeInsets) { MeasurementInputFocus(imeInsets) }
     BoxWithConstraints(
         Modifier.fillMaxSize().padding(editorPadding).consumeWindowInsets(editorPadding).then(keyboardPadding)
     ) {
-        val panelMaxHeight = maxHeight * when {
+        val restingPanelHeight = maxHeight * when {
             panelExpanded -> 0.30f
             fullscreen -> 0.10f
             else -> 0.16f
         }
+        val panelMaxHeight = if (keyboardVisible) {
+            // Leave room for a field and its supporting text even in the compact panel.
+            maxOf(restingPanelHeight, ((maxHeight - 108.dp) * 0.66f).coerceIn(0.dp, 144.dp))
+        } else restingPanelHeight
         Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Row(
                 Modifier.fillMaxWidth().testTag("measurement-edit-header"),
@@ -328,75 +341,83 @@ fun MeasurementEditScreen(
                         lastFeature = activeElementControls
                     }
                 }
-                Column(
-                    Modifier.fillMaxWidth().heightIn(max = panelMaxHeight).verticalScroll(scroll)
-                        .testTag("measurement-edit-context-panel"),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    when (context) {
-                        MeasurementEditContext.CONTOUR -> {
-                            MeasurementWallPicker(draft, selected, ::select)
-                            TextButton(onClick = { focus.clearFocus(); allFields = !allFields }) {
-                                Text(if (allFields) "Контекстні розміри" else "Усі розміри")
+                CompositionLocalProvider(LocalMeasurementInputFocus provides inputFocus) {
+                    Column(
+                        Modifier.fillMaxWidth().heightIn(max = panelMaxHeight).verticalScroll(scroll)
+                            .testTag("measurement-edit-context-panel"),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        when (context) {
+                            MeasurementEditContext.CONTOUR -> {
+                                val nameFocus = remember { FocusRequester() }
+                                val notesFocus = remember { FocusRequester() }
+                                MeasurementWallPicker(draft, selected, ::select)
+                                TextButton(onClick = { focus.clearFocus(); allFields = !allFields }) {
+                                    Text(if (allFields) "Контекстні розміри" else "Усі розміри")
+                                }
+                                MeasurementSelectedFields(model, selected, validation, enabled, { selected = it },
+                                    compact = !allFields, followingField = nameFocus)
+                                Text("Точність заміру: ${draft.precision.label}")
+                                OutlinedTextField(draft.name, { model.accept(MeasurementCreateIntent.Name(it), grouped = true) },
+                                    enabled = enabled, label = { Text("Назва заміру *") }, singleLine = true,
+                                    modifier = measurementFieldFocusModifier().fillMaxWidth().focusRequester(nameFocus)
+                                        .onFocusChanged { if (it.isFocused) model.beginInput() else model.commitInput() },
+                                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
+                                    keyboardActions = KeyboardActions(onNext = { notesFocus.requestFocus() }),
+                                    isError = validation.nameError != null)
+                                MeasurementShapePicker(draft.shape, enabled) {
+                                    focus.clearFocus()
+                                    model.accept(MeasurementCreateIntent.Shape(it))
+                                    selected = null
+                                }
+                                validation.geometry?.let {
+                                    Text("Площа: ${formatMeasurementArea(it.areaSquareMeters, draft.precision)} м² · Периметр: ${formatMeasurementLength(it.perimeterMeters, draft.precision)} м")
+                                }
+                                geometry?.let { measurementDrawingContour(MeasurementGeometryView.Captured(it)) }?.let { contour ->
+                                    Text(if (contour.measuredSides) "Виміряні сторони" else "Сторони за збереженим контуром")
+                                    Text(contour.sideLabels.joinToString(" · "), style = MaterialTheme.typography.bodySmall)
+                                }
+                                OutlinedTextField(draft.notes, { model.accept(MeasurementCreateIntent.Notes(it), grouped = true) },
+                                    enabled = enabled, label = { Text("Примітки") }, maxLines = 3,
+                                    modifier = measurementFieldFocusModifier().fillMaxWidth().focusRequester(notesFocus)
+                                        .onFocusChanged { if (it.isFocused) model.beginInput() else model.commitInput() })
                             }
-                            MeasurementSelectedFields(model, selected, validation, enabled, { selected = it }, compact = !allFields)
-                            Text("Точність заміру: ${draft.precision.label}")
-                            OutlinedTextField(draft.name, { model.accept(MeasurementCreateIntent.Name(it), grouped = true) },
-                                enabled = enabled, label = { Text("Назва заміру *") }, singleLine = true,
-                                modifier = Modifier.fillMaxWidth().onFocusChanged { if (it.isFocused) model.beginInput() else model.commitInput() },
-                                isError = validation.nameError != null)
-                            MeasurementShapePicker(draft.shape, enabled) {
-                                focus.clearFocus()
-                                model.accept(MeasurementCreateIntent.Shape(it))
-                                selected = null
-                            }
-                            validation.geometry?.let {
-                                Text("Площа: ${formatMeasurementArea(it.areaSquareMeters, draft.precision)} м² · Периметр: ${formatMeasurementLength(it.perimeterMeters, draft.precision)} м")
-                            }
-                            geometry?.let { measurementDrawingContour(MeasurementGeometryView.Captured(it)) }?.let { contour ->
-                                Text(if (contour.measuredSides) "Виміряні сторони" else "Сторони за збереженим контуром")
-                                Text(contour.sideLabels.joinToString(" · "), style = MaterialTheme.typography.bodySmall)
-                            }
-                            OutlinedTextField(draft.notes, { model.accept(MeasurementCreateIntent.Notes(it), grouped = true) },
-                                enabled = enabled, label = { Text("Примітки") }, modifier = Modifier.fillMaxWidth().onFocusChanged {
-                                    if (it.isFocused) model.beginInput() else model.commitInput()
-                                })
-                        }
-                        MeasurementEditContext.ELEMENTS -> {
-                            if (selectedFeature != null) TextButton(enabled = enabled, onClick = model::clearDrawingSelection) {
-                                Text("Зняти виділення")
-                            }
-                            val firstSection = when {
-                                state.selectedPointUuid != null -> MeasurementElementSection.POINTS
-                                state.selectedLineUuid != null || state.lineElementUuid != null -> MeasurementElementSection.LINES
-                                state.area.selected != null || state.area.tool != null -> MeasurementElementSection.AREAS
-                                else -> MeasurementElementSection.POINTS
-                            }
-                            val sections = listOf(firstSection) + MeasurementElementSection.entries.filter { it != firstSection }
-                            val canEditGeometry = enabled && validation.geometry != null
-                            for (section in sections) key(section) {
-                                when (section) {
-                                    MeasurementElementSection.POINTS ->
-                                        MeasurementPointControls(model, state, overlay, validation, savedGeometry, enabled)
-                                    MeasurementElementSection.LINES -> LinePlacementControls(model, canEditGeometry)
-                                    MeasurementElementSection.AREAS -> AreaFeatureControls(model, canEditGeometry)
+                            MeasurementEditContext.ELEMENTS -> {
+                                if (selectedFeature != null) TextButton(enabled = enabled, onClick = model::clearDrawingSelection) {
+                                    Text("Зняти виділення")
+                                }
+                                val firstSection = when {
+                                    state.selectedPointUuid != null -> MeasurementElementSection.POINTS
+                                    state.selectedLineUuid != null || state.lineElementUuid != null -> MeasurementElementSection.LINES
+                                    state.area.selected != null || state.area.tool != null -> MeasurementElementSection.AREAS
+                                    else -> MeasurementElementSection.POINTS
+                                }
+                                val sections = listOf(firstSection) + MeasurementElementSection.entries.filter { it != firstSection }
+                                val canEditGeometry = enabled && validation.geometry != null
+                                for (section in sections) key(section) {
+                                    when (section) {
+                                        MeasurementElementSection.POINTS ->
+                                            MeasurementPointControls(model, state, overlay, validation, savedGeometry, enabled)
+                                        MeasurementElementSection.LINES -> LinePlacementControls(model, canEditGeometry)
+                                        MeasurementElementSection.AREAS -> AreaFeatureControls(model, canEditGeometry)
+                                    }
                                 }
                             }
-                        }
-                        MeasurementEditContext.COST -> {
-                            Text("Розрахунок за останнім збереженим заміром", style = MaterialTheme.typography.titleSmall)
-                            if (state.dirty) {
-                                Text("Збережіть зміни, щоб переглянути розрахунок для оновленого заміру.")
-                            } else {
-                                TextButton(enabled = enabled && !state.conflict && overlay is PointOverlayState.Loaded,
-                                    onClick = {
-                                        model.requestExit {
-                                            fullscreen = false
-                                            navigationGuard?.fullscreen?.value = false
-                                            onBack()
-                                        }
-                                    }) {
-                                    Text("Відкрити замір із калькулятором")
+                            MeasurementEditContext.COST -> {
+                                Text("Розрахунок за останнім збереженим заміром", style = MaterialTheme.typography.titleSmall)
+                                if (state.dirty) {
+                                    Text("Збережіть зміни, щоб переглянути розрахунок для оновленого заміру.")
+                                } else {
+                                    TextButton(enabled = enabled && !state.conflict && overlay is PointOverlayState.Loaded,
+                                        onClick = {
+                                            model.requestExit {
+                                                fullscreen = false
+                                                navigationGuard?.fullscreen?.value = false
+                                                onBack()
+                                            }
+                                        }) {
+                                        Text("Відкрити замір із калькулятором")
+                                    }
                                 }
                             }
                         }
@@ -413,7 +434,7 @@ fun MeasurementEditScreen(
             confirmButton = { TextButton(onClick = { statusDetails = null }) { Text("Закрити") } }
         )
     }
-    WallAnchorEditor(model)
+    CompositionLocalProvider(LocalMeasurementInputFocus provides inputFocus) { WallAnchorEditor(model) }
     if(state.reviewPrompt) AlertDialog(onDismissRequest={},title={Text("Потрібно перевірити розміщення")},
         text={Text("Контур стелі змінено. Збережені монтажні відстані використано для перерахунку. Перевірте розташування точок і ліній.")},
         confirmButton={TextButton(enabled=!state.saving && !state.checking,onClick={ model.reviewNow(); showElements() }){Text("Перевірити")}},
@@ -567,7 +588,7 @@ internal fun MeasurementWallPicker(draft: MeasurementCreateDraft, selected: Int?
 
 @Composable
 private fun MeasurementSelectedFields(model: MeasurementEditModel, selected: Int?, validation: MeasurementCreateValidation,
-    enabled: Boolean, onSelect: (Int) -> Unit, compact: Boolean = false) {
+    enabled: Boolean, onSelect: (Int) -> Unit, compact: Boolean = false, followingField: FocusRequester) {
     val currentState by model.state.collectAsState()
     val draft = currentState.draft
     val focus = LocalFocusManager.current
@@ -589,19 +610,29 @@ private fun MeasurementSelectedFields(model: MeasurementEditModel, selected: Int
                 if (selected != null && draft.shape == "l_shaped" && measurementWallParameter(draft.shape, selected) == null)
                     Text(measurementWallRelation(selected), style = MaterialTheme.typography.bodySmall)
                 val keys = CeilingShapeTemplates.template(outline.shape)!!.parameterKeys
-                keys.filter { !compact || selected != null && it in measurementWallParameters(draft.shape, selected) }.forEach { key ->
+                    .filter { !compact || selected != null && it in measurementWallParameters(draft.shape, selected) }
+                val requesters = remember(keys) { List(keys.size) { FocusRequester() } }
+                keys.forEachIndexed { index, key ->
                     val side = measurementParameterWall(draft.shape, key)
                     MeasurementLengthField(outline.fields.getValue(key), measurementTemplateFieldLabel(draft.shape, key),
                         validation.fieldErrors[key], enabled,
+                        modifier = Modifier.focusRequester(requesters[index]),
+                        onNext = { (requesters.getOrNull(index + 1) ?: followingField).requestFocus() },
                         selected = selected != null && key in measurementWallParameters(draft.shape, selected),
                         onFocus = inputFocus(side), onChange = { model.accept(MeasurementCreateIntent.Dimension(key, it), grouped = true) })
                 }
             }
             is MeasurementOutlineDraft.Orthogonal -> {
                 val labels = measurementSideLabels(outline.sides.size)
-                outline.sides.forEachIndexed { i, side ->
-                    if (!compact || selected == i) key(side.inputId) {
+                val visibleSides = outline.sides.indices.filter { !compact || selected == it }
+                val ids = visibleSides.map { outline.sides[it].inputId }
+                val requesters = remember(ids) { List(ids.size) { FocusRequester() } }
+                visibleSides.forEachIndexed { index, i ->
+                    val side = outline.sides[i]
+                    key(side.inputId) {
                         MeasurementLengthField(side.length, "Сторона ${labels[i]}, м", validation.fieldErrors[side.inputId], enabled,
+                            modifier = Modifier.focusRequester(requesters[index]),
+                            onNext = { (requesters.getOrNull(index + 1) ?: followingField).requestFocus() },
                             selected = selected == i,
                             onFocus = inputFocus(i), onChange = { model.accept(MeasurementCreateIntent.SideLength(i, it), grouped = true) })
                         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {

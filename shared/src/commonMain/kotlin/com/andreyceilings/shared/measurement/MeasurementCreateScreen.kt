@@ -8,6 +8,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
@@ -27,6 +28,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -240,7 +242,8 @@ fun MeasurementCreateScreen(
 
 @Composable
 internal fun MeasurementLengthField(value: String, label: String, error: String?, enabled: Boolean,
-    modifier: Modifier = Modifier, selected: Boolean = false, onFocus: (Boolean) -> Unit = {}, onChange: (String) -> Unit) {
+    modifier: Modifier = Modifier, selected: Boolean = false, onFocus: (Boolean) -> Unit = {},
+    onNext: (() -> Unit)? = null, onChange: (String) -> Unit) {
     // A decimal IME hint does not guarantee the user's keyboard offers comma or dot.
     // Keep an accessible separator action and preserve the actual caret selection.
     val requester = remember { FocusRequester() }
@@ -258,10 +261,14 @@ internal fun MeasurementLengthField(value: String, label: String, error: String?
         if (changed) onChange(edited.text)
     }
     OutlinedTextField(value = field, onValueChange = ::update, label = { Text(label) }, enabled = enabled, singleLine = true,
-        modifier = modifier.fillMaxWidth().focusRequester(requester)
+        modifier = modifier.then(measurementFieldFocusModifier()).fillMaxWidth().focusRequester(requester)
             .then(if (selected) Modifier.border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(4.dp)) else Modifier)
             .onFocusChanged { onFocus(it.isFocused) },
-        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+        keyboardOptions = KeyboardOptions(
+            keyboardType = KeyboardType.Decimal,
+            imeAction = if (onNext == null) ImeAction.Default else ImeAction.Next
+        ),
+        keyboardActions = KeyboardActions(onNext = onNext?.let { next -> { next() } }),
         trailingIcon = {
             IconButton(onClick = {
                 insertDecimalSeparator(field)?.let(::update)

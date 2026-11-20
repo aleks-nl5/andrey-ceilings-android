@@ -3,9 +3,13 @@ package com.andreyceilings.shared.measurement
 import com.andreyceilings.shared.input.DecimalInputField
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 
@@ -73,9 +77,14 @@ internal fun LinePlacementControls(model:MeasurementEditModel,enabled:Boolean) {
             confirmButton={TextButton(onClick=model::discardLineProperties){Text("Відхилити параметри")}},
             dismissButton={TextButton(onClick=model::continueLineProperties){Text("Продовжити")}})
         else AlertDialog(onDismissRequest=model::dismissLineProperties,title={Text("Параметри лінії")},
-            text={Column(verticalArrangement=Arrangement.spacedBy(8.dp)) {
-                DecimalInputField(input.width, { model.changeLineProperties(width = it) }, "Ширина, мм (необов'язково)", isError = !input.valid, allowDecimalSeparator = false)
-                OutlinedTextField(input.note,{model.changeLineProperties(note=it)},label={Text("Примітка сегмента")})
+            text={
+                val noteFocus = remember { FocusRequester() }
+                Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement=Arrangement.spacedBy(8.dp)) {
+                DecimalInputField(input.width, { model.changeLineProperties(width = it) }, "Ширина, мм (необов'язково)",
+                    modifier = measurementFieldFocusModifier(), isError = !input.valid, allowDecimalSeparator = false,
+                    onNext = { noteFocus.requestFocus() })
+                OutlinedTextField(input.note, { model.changeLineProperties(note = it) }, label = { Text("Примітка сегмента") },
+                    modifier = measurementFieldFocusModifier().focusRequester(noteFocus), maxLines = 3)
                 Text("Ширина є довідковим параметром. Площу не віднімаємо; допустимість отвору чи оболонки не перевірена.")
             }},confirmButton={TextButton(enabled=input.valid,onClick=model::applyLineProperties){Text("Застосувати параметри")}},
             dismissButton={TextButton(onClick=model::dismissLineProperties){Text("Скасувати")}})

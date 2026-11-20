@@ -25,4 +25,4 @@ adb pull /data/local/tmp/p5a-workspace/. "$artifact_dir"
 grep -q 'OK (4 tests)' "$artifact_dir/instrumentation.txt"
 shopt -s nullglob
 images=("$artifact_dir"/*.png)
-[[ "${#images[@]}" == 26 ]]
+[[ "${#images[@]}" == 28 ]]

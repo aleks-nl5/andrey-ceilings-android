@@ -4,10 +4,15 @@ import com.andreyceilings.shared.input.DecimalInputField
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 
@@ -25,7 +30,7 @@ fun AreaFeatureControls(model: MeasurementEditModel, enabled: Boolean) {
                 AreaTool.RECTANGLE -> "Прямокутник";AreaTool.POLYGON -> "Багатокутник";AreaTool.CIRCLE -> "Коло"
             })})}}
             Text(when(a.tool) {AreaTool.RECTANGLE -> "Позначте два протилежні кути.";AreaTool.POLYGON -> "Позначте 3–16 вершин, потім завершіть фігуру.";else -> "Позначте центр і введіть виміряний діаметр."})
-            if(a.tool==AreaTool.CIRCLE)DecimalInputField(a.diameter, model::setAreaDiameter, "Діаметр, м (парні мм)", enabled = enabled)
+            if(a.tool==AreaTool.CIRCLE)DecimalInputField(a.diameter, model::setAreaDiameter, "Діаметр, м (парні мм)", modifier = measurementFieldFocusModifier(), enabled = enabled)
             Text("Точок: ${a.vertices.size}. Положення від тапів приблизне.")
             FlowRow {
                 TextButton(enabled=enabled && model.areaCreationShape()!=null,onClick=model::acceptAreaCreation) {Text("Завершити фігуру в чернетці")}
@@ -93,11 +98,15 @@ fun AreaFeatureControls(model: MeasurementEditModel, enabled: Boolean) {
         if(a.dismissProperties)AlertDialog(onDismissRequest=model::continueAreaProperties,title={Text("Відхилити властивості?")},
             confirmButton={TextButton(onClick=model::discardAreaProperties){Text("Відхилити")}},dismissButton={TextButton(onClick=model::continueAreaProperties){Text("Продовжити")}})
         else AlertDialog(onDismissRequest=model::dismissAreaProperties,title={Text("Властивості фігури")},text={
+            val diameterFocus = remember { FocusRequester() }
             Column(Modifier.verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(6.dp)) {
                 AreaRole.entries.forEach {role ->FilterChip(properties.role==role,onClick={model.changeAreaProperties {it.copy(role=role)}},label={Text(areaRoleLabel(role))})}
-                OutlinedTextField(properties.note,{text->model.changeAreaProperties {it.copy(note=text)}},label={Text("Примітка фігури")})
+                OutlinedTextField(properties.note, { text -> model.changeAreaProperties { it.copy(note = text) } },
+                    label = { Text("Примітка фігури") }, modifier = measurementFieldFocusModifier(), maxLines = 3,
+                    keyboardOptions = KeyboardOptions(imeAction = if (circle) ImeAction.Next else ImeAction.Default),
+                    keyboardActions = KeyboardActions(onNext = if (circle) ({ diameterFocus.requestFocus() }) else null))
                 if(circle)Row {Checkbox(properties.diameterMeasured,onCheckedChange={checked ->model.changeAreaProperties {it.copy(diameterMeasured=checked)}});Text("Діаметр повторно виміряно")}
-                if(circle)DecimalInputField(properties.diameter, { text -> model.changeAreaProperties { it.copy(diameter=text,diameterMeasured=true) } }, "Виміряний діаметр, м (парні мм)", isError = !validDiameter)
+                if(circle)DecimalInputField(properties.diameter, { text -> model.changeAreaProperties { it.copy(diameter=text,diameterMeasured=true) } }, "Виміряний діаметр, м (парні мм)", modifier = measurementFieldFocusModifier().focusRequester(diameterFocus), isError = !validDiameter)
                 if (!validDiameter) Text("Введіть додатний діаметр до 2000 м: цілий радіус у мм, до 3 знаків після коми/крапки.", color = MaterialTheme.colorScheme.error)
             }
         },confirmButton={TextButton(enabled=validDiameter,onClick=model::applyAreaProperties){Text("Застосувати властивості")}},dismissButton={TextButton(onClick=model::dismissAreaProperties){Text("Скасувати")}})

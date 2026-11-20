@@ -15,6 +15,7 @@ import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.test.platform.app.InstrumentationRegistry
 import com.andreyceilings.app.data.db.CeilingsDatabase
 import com.andreyceilings.app.ui.theme.CeilingsTheme
@@ -26,7 +27,6 @@ import com.andreyceilings.shared.navigation.AppNavigationState
 import com.andreyceilings.shared.navigation.AppRoute
 import org.junit.Rule
 import org.junit.Test
-import kotlin.math.abs
 import kotlin.test.*
 
 class MeasurementWorkspaceLayoutTest {
@@ -148,19 +148,57 @@ class MeasurementWorkspaceLayoutTest {
                 action("Вписати креслення").performClick()
 
                 if (capture && !landscape) {
+                    val scale = canvas().config[MeasurementDrawingSemantics.Projection].scale
                     compose.onNodeWithTag("measurement-edit-context-contour").performClick()
-                    compose.onNodeWithText("AB").performScrollTo().performClick()
-                    val field = compose.onNode(hasSetTextAction() and hasText("Сторона AB", substring = true))
-                    field.performScrollTo().performClick()
-                    compose.waitUntil(12000) {
-                        compose.runOnIdle {
-                            ViewCompat.getRootWindowInsets(compose.activity.window.decorView)
-                                ?.isVisible(WindowInsetsCompat.Type.ime()) == true
-                        }
+                    compose.onNodeWithText("Усі розміри").performScrollTo().performClick()
+                    fun field(label: String) = compose.onNode(hasSetTextAction() and hasText(label, substring = true))
+                    fun imeVisible() = compose.runOnIdle {
+                        ViewCompat.getRootWindowInsets(compose.activity.window.decorView)
+                            ?.isVisible(WindowInsetsCompat.Type.ime()) == true
                     }
-                    assertTrue(abs(canvas().config[MeasurementDrawingSemantics.Viewport].zoom - 1f) < 0.001)
+                    fun assertAboveKeyboard(input: SemanticsNodeInteraction) {
+                        val bounds = input.fetchSemanticsNode().boundsInRoot
+                        val panel = compose.onNodeWithTag("measurement-edit-context-panel").fetchSemanticsNode().boundsInRoot
+                        val keyboardTop = compose.runOnIdle {
+                            val decor = compose.activity.window.decorView
+                            val ime = ViewCompat.getRootWindowInsets(decor)!!
+                                .getInsets(WindowInsetsCompat.Type.ime()).bottom
+                            decor.height - ime
+                        }
+                        assertTrue(bounds.height >= 48 * compose.density.density,
+                            "The focused field must have room to show its input")
+                        assertTrue(bounds.top >= panel.top - 2 && bounds.bottom <= minOf(panel.bottom, keyboardTop.toFloat()) + 2)
+                    }
+
+                    val length = field("Сторона AB")
+                    length.performScrollTo().performClick()
+                    compose.waitUntil(15000) { imeVisible() }
+                    length.assertIsFocused()
+                    assertAboveKeyboard(length)
+                    length.performImeAction()
+                    val width = field("Сторона BC")
+                    width.assertIsFocused()
+                    assertAboveKeyboard(width)
+                    capture("normal-ime-next")
+
+                    val nameField = field("Назва заміру")
+                    nameField.performScrollTo().performClick().performImeAction()
+                    val notes = field("Примітки")
+                    notes.assertIsFocused()
+                    notes.performTextInput("Перевірка клавіатури")
+                    notes.assertTextContains("Перевірка клавіатури")
+                    assertAboveKeyboard(notes)
+                    assertEquals(scale, canvas().config[MeasurementDrawingSemantics.Projection].scale, 0.0001)
                     save.assertIsDisplayed()
                     capture("normal-ime")
+
+                    compose.runOnIdle {
+                        val window = compose.activity.window
+                        WindowInsetsControllerCompat(window, window.decorView).hide(WindowInsetsCompat.Type.ime())
+                    }
+                    compose.waitUntil(15000) { !imeVisible() }
+                    notes.assertIsFocused()
+                    assertEquals(scale, canvas().config[MeasurementDrawingSemantics.Projection].scale, 0.0001)
                 }
             } finally {
                 compose.runOnIdle { mounted = false }

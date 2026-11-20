@@ -1,6 +1,7 @@
 package com.andreyceilings.shared.input
 
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -10,6 +11,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.TextFieldValue
 
@@ -18,7 +20,8 @@ import androidx.compose.ui.text.input.TextFieldValue
 fun DecimalInputField(
     value: String, onValueChange: (String) -> Unit, label: String,
     modifier: Modifier = Modifier, enabled: Boolean = true, isError: Boolean = false,
-    signed: Boolean = false, allowDecimalSeparator: Boolean = true
+    signed: Boolean = false, allowDecimalSeparator: Boolean = true,
+    onNext: (() -> Unit)? = null
 ) {
     val requester = remember { FocusRequester() }
     var field by remember { mutableStateOf(TextFieldValue(value, TextRange(value.length))) }
@@ -35,7 +38,11 @@ fun DecimalInputField(
     OutlinedTextField(field, { update(it) }, label = { Text(label) },
         modifier = modifier.fillMaxWidth().focusRequester(requester), enabled = enabled,
         singleLine = true, isError = isError,
-        keyboardOptions = KeyboardOptions(keyboardType = if (allowDecimalSeparator) KeyboardType.Decimal else KeyboardType.Number),
+        keyboardOptions = KeyboardOptions(
+            keyboardType = if (allowDecimalSeparator) KeyboardType.Decimal else KeyboardType.Number,
+            imeAction = if (onNext == null) ImeAction.Default else ImeAction.Next
+        ),
+        keyboardActions = KeyboardActions(onNext = onNext?.let { next -> { next() } }),
         trailingIcon = if (allowDecimalSeparator) ({
             IconButton(enabled = enabled, onClick = {
                 insertDecimalSeparator(field)?.let { update(it) }

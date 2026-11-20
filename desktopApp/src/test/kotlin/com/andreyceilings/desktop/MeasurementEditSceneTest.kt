@@ -319,6 +319,51 @@ class MeasurementEditSceneTest {
         } finally { scene.close() }
     }
 
+    @Test fun keyboardNextRevealsTheLastEditorFieldAndPreservesTheCamera() {
+        var keyboardInset by mutableIntStateOf(0)
+        val model = MeasurementEditModel(null, MeasurementEditDocument(3, 1, draft()))
+        val scene = ImageComposeScene(360, 640) {
+            CeilingsTheme(false) {
+                MeasurementEditScreen(model, onBack = {}, onSaved = {},
+                    imeInsets = WindowInsets(0, 0, 0, keyboardInset))
+            }
+        }
+        fun field(label: String) = scene.nodes().single {
+            it.config.getOrNull(SemanticsActions.SetText) != null && it.textTree().contains(label)
+        }
+        fun assertFocusedAboveKeyboard(label: String) {
+            repeat(60) {
+                scene.frame()
+                val input = field(label)
+                val panel = scene.nodes().single {
+                    it.config.getOrNull(SemanticsProperties.TestTag) == "measurement-edit-context-panel"
+                }
+                val bounds = input.boundsInRoot
+                if (input.config.getOrNull(SemanticsProperties.Focused) == true &&
+                    bounds.height >= 48 && bounds.top >= panel.boundsInRoot.top - 1 &&
+                    bounds.bottom <= 640 - keyboardInset + 1) return
+                Thread.sleep(10)
+            }
+            fail("The focused field '$label' must scroll above the keyboard")
+        }
+        try {
+            repeat(4) { scene.frame() }
+            val scale = scene.projectedDrawing().config[MeasurementDrawingSemantics.Projection].scale
+            assertTrue(field("Назва заміру").config[SemanticsActions.RequestFocus].action?.invoke() == true)
+            keyboardInset = 228
+            assertFocusedAboveKeyboard("Назва заміру")
+            assertTrue(field("Назва заміру").config[SemanticsActions.OnImeAction].action?.invoke() == true)
+            assertFocusedAboveKeyboard("Примітки")
+            val notes = field("Примітки")
+            assertTrue(notes.config[SemanticsActions.SetText].action?.invoke(AnnotatedString("Чернетка")) == true)
+            scene.frame()
+            assertEquals("Чернетка", model.state.value.draft.notes)
+            assertEquals(scale, scene.projectedDrawing().config[MeasurementDrawingSemantics.Projection].scale, 0.0001)
+            keyboardInset = 0
+            assertFocusedAboveKeyboard("Примітки")
+        } finally { scene.close() }
+    }
+
     @Test fun narrowWorkspaceShowsTheCompleteValidationErrorWithoutResizingTheCanvasWhileReading() {
         val model = MeasurementEditModel(null, MeasurementEditDocument(3, 1, draft()))
         val scene = ImageComposeScene(300, 580) {
