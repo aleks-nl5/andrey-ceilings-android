@@ -1,6 +1,9 @@
 package com.andreyceilings.desktop
 
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.runtime.*
 import androidx.compose.runtime.snapshots.Snapshot
@@ -271,6 +274,39 @@ class MeasurementEditSceneTest {
                 assertTrue(kotlin.math.abs(expectedDistance - pixelDistance(drawing())) > 1.0)
             } finally { scene.close() }
         }
+    }
+
+    @Test fun firstFitUsesTheSettledLayoutAfterTheLoadingRowDisappears() {
+        val source = draft().copy(outline = MeasurementOutlineDraft.Template("rectangle",
+            mapOf("length" to "2", "width" to "3")))
+        val geometry = assertNotNull(validateMeasurementCreate(source).geometry)
+        var headerHeight by mutableIntStateOf(70)
+        var ready by mutableStateOf(false)
+        val scene = ImageComposeScene(680, 200) {
+            CeilingsTheme(false) {
+                Column(Modifier.fillMaxSize()) {
+                    Spacer(Modifier.height(headerHeight.dp))
+                    MeasurementDrawing(MeasurementGeometryView.Captured(geometry), Modifier.weight(1f),
+                        interactive = true, showSideLegend = false, fillAvailableHeight = true,
+                        retainCameraOnResize = true, verticalViewControls = true, cameraFitReady = ready)
+                }
+            }
+        }
+        try {
+            repeat(5) { scene.frame() }
+            val loadingScale = scene.projectedDrawing().config[MeasurementDrawingSemantics.Projection].scale
+            headerHeight = 20
+            ready = true
+            repeat(5) { scene.frame() }
+            val fitted = scene.projectedDrawing()
+            val settledScale = fitted.config[MeasurementDrawingSemantics.Projection].scale
+            assertTrue(settledScale > loadingScale)
+            assertTrue(settledScale * 3000 / fitted.size.height > 0.54)
+
+            headerHeight = 40
+            repeat(5) { scene.frame() }
+            assertEquals(settledScale, scene.projectedDrawing().config[MeasurementDrawingSemantics.Projection].scale, 0.0001)
+        } finally { scene.close() }
     }
 
     @Test fun compactWorkspaceFitsARealTwoByThreeContourAndSizesCostToItsContent() {

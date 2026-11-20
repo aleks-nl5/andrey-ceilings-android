@@ -286,6 +286,7 @@ fun MeasurementEditScreen(
                 else MeasurementDrawing(MeasurementGeometryView.Captured(geometry),
                     Modifier.fillMaxSize(), interactive = true, fillAvailableHeight = true, showSideLegend = false,
                     retainCameraOnResize = true, verticalViewControls = true,
+                    cameraFitReady = overlay !is PointOverlayState.Loading && !state.checking,
                     selectedSide = selected, onSelectSide = ::select, fullscreen = fullscreen,
                     pointPlacements = if(overlay is PointOverlayState.Loaded) model.displayPoints() else emptyList(), fitPointPlacements = true,
                     selectedPointUuid=state.selectedPointUuid,onSelectPoint = { model.selectPoint(it); showElements() },

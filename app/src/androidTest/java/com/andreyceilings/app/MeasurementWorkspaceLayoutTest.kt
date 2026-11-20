@@ -85,8 +85,10 @@ class MeasurementWorkspaceLayoutTest {
                 val width = b.x - a.x
                 val height = b.y - a.y
                 assertEquals(1.5, height / width, 0.001)
-                assertTrue(maxOf(width / node.size.width, height / node.size.height) > 0.54)
-                assertTrue(a.x >= 0 && a.y >= 0 && b.x <= node.size.width && b.y <= node.size.height)
+                assertTrue(maxOf(width / node.size.width, height / node.size.height) > 0.54,
+                    "Contour ${width}×${height}px must use the settled ${node.size} canvas ($projection)")
+                assertTrue(a.x >= 0 && a.y >= 0 && b.x <= node.size.width && b.y <= node.size.height,
+                    "Projected contour $a–$b must fit ${node.size}")
             }
             try {
                 compose.waitUntil(15000) { compose.onAllNodes(hasText("Редагувати") and hasClickAction()).fetchSemanticsNodes().isNotEmpty() }
@@ -112,11 +114,11 @@ class MeasurementWorkspaceLayoutTest {
                 assertTrue(back.positionInRoot.x < saveNode.positionInRoot.x)
                 action("Скасувати дію").assertIsNotEnabled()
                 action("Повторити").assertIsNotEnabled()
+                capture("normal-contour")
                 assertDrawingFit()
                 val normal = canvas().size.height
                 val rail = compose.onNodeWithTag("measurement-edit-zoom-rail").fetchSemanticsNode()
                 assertTrue(canvas().boundsInRoot.right <= rail.boundsInRoot.left + 1)
-                capture("normal-contour")
 
                 compose.onNodeWithTag("measurement-edit-context-cost").performClick()
                 val cost = compose.onNodeWithTag("measurement-edit-context-panel").fetchSemanticsNode()

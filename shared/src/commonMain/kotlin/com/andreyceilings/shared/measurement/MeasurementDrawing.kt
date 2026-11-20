@@ -108,7 +108,8 @@ fun MeasurementDrawing(
     fillAvailableHeight: Boolean = fullscreen,
     showSideLegend: Boolean = !fullscreen,
     retainCameraOnResize: Boolean = false,
-    verticalViewControls: Boolean = false
+    verticalViewControls: Boolean = false,
+    cameraFitReady: Boolean = true
 ) {
     val contour = remember(geometry) { measurementDrawingContour(geometry) }
     if (contour == null) {
@@ -165,10 +166,12 @@ fun MeasurementDrawing(
         return MeasurementDrawingCamera(projection.inverse(DrawingPoint(width / 2.0, height / 2.0)), projection.scale)
     }
 
-    LaunchedEffect(canvasSize, fullscreen) {
-        if (retainCameraOnResize && !cameraAdjusted &&
+    LaunchedEffect(canvasSize, fullscreen, cameraFitReady) {
+        if (retainCameraOnResize && cameraFitReady && !cameraAdjusted &&
             (fittedCamera == null || fittedForFullscreen != fullscreen)) {
-            // Size can change again while the panel and insets settle on entry.
+            // A readiness change can remove the loading row in this same frame.
+            // Wait for its layout and let a subsequent size change restart the fit.
+            withFrameNanos { }
             withFrameNanos { }
             val camera = fitCamera(canvasSize)
             if (!cameraAdjusted && camera != null) {
