@@ -3,7 +3,6 @@ package com.andreyceilings.app
 import android.content.pm.ActivityInfo
 import android.content.res.Configuration
 import android.graphics.Bitmap
-import android.os.ParcelFileDescriptor
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.enableEdgeToEdge
@@ -27,6 +26,7 @@ import com.andreyceilings.shared.navigation.AppNavigationState
 import com.andreyceilings.shared.navigation.AppRoute
 import org.junit.Rule
 import org.junit.Test
+import java.io.File
 import kotlin.test.*
 
 class MeasurementWorkspaceLayoutTest {
@@ -213,14 +213,14 @@ class MeasurementWorkspaceLayoutTest {
 
     private fun screenshot(name: String) {
         compose.waitForIdle()
-        val automation = InstrumentationRegistry.getInstrumentation().uiAutomation
-        val bitmap = checkNotNull(automation.takeScreenshot())
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val bitmap = checkNotNull(instrumentation.uiAutomation.takeScreenshot()) { "Unable to capture $name" }
         try {
-            val descriptors = automation.executeShellCommandRw("cat > /data/local/tmp/p5a-workspace/$name.png")
-            ParcelFileDescriptor.AutoCloseOutputStream(descriptors[1]).use {
-                check(bitmap.compress(Bitmap.CompressFormat.PNG, 100, it))
+            val directory = File(instrumentation.targetContext.cacheDir, "p5a-workspace")
+            check(directory.isDirectory || directory.mkdirs()) { "Unable to create $directory" }
+            File(directory, "$name.png").outputStream().buffered().use { output ->
+                check(bitmap.compress(Bitmap.CompressFormat.PNG, 100, output)) { "Unable to encode $name.png" }
             }
-            ParcelFileDescriptor.AutoCloseInputStream(descriptors[0]).use { it.readBytes() }
         } finally {
             bitmap.recycle()
         }
