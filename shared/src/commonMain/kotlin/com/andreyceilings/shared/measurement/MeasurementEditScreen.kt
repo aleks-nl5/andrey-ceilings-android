@@ -4,6 +4,12 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.Redo
+import androidx.compose.material.icons.automirrored.filled.Undo
+import androidx.compose.material.icons.filled.Fullscreen
+import androidx.compose.material.icons.filled.FullscreenExit
+import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
@@ -16,16 +22,22 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.andreyceilings.shared.calculation.*
 import com.andreyceilings.shared.estimate.FrozenPolygonGeometry
+import com.andreyceilings.shared.ui.CeilingsFab
+import com.andreyceilings.shared.ui.CeilingsFabProfile
+import com.andreyceilings.shared.ui.ceilingsFloatingOutlineAlpha
 import kotlinx.coroutines.*
 
 private enum class MeasurementElementSection { POINTS, LINES, AREAS }
@@ -42,10 +54,11 @@ fun MeasurementEditScreen(
     contentPadding: PaddingValues, systemTopInset: Dp, onBack: () -> Unit,
     onSaved: () -> Unit, navigationGuard: MeasurementCreateNavigationGuard?
 ) {
+    val editorPadding = measurementEditorPadding(contentPadding, systemTopInset)
     // Do not consume restored form state against Android's temporary null session
     // during Activity startup. The unlocked-session store can reattach a pending write.
     if (store == null) {
-        Column(Modifier.fillMaxSize().padding(contentPadding).padding(top = systemTopInset)) {
+        Column(Modifier.fillMaxSize().padding(editorPadding)) {
             Text("Захищена база недоступна або завантажується.")
             TextButton(onClick = onBack) { Text("До заміру") }
         }
@@ -68,7 +81,7 @@ fun MeasurementEditScreen(
             } catch (_: Exception) { error = "Замір недоступний для редагування. Перевірте об'єкт і збережену геометрію." }
         }
         val editor = model
-        if (editor == null) Column(Modifier.fillMaxSize().padding(contentPadding).padding(top = systemTopInset)) {
+        if (editor == null) Column(Modifier.fillMaxSize().padding(editorPadding)) {
             Text(error ?: "Завантаження заміру…")
             TextButton(onClick = onBack) { Text("До заміру") }
         } else MeasurementEditScreen(editor, contentPadding, systemTopInset, onBack, onSaved, navigationGuard)
@@ -175,204 +188,216 @@ fun MeasurementEditScreen(
         overlay is PointOverlayState.Missing -> "Замір або об'єкт недоступний."
         overlay is PointOverlayState.Unavailable -> "Позначки недоступні: захищена база заблокована або помилка читання."
         overlay is PointOverlayState.Loading -> "Завантаження збережених позначок…"
-        state.dirty -> "Є незбережені зміни"
         else -> null
     }
     val statusIsProblem = state.error != null || geometryWarning != null || state.uncertain || state.conflict ||
         overlay is PointOverlayState.Missing || overlay is PointOverlayState.Unavailable
-    val panelFraction = when {
-        fullscreen && !panelExpanded -> 0.18f
-        !panelExpanded -> 0.24f
-        else -> 0.47f
-    }
-
+    val editorPadding = measurementEditorPadding(contentPadding, systemTopInset)
     val keyboardPadding = if (imeInsets == null) Modifier.imePadding() else Modifier.windowInsetsPadding(imeInsets)
-    Column(
-        Modifier.fillMaxSize().padding(contentPadding).padding(top = systemTopInset).then(keyboardPadding),
-        verticalArrangement = Arrangement.spacedBy(2.dp)
+    BoxWithConstraints(
+        Modifier.fillMaxSize().padding(editorPadding).consumeWindowInsets(editorPadding).then(keyboardPadding)
     ) {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            TextButton(
-                onClick = { if (!surfaceBack()) model.requestExit(onBack) },
-                enabled = canLeaveSurface,
-                modifier = Modifier.testTag("measurement-edit-back")
-            ) { Text(if (fullscreen) "Згорнути" else "До заміру") }
-            Text(draft.name.ifBlank { "Стеля" }, Modifier.weight(1f), maxLines = 1,
-                overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleMedium)
-            Button(onClick = ::save,
-                enabled = enabled && validation.canSave && model.canSaveMountingDraft() &&
-                    !state.conflict && overlay is PointOverlayState.Loaded,
-                modifier = Modifier.testTag("measurement-edit-save")
-            ) { Text("Зберегти") }
+        val panelMaxHeight = maxHeight * when {
+            panelExpanded -> 0.30f
+            fullscreen -> 0.10f
+            else -> 0.16f
         }
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            MeasurementEditAction("Скасувати дію", enabled && state.canUndo, Modifier.weight(1f)) {
-                focus.clearFocus()
-                model.undo()
-            }
-            MeasurementEditAction("Повторити", enabled && state.canRedo, Modifier.weight(1f)) {
-                focus.clearFocus()
-                model.redo()
-            }
-            if (!fullscreen) MeasurementEditAction("На весь екран", enabled, Modifier.weight(1f)) {
-                fullscreenPanelExpanded = false
-                fullscreen = true
-            }
-            MeasurementEditAction("Відхилити", enabled, Modifier.weight(1f)) {
-                model.requestExit {
-                    fullscreen = false
-                    onBack()
-                }
-            }
-        }
-        Row(Modifier.fillMaxWidth().height(48.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text(status.orEmpty(),
-                modifier = Modifier.weight(1f).semantics { liveRegion = LiveRegionMode.Polite },
-                maxLines = 2, overflow = TextOverflow.Ellipsis,
-                style = MaterialTheme.typography.bodySmall,
-                color = if (statusIsProblem) MaterialTheme.colorScheme.error
-                    else MaterialTheme.colorScheme.onSurfaceVariant)
-            if (statusIsProblem && status != null) {
-                IconButton(onClick = { statusDetails = status }) {
-                    Icon(Icons.Default.Info, contentDescription = "Показати повне повідомлення")
-                }
-            }
-        }
-        if (state.uncertain || state.conflict) FlowRow {
-            if (state.uncertain) TextButton(enabled = !state.saving, onClick = { scope.launch { model.save() } }) {
-                Text("Повторити ту саму спробу")
-            }
-            TextButton(enabled = !state.saving, onClick = { reloadConfirm = true }) { Text("Перезавантажити запис") }
-        }
-        Box(Modifier.fillMaxWidth().weight(1f - panelFraction)) {
-            if (geometry == null) Text("Креслення недоступне: ${validation.geometryError.orEmpty()}")
-            else MeasurementDrawing(MeasurementGeometryView.Captured(geometry),
-                Modifier.fillMaxSize(), interactive = true, fillAvailableHeight = true, showSideLegend = false,
-                retainCameraOnResize = true,
-                selectedSide = selected, onSelectSide = ::select, fullscreen = fullscreen,
-                pointPlacements = if(overlay is PointOverlayState.Loaded) model.displayPoints() else emptyList(), fitPointPlacements = true,
-                selectedPointUuid=state.selectedPointUuid,onSelectPoint = { model.selectPoint(it); showElements() },
-                pointEditingEnabled=enabled && overlay is PointOverlayState.Loaded && validation.geometry!=null,editPointsInFullscreen=true,
-                pointDrag=state.drag,onBeginPointDrag=model::beginPointDrag,onPreviewPointDrag=model::previewPointDrag,
-                onFinishPointDrag=model::finishPointDrag,onCancelPointDrag=model::cancelPointDrag,
-                mountingDimensions=if(validation.geometry==null) emptyList() else mountingDimensions(model.displayPoints().find { it.uuid==state.selectedPointUuid },geometry,model.draftWalls())+
-                    model.displayLines().find {it.uuid==state.selectedLineUuid}?.takeUnless {it.unresolved}?.let {line ->
-                        mountingDimensions(line.endpoint(true),geometry,model.draftWalls())+mountingDimensions(line.endpoint(false),geometry,model.draftWalls())
-                    }.orEmpty()+model.displayAreas().find {it.uuid==state.area.selected}?.takeUnless {it.unresolved}?.let {a ->
-                        mountingDimensions(a.point(state.area.mountingIndex ?: state.area.moveVertex ?: 0),geometry,model.draftWalls())
-                    }.orEmpty(),
-                areaFeatures=model.displayAreas()+listOfNotNull(model.areaCreationShape()?.let {shape -> AreaFeature("area-preview",state.draft.recordUuid,shape,state.original.updatedAt,0,0,role=state.area.role)}),
-                selectedAreaUuid=state.area.selected,areaPlacementMode=enabled && state.area.tool!=null,onAreaTap=model::areaTap,onSelectArea = { model.selectArea(it); showElements() },
-                areaEditingEnabled=enabled && validation.geometry!=null,areaDrag=state.area.drag,areaCreationPoints=state.area.vertices,
-                onBeginAreaDrag=model::beginAreaDrag,onPreviewAreaDrag=model::previewAreaDrag,onFinishAreaDrag=model::finishAreaDrag,onCancelAreaDrag=model::cancelAreaDrag,
-                linePlacements=model.displayLines()+listOfNotNull(state.linePreview),selectedLineUuid=state.selectedLineUuid,
-                linePlacementMode=enabled && state.lineElementUuid!=null,onLineTap=model::lineTap,onSelectLine = { model.selectLine(it); showElements() },
-                lineStartPoint=state.lineStart,lineEditingEnabled=enabled && validation.geometry!=null,lineDrag=state.lineDrag,onBeginLineDrag=model::beginLineDrag,
-                onPreviewLineDrag=model::previewLineDrag,onFinishLineDrag=model::finishLineDrag,onCancelLineDrag=model::cancelLineDrag,
-                mountingWallOrdinals=if(validation.geometry==null) emptyList() else model.displayPoints().find { it.uuid==state.selectedPointUuid }?.mounting?.anchor?.let { a ->
-                    model.draftWalls().filter { it.uuid==a.firstWall || it.uuid==a.secondWall }.map { it.ordinal } }.orEmpty())
-        }
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp),
-            verticalAlignment = Alignment.CenterVertically) {
-            MeasurementEditContext.entries.forEach { mode ->
-                FilterChip(
-                    selected = context == mode,
-                    onClick = { context = mode },
-                    label = { Text(mode.label) },
-                    modifier = Modifier.weight(1f).testTag("measurement-edit-context-${mode.name.lowercase()}")
-                )
-            }
-            IconButton(
-                onClick = {
-                    if (fullscreen) fullscreenPanelExpanded = !fullscreenPanelExpanded
-                    else normalPanelExpanded = !normalPanelExpanded
-                },
-                modifier = Modifier.testTag("measurement-edit-panel")
+        Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Row(
+                Modifier.fillMaxWidth().testTag("measurement-edit-header"),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Icon(
-                    if (panelExpanded) Icons.Default.KeyboardArrowDown else Icons.Default.KeyboardArrowUp,
-                    contentDescription = if (panelExpanded) "Згорнути панель" else "Розгорнути панель"
-                )
-            }
-        }
-        panelState.SaveableStateProvider("$measurementUuid:${context.name}") {
-            val scroll = if (context == MeasurementEditContext.CONTOUR) contourScroll else rememberScrollState()
-            var lastFeature by rememberSaveable { mutableStateOf(activeElementControls) }
-            LaunchedEffect(context, activeElementControls) {
-                if (context == MeasurementEditContext.ELEMENTS && lastFeature != activeElementControls) {
-                    scroll.scrollTo(0)
-                    lastFeature = activeElementControls
-                }
-            }
-            Column(
-                Modifier.fillMaxWidth().weight(panelFraction).verticalScroll(scroll)
-                    .testTag("measurement-edit-context-panel"),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                when (context) {
-                    MeasurementEditContext.CONTOUR -> {
-                        MeasurementWallPicker(draft, selected, ::select)
-                        TextButton(onClick = { focus.clearFocus(); allFields = !allFields }) {
-                            Text(if (allFields) "Контекстні розміри" else "Усі розміри")
-                        }
-                        MeasurementSelectedFields(model, selected, validation, enabled, { selected = it }, compact = !allFields)
-                        Text("Точність заміру: ${draft.precision.label}")
-                        OutlinedTextField(draft.name, { model.accept(MeasurementCreateIntent.Name(it), grouped = true) },
-                            enabled = enabled, label = { Text("Назва заміру *") }, singleLine = true,
-                            modifier = Modifier.fillMaxWidth().onFocusChanged { if (it.isFocused) model.beginInput() else model.commitInput() },
-                            isError = validation.nameError != null)
-                        MeasurementShapePicker(draft.shape, enabled) {
-                            focus.clearFocus()
-                            model.accept(MeasurementCreateIntent.Shape(it))
-                            selected = null
-                        }
-                        validation.geometry?.let {
-                            Text("Площа: ${formatMeasurementArea(it.areaSquareMeters, draft.precision)} м² · Периметр: ${formatMeasurementLength(it.perimeterMeters, draft.precision)} м")
-                        }
-                        geometry?.let { measurementDrawingContour(MeasurementGeometryView.Captured(it)) }?.let { contour ->
-                            Text(if (contour.measuredSides) "Виміряні сторони" else "Сторони за збереженим контуром")
-                            Text(contour.sideLabels.joinToString(" · "), style = MaterialTheme.typography.bodySmall)
-                        }
-                        OutlinedTextField(draft.notes, { model.accept(MeasurementCreateIntent.Notes(it), grouped = true) },
-                            enabled = enabled, label = { Text("Примітки") }, modifier = Modifier.fillMaxWidth().onFocusChanged {
-                                if (it.isFocused) model.beginInput() else model.commitInput()
-                            })
+                MeasurementEditorFab(
+                    label = "До заміру",
+                    icon = Icons.AutoMirrored.Filled.ArrowBack,
+                    enabled = canLeaveSurface,
+                    modifier = Modifier.testTag("measurement-edit-back")
+                ) { if (!surfaceBack()) model.requestExit(onBack) }
+                Column(Modifier.weight(1f)) {
+                    Text(draft.name.ifBlank { "Стеля" }, maxLines = 1,
+                        overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleMedium)
+                    if (state.dirty && !statusIsProblem) {
+                        Text("Незбережено", maxLines = 1, overflow = TextOverflow.Ellipsis,
+                            style = MaterialTheme.typography.labelSmall)
                     }
-                    MeasurementEditContext.ELEMENTS -> {
-                        if (selectedFeature != null) TextButton(enabled = enabled, onClick = model::clearDrawingSelection) {
-                            Text("Зняти виділення")
+                }
+                MeasurementIconAction("Скасувати дію", Icons.AutoMirrored.Filled.Undo, enabled && state.canUndo) {
+                    focus.clearFocus()
+                    model.undo()
+                }
+                MeasurementIconAction("Повторити", Icons.AutoMirrored.Filled.Redo, enabled && state.canRedo) {
+                    focus.clearFocus()
+                    model.redo()
+                }
+                MeasurementIconAction(
+                    if (fullscreen) "Згорнути" else "На весь екран",
+                    if (fullscreen) Icons.Default.FullscreenExit else Icons.Default.Fullscreen,
+                    canLeaveSurface
+                ) {
+                    if (!surfaceBack()) {
+                        fullscreenPanelExpanded = false
+                        fullscreen = true
+                    }
+                }
+                MeasurementEditorFab(
+                    label = "Зберегти замір",
+                    icon = Icons.Default.Save,
+                    enabled = enabled && validation.canSave && model.canSaveMountingDraft() &&
+                        !state.conflict && overlay is PointOverlayState.Loaded,
+                    modifier = Modifier.testTag("measurement-edit-save"),
+                    onClick = ::save
+                )
+            }
+            status?.let { message ->
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text(message, modifier = Modifier.weight(1f).semantics { liveRegion = LiveRegionMode.Polite },
+                        maxLines = 2, overflow = TextOverflow.Ellipsis,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (statusIsProblem) MaterialTheme.colorScheme.error
+                            else MaterialTheme.colorScheme.onSurfaceVariant)
+                    if (statusIsProblem) {
+                        MeasurementIconAction("Показати повне повідомлення", Icons.Default.Info) {
+                            statusDetails = message
                         }
-                        val firstSection = when {
-                            state.selectedPointUuid != null -> MeasurementElementSection.POINTS
-                            state.selectedLineUuid != null || state.lineElementUuid != null -> MeasurementElementSection.LINES
-                            state.area.selected != null || state.area.tool != null -> MeasurementElementSection.AREAS
-                            else -> MeasurementElementSection.POINTS
+                    }
+                }
+            }
+            if (state.uncertain || state.conflict) FlowRow {
+                if (state.uncertain) TextButton(enabled = !state.saving, onClick = { scope.launch { model.save() } }) {
+                    Text("Повторити ту саму спробу")
+                }
+                TextButton(enabled = !state.saving, onClick = { reloadConfirm = true }) { Text("Перезавантажити запис") }
+            }
+            Box(Modifier.fillMaxWidth().weight(1f)) {
+                if (geometry == null) Text("Креслення недоступне: ${validation.geometryError.orEmpty()}")
+                else MeasurementDrawing(MeasurementGeometryView.Captured(geometry),
+                    Modifier.fillMaxSize(), interactive = true, fillAvailableHeight = true, showSideLegend = false,
+                    retainCameraOnResize = true, verticalViewControls = true,
+                    selectedSide = selected, onSelectSide = ::select, fullscreen = fullscreen,
+                    pointPlacements = if(overlay is PointOverlayState.Loaded) model.displayPoints() else emptyList(), fitPointPlacements = true,
+                    selectedPointUuid=state.selectedPointUuid,onSelectPoint = { model.selectPoint(it); showElements() },
+                    pointEditingEnabled=enabled && overlay is PointOverlayState.Loaded && validation.geometry!=null,editPointsInFullscreen=true,
+                    pointDrag=state.drag,onBeginPointDrag=model::beginPointDrag,onPreviewPointDrag=model::previewPointDrag,
+                    onFinishPointDrag=model::finishPointDrag,onCancelPointDrag=model::cancelPointDrag,
+                    mountingDimensions=if(validation.geometry==null) emptyList() else mountingDimensions(model.displayPoints().find { it.uuid==state.selectedPointUuid },geometry,model.draftWalls())+
+                        model.displayLines().find {it.uuid==state.selectedLineUuid}?.takeUnless {it.unresolved}?.let {line ->
+                            mountingDimensions(line.endpoint(true),geometry,model.draftWalls())+mountingDimensions(line.endpoint(false),geometry,model.draftWalls())
+                        }.orEmpty()+model.displayAreas().find {it.uuid==state.area.selected}?.takeUnless {it.unresolved}?.let {a ->
+                            mountingDimensions(a.point(state.area.mountingIndex ?: state.area.moveVertex ?: 0),geometry,model.draftWalls())
+                        }.orEmpty(),
+                    areaFeatures=model.displayAreas()+listOfNotNull(model.areaCreationShape()?.let {shape -> AreaFeature("area-preview",state.draft.recordUuid,shape,state.original.updatedAt,0,0,role=state.area.role)}),
+                    selectedAreaUuid=state.area.selected,areaPlacementMode=enabled && state.area.tool!=null,onAreaTap=model::areaTap,onSelectArea = { model.selectArea(it); showElements() },
+                    areaEditingEnabled=enabled && validation.geometry!=null,areaDrag=state.area.drag,areaCreationPoints=state.area.vertices,
+                    onBeginAreaDrag=model::beginAreaDrag,onPreviewAreaDrag=model::previewAreaDrag,onFinishAreaDrag=model::finishAreaDrag,onCancelAreaDrag=model::cancelAreaDrag,
+                    linePlacements=model.displayLines()+listOfNotNull(state.linePreview),selectedLineUuid=state.selectedLineUuid,
+                    linePlacementMode=enabled && state.lineElementUuid!=null,onLineTap=model::lineTap,onSelectLine = { model.selectLine(it); showElements() },
+                    lineStartPoint=state.lineStart,lineEditingEnabled=enabled && validation.geometry!=null,lineDrag=state.lineDrag,onBeginLineDrag=model::beginLineDrag,
+                    onPreviewLineDrag=model::previewLineDrag,onFinishLineDrag=model::finishLineDrag,onCancelLineDrag=model::cancelLineDrag,
+                    mountingWallOrdinals=if(validation.geometry==null) emptyList() else model.displayPoints().find { it.uuid==state.selectedPointUuid }?.mounting?.anchor?.let { a ->
+                        model.draftWalls().filter { it.uuid==a.firstWall || it.uuid==a.secondWall }.map { it.ordinal } }.orEmpty())
+            }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp),
+                verticalAlignment = Alignment.CenterVertically) {
+                MeasurementEditContext.entries.forEach { mode ->
+                    FilterChip(
+                        selected = context == mode,
+                        onClick = { context = mode },
+                        label = { Text(mode.label) },
+                        modifier = Modifier.weight(1f).testTag("measurement-edit-context-${mode.name.lowercase()}")
+                    )
+                }
+                IconButton(
+                    onClick = {
+                        if (fullscreen) fullscreenPanelExpanded = !fullscreenPanelExpanded
+                        else normalPanelExpanded = !normalPanelExpanded
+                    },
+                    modifier = Modifier.testTag("measurement-edit-panel")
+                ) {
+                    Icon(
+                        if (panelExpanded) Icons.Default.KeyboardArrowDown else Icons.Default.KeyboardArrowUp,
+                        contentDescription = if (panelExpanded) "Згорнути панель" else "Розгорнути панель"
+                    )
+                }
+            }
+            panelState.SaveableStateProvider("$measurementUuid:${context.name}") {
+                val scroll = if (context == MeasurementEditContext.CONTOUR) contourScroll else rememberScrollState()
+                var lastFeature by rememberSaveable { mutableStateOf(activeElementControls) }
+                LaunchedEffect(context, activeElementControls) {
+                    if (context == MeasurementEditContext.ELEMENTS && lastFeature != activeElementControls) {
+                        scroll.scrollTo(0)
+                        lastFeature = activeElementControls
+                    }
+                }
+                Column(
+                    Modifier.fillMaxWidth().heightIn(max = panelMaxHeight).verticalScroll(scroll)
+                        .testTag("measurement-edit-context-panel"),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    when (context) {
+                        MeasurementEditContext.CONTOUR -> {
+                            MeasurementWallPicker(draft, selected, ::select)
+                            TextButton(onClick = { focus.clearFocus(); allFields = !allFields }) {
+                                Text(if (allFields) "Контекстні розміри" else "Усі розміри")
+                            }
+                            MeasurementSelectedFields(model, selected, validation, enabled, { selected = it }, compact = !allFields)
+                            Text("Точність заміру: ${draft.precision.label}")
+                            OutlinedTextField(draft.name, { model.accept(MeasurementCreateIntent.Name(it), grouped = true) },
+                                enabled = enabled, label = { Text("Назва заміру *") }, singleLine = true,
+                                modifier = Modifier.fillMaxWidth().onFocusChanged { if (it.isFocused) model.beginInput() else model.commitInput() },
+                                isError = validation.nameError != null)
+                            MeasurementShapePicker(draft.shape, enabled) {
+                                focus.clearFocus()
+                                model.accept(MeasurementCreateIntent.Shape(it))
+                                selected = null
+                            }
+                            validation.geometry?.let {
+                                Text("Площа: ${formatMeasurementArea(it.areaSquareMeters, draft.precision)} м² · Периметр: ${formatMeasurementLength(it.perimeterMeters, draft.precision)} м")
+                            }
+                            geometry?.let { measurementDrawingContour(MeasurementGeometryView.Captured(it)) }?.let { contour ->
+                                Text(if (contour.measuredSides) "Виміряні сторони" else "Сторони за збереженим контуром")
+                                Text(contour.sideLabels.joinToString(" · "), style = MaterialTheme.typography.bodySmall)
+                            }
+                            OutlinedTextField(draft.notes, { model.accept(MeasurementCreateIntent.Notes(it), grouped = true) },
+                                enabled = enabled, label = { Text("Примітки") }, modifier = Modifier.fillMaxWidth().onFocusChanged {
+                                    if (it.isFocused) model.beginInput() else model.commitInput()
+                                })
                         }
-                        val sections = listOf(firstSection) + MeasurementElementSection.entries.filter { it != firstSection }
-                        val canEditGeometry = enabled && validation.geometry != null
-                        for (section in sections) key(section) {
-                            when (section) {
-                                MeasurementElementSection.POINTS ->
-                                    MeasurementPointControls(model, state, overlay, validation, savedGeometry, enabled)
-                                MeasurementElementSection.LINES -> LinePlacementControls(model, canEditGeometry)
-                                MeasurementElementSection.AREAS -> AreaFeatureControls(model, canEditGeometry)
+                        MeasurementEditContext.ELEMENTS -> {
+                            if (selectedFeature != null) TextButton(enabled = enabled, onClick = model::clearDrawingSelection) {
+                                Text("Зняти виділення")
+                            }
+                            val firstSection = when {
+                                state.selectedPointUuid != null -> MeasurementElementSection.POINTS
+                                state.selectedLineUuid != null || state.lineElementUuid != null -> MeasurementElementSection.LINES
+                                state.area.selected != null || state.area.tool != null -> MeasurementElementSection.AREAS
+                                else -> MeasurementElementSection.POINTS
+                            }
+                            val sections = listOf(firstSection) + MeasurementElementSection.entries.filter { it != firstSection }
+                            val canEditGeometry = enabled && validation.geometry != null
+                            for (section in sections) key(section) {
+                                when (section) {
+                                    MeasurementElementSection.POINTS ->
+                                        MeasurementPointControls(model, state, overlay, validation, savedGeometry, enabled)
+                                    MeasurementElementSection.LINES -> LinePlacementControls(model, canEditGeometry)
+                                    MeasurementElementSection.AREAS -> AreaFeatureControls(model, canEditGeometry)
+                                }
                             }
                         }
-                    }
-                    MeasurementEditContext.COST -> {
-                        Text("Розрахунок за останнім збереженим заміром", style = MaterialTheme.typography.titleSmall)
-                        if (state.dirty) {
-                            Text("Збережіть зміни, щоб переглянути розрахунок для оновленого заміру.")
-                        } else {
-                            TextButton(enabled = enabled && !state.conflict && overlay is PointOverlayState.Loaded,
-                                onClick = {
-                                    model.requestExit {
-                                        fullscreen = false
-                                        navigationGuard?.fullscreen?.value = false
-                                        onBack()
-                                    }
-                                }) {
-                                Text("Відкрити замір із калькулятором")
+                        MeasurementEditContext.COST -> {
+                            Text("Розрахунок за останнім збереженим заміром", style = MaterialTheme.typography.titleSmall)
+                            if (state.dirty) {
+                                Text("Збережіть зміни, щоб переглянути розрахунок для оновленого заміру.")
+                            } else {
+                                TextButton(enabled = enabled && !state.conflict && overlay is PointOverlayState.Loaded,
+                                    onClick = {
+                                        model.requestExit {
+                                            fullscreen = false
+                                            navigationGuard?.fullscreen?.value = false
+                                            onBack()
+                                        }
+                                    }) {
+                                    Text("Відкрити замір із калькулятором")
+                                }
                             }
                         }
                     }
@@ -407,9 +432,46 @@ fun MeasurementEditScreen(
 }
 
 @Composable
-private fun MeasurementEditAction(label: String, enabled: Boolean, modifier: Modifier, onClick: () -> Unit) {
-    TextButton(onClick = onClick, modifier = modifier, enabled = enabled, contentPadding = PaddingValues(horizontal = 2.dp)) {
-        Text(label, textAlign = TextAlign.Center, style = MaterialTheme.typography.labelMedium)
+private fun measurementEditorPadding(contentPadding: PaddingValues, systemTopInset: Dp): PaddingValues {
+    val direction = LocalLayoutDirection.current
+    return PaddingValues(
+        start = contentPadding.calculateStartPadding(direction),
+        top = maxOf(contentPadding.calculateTopPadding(), systemTopInset),
+        end = contentPadding.calculateEndPadding(direction),
+        bottom = contentPadding.calculateBottomPadding()
+    )
+}
+
+@Composable
+private fun MeasurementEditorFab(label: String, icon: ImageVector, enabled: Boolean, modifier: Modifier, onClick: () -> Unit) {
+    val scheme = MaterialTheme.colorScheme
+    val dark = scheme.background.luminance() < 0.4f
+    val background = when {
+        !enabled -> scheme.surfaceVariant
+        dark -> scheme.surfaceContainerHigh
+        else -> Color.White
+    }
+    CeilingsFab(
+        onClick = onClick, actionLabel = label, profile = CeilingsFabProfile.COMPACT,
+        actionModifier = modifier, enabled = enabled,
+        containerColor = background, outlineAlpha = ceilingsFloatingOutlineAlpha(dark)
+    ) {
+        Icon(icon, contentDescription = null, modifier = Modifier.size(23.dp),
+            tint = if (enabled) scheme.onSurface else scheme.onSurface.copy(alpha = 0.38f))
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun MeasurementIconAction(label: String, icon: ImageVector, enabled: Boolean = true, onClick: () -> Unit) {
+    TooltipBox(
+        positionProvider = TooltipDefaults.rememberTooltipPositionProvider(TooltipAnchorPosition.Above),
+        tooltip = { PlainTooltip { Text(label) } },
+        state = rememberTooltipState()
+    ) {
+        IconButton(onClick = onClick, enabled = enabled, modifier = Modifier.size(48.dp)) {
+            Icon(icon, contentDescription = label)
+        }
     }
 }
 

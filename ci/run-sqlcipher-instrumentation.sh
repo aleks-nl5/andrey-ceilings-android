@@ -16,6 +16,8 @@ gradle --no-daemon :app:connectedDebugAndroidTest \
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 adb install -r app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
 
+bash ci/capture-measurement-workspace.sh
+
 bash ci/verify-sqlcipher-process-death.sh
 bash ci/verify-production-v9-upgrade.sh
 

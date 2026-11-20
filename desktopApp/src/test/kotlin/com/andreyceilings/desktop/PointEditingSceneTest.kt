@@ -162,7 +162,7 @@ class PointEditingSceneTest {
                 scene.click("Контур")
                 scene.setField("Сторона BC", "4");scene.setField("Сторона AB", "6")
                 assertEquals(afterPointSave,MeasurementRepository(db).find(id));assertEquals(saved,points.find(p.uuid))
-                scene.click("Зберегти");scene.awaitText("Контур стелі змінено. Збережені монтажні відстані")
+                scene.click("Зберегти замір");scene.awaitText("Контур стелі змінено. Збережені монтажні відстані")
                 assertEquals(PointPositionMm(1500,600),points.find(p.uuid)!!.let{PointPositionMm(it.xMm,it.yMm)})
                 assertTrue(points.forMeasurement(original.uuid).all {it.mounting.needsReview})
                 val anchor=assertNotNull(points.find(p.uuid)!!.mounting.anchor)
@@ -181,14 +181,14 @@ class PointEditingSceneTest {
                 scene.awaitText("Перевірити (1)");scene.click("Розміщення перевірено")
                 repeat(150) {scene.frame();if(points.forMeasurement(original.uuid).any{it.mounting.needsReview})delay(25)}
                 assertTrue(points.forMeasurement(original.uuid).none {it.mounting.needsReview})
-                scene.click("Зберегти")
+                scene.click("Зберегти замір")
                 repeat(150) {if(editing){scene.frame();delay(25)}}
                 assertFalse(editing)
                 val beforeName=points.forMeasurement(original.uuid)
                 val geometryBeforeName=MeasurementRepository(db).find(id)!!.drawingJson
                 scene.click("Редагувати")
                 scene.awaitDrawingPoints(pointIds)
-                scene.setField("Назва заміру","Нова назва");scene.click("Зберегти")
+                scene.setField("Назва заміру","Нова назва");scene.click("Зберегти замір")
                 repeat(150) {if(editing){scene.frame();delay(25)}}
                 assertFalse(editing);assertEquals("Нова назва",MeasurementRepository(db).find(id)!!.name)
                 assertEquals(geometryBeforeName,MeasurementRepository(db).find(id)!!.drawingJson)
@@ -244,7 +244,7 @@ class PointEditingSceneTest {
     private fun ImageComposeScene.text() = semanticsOwners.joinToString { it.rootSemanticsNode.textTree() }
     private fun ImageComposeScene.awaitText(label: String) { repeat(240) { frame(); if (text().contains(label)) return; Thread.sleep(25) }; fail("Missing '$label': ${text().take(2000)}") }
     private fun ImageComposeScene.click(label: String) {
-        repeat(240) { frame(); nodes().firstOrNull { it.config.getOrNull(SemanticsActions.OnClick) != null && it.config.getOrNull(SemanticsProperties.Disabled)==null && it.textTree() == label }?.let {
+        repeat(240) { frame(); nodes().firstOrNull { it.config.getOrNull(SemanticsActions.OnClick) != null && it.config.getOrNull(SemanticsProperties.Disabled)==null && (it.textTree() == label || label in it.config.getOrNull(SemanticsProperties.ContentDescription).orEmpty()) }?.let {
             assertNull(it.config.getOrNull(SemanticsProperties.Disabled), label)
             assertTrue(it.config.getOrNull(SemanticsActions.OnClick)?.action?.invoke() == true); frame(); return }; Thread.sleep(25) }
         fail("Missing action '$label': ${text().take(2000)}")

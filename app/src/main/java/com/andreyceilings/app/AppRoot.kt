@@ -36,6 +36,7 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.Animatable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Size
@@ -112,9 +113,13 @@ internal val navigationStateSaver = Saver<AppNavigationState, ArrayList<String>>
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, onDatabaseReplaced: (CeilingsDatabase) -> Unit, themeMode: ThemeMode, onThemeModeChange: (ThemeMode) -> Unit) {
+internal fun CeilingsApp(
+    databaseStatus: String, database: CeilingsDatabase?, onDatabaseReplaced: (CeilingsDatabase) -> Unit,
+    themeMode: ThemeMode, onThemeModeChange: (ThemeMode) -> Unit,
+    initialNavigation: AppNavigationState = AppNavigationState()
+) {
     var navigation by rememberSaveable(stateSaver = navigationStateSaver) {
-        mutableStateOf(AppNavigationState())
+        mutableStateOf(initialNavigation)
     }
     val editorSession: MeasurementEditorSession = androidx.lifecycle.viewmodel.compose.viewModel()
     val measurementCreateNavigationGuard = editorSession.navigationGuard
@@ -143,6 +148,7 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
     val isProjectDetailsOpen = tab == AppTab.OBJECTS && navigation.projectDetails != null
     val isMeasurementDetailsOpen = (isProjectDetailsOpen || tab == AppTab.MEASUREMENTS) &&
         (navigation.measurementDetails != null || navigation.measurementCreate != null || navigation.measurementEdit != null)
+    val isMeasurementEditOpen = isMeasurementDetailsOpen && navigation.measurementEdit != null
     var projectTitleProgress by remember { mutableFloatStateOf(0f) }
     // Let the shared title own details scrolling rather than enterAlways showing
     // the original toolbar during a reverse swipe.
@@ -720,13 +726,13 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
                     (1f - projectTitleProgress) * (1f - projectTitleProgress)
                 else 1f)
         )
-        CeilingsEdgeGradient(
+        if (!isMeasurementEditOpen) CeilingsEdgeGradient(
             edge = CeilingsEdge.BOTTOM,
             modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth()
                 .height(navigationBarInset + systemPanelGradientHeight)
         )
 
-        if (!measurementFullscreen) FloatingNavigationBar(
+        if (!isMeasurementEditOpen && !measurementFullscreen) FloatingNavigationBar(
             selectedTab = tab,
             darkTheme = useDarkTheme,
             onSelect = ::navigateTo,
@@ -741,7 +747,7 @@ internal fun CeilingsApp(databaseStatus: String, database: CeilingsDatabase?, on
                     }
                 }
             },
-            modifier = Modifier.align(Alignment.BottomCenter)
+            modifier = Modifier.align(Alignment.BottomCenter).testTag("global-bottom-navigation")
         )
     }
     }

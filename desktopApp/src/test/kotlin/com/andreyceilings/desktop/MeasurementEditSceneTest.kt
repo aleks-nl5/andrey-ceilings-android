@@ -75,10 +75,12 @@ class MeasurementEditSceneTest {
                 scene.click("Повторити"); scene.frame(); assertEquals("Нова кухня", model.state.value.draft.name)
                 scene.click("На весь екран"); scene.frame(); assertTrue(guard.fullscreen.value)
                 assertTrue(scene.text().contains("Назва заміру"))
-                scene.click("Відхилити"); scene.frame()
+                scene.click("До заміру"); scene.frame()
+                assertFalse(guard.fullscreen.value)
+                scene.click("До заміру"); scene.frame()
                 assertTrue(scene.text().contains("Незбережені зміни")); assertEquals(0, backs)
                 scene.click("Продовжити"); scene.frame(); assertTrue(model.state.value.dirty)
-                scene.click("Відхилити"); scene.frame(); scene.click("Відхилити зміни")
+                scene.click("До заміру"); scene.frame(); scene.click("Відхилити зміни")
                 assertEquals(1, backs); assertFalse(model.state.value.dirty)
                 assertEquals(MeasurementDetails(7, 3), route.measurementDetails)
             } finally { scene.close() }
@@ -226,7 +228,7 @@ class MeasurementEditSceneTest {
                 scene.sendPointerEvent(PointerEventType.Move, center + Offset(32f, 0f), type = PointerType.Mouse)
                 scene.sendPointerEvent(PointerEventType.Release, center + Offset(32f, 0f), type = PointerType.Mouse)
                 scene.frame()
-                scene.click("+")
+                scene.click("Збільшити масштаб")
                 scene.frame()
                 val initial = drawing()
                 val expectedDistance = pixelDistance(initial)
@@ -271,7 +273,53 @@ class MeasurementEditSceneTest {
         }
     }
 
-    @Test fun narrowWorkspaceShowsTheCompleteValidationErrorWithoutResizingTheCanvas() {
+    @Test fun compactWorkspaceFitsARealTwoByThreeContourAndSizesCostToItsContent() {
+        val source = draft().copy(outline = MeasurementOutlineDraft.Template("rectangle", mapOf("length" to "2", "width" to "3")))
+        val model = MeasurementEditModel(null, MeasurementEditDocument(3, 1, source))
+        val scene = ImageComposeScene(360, 580) {
+            CeilingsTheme(true) {
+                MeasurementEditScreen(model, PaddingValues(12.dp, 24.dp, 12.dp, 24.dp), 24.dp,
+                    onBack = {}, onSaved = {})
+            }
+        }
+        fun tagged(tag: String) = scene.nodes().single { it.config.getOrNull(SemanticsProperties.TestTag) == tag }
+        fun fittedHeight(): Double {
+            val canvas = scene.projectedDrawing()
+            val projection = canvas.config[MeasurementDrawingSemantics.Projection]
+            val a = projection.project(DrawingPoint(0.0, 0.0))
+            val b = projection.project(DrawingPoint(2000.0, 3000.0))
+            assertTrue(a.x >= 0 && a.y >= 0 && b.x <= canvas.size.width && b.y <= canvas.size.height)
+            assertEquals(1.5, (b.y - a.y) / (b.x - a.x), 0.001)
+            assertTrue(canvas.boundsInRoot.right <= tagged("measurement-edit-zoom-rail").boundsInRoot.left + 1)
+            return b.y - a.y
+        }
+        try {
+            repeat(4) { scene.frame() }
+            val header = tagged("measurement-edit-header")
+            assertEquals(24f, header.boundsInRoot.top)
+            assertEquals(56, tagged("measurement-edit-back").size.height)
+            assertEquals(tagged("measurement-edit-back").size, tagged("measurement-edit-save").size)
+            assertNotNull(tagged("measurement-edit-save").config.getOrNull(SemanticsProperties.Disabled))
+            assertNull(tagged("measurement-edit-save").config.getOrNull(SemanticsActions.OnClick))
+            val contourHeight = fittedHeight()
+            val canvasHeight = scene.projectedDrawing().size.height
+            assertTrue(contourHeight > canvasHeight * 0.54, "The fitted contour should occupy most of the available height")
+            scene.click("Вартість")
+            repeat(4) { scene.frame() }
+            assertTrue(tagged("measurement-edit-context-panel").size.height < 120)
+            assertTrue(scene.projectedDrawing().size.height > canvasHeight)
+            scene.click("Контур")
+            scene.frame()
+            scene.click("На весь екран")
+            repeat(4) { scene.frame() }
+            assertTrue(fittedHeight() > contourHeight + 35.0)
+            scene.click("До заміру")
+            repeat(4) { scene.frame() }
+            assertEquals(contourHeight, fittedHeight(), 0.1)
+        } finally { scene.close() }
+    }
+
+    @Test fun narrowWorkspaceShowsTheCompleteValidationErrorWithoutResizingTheCanvasWhileReading() {
         val model = MeasurementEditModel(null, MeasurementEditDocument(3, 1, draft()))
         val scene = ImageComposeScene(300, 580) {
             CeilingsTheme(false) { MeasurementEditScreen(model, onBack = {}, onSaved = {}) }
@@ -279,13 +327,12 @@ class MeasurementEditSceneTest {
         fun canvas() = scene.projectedDrawing()
         try {
             scene.frame()
-            val originalBounds = canvas().boundsInRoot
             scene.click("Усі розміри")
             scene.frame()
             val field = scene.nodes().single { it.config.getOrNull(SemanticsProperties.EditableText)?.text == "5" }
             assertTrue(field.config[SemanticsActions.SetText].action?.invoke(AnnotatedString("")) == true)
             scene.frame()
-            assertEquals(originalBounds, canvas().boundsInRoot)
+            val boundsWithWarning = canvas().boundsInRoot
             val details = scene.nodes().single {
                 "Показати повне повідомлення" in it.config.getOrNull(SemanticsProperties.ContentDescription).orEmpty()
             }
@@ -299,7 +346,7 @@ class MeasurementEditSceneTest {
             assertTrue(fullMessage.boundsInRoot.height > 48)
             scene.click("Закрити")
             scene.frame()
-            assertEquals(originalBounds, canvas().boundsInRoot)
+            assertEquals(boundsWithWarning, canvas().boundsInRoot)
         } finally { scene.close() }
     }
 
@@ -359,7 +406,7 @@ class MeasurementEditSceneTest {
         fail("Editor control did not become available by scrolling")
     }
     private fun ImageComposeScene.click(label: String) {
-        val node = nodes().first { it.config.getOrNull(SemanticsActions.OnClick) != null && it.textTree().contains(label) }
+        val node = nodes().first { it.config.getOrNull(SemanticsActions.OnClick) != null && (it.textTree().contains(label) || label in it.config.getOrNull(SemanticsProperties.ContentDescription).orEmpty()) }
         assertTrue(node.config.getOrNull(SemanticsActions.OnClick)?.action?.invoke() == true)
     }
 }

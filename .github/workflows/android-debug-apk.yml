@@ -124,6 +124,15 @@ jobs:
           # shell command. Keep multiline logic inside our own Bash process.
           script: bash ci/run-sqlcipher-instrumentation.sh
 
+      - name: Upload P5A Android workspace screenshots
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: p5a-android-workspace
+          path: ${{ runner.temp }}/p5a-workspace/
+          if-no-files-found: warn
+          retention-days: 14
+
       - name: Prepare persistent signing
         env:
           KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}

@@ -2,6 +2,12 @@ package com.andreyceilings.shared.measurement
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.focusable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CenterFocusStrong
+import androidx.compose.material.icons.filled.ZoomIn
+import androidx.compose.material.icons.filled.ZoomOut
 import androidx.compose.foundation.gestures.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.listSaver
@@ -21,6 +27,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
@@ -99,7 +107,8 @@ fun MeasurementDrawing(
     onFinishAreaDrag: ()->Unit = {}, onCancelAreaDrag: ()->Unit = {},
     fillAvailableHeight: Boolean = fullscreen,
     showSideLegend: Boolean = !fullscreen,
-    retainCameraOnResize: Boolean = false
+    retainCameraOnResize: Boolean = false,
+    verticalViewControls: Boolean = false
 ) {
     val contour = remember(geometry) { measurementDrawingContour(geometry) }
     if (contour == null) {
@@ -117,11 +126,8 @@ fun MeasurementDrawing(
     }
     val focusRequester = remember { FocusRequester() }
     var markerGesture by remember { mutableStateOf(false) }
-    fun move(dx: Float, dy: Float, factor: Float = 1f) {
-        if (markerGesture) return
-        val next = MeasurementViewport(zoom, panX, panY).move(dx, dy, factor)
-        zoom = next.zoom; panX = next.panX; panY = next.panY
-    }
+    var cameraAdjusted by rememberSaveable { mutableStateOf(false) }
+    var fittedForFullscreen by rememberSaveable { mutableStateOf(fullscreen) }
     val currentSelection by rememberUpdatedState(onSelectSide)
     val currentPoints by rememberUpdatedState(pointPlacements)
     val currentPointSelection by rememberUpdatedState(onSelectPoint)
@@ -159,8 +165,38 @@ fun MeasurementDrawing(
         return MeasurementDrawingCamera(projection.inverse(DrawingPoint(width / 2.0, height / 2.0)), projection.scale)
     }
 
+    LaunchedEffect(canvasSize, fullscreen) {
+        if (retainCameraOnResize && !cameraAdjusted &&
+            (fittedCamera == null || fittedForFullscreen != fullscreen)) {
+            // Size can change again while the panel and insets settle on entry.
+            withFrameNanos { }
+            val camera = fitCamera(canvasSize)
+            if (!cameraAdjusted && camera != null) {
+                fittedCamera = camera
+                fittedForFullscreen = fullscreen
+            }
+        }
+    }
+
+    fun move(dx: Float, dy: Float, factor: Float = 1f) {
+        if (markerGesture) return
+        val current = MeasurementViewport(zoom, panX, panY)
+        val next = current.move(dx, dy, factor)
+        if (next == current) return
+        if (retainCameraOnResize) {
+            if (fittedCamera == null) fittedCamera = fitCamera(canvasSize)
+            cameraAdjusted = true
+        }
+        zoom = next.zoom
+        panX = next.panX
+        panY = next.panY
+    }
+
     fun fit() {
-        if (retainCameraOnResize) fittedCamera = fitCamera(canvasSize) ?: fittedCamera
+        if (retainCameraOnResize) {
+            fittedCamera = fitCamera(canvasSize) ?: fittedCamera
+            cameraAdjusted = true
+        }
         zoom = 1f
         panX = 0f
         panY = 0f
@@ -193,11 +229,11 @@ fun MeasurementDrawing(
     val dimensionLayouts = mountingDimensions.map { measurer.measure(it.label,labelStyle) }
     val vertexLayouts = contour.vertexNames.map { measurer.measure(it, labelStyle) }
     Column(modifier, verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        if (interactive) Row {
+        if (interactive && !verticalViewControls) Row {
             TextButton(enabled = !markerGesture, onClick = ::fit) { Text("Вписати креслення") }
             TextButton(onClick = { move(0f, 0f, 1 / 1.25f) }) { Text("−") }
             TextButton(onClick = { move(0f, 0f, 1.25f) }) { Text("+") }
-        } else Text("Креслення заміру", style = MaterialTheme.typography.titleSmall)
+        } else if (!interactive) Text("Креслення заміру", style = MaterialTheme.typography.titleSmall)
         if (contour.historical) Text(
             "Історичний прямокутник зі збережених розмірів. Точність креслення не збережена.",
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -360,116 +396,132 @@ fun MeasurementDrawing(
                     }
                 }
             }
-        Canvas(Modifier.fillMaxWidth().then(if (fillAvailableHeight) Modifier.weight(1f) else Modifier.height(if (compact) 155.dp else 235.dp))
-            .clipToBounds().onSizeChanged { size ->
-                canvasSize = size
-                if (retainCameraOnResize && fittedCamera == null) fittedCamera = fitCamera(size)
-            }.then(inputModifier)
-            .semantics {
-                contentDescription = "Контур стелі, ${contour.points.size} вершин, позначок: ${pointPlacements.size}, ліній: ${linePlacements.size}, площинних об’єктів: ${areaFeatures.size}"
-                this[MeasurementDrawingSemantics.Points]=pointPlacements
-                this[MeasurementDrawingSemantics.Lines]=linePlacements
-                this[MeasurementDrawingSemantics.Areas]=areaFeatures
-                this[MeasurementDrawingSemantics.Viewport] = viewport
-                semanticsProjection?.let {
-                    this[MeasurementDrawingSemantics.Projection] = it
-                }
-                selectedSide?.let { this[MeasurementDrawingSemantics.SelectedWall] = it }
-                this[MeasurementDrawingSemantics.EditingEnabled]=pointEditingEnabled || lineEditingEnabled || areaEditingEnabled
-                selectedPointUuid?.let {this[MeasurementDrawingSemantics.SelectedPoint]=it}
-                selectedLineUuid?.let {this[MeasurementDrawingSemantics.SelectedLine]=it}
-                selectedAreaUuid?.let {this[MeasurementDrawingSemantics.SelectedArea]=it}
-                pointDrag?.let {this[MeasurementDrawingSemantics.PointDrag]=it}
-            }) {
-            val projection = projectDrawing(size.width, size.height) ?: return@Canvas
-            val projectedPoints = contour.points.map(projection::project)
-            val points = projectedPoints.map { Offset(it.x.toFloat(), it.y.toFloat()) }
-            fun screen(point: DrawingPoint): Offset {
-                val projected = projection.project(point)
-                return Offset(projected.x.toFloat(), projected.y.toFloat())
-            }
-            fun screenPosition(point: PointPositionMm) =
-                screen(DrawingPoint(point.xMm.toDouble(), point.yMm.toDouble()))
-            val path = Path().apply {
-                moveTo(points.first().x, points.first().y)
-                points.drop(1).forEach { lineTo(it.x, it.y) }
-                close()
-            }
-            drawPath(path, ink.copy(alpha = 0.08f))
-            drawPath(path, ink, style = Stroke(width = 2.5.dp.toPx()))
-            selectedSide?.takeIf { it in points.indices }?.let { i ->
-                drawLine(ink, points[i], points[(i + 1) % points.size], strokeWidth = 8.dp.toPx())
-            }
-            mountingWallOrdinals.filter { it in points.indices }.forEach { i ->
-                drawLine(ink.copy(alpha=0.65f),points[i],points[(i+1)%points.size],strokeWidth=6.dp.toPx())
-            }
-            points.forEach { drawCircle(ink, 3.dp.toPx(), it) }
-            areaFeatures.forEach {saved ->
-                val feature=areaDrag?.takeIf {it.uuid==saved.uuid} ?: saved
-                val color=if(feature.unresolved) androidx.compose.ui.graphics.Color(0xFFD34C44) else ink
-                val width=if(feature.uuid==selectedAreaUuid)4.dp.toPx() else 2.dp.toPx()
-                when(val shape=feature.shape) {
-                    is AreaShape.Circle -> {
-                        val center=screenPosition(shape.center)
-                        val radius=(screenPosition(PointPositionMm(shape.center.xMm+shape.radiusMm,shape.center.yMm))-center).getDistance()
-                        drawCircle(color.copy(alpha=0.16f),radius,center)
-                        drawCircle(color,radius,center,style=Stroke(width))
+        Box(Modifier.fillMaxWidth().then(
+            if (fillAvailableHeight) Modifier.weight(1f) else Modifier.height(if (compact) 155.dp else 235.dp)
+        )) {
+            val railWidth = if (interactive && verticalViewControls) 48.dp else 0.dp
+            Canvas(Modifier.fillMaxSize().padding(end = railWidth)
+                .clipToBounds().onSizeChanged { canvasSize = it }.then(inputModifier)
+                .semantics {
+                    contentDescription = "Контур стелі, ${contour.points.size} вершин, позначок: ${pointPlacements.size}, ліній: ${linePlacements.size}, площинних об’єктів: ${areaFeatures.size}"
+                    this[MeasurementDrawingSemantics.Points]=pointPlacements
+                    this[MeasurementDrawingSemantics.Lines]=linePlacements
+                    this[MeasurementDrawingSemantics.Areas]=areaFeatures
+                    this[MeasurementDrawingSemantics.Viewport] = viewport
+                    semanticsProjection?.let {
+                        this[MeasurementDrawingSemantics.Projection] = it
                     }
-                    is AreaShape.Polygon -> {
-                        val vertices=shape.vertices.map(::screenPosition)
-                        val areaPath=Path().apply {moveTo(vertices.first().x,vertices.first().y);vertices.drop(1).forEach {lineTo(it.x,it.y)};close()}
-                        drawPath(areaPath,color.copy(alpha=0.16f));drawPath(areaPath,color,style=Stroke(width))
+                    selectedSide?.let { this[MeasurementDrawingSemantics.SelectedWall] = it }
+                    this[MeasurementDrawingSemantics.EditingEnabled]=pointEditingEnabled || lineEditingEnabled || areaEditingEnabled
+                    selectedPointUuid?.let {this[MeasurementDrawingSemantics.SelectedPoint]=it}
+                    selectedLineUuid?.let {this[MeasurementDrawingSemantics.SelectedLine]=it}
+                    selectedAreaUuid?.let {this[MeasurementDrawingSemantics.SelectedArea]=it}
+                    pointDrag?.let {this[MeasurementDrawingSemantics.PointDrag]=it}
+                }) {
+                val projection = projectDrawing(size.width, size.height) ?: return@Canvas
+                val projectedPoints = contour.points.map(projection::project)
+                val points = projectedPoints.map { Offset(it.x.toFloat(), it.y.toFloat()) }
+                fun screen(point: DrawingPoint): Offset {
+                    val projected = projection.project(point)
+                    return Offset(projected.x.toFloat(), projected.y.toFloat())
+                }
+                fun screenPosition(point: PointPositionMm) =
+                    screen(DrawingPoint(point.xMm.toDouble(), point.yMm.toDouble()))
+                val path = Path().apply {
+                    moveTo(points.first().x, points.first().y)
+                    points.drop(1).forEach { lineTo(it.x, it.y) }
+                    close()
+                }
+                drawPath(path, ink.copy(alpha = 0.08f))
+                drawPath(path, ink, style = Stroke(width = 2.5.dp.toPx()))
+                selectedSide?.takeIf { it in points.indices }?.let { i ->
+                    drawLine(ink, points[i], points[(i + 1) % points.size], strokeWidth = 8.dp.toPx())
+                }
+                mountingWallOrdinals.filter { it in points.indices }.forEach { i ->
+                    drawLine(ink.copy(alpha=0.65f),points[i],points[(i+1)%points.size],strokeWidth=6.dp.toPx())
+                }
+                points.forEach { drawCircle(ink, 3.dp.toPx(), it) }
+                areaFeatures.forEach {saved ->
+                    val feature=areaDrag?.takeIf {it.uuid==saved.uuid} ?: saved
+                    val color=if(feature.unresolved) androidx.compose.ui.graphics.Color(0xFFD34C44) else ink
+                    val width=if(feature.uuid==selectedAreaUuid)4.dp.toPx() else 2.dp.toPx()
+                    when(val shape=feature.shape) {
+                        is AreaShape.Circle -> {
+                            val center=screenPosition(shape.center)
+                            val radius=(screenPosition(PointPositionMm(shape.center.xMm+shape.radiusMm,shape.center.yMm))-center).getDistance()
+                            drawCircle(color.copy(alpha=0.16f),radius,center)
+                            drawCircle(color,radius,center,style=Stroke(width))
+                        }
+                        is AreaShape.Polygon -> {
+                            val vertices=shape.vertices.map(::screenPosition)
+                            val areaPath=Path().apply {moveTo(vertices.first().x,vertices.first().y);vertices.drop(1).forEach {lineTo(it.x,it.y)};close()}
+                            drawPath(areaPath,color.copy(alpha=0.16f));drawPath(areaPath,color,style=Stroke(width))
+                        }
+                    }
+                    if(feature.uuid==selectedAreaUuid)feature.shape.positions.forEach {drawCircle(color,5.dp.toPx(),screenPosition(it))}
+                }
+                areaCreationPoints.forEach {drawCircle(ink,5.dp.toPx(),screenPosition(it))}
+                areaCreationPoints.zipWithNext().forEach {(a,b)->drawLine(ink.copy(alpha=0.6f),screenPosition(a),screenPosition(b),strokeWidth=2.dp.toPx())}
+                mountingDimensions.forEachIndexed { index, dimension ->
+                    val a=screen(dimension.start);val b=screen(dimension.end)
+                    drawLine(ink,a,b,strokeWidth=1.dp.toPx())
+                    drawCircle(ink,2.dp.toPx(),b)
+                    val label=dimensionLayouts[index]
+                    val mid=(a+b)/2f
+                    drawRect(surface.copy(alpha=0.96f),mid,Size(label.size.width.toFloat(),label.size.height.toFloat()))
+                    drawText(label,topLeft=mid)
+                }
+                lineStartPoint?.let { start ->
+                    drawCircle(ink, 6.dp.toPx(), screenPosition(start), style = Stroke(2.dp.toPx()))
+                }
+                linePlacements.forEach { line ->
+                    val visible = lineDrag?.takeIf { it.uuid == line.uuid } ?: line
+                    val a = screenPosition(visible.start)
+                    val b = screenPosition(visible.end)
+                    val color=if(visible.unresolved)androidx.compose.ui.graphics.Color(0xffb3261e) else ink
+                    if(line.uuid==selectedLineUuid)drawLine(color.copy(alpha=0.25f),a,b,strokeWidth=14.dp.toPx())
+                    drawLine(color,a,b,strokeWidth=if(visible.precision==PointPrecision.EXACT)3.dp.toPx() else 2.dp.toPx())
+                    listOf(a,b).forEach {drawCircle(surface,5.dp.toPx(),it);drawCircle(color,5.dp.toPx(),it,style=Stroke(2.dp.toPx()))}
+                    if(visible.needsReview)drawCircle(color,8.dp.toPx(),a,style=Stroke(1.dp.toPx()))
+                }
+                pointPlacements.forEach { marker ->
+                    val preview = pointDrag?.takeIf { it.point.uuid == marker.uuid }
+                    val center = screen(DrawingPoint(preview?.xMm ?: marker.xMm.toDouble(), preview?.yMm ?: marker.yMm.toDouble()))
+                    drawCircle(surface, 7.dp.toPx(), center)
+                    val markerInk=if(marker.mounting.unresolved) androidx.compose.ui.graphics.Color(0xffb3261e) else ink
+                    drawCircle(markerInk, 7.dp.toPx(), center, style = Stroke(if (marker.precision == PointPrecision.EXACT) 3.dp.toPx() else 2.dp.toPx()))
+                    drawCircle(markerInk, 2.dp.toPx(), center)
+                    if(marker.mounting.needsReview) drawCircle(markerInk,10.dp.toPx(),center,style=Stroke(1.dp.toPx()))
+                    if (marker.uuid == selectedPointUuid) drawCircle(ink, 12.dp.toPx(), center, style = Stroke(3.dp.toPx()))
+                }
+                val visibleLabels = layoutMeasurementDrawingForProjectedPoints(
+                    projectedPoints, size.width, size.height,
+                    textLayouts.map { DrawingLabelSize(it.size.width.toFloat(), it.size.height.toFloat()) }, density,
+                    vertexLayouts.map { DrawingLabelSize(it.size.width.toFloat(), it.size.height.toFloat()) }
+                )
+                visibleLabels.vertexLabels.forEach { label ->
+                    drawText(vertexLayouts[label.sideIndex], topLeft = Offset(label.left, label.top))
+                }
+                visibleLabels.labels.forEach { label ->
+                    drawRoundRect(surface.copy(alpha = 0.96f),
+                        topLeft = Offset(label.left, label.top), size = Size(label.width, label.height),
+                        cornerRadius = CornerRadius(3.dp.toPx()))
+                    drawText(textLayouts[label.sideIndex], topLeft = Offset(label.left, label.top))
+                }
+            }
+            if (interactive && verticalViewControls) {
+                Column(
+                    Modifier.align(Alignment.CenterEnd).width(48.dp)
+                        .verticalScroll(rememberScrollState()).testTag("measurement-edit-zoom-rail")
+                ) {
+                    MeasurementIconAction("Вписати креслення", Icons.Default.CenterFocusStrong, !markerGesture, ::fit)
+                    MeasurementIconAction("Збільшити масштаб", Icons.Default.ZoomIn, !markerGesture) {
+                        move(0f, 0f, 1.25f)
+                    }
+                    MeasurementIconAction("Зменшити масштаб", Icons.Default.ZoomOut, !markerGesture) {
+                        move(0f, 0f, 1 / 1.25f)
                     }
                 }
-                if(feature.uuid==selectedAreaUuid)feature.shape.positions.forEach {drawCircle(color,5.dp.toPx(),screenPosition(it))}
-            }
-            areaCreationPoints.forEach {drawCircle(ink,5.dp.toPx(),screenPosition(it))}
-            areaCreationPoints.zipWithNext().forEach {(a,b)->drawLine(ink.copy(alpha=0.6f),screenPosition(a),screenPosition(b),strokeWidth=2.dp.toPx())}
-            mountingDimensions.forEachIndexed { index, dimension ->
-                val a=screen(dimension.start);val b=screen(dimension.end)
-                drawLine(ink,a,b,strokeWidth=1.dp.toPx())
-                drawCircle(ink,2.dp.toPx(),b)
-                val label=dimensionLayouts[index]
-                val mid=(a+b)/2f
-                drawRect(surface.copy(alpha=0.96f),mid,Size(label.size.width.toFloat(),label.size.height.toFloat()))
-                drawText(label,topLeft=mid)
-            }
-            lineStartPoint?.let { start ->
-                drawCircle(ink, 6.dp.toPx(), screenPosition(start), style = Stroke(2.dp.toPx()))
-            }
-            linePlacements.forEach { line ->
-                val visible = lineDrag?.takeIf { it.uuid == line.uuid } ?: line
-                val a = screenPosition(visible.start)
-                val b = screenPosition(visible.end)
-                val color=if(visible.unresolved)androidx.compose.ui.graphics.Color(0xffb3261e) else ink
-                if(line.uuid==selectedLineUuid)drawLine(color.copy(alpha=0.25f),a,b,strokeWidth=14.dp.toPx())
-                drawLine(color,a,b,strokeWidth=if(visible.precision==PointPrecision.EXACT)3.dp.toPx() else 2.dp.toPx())
-                listOf(a,b).forEach {drawCircle(surface,5.dp.toPx(),it);drawCircle(color,5.dp.toPx(),it,style=Stroke(2.dp.toPx()))}
-                if(visible.needsReview)drawCircle(color,8.dp.toPx(),a,style=Stroke(1.dp.toPx()))
-            }
-            pointPlacements.forEach { marker ->
-                val preview = pointDrag?.takeIf { it.point.uuid == marker.uuid }
-                val center = screen(DrawingPoint(preview?.xMm ?: marker.xMm.toDouble(), preview?.yMm ?: marker.yMm.toDouble()))
-                drawCircle(surface, 7.dp.toPx(), center)
-                val markerInk=if(marker.mounting.unresolved) androidx.compose.ui.graphics.Color(0xffb3261e) else ink
-                drawCircle(markerInk, 7.dp.toPx(), center, style = Stroke(if (marker.precision == PointPrecision.EXACT) 3.dp.toPx() else 2.dp.toPx()))
-                drawCircle(markerInk, 2.dp.toPx(), center)
-                if(marker.mounting.needsReview) drawCircle(markerInk,10.dp.toPx(),center,style=Stroke(1.dp.toPx()))
-                if (marker.uuid == selectedPointUuid) drawCircle(ink, 12.dp.toPx(), center, style = Stroke(3.dp.toPx()))
-            }
-            val visibleLabels = layoutMeasurementDrawingForProjectedPoints(
-                projectedPoints, size.width, size.height,
-                textLayouts.map { DrawingLabelSize(it.size.width.toFloat(), it.size.height.toFloat()) }, density,
-                vertexLayouts.map { DrawingLabelSize(it.size.width.toFloat(), it.size.height.toFloat()) }
-            )
-            visibleLabels.vertexLabels.forEach { label ->
-                drawText(vertexLayouts[label.sideIndex], topLeft = Offset(label.left, label.top))
-            }
-            visibleLabels.labels.forEach { label ->
-                drawRoundRect(surface.copy(alpha = 0.96f),
-                    topLeft = Offset(label.left, label.top), size = Size(label.width, label.height),
-                    cornerRadius = CornerRadius(3.dp.toPx()))
-                drawText(textLayouts[label.sideIndex], topLeft = Offset(label.left, label.top))
             }
         }
         if (showSideLegend) {

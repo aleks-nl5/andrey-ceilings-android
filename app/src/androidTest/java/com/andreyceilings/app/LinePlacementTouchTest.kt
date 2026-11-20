@@ -45,7 +45,7 @@ class LinePlacementTouchTest {
             }
         }
         fun click(label: String) {
-            val action = hasText(label) and hasClickAction()
+            val action = (hasText(label) or hasContentDescription(label)) and hasClickAction()
             if (compose.onAllNodes(action and hasAnyAncestor(hasScrollAction())).fetchSemanticsNodes().isNotEmpty()) {
                 compose.onNode(action).performScrollTo()
             }
@@ -72,12 +72,12 @@ class LinePlacementTouchTest {
                 canvas.performTouchInput {down(center);moveTo(center+Offset(80f,30f));up()}
                 compose.runOnIdle {assertNull(model.state.value.lineStart);assertTrue(model.displayLines().isEmpty())}
                 // Fit removes the pan, using the real UI action.
-                compose.onNodeWithText("Вписати креслення").performClick()
+                click("Вписати креслення")
                 canvas.performTouchInput {down(center);cancel()}
                 compose.runOnIdle {assertNull(model.state.value.lineStart)}
                 canvas.performTouchInput {pinch(center-Offset(40f,0f),center+Offset(40f,0f),center-Offset(70f,0f),center+Offset(70f,0f))}
                 compose.runOnIdle {assertNull(model.state.value.lineStart)}
-                compose.onNodeWithText("Вписати креслення").performClick()
+                click("Вписати креслення")
                 tap(500,600);tap(3000,600)
                 val uuid = model.state.value.linePreview!!.uuid
                 click("Вартість")

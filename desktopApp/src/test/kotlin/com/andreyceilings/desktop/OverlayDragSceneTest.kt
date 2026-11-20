@@ -54,9 +54,9 @@ class OverlayDragSceneTest {
                 else MeasurementEditScreen(model,PaddingValues(0.dp),0.dp,{}, {},null)
             }}}
             try {
-                scene.awaitText("Вписати креслення")
+                scene.awaitEnabled("Вписати креслення")
                 // The editor installs point gesture keys only after loading its SQLCipher overlay.
-                if (mode != "details") scene.awaitEnabled("Зберегти")
+                if (mode != "details") scene.awaitEnabled("Зберегти замір")
                 if(mode=="fullscreen")scene.click("На весь екран")
                 // Selected polygon owns the drag even inside an unrelated LINE's halo.
                 scene.tapWorld(1000, 1500)
@@ -88,7 +88,7 @@ class OverlayDragSceneTest {
                 assertEquals(circle,model.displayAreas().first {it.uuid==f.circle});assertNotNull(model.state.value.error)
                 assertEquals(before,OverlayDragFixture.snapshot(driver))
                 val expectedLines=model.displayLines();val expectedAreas=model.displayAreas()
-                scene.click(if(mode=="details")"Зберегти креслення" else "Зберегти")
+                scene.click(if(mode=="details")"Зберегти креслення" else "Зберегти замір")
                 withTimeout(15000){while(model.state.value.saving || model.state.value.dirty){scene.frame();delay(20)}}
                 assertNull(model.state.value.error)
                 val reopened=store.load(f.project,f.id)
@@ -155,7 +155,7 @@ class OverlayDragSceneTest {
     private fun ImageComposeScene.awaitEnabled(label: String) {
         repeat(240) {
             frame()
-            if (nodes().any { it.textTree() == label &&
+            if (nodes().any { (it.textTree() == label || label in it.config.getOrNull(SemanticsProperties.ContentDescription).orEmpty()) &&
                 it.config.getOrNull(SemanticsActions.OnClick) != null &&
                 it.config.getOrNull(SemanticsProperties.Disabled) == null }) return
             Thread.sleep(25)
@@ -165,7 +165,7 @@ class OverlayDragSceneTest {
 
     private fun ImageComposeScene.click(label: String) {
         var searchedTop=false
-        repeat(240) { frame(); nodes().firstOrNull { it.config.getOrNull(SemanticsActions.OnClick) != null && it.textTree() == label }?.let {
+        repeat(240) { frame(); nodes().firstOrNull { it.config.getOrNull(SemanticsActions.OnClick) != null && (it.textTree() == label || label in it.config.getOrNull(SemanticsProperties.ContentDescription).orEmpty()) }?.let {
             assertNull(it.config.getOrNull(SemanticsProperties.Disabled), label)
             assertTrue(it.config.getOrNull(SemanticsActions.OnClick)?.action?.invoke() == true); frame(); return }
             nodes().firstOrNull {it.config.getOrNull(SemanticsActions.ScrollToIndex)!=null}?.config?.getOrNull(SemanticsActions.ScrollBy)?.action?.invoke(0f,if(!searchedTop)-10000f else 150f)

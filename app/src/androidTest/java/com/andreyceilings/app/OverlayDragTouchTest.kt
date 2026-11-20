@@ -44,7 +44,7 @@ class OverlayDragTouchTest {
         }}}
         val matcher=SemanticsMatcher("ceiling canvas") {n -> n.config.getOrNull(SemanticsProperties.ContentDescription).orEmpty().any {it.startsWith("Контур стелі")}}
         fun click(label:String) {
-            val action=hasText(label) and hasClickAction()
+            val action = (hasText(label) or hasContentDescription(label)) and hasClickAction()
             if(compose.onAllNodes(action).fetchSemanticsNodes().isEmpty()) {
                 compose.onNode(hasScrollToIndexAction()).performScrollToNode(action)
             }
@@ -74,7 +74,7 @@ class OverlayDragTouchTest {
         try {
             compose.waitUntil(15000){compose.onAllNodes(matcher).fetchSemanticsNodes().any {it.config.getOrNull(MeasurementDrawingSemantics.EditingEnabled)==true}}
             val initialPricing = pricing(db)
-            if(mode=="fullscreen")compose.onNodeWithText("На весь екран").performClick()
+            if(mode=="fullscreen")click("На весь екран")
             val before=OverlayDragFixture.snapshot(driver)
             if (mode != "details") {
                 val point = doc.placements.points.single()
@@ -143,7 +143,7 @@ class OverlayDragTouchTest {
             canvas().performTouchInput {pinch(center-Offset(25f,0f),center+Offset(25f,0f),center-Offset(45f,0f),center+Offset(45f,0f))}
             click("Вписати креслення")
             val empty=position(3500,500);canvas().performTouchInput {swipe(empty,empty+Offset(35f,20f))};click("Вписати креслення")
-            click(if(mode=="details")"Зберегти креслення" else "Зберегти")
+            click(if(mode=="details")"Зберегти креслення" else "Зберегти замір")
             compose.waitUntil(15000){AreaFeatureRepository(db).forMeasurement(doc.draft.recordUuid).first {it.uuid==f.circle}.shape.positions.single().xMm==3100L}
             var saved=store.load(f.project,f.id)
             val line=saved.placements.lines.single();assertEquals(1600,line.lengthMm);assertEquals(PointPositionMm(800,750),line.start)

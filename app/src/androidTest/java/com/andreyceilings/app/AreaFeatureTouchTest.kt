@@ -38,7 +38,7 @@ class AreaFeatureTouchTest {
         compose.setContent {CeilingsTheme(dark) {MeasurementEditScreen(model,PaddingValues(0.dp),0.dp,{}, {},null)}}
         val matcher=SemanticsMatcher("ceiling canvas") {n->n.config.getOrNull(SemanticsProperties.ContentDescription).orEmpty().any {it.startsWith("Контур стелі")}}
         fun click(text: String) {
-            val action = hasText(text) and hasClickAction()
+            val action = (hasText(text) or hasContentDescription(text)) and hasClickAction()
             if (compose.onAllNodes(action and hasAnyAncestor(hasScrollAction())).fetchSemanticsNodes().isNotEmpty()) {
                 compose.onNode(action).performScrollTo()
             }
@@ -57,15 +57,15 @@ class AreaFeatureTouchTest {
             click("Позначити отвір");compose.onNodeWithText("Діаметр, м (парні мм)").performScrollTo().performTextInput("0,2");tap(2000,1500);click("Завершити фігуру в чернетці")
             click("Розмістити область: ${element.label}");tap(1500,500);tap(2000,1000);click("Завершити фігуру в чернетці")
             compose.runOnIdle {assertEquals(3,model.displayAreas().size)}
-            compose.onNodeWithText("Скасувати дію").performClick()
+            click("Скасувати дію")
             compose.runOnIdle {assertEquals(2,model.displayAreas().size)}
-            compose.onNodeWithText("Повторити").performClick()
-            compose.onNodeWithText("На весь екран").performClick()
-            compose.onNodeWithText("Вписати креслення").performClick()
+            click("Повторити")
+            click("На весь екран")
+            click("Вписати креслення")
             val canvas=compose.onNode(matcher)
             canvas.performTouchInput {pinch(center-Offset(30f,0f),center+Offset(30f,0f),center-Offset(50f,0f),center+Offset(50f,0f))}
-            compose.onNodeWithText("Вписати креслення").performClick()
-            compose.onNodeWithText("Згорнути").performClick()
+            click("Вписати креслення")
+            click("Згорнути")
             tap(2200,1500) // accessible halo selects the circle
             compose.runOnIdle {assertNotNull(model.state.value.area.selected)}
             click("Властивості фігури")
@@ -73,9 +73,9 @@ class AreaFeatureTouchTest {
             compose.onNodeWithText("Застосувати властивості").performClick()
             click("Видалити фігуру");compose.onNodeWithText("Видалити",useUnmergedTree=true).performClick()
             compose.runOnIdle {assertEquals(2,model.displayAreas().size)}
-            compose.onNodeWithText("Скасувати дію").performClick()
+            click("Скасувати дію")
             val ids=model.displayAreas().map {it.uuid}.toSet()
-            compose.onNodeWithText("Зберегти",useUnmergedTree=true).performClick()
+            compose.onNodeWithTag("measurement-edit-save").performClick()
             compose.waitUntil(15000) {model.state.value.saved || model.state.value.error!=null}
             compose.runOnIdle {assertTrue(model.state.value.saved,model.state.value.error);assertEquals(ids,store.load(f.project,f.id).placements.areas.map {it.uuid}.toSet())}
         } finally {store.closePointReads();driver.close();context.deleteDatabase(name);key.fill(0)}

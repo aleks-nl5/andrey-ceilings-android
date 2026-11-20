@@ -43,7 +43,7 @@ class AreaFeatureSceneTest {
             try {
                 // Save becomes enabled after the point overlay loads. Its arrival also
                 // changes the canvas pointer-input keys and restarts the gesture handler.
-                scene.awaitEnabled("Зберегти")
+                scene.awaitEnabled("Зберегти замір")
                 scene.click("Елементи")
                 scene.click("Позначити перешкоду")
                 scene.tapWorld(500,500)
@@ -82,7 +82,7 @@ class AreaFeatureSceneTest {
                 scene.click("Видалити фігуру");scene.click("Видалити");assertEquals(2,model.displayAreas().size)
                 scene.click("Скасувати дію");assertEquals(3,model.displayAreas().size)
                 val ids=model.displayAreas().map {it.uuid}.toSet()
-                scene.click("Зберегти")
+                scene.click("Зберегти замір")
                 withTimeout(15000){while(!delivered && model.state.value.error==null){scene.frame();delay(20)}}
                 assertTrue(delivered,model.state.value.error)
                 assertEquals(ids,store.load(project,id).placements.areas.map {it.uuid}.toSet())
@@ -139,13 +139,13 @@ class AreaFeatureSceneTest {
         repeat(240) {
             frame()
             if (nodes().any { it.config.getOrNull(SemanticsActions.OnClick) != null &&
-                it.config.getOrNull(SemanticsProperties.Disabled) == null && it.textTree() == label }) return
+                it.config.getOrNull(SemanticsProperties.Disabled) == null && (it.textTree() == label || label in it.config.getOrNull(SemanticsProperties.ContentDescription).orEmpty()) }) return
             Thread.sleep(25)
         }
         fail("Action '$label' did not become enabled: ${text().take(2000)}")
     }
     private fun ImageComposeScene.click(label: String) {
-        repeat(240) { frame(); nodes().firstOrNull { it.config.getOrNull(SemanticsActions.OnClick) != null && it.textTree() == label }?.let {
+        repeat(240) { frame(); nodes().firstOrNull { it.config.getOrNull(SemanticsActions.OnClick) != null && (it.textTree() == label || label in it.config.getOrNull(SemanticsProperties.ContentDescription).orEmpty()) }?.let {
             assertNull(it.config.getOrNull(SemanticsProperties.Disabled), label)
             assertTrue(it.config.getOrNull(SemanticsActions.OnClick)?.action?.invoke() == true); frame(); return }; Thread.sleep(25) }
         fail("Missing action '$label': ${text().take(2000)}")
