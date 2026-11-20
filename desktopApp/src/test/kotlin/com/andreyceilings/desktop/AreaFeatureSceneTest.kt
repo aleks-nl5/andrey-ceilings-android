@@ -42,7 +42,7 @@ class AreaFeatureSceneTest {
             var testFailure:Throwable?=null
             try {
                 withTimeout(15000) {
-                    while (scene.canvas().config.getOrNull(MeasurementDrawingSemantics.EditingEnabled) != true) {
+                    while (scene.nodes().none { it.config.getOrNull(MeasurementDrawingSemantics.EditingEnabled) == true }) {
                         scene.frame(); delay(20)
                     }
                 }
