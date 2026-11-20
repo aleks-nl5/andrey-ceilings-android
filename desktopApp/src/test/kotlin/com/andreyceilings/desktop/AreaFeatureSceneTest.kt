@@ -44,6 +44,7 @@ class AreaFeatureSceneTest {
                 // Save becomes enabled after the point overlay loads. Its arrival also
                 // changes the canvas pointer-input keys and restarts the gesture handler.
                 scene.awaitEnabled("Зберегти")
+                scene.click("Елементи")
                 scene.click("Позначити перешкоду")
                 scene.tapWorld(row,500,500)
                 assertEquals(1,model.state.value.area.vertices.size,"First area corner must be delivered in $dark theme")
@@ -117,19 +118,10 @@ class AreaFeatureSceneTest {
         repeat(150) {
             frame()
             val bounds = bounds()
-            val scrollBy = when {
-                bounds.bottom > 1300f -> bounds.bottom - 1200f
-                bounds.top < 100f -> bounds.top - 200f
-                else -> 0f
-            }
-            if (scrollBy != 0f) {
-                nodes().firstOrNull { it.config.getOrNull(SemanticsActions.ScrollBy) != null }
-                    ?.config?.getOrNull(SemanticsActions.ScrollBy)?.action?.invoke(0f, scrollBy)
-                repeat(10) { frame(); Thread.sleep(15) }
-                stable = 0
-            } else {
-                stable = if (bounds == previous) stable + 1 else 0
-                if (stable >= 3) return bounds
+            stable = if (bounds == previous) stable + 1 else 0
+            if (stable >= 3) {
+                assertTrue(bounds.top >= 0f && bounds.bottom <= 1400f, "Canvas must fit the workspace: $bounds")
+                return bounds
             }
             previous = bounds
             Thread.sleep(20)
