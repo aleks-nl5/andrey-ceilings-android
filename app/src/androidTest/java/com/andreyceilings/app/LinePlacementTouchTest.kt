@@ -80,18 +80,26 @@ class LinePlacementTouchTest {
                 click("Вписати креслення")
                 tap(500,600);tap(3000,600)
                 val uuid = model.state.value.linePreview!!.uuid
+                if (theme) {
+                    compose.onNodeWithTag("measurement-edit-context-cost").assertDoesNotExist()
+                    click("Згорнути")
+                }
                 click("Вартість")
                 compose.onNodeWithText("Розрахунок за останнім збереженим заміром").assertExists()
+                if (theme) click("На весь екран")
                 click("Елементи")
+                compose.runOnIdle { assertEquals(uuid, model.state.value.linePreview?.uuid) }
                 click("Зберегти лінію в чернетці")
                 compose.runOnIdle {
                     assertEquals(uuid,model.displayLines().single().uuid)
                     assertEquals(0L,PriceNameUniquenessProof.scalar(driver,"SELECT count(*) FROM line_placements WHERE deletedAt IS NULL"))
                 }
+                if (theme) click("Закрити панель")
                 tap(1800,600)
                 compose.runOnIdle {assertEquals(uuid,model.state.value.selectedLineUuid)}
                 // A cancelled selected drag and pinch may not commit a move.
                 val before=model.displayLines().single()
+                if (theme) click("Закрити панель")
                 val selectedPosition=world(1800,600)
                 canvas.performTouchInput {down(selectedPosition);moveTo(selectedPosition+Offset(60f,40f));cancel()}
                 compose.runOnIdle {assertEquals(before,model.displayLines().single())}
