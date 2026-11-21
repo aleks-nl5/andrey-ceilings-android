@@ -41,3 +41,13 @@ The connected integration can read `main` but received **403 Resource not access
 ### What is explicitly out of scope
 
 No runtime business rule, migrations, user-visible UX, SQLCipher KDF/keys or schema, immutable quotes/PDF, broad test exclusions, silent CI skips or blanket retries. The next feature after this CI phase is P5B unified POINT/LINE/AREA UX in #95; P5C contour and P5D live pricing/quotes are separate.
+
+
+## Additive draft feedback slice — 21.11.2026 (not merge-ready)
+- New `.github/workflows/draft-impact-feedback.yml` provides a **separate non-required advisory** on Draft PR updates. It never claims the Android/Windows/iOS FULL gate is green.
+- `ci/impact.py` reads a complete merge-base `git diff --name-status -z --find-renames BASE...HEAD`, checks exact PR head, and fails closed to **FULL** if the diff, path, status, or SHA cannot be established. Critical source (commonMain including pricing/PDF/theme/navigation/Canvas), SQLDelight/SQLCipher/backup, CI, Gradle, or tests all require FULL.
+- Documentation-only changes select **FAST** (real parser regression tests). Confident Android-only, Desktop-only, and iOS-only paths select **TARGETED** with a conservative union of relevant draft tasks: Android unit + debug APK; Windows Desktop compile + production scene smoke; iOS Simulator framework + SQLCipher test. Any selected test failure turns the advisory result red; no silent success.
+- This slice **does not yet reduce FULL workflow frequency**. The established `android-debug-apk.yml` and `cmp-kmp-platforms.yml` still execute FULL on PRs. Do not modify required check settings to use the advisory. Next separate step: validate classifier on real Draft scenarios, design ready-for-review/full final SHA gates without skipped required statuses, then optimize frequency. Until that gate is validated, existing FULL is the safety net.
+- `ci/tests/test_impact.py` contains table-driven tests for docs, Android/Desktop/iOS, combined groups, shared foundation/pricing/PDF, database/Gradle/CI, deleted/renamed, unknown paths and invalid diff. Command: `python3 -m unittest discover -s ci/tests -p test_impact.py -v`.
+- Artifact retention changed conservatively: intermediate debug APK **7 days**; release/signed APK **14 days**; P5A screenshots **14 days**; Android instrumentation and Windows test reports **30 days**. GitHub Actions run/log retention (target 90 days, if possible) and actual required check protection remain manual repo setting verifications; no history deletion.
+- The slower JDBC/Compose suites still require isolated profiling before any SQLCipher pooling / production optimization. This diagnostic slice intentionally does not touch production code or reduce test coverage.

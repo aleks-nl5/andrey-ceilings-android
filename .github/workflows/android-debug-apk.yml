@@ -177,7 +177,7 @@ jobs:
             app/build/outputs/androidTest-results/connected/
             app/build/reports/androidTests/connected/
           if-no-files-found: warn
-          retention-days: 14
+          retention-days: 30
 
       - name: Prepare persistent signing
         env:
@@ -211,7 +211,7 @@ jobs:
           name: andrey-ceilings-debug-apk
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 7
 
       - name: Build release APK
         if: env.SIGNING_CONFIGURED == 'true'
