@@ -90,6 +90,9 @@ jobs:
       # snapshot loading itself succeeds.
       - name: Verify encrypted SQLDelight database on Android emulator
         id: android_instrumentation
+        # An initial failure must still fail the job unless the AVD truly
+        # disconnects and the entire suite passes in one fresh AVD.
+        continue-on-error: true
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 35
@@ -102,8 +105,51 @@ jobs:
           # shell command. Keep multiline logic inside our own Bash process.
           script: bash ci/run-sqlcipher-instrumentation.sh
 
+      - name: Classify Android emulator transport failure
+        id: android_emulator_loss
+        if: steps.android_instrumentation.outcome == 'failure'
+        shell: bash
+        run: |
+          if [[ -f "$RUNNER_TEMP/p5a-workspace/emulator-disconnected.marker" ]]; then
+            echo "lost=true" >> "$GITHUB_OUTPUT"
+            echo "::warning::Emulator disconnected during instrumentation; retrying full suite once on a fresh AVD."
+          else
+            echo "lost=false" >> "$GITHUB_OUTPUT"
+            echo "::error::Instrumentation failed without emulator transport loss: no retry for real test failures."
+          fi
+
+      - name: Retry full instrumentation once on a fresh AVD after emulator loss
+        id: android_instrumentation_retry
+        if: steps.android_instrumentation.outcome == 'failure' && steps.android_emulator_loss.outputs.lost == 'true'
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          profile: pixel_6
+          force-avd-creation: true
+          emulator-options: -no-snapshot -no-window -gpu swiftshader -feature -Vulkan -noaudio -no-boot-anim -camera-back none
+          disable-animations: true
+          script: bash ci/run-sqlcipher-instrumentation.sh
+
+      - name: Enforce successful Android instrumentation
+        if: always()
+        shell: bash
+        env:
+          FIRST_OUTCOME: ${{ steps.android_instrumentation.outcome }}
+          EMULATOR_LOST: ${{ steps.android_emulator_loss.outputs.lost }}
+          RETRY_OUTCOME: ${{ steps.android_instrumentation_retry.outcome }}
+        run: |
+          if [[ "$FIRST_OUTCOME" == "success" ]]; then
+            echo "Android instrumentation passed on the first AVD."
+          elif [[ "$EMULATOR_LOST" == "true" && "$RETRY_OUTCOME" == "success" ]]; then
+            echo "::notice::Full instrumentation passed on a fresh AVD after the initial emulator disconnected."
+          else
+            echo "::error::Android instrumentation did not pass. Real test failures are never ignored."
+            exit 1
+          fi
+
       - name: Report Android emulator host diagnostics
-        if: failure() && steps.android_instrumentation.conclusion == 'failure'
+        if: always() && (steps.android_instrumentation.outcome == 'failure' || steps.android_instrumentation_retry.outcome == 'failure')
         shell: bash
         run: |
           free -m
