@@ -2,9 +2,8 @@ package com.andreyceilings.app
 
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.runtime.*
-import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
@@ -35,59 +34,96 @@ class LinePlacementTouchTest {
         val element=MeasurementElementRepository(db).createCatalogSelection(f.element.measurementUuid,prices.find(id)!!.uuid,ElementQuantity.Exact(4500),6, businessRole = com.andreyceilings.shared.livepricing.BusinessRole.ADDITIONAL_WORK)
         val store=MeasurementEditStore(db){100}
         var model=MeasurementEditModel(store,store.load(f.project,f.id))
-        var dark by mutableStateOf(false);var full by mutableStateOf(false)
+        var dark by mutableStateOf(false)
         var shown by mutableStateOf(model)
         val matcher=SemanticsMatcher("ceiling canvas") {node ->node.config.getOrNull(SemanticsProperties.ContentDescription).orEmpty().any {it.startsWith("Контур стелі")}}
         compose.setContent {
             CeilingsTheme(dark) {
-                val editor=shown;val state by editor.state.collectAsState()
-                val geometry=validateMeasurementCreate(state.draft).geometry!!
-                MeasurementDrawing(MeasurementGeometryView.Captured(geometry),Modifier.fillMaxWidth().height(if(full)500.dp else 350.dp),
-                    interactive=true,fullscreen=full,linePlacements=editor.displayLines()+listOfNotNull(state.linePreview),
-                    selectedLineUuid=state.selectedLineUuid,linePlacementMode=state.lineElementUuid!=null,
-                    onLineTap=editor::lineTap,onSelectLine=editor::selectLine,lineEditingEnabled=true,
-                    lineDrag=state.lineDrag,onBeginLineDrag=editor::beginLineDrag,onPreviewLineDrag=editor::previewLineDrag,
-                    onFinishLineDrag=editor::finishLineDrag,onCancelLineDrag=editor::cancelLineDrag)
+                key(shown) {
+                    MeasurementEditScreen(shown, PaddingValues(0.dp), onBack = {})
+                }
             }
         }
+        fun click(label: String) {
+            val action = (hasText(label) or hasContentDescription(label)) and hasClickAction()
+            if (compose.onAllNodes(action and hasAnyAncestor(hasScrollAction())).fetchSemanticsNodes().isNotEmpty()) {
+                compose.onNode(action).performScrollTo()
+            }
+            compose.onNode(action).performClick()
+        }
         try {
-            for (theme in listOf(false,true)) {
-                compose.runOnIdle {dark=theme;full=theme;model=MeasurementEditModel(store,store.load(f.project,f.id));shown=model;model.beginLine(element.uuid)}
+            for (theme in listOf(false, true)) {
+                val document = store.load(f.project, f.id)
+                compose.runOnIdle {
+                    dark = theme
+                    model = MeasurementEditModel(store, document)
+                    shown = model
+                }
+                if (theme) click("На весь екран")
+                click("Елементи")
+                compose.onNodeWithTag("measurement-edit-section-lines").performScrollTo().performClick()
+                click("Розмістити лінію")
                 val canvas=compose.onNode(matcher)
                 fun world(x:Long,y:Long):Offset {
-                    val bounds=canvas.fetchSemanticsNode().boundsInRoot
-                    val contour=measurementDrawingContour(MeasurementGeometryView.Captured(validateMeasurementCreate(model.state.value.draft).geometry!!))!!
-                    val p=measurementDrawingProjection(contour,bounds.width,bounds.height,compose.density.density)!!.project(DrawingPoint(x.toDouble(),y.toDouble()))
+                    val projection = canvas.fetchSemanticsNode().config[MeasurementDrawingSemantics.Projection]
+                    val p = projection.project(DrawingPoint(x.toDouble(), y.toDouble()))
                     return Offset(p.x.toFloat(),p.y.toFloat())
                 }
                 fun tap(x:Long,y:Long) {val p=world(x,y);canvas.performTouchInput {click(p)}}
                 canvas.performTouchInput {down(center);moveTo(center+Offset(80f,30f));up()}
                 compose.runOnIdle {assertNull(model.state.value.lineStart);assertTrue(model.displayLines().isEmpty())}
                 // Fit removes the pan, using the real UI action.
-                compose.onNodeWithText("Вписати креслення").performClick()
+                click("Вписати креслення")
                 canvas.performTouchInput {down(center);cancel()}
                 compose.runOnIdle {assertNull(model.state.value.lineStart)}
                 canvas.performTouchInput {pinch(center-Offset(40f,0f),center+Offset(40f,0f),center-Offset(70f,0f),center+Offset(70f,0f))}
                 compose.runOnIdle {assertNull(model.state.value.lineStart)}
-                compose.onNodeWithText("Вписати креслення").performClick()
+                click("Вписати креслення")
                 tap(500,600);tap(3000,600)
-                var uuid=""
+                val uuid = model.state.value.linePreview!!.uuid
+                if (theme) {
+                    compose.onNodeWithTag("measurement-edit-context-cost").assertDoesNotExist()
+                    click("Згорнути")
+                }
+                click("Вартість")
+                compose.onNodeWithText("Розрахунок за останнім збереженим заміром").assertExists()
+                if (theme) click("На весь екран")
+                click("Елементи")
+                compose.runOnIdle { assertEquals(uuid, model.state.value.linePreview?.uuid) }
+                click("Зберегти лінію в чернетці")
                 compose.runOnIdle {
-                    uuid=model.state.value.linePreview!!.uuid;model.acceptLineCreation()
                     assertEquals(uuid,model.displayLines().single().uuid)
                     assertEquals(0L,PriceNameUniquenessProof.scalar(driver,"SELECT count(*) FROM line_placements WHERE deletedAt IS NULL"))
                 }
+                if (theme) click("Закрити панель")
                 tap(1800,600)
                 compose.runOnIdle {assertEquals(uuid,model.state.value.selectedLineUuid)}
                 // A cancelled selected drag and pinch may not commit a move.
                 val before=model.displayLines().single()
+                val panel = compose.onNodeWithTag("measurement-edit-context-panel")
+                if (theme) panel.assertDoesNotExist()
                 val selectedPosition=world(1800,600)
                 canvas.performTouchInput {down(selectedPosition);moveTo(selectedPosition+Offset(60f,40f));cancel()}
                 compose.runOnIdle {assertEquals(before,model.displayLines().single())}
-                compose.runOnIdle {model.undo();assertTrue(model.displayLines().isEmpty());model.redo()}
+                if (theme) {
+                    panel.assertDoesNotExist()
+                    canvas.performTouchInput { advanceEventTime(400); doubleClick(selectedPosition) }
+                    panel.assertExists()
+                    compose.onNodeWithText("Параметри лінії").assertExists()
+                    click("Закрити панель")
+                }
+                click("Скасувати дію")
+                compose.runOnIdle { assertTrue(model.displayLines().isEmpty()) }
+                click("Повторити")
                 if(!theme) {
-                    runBlocking {model.save()}
-                    assertTrue(model.state.value.saved)
+                    compose.waitUntil(15000) {
+                        compose.onAllNodes(matcher).fetchSemanticsNodes().any {
+                            it.config.getOrNull(MeasurementDrawingSemantics.EditingEnabled) == true
+                        } && compose.onAllNodes(hasTestTag("measurement-edit-save") and isEnabled()).fetchSemanticsNodes().isNotEmpty()
+                    }
+                    compose.onNodeWithTag("measurement-edit-save").performClick()
+                    compose.waitUntil(15000) { !model.state.value.dirty && !model.state.value.saving || model.state.value.error != null }
+                    assertTrue(!model.state.value.dirty && !model.state.value.saving, model.state.value.error)
                     assertEquals(uuid,LinePlacementRepository(db).forMeasurement(element.measurementUuid).single().uuid)
                     // Remove via atomic editor to run the other theme against the same empty ceiling.
                     val clean=MeasurementEditModel(store,store.load(f.project,f.id))

@@ -18,9 +18,6 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.semantics.contentDescription
-import com.andreyceilings.shared.input.insertDecimalSeparator
 import com.andreyceilings.shared.input.filterNumericEdit
 
 internal data class PriceGroupEditor(
@@ -118,17 +115,6 @@ internal fun PriceEditorDialog(
                         val changed = edited.text != price.text
                         price = edited
                         if (changed) change(draft.copy(salePriceText = edited.text))
-                    },
-                    trailingIcon = {
-                        IconButton(enabled = enabled, onClick = {
-                            focusRequesters.getValue("price").requestFocus()
-                            insertDecimalSeparator(price)?.let { next ->
-                                val edited = filterNumericEdit(price, next)
-                                val changed = edited.text != price.text
-                                price = edited
-                                if (changed) onChange(editor.copy(focusField = "price", draft = draft.copy(salePriceText = edited.text)))
-                            }
-                        }, modifier = Modifier.semantics { contentDescription = "Вставити десяткову кому" }) { Text(",") }
                     },
                     label = { Text("Ціна продажу, ₴ *") }, singleLine = true, enabled = enabled,
                     isError = PriceCatalogRules.parseSalePrice(draft.salePriceText) == null,

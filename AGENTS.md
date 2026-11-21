@@ -1,3 +1,13 @@
+## CURRENT implementation — P5A #131 / Draft PR #132 (owner authorized 19.11.2026)
+
+**Codex work ONLY in branch `feat/p5a-ceiling-workspace`, [Draft PR #132](https://github.com/aleks-nl5/andrey-ceilings-android/pull/132).** Main baseline is owner-merged documentation [PR #130](https://github.com/aleks-nl5/andrey-ceilings-android/pull/130), merge `6e5c22226fa22de1731dd13056c9666799ef477f`. **Read [issue #131](https://github.com/aleks-nl5/andrey-ceilings-android/issues/131), [docs/P5A_CODEX_HANDOFF.md](docs/P5A_CODEX_HANDOFF.md), and [docs/P5_UX_DISCOVERY.md](docs/P5_UX_DISCOVERY.md) first.** Initial Draft PR is documentation only; production implementation must now be added by Codex to THIS branch.
+
+**Scope:** One working shared CMP `MeasurementEditScreen` saved-measurement workspace «Стеля» with persistent Canvas, contextual Contour/Elements/Cost panel, continuity of zoom/pan/selection/undo, responsive normal/fullscreen, existing POINT/LINE/AREA controls and exact Save/Back lifecycle. **Do NOT** implement new POINT/LINE/AREA creation mechanics or split them into separate tasks; all three are one future P5B delivery. Do not start P5C contour diagnostics/AB/exterior labels or P5D quick canvas/profile selectors/in-memory draft pricing in P5A. No DB/schema/SQLCipher/pricing/frozen quote/PDF changes. Test using production UI on Android and desktop; same final SHA on Android/Windows/iOS CI, independent review and owner APK gate. Only owner merges.
+
+**Older milestone sections below are historical and not current Codex instructions.**
+
+---
+
 ## CURRENT — P4 closed; P5 UX discovery only (#95), 19.11.2026
 
 **Main baseline:** owner merged [PR #129](https://github.com/aleks-nl5/andrey-ceilings-android/pull/129) 19.11.2026, merge SHA `8e2aac33775ff5843febabbcaf9d31be32362945`. P4C4 [#128](https://github.com/aleks-nl5/andrey-ceilings-android/issues/128) completed; P4 umbrella [#44](https://github.com/aleks-nl5/andrey-ceilings-android/issues/44) closed/completed after [evidence-based audit](https://github.com/aleks-nl5/andrey-ceilings-android/issues/44#issuecomment-7019985840). SQLCipher schema v20 remains.
@@ -151,6 +161,8 @@ Continue only Draft PR #117 / issue #116. Owner found two blocking defects: glob
 - Keep platform-specific capabilities (e.g. Android gesture bridge, Keystore, PDF, storage permissions) in platform modules, with shared contracts where appropriate.
 
 ## Implementation and verification
+
+- New CMP screens must use the shared scaffold or workspace chrome and theme-matched `Surface` content roles. Follow the [CMP UI Foundation checklist](docs/CMP_UI_FOUNDATION.md) for inset ownership and integration evidence in light and dark themes.
 - Prefer small, focused changes with matching `commonTest`/JVM tests and platform checks. Preserve currently working behavior on Android and Windows.
 - The repo uses JDK 21 and Gradle 9.7.0 in CI (no checked-in Gradle wrapper). Example local checks, when tools are present: `gradle --no-daemon :shared:jvmTest :app:testDebugUnitTest` and `gradle --no-daemon :desktopApp:compileKotlin`.
 - GitHub Actions `Build Android APK` and `Verify CMP KMP platforms` are mandatory before merge: Android build, unit/instrumentation tests, Windows/JVM, and iOS Simulator. Never claim a platform or smoke test passed unless it actually ran successfully.

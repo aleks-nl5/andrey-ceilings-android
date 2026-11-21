@@ -26,7 +26,6 @@ fun MeasurementsScreen(
     contentPadding: PaddingValues, systemTopInset: Dp,
     navigationGuard: MeasurementCreateNavigationGuard,
     onNavigate: (AppNavigationState) -> Unit,
-    onEditSaved: (Long, Long) -> Unit,
     onUseMeasurement: (FrozenPolygonGeometry) -> Unit,
     onOpenEstimates: () -> Unit, onCreateProject: () -> Unit
 ) {
@@ -39,7 +38,7 @@ fun MeasurementsScreen(
     }
     navigation.measurementEdit?.let { route ->
         MeasurementEditScreen(route.projectId, route.measurementId, editStore, contentPadding, systemTopInset,
-            onBack = back, onSaved = { onEditSaved(route.projectId, route.measurementId) }, navigationGuard = navigationGuard)
+            onBack = back, navigationGuard = navigationGuard)
         return
     }
     navigation.measurementDetails?.let { route ->

@@ -37,28 +37,32 @@ class AreaFeatureSceneTest {
             val item=prices.find(prices.createInGroup("area.scene","Область UI",PriceGroupRepository(db).all().first().uuid,1.0,6,"шт.",QuantityMode.MANUAL,PlacementKind.AREA))!!
             val element=MeasurementElementRepository(db).createCatalogSelection(row.uuid,item.uuid,ElementQuantity.Unknown,7, businessRole = com.andreyceilings.shared.livepricing.BusinessRole.ADDITIONAL_WORK)
             val store=MeasurementEditStore(db){100};val model=MeasurementEditModel(store,store.load(project,id))
-            var delivered=false
-            val scene=ImageComposeScene(900,1400,coroutineContext=sceneDispatcher) {CeilingsTheme(dark) {MeasurementEditScreen(model,PaddingValues(0.dp),0.dp,{}, {delivered=true},null)}}
+            var exited=false
+            val scene=ImageComposeScene(900,1400,coroutineContext=sceneDispatcher) {CeilingsTheme(dark) {MeasurementEditScreen(model,PaddingValues(0.dp),0.dp,{exited=true},null)}}
             var testFailure:Throwable?=null
             try {
-                // Save becomes enabled after the point overlay loads. Its arrival also
-                // changes the canvas pointer-input keys and restarts the gesture handler.
-                scene.awaitEnabled("Зберегти")
+                withTimeout(15000) {
+                    while (scene.nodes().none { it.config.getOrNull(MeasurementDrawingSemantics.EditingEnabled) == true }) {
+                        scene.frame(); delay(20)
+                    }
+                }
+                scene.click("Елементи")
+                scene.click("Площинні об’єкти · 0")
                 scene.click("Позначити перешкоду")
-                scene.tapWorld(row,500,500)
+                scene.tapWorld(500,500)
                 assertEquals(1,model.state.value.area.vertices.size,"First area corner must be delivered in $dark theme")
-                scene.tapWorld(row,1000,1000)
+                scene.tapWorld(1000,1000)
                 assertEquals(2,model.state.value.area.vertices.size,"Second area corner must be delivered in $dark theme")
                 scene.click("Завершити фігуру в чернетці")
                 assertEquals(1,model.displayAreas().size)
                 scene.click("Позначити отвір")
                 scene.setField("Діаметр, м (парні мм)", "0,2")
-                scene.tapWorld(row, 2500, 1500)
+                scene.tapWorld(2500, 1500)
                 assertEquals(1, model.state.value.area.vertices.size, "Circle center must be delivered in $dark theme")
                 scene.click("Завершити фігуру в чернетці")
                 scene.click("Розмістити область: ${element.label}")
-                scene.tapWorld(row, 1500, 500)
-                scene.tapWorld(row, 2000, 1000)
+                scene.tapWorld(1500, 500)
+                scene.tapWorld(2000, 1000)
                 assertEquals(2, model.state.value.area.vertices.size, "Catalog area corners must be delivered in $dark theme")
                 scene.click("Завершити фігуру в чернетці")
                 assertEquals(3,model.displayAreas().size)
@@ -66,7 +70,7 @@ class AreaFeatureSceneTest {
                 scene.click("Скасувати дію");assertEquals(2,model.displayAreas().size);scene.click("Повторити")
                 scene.click("На весь екран");scene.click("Вписати креслення")
                 scene.click("Згорнути")
-                scene.tapWorld(row,2500,1500)
+                scene.tapWorld(2500,1500)
                 assertEquals(AreaRole.VOID_MARKER,model.displayAreas().first {it.uuid==model.state.value.area.selected}.role)
                 scene.click("Властивості фігури")
                 scene.setField("Виміряний діаметр", "")
@@ -81,9 +85,10 @@ class AreaFeatureSceneTest {
                 scene.click("Видалити фігуру");scene.click("Видалити");assertEquals(2,model.displayAreas().size)
                 scene.click("Скасувати дію");assertEquals(3,model.displayAreas().size)
                 val ids=model.displayAreas().map {it.uuid}.toSet()
-                scene.click("Зберегти")
-                withTimeout(15000){while(!delivered && model.state.value.error==null){scene.frame();delay(20)}}
-                assertTrue(delivered,model.state.value.error)
+                scene.click("Зберегти замір")
+                withTimeout(15000){while(model.state.value.dirty && model.state.value.error==null){scene.frame();delay(20)}}
+                assertFalse(model.state.value.dirty, model.state.value.error)
+                assertFalse(exited)
                 assertEquals(ids,store.load(project,id).placements.areas.map {it.uuid}.toSet())
             } catch(t:Throwable) {testFailure=t;throw t}
             finally {
@@ -97,14 +102,13 @@ class AreaFeatureSceneTest {
             }
         }
     }
-    private fun ImageComposeScene.world(row: Room_measurements, x: Long, y: Long): Offset {
+    private fun ImageComposeScene.world(x: Long, y: Long): Offset {
         val b = stableBounds()
-        val contour = measurementDrawingContour(measurementGeometryForViewing(row.shape, row.drawingJson, row.lengthMeters, row.widthMeters))!!
-        val p = measurementDrawingProjection(contour, b.width, b.height)!!.project(DrawingPoint(x.toDouble(), y.toDouble()))
+        val p = canvas().config[MeasurementDrawingSemantics.Projection].project(DrawingPoint(x.toDouble(), y.toDouble()))
         return Offset(b.left + p.x.toFloat(), b.top + p.y.toFloat())
     }
-    private fun ImageComposeScene.tapWorld(row: Room_measurements, x: Long, y: Long) {
-        val p = world(row, x, y)
+    private fun ImageComposeScene.tapWorld(x: Long, y: Long) {
+        val p = world(x, y)
         assertTrue(p.x in 0f..900f && p.y in 0f..1400f, "Tap must be inside the viewport: $p")
         sendPointerEvent(PointerEventType.Press, p, type = PointerType.Touch)
         sendPointerEvent(PointerEventType.Release, p, type = PointerType.Touch)
@@ -117,19 +121,10 @@ class AreaFeatureSceneTest {
         repeat(150) {
             frame()
             val bounds = bounds()
-            val scrollBy = when {
-                bounds.bottom > 1300f -> bounds.bottom - 1200f
-                bounds.top < 100f -> bounds.top - 200f
-                else -> 0f
-            }
-            if (scrollBy != 0f) {
-                nodes().firstOrNull { it.config.getOrNull(SemanticsActions.ScrollBy) != null }
-                    ?.config?.getOrNull(SemanticsActions.ScrollBy)?.action?.invoke(0f, scrollBy)
-                repeat(10) { frame(); Thread.sleep(15) }
-                stable = 0
-            } else {
-                stable = if (bounds == previous) stable + 1 else 0
-                if (stable >= 3) return bounds
+            stable = if (bounds == previous) stable + 1 else 0
+            if (stable >= 3) {
+                assertTrue(bounds.top >= 0f && bounds.bottom <= 1400f, "Canvas must fit the workspace: $bounds")
+                return bounds
             }
             previous = bounds
             Thread.sleep(20)
@@ -144,17 +139,8 @@ class AreaFeatureSceneTest {
     }
     private fun SemanticsNode.textTree(): String = config.getOrNull(SemanticsProperties.Text).orEmpty().joinToString { it.text } + children.joinToString { it.textTree() }
     private fun ImageComposeScene.text() = semanticsOwners.joinToString { it.rootSemanticsNode.textTree() }
-    private fun ImageComposeScene.awaitEnabled(label: String) {
-        repeat(240) {
-            frame()
-            if (nodes().any { it.config.getOrNull(SemanticsActions.OnClick) != null &&
-                it.config.getOrNull(SemanticsProperties.Disabled) == null && it.textTree() == label }) return
-            Thread.sleep(25)
-        }
-        fail("Action '$label' did not become enabled: ${text().take(2000)}")
-    }
     private fun ImageComposeScene.click(label: String) {
-        repeat(240) { frame(); nodes().firstOrNull { it.config.getOrNull(SemanticsActions.OnClick) != null && it.textTree() == label }?.let {
+        repeat(240) { frame(); nodes().firstOrNull { it.config.getOrNull(SemanticsActions.OnClick) != null && (it.textTree() == label || label in it.config.getOrNull(SemanticsProperties.ContentDescription).orEmpty()) }?.let {
             assertNull(it.config.getOrNull(SemanticsProperties.Disabled), label)
             assertTrue(it.config.getOrNull(SemanticsActions.OnClick)?.action?.invoke() == true); frame(); return }; Thread.sleep(25) }
         fail("Missing action '$label': ${text().take(2000)}")

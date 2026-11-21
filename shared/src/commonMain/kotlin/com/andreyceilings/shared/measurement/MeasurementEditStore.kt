@@ -2,6 +2,7 @@ package com.andreyceilings.shared.measurement
 
 import com.andreyceilings.shared.calculation.MeasurementPrecision
 import com.andreyceilings.shared.db.*
+import com.andreyceilings.shared.prices.PlacementKind
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.flow.*
@@ -26,8 +27,16 @@ internal class MeasurementEditUncertain(cause: Throwable) : IllegalStateExceptio
 @kotlinx.serialization.Serializable
 data class CeilingPlacementDocument(val points: List<PointPlacement> = emptyList(),
     val elements: Map<String, Long> = emptyMap(), val walls: List<CeilingWall> = emptyList(), val quantities: Map<String,Long> = emptyMap(), val lines: List<LinePlacement> = emptyList(), val areas: List<AreaFeature> = emptyList())
-data class MeasurementEditDocument(val measurementId: Long, val updatedAt: Long, val draft: MeasurementCreateDraft,
-    val placements: CeilingPlacementDocument = CeilingPlacementDocument(), val sourceDrawingJson: String? = null, val lineElements: List<MeasurementElement> = emptyList(), val areaElements: List<MeasurementElement> = emptyList())
+data class MeasurementEditDocument(
+    val measurementId: Long,
+    val updatedAt: Long,
+    val draft: MeasurementCreateDraft,
+    val placements: CeilingPlacementDocument = CeilingPlacementDocument(),
+    val sourceDrawingJson: String? = null,
+    val lineElements: List<MeasurementElement> = emptyList(),
+    val areaElements: List<MeasurementElement> = emptyList(),
+    val pointElements: List<MeasurementElement> = emptyList()
+)
 
 class MeasurementEditStore(private val database: PrototypeDatabase, private val nowMillis: () -> Long) {
     private val sessionClosed = MutableStateFlow(false)
@@ -108,12 +117,21 @@ class MeasurementEditStore(private val database: PrototypeDatabase, private val 
         val points = PointPlacementRepository(database).forMeasurement(row.uuid)
         val lines = LinePlacementRepository(database).forMeasurement(row.uuid)
         val areas = AreaFeatureRepository(database).forMeasurement(row.uuid)
-        val areaElements = MeasurementElementRepository(database).active().filter {it.measurementUuid==row.uuid && it.supportsAreaPlacement()}
-        val lineElements = MeasurementElementRepository(database).active().filter { it.measurementUuid==row.uuid && it.supportsLinePlacement() }
+        val measurementElements = MeasurementElementRepository(database).forMeasurement(row.uuid)
+        val areaElements = measurementElements.filter { it.supportsAreaPlacement() }
+        val lineElements = measurementElements.filter { it.supportsLinePlacement() }
+        val pointElements = measurementElements.filter {
+            (it.source as? ElementSource.CatalogSelection)?.placementKind == PlacementKind.POINT
+        }
         val elements = (points.map { it.elementUuid } + lines.map { it.elementUuid } + lineElements.map { it.uuid } + areaElements.map {it.uuid}).distinct().associateWith { MeasurementElementRepository(database).find(it)!!.updatedAt }
         val walls = database.ceilingEditsQueries.selectWalls(row.uuid).executeAsList().map { CeilingWall(it.uuid,it.ordinal.toInt()) }
         require(walls.size == geometry.vertices.size) { "Неповні ідентичності стін." }
-        MeasurementEditDocument(row.id, row.updatedAt, draft, CeilingPlacementDocument(points,elements,walls,points.map {it.elementUuid}.distinct().associateWith { MeasurementElementRepository(database).find(it)!!.pointCapacity()!! },lines,areas),row.drawingJson,lineElements,areaElements)
+        val quantities = points.map { it.elementUuid }.distinct().associateWith {
+            MeasurementElementRepository(database).find(it)!!.pointCapacity()!!
+        }
+        MeasurementEditDocument(row.id, row.updatedAt, draft,
+            CeilingPlacementDocument(points, elements, walls, quantities, lines, areas),
+            row.drawingJson, lineElements, areaElements, pointElements)
     }
 
     fun update(original: MeasurementEditDocument, draft: MeasurementCreateDraft,

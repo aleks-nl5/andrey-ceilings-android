@@ -2,12 +2,18 @@
 
 > **Статус 03.11.2026:** стабільні спільні CMP UI primitives прийняті в PR #65, використовуються Objects/Clients/Project Details/Measurement Details. Продовжуємо повторне використання у [Measurement Editor PR A/B](CMP_MEASUREMENT_EDITOR_PLAN.md); не дублювати header/fade/FAB/insets. Раніші приклади є контрактами, а не новим запитом на міграцію.
 
-New CMP screens use `shared/commonMain/ui/CeilingsScreenScaffold`. Android,
+New CMP screens use `CeilingsScreenScaffold` or `CeilingsWorkspaceScaffold` from `shared/commonMain/ui`. Android,
 Windows and a future runnable iOS host share the same components; no Android
 Context or window API enters commonMain. This is an architectural extraction of
 PR #62's Objects/Clients and Project Details UI, not a migration of other screens.
 The pre-change inventory and CI baseline are in
 [the audit](architecture/CMP_UI_FOUNDATION_AUDIT.md).
+
+## Checklist for new CMP screens
+
+- Use the shared scaffold for lists and forms. Use the workspace scaffold for a persistent drawing with pinned controls and a temporary overlay. It shares the same background/content roles and owns the top fade and layer order in both modes.
+- Give each inset one owner. With host-provided safe padding, the workspace consumes that padding before applying the remaining IME inset. Use a `Surface` with explicit color and content color for independently colored panels.
+- Review composited light and dark captures, including theme changes on the same screen. Check text, actions, warnings, focus, overflow and the fade over actual content. Keep pixel or interaction tests for acceptance-critical visuals and record the final-SHA evidence in the PR.
 
 ## Scaffold contract
 
@@ -88,6 +94,11 @@ default. Use `{}` when the edge is owned elsewhere. Objects uses the slot to
 retain its original at-rest extent and 180ms fade expansion without a second
 gradient. `edgeAlpha` exists for legacy AppHeader
 chrome with its previously stronger collapsed shade; new screens keep 50%.
+The measurement workspace follows the same default in normal and fullscreen:
+safe top inset + measured header + `CeilingsEdgeDefaults.FadeHeight` (36dp),
+default Material 3 surface color and 50% → 0% alpha. Do not add a mode-specific
+tail or substitute local surface colors. The drawing remains edge-to-edge;
+only foreground controls receive safe insets.
 
 A fade has no pointer handler. Its transparent tail must never enlarge a hit
 region. `CeilingsPinnedContent` wraps normally measured foreground content with

@@ -85,44 +85,95 @@ jobs:
           test -r /dev/kvm && test -w /dev/kvm
           ls -l /dev/kvm
 
-      # The encrypted instrumentation suite is mandatory. Reuse only a CLEAN
-      # Android emulator boot snapshot: no application database or test state
-      # is ever cached, because this snapshot is created BEFORE running tests.
-      # The first cache miss initializes a snapshot; subsequent CI runs restore
-      # it and still execute every SQLCipher/WAL instrumentation test.
-      - name: Cache clean Android emulator boot snapshot
-        uses: actions/cache@v5
-        id: avd-cache
-        with:
-          path: |
-            ~/.android/avd/*
-            ~/.android/adb*
-          key: avd-ubuntu-api35-x86_64-pixel6-cleanboot-v1
-
-      - name: Initialize clean Android emulator snapshot
-        if: steps.avd-cache.outputs.cache-hit != 'true'
-        uses: reactivecircus/android-emulator-runner@v2
-        with:
-          api-level: 35
-          arch: x86_64
-          profile: pixel_6
-          force-avd-creation: false
-          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
-          disable-animations: false
-          script: echo "Clean AVD boot snapshot created before test execution"
-
+      # Start each suite with a fresh AVD. Restored boot snapshots have
+      # intermittently lost the emulator during instrumentation, even when
+      # snapshot loading itself succeeds.
       - name: Verify encrypted SQLDelight database on Android emulator
+        id: android_instrumentation
+        # An initial failure must still fail the job unless the AVD truly
+        # disconnects and the entire suite passes in one fresh AVD.
+        continue-on-error: true
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 35
           arch: x86_64
           profile: pixel_6
-          force-avd-creation: false
-          emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          force-avd-creation: true
+          emulator-options: -no-snapshot -no-window -gpu swiftshader -feature -Vulkan -noaudio -no-boot-anim -camera-back none
           disable-animations: true
           # android-emulator-runner invokes each script line as a separate
           # shell command. Keep multiline logic inside our own Bash process.
           script: bash ci/run-sqlcipher-instrumentation.sh
+
+      - name: Classify Android emulator transport failure
+        id: android_emulator_loss
+        if: steps.android_instrumentation.outcome == 'failure'
+        shell: bash
+        run: |
+          if [[ -f "$RUNNER_TEMP/p5a-workspace/emulator-disconnected.marker" ]]; then
+            echo "lost=true" >> "$GITHUB_OUTPUT"
+            echo "::warning::Emulator disconnected during instrumentation; retrying full suite once on a fresh AVD."
+          else
+            echo "lost=false" >> "$GITHUB_OUTPUT"
+            echo "::error::Instrumentation failed without emulator transport loss: no retry for real test failures."
+          fi
+
+      - name: Retry full instrumentation once on a fresh AVD after emulator loss
+        id: android_instrumentation_retry
+        if: steps.android_instrumentation.outcome == 'failure' && steps.android_emulator_loss.outputs.lost == 'true'
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          profile: pixel_6
+          force-avd-creation: true
+          emulator-options: -no-snapshot -no-window -gpu swiftshader -feature -Vulkan -noaudio -no-boot-anim -camera-back none
+          disable-animations: true
+          script: bash ci/run-sqlcipher-instrumentation.sh
+
+      - name: Enforce successful Android instrumentation
+        if: always()
+        shell: bash
+        env:
+          FIRST_OUTCOME: ${{ steps.android_instrumentation.outcome }}
+          EMULATOR_LOST: ${{ steps.android_emulator_loss.outputs.lost }}
+          RETRY_OUTCOME: ${{ steps.android_instrumentation_retry.outcome }}
+        run: |
+          if [[ "$FIRST_OUTCOME" == "success" ]]; then
+            echo "Android instrumentation passed on the first AVD."
+          elif [[ "$EMULATOR_LOST" == "true" && "$RETRY_OUTCOME" == "success" ]]; then
+            echo "::notice::Full instrumentation passed on a fresh AVD after the initial emulator disconnected."
+          else
+            echo "::error::Android instrumentation did not pass. Real test failures are never ignored."
+            exit 1
+          fi
+
+      - name: Report Android emulator host diagnostics
+        if: always() && (steps.android_instrumentation.outcome == 'failure' || steps.android_instrumentation_retry.outcome == 'failure')
+        shell: bash
+        run: |
+          free -m
+          sudo dmesg --ctime | grep -Ei 'out of memory|oom.kill|killed process|qemu.*(segfault|trap)|kvm.*(error|fail)' | tail -40 || true
+
+      - name: Upload P5A Android workspace screenshots
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: p5a-android-workspace
+          path: ${{ runner.temp }}/p5a-workspace/
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Preserve Android instrumentation test reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: android-instrumentation-reports
+          path: |
+            app/build/outputs/androidTest-results/connected/
+            app/build/reports/androidTests/connected/
+          if-no-files-found: warn
+          retention-days: 14
 
       - name: Prepare persistent signing
         env:
@@ -178,7 +229,7 @@ jobs:
           api-level: 35
           arch: x86_64
           profile: pixel_6
-          force-avd-creation: false
-          emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          force-avd-creation: true
+          emulator-options: -no-snapshot -no-window -gpu swiftshader -feature -Vulkan -noaudio -no-boot-anim -camera-back none
           disable-animations: true
           script: bash ci/verify-production-release.sh

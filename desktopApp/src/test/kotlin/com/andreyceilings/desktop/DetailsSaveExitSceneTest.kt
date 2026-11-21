@@ -72,6 +72,61 @@ class DetailsSaveExitSceneTest {
             }
         }
     }
+
+    @Test fun workspaceRetriesAnUnconfirmedSaveInPlaceAndOnlyExitsAfterExplicitSave(): Unit = runBlocking {
+        val dir = java.nio.file.Files.createTempDirectory("workspace-save-scene-").toFile()
+        val raw = if (System.getProperty("os.name").startsWith("Windows", true))
+            SqlCipherWindowsDriverFactory.open(dir.resolve("scene.db"), ByteArray(32) { 94 })
+        else JdbcSqliteDriver("jdbc:sqlite:${dir.resolve("scene.db").absolutePath}")
+        PriceCatalogSchema.create(raw)
+        val fixture = OverlayDragFixture.create(PrototypeDatabase(raw))
+        val fault = DetailsExitFaultDriver(raw)
+        val store = MeasurementEditStore(PrototypeDatabase(fault)) { 200 }
+        val model = MeasurementEditModel(store, store.load(fixture.project, fixture.id))
+        var exits by mutableIntStateOf(0)
+        val scene = ImageComposeScene(720, 1000, coroutineContext = sceneDispatcher) {
+            CeilingsTheme(false) {
+                if (exits == 0) MeasurementEditScreen(model, onBack = { exits++ })
+                else androidx.compose.material3.Text("Картка заміру")
+            }
+        }
+        try {
+            withTimeout(15000) {
+                while (scene.nodes().none { it.config.getOrNull(MeasurementDrawingSemantics.EditingEnabled) == true }) {
+                    scene.frame(); delay(20)
+                }
+            }
+            scene.click("Деталі заміру")
+            scene.setField("Назва заміру", "Перший запис")
+            fault.failNext(DetailsExitFaultDriver.Fault.LOST_RESPONSE)
+            scene.click("Зберегти замір")
+            withTimeout(15000) { while (!model.state.value.uncertain) { scene.frame(); delay(20) } }
+            scene.click("Показати повне повідомлення")
+            scene.awaitText("Повторити ту саму спробу")
+            assertEquals(0, exits)
+            assertFalse(model.state.value.workspaceSaveConfirmed)
+            val committed = OverlayDragFixture.snapshot(raw)
+            scene.click("Повторити ту саму спробу")
+            withTimeout(15000) { while (!model.state.value.workspaceSaveConfirmed) { scene.frame(); delay(20) } }
+            assertEquals(committed, OverlayDragFixture.snapshot(raw))
+            assertFalse(model.state.value.dirty)
+            assertEquals(0, exits)
+            scene.setField("Примітки", "Другий запис")
+            scene.click("До заміру")
+            scene.click("Зберегти й вийти", layerTitle = "Незбережені зміни")
+            scene.awaitText("Картка заміру")
+            assertEquals(1, exits)
+            assertEquals(3L, operationCount(raw))
+            val saved = store.load(fixture.project, fixture.id)
+            assertEquals("Перший запис", saved.draft.name)
+            assertEquals("Другий запис", saved.draft.notes)
+        } finally {
+            scene.close()
+            store.closeAndAwaitPointReads()
+            raw.close()
+            dir.deleteRecursively()
+        }
+    }
     private fun ImageComposeScene.dragWorld(row:Room_measurements,x:Long,y:Long,toX:Long,toY:Long) {
         val b=stableBounds()
         val contour=measurementDrawingContour(measurementGeometryForViewing(row.shape,row.drawingJson,row.lengthMeters,row.widthMeters))!!
@@ -125,7 +180,8 @@ class DetailsSaveExitSceneTest {
     private fun ImageComposeScene.awaitText(label: String) { repeat(240) { frame(); if (text().contains(label)) return; Thread.sleep(25) }; fail("Missing '$label': ${text().take(2000)}") }
     private fun ImageComposeScene.click(label: String, layerTitle: String? = null) {
         var searchedTop=false
-        repeat(240) { frame(); nodes(layerTitle).firstOrNull { it.config.getOrNull(SemanticsActions.OnClick) != null && (it.textTree() == label || it.config.getOrNull(SemanticsActions.OnClick)?.label==label) }?.let {
+        repeat(240) { frame(); nodes(layerTitle).firstOrNull { it.config.getOrNull(SemanticsActions.OnClick) != null && (it.textTree() == label || it.config.getOrNull(SemanticsActions.OnClick)?.label==label ||
+            label in it.config.getOrNull(SemanticsProperties.ContentDescription).orEmpty()) }?.let {
             assertNull(it.config.getOrNull(SemanticsProperties.Disabled), label)
             assertTrue(it.config.getOrNull(SemanticsActions.OnClick)?.action?.invoke() == true); frame(); return }
             nodes().firstOrNull {it.config.getOrNull(SemanticsActions.ScrollToIndex)!=null}?.config?.getOrNull(SemanticsActions.ScrollBy)?.action?.invoke(0f,if(!searchedTop)-10000f else 150f)

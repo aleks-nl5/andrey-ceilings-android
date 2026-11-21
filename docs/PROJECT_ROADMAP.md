@@ -1,3 +1,11 @@
+# CURRENT — P5A implementation, owner authorized 19.11.2026
+
+Following docs-only [PR #130](https://github.com/aleks-nl5/andrey-ceilings-android/pull/130) merged to main, active P5 slice is **[issue #131](https://github.com/aleks-nl5/andrey-ceilings-android/issues/131) / [Draft PR #132](https://github.com/aleks-nl5/andrey-ceilings-android/pull/132)** in `feat/p5a-ceiling-workspace`. Codex [handoff](P5A_CODEX_HANDOFF.md) is authoritative for the next implementation: single persistent CMP Canvas + model, contextual Contour/Elements/Cost panel and full existing functionality in normal/fullscreen. Create/edit existing measurements must keep functioning; new measurement creation workflow retains current screen until P5C. Initial Draft PR contains documentation only.
+
+**Next P5 delivery slices AFTER separate owner approval:** **P5B** = one **unified** POINT + LINE + AREA interaction/redesign task (not three issues), LINE default parallel-to-wall smart snapping; **P5C** = invalid contour diagnostics, exterior vertex letters, AB orientation/fit; **P5D** = quick CANVAS/PRIMARY_PROFILE catalog selectors and true KMP in-memory unsaved draft price preview. Future multi-turn polyline is separate. Preserve SQLCipher/WAL/backup, exact geometry, immutable frozen quotes/PDF. Follow final-SHA all-platform CI, independent code review, owner APK and owner-only merge.
+
+---
+
 # CURRENT — P4 completed; P5 UX discovery (#95), 19.11.2026
 
 **P4 closed:** owner merged [PR #129](https://github.com/aleks-nl5/andrey-ceilings-android/pull/129) on 19.11.2026 (merge SHA `8e2aac33775ff5843febabbcaf9d31be32362945`). [#128](https://github.com/aleks-nl5/andrey-ceilings-android/issues/128) completed; umbrella [#44](https://github.com/aleks-nl5/andrey-ceilings-android/issues/44) closed/completed after [final audit](https://github.com/aleks-nl5/andrey-ceilings-android/issues/44#issuecomment-7019985840). Frozen individual and selected-room PDF remain working baseline; SQLDelight/SQLCipher schema **v20**.

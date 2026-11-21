@@ -59,7 +59,7 @@ class PointEditingSceneTest {
                 CeilingsTheme(dark) {
                     if (editing) MeasurementEditScreen(project, id, edit, PaddingValues(), 0.dp, {
                         nav = guard.transition(nav, nav.back()); editing = nav.measurementEdit != null
-                    }, { guard.deliverEditResult(nav, project, id) { nav = it; editing = false } }, guard)
+                    }, guard)
                     else MeasurementDetailsScreen(project, id, details, PaddingValues(), 0.dp, {}, onEdit = {
                         nav = guard.transition(nav, nav.editMeasurement(project, id)); editing = nav.measurementEdit != null
                     }, navigationGuard = guard,editStore=edit)
@@ -70,17 +70,18 @@ class PointEditingSceneTest {
                     it.uuid == p.uuid && it.xMm == x && (precision == null || it.precision == precision) } } }
                 scene.frame()
             }
+            val pointIds = setOf(p.uuid, second.uuid)
             var testFailure: Throwable? = null
             try {
                 scene.awaitText("Розміщено: 2 з 6")
-                scene.tapWorld(original,second.xMm,second.yMm)
+                scene.tapWorld(second.xMm,second.yMm)
                 scene.awaitText("Ця позначка: точне числове положення без виміряних стінних прив'язок")
-                scene.tapWorld(original, 1000, 1000)
+                scene.tapWorld(1000, 1000)
                 scene.awaitText("Ця позначка: приблизне положення")
                 assertEquals(p.uuid, scene.canvas().config.getOrNull(MeasurementDrawingSemantics.SelectedPoint))
                 val before = points.find(p.uuid)
                 val priorPricing = assertIs<PricingReadResult.Loaded>(pricing.read(project, original.uuid))
-                val start = scene.world(original, 1000, 1000); val end = scene.world(original, 1800, 1600)
+                val start = scene.world(1000, 1000); val end = scene.world(1800, 1600)
                 val inputType = if (dark) PointerType.Mouse else PointerType.Touch
                 scene.sendPointerEvent(PointerEventType.Press, start, type = inputType)
                 scene.sendPointerEvent(PointerEventType.Move, end, type = inputType)
@@ -100,7 +101,7 @@ class PointEditingSceneTest {
                 assertEquals(2, points.forMeasurement(original.uuid).size)
                 val saved = points.find(p.uuid)!!
                 val afterPointSave=MeasurementRepository(db).find(id)
-                val pinch = scene.world(original, saved.xMm, saved.yMm)
+                val pinch = scene.world(saved.xMm, saved.yMm)
                 fun pointer(id: Long, offset: Offset, pressed: Boolean) = ComposeScenePointer(PointerId(id), offset, pressed, PointerType.Touch)
                 val callsBeforePinch = calls.get()
                 scene.sendPointerEvent(PointerEventType.Press, pointers = listOf(pointer(0, pinch, true)))
@@ -109,30 +110,30 @@ class PointEditingSceneTest {
                 scene.sendPointerEvent(PointerEventType.Release, pointers = listOf(pointer(0, pinch - Offset(20f, 0f), false), pointer(1, pinch + Offset(100f, 0f), false)))
                 scene.frame(); assertNull(scene.canvas().config.getOrNull(MeasurementDrawingSemantics.PointDrag)); assertEquals(callsBeforePinch, calls.get())
                 assertEquals(saved, points.find(p.uuid)); scene.click("Вписати креслення")
-                val canceledStart = scene.world(original, saved.xMm, saved.yMm)
-                val canceledEnd = scene.world(original, saved.xMm + 1000, saved.yMm + 500)
+                val canceledStart = scene.world(saved.xMm, saved.yMm)
+                val canceledEnd = scene.world(saved.xMm + 1000, saved.yMm + 500)
                 scene.sendPointerEvent(PointerEventType.Press, canceledStart, type = PointerType.Touch)
                 scene.sendPointerEvent(PointerEventType.Move, canceledEnd, type = PointerType.Touch)
                 scene.frame(); assertNotNull(scene.canvas().config.getOrNull(MeasurementDrawingSemantics.PointDrag))
                 assertEquals(nav, guard.transition(nav, nav.back()))
                 scene.sendPointerEvent(PointerEventType.Release, canceledEnd, type = PointerType.Touch)
                 scene.frame(); assertEquals(saved, points.find(p.uuid)); assertEquals(callsBeforePinch, calls.get())
-                scene.tapWorld(original, saved.xMm, saved.yMm)
-                val outside = scene.world(original, -500, saved.yMm)
-                val from = scene.world(original, saved.xMm, saved.yMm)
+                scene.tapWorld(saved.xMm, saved.yMm)
+                val outside = scene.world(-500, saved.yMm)
+                val from = scene.world(saved.xMm, saved.yMm)
                 scene.sendPointerEvent(PointerEventType.Press, from, type = PointerType.Touch)
                 scene.sendPointerEvent(PointerEventType.Move, outside, type = PointerType.Touch)
                 scene.sendPointerEvent(PointerEventType.Release, outside, type = PointerType.Touch)
                 scene.awaitText("Позначка має бути строго всередині контуру.")
                 assertEquals(saved, points.find(p.uuid))
-                val empty = scene.world(original, 4000, 3000)
+                val empty = scene.world(4000, 3000)
                 scene.sendPointerEvent(PointerEventType.Press, empty, type = PointerType.Touch)
                 scene.sendPointerEvent(PointerEventType.Move, empty + Offset(50f, 30f), type = PointerType.Touch)
                 scene.sendPointerEvent(PointerEventType.Release, empty + Offset(50f, 30f), type = PointerType.Touch)
                 scene.frame(); assertEquals(saved, points.find(p.uuid)); scene.click("Вписати креслення")
                 scene.click("Задати розміри від стін")
-                scene.awaitText("Позначки: 2")
-                scene.tapWorld(original,saved.xMm,saved.yMm)
+                scene.awaitDrawingPoints(pointIds)
+                scene.tapWorld(saved.xMm,saved.yMm)
                 scene.click("Задати розміри від стін")
                 scene.setField("Від першої стіни, м","0,")
                 assertEquals(saved,points.find(p.uuid))
@@ -140,49 +141,74 @@ class PointEditingSceneTest {
                 scene.click("Застосувати розміри")
                 assertEquals(saved,points.find(p.uuid),"Mounting fields stage only, no separate point Save")
                 scene.click("Скасувати дію");scene.click("Повторити")
-                scene.click("На весь екран");scene.awaitText("Позначки: 2")
-                assertTrue(scene.canvas().config.getOrNull(SemanticsProperties.ContentDescription).orEmpty().any { it.contains("позначок: 2") })
-                val fsStart=scene.world(original,1500,600);val fsEnd=scene.world(original,1700,900)
+                scene.click("На весь екран")
+                scene.awaitDrawingPoints(pointIds)
+                scene.click("Елементи")
+                scene.awaitText("Точкові позначки")
+                scene.click("Закрити панель")
+                val fsStart=scene.world(1500,600);val fsEnd=scene.world(1700,900)
                 scene.sendPointerEvent(PointerEventType.Press,fsStart,type=inputType)
                 scene.sendPointerEvent(PointerEventType.Move,fsEnd,type=inputType)
                 scene.sendPointerEvent(PointerEventType.Release,fsEnd,type=inputType)
                 scene.frame();assertEquals(saved,points.find(p.uuid))
+                scene.click("Елементи")
                 scene.awaitText("Виміряних прив'язок немає")
                 scene.click("Скасувати дію");scene.click("Згорнути")
-                scene.click("Усі розміри");scene.setField("Сторона AB", "")
+                scene.click("Контур")
+                scene.setField("AB, м", "")
+                scene.click("Показати повне повідомлення")
                 scene.awaitText("Невалідна чернетка: показано збережений контур")
+                scene.click("Закрити")
                 assertTrue(scene.canvas().config.getOrNull(SemanticsProperties.ContentDescription).orEmpty().any { it.contains("позначок: 2") })
-                scene.setField("Сторона AB", "1");scene.setField("Сторона BC", "1")
+                scene.setField("AB, м", "1");scene.setField("BC, м", "1")
+                scene.click("Елементи")
                 scene.awaitText("Попередній перерахунок")
-                assertTrue(scene.canvas().config.getOrNull(SemanticsProperties.ContentDescription).orEmpty().any { it.contains("позначок: 2") })
-                scene.setField("Сторона BC", "4");scene.setField("Сторона AB", "6")
+                scene.awaitDrawingPoints(pointIds)
+                scene.click("Контур")
+                scene.setField("BC, м", "4");scene.setField("AB, м", "6")
                 assertEquals(afterPointSave,MeasurementRepository(db).find(id));assertEquals(saved,points.find(p.uuid))
-                scene.click("Зберегти");scene.awaitText("Контур стелі змінено. Збережені монтажні відстані")
+                scene.click("Зберегти замір");scene.awaitText("Контур стелі змінено. Збережені монтажні відстані")
                 assertEquals(PointPositionMm(1500,600),points.find(p.uuid)!!.let{PointPositionMm(it.xMm,it.yMm)})
                 assertTrue(points.forMeasurement(original.uuid).all {it.mounting.needsReview})
                 val anchor=assertNotNull(points.find(p.uuid)!!.mounting.anchor)
                 assertEquals(600L,anchor.firstMm);assertEquals(1500L,anchor.secondMm)
                 assertNull(points.find(second.uuid)!!.mounting.anchor)
                 scene.click("Пізніше")
-                repeat(200) {if(editing){scene.frame();delay(25)}}
-                assertFalse(editing);scene.awaitText("Перевірити (2)")
-                scene.tapWorld(MeasurementRepository(db).find(id)!!,1500,600)
+                withTimeout(15000) {
+                    while (points.forMeasurement(original.uuid).any { it.mounting.deferredAt == null }) {
+                        scene.frame(); delay(20)
+                    }
+                }
+                assertTrue(editing)
+                scene.click("До заміру")
+                assertFalse(editing)
+                scene.awaitText("Перевірити (2)")
+                scene.tapWorld(1500,600)
                 scene.awaitText("Ця позначка: положення за виміряними відстанями")
-                assertTrue(points.forMeasurement(original.uuid).all {it.mounting.deferredAt!=null})
-                scene.click("Перевірити (2)");scene.awaitText("Позначки: 2")
+                scene.click("Перевірити (2)")
+                scene.awaitDrawingPoints(pointIds)
+                scene.click("Елементи")
+                scene.click("Точкові позначки · 2")
                 scene.click("Перевірити (2)");scene.click("Розміщення перевірено")
                 scene.awaitText("Перевірити (1)");scene.click("Розміщення перевірено")
                 repeat(150) {scene.frame();if(points.forMeasurement(original.uuid).any{it.mounting.needsReview})delay(25)}
                 assertTrue(points.forMeasurement(original.uuid).none {it.mounting.needsReview})
-                scene.click("Зберегти")
-                repeat(150) {if(editing){scene.frame();delay(25)}}
-                assertFalse(editing)
                 val beforeName=points.forMeasurement(original.uuid)
                 val geometryBeforeName=MeasurementRepository(db).find(id)!!.drawingJson
-                scene.click("Редагувати");scene.awaitText("Позначки: 2")
-                scene.setField("Назва заміру","Нова назва");scene.click("Зберегти")
-                repeat(150) {if(editing){scene.frame();delay(25)}}
-                assertFalse(editing);assertEquals("Нова назва",MeasurementRepository(db).find(id)!!.name)
+                scene.click("Контур")
+                scene.click("Деталі заміру")
+                scene.setField("Назва заміру","Нова назва");scene.click("Зберегти замір")
+                withTimeout(15000) {
+                    while (MeasurementRepository(db).find(id)?.name != "Нова назва") { scene.frame(); delay(20) }
+                }
+                scene.frame()
+                assertTrue(editing)
+                scene.setField("Примітки", "Другий запис")
+                scene.click("До заміру")
+                scene.click("Зберегти й вийти")
+                withTimeout(15000) { while (editing) { scene.frame(); delay(20) } }
+                assertEquals("Нова назва",MeasurementRepository(db).find(id)!!.name)
+                assertEquals("Другий запис",MeasurementRepository(db).find(id)!!.notes)
                 assertEquals(geometryBeforeName,MeasurementRepository(db).find(id)!!.drawingJson)
                 assertEquals(beforeName,points.forMeasurement(original.uuid))
                 assertEquals(2000L,elements.find(element.uuid)!!.placedQuantityMilli)
@@ -195,19 +221,18 @@ class PointEditingSceneTest {
             }
         }
     }
-    private fun ImageComposeScene.world(row: Room_measurements, x: Long, y: Long): Offset {
+    private fun ImageComposeScene.world(x: Long, y: Long): Offset {
         val b = stableBounds()
-        val contour = measurementDrawingContour(measurementGeometryForViewing(row.shape, row.drawingJson, row.lengthMeters, row.widthMeters))!!
-        val p = measurementDrawingProjection(contour, b.width, b.height)!!.project(DrawingPoint(x.toDouble(), y.toDouble()))
+        val p = canvas().config[MeasurementDrawingSemantics.Projection].project(DrawingPoint(x.toDouble(), y.toDouble()))
         return Offset(b.left + p.x.toFloat(), b.top + p.y.toFloat())
     }
-    private fun ImageComposeScene.tapWorld(row: Room_measurements, x: Long, y: Long) {
+    private fun ImageComposeScene.tapWorld(x: Long, y: Long) {
         val deadline=System.nanoTime()+15_000_000_000L
         while(canvas().config.getOrNull(MeasurementDrawingSemantics.EditingEnabled)!=true && System.nanoTime()<deadline) {
             frame();Thread.sleep(20)
         }
         assertEquals(true,canvas().config.getOrNull(MeasurementDrawingSemantics.EditingEnabled),"Wait for the actual drawing editor")
-        val p = world(row, x, y)
+        val p = world(x, y)
         sendPointerEvent(PointerEventType.Press, p, type = PointerType.Touch)
         sendPointerEvent(PointerEventType.Release, p, type = PointerType.Touch); frame()
     }
@@ -216,6 +241,16 @@ class PointEditingSceneTest {
         repeat(150) { frame(); val b = canvas().boundsInRoot; stable = if (b == previous) stable + 1 else 0
             if (stable >= 3) return b; previous = b; Thread.sleep(20) }
         fail("Canvas did not settle")
+    }
+    private fun ImageComposeScene.awaitDrawingPoints(expectedIds: Set<String>) {
+        repeat(240) {
+            frame()
+            val actualIds = nodes().firstNotNullOfOrNull { it.config.getOrNull(MeasurementDrawingSemantics.Points) }
+                ?.map { it.uuid }?.toSet()
+            if (actualIds == expectedIds) return
+            Thread.sleep(25)
+        }
+        fail("The drawing did not show the expected points: ${text().take(2000)}")
     }
     private fun ImageComposeScene.canvas() = nodes().first { it.config.getOrNull(SemanticsProperties.ContentDescription).orEmpty().any { it.startsWith("Контур стелі") } }
     private fun ImageComposeScene.frame() { Snapshot.sendApplyNotifications(); render(System.nanoTime()).close() }
@@ -227,7 +262,7 @@ class PointEditingSceneTest {
     private fun ImageComposeScene.text() = semanticsOwners.joinToString { it.rootSemanticsNode.textTree() }
     private fun ImageComposeScene.awaitText(label: String) { repeat(240) { frame(); if (text().contains(label)) return; Thread.sleep(25) }; fail("Missing '$label': ${text().take(2000)}") }
     private fun ImageComposeScene.click(label: String) {
-        repeat(240) { frame(); nodes().firstOrNull { it.config.getOrNull(SemanticsActions.OnClick) != null && it.config.getOrNull(SemanticsProperties.Disabled)==null && it.textTree() == label }?.let {
+        repeat(240) { frame(); nodes().firstOrNull { it.config.getOrNull(SemanticsActions.OnClick) != null && it.config.getOrNull(SemanticsProperties.Disabled)==null && (it.textTree() == label || label in it.config.getOrNull(SemanticsProperties.ContentDescription).orEmpty()) }?.let {
             assertNull(it.config.getOrNull(SemanticsProperties.Disabled), label)
             assertTrue(it.config.getOrNull(SemanticsActions.OnClick)?.action?.invoke() == true); frame(); return }; Thread.sleep(25) }
         fail("Missing action '$label': ${text().take(2000)}")
