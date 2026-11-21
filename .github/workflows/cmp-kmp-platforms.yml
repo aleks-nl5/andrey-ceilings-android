@@ -156,6 +156,30 @@ jobs:
       - name: Compile Windows Desktop and run shared JVM / SQLCipher CRUD tests
         run: gradle --no-daemon :desktopApp:compileKotlin :shared:jvmTest :desktopApp:test --stacktrace --warning-mode all
 
+      # Real encrypted JDBC stage timings; generated only when the fresh
+      # Windows-only diagnostic JUnit test actually executes (never from cache).
+      # It reports only times/counts, not credentials, SQL payloads or DB rows.
+      - name: Summarize Windows SQLCipher JDBC connection profile
+        if: always()
+        shell: pwsh
+        run: |
+          $profile = Join-Path $env:RUNNER_TEMP "windows-sqlcipher-jdbc-profile.md"
+          if (Test-Path $profile) {
+            Get-Content $profile | Add-Content -Path $env:GITHUB_STEP_SUMMARY
+          } else {
+            "## Windows SQLCipher JDBC profile" | Add-Content -Path $env:GITHUB_STEP_SUMMARY
+            "No fresh sample: profile test was cached, skipped, or failed before reporting." | Add-Content -Path $env:GITHUB_STEP_SUMMARY
+          }
+
+      - name: Preserve Windows SQLCipher JDBC profiling data
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: windows-sqlcipher-jdbc-profile
+          path: ${{ runner.temp }}/windows-sqlcipher-jdbc-profile.md
+          if-no-files-found: warn
+          retention-days: 30
+
       # Diagnostic-only summary from existing XML. Never interpret a missing
       # report as a successful test run, and never replace Gradle exit status.
       - name: Summarize Windows JVM and Desktop test timings
