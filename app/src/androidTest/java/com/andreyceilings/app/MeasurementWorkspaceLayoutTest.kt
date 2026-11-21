@@ -514,6 +514,17 @@ class MeasurementWorkspaceLayoutTest {
                     } >= 2
                 }
             }
+            if (!matched) {
+                // Preserve the actual rendered pixels for a failed visual check.
+                // A black-box assertion alone cannot distinguish an opaque overlay,
+                // a projected-coordinate mismatch and a low-contrast dark grid.
+                val diagnostic = "grid-failure-${theme.name.lowercase()}-y${region.top.roundToInt()}"
+                val directory = File(InstrumentationRegistry.getInstrumentation().targetContext.cacheDir, "p5a-workspace")
+                check(directory.isDirectory || directory.mkdirs())
+                File(directory, "$diagnostic.png").outputStream().buffered().use { output ->
+                    check(bitmap.compress(Bitmap.CompressFormat.PNG, 100, output))
+                }
+            }
             assertTrue(matched, "Expected at least two visible composited grid lines in $region with $theme")
         }
         try {
