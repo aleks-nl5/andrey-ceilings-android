@@ -2,6 +2,7 @@ package com.andreyceilings.app
 
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
+import androidx.test.platform.app.InstrumentationRegistry
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.runtime.*
 import androidx.compose.ui.geometry.Offset
@@ -34,17 +35,23 @@ class OverlayDragTouchTest {
         var driver=createEncryptedPrototypeDriver(context,key,name,enableWalForTesting=true,initializePriceCatalog=true)
         val db=PrototypeDatabase(driver);val f=OverlayDragFixture.create(db);val store=MeasurementEditStore(db){200}
         val details=MeasurementDetailsStore(db);val doc=store.load(f.project,f.id)
+        fun captureSelected(stage: String) {
+            if (InstrumentationRegistry.getArguments().getString("p5aSelectedScreenshots") == "true") {
+                compose.waitForIdle()
+                captureMeasurementWorkspaceScreenshot("short-${if (dark) "dark" else "light"}-$mode-$stage")
+            }
+        }
         fun pricing(database: PrototypeDatabase) = assertIs<PricingReadResult.Loaded>(
             LivePricingReader(database).read(f.project, doc.draft.recordUuid))
         val m=MeasurementEditModel(store,doc)
         var mounted by mutableStateOf(true)
         compose.setContent {CeilingsTheme(dark) {if(mounted) {
             if(mode=="details")MeasurementDetailsScreen(f.project,f.id,details,PaddingValues(0.dp),0.dp,{},editStore=store)
-            else MeasurementEditScreen(m,PaddingValues(0.dp),0.dp,{}, {},null)
+            else MeasurementEditScreen(m,PaddingValues(0.dp),0.dp,{},null)
         }}}
         val matcher=SemanticsMatcher("ceiling canvas") {n -> n.config.getOrNull(SemanticsProperties.ContentDescription).orEmpty().any {it.startsWith("Контур стелі")}}
         fun click(label:String) {
-            val action=hasText(label) and hasClickAction()
+            val action = (hasText(label) or hasContentDescription(label)) and hasClickAction()
             if(compose.onAllNodes(action).fetchSemanticsNodes().isEmpty()) {
                 compose.onNode(hasScrollToIndexAction()).performScrollToNode(action)
             }
@@ -59,53 +66,181 @@ class OverlayDragTouchTest {
             }
         }
         fun canvas()=compose.onNode(matcher).also {
-            if(mode!="fullscreen")it.performScrollTo()
+            if (mode == "details") it.performScrollTo()
             compose.waitForIdle()
         }
         fun position(x:Long,y:Long):Offset {
-            val size=canvas().fetchSemanticsNode().size
-            val contour=measurementDrawingContour(MeasurementGeometryView.Captured(validateMeasurementCreate(doc.draft).geometry!!))!!
-            val p=measurementDrawingProjection(contour,size.width.toFloat(),size.height.toFloat(),compose.density.density)!!.project(DrawingPoint(x.toDouble(),y.toDouble()))
+            val projection = canvas().fetchSemanticsNode().config[MeasurementDrawingSemantics.Projection]
+            val p = projection.project(DrawingPoint(x.toDouble(), y.toDouble()))
             return Offset(p.x.toFloat(),p.y.toFloat())
         }
         fun tap(x:Long,y:Long){val p=position(x,y);canvas().performTouchInput {click(p)}}
+        val panel = compose.onNodeWithTag("measurement-edit-context-panel")
+        fun openFromCanvas(x: Long, y: Long) {
+            if (mode != "fullscreen") return
+            panel.assertDoesNotExist()
+            val p = position(x, y)
+            canvas().performTouchInput { advanceEventTime(400); doubleClick(p) }
+            panel.assertExists()
+        }
+        fun clearSelectionByTappingCanvas() {
+            val before = canvas().fetchSemanticsNode().config[MeasurementDrawingSemantics.Viewport]
+            val draft = m.state.value
+            tap(3450, 550)
+            val after = canvas().fetchSemanticsNode().config
+            assertNull(after.getOrNull(MeasurementDrawingSemantics.SelectedPoint))
+            assertNull(after.getOrNull(MeasurementDrawingSemantics.SelectedLine))
+            assertNull(after.getOrNull(MeasurementDrawingSemantics.SelectedArea))
+            assertEquals(before, after[MeasurementDrawingSemantics.Viewport])
+            assertEquals(draft.draft, m.state.value.draft)
+            assertEquals(draft.area.edits, m.state.value.area.edits)
+            assertEquals(draft.lineEdits, m.state.value.lineEdits)
+            assertEquals(draft.pointEdits, m.state.value.pointEdits)
+        }
         fun drag(x:Long,y:Long,toX:Long,toY:Long) {
             val a=position(x,y);val b=position(toX,toY);canvas().performTouchInput {swipe(a,b,500)}
         }
         try {
             compose.waitUntil(15000){compose.onAllNodes(matcher).fetchSemanticsNodes().any {it.config.getOrNull(MeasurementDrawingSemantics.EditingEnabled)==true}}
             val initialPricing = pricing(db)
-            if(mode=="fullscreen")compose.onNodeWithText("На весь екран").performClick()
+            if(mode=="fullscreen")click("На весь екран")
             val before=OverlayDragFixture.snapshot(driver)
+            if (mode != "details") {
+                val point = doc.placements.points.single()
+                tap(point.xMm, point.yMm)
+                val selected = canvas().fetchSemanticsNode()
+                assertEquals(point.uuid, selected.config[MeasurementDrawingSemantics.SelectedPoint])
+                if (mode == "fullscreen") {
+                    panel.assertDoesNotExist()
+                    captureSelected("single-tap-point")
+                    drag(point.xMm, point.yMm, 2900, 2150)
+                    panel.assertDoesNotExist()
+                    compose.runOnIdle {
+                        assertEquals(2900L, m.displayPoints().single().xMm)
+                        assertEquals(2150L, m.displayPoints().single().yMm)
+                    }
+                    click("Скасувати дію")
+                    panel.assertDoesNotExist()
+                }
+                openFromCanvas(point.xMm, point.yMm)
+                captureSelected("selected-point")
+                click("Задати розміри від стін")
+                captureSelected("point-dialog")
+                compose.onNode(hasText("Скасувати") and hasClickAction() and hasAnyAncestor(isDialog())).performClick()
+                if (mode == "fullscreen") click("Закрити панель")
+                clearSelectionByTappingCanvas()
+                tap(point.xMm, point.yMm)
+                canvas().performTouchInput {
+                    pinch(center - Offset(25f, 0f), center + Offset(25f, 0f),
+                        center - Offset(45f, 0f), center + Offset(45f, 0f))
+                }
+                val viewport = canvas().fetchSemanticsNode().config[MeasurementDrawingSemantics.Viewport]
+                assertTrue(viewport.zoom > 1f)
+                val firstWorldPoint = DrawingPoint(1000.0, 1500.0)
+                val secondWorldPoint = DrawingPoint(3000.0, 1500.0)
+                fun pixelDistance(projection: MeasurementDrawingProjection) =
+                    projection.project(secondWorldPoint).x - projection.project(firstWorldPoint).x
+                val baselineDistance = pixelDistance(canvas().fetchSemanticsNode().config[MeasurementDrawingSemantics.Projection])
+                click("Контур")
+                if (mode == "fullscreen") {
+                    compose.onNodeWithTag("measurement-edit-context-cost").assertDoesNotExist()
+                    click("Закрити панель")
+                } else {
+                    click("Вартість")
+                    compose.onNodeWithText("Розрахунок за останнім збереженим заміром").assertExists()
+                }
+                click("Елементи")
+                val restored = canvas().fetchSemanticsNode()
+                assertEquals(selected.id, restored.id)
+                assertEquals(point.uuid, restored.config[MeasurementDrawingSemantics.SelectedPoint])
+                assertEquals(viewport, restored.config[MeasurementDrawingSemantics.Viewport])
+                assertEquals(baselineDistance, pixelDistance(restored.config[MeasurementDrawingSemantics.Projection]), 0.01)
+                click("Вписати креслення")
+                click("Зняти виділення")
+                if (mode == "fullscreen") click("Закрити панель")
+                assertEquals(before, OverlayDragFixture.snapshot(driver))
+            }
             tap(1000,1500);drag(1000,1050,1300,1250) // selected AREA takes priority over LINE halo
             if(mode!="details")compose.runOnIdle {
                 assertEquals(PointPositionMm(800,1200),m.displayAreas().first {it.uuid==f.polygon}.shape.positions.first(),"Canvas must move the selected polygon")
             }
+            if (mode != "details") {
+                if (mode == "fullscreen") {
+                    panel.assertDoesNotExist()
+                    captureSelected("single-tap-drag-area")
+                }
+                openFromCanvas(1300, 1250)
+                captureSelected("selected-area")
+                if (InstrumentationRegistry.getArguments().getString("p5aSelectedScreenshots") == "true") {
+                    click("Властивості фігури")
+                    captureSelected("area-dialog")
+                    compose.onNode(hasText("Скасувати") and hasClickAction() and hasAnyAncestor(isDialog())).performClick()
+                }
+                if (mode == "fullscreen") click("Закрити панель")
+                clearSelectionByTappingCanvas()
+                tap(1000, 1500)
+                openFromCanvas(1000, 1500)
+            }
             click("Скасувати дію");click("Повторити");click("Скасувати дію")
-            click("Вершина 1");drag(500,1000,800,1200)
+            click("Вершина 1");if (mode == "fullscreen") click("Закрити панель")
+            drag(500,1000,800,1200)
             if(mode!="details")compose.runOnIdle {
                 val polygon=m.displayAreas().first {it.uuid==f.polygon}
                 assertEquals(PointPositionMm(800,1200),polygon.shape.positions.first(),"Canvas must move the explicit vertex")
                 assertNull(polygon.mountings.first().anchor)
                 assertTrue(polygon.mountings.drop(1).all {it.anchor!=null})
             }
-            click("Зняти виділення");tap(1000,950)
+            if (mode == "fullscreen") click("Елементи")
+            click("Зняти виділення")
+            if (mode == "fullscreen") click("Закрити панель")
+            tap(1000,950)
             if(mode!="details")compose.runOnIdle {assertEquals(f.line,m.state.value.selectedLineUuid,"Canvas tap must select LINE UUID before pointer drag; area=${m.state.value.area.selected}; error=${m.state.value.error}")}
+            if (mode != "details") {
+                if (mode == "fullscreen") {
+                    panel.assertDoesNotExist()
+                    captureSelected("single-tap-line")
+                }
+                openFromCanvas(1000, 950)
+                captureSelected("selected-line")
+                if (InstrumentationRegistry.getArguments().getString("p5aSelectedScreenshots") == "true") {
+                    click("Параметри лінії")
+                    captureSelected("line-dialog")
+                    compose.onNode(hasText("Скасувати") and hasClickAction() and hasAnyAncestor(isDialog())).performClick()
+                }
+                if (mode == "fullscreen") click("Закрити панель")
+                clearSelectionByTappingCanvas()
+                tap(1000, 950)
+            }
             drag(1000,950,1300,750)
             if(mode!="details")compose.runOnIdle {
                 assertEquals(f.line,m.state.value.selectedLineUuid,"Drag must retain LINE selection: ${m.state.value.error}")
                 assertEquals(PointPositionMm(800,750),m.displayLines().single().start,"The injected gesture must move the selected LINE")
             }
-            click("Кінець");drag(1800,750,2400,750)
-            tap(2800,1500);drag(2800,1500,3100,1800)
+            openFromCanvas(1300, 750)
+            click("Кінець");if (mode == "fullscreen") click("Закрити панель")
+            drag(1800,750,2400,750)
+            tap(2800,1500)
+            if (mode == "fullscreen") panel.assertDoesNotExist()
+            drag(2800,1500,3100,1800)
             drag(3100,1800,4500,1800)
-            compose.onNodeWithText("Фігура перетинає стіну або себе. Положення не змінено.").assertExists()
+            val invalidDrag = "Фігура перетинає стіну або себе. Положення не змінено."
+            if (mode != "details") {
+                compose.onNodeWithTag("measurement-edit-status").performClick()
+                compose.onNodeWithTag("measurement-edit-status-details").assertTextEquals(invalidDrag)
+                compose.onNodeWithText("Закрити").performClick()
+            } else compose.onNodeWithText(invalidDrag).assertExists()
             assertEquals(before,OverlayDragFixture.snapshot(driver))
+            if (mode == "editor") {
+                click("Вартість")
+                compose.onNodeWithText("Розрахунок за останнім збереженим заміром").assertExists()
+                compose.onNodeWithText("Переглянути збережений розрахунок у картці заміру").assertDoesNotExist()
+                click("Елементи")
+            }
             // Pinch cancels object ownership; empty-space pan affects only the viewport.
             canvas().performTouchInput {pinch(center-Offset(25f,0f),center+Offset(25f,0f),center-Offset(45f,0f),center+Offset(45f,0f))}
             click("Вписати креслення")
             val empty=position(3500,500);canvas().performTouchInput {swipe(empty,empty+Offset(35f,20f))};click("Вписати креслення")
-            click(if(mode=="details")"Зберегти креслення" else "Зберегти")
+            click(if(mode=="details")"Зберегти креслення" else "Зберегти замір")
             compose.waitUntil(15000){AreaFeatureRepository(db).forMeasurement(doc.draft.recordUuid).first {it.uuid==f.circle}.shape.positions.single().xMm==3100L}
             var saved=store.load(f.project,f.id)
             val line=saved.placements.lines.single();assertEquals(1600,line.lengthMm);assertEquals(PointPositionMm(800,750),line.start)

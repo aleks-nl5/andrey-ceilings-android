@@ -21,6 +21,10 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.disabled
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
@@ -77,13 +81,20 @@ fun CeilingsFab(
     enabled: Boolean = true,
     containerColor: Color = MaterialTheme.colorScheme.primaryContainer,
     outlineAlpha: Float = 0.45f,
+    actionModifier: Modifier = Modifier,
     content: @Composable BoxScope.() -> Unit
 ) {
     val p = progress.coerceIn(0f, 1f)
     val interaction = remember { MutableInteractionSource() }
     Box(modifier.size(profile.drawSize).ceilingsFabShadow(profile, p),
         contentAlignment = Alignment.Center) {
-        Box(Modifier.size(profile.touchSize).clip(CircleShape).then(
+        Box(actionModifier.size(profile.touchSize).clip(CircleShape).semantics {
+            contentDescription = actionLabel
+            if (!enabled) {
+                role = Role.Button
+                disabled()
+            }
+        }.then(
             if (enabled) Modifier.clickable(
                 interactionSource = interaction, indication = null,
                 role = Role.Button, onClickLabel = actionLabel, onClick = onClick

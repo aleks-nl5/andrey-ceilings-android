@@ -148,10 +148,9 @@ class DecimalInputSceneTest {
                 set("05")
                 assertTrue(field().config[SemanticsActions.SetSelection].action!!.invoke(0, 1, false))
                 render()
-                val comma = scene.nodes().first {
-                    it.config.getOrNull(SemanticsProperties.ContentDescription)?.contains("Вставити десяткову кому") == true
-                }
-                assertTrue(comma.config[SemanticsActions.OnClick].action!!.invoke())
+                assertFalse(scene.nodes().any { it.config.getOrNull(SemanticsProperties.ContentDescription)
+                    ?.contains("Вставити десяткову кому") == true })
+                assertTrue(field().config[SemanticsActions.InsertTextAtCursor].action!!.invoke(AnnotatedString(",")))
                 render()
                 assertEquals("0,5", text)
                 assertEquals(TextRange(2), field().config[SemanticsProperties.TextSelectionRange])

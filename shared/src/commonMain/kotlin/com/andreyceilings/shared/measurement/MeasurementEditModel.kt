@@ -26,7 +26,8 @@ data class MeasurementEditState(
     val pointEdits: Map<String,PointMountingEdit> = emptyMap(), val selectedPointUuid: String? = null,
     val drag: PointDragPreview? = null, val mountingInput: WallAnchorInput? = null,
     val mountingDismiss: Boolean = false, val uncertain: Boolean = false,
-    val reviewPrompt: Boolean = false, val reviewing: Boolean = false, val wallGeneration: String = newRecordUuid()
+    val reviewPrompt: Boolean = false, val reviewing: Boolean = false, val wallGeneration: String = newRecordUuid(),
+    val workspaceSaveConfirmed: Boolean = false
 ) {
     val dirty: Boolean get() = if (area.dirty || lineProperties?.dirty==true || lineEdits.isNotEmpty() || declaredLengths.isNotEmpty() || lineStart!=null || linePreview!=null || pointEdits.isNotEmpty() || mountingInput?.dirty==true) true else if (draft == original.draft) false else {
         val current = validateMeasurementCreate(draft)
@@ -52,7 +53,7 @@ class MeasurementEditModel(
     private val redo = mutableListOf<CeilingFormHistory>()
     private var inputStart: CeilingFormHistory? = null
     private var attempt: CeilingWriteAttempt? = null
-    private var reconcileReceipt: String? = null
+    private var reconcileAttempt: CeilingWriteAttempt? = null
     private fun form() = CeilingFormHistory(state.value.draft.snapshot(),state.value.pointEdits,state.value.wallGeneration,state.value.lineEdits,state.value.declaredLengths,state.value.area.history())
     private var exitAction: (() -> Unit)? = null
     fun observePoints(): Flow<PointOverlayState> = store?.observePoints(state.value.original)
@@ -152,7 +153,24 @@ class MeasurementEditModel(
         }
     }
     suspend fun save(keepEditing: Boolean = false) {saveAttempt(keepEditing,preserveExitAction=false)}
-    private suspend fun saveAttempt(keepEditing:Boolean,preserveExitAction:Boolean):Boolean {
+    internal suspend fun saveInWorkspace() {
+        saveAttempt(keepEditing = true, preserveExitAction = false, workspace = true)
+    }
+
+    private fun workspaceSaved(document: MeasurementEditDocument, before: MeasurementEditState, review: Boolean): MeasurementEditState {
+        val selectedLine = before.selectedLineUuid?.takeIf { id -> document.placements.lines.any { it.uuid == id } }
+        val selectedArea = document.placements.areas.find { it.uuid == before.area.selected }
+        val vertices = (selectedArea?.shape as? AreaShape.Polygon)?.positions?.indices
+        return MeasurementEditState(document, reviewPrompt = review, reviewing = before.reviewing,
+            selectedPointUuid = before.selectedPointUuid?.takeIf { id -> document.placements.points.any { it.uuid == id } },
+            selectedLineUuid = selectedLine,
+            lineMoveTarget = if (selectedLine != null) before.lineMoveTarget else 0,
+            area = AreaEditorState(selected = selectedArea?.uuid,
+                moveVertex = before.area.moveVertex?.takeIf { vertices?.contains(it) == true }),
+            workspaceSaveConfirmed = true)
+    }
+
+    private suspend fun saveAttempt(keepEditing:Boolean,preserveExitAction:Boolean,workspace:Boolean = false):Boolean {
         if (!mutex.tryLock()) return false
         try {
             if (state.value.saving || state.value.checking || state.value.saved || state.value.exitReady || state.value.area.properties!=null || state.value.conflict || state.value.mountingInput!=null || state.value.lineProperties!=null) return false
@@ -162,7 +180,7 @@ class MeasurementEditModel(
             val completion=store?.beginWrite() ?: return false
             val command=attempt ?: CeilingWriteAttempt(newRecordUuid(),null).also { attempt=it }
             if(!preserveExitAction)exitAction=null
-            mutableState.value=before.copy(saving=true,exitRequested=false,error=null,drag=null)
+            mutableState.value=before.copy(saving=true,exitRequested=false,error=null,drag=null,workspaceSaveConfirmed=false)
             store?.retain(token,this)
             return withContext(NonCancellable+Dispatchers.Default) {
                 try {
@@ -170,12 +188,15 @@ class MeasurementEditModel(
                     val result=checkNotNull(store).update(before.original,before.draft,before.pointEdits,command.operation,before.wallGeneration,timestamp,completion,before.lineEdits,before.declaredLengths,before.area.edits,before.area.quantities)
                     val geometryChanged=validateMeasurementCreate(before.original.draft).geometry!=validateMeasurementCreate(result.draft).geometry
                     undo.clear();redo.clear();attempt=null
-                    mutableState.value=MeasurementEditState(result,exitReady=preserveExitAction && exitAction!=null,
-                        saved=!keepEditing && !(geometryChanged && (result.placements.points.any { it.mounting.needsReview } || result.placements.lines.any {it.needsReview} || result.placements.areas.any {it.needsReview})),
-                        reviewPrompt=geometryChanged && (result.placements.points.any { it.mounting.needsReview } || result.placements.lines.any {it.needsReview} || result.placements.areas.any {it.needsReview}),
+                    val review = geometryChanged && (result.placements.points.any { it.mounting.needsReview } ||
+                        result.placements.lines.any { it.needsReview } || result.placements.areas.any { it.needsReview })
+                    mutableState.value=if (workspace) workspaceSaved(result, before, review) else MeasurementEditState(result,exitReady=preserveExitAction && exitAction!=null,
+                        saved=!keepEditing && !review,
+                        reviewPrompt=review,
                         reviewing=keepEditing || before.reviewing,
                         selectedLineUuid=if(keepEditing && result.placements.points.none {it.mounting.needsReview})result.placements.lines.firstOrNull {it.needsReview}?.uuid else null,
                         selectedPointUuid=if (keepEditing) result.placements.points.firstOrNull { it.mounting.needsReview }?.uuid else null)
+                    if (workspace) store.release(token)
                     true
                 } catch (conflict: MeasurementEditConflict) {
                     attempt=null;mutableState.value=before.copy(error=conflict.message,conflict=true);store?.release(token);false
@@ -199,11 +220,11 @@ class MeasurementEditModel(
             selectedLineUuid=if(state.value.original.placements.points.none {it.mounting.needsReview})state.value.original.placements.lines.firstOrNull {it.needsReview}?.uuid else null,
             selectedPointUuid=state.value.original.placements.points.firstOrNull { it.mounting.needsReview }?.uuid)
     }
-    suspend fun reviewLater() {
+    suspend fun reviewLater(inWorkspace: Boolean = false) {
         if (state.value.saving) return
         mutableState.value=state.value.copy(reviewPrompt=false,reviewing=false,area=state.value.area.copy(edits=state.value.original.placements.areas.filter {it.needsReview}.associate {it.uuid to AreaFeatureEdit(it,defer=true)}),lineEdits=state.value.original.placements.lines.filter {it.needsReview}.associate {it.uuid to LinePlacementEdit(it,defer=true)},pointEdits=state.value.original.placements.points
             .filter { it.mounting.needsReview }.associate { it.uuid to PointMountingEdit(defer=true) })
-        save()
+        if (inWorkspace) saveInWorkspace() else save()
     }
     suspend fun confirmSelected() {
         val point=displayPoints().find { it.uuid==state.value.selectedPointUuid } ?: return
@@ -631,6 +652,9 @@ class MeasurementEditModel(
         put("wallGeneration",state.value.wallGeneration)
         put("lineElements",encodeAreaElementSnapshots(state.value.original.lineElements))
         put("areaElements",encodeAreaElementSnapshots(state.value.original.areaElements))
+        if (state.value.original.pointElements.isNotEmpty()) {
+            put("pointElements", mountingCodec.encodeToJsonElement(state.value.original.pointElements))
+        }
         put("areaEditor",mountingCodec.encodeToString(state.value.area.copy(drag=null)))
         put("placements",mountingCodec.encodeToString(state.value.original.placements))
         state.value.lineProperties?.let {put("lineProperties",mountingCodec.encodeToString(it))}
@@ -646,9 +670,12 @@ class MeasurementEditModel(
         state.value.original.sourceDrawingJson?.let { put("sourceDrawingJson",it) }
         state.value.selectedPointUuid?.let { put("selectedPoint",it) }
         state.value.mountingInput?.let { put("mountingInput",mountingCodec.encodeToString(it)) }
-        attempt?.let { put("receipt",it.operation) }
+        (attempt ?: reconcileAttempt)?.let { write ->
+            put("receipt", write.operation)
+            write.now?.let { put("writeTime", it) }
+        }
         put("reviewPrompt",state.value.reviewPrompt);put("reviewing",state.value.reviewing)
-        put("writeStarted", state.value.saving || state.value.saved || reconcileAfterRestore)
+        put("writeStarted", state.value.saving || state.value.saved || state.value.uncertain || reconcileAfterRestore)
         // Leave room for the draft and the rest of Android's saved instance state.
         fun bounded(history: List<CeilingFormHistory>): List<String> {
             var remaining = 64_000
@@ -676,7 +703,12 @@ class MeasurementEditModel(
             require(original.precision == draft.precision && original.recordUuid == draft.recordUuid)
             MeasurementEditModel(store, MeasurementEditDocument(measurementId, json.getValue("version").jsonPrimitive.long, original,
                 json["placements"]?.jsonPrimitive?.content?.let { mountingCodec.decodeFromString<CeilingPlacementDocument>(it) } ?: CeilingPlacementDocument(),
-                json["sourceDrawingJson"]?.jsonPrimitive?.content,lineElements=decodeAreaElementSnapshots(json["lineElements"]),areaElements=decodeAreaElementSnapshots(json["areaElements"])), token).also {
+                json["sourceDrawingJson"]?.jsonPrimitive?.content,
+                lineElements = decodeAreaElementSnapshots(json["lineElements"]),
+                areaElements = decodeAreaElementSnapshots(json["areaElements"]),
+                pointElements = json["pointElements"]?.let {
+                    mountingCodec.decodeFromJsonElement<List<MeasurementElement>>(it)
+                }.orEmpty()), token).also {
                 it.mutableState.value = it.state.value.copy(draft = draft,
                     area=json["areaEditor"]?.jsonPrimitive?.content?.let {mountingCodec.decodeFromString<AreaEditorState>(it)} ?: AreaEditorState(),
                     lineProperties=json["lineProperties"]?.jsonPrimitive?.content?.let {mountingCodec.decodeFromString<LinePropertiesInput>(it)},
@@ -694,7 +726,9 @@ class MeasurementEditModel(
                     reviewPrompt=json["reviewPrompt"]?.jsonPrimitive?.booleanOrNull ?: false,
                     reviewing=json["reviewing"]?.jsonPrimitive?.booleanOrNull ?: false,
                     wallGeneration=json["wallGeneration"]?.jsonPrimitive?.content ?: token)
-                it.reconcileReceipt=json["receipt"]?.jsonPrimitive?.content
+                it.reconcileAttempt = json["receipt"]?.jsonPrimitive?.content?.let { receipt ->
+                    CeilingWriteAttempt(receipt, json["writeTime"]?.jsonPrimitive?.longOrNull)
+                }
                 for ((key, history) in listOf("undo" to it.undo, "redo" to it.redo)) {
                     json.getValue(key).jsonArray.takeLast(100).forEach { value ->
                         val entry=runCatching { mountingCodec.decodeFromString<CeilingFormHistory>(value.jsonPrimitive.content) }.getOrElse { CeilingFormHistory(value.jsonPrimitive.content,emptyMap()) }
@@ -714,7 +748,7 @@ class MeasurementEditModel(
     private var needsReadAfterRestore: Boolean = false
     var reconcileAfterRestore: Boolean = false
         private set
-    suspend fun reconcile() {
+    suspend fun reconcile(keepEditing: Boolean = false) {
         if (!needsReadAfterRestore || state.value.saving || state.value.saved || store == null) return
         needsReadAfterRestore = false
         val recoveringWrite = reconcileAfterRestore
@@ -722,13 +756,21 @@ class MeasurementEditModel(
         try {
             val before = state.value
             val loaded = withContext(Dispatchers.Default) { checkNotNull(store).load(before.draft.projectId, before.original.measurementId) }
-            val receipt=reconcileReceipt
-            if(recoveringWrite && receipt!=null) {
-                val committed=withContext(Dispatchers.Default) { store.operationCommitted(receipt,loaded.draft.recordUuid,loaded.updatedAt) }
+            val pending = reconcileAttempt
+            reconcileAttempt = null
+            if (recoveringWrite && pending != null) {
+                val committed = withContext(Dispatchers.Default) {
+                    store.operationCommitted(pending.operation, loaded.draft.recordUuid, loaded.updatedAt)
+                }
                 if(committed) {
                     val changed=validateMeasurementCreate(loaded.draft).geometry!=validateMeasurementCreate(before.original.draft).geometry
                     val review=changed && (loaded.placements.points.any {it.mounting.needsReview} || loaded.placements.lines.any {it.needsReview} || loaded.placements.areas.any {it.needsReview})
-                    mutableState.value=MeasurementEditState(loaded,saved=!review,reviewPrompt=review)
+                    mutableState.value=if (keepEditing) workspaceSaved(loaded, before, review)
+                        else MeasurementEditState(loaded,saved=!review,reviewPrompt=review)
+                } else if (keepEditing && loaded == before.original) {
+                    attempt = pending
+                    mutableState.value = before.copy(original = loaded, checking = false, uncertain = true,
+                        error = "Результат збереження не підтверджено. Повторіть ту саму спробу або перезавантажте запис.")
                 } else mutableState.value=before.copy(checking=false,conflict=true,error="Спробу не підтверджено. Чернетку збережено; перезавантажте актуальний запис перед новим Save.")
                 return
             }
@@ -738,7 +780,8 @@ class MeasurementEditModel(
                 loaded.draft.name == before.draft.name.trim() && loaded.draft.notes == before.draft.notes.trim() &&
                 loaded.placements.points.map { it.copy(updatedAt=0,lastCeilingEditUuid=null,mounting=it.mounting.copy(modifiedVersion=0,confirmedAt=null,deferredAt=null,anchorGeometryJson=null,lastValidGeometryJson=null)) } ==
                 displayPoints().map { it.copy(updatedAt=0,lastCeilingEditUuid=null,mounting=it.mounting.copy(modifiedVersion=0,confirmedAt=null,deferredAt=null,anchorGeometryJson=null,lastValidGeometryJson=null)) }) {
-                mutableState.value = MeasurementEditState(loaded, saved = true)
+                mutableState.value = if (keepEditing) workspaceSaved(loaded, before, false)
+                    else MeasurementEditState(loaded, saved = true)
             } else if (loaded.updatedAt != before.original.updatedAt || loaded.draft.recordUuid != before.original.draft.recordUuid || loaded.placements!=before.original.placements) {
                 mutableState.value = before.copy(checking = false, conflict = true, error = MeasurementEditConflict().message)
             } else mutableState.value = before.copy(original=loaded,checking = false)

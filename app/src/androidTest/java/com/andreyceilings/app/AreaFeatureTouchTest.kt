@@ -35,43 +35,57 @@ class AreaFeatureTouchTest {
         val element=MeasurementElementRepository(db).createCatalogSelection(f.element.measurementUuid,price.uuid,ElementQuantity.Unknown,7, businessRole = com.andreyceilings.shared.livepricing.BusinessRole.ADDITIONAL_WORK)
         val store=MeasurementEditStore(db){100}
         val model=MeasurementEditModel(store,store.load(f.project,f.id))
-        compose.setContent {CeilingsTheme(dark) {MeasurementEditScreen(model,PaddingValues(0.dp),0.dp,{}, {},null)}}
+        compose.setContent {CeilingsTheme(dark) {MeasurementEditScreen(model,PaddingValues(0.dp),0.dp,{},null)}}
         val matcher=SemanticsMatcher("ceiling canvas") {n->n.config.getOrNull(SemanticsProperties.ContentDescription).orEmpty().any {it.startsWith("Контур стелі")}}
-        fun click(text:String)=compose.onNodeWithText(text).performScrollTo().performClick()
+        fun click(text: String) {
+            val action = (hasText(text) or hasContentDescription(text)) and hasClickAction()
+            if (compose.onAllNodes(action and hasAnyAncestor(hasScrollAction())).fetchSemanticsNodes().isNotEmpty()) {
+                compose.onNode(action).performScrollTo()
+            }
+            compose.onNode(action).performClick()
+        }
         fun tap(x:Long,y:Long) {
-            val canvas=compose.onNode(matcher).performScrollTo()
-            val bounds=canvas.fetchSemanticsNode().boundsInRoot
-            val contour=measurementDrawingContour(MeasurementGeometryView.Captured(validateMeasurementCreate(model.state.value.draft).geometry!!))!!
-            val p=measurementDrawingProjection(contour,bounds.width,bounds.height,compose.density.density)!!.project(DrawingPoint(x.toDouble(),y.toDouble()))
+            val canvas=compose.onNode(matcher)
+            val projection = canvas.fetchSemanticsNode().config[MeasurementDrawingSemantics.Projection]
+            val p = projection.project(DrawingPoint(x.toDouble(), y.toDouble()))
             canvas.performTouchInput {click(Offset(p.x.toFloat(),p.y.toFloat()))}
         }
         try {
+            click("Елементи")
+            compose.onNodeWithTag("measurement-edit-section-areas").performScrollTo().performClick()
             click("Позначити перешкоду");tap(500,500);tap(1000,1000);click("Завершити фігуру в чернетці")
             compose.runOnIdle {assertEquals(1,model.displayAreas().size);assertEquals(0,AreaFeatureRepository(db).all().size)}
             click("Позначити отвір");compose.onNodeWithText("Діаметр, м (парні мм)").performScrollTo().performTextInput("0,2");tap(2000,1500);click("Завершити фігуру в чернетці")
             click("Розмістити область: ${element.label}");tap(1500,500);tap(2000,1000);click("Завершити фігуру в чернетці")
             compose.runOnIdle {assertEquals(3,model.displayAreas().size)}
-            compose.onNodeWithText("Скасувати дію").performClick()
+            click("Скасувати дію")
             compose.runOnIdle {assertEquals(2,model.displayAreas().size)}
-            compose.onNodeWithText("Повторити").performClick()
-            compose.onNodeWithText("На весь екран").performClick()
-            compose.onNodeWithText("Вписати креслення").performClick()
+            click("Повторити")
+            click("На весь екран")
+            click("Вписати креслення")
             val canvas=compose.onNode(matcher)
             canvas.performTouchInput {pinch(center-Offset(30f,0f),center+Offset(30f,0f),center-Offset(50f,0f),center+Offset(50f,0f))}
-            compose.onNodeWithText("Вписати креслення").performClick()
-            compose.onNodeWithText("Згорнути").performClick()
-            tap(2200,1500) // accessible halo selects the circle
-            compose.runOnIdle {assertNotNull(model.state.value.area.selected)}
+            click("Вписати креслення")
+            click("Згорнути")
+            // Wait until the normal canvas and its viewport have replaced the fullscreen layout.
+            compose.onNodeWithTag("measurement-edit-normal-panel").assertExists()
+            compose.waitForIdle()
+            val circle = compose.runOnIdle {
+                model.displayAreas().single { it.shape is AreaShape.Circle }
+            }
+            val center = (circle.shape as AreaShape.Circle).center
+            tap(center.xMm, center.yMm)
+            compose.runOnIdle { assertEquals(circle.uuid, model.state.value.area.selected) }
             click("Властивості фігури")
             compose.onNodeWithText("Примітка фігури").performTextInput("Тестова позначка")
             compose.onNodeWithText("Застосувати властивості").performClick()
             click("Видалити фігуру");compose.onNodeWithText("Видалити",useUnmergedTree=true).performClick()
             compose.runOnIdle {assertEquals(2,model.displayAreas().size)}
-            compose.onNodeWithText("Скасувати дію").performClick()
+            click("Скасувати дію")
             val ids=model.displayAreas().map {it.uuid}.toSet()
-            compose.onNodeWithText("Зберегти",useUnmergedTree=true).performClick()
-            compose.waitUntil(15000) {model.state.value.saved || model.state.value.error!=null}
-            compose.runOnIdle {assertTrue(model.state.value.saved,model.state.value.error);assertEquals(ids,store.load(f.project,f.id).placements.areas.map {it.uuid}.toSet())}
+            compose.onNodeWithTag("measurement-edit-save").performClick()
+            compose.waitUntil(15000) {!model.state.value.dirty && !model.state.value.saving || model.state.value.error!=null}
+            compose.runOnIdle {assertTrue(!model.state.value.dirty && !model.state.value.saving,model.state.value.error);assertEquals(ids,store.load(f.project,f.id).placements.areas.map {it.uuid}.toSet())}
         } finally {store.closePointReads();driver.close();context.deleteDatabase(name);key.fill(0)}
     }
 }

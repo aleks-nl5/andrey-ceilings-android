@@ -9,7 +9,10 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.unit.dp
 import kotlinx.serialization.Serializable
 import kotlin.math.roundToLong
@@ -46,6 +49,8 @@ fun WallAnchorEditor(model: MeasurementEditModel) {
             dismissButton={TextButton(onClick=model::continueMounting){Text("Продовжити")}})
         return
     }
+    val secondField = remember { FocusRequester() }
+    val editorFocus = LocalMeasurementInputFocus.current != null
     val geometry=validateMeasurementCreate(state.draft).geometry
     val walls=model.draftWalls()
     val solution=geometry?.let { g -> input.anchor()?.let { solveWallAnchor(g,walls,it) } }
@@ -69,9 +74,12 @@ fun WallAnchorEditor(model: MeasurementEditModel) {
                 } }
             }
             DecimalInputField(input.firstText, { value -> model.updateMounting { it.copy(firstText = value) } },
-                if (input.kind == WallAnchor.Kind.TWO_WALLS) "Від першої стіни, м" else "Від початку вздовж стіни, м")
+                if (input.kind == WallAnchor.Kind.TWO_WALLS) "Від першої стіни, м" else "Від початку вздовж стіни, м",
+                modifier = measurementFieldFocusModifier(),
+                onNext = if (editorFocus) ({ secondField.requestFocus() }) else null)
             DecimalInputField(input.secondText, { value -> model.updateMounting { it.copy(secondText = value) } },
-                if (input.kind == WallAnchor.Kind.TWO_WALLS) "Від другої стіни, м" else "Відступ усередину, м")
+                if (input.kind == WallAnchor.Kind.TWO_WALLS) "Від другої стіни, м" else "Відступ усередину, м",
+                modifier = measurementFieldFocusModifier().focusRequester(secondField))
             if(solution==null) Text("Немає однозначної внутрішньої точки з проєкціями на обрані відрізки. Перевірте розміри, оберіть інші стіни або спосіб «Уздовж + усередину».",color=MaterialTheme.colorScheme.error)
             else Text("Фактично після округлення до мм: ${formatPointMetres(solution.firstActualMm.roundToLong())} м / ${formatPointMetres(solution.secondActualMm.roundToLong())} м. Похибка представлення не перевищує 1 мм.")
             state.error?.let {Text(it,color=MaterialTheme.colorScheme.error)}

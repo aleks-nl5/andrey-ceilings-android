@@ -1,13 +1,11 @@
 package com.andreyceilings.shared.measurement
 
-import com.andreyceilings.shared.input.insertDecimalSeparator
 import com.andreyceilings.shared.input.filterNumericEdit
 
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.border
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
@@ -16,6 +14,11 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.foundation.interaction.FocusInteraction
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.onFocusChanged
@@ -23,10 +26,9 @@ import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -240,10 +242,8 @@ fun MeasurementCreateScreen(
 
 @Composable
 internal fun MeasurementLengthField(value: String, label: String, error: String?, enabled: Boolean,
-    modifier: Modifier = Modifier, selected: Boolean = false, onFocus: (Boolean) -> Unit = {}, onChange: (String) -> Unit) {
-    // A decimal IME hint does not guarantee the user's keyboard offers comma or dot.
-    // Keep an accessible separator action and preserve the actual caret selection.
-    val requester = remember { FocusRequester() }
+    modifier: Modifier = Modifier, selected: Boolean = false, onFocus: (Boolean) -> Unit = {},
+    onNext: (() -> Unit)? = null, onChange: (String) -> Unit) {
     var field by remember { mutableStateOf(TextFieldValue(value, selection = TextRange(value.length))) }
     LaunchedEffect(value) {
         if (field.text != value) {
@@ -257,19 +257,39 @@ internal fun MeasurementLengthField(value: String, label: String, error: String?
         field = edited
         if (changed) onChange(edited.text)
     }
+    val interactionSource = remember { MutableInteractionSource() }
+    var hasRealFocus by remember { mutableStateOf(false) }
+    // A wall selected on the canvas has exactly the same Material outline/label
+    // emphasis as a focused input, but must not request actual focus or open IME.
+    // Compose keeps the round field outline and its label cutout intact.
+    LaunchedEffect(selected, hasRealFocus, enabled) {
+        if (selected && !hasRealFocus && enabled) {
+            val previewFocus = FocusInteraction.Focus()
+            interactionSource.emit(previewFocus)
+            try {
+                awaitCancellation()
+            } finally {
+                // The effect is cancelled when the wall selection changes; always
+                // release the synthetic visual focus even on cancellation.
+                withContext(NonCancellable) {
+                    interactionSource.emit(FocusInteraction.Unfocus(previewFocus))
+                }
+            }
+        }
+    }
     OutlinedTextField(value = field, onValueChange = ::update, label = { Text(label) }, enabled = enabled, singleLine = true,
-        modifier = modifier.fillMaxWidth().focusRequester(requester)
-            .then(if (selected) Modifier.border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(4.dp)) else Modifier)
-            .onFocusChanged { onFocus(it.isFocused) },
-        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-        trailingIcon = {
-            IconButton(onClick = {
-                insertDecimalSeparator(field)?.let(::update)
-                requester.requestFocus()
-            }, enabled = enabled, modifier = Modifier.semantics {
-                contentDescription = "Вставити десяткову кому"
-            }) { Text(",") }
-        },
+        modifier = modifier.then(measurementFieldFocusModifier()).fillMaxWidth()
+            .onFocusChanged {
+                hasRealFocus = it.isFocused
+                onFocus(it.isFocused)
+            },
+        interactionSource = interactionSource,
+        colors = OutlinedTextFieldDefaults.colors(),
+        keyboardOptions = KeyboardOptions(
+            keyboardType = KeyboardType.Decimal,
+            imeAction = if (onNext == null) ImeAction.Default else ImeAction.Next
+        ),
+        keyboardActions = KeyboardActions(onNext = onNext?.let { next -> { next() } }),
         isError = value.isNotEmpty() && error != null,
         supportingText = { error?.let { Text(it) } })
 }

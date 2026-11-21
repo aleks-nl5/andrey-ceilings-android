@@ -107,7 +107,6 @@ fun main() = application {
                     navigation = navigation,
                     availableRoutes = availableRoutes,
                     onNavigate = ::updateNavigation,
-                    onApplyApprovedEditResult = ::applyNavigation,
                     measurementCreateNavigationGuard = measurementCreateNavigationGuard
                 )
             }
@@ -142,7 +141,6 @@ private fun DesktopPriceHost(
     navigation: AppNavigationState,
     availableRoutes: Set<AppRoute>,
     onNavigate: (AppNavigationState) -> Unit,
-    onApplyApprovedEditResult: (AppNavigationState) -> Unit,
     measurementCreateNavigationGuard: com.andreyceilings.shared.measurement.MeasurementCreateNavigationGuard
 ) {
     val measurementFullscreen by measurementCreateNavigationGuard.fullscreen.collectAsState()
@@ -267,10 +265,6 @@ private fun DesktopPriceHost(
                     onOpenMeasurementQuote = { onNavigate(navigation.openMeasurementQuote()) },
                     measurementEdit = navigation.measurementEdit,
                     onEditMeasurement = { projectId, measurementId -> onNavigate(navigation.editMeasurement(projectId, measurementId)) },
-                    onMeasurementSaved = { projectId, measurementId ->
-                        measurementCreateNavigationGuard.deliverEditResult(
-                            navigation, projectId, measurementId, onApplyApprovedEditResult)
-                    },
                     measurementCreate = navigation.measurementCreate,
                     measurementCreateNavigationGuard = measurementCreateNavigationGuard,
                     onCreateMeasurement = { onNavigate(navigation.createMeasurement(it)) },

@@ -176,7 +176,6 @@ fun ObjectsClientsScreen(
     onCloseMeasurement: () -> Unit = onCloseProject,
     measurementEdit: com.andreyceilings.shared.navigation.MeasurementEdit? = null,
     onEditMeasurement: (Long, Long) -> Unit = { _, _ -> },
-    onMeasurementSaved: (Long, Long) -> Unit = { _, _ -> },
     measurementCreate: com.andreyceilings.shared.navigation.MeasurementCreate? = null,
     measurementPrecision: com.andreyceilings.shared.calculation.MeasurementPrecision = com.andreyceilings.shared.calculation.MeasurementPrecision.ONE_CENTIMETER,
     onCreateMeasurement: (Long) -> Unit = {},
@@ -602,7 +601,7 @@ fun ObjectsClientsScreen(
         if (edit != null) com.andreyceilings.shared.measurement.MeasurementEditScreen(
             projectId = edit.projectId, measurementId = edit.measurementId, store = detailsStore?.measurementEdit,
             contentPadding = contentPadding, systemTopInset = systemTopInset,
-            onBack = onCloseMeasurement, onSaved = { onMeasurementSaved(edit.projectId, edit.measurementId) },
+            onBack = onCloseMeasurement,
             navigationGuard = measurementCreateNavigationGuard
         )
         if (create != null) com.andreyceilings.shared.measurement.MeasurementCreateScreen(

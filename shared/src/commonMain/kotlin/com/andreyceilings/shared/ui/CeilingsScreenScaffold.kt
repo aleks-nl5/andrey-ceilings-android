@@ -57,8 +57,7 @@ fun CeilingsScreenScaffold(
 ) {
     val safe = windowInsets.asPaddingValues()
     val direction = LocalLayoutDirection.current
-    Surface(modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background,
-        contentColor = MaterialTheme.colorScheme.onBackground) {
+    CeilingsScreenSurface(modifier) {
         SubcomposeLayout(Modifier.fillMaxSize().consumeWindowInsets(windowInsets)) { constraints ->
             val width = constraints.maxWidth
             val height = constraints.maxHeight
@@ -102,4 +101,11 @@ fun CeilingsScreenScaffold(
             }
         }
     }
+}
+
+/** Shared background and foreground roles for CMP scaffolds, including edge-to-edge workspaces. */
+@Composable
+internal fun CeilingsScreenSurface(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
+    val colors = MaterialTheme.colorScheme
+    Surface(modifier.fillMaxSize(), color = colors.background, contentColor = colors.onBackground, content = content)
 }
