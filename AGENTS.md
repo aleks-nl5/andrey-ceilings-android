@@ -1,3 +1,13 @@
+## CURRENT active milestone — CI #134 / beginning of P5B (21.11.2026)
+
+Owner merged P5A [PR #132](https://github.com/aleks-nl5/andrey-ceilings-android/pull/132) into main at `b20d185b83a7e38d02d9bea2225b36175eb33887` (final Android/Windows/iOS SUCCESS); #131 completed. **Next approved work is [issue #134](https://github.com/aleks-nl5/andrey-ceilings-android/issues/134), branch `ci/p5b-impact-full-gate`, and [docs/CI_134_CODEX_HANDOFF.md](docs/CI_134_CODEX_HANDOFF.md)**. Begin with Windows timings/diagnostics, then implement a conservative FAST/TARGETED feedback path while keeping FULL mandatory for ready-to-merge PRs. Do NOT disable, skip, remove or weaken tests; do NOT change SQLCipher security, KDF, app business logic or branch-protection rules as a side effect. Actual GitHub branch protection read is forbidden to this integration (403), so document the manual required-check configuration and never claim enforcement without verifying settings.
+
+The first commit on the new branch includes only diagnostic/test visibility, parser regression tests, and the implementation handoff. **It is not a finished #134 implementation or a merge-ready CI gate.** Codex may implement the bounded remaining scope on this branch/its existing Draft PR only, updating code and tests together. The owner alone approves final SHA, manual APK, Ready and merge. After #134, proceed to P5B unified POINT/LINE/AREA UX (#95); P5C/P5D remain separate.
+
+**Older milestone sections below are historical and superseded for active development.**
+
+---
+
 ## CURRENT implementation — P5A #131 / Draft PR #132 (owner authorized 19.11.2026)
 
 **Codex work ONLY in branch `feat/p5a-ceiling-workspace`, [Draft PR #132](https://github.com/aleks-nl5/andrey-ceilings-android/pull/132).** Main baseline is owner-merged documentation [PR #130](https://github.com/aleks-nl5/andrey-ceilings-android/pull/130), merge `6e5c22226fa22de1731dd13056c9666799ef477f`. **Read [issue #131](https://github.com/aleks-nl5/andrey-ceilings-android/issues/131), [docs/P5A_CODEX_HANDOFF.md](docs/P5A_CODEX_HANDOFF.md), and [docs/P5_UX_DISCOVERY.md](docs/P5_UX_DISCOVERY.md) first.** Initial Draft PR is documentation only; production implementation must now be added by Codex to THIS branch.

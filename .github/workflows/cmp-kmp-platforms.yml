@@ -78,6 +78,9 @@ jobs:
           # Forked PRs may restore caches, but cannot write to the repository cache.
           cache-read-only: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
 
+      - name: Verify JUnit timing summary parser
+        run: python -m unittest discover -s ci/tests -p test_windows_test_timings.py
+
       # All original targets are retained while one Gradle invocation avoids
       # redundant startup and repeated configuration.
       - name: Verify transient quote CMP scenes
@@ -85,6 +88,13 @@ jobs:
 
       - name: Compile Windows Desktop and run shared JVM / SQLCipher CRUD tests
         run: gradle --no-daemon :desktopApp:compileKotlin :shared:jvmTest :desktopApp:test --stacktrace --warning-mode all
+
+      # Diagnostic-only summary from existing XML. Never interpret a missing
+      # report as a successful test run, and never replace Gradle exit status.
+      - name: Summarize Windows JVM and Desktop test timings
+        if: always()
+        shell: pwsh
+        run: python ci/windows_test_timings.py --top 20 --summary "$env:GITHUB_STEP_SUMMARY"
 
       - name: Preserve Windows Desktop and JVM test reports
         if: always()
