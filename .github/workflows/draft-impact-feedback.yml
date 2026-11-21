@@ -1,0 +1,167 @@
+# Non-required, low-cost draft feedback. Existing FULL workflows still run
+# on every PR update until the final-SHA gate transition is separately validated.
+name: Draft impact feedback (informational)
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, converted_to_draft]
+
+concurrency:
+  group: draft-impact-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  impact:
+    name: Draft change classifier (NOT FULL)
+    if: github.event.pull_request.draft == true
+    runs-on: ubuntu-24.04
+    outputs:
+      mode: ${{ steps.classify.outputs.mode }}
+      android: ${{ steps.classify.outputs.android }}
+      desktop: ${{ steps.classify.outputs.desktop }}
+      ios: ${{ steps.classify.outputs.ios }}
+    steps:
+      - name: Checkout exact PR head and merge base history
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Regression tests for fail-closed classifier
+        run: python3 -m unittest discover -s ci/tests -p test_impact.py -v
+
+      - name: Classify complete PR diff
+        id: classify
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$HEAD_SHA"
+          python3 ci/impact.py --base "$BASE_SHA" --head "$HEAD_SHA" \
+            --github-output "$GITHUB_OUTPUT" --summary "$GITHUB_STEP_SUMMARY"
+
+  android-quick:
+    name: Draft TARGETED Android (NOT FULL)
+    needs: impact
+    if: needs.impact.outputs.android == 'true'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: android-actions/setup-android@v4
+      - run: sdkmanager 'platforms;android-37.0'
+      - uses: gradle/actions/setup-gradle@v6
+        with:
+          gradle-version: '9.7.0'
+          cache-read-only: ${{ github.event.pull_request.head.repo.full_name != github.repository }}
+      - name: Build Android debug APK and run Android JVM unit tests
+        run: gradle --no-daemon :app:assembleDebug :app:testDebugUnitTest --stacktrace --warning-mode all
+      - name: Keep draft Android APK for owner smoke
+        uses: actions/upload-artifact@v7
+        with:
+          name: draft-targeted-android-debug-apk
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 7
+
+  desktop-quick:
+    name: Draft TARGETED Desktop (NOT FULL)
+    needs: impact
+    if: needs.impact.outputs.desktop == 'true'
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: android-actions/setup-android@v4
+      - run: sdkmanager 'platforms;android-37.0'
+      - uses: gradle/actions/setup-gradle@v6
+        with:
+          gradle-version: '9.7.0'
+          cache-read-only: ${{ github.event.pull_request.head.repo.full_name != github.repository }}
+      - name: Compile Desktop and exercise production Compose scene smoke
+        run: gradle --no-daemon :desktopApp:compileKotlin :desktopApp:test --tests "com.andreyceilings.desktop.CeilingsFoundationSceneTest" --stacktrace --warning-mode all
+
+  ios-quick:
+    name: Draft TARGETED iOS (NOT FULL)
+    needs: impact
+    if: needs.impact.outputs.ios == 'true'
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: android-actions/setup-android@v4
+      - run: sdkmanager 'platforms;android-37.0'
+      - uses: gradle/actions/setup-gradle@v6
+        with:
+          gradle-version: '9.7.0'
+          cache-read-only: ${{ github.event.pull_request.head.repo.full_name != github.repository }}
+      - name: Compile iOS framework and verify SQLCipher on iOS Simulator
+        run: gradle --no-daemon :shared:linkDebugFrameworkIosSimulatorArm64 :shared:iosSimulatorArm64Test --stacktrace --warning-mode all
+
+  feedback:
+    name: Draft impact result (advisory, NOT merge gate)
+    if: always() && needs.impact.result == 'success'
+    needs: [impact, android-quick, desktop-quick, ios-quick]
+    runs-on: ubuntu-24.04
+    env:
+      MODE: ${{ needs.impact.outputs.mode }}
+      ANDROID: ${{ needs.impact.outputs.android }}
+      DESKTOP: ${{ needs.impact.outputs.desktop }}
+      IOS: ${{ needs.impact.outputs.ios }}
+      ANDROID_RESULT: ${{ needs['android-quick'].result }}
+      DESKTOP_RESULT: ${{ needs['desktop-quick'].result }}
+      IOS_RESULT: ${{ needs['ios-quick'].result }}
+    steps:
+      - name: Require every selected targeted run to succeed
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "## Draft feedback results" >> "$GITHUB_STEP_SUMMARY"
+          echo "Mode: **$MODE**. This is NOT a required FULL merge check." >> "$GITHUB_STEP_SUMMARY"
+          for target in ANDROID DESKTOP IOS; do
+            selected="${!target}"
+            key="${target}_RESULT"
+            result="${!key}"
+            if [[ "$selected" == true ]]; then
+              echo "- $target: $result" >> "$GITHUB_STEP_SUMMARY"
+              if [[ "$result" != success ]]; then
+                echo "::error::Selected $target test group did not pass: $result"
+                exit 1
+              fi
+            fi
+          done
+          if [[ "$MODE" == FULL ]]; then
+            echo "FULL fallback required: no focused test selection is safe. Existing Android and CMP workflows must pass." >> "$GITHUB_STEP_SUMMARY"
+          elif [[ "$MODE" == FAST ]]; then
+            echo "Docs-only FAST: classifier unit tests executed. Production FULL checks still run independently." >> "$GITHUB_STEP_SUMMARY"
+          elif [[ "$MODE" == TARGETED ]]; then
+            echo "TARGETED tasks above passed; this is *not* Android instrumentation/Windows/iOS FULL certification." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "::error::Unknown mode $MODE"
+            exit 1
+          fi

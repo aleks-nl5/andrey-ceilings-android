@@ -106,5 +106,10 @@ tasks.withType<app.cash.sqldelight.gradle.VerifyMigrationTask>().configureEach {
 tasks.withType<org.gradle.api.tasks.testing.AbstractTestTask>().configureEach {
     if (name == "iosSimulatorArm64Test" || name == "jvmTest") {
         testLogging.exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
+        if (name == "jvmTest" && System.getProperty("os.name").startsWith("Windows", ignoreCase = true)) {
+            // Show the currently executing test in long Windows SQLCipher suites.
+            testLogging.events(org.gradle.api.tasks.testing.logging.TestLogEvent.STARTED,
+                org.gradle.api.tasks.testing.logging.TestLogEvent.FAILED)
+        }
     }
 }
