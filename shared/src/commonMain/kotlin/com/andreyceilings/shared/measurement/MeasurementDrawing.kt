@@ -32,11 +32,14 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.SemanticsPropertyKey
@@ -56,6 +59,7 @@ object MeasurementDrawingSemantics {
     val SelectedArea=SemanticsPropertyKey<String>("Selected measurement area")
     val PointDrag=SemanticsPropertyKey<PointDragPreview>("Measurement point drag")
     val Viewport = SemanticsPropertyKey<MeasurementViewport>("Measurement viewport")
+    val ViewportBounds = SemanticsPropertyKey<Rect>("Measurement viewport bounds in the Canvas")
     val Projection = SemanticsPropertyKey<MeasurementDrawingProjection>("Measurement world-to-screen projection")
     val SelectedWall = SemanticsPropertyKey<Int>("Selected measurement wall")
     val EditingEnabled=SemanticsPropertyKey<Boolean>("Measurement overlay editing enabled")
@@ -68,6 +72,12 @@ private data class MeasurementDrawingCamera(val center: DrawingPoint, val pixels
     )
 }
 
+private enum class DrawingTarget { WALL, POINT, LINE, AREA }
+
+private data class DrawingTap(
+    val target: DrawingTarget, val id: String, val position: Offset, val upTime: Long, val pointer: PointerType
+)
+
 private val measurementCameraSaver = listSaver<MeasurementDrawingCamera?, Double>(
     save = { it?.let { camera -> listOf(camera.center.x, camera.center.y, camera.pixelsPerMm) }.orEmpty() },
     restore = { MeasurementDrawingCamera(DrawingPoint(it[0], it[1]), it[2]) }
@@ -78,6 +88,7 @@ private val measurementCameraSaver = listSaver<MeasurementDrawingCamera?, Double
  * belong in a separate typed overlay, projected through layoutMeasurementDrawing's same
  * transform; painted symbols must never become input to contour/area calculations.
  * compact is presentation only and does not grant editing capability.
+ * viewportPadding reserves display-only space for chrome; the camera and gestures use the inner bounds.
  */
 @Composable
 fun MeasurementDrawing(
@@ -117,7 +128,9 @@ fun MeasurementDrawing(
     showWorkspaceGrid: Boolean = false,
     fitTop: Dp = 0.dp,
     fitBottom: Dp = 0.dp,
-    onEmptyTap: () -> Unit = {}
+    onEmptyTap: () -> Unit = {},
+    viewportPadding: PaddingValues = PaddingValues(0.dp),
+    onOpenSelection: ((wall: Boolean) -> Unit)? = null
 ) {
     val contour = remember(geometry) { measurementDrawingContour(geometry) }
     if (contour == null) {
@@ -138,6 +151,8 @@ fun MeasurementDrawing(
     var cameraAdjusted by rememberSaveable { mutableStateOf(false) }
     val currentSelection by rememberUpdatedState(onSelectSide)
     val currentEmptyTap by rememberUpdatedState(onEmptyTap)
+    val currentOpenSelection by rememberUpdatedState(onOpenSelection)
+    val currentSelectedSide by rememberUpdatedState(selectedSide)
     val currentPoints by rememberUpdatedState(pointPlacements)
     val currentPointSelection by rememberUpdatedState(onSelectPoint)
     val currentPointTap by rememberUpdatedState(onPlacePoint)
@@ -164,7 +179,13 @@ fun MeasurementDrawing(
     val currentCancelLineDrag by rememberUpdatedState(onCancelLineDrag)
     val currentFitPoints by rememberUpdatedState(fitPoints)
     val currentContour by rememberUpdatedState(contour)
-    val density = LocalDensity.current.density
+    val localDensity = LocalDensity.current
+    val density = localDensity.density
+    val topPx = with(localDensity) { viewportPadding.calculateTopPadding().roundToPx() }
+    val bottomPx = with(localDensity) { viewportPadding.calculateBottomPadding().roundToPx() }
+    val viewportTop by rememberUpdatedState(topPx.toFloat())
+    val viewportBottom by rememberUpdatedState(bottomPx.toFloat())
+    fun viewportHeight(height: Float) = (height - viewportTop - viewportBottom).coerceAtLeast(0f)
     val isRtl = LocalLayoutDirection.current == LayoutDirection.Rtl
 
     fun fitProjection(width: Float, height: Float): MeasurementDrawingProjection? {
@@ -179,12 +200,12 @@ fun MeasurementDrawing(
 
     fun fitCamera(size: IntSize): MeasurementDrawingCamera? {
         val width = size.width.toFloat()
-        val height = size.height.toFloat()
+        val height = viewportHeight(size.height.toFloat())
         val projection = fitProjection(width, height) ?: return null
         return MeasurementDrawingCamera(projection.inverse(DrawingPoint(width / 2.0, height / 2.0)), projection.scale)
     }
 
-    LaunchedEffect(canvasSize, cameraFitReady, fitTop, fitBottom) {
+    LaunchedEffect(canvasSize, cameraFitReady, fitTop, fitBottom, topPx, bottomPx) {
         if (retainCameraOnResize && cameraFitReady && !cameraAdjusted && fittedCamera == null) {
             // A readiness change can remove the loading row in this same frame.
             // Wait for its layout and let a subsequent size change restart the fit.
@@ -220,14 +241,15 @@ fun MeasurementDrawing(
     }
 
     fun projectDrawing(width: Float, height: Float): MeasurementDrawingProjection? {
-        if (width <= 0f || height <= 0f) return null
-        val base = fittedCamera?.takeIf { retainCameraOnResize }?.projection(width, height)
-            ?: fitProjection(width, height)
+        val viewHeight = viewportHeight(height)
+        if (width <= 0f || viewHeight <= 0f) return null
+        val base = fittedCamera?.takeIf { retainCameraOnResize }?.projection(width, viewHeight)
+            ?: fitProjection(width, viewHeight)
             ?: return null
         if (!interactive) return base
         val viewport = MeasurementViewport(zoom, panX, panY)
-        val origin = viewport.transform(DrawingPoint(base.offsetX, base.offsetY), width, height)
-        return MeasurementDrawingProjection(base.scale * viewport.zoom, origin.x, origin.y)
+        val origin = viewport.transform(DrawingPoint(base.offsetX, base.offsetY), width, viewHeight)
+        return MeasurementDrawingProjection(base.scale * viewport.zoom, origin.x, origin.y + viewportTop)
     }
     val semanticsProjection = projectDrawing(canvasSize.width.toFloat(), canvasSize.height.toFloat())
     val currentSelectedPoint by rememberUpdatedState(selectedPointUuid)
@@ -235,6 +257,13 @@ fun MeasurementDrawing(
     val currentPreviewDrag by rememberUpdatedState(onPreviewPointDrag)
     val currentFinishDrag by rememberUpdatedState(onFinishPointDrag)
     val currentCancelDrag by rememberUpdatedState(onCancelPointDrag)
+    fun openSelected(): Boolean {
+        val open = currentOpenSelection ?: return false
+        val wall = currentSelectedSide != null
+        if (!wall && currentSelectedPoint == null && currentSelectedLine == null && currentSelectedArea == null) return false
+        open(wall)
+        return true
+    }
     val ink = MaterialTheme.colorScheme.primary
     val surface = MaterialTheme.colorScheme.surface
     val gridInk = MaterialTheme.colorScheme.onSurface
@@ -263,6 +292,7 @@ fun MeasurementDrawing(
                     Key.Equals, Key.Plus, Key.NumPadAdd -> { move(0f, 0f, 1.25f); true }
                     Key.Minus, Key.NumPadSubtract -> { move(0f, 0f, 1 / 1.25f); true }
                     Key.MoveHome -> { fit(); true }
+                    Key.Enter, Key.NumPadEnter -> openSelected()
                     Key.DirectionLeft -> { move(-24f, 0f); true }
                     Key.DirectionRight -> { move(24f, 0f); true }
                     Key.DirectionUp -> { move(0f, -24f); true }
@@ -271,9 +301,13 @@ fun MeasurementDrawing(
                 }
             }.focusable()
             .pointerInput(contour, canvasSize, pointEditingEnabled, lineEditingEnabled, areaEditingEnabled, fullscreen, editPointsInFullscreen) {
+                var lastTap: DrawingTap? = null
                 awaitEachGesture {
                     val down = awaitFirstDown(requireUnconsumed = false)
+                    val previousTap = lastTap
+                    lastTap = null
                     val width = canvasSize.width.toFloat(); val height = canvasSize.height.toFloat()
+                    if (down.position.y < viewportTop || down.position.y >= height - viewportBottom) return@awaitEachGesture
                     val projection = projectDrawing(width, height) ?: return@awaitEachGesture
                     fun world(position: Offset) = projection.inverse(DrawingPoint(position.x.toDouble(), position.y.toDouble()))
                     fun hit(position: Offset): PointPlacement? = currentPoints.minByOrNull { marker ->
@@ -369,17 +403,37 @@ fun MeasurementDrawing(
                                     ownsMarker = false
                                 }
                                 if (!moved && !multi) {
+                                    fun selectTarget(target: DrawingTarget, id: String, select: () -> Unit) {
+                                        select()
+                                        val open = currentOpenSelection
+                                        if (!creating && open != null) {
+                                            val elapsed = down.uptimeMillis - (previousTap?.upTime ?: 0)
+                                            // Compose exposes the platform double-tap times and touch slop.
+                                            if (previousTap?.target == target && previousTap.id == id &&
+                                                previousTap.pointer == down.type &&
+                                                elapsed in viewConfiguration.doubleTapMinTimeMillis..viewConfiguration.doubleTapTimeoutMillis &&
+                                                (previousTap.position - down.position).getDistance() <= viewConfiguration.touchSlop
+                                            ) open(target == DrawingTarget.WALL)
+                                            else lastTap = DrawingTap(target, id, position, change?.uptimeMillis ?: down.uptimeMillis, down.type)
+                                        }
+                                    }
                                     if(currentAreaMode) {
                                         val target=world(position)
                                         if(target.x.isFinite() && target.y.isFinite() && target.x in -1_000_000.0..1_000_000.0 && target.y in -1_000_000.0..1_000_000.0)currentAreaTap(target.x.roundToLong(),target.y.roundToLong())
                                     } else if(currentLineMode) {
                                         val target=world(position)
                                         if(target.x.isFinite() && target.y.isFinite() && target.x in -1_000_000.0..1_000_000.0 && target.y in -1_000_000.0..1_000_000.0)currentLineTap(target.x.roundToLong(),target.y.roundToLong())
-                                    } else if(marker!=null && (!fullscreen || editPointsInFullscreen)) currentPointSelection(marker.uuid)
-                                    else if(selectedLine!=null)currentLineSelection(selectedLine.uuid)
-                                    else if(selectedArea!=null)currentAreaSelection(selectedArea.uuid)
-                                    else if(line!=null)currentLineSelection(line.uuid)
-                                    else if(area!=null)currentAreaSelection(area.uuid)
+                                    } else if (marker != null && (!fullscreen || editPointsInFullscreen)) {
+                                        selectTarget(DrawingTarget.POINT, marker.uuid) { currentPointSelection(marker.uuid) }
+                                    } else if (selectedLine != null) {
+                                        selectTarget(DrawingTarget.LINE, selectedLine.uuid) { currentLineSelection(selectedLine.uuid) }
+                                    } else if (selectedArea != null) {
+                                        selectTarget(DrawingTarget.AREA, selectedArea.uuid) { currentAreaSelection(selectedArea.uuid) }
+                                    } else if (line != null) {
+                                        selectTarget(DrawingTarget.LINE, line.uuid) { currentLineSelection(line.uuid) }
+                                    } else if (area != null) {
+                                        selectTarget(DrawingTarget.AREA, area.uuid) { currentAreaSelection(area.uuid) }
+                                    }
                                     else if (currentMode && !fullscreen) {
                                         val target = world(position)
                                         val bound = com.andreyceilings.shared.calculation.CeilingPolygonCalculator.MAX_COORDINATE_MM.toDouble()
@@ -388,7 +442,7 @@ fun MeasurementDrawing(
                                     } else {
                                         val points = contour.points.map(projection::project)
                                         val wall = measurementWallAt(points, position.x, position.y, 24.dp.toPx())
-                                        if (wall != null) currentSelection(wall)
+                                        if (wall != null) selectTarget(DrawingTarget.WALL, wall.toString()) { currentSelection(wall) }
                                         else if (!currentMode && marker == null) currentEmptyTap()
                                     }
                                     focusRequester.requestFocus()
@@ -409,7 +463,10 @@ fun MeasurementDrawing(
                 awaitPointerEventScope {
                     while (true) {
                         val event = awaitPointerEvent()
-                        if (event.type == PointerEventType.Scroll) {
+                        val position = event.changes.firstOrNull()?.position ?: Offset.Zero
+                        if (event.type == PointerEventType.Scroll &&
+                            position.y >= viewportTop && position.y < canvasSize.height - viewportBottom
+                        ) {
                             val delta = event.changes.firstOrNull()?.scrollDelta ?: Offset.Zero
                             if (event.keyboardModifiers.isCtrlPressed) move(-delta.x * 24, -delta.y * 24)
                             else move(0f, 0f, 1.15f.pow(-delta.y))
@@ -429,6 +486,8 @@ fun MeasurementDrawing(
                     this[MeasurementDrawingSemantics.Lines]=linePlacements
                     this[MeasurementDrawingSemantics.Areas]=areaFeatures
                     this[MeasurementDrawingSemantics.Viewport] = viewport
+                    this[MeasurementDrawingSemantics.ViewportBounds] =
+                        Rect(0f, viewportTop, canvasSize.width.toFloat(), viewportTop + viewportHeight(canvasSize.height.toFloat()))
                     semanticsProjection?.let {
                         this[MeasurementDrawingSemantics.Projection] = it
                     }
@@ -438,6 +497,10 @@ fun MeasurementDrawing(
                     selectedLineUuid?.let {this[MeasurementDrawingSemantics.SelectedLine]=it}
                     selectedAreaUuid?.let {this[MeasurementDrawingSemantics.SelectedArea]=it}
                     pointDrag?.let {this[MeasurementDrawingSemantics.PointDrag]=it}
+                    if (onOpenSelection != null && (selectedSide != null || selectedPointUuid != null ||
+                            selectedLineUuid != null || selectedAreaUuid != null)) {
+                        customActions = listOf(CustomAccessibilityAction("Відкрити параметри", ::openSelected))
+                    }
                 }) {
                 val projection = projectDrawing(size.width, size.height) ?: return@Canvas
                 if (showWorkspaceGrid) drawMeasurementGrid(projection, gridInk)
@@ -541,9 +604,12 @@ fun MeasurementDrawing(
                         move(0f, 0f, 1 / 1.25f)
                     }
                 }
-                val rail = Modifier.align(Alignment.CenterEnd).testTag("measurement-edit-zoom-rail")
-                if (maxHeight >= 144.dp) Column(rail.width(48.dp)) { actions() }
-                else Row(rail) { actions() }
+                val rail = Modifier.testTag("measurement-edit-zoom-rail")
+                val railHeight = maxHeight - viewportPadding.calculateTopPadding() - viewportPadding.calculateBottomPadding()
+                Box(Modifier.matchParentSize().padding(viewportPadding), contentAlignment = Alignment.CenterEnd) {
+                    if (railHeight >= 144.dp) Column(rail.width(48.dp)) { actions() }
+                    else Row(rail) { actions() }
+                }
             }
         }
         if (showSideLegend) {

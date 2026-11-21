@@ -75,6 +75,14 @@ class OverlayDragTouchTest {
             return Offset(p.x.toFloat(),p.y.toFloat())
         }
         fun tap(x:Long,y:Long){val p=position(x,y);canvas().performTouchInput {click(p)}}
+        val panel = compose.onNodeWithTag("measurement-edit-context-panel")
+        fun openFromCanvas(x: Long, y: Long) {
+            if (mode != "fullscreen") return
+            panel.assertDoesNotExist()
+            val p = position(x, y)
+            canvas().performTouchInput { advanceEventTime(400); doubleClick(p) }
+            panel.assertExists()
+        }
         fun clearSelectionByTappingCanvas() {
             val before = canvas().fetchSemanticsNode().config[MeasurementDrawingSemantics.Viewport]
             val draft = m.state.value
@@ -102,10 +110,24 @@ class OverlayDragTouchTest {
                 tap(point.xMm, point.yMm)
                 val selected = canvas().fetchSemanticsNode()
                 assertEquals(point.uuid, selected.config[MeasurementDrawingSemantics.SelectedPoint])
+                if (mode == "fullscreen") {
+                    panel.assertDoesNotExist()
+                    captureSelected("single-tap-point")
+                    drag(point.xMm, point.yMm, 2900, 2150)
+                    panel.assertDoesNotExist()
+                    compose.runOnIdle {
+                        assertEquals(2900L, m.displayPoints().single().xMm)
+                        assertEquals(2150L, m.displayPoints().single().yMm)
+                    }
+                    click("Скасувати дію")
+                    panel.assertDoesNotExist()
+                }
+                openFromCanvas(point.xMm, point.yMm)
                 captureSelected("selected-point")
                 click("Задати розміри від стін")
                 captureSelected("point-dialog")
                 compose.onNode(hasText("Скасувати") and hasClickAction() and hasAnyAncestor(isDialog())).performClick()
+                if (mode == "fullscreen") click("Закрити панель")
                 clearSelectionByTappingCanvas()
                 tap(point.xMm, point.yMm)
                 canvas().performTouchInput {
@@ -143,14 +165,21 @@ class OverlayDragTouchTest {
                 assertEquals(PointPositionMm(800,1200),m.displayAreas().first {it.uuid==f.polygon}.shape.positions.first(),"Canvas must move the selected polygon")
             }
             if (mode != "details") {
+                if (mode == "fullscreen") {
+                    panel.assertDoesNotExist()
+                    captureSelected("single-tap-drag-area")
+                }
+                openFromCanvas(1300, 1250)
                 captureSelected("selected-area")
                 if (InstrumentationRegistry.getArguments().getString("p5aSelectedScreenshots") == "true") {
                     click("Властивості фігури")
                     captureSelected("area-dialog")
                     compose.onNode(hasText("Скасувати") and hasClickAction() and hasAnyAncestor(isDialog())).performClick()
                 }
+                if (mode == "fullscreen") click("Закрити панель")
                 clearSelectionByTappingCanvas()
                 tap(1000, 1500)
+                openFromCanvas(1000, 1500)
             }
             click("Скасувати дію");click("Повторити");click("Скасувати дію")
             click("Вершина 1");if (mode == "fullscreen") click("Закрити панель")
@@ -167,12 +196,18 @@ class OverlayDragTouchTest {
             tap(1000,950)
             if(mode!="details")compose.runOnIdle {assertEquals(f.line,m.state.value.selectedLineUuid,"Canvas tap must select LINE UUID before pointer drag; area=${m.state.value.area.selected}; error=${m.state.value.error}")}
             if (mode != "details") {
+                if (mode == "fullscreen") {
+                    panel.assertDoesNotExist()
+                    captureSelected("single-tap-line")
+                }
+                openFromCanvas(1000, 950)
                 captureSelected("selected-line")
                 if (InstrumentationRegistry.getArguments().getString("p5aSelectedScreenshots") == "true") {
                     click("Параметри лінії")
                     captureSelected("line-dialog")
                     compose.onNode(hasText("Скасувати") and hasClickAction() and hasAnyAncestor(isDialog())).performClick()
                 }
+                if (mode == "fullscreen") click("Закрити панель")
                 clearSelectionByTappingCanvas()
                 tap(1000, 950)
             }
@@ -181,9 +216,11 @@ class OverlayDragTouchTest {
                 assertEquals(f.line,m.state.value.selectedLineUuid,"Drag must retain LINE selection: ${m.state.value.error}")
                 assertEquals(PointPositionMm(800,750),m.displayLines().single().start,"The injected gesture must move the selected LINE")
             }
+            openFromCanvas(1300, 750)
             click("Кінець");if (mode == "fullscreen") click("Закрити панель")
             drag(1800,750,2400,750)
-            tap(2800,1500);if (mode == "fullscreen") click("Закрити панель")
+            tap(2800,1500)
+            if (mode == "fullscreen") panel.assertDoesNotExist()
             drag(2800,1500,3100,1800)
             drag(3100,1800,4500,1800)
             val invalidDrag = "Фігура перетинає стіну або себе. Положення не змінено."

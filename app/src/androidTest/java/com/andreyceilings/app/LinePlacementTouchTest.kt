@@ -100,10 +100,18 @@ class LinePlacementTouchTest {
                 compose.runOnIdle {assertEquals(uuid,model.state.value.selectedLineUuid)}
                 // A cancelled selected drag and pinch may not commit a move.
                 val before=model.displayLines().single()
-                if (theme) click("Закрити панель")
+                val panel = compose.onNodeWithTag("measurement-edit-context-panel")
+                if (theme) panel.assertDoesNotExist()
                 val selectedPosition=world(1800,600)
                 canvas.performTouchInput {down(selectedPosition);moveTo(selectedPosition+Offset(60f,40f));cancel()}
                 compose.runOnIdle {assertEquals(before,model.displayLines().single())}
+                if (theme) {
+                    panel.assertDoesNotExist()
+                    canvas.performTouchInput { advanceEventTime(400); doubleClick(selectedPosition) }
+                    panel.assertExists()
+                    compose.onNodeWithText("Параметри лінії").assertExists()
+                    click("Закрити панель")
+                }
                 click("Скасувати дію")
                 compose.runOnIdle { assertTrue(model.displayLines().isEmpty()) }
                 click("Повторити")

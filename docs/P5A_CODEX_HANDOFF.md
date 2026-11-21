@@ -31,11 +31,9 @@ Visual priority on a narrow phone:
 
 - `ContextMode = CONTOUR | ELEMENTS | COST`, selected mode stored with `rememberSaveable` keyed to the current measurement identity.
 - `ContextPanelState` (compact/expanded) is ephemeral/saveable as appropriate; **not** stored in DB. Mode change and panel resize do not trigger source reload or confirmation.
-- Selection from canvas:
-  - select wall → mode CONTOUR + selected wall fields;
-  - select any point, line or area → mode ELEMENTS + specific properties using **existing model APIs**; preserve interaction with multiple kinds and normal/fullscreen;
-  - deselect element → mode ELEMENTS list (retained declared-vs-placed quantities), unless the user explicitly switches to another mode.
-- Selection from panel should select the same UUID on canvas; do not implement a new persistent selection registry. Temporary UI selection state may be lifted to avoid state loss.
+- In normal mode, one tap selects the wall or POINT/LINE/AREA and switches the visible panel to its context. The shared top fade and spaces between the tabs show the drawing underneath. The rounded content panel below the tabs has an opaque background.
+- In fullscreen, one tap selects and a drag moves the selection. A double tap on the same target opens its compact context. Desktop Enter and the accessible «Відкрити параметри» action also open the context. An empty Canvas tap clears selection.
+- Focusing a contour field selects its mapped wall and preserves the caret. Selecting the wall on Canvas highlights the related fields using the outline and label colors of the field itself. Selection from the element controls uses the existing placement UUIDs.
 - Preserve the same original `MeasurementEditModel` instance and **one** edit token/reconciliation/receipt lifecycle, backed by existing `MeasurementEditStore`. Do not rebind `navigationGuard` for a second editor.
 - Preserve old menu affordances and dialogs as needed during P5A: if line/area/point tooling isn't redesigned yet, **place existing working controls in the panel** and make sure users can actually reach every action. Avoid an empty attractive shell.
 - For conditional support: `MeasurementCreateScreen` remains a separate safe existing creation route until P5C. Do not change creation flow or post-save routing; the newly created saved measurement must still open the new editor via existing edit entry.
@@ -53,7 +51,7 @@ Visual priority on a narrow phone:
 
 **Step A: extract a single workspace frame.** Keep the model and all existing screen-visible functionality. Build an adaptive layout where header + Canvas are stable, and mode + contextual panel can expand/collapse/scroll without scrolling Canvas offscreen. Responsive compact/expanded sizes; no layout measuring guess dependent on one device. Provide semantics/test tags for mode tabs, sheet states, Canvas, Save/Back, selected wall/feature.
 
-**Step B: wire selection and controls.** Existing wall/point/line/area click events update the bottom panel immediately. Use model's selected line UUID, point UUID, area selected and UI wall index; avoid stale selection when reloading or changing measurement. Drawing the context selector must not clear undo stack. Put full contour fields (including L template and orthogonal add/remove/turn controls), name/notes, point mounting controls, line controls, area controls in accessible expanded UI. No new point/line/area creation gesture or snap yet.
+**Step B: wire selection and controls.** Wall/point/line/area selection updates the open normal panel immediately. Fullscreen opens the panel on an explicit open action. Use model's selected line UUID, point UUID, area selected and UI wall index; avoid stale selection when reloading or changing measurement. Drawing the context selector must not clear undo stack. Put full contour fields (including L template and orthogonal add/remove/turn controls), name/notes, point mounting controls, line controls, area controls in accessible expanded UI. No new point/line/area creation gesture or snap yet.
 
 **Step C: fullscreen & persistence safety.** Prefer a **single** rendering path. If different Compose layouts unmount Canvas, ensure source-independent `zoom/pan` state survives consistently and there aren't parallel pointer listeners. Restore relevant UI state after Compose recomposition, IME and recreation; use `navigationGuard` instead of extra BackHandlers. Keep Save/Exit conflict and uncertain retry semantics; no duplicate Save or loss after blocked navigation.
 

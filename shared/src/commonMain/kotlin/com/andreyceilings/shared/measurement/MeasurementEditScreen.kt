@@ -50,6 +50,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.customActions
@@ -227,22 +228,29 @@ fun MeasurementEditScreen(
             if (mode != MeasurementEditContext.COST) lastDrawingContext = mode
         }
     }
-    fun select(side: Int) {
-        focus.clearFocus()
-        model.commitInput()
+    fun selectSideFromField(side: Int) {
+        if (!enabled) return
         selected = side
-        openContext(MeasurementEditContext.CONTOUR)
-        scope.launch { contourScroll.scrollTo(0) }
+        model.clearDrawingSelection()
+    }
+    fun select(side: Int) {
+        if (!enabled) return
+        selectSideFromField(side)
+        if (!fullscreen) {
+            openContext(MeasurementEditContext.CONTOUR)
+            scope.launch { contourScroll.scrollTo(0) }
+        }
     }
     fun showElements() = openContext(MeasurementEditContext.ELEMENTS)
+    fun selectElement(uuid: String, select: (String) -> Unit) {
+        if (!enabled) return
+        select(uuid)
+        selected = null
+        if (!fullscreen) showElements()
+    }
 
     val selectedFeature = state.selectedPointUuid ?: state.selectedLineUuid ?: state.area.selected
     val activeElementControls = selectedFeature ?: state.lineElementUuid ?: state.area.tool?.name
-    var previousElementControls by rememberSaveable(measurementUuid) { mutableStateOf(activeElementControls) }
-    LaunchedEffect(activeElementControls) {
-        if (activeElementControls != null && activeElementControls != previousElementControls) showElements()
-        previousElementControls = activeElementControls
-    }
     val savedGeometry = (overlay as? PointOverlayState.Loaded)?.savedGeometry
         ?: validateMeasurementCreate(state.original.draft).geometry
     val geometry = validation.geometry ?: savedGeometry
@@ -264,6 +272,9 @@ fun MeasurementEditScreen(
     val statusIsProblem = state.error != null || geometryWarning != null || validation.nameError != null || state.uncertain || state.conflict ||
         overlay is PointOverlayState.Missing || overlay is PointOverlayState.Unavailable
     val editorPadding = measurementEditorPadding(contentPadding, systemTopInset)
+    val density = LocalDensity.current
+    var tabRowPx by remember { mutableIntStateOf(0) }
+    val tabRowHeight = if (tabRowPx == 0) 48.dp else with(density) { tabRowPx.toDp() }
     val keyboard = imeInsets ?: WindowInsets.ime
     val keyboardVisible = keyboard.getBottom(LocalDensity.current) > 0
     val inputFocus = remember(imeInsets) { MeasurementInputFocus(imeInsets) }
@@ -389,7 +400,7 @@ fun MeasurementEditScreen(
                                     val nameFocus = remember { FocusRequester() }
                                     val notesFocus = remember { FocusRequester() }
                                     val detailsVisible = contourDetails
-                                    MeasurementSelectedFields(model, selected, validation, enabled,
+                                    MeasurementSelectedFields(model, selected, validation, enabled, ::selectSideFromField,
                                         followingField = nameFocus.takeIf { detailsVisible })
                                     MeasurementDisclosure("Деталі заміру", detailsVisible) {
                                         if (detailsVisible) focus.clearFocus()
@@ -498,7 +509,9 @@ fun MeasurementEditScreen(
                 if (fullscreen) Modifier else Modifier.height(normalPanelHeight).testTag("measurement-edit-normal-panel")
             ).then(if (inlineKeyboardPanel) Modifier.padding(start = 60.dp,
                 end = if (statusIsProblem) 112.dp else 60.dp) else Modifier)) {
-                if (!fullscreen && !keyboardVisible) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp),
+                if (!fullscreen && !keyboardVisible) Row(
+                    Modifier.fillMaxWidth().onSizeChanged { tabRowPx = it.height }.testTag("measurement-edit-tab-row"),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
                     verticalAlignment = Alignment.CenterVertically) {
                     val tabLines = if (LocalDensity.current.fontScale >= 1.35f) 2 else 1
                     MeasurementEditContext.entries.forEach { mode ->
@@ -534,7 +547,7 @@ fun MeasurementEditScreen(
                     }
                 }
                 if (!fullscreen) {
-                    Surface(Modifier.fillMaxWidth().weight(1f), shape = WorkspacePanelShape,
+                    Surface(Modifier.fillMaxWidth().weight(1f).testTag("measurement-edit-panel-surface"), shape = WorkspacePanelShape,
                         color = MaterialTheme.colorScheme.background, contentColor = MaterialTheme.colorScheme.onBackground,
                         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)) {
                         contextPanel(Modifier.fillMaxSize().padding(horizontal = 10.dp))
@@ -584,13 +597,23 @@ fun MeasurementEditScreen(
     ) { headerHeight ->
         val normalPanelHeight = normalPanelHeight(headerHeight)
         val inlineKeyboardPanel = inlineKeyboardPanel()
+        val tabBleed = if (!fullscreen && !keyboardVisible) minOf(tabRowHeight, normalPanelHeight) else 0.dp
+        val headerBleed = if (!fullscreen && !inlineKeyboardPanel) headerHeight else 0.dp
         Column(Modifier.fillMaxSize()) {
-            if (!fullscreen && !inlineKeyboardPanel) Spacer(Modifier.height(headerHeight))
             Box(Modifier.fillMaxWidth().weight(1f)) {
                 if (geometry == null) Text("Креслення недоступне: ${validation.geometryError.orEmpty()}")
                 else MeasurementDrawing(MeasurementGeometryView.Captured(geometry),
                     Modifier.fillMaxSize(), interactive = true, fillAvailableHeight = true, showSideLegend = false,
                     retainCameraOnResize = true, verticalViewControls = !keyboardVisible, showWorkspaceGrid = true,
+                    viewportPadding = PaddingValues(top = headerBleed, bottom = tabBleed),
+                    onOpenSelection = if (fullscreen) { wall ->
+                        if (enabled) {
+                            if (wall) {
+                                openContext(MeasurementEditContext.CONTOUR)
+                                scope.launch { contourScroll.scrollTo(0) }
+                            } else showElements()
+                        }
+                    } else null,
                     fitTop = if (fullscreen) headerHeight else 0.dp,
                     fitBottom = if (fullscreen) 56.dp else 0.dp,
                     cameraFitReady = overlay !is PointOverlayState.Loading && !state.checking,
@@ -602,7 +625,7 @@ fun MeasurementEditScreen(
                         }
                     },
                     pointPlacements = if(overlay is PointOverlayState.Loaded) model.displayPoints() else emptyList(), fitPointPlacements = true,
-                    selectedPointUuid=state.selectedPointUuid,onSelectPoint = { model.selectPoint(it); showElements() },
+                    selectedPointUuid=state.selectedPointUuid,onSelectPoint = { selectElement(it, model::selectPoint) },
                     pointEditingEnabled=enabled && overlay is PointOverlayState.Loaded && validation.geometry!=null,editPointsInFullscreen=true,
                     pointDrag=state.drag,onBeginPointDrag=model::beginPointDrag,onPreviewPointDrag=model::previewPointDrag,
                     onFinishPointDrag=model::finishPointDrag,onCancelPointDrag=model::cancelPointDrag,
@@ -613,17 +636,17 @@ fun MeasurementEditScreen(
                             mountingDimensions(a.point(state.area.mountingIndex ?: state.area.moveVertex ?: 0),geometry,model.draftWalls())
                         }.orEmpty(),
                     areaFeatures=model.displayAreas()+listOfNotNull(model.areaCreationShape()?.let {shape -> AreaFeature("area-preview",state.draft.recordUuid,shape,state.original.updatedAt,0,0,role=state.area.role)}),
-                    selectedAreaUuid=state.area.selected,areaPlacementMode=enabled && state.area.tool!=null,onAreaTap=model::areaTap,onSelectArea = { model.selectArea(it); showElements() },
+                    selectedAreaUuid=state.area.selected,areaPlacementMode=enabled && state.area.tool!=null,onAreaTap=model::areaTap,onSelectArea = { selectElement(it, model::selectArea) },
                     areaEditingEnabled=enabled && validation.geometry!=null,areaDrag=state.area.drag,areaCreationPoints=state.area.vertices,
                     onBeginAreaDrag=model::beginAreaDrag,onPreviewAreaDrag=model::previewAreaDrag,onFinishAreaDrag=model::finishAreaDrag,onCancelAreaDrag=model::cancelAreaDrag,
                     linePlacements=model.displayLines()+listOfNotNull(state.linePreview),selectedLineUuid=state.selectedLineUuid,
-                    linePlacementMode=enabled && state.lineElementUuid!=null,onLineTap=model::lineTap,onSelectLine = { model.selectLine(it); showElements() },
+                    linePlacementMode=enabled && state.lineElementUuid!=null,onLineTap=model::lineTap,onSelectLine = { selectElement(it, model::selectLine) },
                     lineStartPoint=state.lineStart,lineEditingEnabled=enabled && validation.geometry!=null,lineDrag=state.lineDrag,onBeginLineDrag=model::beginLineDrag,
                     onPreviewLineDrag=model::previewLineDrag,onFinishLineDrag=model::finishLineDrag,onCancelLineDrag=model::cancelLineDrag,
                     mountingWallOrdinals=if(validation.geometry==null) emptyList() else model.displayPoints().find { it.uuid==state.selectedPointUuid }?.mounting?.anchor?.let { a ->
                         model.draftWalls().filter { it.uuid==a.firstWall || it.uuid==a.secondWall }.map { it.ordinal } }.orEmpty())
             }
-            if (!fullscreen) Spacer(Modifier.height(normalPanelHeight))
+            if (!fullscreen) Spacer(Modifier.height(normalPanelHeight - tabBleed))
         }
     }
     if (statusDetails && status != null) {
@@ -846,6 +869,7 @@ private fun MeasurementSelectedFields(
     selected: Int?,
     validation: MeasurementCreateValidation,
     enabled: Boolean,
+    selectSideFromField: (Int) -> Unit,
     followingField: FocusRequester?
 ) {
     val state by model.state.collectAsState()
@@ -897,7 +921,11 @@ private fun MeasurementSelectedFields(
                         modifier = cell.focusRequester(requesters[index]),
                         onNext = (requesters.getOrNull(index + 1) ?: followingField)?.let { next -> { next.requestFocus() } },
                         selected = selected != null && key in measurementWallParameters(draft.shape, selected),
-                        onFocus = inputFocus, onChange = { model.accept(MeasurementCreateIntent.Dimension(key, it), grouped = true) })
+                        onFocus = { focused ->
+                            inputFocus(focused)
+                            if (focused) selectSideFromField(selected?.takeIf { key in measurementWallParameters(draft.shape, it) }
+                                ?: measurementParameterWall(draft.shape, key))
+                        }, onChange = { model.accept(MeasurementCreateIntent.Dimension(key, it), grouped = true) })
                 }
             }
             is MeasurementOutlineDraft.Orthogonal -> {
@@ -910,7 +938,10 @@ private fun MeasurementSelectedFields(
                         MeasurementLengthField(side.length, "${labels[i]}, м", validation.fieldErrors[side.inputId], enabled,
                             modifier = cell.focusRequester(requesters[i]),
                             onNext = (requesters.getOrNull(i + 1) ?: followingField)?.let { next -> { next.requestFocus() } },
-                            selected = selected == i, onFocus = inputFocus,
+                            selected = selected == i, onFocus = { focused ->
+                                inputFocus(focused)
+                                if (focused) selectSideFromField(i)
+                            },
                             onChange = { model.accept(MeasurementCreateIntent.SideLength(i, it), grouped = true) })
                     }
                 }

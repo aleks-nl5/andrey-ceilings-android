@@ -10,7 +10,11 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.compositeOver
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.semantics.getOrNull
+import androidx.compose.ui.semantics.SemanticsNode
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.*
@@ -29,6 +33,10 @@ import com.andreyceilings.shared.db.MeasurementRepository
 import com.andreyceilings.shared.measurement.*
 import com.andreyceilings.shared.navigation.AppNavigationState
 import com.andreyceilings.shared.navigation.AppRoute
+import com.andreyceilings.shared.theme.ceilingsColorScheme
+import kotlin.math.abs
+import kotlin.math.ceil
+import kotlin.math.roundToInt
 import org.junit.Rule
 import org.junit.Test
 import java.io.File
@@ -93,17 +101,35 @@ class MeasurementWorkspaceLayoutTest {
                         assertTrue(bounds[0].right < bounds[1].left)
                         val canvas = drawing.fetchSemanticsNode().boundsInRoot
                         val header = compose.onNodeWithTag("measurement-edit-header").fetchSemanticsNode().boundsInRoot
+                        assertRenderedChrome(drawing.fetchSemanticsNode(), mode)
                         capture("normal")
+                        val projection = drawing.fetchSemanticsNode().config[MeasurementDrawingSemantics.Projection]
+                        val wall = projection.project(DrawingPoint(2500.0, 0.0))
+                        drawing.performTouchInput { click(Offset(wall.x.toFloat(), wall.y.toFloat())) }
+                        assertEquals(0, drawing.fetchSemanticsNode().config[MeasurementDrawingSemantics.SelectedWall])
+                        fields.first().assertIsNotFocused()
+                        capture("canvas-wall-selected")
+                        drawing.performTouchInput { click(Offset(width * 0.03f, centerY)) }
+                        assertNull(drawing.fetchSemanticsNode().config.getOrNull(MeasurementDrawingSemantics.SelectedWall))
                         fields.first().performSemanticsAction(SemanticsActions.SetText) { set -> assertTrue(set(AnnotatedString(""))) }
                         status.assertExists()
                         assertEquals(header, compose.onNodeWithTag("measurement-edit-header").fetchSemanticsNode().boundsInRoot)
                         assertEquals(canvas, drawing.fetchSemanticsNode().boundsInRoot)
+                        assertRenderedChrome(drawing.fetchSemanticsNode(), mode)
                         capture("validation")
                         status.performClick()
                         compose.onNodeWithTag("measurement-edit-status-details").assertExists()
                         compose.onNodeWithText("Закрити").performClick()
                         fields.first().performSemanticsAction(SemanticsActions.SetText) { set -> assertTrue(set(AnnotatedString("5"))) }
                     }
+                    val projection = drawing.fetchSemanticsNode().config[MeasurementDrawingSemantics.Projection]
+                    val wall = projection.project(DrawingPoint(2500.0, 0.0))
+                    drawing.performTouchInput { click(Offset(wall.x.toFloat(), wall.y.toFloat())) }
+                    assertEquals(0, drawing.fetchSemanticsNode().config[MeasurementDrawingSemantics.SelectedWall])
+                    fields[2].performScrollTo().performClick().assertIsFocused()
+                    assertEquals(4, drawing.fetchSemanticsNode().config[MeasurementDrawingSemantics.SelectedWall])
+                    fields[2].assertIsFocused()
+                    assertEquals("2", fields[2].fetchSemanticsNode().config[SemanticsProperties.EditableText].text)
                 } finally {
                     compose.runOnIdle { mounted = false }
                     compose.waitForIdle()
@@ -171,10 +197,11 @@ class MeasurementWorkspaceLayoutTest {
                 val width = b.x - a.x
                 val height = b.y - a.y
                 assertEquals(1.5, height / width, 0.001)
-                assertTrue(maxOf(width / node.size.width, height / node.size.height) > 0.54,
-                    "Contour ${width}×${height}px must use the settled ${node.size} canvas ($projection)")
-                assertTrue(a.x >= 0 && a.y >= 0 && b.x <= node.size.width && b.y <= node.size.height,
-                    "Projected contour $a–$b must fit ${node.size}")
+                val viewport = node.config[MeasurementDrawingSemantics.ViewportBounds]
+                assertTrue(maxOf(width / viewport.width, height / viewport.height) > 0.54,
+                    "Contour ${width}×${height}px must use the settled $viewport viewport ($projection)")
+                assertTrue(a.x >= 0 && a.y >= viewport.top && b.x <= viewport.right && b.y <= viewport.bottom,
+                    "Projected contour $a–$b must fit $viewport")
             }
             fun contextTab(name: String) = compose.onNodeWithTag("measurement-edit-context-$name")
             val panel = compose.onNodeWithTag("measurement-edit-context-panel")
@@ -214,6 +241,7 @@ class MeasurementWorkspaceLayoutTest {
                 assertTrue(back.positionInRoot.x < saveNode.positionInRoot.x)
                 action("Скасувати дію").assertIsNotEnabled()
                 action("Повторити").assertIsNotEnabled()
+                assertRenderedChrome(canvas(), theme)
                 capture("normal-contour")
                 assertDrawingFit()
                 val initialProjection = canvas().config[MeasurementDrawingSemantics.Projection]
@@ -226,16 +254,30 @@ class MeasurementWorkspaceLayoutTest {
                 assertEquals(initialProjection, canvas().config[MeasurementDrawingSemantics.Projection])
                 val normal = canvas().boundsInRoot
                 val initialCanvas = canvas()
-                for (mode in listOf(ThemeMode.SYSTEM, ThemeMode.DARK, theme)) {
+                for (mode in listOf(ThemeMode.SYSTEM, if (theme == ThemeMode.LIGHT) ThemeMode.DARK else ThemeMode.LIGHT, theme)) {
                     compose.runOnIdle { appliedTheme = mode }
                     assertEquals(initialCanvas.id, canvas().id)
                     assertEquals(normal, canvas().boundsInRoot)
                     assertEquals(initialCanvas.config[MeasurementDrawingSemantics.Projection],
                         canvas().config[MeasurementDrawingSemantics.Projection])
+                    if (mode != ThemeMode.SYSTEM && mode != theme) {
+                        assertRenderedChrome(canvas(), mode)
+                        if (capture && !landscape) captureMeasurementWorkspaceScreenshot(
+                            "$display-${route.name.lowercase()}-${mode.name.lowercase()}-portrait-normal-contour"
+                        )
+                    }
                 }
                 val normalPanel = panel.fetchSemanticsNode().boundsInRoot
                 val panelHeight = compose.onNodeWithTag("measurement-edit-normal-panel").fetchSemanticsNode().size.height
-                assertEquals(normal.height, panelHeight.toFloat(), 1f)
+                val normalViewport = canvas().config[MeasurementDrawingSemantics.ViewportBounds]
+                assertEquals(normalViewport.height, panelHeight.toFloat(), 1f)
+                val tabs = compose.onNodeWithTag("measurement-edit-tab-row").fetchSemanticsNode().boundsInRoot
+                assertEquals(normal.bottom, tabs.bottom, 1f)
+                drawingInput.performTouchInput {
+                    val y = normalViewport.bottom + (height - normalViewport.bottom) / 2f
+                    swipe(Offset(1f, y), Offset(1f, y - 45f * density))
+                }
+                assertEquals(initialProjection, canvas().config[MeasurementDrawingSemantics.Projection])
                 compose.onNodeWithTag("ceilings-workspace-normal-gradient").assertExists()
                 fun assertZoomTargets() {
                     val targets = compose.onAllNodesWithTag("measurement-edit-zoom-target", useUnmergedTree = true).fetchSemanticsNodes()
@@ -427,6 +469,63 @@ class MeasurementWorkspaceLayoutTest {
         }
         context.deleteDatabase(name)
         key.fill(0)
+    }
+
+    private fun assertRenderedChrome(canvas: SemanticsNode, theme: ThemeMode) {
+        // Production Android window pixels include shared chrome, the actual drawing and the app theme.
+        compose.waitForIdle()
+        val header = compose.onNodeWithTag("measurement-edit-header").fetchSemanticsNode().boundsInRoot
+        val tabs = compose.onNodeWithTag("measurement-edit-tab-row").fetchSemanticsNode().boundsInRoot
+        val panel = compose.onNodeWithTag("measurement-edit-panel-surface").fetchSemanticsNode().boundsInRoot
+        val gradient = compose.onNodeWithTag("ceilings-workspace-normal-gradient").fetchSemanticsNode().boundsInRoot
+        val drawing = canvas.boundsInRoot
+        val projection = canvas.config[MeasurementDrawingSemantics.Projection]
+        val density = compose.density.density
+        val dark = theme == ThemeMode.DARK
+        val colors = ceilingsColorScheme(dark)
+        var step = 100.0 * projection.scale
+        while (step < 16f * density) step *= 2
+        val x0 = drawing.left + projection.offsetX
+        val y0 = drawing.top + projection.offsetY
+        val bitmap = checkNotNull(InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot())
+        fun difference(a: Int, b: Int) = maxOf(
+            abs(android.graphics.Color.red(a) - android.graphics.Color.red(b)),
+            abs(android.graphics.Color.green(a) - android.graphics.Color.green(b)),
+            abs(android.graphics.Color.blue(a) - android.graphics.Color.blue(b))
+        )
+        fun assertGrid(region: Rect, baseColor: (Float) -> Int) {
+            val inset = 3f * density
+            val xMin = region.left + region.width * 0.29f
+            val xMax = region.right - region.width * 0.29f
+            val lines = generateSequence(ceil((xMin - x0) / step)) { it + 1 }
+                .map { x0 + it * step }.takeWhile { it + inset < xMax }.toList()
+            val matched = (ceil(region.top).toInt() until region.bottom.toInt()).any { y ->
+                val gy = (y - y0) / step
+                if (abs(gy - kotlin.math.round(gy)) * step <= inset / 2) false else lines.any { x ->
+                    val gap = bitmap.getPixel((x + inset).roundToInt(), y)
+                    difference(gap, baseColor(y.toFloat())) <= 4 &&
+                        (-1..1).any { dx -> difference(bitmap.getPixel(x.roundToInt() + dx, y), gap) >= 3 }
+                }
+            }
+            assertTrue(matched, "Expected visible composited grid in $region with $theme")
+        }
+        try {
+            assertGrid(Rect(drawing.left, header.bottom + 2 * density, drawing.right, header.bottom + 16 * density)) { y ->
+                val shade = if (dark) colors.surfaceBright else colors.surfaceDim
+                val alpha = 0.50f * (1f - (y - gradient.top) / gradient.height).coerceIn(0f, 1f)
+                shade.copy(alpha = alpha).compositeOver(colors.background).toArgb()
+            }
+            assertGrid(Rect(tabs.left, tabs.top + density, tabs.right, tabs.top + 5 * density)) {
+                colors.background.toArgb()
+            }
+            val y = y0 + ceil((panel.top + 24 * density - y0) / step) * step
+            val x = (panel.left + 5 * density).roundToInt()
+            assertTrue(y < panel.bottom)
+            assertTrue(difference(colors.background.toArgb(), bitmap.getPixel(x, y.roundToInt())) <= 3,
+                "The content panel must paint its opaque background")
+        } finally {
+            bitmap.recycle()
+        }
     }
 
 }

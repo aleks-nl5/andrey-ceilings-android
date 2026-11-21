@@ -2,7 +2,6 @@ package com.andreyceilings.shared.measurement
 
 import com.andreyceilings.shared.input.filterNumericEdit
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -255,8 +254,11 @@ internal fun MeasurementLengthField(value: String, label: String, error: String?
     }
     OutlinedTextField(value = field, onValueChange = ::update, label = { Text(label) }, enabled = enabled, singleLine = true,
         modifier = modifier.then(measurementFieldFocusModifier()).fillMaxWidth()
-            .then(if (selected) Modifier.background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f), MaterialTheme.shapes.extraSmall) else Modifier)
             .onFocusChanged { onFocus(it.isFocused) },
+        colors = if (selected) OutlinedTextFieldDefaults.colors(
+            unfocusedBorderColor = MaterialTheme.colorScheme.primary,
+            unfocusedLabelColor = MaterialTheme.colorScheme.primary
+        ) else OutlinedTextFieldDefaults.colors(),
         keyboardOptions = KeyboardOptions(
             keyboardType = KeyboardType.Decimal,
             imeAction = if (onNext == null) ImeAction.Default else ImeAction.Next
