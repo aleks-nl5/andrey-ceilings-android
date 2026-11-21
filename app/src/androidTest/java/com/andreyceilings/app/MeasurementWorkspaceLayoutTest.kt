@@ -11,6 +11,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.semantics.SemanticsNode
 import androidx.compose.ui.semantics.SemanticsActions
@@ -477,7 +478,8 @@ class MeasurementWorkspaceLayoutTest {
         compose.waitForIdle()
         compose.onNodeWithTag("ceilings-workspace-normal-gradient").assertExists()
         compose.onNodeWithTag("measurement-edit-tab-row").assertExists()
-        val panel = compose.onNodeWithTag("measurement-edit-panel-surface").fetchSemanticsNode().boundsInRoot
+        val panelNode = compose.onNodeWithTag("measurement-edit-panel-surface")
+        val panel = panelNode.fetchSemanticsNode().boundsInRoot
         val drawing = canvas.boundsInRoot
         val projection = canvas.config[MeasurementDrawingSemantics.Projection]
         val density = compose.density.density
@@ -485,23 +487,26 @@ class MeasurementWorkspaceLayoutTest {
         var step = 100.0 * projection.scale
         while (step < 16f * density) step *= 2
         val y0 = drawing.top + projection.offsetY
-        val bitmap = checkNotNull(InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot())
-        try {
-            // The context panel must remain opaque, unlike the row of tabs above it.
-            val y = y0 + ceil((panel.top + 24 * density - y0) / step) * step
-            val x = (panel.left + 5 * density).roundToInt()
-            assertTrue(y < panel.bottom)
-            val expected = colors.background.toArgb()
-            val actual = bitmap.getPixel(x, y.roundToInt())
-            val difference = maxOf(
-                abs(android.graphics.Color.red(expected) - android.graphics.Color.red(actual)),
-                abs(android.graphics.Color.green(expected) - android.graphics.Color.green(actual)),
-                abs(android.graphics.Color.blue(expected) - android.graphics.Color.blue(actual))
-            )
-            assertTrue(difference <= 3, "The content panel must paint its opaque background")
-        } finally {
-            bitmap.recycle()
-        }
+        // The context panel must remain opaque, unlike the row of tabs above it.
+        // Capture the Compose node, not the entire Android display: UiAutomation's
+        // screenshot includes system-bar/window offsets not represented by boundsInRoot.
+        val yInRoot = y0 + ceil((panel.top + 24 * density - y0) / step) * step
+        assertTrue(yInRoot < panel.bottom)
+        val image = panelNode.captureToImage().toPixelMap()
+        val x = (5 * density).roundToInt()
+        val y = (yInRoot - panel.top).roundToInt()
+        assertTrue(x in 0 until image.width && y in 0 until image.height,
+            "Panel color sample ($x,$y) is outside the captured panel ${image.width}×${image.height}; bounds=$panel")
+        val expected = colors.background.toArgb()
+        val actual = image[x, y].toArgb()
+        val difference = maxOf(
+            abs(android.graphics.Color.red(expected) - android.graphics.Color.red(actual)),
+            abs(android.graphics.Color.green(expected) - android.graphics.Color.green(actual)),
+            abs(android.graphics.Color.blue(expected) - android.graphics.Color.blue(actual))
+        )
+        assertTrue(difference <= 3,
+            "The content panel must paint its opaque background: expected #${expected.toUInt().toString(16)}, " +
+                "actual #${actual.toUInt().toString(16)} at local ($x,$y), theme=$theme, panel=$panel")
     }
 
 }
