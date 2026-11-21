@@ -614,7 +614,11 @@ class MeasurementEditSceneTest {
             assertEquals(viewportHeight, normalPanel.size.height.toFloat(), 1f)
             assertEquals(tagged("measurement-edit-tab-row").boundsInRoot.bottom, scene.projectedDrawing().boundsInRoot.bottom)
             val fade = tagged("ceilings-workspace-normal-gradient").boundsInRoot
-            assertTrue(fade.top < scene.projectedDrawing().boundsInRoot.top && fade.bottom > scene.projectedDrawing().boundsInRoot.top)
+            val drawingTop = scene.projectedDrawing().boundsInRoot.top
+            // The edge-to-edge canvas now starts at the physical screen edge, as does
+            // the transparent overlay. The fade must still cover the safe status area.
+            assertEquals(drawingTop, fade.top, 1f)
+            assertTrue(fade.bottom > drawingTop + 24f)
             val discs = scene.nodes(unmerged = true).filter { it.config.getOrNull(SemanticsProperties.TestTag) == "measurement-edit-zoom-disc" }
             assertEquals(3, discs.size)
             assertTrue(discs.all { it.size.width == 36 && it.size.height == 36 })
