@@ -1,6 +1,21 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Keep diagnostic screenshots when the main connectedAndroidTest suite fails.
+# The normal screenshot collector runs only after this suite succeeds, so without
+# this trap the most useful failing frame would disappear with the emulator.
+collect_failed_workspace_capture() {
+  local status=$?
+  local artifact_dir="${RUNNER_TEMP:-app/build}/p5a-workspace"
+  mkdir -p "$artifact_dir"
+  if adb shell run-as com.andreyceilings.app test -d cache/p5a-workspace >/dev/null 2>&1; then
+    adb exec-out run-as com.andreyceilings.app tar -C cache/p5a-workspace -cf - . \
+      | tar -xf - -C "$artifact_dir" || true
+  fi
+  exit "$status"
+}
+trap collect_failed_workspace_capture ERR
+
 # reactivecircus/android-emulator-runner treats each YAML script line as an
 # independent shell command, so keep shell continuations here (not in YAML).
 #
