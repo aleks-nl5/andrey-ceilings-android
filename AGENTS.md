@@ -1,3 +1,11 @@
+## ПОСТІЙНА АРХІТЕКТУРНА ВИМОГА — багатомовність / localization (owner, 22.11.2026)
+
+**StelaPro має бути локалізованим для Android, iOS та Windows.** Українська є базовою і fallback мовою, але жоден новий user-facing текст не має жорстко прив'язувати UI до української: використовувати майбутні shared Compose Multiplatform Resources або тимчасово централізувати рядки до L1. Відокремлювати локалізовані presentation labels від domain IDs/wire codes, користувацьких назв, SQLDelight/SQLCipher даних. Мова UI ≠ мова PDF ≠ валюта/locale-specific formatting. Ніколи не перекладати автоматично збережені прайс-позиції чи історичні/frozen кошториси; зберегти exact cents, geometry, snapshot/provenance і restore. Додати baseline-aware lint та тести після введення фундаменту, не відключаючи наявних CI. Усі нові UI/документні задачі мають враховувати цю вимогу; існуючий hardcode мігрувати окремими погодженими етапами. Детально: **[docs/architecture/LOCALIZATION_STRATEGY.md](docs/architecture/LOCALIZATION_STRATEGY.md)** і [roadmap](docs/PROJECT_ROADMAP.md).
+
+**Це правило діє постійно, але саме по собі НЕ авторизує Codex починати L0–L4, змінювати поточні гілки/PR або мігрувати БД.** Для реалізації потрібна окрема owner-approved задача. Далі наведено історичні milestone/branch-specific інструкції.
+
+---
+
 ## CURRENT implementation — P5A #131 / Draft PR #132 (owner authorized 19.11.2026)
 
 **Codex work ONLY in branch `feat/p5a-ceiling-workspace`, [Draft PR #132](https://github.com/aleks-nl5/andrey-ceilings-android/pull/132).** Main baseline is owner-merged documentation [PR #130](https://github.com/aleks-nl5/andrey-ceilings-android/pull/130), merge `6e5c22226fa22de1731dd13056c9666799ef477f`. **Read [issue #131](https://github.com/aleks-nl5/andrey-ceilings-android/issues/131), [docs/P5A_CODEX_HANDOFF.md](docs/P5A_CODEX_HANDOFF.md), and [docs/P5_UX_DISCOVERY.md](docs/P5_UX_DISCOVERY.md) first.** Initial Draft PR is documentation only; production implementation must now be added by Codex to THIS branch.
