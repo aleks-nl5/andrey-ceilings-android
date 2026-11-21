@@ -67,8 +67,15 @@ class AreaFeatureTouchTest {
             canvas.performTouchInput {pinch(center-Offset(30f,0f),center+Offset(30f,0f),center-Offset(50f,0f),center+Offset(50f,0f))}
             click("Вписати креслення")
             click("Згорнути")
-            tap(2200,1500) // accessible halo selects the circle
-            compose.runOnIdle {assertNotNull(model.state.value.area.selected)}
+            // Wait until the normal canvas and its viewport have replaced the fullscreen layout.
+            compose.onNodeWithTag("measurement-edit-normal-panel").assertExists()
+            compose.waitForIdle()
+            val circle = compose.runOnIdle {
+                model.displayAreas().single { it.shape is AreaShape.Circle }
+            }
+            val center = (circle.shape as AreaShape.Circle).center
+            tap(center.xMm, center.yMm)
+            compose.runOnIdle { assertEquals(circle.uuid, model.state.value.area.selected) }
             click("Властивості фігури")
             compose.onNodeWithText("Примітка фігури").performTextInput("Тестова позначка")
             compose.onNodeWithText("Застосувати властивості").performClick()
