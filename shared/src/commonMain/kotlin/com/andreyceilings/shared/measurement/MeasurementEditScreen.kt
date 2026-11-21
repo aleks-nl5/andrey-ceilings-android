@@ -601,7 +601,10 @@ fun MeasurementEditScreen(
         val headerBleed = if (!fullscreen && !inlineKeyboardPanel) headerHeight else 0.dp
         Column(Modifier.fillMaxSize()) {
             Box(Modifier.fillMaxWidth().weight(1f)) {
-                if (geometry == null) Text("Креслення недоступне: ${validation.geometryError.orEmpty()}")
+                if (geometry == null) Text(
+                    "Креслення недоступне: ${validation.geometryError.orEmpty()}",
+                    Modifier.padding(top = headerBleed)
+                )
                 else MeasurementDrawing(MeasurementGeometryView.Captured(geometry),
                     Modifier.fillMaxSize(), interactive = true, fillAvailableHeight = true, showSideLegend = false,
                     retainCameraOnResize = true, verticalViewControls = !keyboardVisible, showWorkspaceGrid = true,

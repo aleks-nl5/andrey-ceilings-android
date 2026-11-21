@@ -79,6 +79,10 @@ class OverlayDragSceneTest {
                 assertEquals(before,OverlayDragFixture.snapshot(driver))
                 scene.click("Скасувати дію");assertEquals(doc.placements.areas.first {it.uuid==f.polygon},model.displayAreas().first {it.uuid==f.polygon})
                 scene.click("Повторити");assertEquals(polygon,model.displayAreas().first {it.uuid==f.polygon})
+                if (mode == "fullscreen") {
+                    scene.assertContextPanelClosed()
+                    scene.click("Елементи")
+                }
                 if (mode != "details") scene.click("Лінії · 1")
                 scene.click("Сегмент 1: 1 м");assertEquals(f.line,model.state.value.selectedLineUuid,"$mode must select LINE before drag");scene.dragWorld(1000,950,1300,750)
                 val line=model.displayLines().single();assertEquals(PointPositionMm(800,750),line.start);assertEquals(1000,line.lengthMm)
@@ -88,7 +92,7 @@ class OverlayDragSceneTest {
                 scene.dragWorld(1800,750,2400,750)
                 assertEquals(1600,model.displayLines().single().lengthMm,"$mode: ${model.state.value.lineDrag} ${model.state.value.selectedLineUuid} ${model.state.value.error} ${model.displayLines().single()}")
                 scene.tapWorld(2800,1500)
-                if (mode == "fullscreen") scene.click("Закрити панель")
+                if (mode == "fullscreen") scene.assertContextPanelClosed()
                 scene.dragWorld(2800,1500,3100,1800)
                 val circle=model.displayAreas().first {it.uuid==f.circle};assertEquals(AreaShape.Circle(PointPositionMm(3100,1800),200),circle.shape)
                 assertEquals(doc.placements.areas.first {it.uuid==f.circle}.twiceAreaMm2,circle.twiceAreaMm2)
@@ -159,6 +163,10 @@ class OverlayDragSceneTest {
         return semanticsOwners.flatMap { flatten(it.rootSemanticsNode) }
     }
     private fun SemanticsNode.textTree(): String = config.getOrNull(SemanticsProperties.Text).orEmpty().joinToString { it.text } + children.joinToString { it.textTree() }
+    private fun ImageComposeScene.assertContextPanelClosed() {
+        assertFalse(nodes().any { it.config.getOrNull(SemanticsProperties.TestTag) == "measurement-edit-context-panel" })
+    }
+
     private fun ImageComposeScene.text() = semanticsOwners.joinToString { it.rootSemanticsNode.textTree() }
     private fun ImageComposeScene.awaitText(label: String) { repeat(240) { frame(); if (text().contains(label)) return; Thread.sleep(25) }; fail("Missing '$label': ${text().take(2000)}") }
     private fun ImageComposeScene.awaitEnabled(label: String) {
