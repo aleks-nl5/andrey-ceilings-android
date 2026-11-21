@@ -14,6 +14,9 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.foundation.interaction.FocusInteraction
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import kotlinx.coroutines.awaitCancellation
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.onFocusChanged
@@ -252,13 +255,30 @@ internal fun MeasurementLengthField(value: String, label: String, error: String?
         field = edited
         if (changed) onChange(edited.text)
     }
+    val interactionSource = remember { MutableInteractionSource() }
+    var hasRealFocus by remember { mutableStateOf(false) }
+    // A wall selected on the canvas has exactly the same Material outline/label
+    // emphasis as a focused input, but must not request actual focus or open IME.
+    // Compose keeps the round field outline and its label cutout intact.
+    LaunchedEffect(selected, hasRealFocus, enabled) {
+        if (selected && !hasRealFocus && enabled) {
+            val previewFocus = FocusInteraction.Focus()
+            interactionSource.emit(previewFocus)
+            try {
+                awaitCancellation()
+            } finally {
+                interactionSource.emit(FocusInteraction.Unfocus(previewFocus))
+            }
+        }
+    }
     OutlinedTextField(value = field, onValueChange = ::update, label = { Text(label) }, enabled = enabled, singleLine = true,
         modifier = modifier.then(measurementFieldFocusModifier()).fillMaxWidth()
-            .onFocusChanged { onFocus(it.isFocused) },
-        colors = if (selected) OutlinedTextFieldDefaults.colors(
-            unfocusedBorderColor = MaterialTheme.colorScheme.primary,
-            unfocusedLabelColor = MaterialTheme.colorScheme.primary
-        ) else OutlinedTextFieldDefaults.colors(),
+            .onFocusChanged {
+                hasRealFocus = it.isFocused
+                onFocus(it.isFocused)
+            },
+        interactionSource = interactionSource,
+        colors = OutlinedTextFieldDefaults.colors(),
         keyboardOptions = KeyboardOptions(
             keyboardType = KeyboardType.Decimal,
             imeAction = if (onNext == null) ImeAction.Default else ImeAction.Next

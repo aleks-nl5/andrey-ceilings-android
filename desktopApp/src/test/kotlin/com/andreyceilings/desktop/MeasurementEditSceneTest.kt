@@ -458,6 +458,12 @@ class MeasurementEditSceneTest {
             assertTrue(scene.sendKeyEvent(KeyEvent(Key.Enter, KeyEventType.KeyDown)))
             scene.finishSheetMotion()
             assertTrue(panelOpen())
+            // An empty tap dismisses the opened panel and clears the wall selection.
+            val bounds = scene.projectedDrawing().boundsInRoot
+            mouseTap(Offset(bounds.left + 6f, bounds.top + bounds.height * 0.35f), 2900)
+            scene.finishSheetMotion()
+            assertFalse(panelOpen())
+            assertNull(scene.projectedDrawing().config.getOrNull(MeasurementDrawingSemantics.SelectedWall))
         } finally { scene.close() }
     }
 

@@ -22,6 +22,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -47,26 +48,34 @@ internal fun CeilingsWorkspaceScaffold(
     val colors = MaterialTheme.colorScheme
     var measuredHeader by remember { mutableIntStateOf(0) }
     val headerHeight = maxOf(CeilingsFabProfile.COMPACT.touchSize, with(density) { measuredHeader.toDp() })
+    val topInset = safePadding.calculateTopPadding()
+    val layoutDirection = LocalLayoutDirection.current
+    val drawPadding = PaddingValues(
+        start = safePadding.calculateStartPadding(layoutDirection),
+        end = safePadding.calculateEndPadding(layoutDirection),
+        bottom = safePadding.calculateBottomPadding()
+    )
+    // The canvas must reach the physical top edge, behind the transparent system bar.
+    // Only foreground controls are kept inside the host's safe system-bar padding.
+    val drawingWorkspace = Modifier.fillMaxSize().padding(drawPadding)
+        .consumeWindowInsets(drawPadding).windowInsetsPadding(keyboard)
     val safeWorkspace = Modifier.fillMaxSize().padding(safePadding)
         .consumeWindowInsets(safePadding).windowInsetsPadding(keyboard)
     CeilingsScreenSurface {
         Box(Modifier.fillMaxSize()) {
-            BoxWithConstraints(safeWorkspace) { content(headerHeight) }
-            if (!fullscreen) {
-                CeilingsEdgeGradient(
-                    CeilingsEdge.TOP,
-                    Modifier.fillMaxWidth().height(safePadding.calculateTopPadding() + headerHeight + 72.dp)
-                        .testTag("ceilings-workspace-normal-gradient"),
-                    color = if (colors.background.luminance() < 0.5f) colors.surfaceBright else colors.surfaceDim
-                )
-            }
+            // Increase the drawing's reserved top region by the newly exposed status-bar inset,
+            // so camera fit, pointer-safe space and the header keep their former alignment.
+            BoxWithConstraints(drawingWorkspace) { content(headerHeight + topInset) }
+            CeilingsEdgeGradient(
+                CeilingsEdge.TOP,
+                Modifier.fillMaxWidth().height(
+                    topInset + headerHeight + if (fullscreen) CeilingsEdgeDefaults.FadeHeight else 72.dp
+                ).then(if (fullscreen) Modifier else Modifier.testTag("ceilings-workspace-normal-gradient")),
+                color = if (fullscreen) colors.surface else
+                    if (colors.background.luminance() < 0.5f) colors.surfaceBright else colors.surfaceDim
+            )
             BoxWithConstraints(safeWorkspace) {
                 val workspace = this
-                if (fullscreen) {
-                    CeilingsEdgeGradient(
-                        CeilingsEdge.TOP, Modifier.fillMaxWidth().height(headerHeight + CeilingsEdgeDefaults.FadeHeight)
-                    )
-                }
                 Box(Modifier.fillMaxWidth().align(Alignment.TopCenter).onSizeChanged { measuredHeader = it.height }) {
                     header(workspace, headerHeight)
                 }

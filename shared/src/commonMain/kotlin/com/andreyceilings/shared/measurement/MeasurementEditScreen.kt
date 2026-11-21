@@ -520,7 +520,13 @@ fun MeasurementEditScreen(
                             onClick = { if (context != mode) { focus.clearFocus(); openContext(mode) } },
                             label = { Text(mode.label, Modifier.fillMaxWidth(), textAlign = TextAlign.Center,
                                 maxLines = tabLines, softWrap = tabLines > 1, overflow = TextOverflow.Ellipsis) },
-                            modifier = Modifier.weight(1f).testTag("measurement-edit-context-${mode.name.lowercase()}")
+                            modifier = Modifier.weight(1f).testTag("measurement-edit-context-${mode.name.lowercase()}"),
+                            colors = FilterChipDefaults.filterChipColors(
+                                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                                labelColor = MaterialTheme.colorScheme.onSurface,
+                                selectedContainerColor = MaterialTheme.colorScheme.secondaryContainer,
+                                selectedLabelColor = MaterialTheme.colorScheme.onSecondaryContainer
+                            )
                         )
                     }
                 }
@@ -625,6 +631,7 @@ fun MeasurementEditScreen(
                         if (enabled) {
                             selected = null
                             model.clearDrawingSelection()
+                            if (fullscreen && sheet != MeasurementSheet.CLOSED) closeSheet()
                         }
                     },
                     pointPlacements = if(overlay is PointOverlayState.Loaded) model.displayPoints() else emptyList(), fitPointPlacements = true,
