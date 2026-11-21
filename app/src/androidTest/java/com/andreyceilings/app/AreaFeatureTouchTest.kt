@@ -46,8 +46,15 @@ class AreaFeatureTouchTest {
         }
         fun tap(x:Long,y:Long) {
             val canvas=compose.onNode(matcher)
-            val projection = canvas.fetchSemanticsNode().config[MeasurementDrawingSemantics.Projection]
+            val node = canvas.fetchSemanticsNode()
+            val projection = node.config[MeasurementDrawingSemantics.Projection]
+            val viewport = node.config[MeasurementDrawingSemantics.ViewportBounds]
             val p = projection.project(DrawingPoint(x.toDouble(), y.toDouble()))
+            assertTrue(
+                p.x >= 0 && p.x <= node.size.width && p.y >= viewport.top && p.y < viewport.bottom,
+                "Projected touch ($x,$y) -> (${p.x},${p.y}) is outside the visible canvas viewport " +
+                    "$viewport (canvas ${node.size}). Check camera fit and overlays."
+            )
             canvas.performTouchInput {click(Offset(p.x.toFloat(),p.y.toFloat()))}
         }
         try {
@@ -75,7 +82,13 @@ class AreaFeatureTouchTest {
             }
             val center = (circle.shape as AreaShape.Circle).center
             tap(center.xMm, center.yMm)
-            compose.runOnIdle { assertEquals(circle.uuid, model.state.value.area.selected) }
+            compose.runOnIdle {
+                assertEquals(
+                    circle.uuid, model.state.value.area.selected,
+                    "Tapping the circle center (${center.xMm},${center.yMm}) must select its UUID; " +
+                        "fullscreen=${model.state.value.area.tool}; areas=${model.displayAreas().map { it.uuid }}"
+                )
+            }
             click("Властивості фігури")
             compose.onNodeWithText("Примітка фігури").performTextInput("Тестова позначка")
             compose.onNodeWithText("Застосувати властивості").performClick()
