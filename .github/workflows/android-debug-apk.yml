@@ -164,6 +164,17 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
+      - name: Preserve Android instrumentation test reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: android-instrumentation-reports
+          path: |
+            app/build/outputs/androidTest-results/connected/
+            app/build/reports/androidTests/connected/
+          if-no-files-found: warn
+          retention-days: 14
+
       - name: Prepare persistent signing
         env:
           KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
