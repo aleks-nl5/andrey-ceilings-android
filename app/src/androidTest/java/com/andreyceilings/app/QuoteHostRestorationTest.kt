@@ -53,11 +53,47 @@ class QuoteHostRestorationTest {
         val store = MeasurementElementsStore(db, { 200 })
         var owner by mutableStateOf(Owner())
         var mounted by mutableStateOf(true)
-        var current: TransientQuotePresenter? = null
-        var currentNavigation: AppNavigationState? = null
+        // Read from the instrumentation thread and written by Compose's SideEffect.
+        // Snapshot-backed references avoid cross-thread visibility races.
+        var current by mutableStateOf<TransientQuotePresenter?>(null)
+        var currentNavigation by mutableStateOf<AppNavigationState?>(null)
         val initial = AppNavigationState().selectTab(AppRoute.MEASUREMENTS)
             .openMeasurement(fixture.projectId, measurement.id).openMeasurementQuote()
         val restoration = StateRestorationTester(compose)
+        // Pricing begins as an asynchronous SQLCipher read. The previous 10s wall-clock
+        // limit occasionally expired on a loaded AVD without a test assertion failure.
+        // Give a bounded startup allowance, but fail promptly for invalid/failed pricing.
+        fun awaitQuoteReady(phase: String, previous: TransientQuotePresenter? = null,
+            requireQuoteRoute: Boolean = false) {
+            try {
+                compose.waitUntil(30_000) {
+                    val active = current
+                    val snapshot = active?.state?.value
+                    (previous == null || active !== previous) &&
+                        (!requireQuoteRoute || currentNavigation?.measurementQuote == true) &&
+                        (snapshot?.amounts != null || snapshot?.unavailable != null ||
+                            (snapshot != null && !snapshot.loading))
+                }
+            } catch (failure: ComposeTimeoutException) {
+                val snapshot = current?.state?.value
+                throw AssertionError(
+                    "$phase: pricing did not settle within 30s; presenter=${current != null}, " +
+                        "newPresenter=${previous == null || current !== previous}, " +
+                        "quoteRoute=${currentNavigation?.measurementQuote}, loading=${snapshot?.loading}, " +
+                        "unavailable=${snapshot?.unavailable}, source=${snapshot?.source != null}, " +
+                        "preview=${snapshot?.preview != null}, amounts=${snapshot?.amounts != null}, " +
+                        "lines=${snapshot?.lines?.size}", failure)
+            }
+            compose.runOnIdle {
+                val state = checkNotNull(current) { "$phase: presenter was never acquired" }.state.value
+                assertFalse(state.loading, "$phase: pricing still loading")
+                assertNull(state.unavailable, "$phase: pricing returned unavailable")
+                assertNotNull(state.amounts,
+                    "$phase: calculation invalid; source=${state.source != null}, " +
+                        "lines=${state.lines.size}, fatal=${state.preview?.fatalProblems}, " +
+                        "mandatory=${state.preview?.mandatoryProblems}")
+            }
+        }
         try {
             restoration.setContent {
                 if (mounted) CompositionLocalProvider(LocalViewModelStoreOwner provides owner) {
@@ -79,7 +115,7 @@ class QuoteHostRestorationTest {
                     }
                 }
             }
-            compose.waitUntil(10_000) { current?.state?.value?.amounts != null }
+            awaitQuoteReady("initial quote")
             val living = compose.runOnIdle { checkNotNull(current).also {
                 it.select("element:${discussing.uuid}", true)
                 it.editQuantity(fixture.elementUuid, "13"); it.confirmQuantity(fixture.elementUuid)
@@ -90,7 +126,7 @@ class QuoteHostRestorationTest {
 
             // Same Android ViewModelStore models configuration recreation, not process death.
             restoration.emulateSavedInstanceStateRestore()
-            compose.waitUntil(10_000) { currentNavigation?.measurementQuote == true && current?.state?.value?.amounts != null }
+            awaitQuoteReady("configuration restore", requireQuoteRoute = true)
             compose.onNodeWithText("Попередній кошторис").assertExists()
             compose.runOnIdle {
                 assertSame(living, current)
@@ -104,7 +140,7 @@ class QuoteHostRestorationTest {
             // and restoring the same route starts a new composition with the original source.
             compose.runOnIdle { owner.viewModelStore.clear(); owner = Owner() }
             restoration.emulateSavedInstanceStateRestore()
-            compose.waitUntil(10_000) { current !== living && current?.state?.value?.amounts != null }
+            awaitQuoteReady("new ViewModelStore", previous = living, requireQuoteRoute = true)
             compose.onNodeWithText("Попередній кошторис").assertExists()
             compose.runOnIdle {
                 assertTrue(currentNavigation!!.measurementQuote)
