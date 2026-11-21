@@ -215,10 +215,14 @@ class MixedDetailsSceneTest {
         };fail("Missing action $label")
     }
     private fun ImageComposeScene.bounds():Rect {
-        repeat(15){val n=canvas();val b=Rect(n.positionInRoot,Size(n.size.width.toFloat(),n.size.height.toFloat()))
+        // A stable, visible Canvas needs no further repositioning. return@repeat
+        // skips only one iteration and previously forced 15 full scene renders
+        // for every pointer gesture even when scrolling was already finished.
+        for (attempt in 0 until 15) {
+            val n=canvas();val b=Rect(n.positionInRoot,Size(n.size.width.toFloat(),n.size.height.toFloat()))
             val h=semanticsOwners.first().rootSemanticsNode.size.height.toFloat()
             val delta=if(b.bottom>h-100)b.bottom-h+150 else if(b.top<100)b.top-200 else 0f
-            if(delta==0f)return@repeat
+            if(delta==0f) break
             nodes().firstOrNull {it.config.getOrNull(SemanticsActions.ScrollBy)!=null}?.config?.getOrNull(SemanticsActions.ScrollBy)?.action?.invoke(0f,delta)
             repeat(5){frame();Thread.sleep(10)}
         }
