@@ -29,6 +29,14 @@ trap collect_failed_workspace_capture ERR
 # The crash tests are excluded from the normal AndroidJUnitRunner session.
 # Each destructive SIGKILL proof runs in its own adb instrumentation session,
 # and is only accepted when a new process recovers the encrypted DB/key.
+# Mandatory focused pointer smoke check: fail near the recurring issue before
+# spending ~20 minutes on the rest. On success, keep the entire original suite,
+# including both of these tests; no exclusions or assertion retries.
+gradle --no-daemon :app:connectedDebugAndroidTest \
+  -Pandroid.testInstrumentationRunnerArguments.class=com.andreyceilings.app.AreaFeatureTouchTest \
+  -Pandroid.testInstrumentationRunnerArguments.notAnnotation=com.andreyceilings.app.IsolatedProcessDeathProof \
+  --stacktrace --warning-mode all
+
 gradle --no-daemon :app:connectedDebugAndroidTest \
   -Pandroid.testInstrumentationRunnerArguments.notAnnotation=com.andreyceilings.app.IsolatedProcessDeathProof \
   --stacktrace --warning-mode all
