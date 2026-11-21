@@ -86,7 +86,7 @@ class AreaFeatureTouchTest {
                 assertEquals(
                     circle.uuid, model.state.value.area.selected,
                     "Tapping the circle center (${center.xMm},${center.yMm}) must select its UUID; " +
-                        "fullscreen=${model.state.value.area.tool}; areas=${model.displayAreas().map { it.uuid }}"
+                        "areaTool=${model.state.value.area.tool}; areas=${model.displayAreas().map { it.uuid }}"
                 )
             }
             click("Властивості фігури")
