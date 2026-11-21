@@ -28,6 +28,7 @@ import com.andreyceilings.shared.calculation.*
 import com.andreyceilings.shared.measurement.*
 import com.andreyceilings.shared.navigation.*
 import com.andreyceilings.shared.theme.CeilingsTheme
+import com.andreyceilings.shared.theme.CeilingsEdgeDefaults
 import com.andreyceilings.shared.theme.ceilingsColorScheme
 import kotlin.test.*
 
@@ -378,6 +379,25 @@ class MeasurementEditSceneTest {
             assertEquals(expected.green, actual.green, 0.045f)
             assertEquals(expected.blue, actual.blue, 0.045f)
         }
+        fun assertSharedFade(tag: String, colors: androidx.compose.material3.ColorScheme, clear: Color): Color {
+            val fade = scene.nodes().single { it.config.getOrNull(SemanticsProperties.TestTag) == tag }.boundsInRoot
+            val header = scene.nodes().single {
+                it.config.getOrNull(SemanticsProperties.TestTag) == "measurement-edit-header"
+            }.boundsInRoot
+            assertEquals(0f, fade.top, 1f)
+            assertEquals(header.bottom + CeilingsEdgeDefaults.FadeHeight.value, fade.bottom, 1f)
+            // Sample outside the horizontally inset drawing so grid strokes do
+            // not change the composited color. Use the actual gradient position.
+            val sampleY = 22
+            val alpha = CeilingsEdgeDefaults.EdgeAlpha * (1f - (sampleY + 0.5f - fade.top) / fade.height)
+            val expected = colors.surface.copy(alpha = alpha).compositeOver(clear)
+            val shaded = sample(2, sampleY)
+            closeColor(shaded, expected)
+            closeColor(sample(2, fade.bottom.toInt() + 2), clear)
+            assertNotEquals(shaded, clear)
+            assertNotEquals(shaded, colors.surface)
+            return shaded
+        }
         try {
             repeat(5) { scene.frame() }
             val initial = scene.projectedDrawing()
@@ -386,12 +406,8 @@ class MeasurementEditSceneTest {
                 repeat(5) { scene.frame() }
                 val colors = ceilingsColorScheme(theme)
                 val clear = sample(14, 730)
-                val normalFade = sample(14, 22)
-                closeColor(sample(2, 22), normalFade)
                 closeColor(clear, colors.background)
-                closeColor(normalFade, (if (theme) colors.surfaceBright else colors.surfaceDim).copy(alpha = 0.50f).compositeOver(clear))
-                assertNotEquals(normalFade, clear)
-                assertNotEquals(normalFade, if (theme) colors.surfaceBright else colors.surfaceDim)
+                val normalFade = assertSharedFade("ceilings-workspace-normal-gradient", colors, clear)
                 val title = scene.nodes().single { it.textTree() == "Кухня" && it.config.getOrNull(SemanticsActions.GetTextLayoutResult) != null }
                 val layout = mutableListOf<TextLayoutResult>()
                 assertTrue(title.config[SemanticsActions.GetTextLayoutResult].action?.invoke(layout) == true)
@@ -402,8 +418,8 @@ class MeasurementEditSceneTest {
                 assertTrue(contrast(sample(center.x.toInt(), center.y.toInt()), colors.surface) >= 3f)
                 scene.click("На весь екран")
                 scene.finishSheetMotion()
-                // A small region excludes an individual major grid stroke under the fullscreen fade.
-                closeColor(sample(19, 25, 3), colors.surface.copy(alpha = 0.50f).compositeOver(clear))
+                val fullscreenFade = assertSharedFade("ceilings-workspace-fullscreen-gradient", colors, clear)
+                closeColor(fullscreenFade, normalFade)
                 scene.click("Контур")
                 scene.finishSheetMotion()
                 assertTrue(contrast(colors.onBackground, colors.background) >= 4.5f)
@@ -618,7 +634,7 @@ class MeasurementEditSceneTest {
             // The edge-to-edge canvas now starts at the physical screen edge, as does
             // the transparent overlay. The fade must still cover the safe status area.
             assertEquals(drawingTop, fade.top, 1f)
-            assertTrue(fade.bottom > drawingTop + 24f)
+            assertEquals(header.boundsInRoot.bottom + CeilingsEdgeDefaults.FadeHeight.value, fade.bottom, 1f)
             val discs = scene.nodes(unmerged = true).filter { it.config.getOrNull(SemanticsProperties.TestTag) == "measurement-edit-zoom-disc" }
             assertEquals(3, discs.size)
             assertTrue(discs.all { it.size.width == 36 && it.size.height == 36 })

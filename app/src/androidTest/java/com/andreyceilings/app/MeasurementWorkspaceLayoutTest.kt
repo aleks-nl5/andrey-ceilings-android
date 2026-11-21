@@ -33,6 +33,7 @@ import com.andreyceilings.shared.measurement.*
 import com.andreyceilings.shared.navigation.AppNavigationState
 import com.andreyceilings.shared.navigation.AppRoute
 import com.andreyceilings.shared.theme.ceilingsColorScheme
+import com.andreyceilings.shared.theme.CeilingsEdgeDefaults
 import kotlin.math.abs
 import kotlin.math.ceil
 import kotlin.math.roundToInt
@@ -312,6 +313,7 @@ class MeasurementWorkspaceLayoutTest {
                 assertEquals(unzoomed, scale(), 0.0001)
                 contextTab("cost").assertDoesNotExist()
                 compose.onNodeWithTag("ceilings-workspace-normal-gradient").assertDoesNotExist()
+                assertSharedFadeBounds("ceilings-workspace-fullscreen-gradient", canvas())
                 assertZoomTargets()
                 panel.assertDoesNotExist()
                 capture("fullscreen")
@@ -470,13 +472,21 @@ class MeasurementWorkspaceLayoutTest {
         key.fill(0)
     }
 
+    private fun assertSharedFadeBounds(tag: String, canvas: SemanticsNode) {
+        val fade = compose.onNodeWithTag(tag).fetchSemanticsNode().boundsInRoot
+        val header = compose.onNodeWithTag("measurement-edit-header").fetchSemanticsNode().boundsInRoot
+        val tail = with(compose.density) { CeilingsEdgeDefaults.FadeHeight.roundToPx() }
+        assertEquals(canvas.boundsInRoot.top, fade.top, 2f)
+        assertEquals(header.bottom + tail, fade.bottom, 2f, "Workspace must use the common top gradient extent")
+    }
+
     private fun assertRenderedChrome(canvas: SemanticsNode, theme: ThemeMode) {
         // Keep functional, geometry and opaque-panel checks. The former
         // grid-in-gradient pixel matcher was repeatedly unreliable on real
         // dark-landscape emulators; TOP fade/transparency remains a manual
         // APK acceptance criterion rather than a CI-blocking RGB assertion.
         compose.waitForIdle()
-        compose.onNodeWithTag("ceilings-workspace-normal-gradient").assertExists()
+        assertSharedFadeBounds("ceilings-workspace-normal-gradient", canvas)
         compose.onNodeWithTag("measurement-edit-tab-row").assertExists()
         val panelNode = compose.onNodeWithTag("measurement-edit-panel-surface")
         val panel = panelNode.fetchSemanticsNode().boundsInRoot

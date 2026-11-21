@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.windowInsetsPadding
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -22,7 +21,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.onSizeChanged
-import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.testTag
@@ -47,7 +45,6 @@ internal fun CeilingsWorkspaceScaffold(
     content: @Composable BoxWithConstraintsScope.(Dp) -> Unit
 ) {
     val density = LocalDensity.current
-    val colors = MaterialTheme.colorScheme
     var measuredHeader by remember { mutableIntStateOf(0) }
     val headerHeight = maxOf(CeilingsFabProfile.COMPACT.touchSize, with(density) { measuredHeader.toDp() })
     val topInset = safePadding.calculateTopPadding()
@@ -68,13 +65,12 @@ internal fun CeilingsWorkspaceScaffold(
             // Increase the drawing's reserved top region by the newly exposed status-bar inset,
             // so camera fit, pointer-safe space and the header keep their former alignment.
             BoxWithConstraints(drawingWorkspace) { content(headerHeight + topInset) }
+            // Same default surface, alpha and 36dp tail as CeilingsScreenScaffold.
+            // Only the diagnostic tag differs between workspace modes.
             CeilingsEdgeGradient(
                 CeilingsEdge.TOP,
-                Modifier.fillMaxWidth().height(
-                    topInset + headerHeight + if (fullscreen) CeilingsEdgeDefaults.FadeHeight else 72.dp
-                ).then(if (fullscreen) Modifier else Modifier.testTag("ceilings-workspace-normal-gradient")),
-                color = if (fullscreen) colors.surface else
-                    if (colors.background.luminance() < 0.5f) colors.surfaceBright else colors.surfaceDim
+                Modifier.fillMaxWidth().height(topInset + headerHeight + CeilingsEdgeDefaults.FadeHeight)
+                    .testTag(if (fullscreen) "ceilings-workspace-fullscreen-gradient" else "ceilings-workspace-normal-gradient")
             )
             BoxWithConstraints(safeWorkspace) {
                 val workspace = this

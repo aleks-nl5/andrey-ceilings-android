@@ -94,6 +94,11 @@ default. Use `{}` when the edge is owned elsewhere. Objects uses the slot to
 retain its original at-rest extent and 180ms fade expansion without a second
 gradient. `edgeAlpha` exists for legacy AppHeader
 chrome with its previously stronger collapsed shade; new screens keep 50%.
+The measurement workspace follows the same default in normal and fullscreen:
+safe top inset + measured header + `CeilingsEdgeDefaults.FadeHeight` (36dp),
+default Material 3 surface color and 50% → 0% alpha. Do not add a mode-specific
+tail or substitute local surface colors. The drawing remains edge-to-edge;
+only foreground controls receive safe insets.
 
 A fade has no pointer handler. Its transparent tail must never enlarge a hit
 region. `CeilingsPinnedContent` wraps normally measured foreground content with
