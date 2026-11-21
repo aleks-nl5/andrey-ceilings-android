@@ -17,6 +17,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.foundation.interaction.FocusInteraction
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.onFocusChanged
@@ -267,7 +269,11 @@ internal fun MeasurementLengthField(value: String, label: String, error: String?
             try {
                 awaitCancellation()
             } finally {
-                interactionSource.emit(FocusInteraction.Unfocus(previewFocus))
+                // The effect is cancelled when the wall selection changes; always
+                // release the synthetic visual focus even on cancellation.
+                withContext(NonCancellable) {
+                    interactionSource.emit(FocusInteraction.Unfocus(previewFocus))
+                }
             }
         }
     }
