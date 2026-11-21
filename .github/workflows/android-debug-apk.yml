@@ -118,6 +118,10 @@ jobs:
             echo "::error::Instrumentation failed without emulator transport loss: no retry for real test failures."
           fi
 
+      # The first run keeps the established SwiftShader renderer. If the AVD
+      # disappears, retry the ENTIRE suite on a fresh AVD with the separately
+      # supported SwiftShader/ANGLE backend, to isolate renderer instability.
+      # This diagnostic fallback never ignores instrumentation failures.
       - name: Retry full instrumentation once on a fresh AVD after emulator loss
         id: android_instrumentation_retry
         if: steps.android_instrumentation.outcome == 'failure' && steps.android_emulator_loss.outputs.lost == 'true'
@@ -127,7 +131,7 @@ jobs:
           arch: x86_64
           profile: pixel_6
           force-avd-creation: true
-          emulator-options: -no-snapshot -no-window -gpu swiftshader -feature -Vulkan -noaudio -no-boot-anim -camera-back none
+          emulator-options: -no-snapshot -no-window -gpu swangle -feature -Vulkan -noaudio -no-boot-anim -camera-back none
           disable-animations: true
           script: bash ci/run-sqlcipher-instrumentation.sh
 
