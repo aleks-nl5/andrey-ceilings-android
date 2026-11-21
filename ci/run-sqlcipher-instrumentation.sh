@@ -8,6 +8,13 @@ collect_failed_workspace_capture() {
   local status=$?
   local artifact_dir="${RUNNER_TEMP:-app/build}/p5a-workspace"
   mkdir -p "$artifact_dir"
+  # Distinguish a vanished emulator/ADB transport from a genuine assertion or
+  # SQLCipher failure. Only transport loss is eligible for one fresh-AVD retry.
+  if ! timeout 10s adb -s emulator-5554 shell true >/dev/null 2>&1; then
+    touch "$artifact_dir/emulator-disconnected.marker"
+    echo "::warning::Android emulator is unreachable after instrumentation failure."
+    adb devices -l || true
+  fi
   if adb shell run-as com.andreyceilings.app test -d cache/p5a-workspace >/dev/null 2>&1; then
     adb exec-out run-as com.andreyceilings.app tar -C cache/p5a-workspace -cf - . \
       | tar -xf - -C "$artifact_dir" || true
