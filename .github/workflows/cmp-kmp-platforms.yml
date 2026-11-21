@@ -85,3 +85,16 @@ jobs:
 
       - name: Compile Windows Desktop and run shared JVM / SQLCipher CRUD tests
         run: gradle --no-daemon :desktopApp:compileKotlin :shared:jvmTest :desktopApp:test --stacktrace --warning-mode all
+
+      - name: Preserve Windows Desktop and JVM test reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: windows-desktop-test-reports
+          path: |
+            desktopApp/build/test-results/test/
+            desktopApp/build/reports/tests/test/
+            shared/build/test-results/
+            shared/build/reports/tests/
+          if-no-files-found: warn
+          retention-days: 14
