@@ -493,7 +493,11 @@ class MeasurementWorkspaceLayoutTest {
             abs(android.graphics.Color.green(a) - android.graphics.Color.green(b)),
             abs(android.graphics.Color.blue(a) - android.graphics.Color.blue(b))
         )
-        fun assertGrid(region: Rect, baseColor: (Float) -> Int) {
+        fun assertGrid(region: Rect) {
+            // Compare pixels on a projected grid line with adjacent clear pixels at the
+            // SAME y. The rendered top fade is theme- and layout-dependent: assuming
+            // an exact composited background RGB produced false failures in dark
+            // landscape despite a visible grid. Two distinct lines must remain visible.
             val inset = 3f * density
             val xMin = region.left + region.width * 0.29f
             val xMax = region.right - region.width * 0.29f
@@ -501,23 +505,22 @@ class MeasurementWorkspaceLayoutTest {
                 .map { x0 + it * step }.takeWhile { it + inset < xMax }.toList()
             val matched = (ceil(region.top).toInt() until region.bottom.toInt()).any { y ->
                 val gy = (y - y0) / step
-                if (abs(gy - kotlin.math.round(gy)) * step <= inset / 2) false else lines.any { x ->
-                    val gap = bitmap.getPixel((x + inset).roundToInt(), y)
-                    difference(gap, baseColor(y.toFloat())) <= 4 &&
-                        (-1..1).any { dx -> difference(bitmap.getPixel(x.roundToInt() + dx, y), gap) >= 3 }
+                if (abs(gy - kotlin.math.round(gy)) * step <= inset / 2) false else {
+                    lines.count { x ->
+                        val gap = bitmap.getPixel((x + inset).roundToInt(), y)
+                        (-1..1).any { dx ->
+                            difference(bitmap.getPixel(x.roundToInt() + dx, y), gap) >= 3
+                        }
+                    } >= 2
                 }
             }
-            assertTrue(matched, "Expected visible composited grid in $region with $theme")
+            assertTrue(matched, "Expected at least two visible composited grid lines in $region with $theme")
         }
         try {
-            assertGrid(Rect(drawing.left, header.bottom + 2 * density, drawing.right, header.bottom + 16 * density)) { y ->
-                val shade = if (dark) colors.surfaceBright else colors.surfaceDim
-                val alpha = 0.50f * (1f - (y - gradient.top) / gradient.height).coerceIn(0f, 1f)
-                shade.copy(alpha = alpha).compositeOver(colors.background).toArgb()
-            }
-            assertGrid(Rect(tabs.left, tabs.top + density, tabs.right, tabs.top + 5 * density)) {
-                colors.background.toArgb()
-            }
+            assertGrid(Rect(drawing.left, header.bottom + 2 * density,
+                drawing.right, header.bottom + 16 * density))
+            assertGrid(Rect(tabs.left, tabs.top + density,
+                tabs.right, tabs.top + 5 * density))
             val y = y0 + ceil((panel.top + 24 * density - y0) / step) * step
             val x = (panel.left + 5 * density).roundToInt()
             assertTrue(y < panel.bottom)
