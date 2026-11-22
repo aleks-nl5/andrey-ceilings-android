@@ -1,16 +1,21 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Keep diagnostic screenshots when the main connectedAndroidTest suite fails.
-# The normal screenshot collector runs only after this suite succeeds, so without
-# this trap the most useful failing frame would disappear with the emulator.
+# Regular Android CI never generates the large P5A screenshot matrix.
+# When a mandatory instrumented test fails, preserve one diagnostic frame
+# from the still-running emulator without masking the actual failure.
 collect_failed_workspace_capture() {
   local status=$?
   local artifact_dir="${RUNNER_TEMP:-app/build}/p5a-workspace"
   mkdir -p "$artifact_dir"
   # Distinguish a vanished emulator/ADB transport from a genuine assertion or
   # SQLCipher failure. Only transport loss is eligible for one fresh-AVD retry.
-  if ! timeout 10s adb -s emulator-5554 shell true >/dev/null 2>&1; then
+  if timeout 10s adb -s emulator-5554 shell true >/dev/null 2>&1; then
+    if ! timeout 10s adb -s emulator-5554 exec-out screencap -p \
+      > "$artifact_dir/android-failure.png"; then
+      rm -f "$artifact_dir/android-failure.png"
+    fi
+  else
     touch "$artifact_dir/emulator-disconnected.marker"
     echo "::warning::Android emulator is unreachable after instrumentation failure."
     adb devices -l || true
@@ -46,8 +51,9 @@ gradle --no-daemon :app:connectedDebugAndroidTest \
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 adb install -r app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
 
-bash ci/capture-measurement-workspace.sh
-
+# Screenshot-only UI replay lives in the separate, manually dispatched
+# "Android workspace screenshots (manual)" workflow, not this security gate.
+# Keep the following encrypted DB recovery/integrity proofs mandatory.
 bash ci/verify-sqlcipher-process-death.sh
 bash ci/verify-production-v9-upgrade.sh
 

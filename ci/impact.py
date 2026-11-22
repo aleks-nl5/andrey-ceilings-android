@@ -16,6 +16,33 @@ import sys
 
 SHA = re.compile(r"^[0-9a-fA-F]{40}(?:[0-9a-fA-F]{24})?$")
 TARGETS = ("android", "desktop", "ios")
+ANDROID_TEST_PACKAGE = "com.andreyceilings.app"
+WORKSPACE_LAYOUT_TEST = f"{ANDROID_TEST_PACKAGE}.MeasurementWorkspaceLayoutTest"
+OVERLAY_DRAG_TEST = f"{ANDROID_TEST_PACKAGE}.OverlayDragTouchTest"
+AREA_TOUCH_TEST = f"{ANDROID_TEST_PACKAGE}.AreaFeatureTouchTest"
+WINDOWS_TEST_PACKAGE = "com.andreyceilings.desktop"
+FOUNDATION_SCENE_TEST = f"{WINDOWS_TEST_PACKAGE}.CeilingsFoundationSceneTest"
+MEASUREMENT_SCENE_TEST = f"{WINDOWS_TEST_PACKAGE}.MeasurementEditSceneTest"
+SHARED_SOURCE = "shared/src/commonMain/kotlin/com/andreyceilings/shared"
+
+# Exact paths keep unrelated features, including PDF and persistence code in
+# UI directories, on deep verification. Each entry needs relevant UI evidence.
+ANDROID_SMOKE_TESTS_BY_PATH = {
+    "app/src/main/res/font/inter_variable.ttf": (WORKSPACE_LAYOUT_TEST,),
+}
+# Each shared presentation path has Android instrumentation and a Windows scene.
+SHARED_SMOKE_TESTS_BY_PATH = {
+    f"{SHARED_SOURCE}/measurement/MeasurementDrawing.kt": (
+        (WORKSPACE_LAYOUT_TEST, OVERLAY_DRAG_TEST, AREA_TOUCH_TEST), MEASUREMENT_SCENE_TEST,
+    ),
+    f"{SHARED_SOURCE}/ui/CeilingsWorkspaceScaffold.kt": (
+        (WORKSPACE_LAYOUT_TEST,), MEASUREMENT_SCENE_TEST,
+    ),
+    f"{SHARED_SOURCE}/ui/CeilingsFab.kt": ((WORKSPACE_LAYOUT_TEST,), FOUNDATION_SCENE_TEST),
+    f"{SHARED_SOURCE}/theme/CeilingsEdgeGradient.kt": ((WORKSPACE_LAYOUT_TEST,), FOUNDATION_SCENE_TEST),
+    f"{SHARED_SOURCE}/theme/CeilingsTheme.kt": ((WORKSPACE_LAYOUT_TEST,), FOUNDATION_SCENE_TEST),
+    f"{SHARED_SOURCE}/theme/CeilingsTypography.kt": ((WORKSPACE_LAYOUT_TEST,), MEASUREMENT_SCENE_TEST),
+}
 
 
 @dataclass(frozen=True)
@@ -30,6 +57,9 @@ class Impact:
     targets: tuple[str, ...]
     reason: str
     paths: tuple[str, ...]
+    depths: tuple[str, str, str] = ("skip", "skip", "skip")
+    android_smoke_tests: tuple[str, ...] = ()
+    windows_smoke_tests: tuple[str, ...] = ()
 
 
 def parse_changes(data: bytes) -> list[Change]:
@@ -58,60 +88,108 @@ def parse_changes(data: bytes) -> list[Change]:
     return changes
 
 
-def critical(path: str) -> bool:
-    """Changes touching build, persistence, security, tests or shared UI are FULL."""
+def _full(reason: str, paths: tuple[str, ...]) -> Impact:
+    """Global fail-closed fallback (CI/config/unknown/common business contracts)."""
+    return Impact("FULL", TARGETS, reason, paths, ("deep", "deep", "deep"))
+
+
+def _group(path: str) -> tuple[tuple[str, ...], str] | None:
+    """Explicit source-set to consumer map. Unknown paths are NOT cheap.
+
+    Depth is per affected platform: skip, smoke, deep. A Windows-only
+    SQLCipher/JDBC change must not force Android/iOS instrumentation.
+    """
     lower = path.lower()
-    return (path.startswith((".github/", "ci/", "gradle/"))
+    # Documentation is safe only in known documentation roots.
+    if (path == "README.md"
+            or path.startswith("docs/") and Path(path).suffix.lower()
+               in {".md", ".txt", ".png", ".jpg", ".jpeg", ".svg"}
+            or path == "iosApp/README.md"):
+        return ((), "skip")
+    # Build, dependency and CI policy changes have unbounded consumers.
+    if (path.startswith((".github/", "ci/", "gradle/"))
             or path in {"AGENTS.md", "gradle.properties", "settings.gradle.kts",
                         "build.gradle.kts", "gradlew", "gradlew.bat", ".gitignore"}
-            or path.endswith((".gradle.kts", ".gradle", ".toml", ".properties", ".sql", ".sq"))
-            or "/src/" in path and any(fragment in lower for fragment in (
-                "/db/", "/database/", "/backup/", "sqlcipher", "migration", "keystore", "keychain",
-                "encryption", "credential", "/test/", "/androidtest/", "/commontest/",
-                "/jvmtest/", "/iostest/", "/androidinstrumentedtest/", "/testfixtures/"))
-            or lower.endswith("/androidmanifest.xml"))
+            or lower.endswith((".gradle.kts", ".gradle", ".toml", ".properties"))):
+        return None
 
+    # Native Swift/Xcode app configuration is not validated by the current
+    # Gradle iOS framework smoke; never label it as a scoped iOS verification.
+    if path.startswith("iosApp/"):
+        return None
+    if (path.startswith(("app/src/", "desktopApp/src/", "shared/src/"))
+            and Path(path).suffix.lower() not in {
+                ".kt", ".java", ".xml", ".sql", ".sq", ".sqm",
+                ".png", ".jpg", ".jpeg", ".webp", ".svg", ".json",
+                ".ttf", ".otf"
+            }):
+        return None
 
-def target_for(path: str) -> str | None:
-    if path == "README.md" or path.startswith("docs/") and Path(path).suffix.lower() in {".md", ".txt", ".png", ".jpg", ".svg"}:
-        return "docs"
-    if path == "iosApp/README.md":
-        return "docs"
-    if path.startswith(("app/src/main/", "app/src/androidMain/", "shared/src/androidMain/")):
-        return "android"
-    if path.startswith(("desktopApp/src/main/", "shared/src/jvmMain/")):
-        return "desktop"
-    if path.startswith(("shared/src/iosMain/",)):
-        return "ios"
-    # Any commonMain (especially theme, navigation, Canvas, pricing/PDF) can
-    # affect Android/Desktop/iOS and needs FULL, not an underestimated subset.
+    if path.startswith(("app/src/", "shared/src/androidMain/",
+                        "shared/src/androidTest/", "shared/src/androidInstrumentedTest/",
+                        "shared/src/androidUnitTest/")):
+        return (("android",), "smoke" if path in ANDROID_SMOKE_TESTS_BY_PATH else "deep")
+    # Platform directories do not establish presentation-only behavior.
+    # Desktop and iOS smoke are selected only by audited shared paths below.
+    if path.startswith(("desktopApp/src/", "shared/src/jvmMain/",
+                        "shared/src/jvmTest/")):
+        return (("desktop",), "deep")
+    if path.startswith(("shared/src/iosMain/", "shared/src/iosTest/")):
+        return (("ios",), "deep")
+    if path.startswith(("shared/src/commonMain/", "shared/src/commonTest/")):
+        # Common business/geometry/finance code is coupled to native DB and
+        # platform persistence. No optimistic category derived from its name.
+        return (TARGETS, "smoke" if path in SHARED_SMOKE_TESTS_BY_PATH else "deep")
     return None
 
 
 def classify(changes: list[Change]) -> Impact:
     paths = tuple(c.path for c in changes)
     if not changes:
-        return Impact("FULL", (), "empty or unverifiable change set", paths)
-    targets: set[str] = set()
+        return _full("empty or unverifiable change set", paths)
+    depths = {target: "skip" for target in TARGETS}
+    rank = {"skip": 0, "smoke": 1, "deep": 2}
+    shared_deep = False
     for c in changes:
         if c.status not in ("A", "M"):
-            return Impact("FULL", (), f"deleted/renamed/copied/type-changed path: {c.path}", paths)
-        if critical(c.path):
-            return Impact("FULL", (), f"critical/test/build/security change: {c.path}", paths)
-        target = target_for(c.path)
-        if target is None:
-            return Impact("FULL", (), f"unknown or cross-platform path: {c.path}", paths)
-        if target != "docs":
-            targets.add(target)
-    if not targets:
-        return Impact("FAST", (), "documentation-only change; run classifier regression tests", paths)
-    return Impact("TARGETED", tuple(t for t in TARGETS if t in targets),
-                  "platform-specific source changes; union of targets", paths)
+            return _full(f"deleted/renamed/copied/type-changed path: {c.path}", paths)
+        group = _group(c.path)
+        if group is None:
+            return _full(f"CI/build or unknown path: {c.path}", paths)
+        targets, depth = group
+        for target in targets:
+            if rank[depth] > rank[depths[target]]:
+                depths[target] = depth
+        if targets == TARGETS and depth == "deep":
+            shared_deep = True
+    selected = tuple(t for t in TARGETS if depths[t] != "skip")
+    levels = tuple(depths[t] for t in TARGETS)
+    if not selected:
+        return Impact("FAST", (), "documentation-only; classifier tests", paths, levels)
+    if shared_deep:
+        return Impact("FULL", TARGETS, "shared business/database or test contract; all dependent suites", paths,
+                      ("deep", "deep", "deep"))
+    android_smoke_tests = ()
+    windows_smoke_tests = ()
+    shared_suites = [SHARED_SMOKE_TESTS_BY_PATH[path]
+                     for path in paths if path in SHARED_SMOKE_TESTS_BY_PATH]
+    if depths["android"] == "smoke":
+        android_tests = {
+            test for path in paths for test in ANDROID_SMOKE_TESTS_BY_PATH.get(path, ())
+        }
+        android_tests.update(test for tests, _ in shared_suites for test in tests)
+        android_smoke_tests = tuple(sorted(android_tests))
+    if depths["desktop"] == "smoke":
+        windows_tests = {FOUNDATION_SCENE_TEST}
+        windows_tests.update(scene for _, scene in shared_suites)
+        windows_smoke_tests = tuple(sorted(windows_tests))
+    return Impact("TARGETED", selected, "per-platform source-set dependency union; scoped depth",
+                  paths, levels, android_smoke_tests, windows_smoke_tests)
 
 
 def impact_from_git(base: str, head: str) -> Impact:
     if not SHA.fullmatch(base) or not SHA.fullmatch(head):
-        return Impact("FULL", (), "missing or malformed base/head SHA", ())
+        return _full("missing or malformed base/head SHA", ())
     try:
         output = subprocess.run(
             ["git", "diff", "--name-status", "-z", "--find-renames", f"{base}...{head}", "--"],
@@ -119,7 +197,7 @@ def impact_from_git(base: str, head: str) -> Impact:
         )
         return classify(parse_changes(output.stdout))
     except (OSError, ValueError, subprocess.SubprocessError, UnicodeError) as error:
-        return Impact("FULL", (), f"could not verify complete git diff ({type(error).__name__})", ())
+        return _full(f"could not verify complete git diff ({type(error).__name__})", ())
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -135,6 +213,11 @@ def main(argv: list[str] | None = None) -> int:
         "android": str("android" in result.targets).lower(),
         "desktop": str("desktop" in result.targets).lower(),
         "ios": str("ios" in result.targets).lower(),
+        **{f"{target}_depth": depth for target, depth in zip(TARGETS, result.depths)},
+        "android_smoke_tests": ",".join(result.android_smoke_tests),
+        "windows_smoke_tests": ",".join(result.windows_smoke_tests),
+        "apple_depth": (result.depths[2] if result.depths[2] != "skip"
+                        else "smoke" if result.depths[1] != "skip" else "skip"),
     }
     if args.github_output:
         with args.github_output.open("a", encoding="utf-8") as f:
@@ -142,11 +225,14 @@ def main(argv: list[str] | None = None) -> int:
                 f.write(f"{key}={value}\n")
     print(f"Change impact: {result.mode}; targets={','.join(result.targets) or 'none'}; reason={result.reason}")
     if args.summary:
-        lines = ["## Draft change impact - advisory only", "",
+        lines = ["## Change impact - platform/depth classification (not CI proof)", "",
                  f"Commit: {args.head or 'unknown'}", f"Decision: **{result.mode}**",
                  f"Target groups: {', '.join(result.targets) or 'none'}",
+                 f"Coverage: {', '.join(f'{t}={d}' for t, d in zip(TARGETS, result.depths))}",
+                 f"Android smoke classes: {', '.join(result.android_smoke_tests) or 'none selected'}",
+                 f"Windows smoke classes: {', '.join(result.windows_smoke_tests) or 'none selected'}",
                  f"Reason: {result.reason.replace(chr(96), '')}",
-                 "", "This is **not a FULL merge gate**. Existing Android/Windows/iOS FULL checks remain mandatory.",
+                 "", "This is a classification, not proof of execution. Skipped platforms are NOT verified; scoped acceptance depends on real matching-SHA job results.",
                  "", f"Changed paths: {len(result.paths)}", ""]
         lines += [f"- {p.replace(chr(96), '')}" for p in result.paths[:40]]
         if len(result.paths) > 40:

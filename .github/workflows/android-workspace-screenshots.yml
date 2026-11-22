@@ -1,0 +1,73 @@
+# Deliberately manual only. P5A screenshots are opt-in visual evidence,
+# never a required Android DB, release or UI verification gate.
+name: Android workspace screenshots (manual)
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: android-workspace-screenshots-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  capture:
+    name: Optional P5A workspace screenshots
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout requested branch commit
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Identify capture source
+        env:
+          EXPECTED_SHA: ${{ github.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          echo "Manual screenshots for source SHA: $EXPECTED_SHA" >> "$GITHUB_STEP_SUMMARY"
+          echo "This opt-in run is NOT Android or SQLCipher merge acceptance." >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: android-actions/setup-android@v4
+      - name: Install required Android SDK platforms
+        run: sdkmanager 'platforms;android-36' 'platforms;android-37.0' 'build-tools;36.0.0'
+      - uses: gradle/actions/setup-gradle@v6
+        with:
+          gradle-version: '9.7.0'
+      - name: Assemble only debug and instrumentation APKs
+        run: gradle --no-daemon :app:assembleDebug :app:assembleDebugAndroidTest --stacktrace --warning-mode all
+      - name: Enable hardware acceleration
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -c /dev/kvm
+          sudo chmod a+rw /dev/kvm
+          test -r /dev/kvm && test -w /dev/kvm
+      - name: Capture P5A visual matrix on demand
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          profile: pixel_6
+          force-avd-creation: true
+          emulator-options: -no-snapshot -no-window -gpu swiftshader -feature -Vulkan -noaudio -no-boot-anim -camera-back none
+          disable-animations: true
+          script: >-
+            adb install -r app/build/outputs/apk/debug/app-debug.apk &&
+            adb install -r app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk &&
+            bash ci/capture-measurement-workspace.sh
+      - name: Preserve optional screenshot evidence and failing-case log
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: p5a-workspace-screenshots
+          path: ${{ runner.temp }}/p5a-workspace/
+          if-no-files-found: warn
+          retention-days: 7

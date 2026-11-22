@@ -8,7 +8,7 @@ on:
   # If merge queue is enabled, verify the merge-group candidate itself.
   merge_group:
     types: [checks_requested]
-  # Repeat FULL cross-platform verification after main merges.
+  # Main pushes use commit impact; manual dispatch and merge queue force FULL.
   push:
     branches: [ main ]
 
@@ -26,6 +26,10 @@ jobs:
     runs-on: ubuntu-24.04
     outputs:
       mode: ${{ steps.decide.outputs.mode }}
+      desktop_depth: ${{ steps.decide.outputs.desktop_depth }}
+      windows_smoke_tests: ${{ steps.decide.outputs.windows_smoke_tests }}
+      ios_depth: ${{ steps.decide.outputs.ios_depth }}
+      apple_depth: ${{ steps.decide.outputs.apple_depth }}
     steps:
       - name: Checkout exact event commit and PR merge-base history
         uses: actions/checkout@v7
@@ -41,21 +45,29 @@ jobs:
         env:
           EVENT_NAME: ${{ github.event_name }}
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          BEFORE_SHA: ${{ github.event.before }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$HEAD_SHA"
-          if [[ "$EVENT_NAME" == pull_request ]]; then
+          if [[ "$EVENT_NAME" == pull_request || "$EVENT_NAME" == push ]]; then
+            # On main push compare the actual before/after history so an Android
+            # UI merge does not restart Windows deep suites. Missing/zero or
+            # unresolvable before SHA triggers classifier FULL fallback.
+            if [[ "$EVENT_NAME" == push ]]; then BASE_SHA="$BEFORE_SHA"; fi
             python3 ci/impact.py --base "$BASE_SHA" --head "$HEAD_SHA" --github-output "$GITHUB_OUTPUT" --summary "$GITHUB_STEP_SUMMARY"
           else
             echo 'mode=FULL' >> "$GITHUB_OUTPUT"
-            echo "FULL mandatory for $EVENT_NAME on $HEAD_SHA" >> "$GITHUB_STEP_SUMMARY"
+            echo 'desktop_depth=deep' >> "$GITHUB_OUTPUT"
+            echo 'ios_depth=deep' >> "$GITHUB_OUTPUT"
+            echo 'apple_depth=deep' >> "$GITHUB_OUTPUT"
+            echo "Manual/main/merge group: FULL on $HEAD_SHA" >> "$GITHUB_STEP_SUMMARY"
           fi
   ios-and-desktop:
     needs: [impact]
-    # Critical/unknown changes still run FULL in a Draft. Classifier failure
-    # also falls back to FULL, never to a cheap path.
-    if: ${{ always() && (github.event_name != 'pull_request' || !github.event.pull_request.draft || needs.impact.result != 'success' || needs.impact.outputs.mode == 'FULL') }}
+    # Native iOS and macOS JVM DB regressions execute even in Draft when
+    # selected depth is deep. Smoke-only Draft uses lightweight feedback.
+    if: ${{ always() && (needs.impact.result != 'success' || needs.impact.outputs.ios_depth == 'deep' || needs.impact.outputs.desktop_depth == 'deep' || (github.event_name != 'pull_request' || !github.event.pull_request.draft) && needs.impact.outputs.apple_depth != 'skip') }}
     runs-on: macos-15
     steps:
       - name: Checkout source
@@ -92,24 +104,31 @@ jobs:
           cache-read-only: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
 
       - name: Verify Xcode toolchain
+        if: ${{ needs.impact.outputs.ios_depth != 'skip' || needs.impact.result != 'success' }}
         run: xcodebuild -version
 
       - name: Compile iOS simulator framework
+        if: ${{ needs.impact.outputs.ios_depth != 'skip' || needs.impact.result != 'success' }}
         run: gradle --no-daemon :shared:linkDebugFrameworkIosSimulatorArm64 --stacktrace --warning-mode all
 
       - name: Run isolated SQLCipher tests on iOS Simulator
+        if: ${{ needs.impact.outputs.ios_depth == 'deep' || needs.impact.result != 'success' }}
         run: gradle --no-daemon :shared:iosSimulatorArm64Test --stacktrace --warning-mode all
 
       # Combine two JVM-focused Gradle invocations; keep iOS framework and SQLCipher
       # tests as separate mandatory checks for actionable failure reporting.
       - name: Compile Desktop and run shared JVM tests on macOS
+        if: ${{ needs.impact.outputs.desktop_depth == 'deep' || needs.impact.result != 'success' }}
         run: gradle --no-daemon :desktopApp:compileKotlin :shared:jvmTest --stacktrace --warning-mode all
+      - name: Compile Desktop host on macOS (scoped UI smoke)
+        if: ${{ needs.impact.outputs.desktop_depth == 'smoke' && needs.impact.result == 'success' }}
+        run: gradle --no-daemon :desktopApp:compileKotlin :shared:compileKotlinJvm --stacktrace --warning-mode all
 
   windows-desktop:
     needs: [impact]
-    # Critical/unknown changes still run FULL in a Draft. Classifier failure
-    # also falls back to FULL, never to a cheap path.
-    if: ${{ always() && (github.event_name != 'pull_request' || !github.event.pull_request.draft || needs.impact.result != 'success' || needs.impact.outputs.mode == 'FULL') }}
+    # Native Windows SQLCipher/JDBC deep regression is mandatory even in a
+    # Draft Windows DB PR; no cross-platform regression for Android-only UI.
+    if: ${{ always() && (needs.impact.result != 'success' || needs.impact.outputs.desktop_depth == 'deep') }}
     runs-on: windows-latest
     steps:
       - name: Checkout source
@@ -200,38 +219,100 @@ jobs:
           if-no-files-found: warn
           retention-days: 30
 
+  windows-desktop-smoke:
+    name: Windows Desktop scoped Compose smoke
+    needs: [impact]
+    if: ${{ needs.impact.result == 'success' && needs.impact.outputs.desktop_depth == 'smoke' && (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Pin Windows smoke source
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          echo "Windows scoped smoke: $EXPECTED_SHA" >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: android-actions/setup-android@v4
+      - run: sdkmanager 'platforms;android-37.0'
+      - uses: gradle/actions/setup-gradle@v6
+        with:
+          gradle-version: '9.7.0'
+          cache-read-only: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
+      - name: Compile Windows/Desktop and exercise production scene smoke
+        env:
+          WINDOWS_SMOKE_TESTS: ${{ needs.impact.outputs.windows_smoke_tests }}
+        run: |
+          if (-not $env:WINDOWS_SMOKE_TESTS) { throw 'Windows smoke needs a scene class filter' }
+          $filters = foreach ($class in ($env:WINDOWS_SMOKE_TESTS -split ',')) {
+            '--tests'
+            $class
+          }
+          gradle --no-daemon :desktopApp:compileKotlin :desktopApp:test @filters --stacktrace --warning-mode all
+      - name: Preserve Windows targeted smoke reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: windows-scoped-ui-test-reports
+          path: |
+            desktopApp/build/test-results/test/
+            desktopApp/build/reports/tests/test/
+          if-no-files-found: warn
+          retention-days: 30
+
   full-gate:
-    # A Draft result has a *different check name* and must NOT satisfy the
-    # branch-protected FULL required context when tests were skipped.
-    name: ${{ github.event_name == 'pull_request' && github.event.pull_request.draft && 'Draft CMP advisory' || 'FULL CMP merge gate' }}
+    name: ${{ github.event_name == 'pull_request' && github.event.pull_request.draft && 'Draft CMP advisory' || 'CMP scoped CI receipt (owner review)' }}
     if: ${{ always() }}
-    needs: [impact, ios-and-desktop, windows-desktop]
+    needs: [impact, ios-and-desktop, windows-desktop, windows-desktop-smoke]
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
-      - name: Validate actual jobs, source SHA and gate result
+      - name: Prove actual scoped Windows and Apple job conclusions on exact SHA
         shell: bash
         env:
           EVENT_NAME: ${{ github.event_name }}
           IS_DRAFT: ${{ github.event.pull_request.draft }}
           IMPACT_RESULT: ${{ needs.impact.result }}
           IMPACT_MODE: ${{ needs.impact.outputs.mode }}
+          DESKTOP_DEPTH: ${{ needs.impact.outputs.desktop_depth }}
+          IOS_DEPTH: ${{ needs.impact.outputs.ios_depth }}
+          APPLE_DEPTH: ${{ needs.impact.outputs.apple_depth }}
+          WINDOWS_FULL_RESULT: ${{ needs['windows-desktop'].result }}
+          WINDOWS_SMOKE_RESULT: ${{ needs['windows-desktop-smoke'].result }}
+          APPLE_RESULT: ${{ needs['ios-and-desktop'].result }}
           EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-          JOB1_RESULT: ${{ needs['ios-and-desktop'].result }}
-          JOB2_RESULT: ${{ needs['windows-desktop'].result }}
         run: |
           set -euo pipefail
-          ACTUAL_SHA="$(git rev-parse HEAD)"
+          windows_result=skipped
+          if [[ "$IMPACT_RESULT" != success || "$DESKTOP_DEPTH" == deep ]]; then
+            windows_result="$WINDOWS_FULL_RESULT"
+          elif [[ "$DESKTOP_DEPTH" == smoke ]]; then
+            windows_result="$WINDOWS_SMOKE_RESULT"
+          fi
+          # A single Apple runner can run macOS JVM and iOS steps independently.
+          # Never turn its success into an iOS verification if iOS was skipped.
+          ios_result=skipped
+          macos_result=skipped
+          if [[ "$IOS_DEPTH" != skip ]]; then ios_result="$APPLE_RESULT"; fi
+          if [[ "$DESKTOP_DEPTH" != skip ]]; then macos_result="$APPLE_RESULT"; fi
+          echo "iOS depth: $IOS_DEPTH; Windows depth: $DESKTOP_DEPTH; macOS/JVM depth: $DESKTOP_DEPTH" >> "$GITHUB_STEP_SUMMARY"
           python3 ci/verify_full_gate.py \
-            --event "$EVENT_NAME" \
-            --draft "$IS_DRAFT" \
-            --impact-result "$IMPACT_RESULT" \
-            --mode "$IMPACT_MODE" \
-            --job-result "$JOB1_RESULT" \
-            --job-result "$JOB2_RESULT" \
-            --expected-sha "$EXPECTED_SHA" \
-            --actual-sha "$ACTUAL_SHA" \
+            --event "$EVENT_NAME" --draft "$IS_DRAFT" \
+            --impact-result "$IMPACT_RESULT" --mode "$IMPACT_MODE" \
+            --expected-group windows --expected-group ios --expected-group macos \
+            --coverage "windows:$DESKTOP_DEPTH:$windows_result" \
+            --coverage "ios:$IOS_DEPTH:$ios_result" \
+            --coverage "macos:$DESKTOP_DEPTH:$macos_result" \
+            --expected-sha "$EXPECTED_SHA" --actual-sha "$(git rev-parse HEAD)" \
             --summary "$GITHUB_STEP_SUMMARY"
