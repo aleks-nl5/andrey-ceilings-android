@@ -77,3 +77,9 @@ This is a **proven dominant cost for this single class**. It does not explain al
 4. Future #147 work: benchmark and potentially optimize SQLCipher open churn, inspect `PriceCatalogWindowsCipherTest` test-fixture repetition and run `MixedDetailsSceneTest` **uncached** in isolation, then compare uncached full-suite wall time. Preserve complete checks and real encryption. Issue #147 remains open; this is **not** a request to resume now.
 
 **Documentation supersedes the earlier “verification still required” paragraph above for the code HEAD `639377ba` only.** Any subsequent commit, including this documentation update, requires a fresh CI status assessment before merging. No new Android/Windows/iOS host functionality is promised by this checkpoint.
+
+### Follow-up fixture benchmark (#150)
+
+[Draft PR #151](https://github.com/aleks-nl5/andrey-ceilings-android/pull/151) records a test-only change to legacy PriceCatalog fixture setup. On the [paired Windows run](https://github.com/aleks-nl5/andrey-ceilings-android/actions/runs/45024437830), the metrics-only baseline `725b7d40` and candidate `402cc29c` each passed all five PriceCatalog cases on the same runner, using `--rerun-tasks --no-build-cache`. Summed JUnit testcase time fell from 1,362.141 s to 837.224 s (38.5%). Physical opens, closes and successful schema guards each fell from 6,634 to 4,427 (33.3%). All nine focused controls passed.
+
+The comparison measures fixture setup and leaves production JDBC behavior as it was in #148. The baseline ran first, so dependency and filesystem warmup can affect the command timings. Issue #147 remains open for production reuse research.

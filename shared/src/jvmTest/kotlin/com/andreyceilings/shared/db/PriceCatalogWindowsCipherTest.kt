@@ -2,6 +2,8 @@ package com.andreyceilings.shared.db
 
 import java.nio.file.Files
 import kotlinx.coroutines.runBlocking
+import org.junit.Rule
+import org.junit.rules.TestName
 import kotlin.test.*
 
 class PriceCatalogWindowsCipherTest {
@@ -9,19 +11,29 @@ class PriceCatalogWindowsCipherTest {
     // database names or paths. Every JUnit test instance owns an independent counter.
     private val nativeMetrics = SqlCipherWindowsConnectionMetrics()
 
+    @get:Rule
+    val testName = TestName()
+
     @AfterTest fun printConnectionCounts() {
         if (!System.getProperty("os.name").startsWith("Windows", ignoreCase = true)) return
+        val opens = nativeMetrics.physicalOpens.get()
+        val closes = nativeMetrics.physicalCloses.get()
+        val guardsPassed = nativeMetrics.encryptedSchemaGuardsPassed.get()
+        val guardAttempts = nativeMetrics.encryptedSchemaGuardAttempts.get()
         println(
             "PriceCatalogWindowsCipherTest native JDBC metrics: " +
-                "physicalOpens=${nativeMetrics.physicalOpens.get()}, " +
-                "physicalCloses=${nativeMetrics.physicalCloses.get()}, " +
-                "schemaGuardsPassed=${nativeMetrics.encryptedSchemaGuardsPassed.get()}, " +
-                "schemaGuardAttempts=${nativeMetrics.encryptedSchemaGuardAttempts.get()}, " +
+                "testCase=${testName.methodName}, " +
+                "physicalOpens=$opens, physicalCloses=$closes, " +
+                "schemaGuardsPassed=$guardsPassed, schemaGuardAttempts=$guardAttempts, " +
                 "guardTotalMs=${nativeMetrics.encryptedSchemaGuardNanos.get() / 1_000_000}, " +
                 "logicalStatements=${nativeMetrics.logicalStatements.get()}, " +
                 "pinnedStatements=${nativeMetrics.statementsOnPinnedTransaction.get()}, " +
                 "outerBegins=${nativeMetrics.outerTransactionsBegun.get()}"
         )
+        assertTrue(opens > 0, "The Windows test must open a physical encrypted connection")
+        assertEquals(opens, closes, "Each physical connection must be closed")
+        assertEquals(opens, guardAttempts, "Each physical connection must attempt the encrypted schema guard")
+        assertEquals(opens, guardsPassed, "Each physical connection must pass the encrypted schema guard")
     }
     @Test fun encryptedPointPlacementsV8UpgradeRollbackReopenRacesAndDomainProof(): Unit = runBlocking {
         if (!System.getProperty("os.name").startsWith("Windows", ignoreCase = true)) return@runBlocking
@@ -72,15 +84,20 @@ class PriceCatalogWindowsCipherTest {
         try {
             val before: List<List<String?>>
             SqlCipherWindowsDriverFactory.openProfiled(file, key, nativeMetrics).use { driver ->
-                PriceCatalogMigrationProof.legacySchema.create(driver)
-                PriceCatalogMigrationProof.populateLegacy(driver)
-                // v3 never tracked payment; unchanged 3.sqm adds 'unknown'
-                // for this active legacy project. Build the expected v4+ row.
-                driver.execute(null, "UPDATE projects SET paymentStatus='unknown'", 0)
+                val database = PrototypeDatabase(driver)
+                database.transaction {
+                    PriceCatalogMigrationProof.legacySchema.create(driver)
+                    PriceCatalogMigrationProof.populateLegacy(driver)
+                    // v3 never tracked payment; unchanged 3.sqm adds 'unknown'
+                    // for this active legacy project. Build the expected v4+ row.
+                    driver.execute(null, "UPDATE projects SET paymentStatus='unknown'", 0)
+                }
                 before = PriceCatalogMigrationProof.untouchedRows(driver)
-                driver.execute(null, "DROP INDEX index_projects_paymentStatus", 0)
-                driver.execute(null, "ALTER TABLE projects DROP COLUMN paymentStatus", 0)
-                driver.execute(null, "PRAGMA user_version=3", 0)
+                database.transaction {
+                    driver.execute(null, "DROP INDEX index_projects_paymentStatus", 0)
+                    driver.execute(null, "ALTER TABLE projects DROP COLUMN paymentStatus", 0)
+                    driver.execute(null, "PRAGMA user_version=3", 0)
+                }
             }
             SqlCipherWindowsDriverFactory.openProfiled(file, key, nativeMetrics).use { driver ->
                 openDesktopPriceCatalog(driver, true)
@@ -119,8 +136,10 @@ class PriceCatalogWindowsCipherTest {
         try {
             var before = emptyList<List<String?>>()
             SqlCipherWindowsDriverFactory.openProfiled(file, key, nativeMetrics).use { driver ->
-                PriceCatalogMigrationProof.legacySchema.create(driver)
-                PriceCatalogMigrationProof.populateLegacy(driver)
+                PrototypeDatabase(driver).transaction {
+                    PriceCatalogMigrationProof.legacySchema.create(driver)
+                    PriceCatalogMigrationProof.populateLegacy(driver)
+                }
                 before = PriceCatalogMigrationProof.untouchedRows(driver)
                 assertFails { PriceCatalogSchema.migrate(PriceCatalogMigrationProof.failing(driver), 4, 6) }
                 PriceCatalogMigrationProof.assertOldPrice(driver)
