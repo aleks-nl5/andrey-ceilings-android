@@ -53,6 +53,35 @@ class ScannerTest(unittest.TestCase):
         for path in lint.CATALOG_DATA:
             self.assertEqual(["catalog_data"], [e.category for e in lint.scan(path, 'name = "Полотно"')])
 
+    def test_follows_direct_display_arguments_and_preserves_technical_bindings(self):
+        source = """
+            fun Warning(row: Row) {
+                val copyForUser: String = "Saved successfully"
+                Text(text = copyForUser)
+                val narration = "Dismiss warning"
+                Icon(icon, contentDescription = narration)
+                val persistedKey = "Settings storage key"
+                val marker = "Warning screen marker"
+                preferences.getString(persistedKey, null)
+                Modifier.testTag(marker)
+                logger.warning(message = marker)
+                val buttonCopy = "Close dialog"
+                builder.setPositiveButton(buttonCopy, listener)
+                val hidden = "Internal fallback"
+                if (row.visible) {
+                    val hidden = row.name
+                    Text(hidden)
+                }
+                Log.i("Warning", persistedKey)
+            }
+        """
+        self.assertEqual(
+            [("ui", "Saved successfully"), ("accessibility", "Dismiss warning"),
+             ("technical", "Settings storage key"), ("technical", "Warning screen marker"),
+             ("ui", "Close dialog"), ("technical", "Internal fallback"), ("log", "Warning")],
+            [entry.key for entry in lint.scan(f"{SHARED}/Screen.kt", source, follow_bindings=True)],
+        )
+
     def test_android_xml_resources_and_accessibility(self):
         source = '''<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android">
             <TextView android:text="@string/title" android:contentDescription="Деталі" />
@@ -121,6 +150,28 @@ class GitBaselineTest(unittest.TestCase):
         self.assertEqual(2, len(failures))
         self.assertTrue(failures[0].endswith("ui: 'Existing'"))
         self.assertTrue(failures[1].endswith("ui: 'New'"))
+
+    def test_guard_keeps_historical_bindings_and_blocks_new_english_copy(self):
+        path = f"{SHARED}/Screen.kt"
+        original = 'fun Warning() { val previousCopy = "Historical copy"; Text(previousCopy) }'
+        self.write(path, original)
+        base = self.commit()
+        self.install_baseline(base)
+        baseline = self.commit()
+        self.write(path, original + '\n// Unrelated change')
+        self.assertEqual([], self.check(base, self.commit()))
+        self.write(path, original + '\n' + '''
+fun Result() {
+    val copyForUser = "Saved successfully"
+    Text(copyForUser)
+    val marker = "Result test marker"
+    Modifier.testTag(marker)
+}
+''')
+        head = self.commit()
+        expected = [f"{path}:4: ui: 'Saved successfully'"]
+        self.assertEqual(expected, self.check(base, head))
+        self.assertEqual(expected, self.check(baseline, head))
 
     def test_bootstrap_inventory_cannot_allow_new_literal(self):
         path = f"{APP}/Screen.kt"

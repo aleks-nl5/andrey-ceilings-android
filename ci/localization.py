@@ -23,6 +23,7 @@ SQL = re.compile(
     r"(?:CREATE|ALTER|DROP)\s+(?:TABLE|INDEX|TRIGGER|VIEW)\b|PRAGMA\s+\w+\s*[=(]|"
     r"WITH\s+\w+\s+AS\b|ATTACH\s+DATABASE\b)", re.I | re.S)
 TECH_VALUE = re.compile(r"(?:@?[a-z]+://\S+|[a-z]+/[+\w.-]+|[\w]+(?:[.][a-z0-9_]+){2,})", re.I)
+LOG_CALL = re.compile(r"(?:Log|PerformanceDiagnosticsLog|logger)\.\w+")
 ACCESSIBILITY = {"contentDescription", "stateDescription", "onClickLabel",
                  "onLongClickLabel", "paneTitle", "accessibilityLabel", "accessibilityHint"}
 NOTIFICATION = {"setContentTitle", "setContentText", "setSubText", "setTicker", "NotificationChannel"}
@@ -31,6 +32,17 @@ VISIBLE_CALLS = {"Text", "BasicText", "AnnotatedString", "TextView", "setText", 
                  "AppDestination", "Snackbar", "showSnackbar", "Window", "appendLine"}
 VISIBLE_NAMES = {"text", "title", "subtitle", "caption", "label", "message", "hint", "errorMessage",
                  "placeholder", "supportingText", "emptyMessage", "tooltip", "quickCreateLabel"}
+# Only follow positional bindings where the display argument is known.
+DISPLAY_ARGUMENTS = {
+    **{name: (0, "ui") for name in (
+        "Text", "BasicText", "TextView", "Label", "setText", "setTitle", "setMessage",
+        "setPositiveButton", "setNegativeButton", "showSnackbar",
+    )},
+    **{name: (0, "notification") for name in NOTIFICATION - {"NotificationChannel"}},
+    "Icon": (1, "accessibility"),
+    "makeText": (1, "ui"),
+    "NotificationChannel": (1, "notification"),
+}
 TECH_CALLS = {"testTag", "Regex", "require", "check", "error", "println", "print",
               "getStringExtra", "getSharedPreferences", "setProperty", "stringResource",
               "pluralStringResource", "getString", "getPluralString", "execute",
@@ -128,7 +140,74 @@ def kotlin_tokens(source):
             yield token, None, match.start()
 
 
-def literal_category(path, value, call, parents, assignment):
+def bound_presentation_literals(source, tokens):
+    """Map simple Kotlin string initializers used directly as display arguments."""
+    scopes = [{}]
+    frames = []
+    closing = {"(": ")", "[": "]", "{": "}"}
+    uses = {}
+    words = [token for token, _, _ in tokens]
+
+    for index, (token, _, offset) in enumerate(tokens):
+        previous = words[index - 1] if index else None
+        following = words[index + 1:index + 3]
+        if token in {"val", "var"} and following and IDENTIFIER.fullmatch(following[0] or ""):
+            name = following[0]
+            initializer = index + 3
+            if words[index + 2:index + 5] == [":", "String", "="]:
+                initializer = index + 5
+            # Record shadowing declarations even when their value is not a literal.
+            scopes[-1][name] = None
+            if token == "val" and words[initializer - 1:initializer + 1] == ["=", None]:
+                literal_start = tokens[initializer][2]
+                next_index = initializer + 1
+                if (next_index == len(tokens) or words[next_index] in {";", "}"}
+                        or (words[next_index] not in {".", "?", "+", "[", "("}
+                            and "\n" in source[literal_start:tokens[next_index][2]])):
+                    scopes[-1][name] = literal_start
+
+        if token in closing:
+            call = previous if IDENTIFIER.fullmatch(previous or "") else None
+            if call and index >= 3 and words[index - 2] == ".":
+                call = f"{words[index - 3]}.{call}"
+            frames.append((token, call, 0))
+            if token == "{":
+                scopes.append({})
+        elif frames and token == closing[frames[-1][0]]:
+            frames.pop()
+            if token == "}":
+                scopes.pop()
+        elif token == "," and frames and frames[-1][0] == "(":
+            delimiter, call, argument = frames[-1]
+            frames[-1] = (delimiter, call, argument + 1)
+        elif token and IDENTIFIER.fullmatch(token) and frames and frames[-1][0] == "(":
+            _, qualified_call, argument = frames[-1]
+            if not qualified_call or LOG_CALL.fullmatch(qualified_call):
+                continue
+            call = qualified_call.rsplit(".", 1)[-1]
+            if call in TECH_CALLS or not following or following[0] not in {",", ")"}:
+                continue
+            category = None
+            if previous == "=" and index >= 3 and words[index - 3] in {"(", ","}:
+                parameter = words[index - 2]
+                if parameter in ACCESSIBILITY:
+                    category = "accessibility"
+                elif parameter in VISIBLE_NAMES and call in NOTIFICATION:
+                    category = "notification"
+                elif parameter in VISIBLE_NAMES and (call in VISIBLE_CALLS or call in DISPLAY_ARGUMENTS):
+                    category = "ui"
+            elif previous in {"(", ","}:
+                position, display_category = DISPLAY_ARGUMENTS.get(call, (-1, None))
+                if argument == position:
+                    category = display_category
+            if category:
+                binding = next((scope[token] for scope in reversed(scopes) if token in scope), None)
+                if binding is not None:
+                    uses.setdefault(binding, category)
+    return uses
+
+
+def literal_category(path, value, call, parents, assignment, bound_category=None):
     file = Path(path).name
     if any("test" in component.lower() for component in path.split("/")[2:-1]):
         return "test"
@@ -138,7 +217,7 @@ def literal_category(path, value, call, parents, assignment):
         return "technical"
     if call.rsplit(".", 1)[-1] in TECH_CALLS or assignment in TECH_NAMES:
         return "technical"
-    if re.fullmatch(r"(?:Log|PerformanceDiagnosticsLog|logger)\.\w+", call):
+    if LOG_CALL.fullmatch(call):
         return "log"
     visible = TEMPLATE.sub("", value) if file.endswith(".kt") else value
     has_letters = any(c.isalpha() for c in visible)
@@ -155,6 +234,8 @@ def literal_category(path, value, call, parents, assignment):
     if (call.rsplit(".", 1)[-1] in VISIBLE_CALLS or assignment in VISIBLE_NAMES
             or any(parent.rsplit(".", 1)[-1] in VISIBLE_CALLS for parent in parents)):
         return "ui"
+    if bound_category:
+        return bound_category
     presentation_file = ("/ui/" in path or file.endswith(("Screen.kt", "Controls.kt", "Chrome.kt", "Ui.kt"))
                          or file in {"AppRoot.kt", "MainActivity.kt", "Main.kt", "AppNavigationState.kt"})
     if presentation_file and CYRILLIC.search(visible):
@@ -164,16 +245,21 @@ def literal_category(path, value, call, parents, assignment):
     return "domain" if CYRILLIC.search(visible) else "technical"
 
 
-def code_entries(path, source):
+def code_entries(path, source, follow_bindings=False):
+    tokens = kotlin_tokens(source)
+    bindings = {}
+    if follow_bindings and path.endswith(".kt"):
+        tokens = list(tokens)
+        bindings = bound_presentation_literals(source, tokens)
     # Keep the surrounding call and assignment across whitespace and comments.
     parents = []
     previous = []
     assignment = None
-    for token, value, offset in kotlin_tokens(source):
+    for token, value, offset in tokens:
         if token is None:
             if value.strip():
                 call = parents[-1] if parents else ""
-                category = literal_category(path, value, call, parents, assignment)
+                category = literal_category(path, value, call, parents, assignment, bindings.get(offset))
                 yield Entry(source.count("\n", 0, offset) + 1, category, value)
         elif token == "(":
             name = previous[-1] if previous and IDENTIFIER.fullmatch(previous[-1]) else ""
@@ -190,7 +276,7 @@ def code_entries(path, source):
         previous = previous[-3:]
 
 
-def scan(path, source):
+def scan(path, source, follow_bindings=False):
     if Path(path).suffix == ".xml":
         for element in ET.fromstring(source).iter():
             tag = element.tag.rsplit("}", 1)[-1]
@@ -210,7 +296,7 @@ def scan(path, source):
         for match in re.finditer(r"'((?:''|[^'])+)'", re.sub(r"--[^\n]*|/\*.*?\*/", "", source, flags=re.S)):
             yield Entry(source.count("\n", 0, match.start()) + 1, "technical", match[1].replace("''", "'"))
     else:
-        yield from code_entries(path, source)
+        yield from code_entries(path, source, follow_bindings)
 
 
 def ref_text(ref, path):
@@ -260,15 +346,14 @@ def check(base, head):
             raise ValueError("Historical localization inventory must remain fixed")
     failures = []
     for before, after in changes(merge_base, head):
-        historical = Counter({(kind, value): count for kind, value, count in baseline.get(before, [])})
+        allowed = Counter()
         if before and sources([before]):
-            existing = Counter(entry.key for entry in scan(before, ref_text(merge_base, before)))
-            # Base changes already landed (e.g. translated or renamed historical rows)
-            # stay permitted. The checked-in baseline is exact for the bootstrap.
-            allowed = historical & existing if trusted is None else existing
-        else:
-            allowed = Counter()
-        for entry in additions(scan(after, ref_text(head, after)), allowed):
+            # Compare both revisions with the current guard. A newly recognized
+            # historical use stays allowed while the inventory remains reproducible.
+            allowed.update(entry.key for entry in scan(
+                before, ref_text(merge_base, before), follow_bindings=True
+            ))
+        for entry in additions(scan(after, ref_text(head, after), follow_bindings=True), allowed):
             failures.append(f"{after}:{entry.line or 1}: {entry.category}: {entry.value!r}")
     return failures
 
