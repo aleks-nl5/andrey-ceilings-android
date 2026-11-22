@@ -182,6 +182,8 @@ def main(argv: list[str] | None = None) -> int:
         "desktop": str("desktop" in result.targets).lower(),
         "ios": str("ios" in result.targets).lower(),
         **{f"{target}_depth": depth for target, depth in zip(TARGETS, result.depths)},
+        "apple_depth": (result.depths[2] if result.depths[2] != "skip"
+                        else "smoke" if result.depths[1] != "skip" else "skip"),
     }
     if args.github_output:
         with args.github_output.open("a", encoding="utf-8") as f:
