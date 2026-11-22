@@ -23,13 +23,14 @@ class LineCreationSnapTest {
     }
 
     @Test
-    fun neverForcesSnapToAnOutsideEndpointOrToADistantWall() {
+    fun snapsInTheCenterButRejectsAnOutsideEndpoint() {
         val start = PointPositionMm(500, 200)
         val outside = PointPositionMm(5_100, 425)
         assertEquals(LineCreationPreview(start, outside), previewLineCreation(rectangle, start, outside, null))
         val interior = PointPositionMm(1500, 1800)
         val end = PointPositionMm(2600, 1860)
-        assertEquals(LineCreationPreview(interior, end), previewLineCreation(rectangle, interior, end, null))
+        assertEquals(LineCreationPreview(interior, PointPositionMm(2600, 1800), 0),
+            previewLineCreation(rectangle, interior, end, null))
     }
 
     @Test

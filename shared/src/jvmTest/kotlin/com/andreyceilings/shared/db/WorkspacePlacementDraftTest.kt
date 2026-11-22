@@ -3,6 +3,7 @@ package com.andreyceilings.shared.db
 import app.cash.sqldelight.db.SqlDriver
 import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
 import com.andreyceilings.shared.measurement.*
+import com.andreyceilings.shared.livepricing.BusinessRole
 import com.andreyceilings.shared.livepricing.LivePricingReader
 import com.andreyceilings.shared.livepricing.PricingReadResult
 import com.andreyceilings.shared.prices.PlacementKind
@@ -150,6 +151,55 @@ class WorkspacePlacementDraftTest {
             assertEquals(original, store.load(fixture.project, fixture.id))
             assertNull(MeasurementElementRepository(db).find(element.uuid))
             assertEquals(0L, PriceNameUniquenessProof.scalar(raw, "SELECT count(*) FROM ceiling_operations"))
+        }
+    }
+
+    @Test
+    fun materialSelectorsSaveRealTypedBindingsAndDeleteMarkerWithoutDeletingWork() = runBlocking {
+        JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).use { raw ->
+            PriceCatalogSchema.create(raw)
+            val db = PrototypeDatabase(raw)
+            val fixture = PointPlacementProof.fixture(db)
+            val pointRepository = PointPlacementRepository(db)
+            val marker = pointRepository.addPoint(fixture.element.version, fixture.contourVersion, 900, 800, 10)
+            val store = MeasurementEditStore(db) { 100 }
+            val measurement = fixture.element.measurementUuid
+            val prices = PriceRepository(db)
+            val group = PriceGroupRepository(db).all().first().uuid
+            fun item(code: String, unit: String, mode: QuantityMode): String =
+                checkNotNull(prices.find(prices.createInGroup(code, code, group, 10.0, 25, unit, mode, PlacementKind.NONE))).uuid
+            val oldCanvas = item("material.old", "м²", QuantityMode.CEILING_AREA)
+            val newCanvas = item("material.new", "м²", QuantityMode.CEILING_AREA)
+            val profile = item("material.profile", "м.п.", QuantityMode.CEILING_PERIMETER)
+            val elements = MeasurementElementRepository(db)
+            val old = elements.createCatalogSelection(measurement, oldCanvas, ElementQuantity.CeilingArea, 30,
+                businessRole = BusinessRole.CANVAS)
+            val original = store.load(fixture.project, fixture.id)
+            val model = MeasurementEditModel(store, original)
+            val catalog = store.placementCatalog().associateBy { it.uuid }
+            model.chooseMaterial(BusinessRole.PRIMARY_PROFILE, catalog.getValue(newCanvas))
+            assertTrue(model.materials(BusinessRole.PRIMARY_PROFILE).isEmpty())
+            model.chooseMaterial(BusinessRole.CANVAS, catalog.getValue(newCanvas))
+            model.chooseMaterial(BusinessRole.PRIMARY_PROFILE, catalog.getValue(profile))
+            model.deleteWorkspacePoint(marker.uuid)
+            assertTrue(model.displayPoints().isEmpty())
+            assertEquals(marker, pointRepository.find(marker.uuid))
+            assertNull(elements.find(old.uuid)?.deletedAt)
+            model.undo()
+            assertEquals(marker, model.displayPoints().single())
+            model.redo()
+            model.saveInWorkspace()
+            assertFalse(model.state.value.dirty, model.state.value.error)
+            val saved = store.load(fixture.project, fixture.id)
+            val canvas = saved.materialElements.single { it.businessRole == BusinessRole.CANVAS }
+            val savedProfile = saved.materialElements.single { it.businessRole == BusinessRole.PRIMARY_PROFILE }
+            assertEquals(newCanvas, (canvas.source as ElementSource.CatalogSelection).priceItemUuid)
+            assertEquals(profile, (savedProfile.source as ElementSource.CatalogSelection).priceItemUuid)
+            assertEquals(ElementQuantity.CeilingArea, canvas.quantity)
+            assertEquals(ElementQuantity.CeilingPerimeter, savedProfile.quantity)
+            assertNotNull(elements.find(old.uuid)?.deletedAt)
+            assertNotNull(pointRepository.find(marker.uuid)?.deletedAt)
+            assertEquals(fixture.element.quantity, elements.find(fixture.element.uuid)?.quantity)
         }
     }
 

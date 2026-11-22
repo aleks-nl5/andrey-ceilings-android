@@ -32,7 +32,7 @@ class LinePlacementTouchTest {
         val prices=PriceRepository(db)
         val id=prices.createInGroup("line.touch","Лінія",PriceGroupRepository(db).all().first().uuid,1.0,5,"м.п.",QuantityMode.ENTERED_LENGTH,PlacementKind.LINE)
         val element=MeasurementElementRepository(db).createCatalogSelection(f.element.measurementUuid,prices.find(id)!!.uuid,ElementQuantity.Exact(4500),6, businessRole = com.andreyceilings.shared.livepricing.BusinessRole.ADDITIONAL_WORK)
-        val existingPoint = PointPlacementRepository(db).addPoint(f.element.version, f.contourVersion, 500, 220, 8)
+        val existingPoint = PointPlacementRepository(db).addPoint(f.element.version, f.contourVersion, 800, 1100, 8)
         val store=MeasurementEditStore(db){100}
         var model=MeasurementEditModel(store,store.load(f.project,f.id))
         var dark by mutableStateOf(false)
@@ -64,6 +64,8 @@ class LinePlacementTouchTest {
                 click("Елементи")
                 compose.onNodeWithTag("measurement-workspace-add").performScrollTo().assertIsEnabled().performClick()
                 compose.onNodeWithTag("p5b-linked-${element.uuid}").performScrollTo().assertIsEnabled().performClick()
+                assertNull(model.state.value.lineElementUuid)
+                click("Розмістити ще")
                 val canvas=compose.onNode(matcher)
                 fun world(x:Long,y:Long):Offset {
                     val projection = canvas.fetchSemanticsNode().config[MeasurementDrawingSemantics.Projection]
@@ -80,19 +82,19 @@ class LinePlacementTouchTest {
                 click("Вписати креслення")
                 // The active LINE tool owns this press even though it hits an existing POINT.
                 val start = world(existingPoint.xMm, existingPoint.yMm)
-                val end = world(3000, 420)
+                val end = world(3000, 1300)
                 if (theme) {
                     click("Вирівнювати паралельно стіні")
                     canvas.performTouchInput { down(start); moveTo(end) }
                     compose.runOnIdle { assertTrue(model.displayLines().isEmpty()) }
                     canvas.performTouchInput { up() }
                 } else {
-                    tap(500, 220)
+                    tap(800, 1100)
                     compose.runOnIdle {
                         assertNotNull(model.state.value.lineStart)
                         assertTrue(model.displayLines().isEmpty())
                     }
-                    tap(3000, 420)
+                    tap(3000, 1300)
                 }
                 val placed = model.displayLines().single()
                 assertEquals(existingPoint.uuid, model.displayPoints().single().uuid)
@@ -131,7 +133,7 @@ class LinePlacementTouchTest {
                     panel.assertDoesNotExist()
                     canvas.performTouchInput { advanceEventTime(400); doubleClick(selectedPosition) }
                     panel.assertExists()
-                    compose.onNodeWithText("Параметри лінії").assertExists()
+                    compose.onNodeWithContentDescription("Редагувати розміри").assertExists()
                     click("Закрити панель")
                 }
                 click("Скасувати дію")

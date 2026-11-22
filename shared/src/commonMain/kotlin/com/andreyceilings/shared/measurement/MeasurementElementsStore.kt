@@ -428,7 +428,7 @@ class MeasurementElementsStore(private val database: PrototypeDatabase, private 
         val row = checkNotNull(measurements.find(route.measurementId))
         val geometry = (measurementGeometryForViewing(row.shape, row.drawingJson, row.lengthMeters, row.widthMeters)
             as? MeasurementGeometryView.Captured)?.geometry ?: throw PointPlacementFailure.InvalidContour()
-        PointPositionDraft(point, element.version, row.updatedAt, geometry)
+        PointPositionDraft(point, element.version, row.updatedAt, geometry).wallRelativeInput()
     }
 
     internal fun save(route: ElementRoute, draft: ElementEditorDraft): MeasurementElement = database.transactionWithResult {

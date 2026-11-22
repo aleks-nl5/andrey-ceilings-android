@@ -118,7 +118,11 @@ class AreaFeatureTouchTest {
         fun begin(label: String?, tool: AreaTool) {
             compose.onNodeWithTag("measurement-workspace-add").performScrollTo().assertIsEnabled().performClick()
             if (label != null) click(label)
-            else compose.onNodeWithTag("p5b-linked-${element.uuid}").performScrollTo().assertIsEnabled().performClick()
+            else {
+                compose.onNodeWithTag("p5b-linked-${element.uuid}").performScrollTo().assertIsEnabled().performClick()
+                assertNull(model.state.value.area.tool)
+                click("Розмістити ще")
+            }
             compose.runOnIdle {
                 assertEquals(tool, model.state.value.area.tool, "Area tool must be active; ${stateSummary()}")
                 assertTrue(model.state.value.area.vertices.isEmpty(), stateSummary())
@@ -193,7 +197,7 @@ class AreaFeatureTouchTest {
                 doubleClick(Offset(screenPoint.x.toFloat(), screenPoint.y.toFloat()))
             }
             compose.runOnIdle { assertEquals(circleInFullscreen.uuid, model.state.value.area.selected) }
-            compose.onNodeWithText("Властивості фігури").assertExists()
+            compose.onNodeWithContentDescription("Редагувати розміри").assertExists()
             click("Згорнути")
             // Wait until the normal canvas and its viewport have replaced the fullscreen layout.
             compose.onNodeWithTag("measurement-edit-normal-panel").assertExists()
@@ -210,10 +214,11 @@ class AreaFeatureTouchTest {
                         "areaTool=${model.state.value.area.tool}; areas=${model.displayAreas().map { it.uuid }}"
                 )
             }
-            click("Властивості фігури")
+            click("Редагувати розміри")
+            compose.onNode(isDialog()).assertDoesNotExist()
             compose.onNodeWithText("Примітка фігури").performTextInput("Тестова позначка")
-            compose.onNodeWithText("Застосувати властивості").performClick()
-            click("Видалити фігуру");compose.onNodeWithText("Видалити",useUnmergedTree=true).performClick()
+            click("Застосувати розміри")
+            click("Додаткові дії");click("Видалити розміщення");compose.onNodeWithText("Видалити",useUnmergedTree=true).performClick()
             compose.runOnIdle {assertEquals(2,model.displayAreas().size)}
             click("Скасувати дію")
             val ids=model.displayAreas().map {it.uuid}.toSet()

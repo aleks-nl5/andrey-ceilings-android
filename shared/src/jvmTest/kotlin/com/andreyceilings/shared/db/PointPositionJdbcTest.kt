@@ -107,7 +107,7 @@ class PointPositionJdbcTest {
                 model.redoPointMove()
                 withTimeout(10_000) { model.points.first { !it.saving && it.undo != null && it.points.single().xMm == 1800L } }
                 val geometry = MeasurementGeometryCodec.read(MeasurementRepository(db).find(f.id)!!.drawingJson)
-                model.openPosition(geometry, f.contourVersion); model.updatePosition { it.copy(x = "2,", y = "1.5") }
+                model.openPosition(geometry, f.contourVersion); model.updatePosition { it.copy(kind = PointPositionInputKind.WORLD, x = "2,", y = "1.5") }
                 assertEquals("2,", model.points.value.positionEditor!!.draft.x)
                 assertNull(model.points.value.positionEditor!!.draft.position())
                 var exited = false

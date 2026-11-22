@@ -39,9 +39,6 @@ fun AreaFeatureControls(model: MeasurementEditModel, enabled: Boolean, inWorkspa
         }
         val selected=areas.find {it.uuid==a.selected}
         if(selected!=null) {
-            if (inWorkspace) WorkspaceCoordinatesAction(enabled && !selected.unresolved) {
-                model.openWorkspaceCoordinates(WorkspaceCoordinatesKind.AREA)
-            }
             Text(areaDescription(selected))
             if (selected.unresolved) Text(
                 if (inWorkspace) "Виміряйте опори й радіус, потім підтвердьте фігуру."
@@ -49,9 +46,7 @@ fun AreaFeatureControls(model: MeasurementEditModel, enabled: Boolean, inWorkspa
                 color = if (inWorkspace) MaterialTheme.colorScheme.error else LocalContentColor.current)
             else if (!inWorkspace) Text("Перетягування змінює лише приблизне положення; опори задаються виміряними відстанями.")
             FlowRow {
-                FilterChip(a.moveVertex==null,onClick={model.setAreaMoveVertex(null)},label={Text("Переміщати всю фігуру")})
                 selected.shape.positions.indices.forEach {index ->
-                    FilterChip(a.moveVertex==index,onClick={model.setAreaMoveVertex(index)},label={Text(if(selected.shape is AreaShape.Circle)"Центр" else "Вершина ${index+1}")})
                     TextButton(enabled=enabled,onClick={model.openAreaMounting(index)}) {Text("Опори ${index+1}")}
                 }
             }

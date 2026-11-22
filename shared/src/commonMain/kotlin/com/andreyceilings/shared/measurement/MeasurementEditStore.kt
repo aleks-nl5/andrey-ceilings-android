@@ -36,7 +36,9 @@ data class MeasurementEditDocument(
     val sourceDrawingJson: String? = null,
     val lineElements: List<MeasurementElement> = emptyList(),
     val areaElements: List<MeasurementElement> = emptyList(),
-    val pointElements: List<MeasurementElement> = emptyList()
+    val pointElements: List<MeasurementElement> = emptyList(),
+    val materialElements: List<MeasurementElement> = emptyList(),
+    val otherElements: List<MeasurementElement> = emptyList()
 )
 
 class MeasurementEditStore(private val database: PrototypeDatabase, private val nowMillis: () -> Long) {
@@ -81,7 +83,7 @@ class MeasurementEditStore(private val database: PrototypeDatabase, private val 
                     ElementCatalogItem(item.uuid, item.groupUuid, item.title, item.code, item.unit,
                         QuantityMode.entries.single { it.value == item.quantityMode },
                         PlacementKind.entries.single { it.value == item.placementKind })
-                }.filter(ElementCatalogItem::supportsWorkspacePlacement)
+                }
             }
         }
     }
@@ -147,7 +149,10 @@ class MeasurementEditStore(private val database: PrototypeDatabase, private val 
         }
         MeasurementEditDocument(row.id, row.updatedAt, draft,
             CeilingPlacementDocument(points, elements, walls, quantities, lines, areas),
-            row.drawingJson, lineElements, areaElements, pointElements)
+            row.drawingJson, lineElements, areaElements, pointElements,
+            measurementElements.filter { it.businessRole?.isWorkspaceMaterial() == true },
+            measurementElements.filter { it.businessRole?.isWorkspaceMaterial() != true &&
+                it !in lineElements && it !in areaElements && it !in pointElements })
     }
 
     fun update(original: MeasurementEditDocument, draft: MeasurementCreateDraft,

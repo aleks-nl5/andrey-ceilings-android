@@ -33,7 +33,10 @@ class WorkspaceAddPointTouchTest {
         val store = MeasurementEditStore(database) { 100 }
         val document = store.load(fixture.project, fixture.id)
         val shown = mutableStateOf(MeasurementEditModel(store, document))
-        val source = fixture.element.source as ElementSource.CatalogSelection
+        val prices = PriceRepository(database)
+        val catalogId = prices.createInGroup("p5b.ui.point", "Тестова позначка", PriceGroupRepository(database).all().first().uuid,
+            1.0, 6, "шт.", com.andreyceilings.shared.prices.QuantityMode.MANUAL, com.andreyceilings.shared.prices.PlacementKind.POINT)
+        val itemUuid = checkNotNull(prices.find(catalogId)).uuid
         val matchCanvas = SemanticsMatcher("measurement drawing") { node ->
             node.config.getOrNull(SemanticsProperties.ContentDescription).orEmpty().any { it.startsWith("Контур стелі") }
         }
@@ -63,8 +66,12 @@ class WorkspaceAddPointTouchTest {
                 }
             }
             click("Елементи")
-            compose.onNodeWithTag("measurement-workspace-add").performScrollTo().performClick()
-            val itemTag = "p5b-catalog-${source.priceItemUuid}"
+            compose.onNodeWithTag("p5b-material-CANVAS").assertIsDisplayed()
+            compose.onNodeWithTag("p5b-material-PRIMARY_PROFILE").assertIsDisplayed()
+            compose.onNodeWithTag("measurement-workspace-add").performClick()
+            compose.onNodeWithTag("p5b-catalog-search").assertIsDisplayed()
+            compose.onNode(isDialog()).assertDoesNotExist()
+            val itemTag = "p5b-catalog-$itemUuid"
             compose.waitUntil(15_000) { compose.onAllNodes(hasTestTag(itemTag)).fetchSemanticsNodes().isNotEmpty() }
             compose.onNodeWithTag(itemTag).performScrollTo().performClick()
             compose.onNodeWithText("Заявлена кількість, шт.").performTextInput("3")
@@ -76,10 +83,12 @@ class WorkspaceAddPointTouchTest {
             assertTrue(PointPlacementRepository(database).forMeasurement(document.draft.recordUuid).isEmpty())
             assertEquals(1, MeasurementElementRepository(database).forMeasurement(document.draft.recordUuid).size)
 
-            click("Координати")
-            compose.onNodeWithTag("p5b-coordinate-0").performScrollTo().performTextReplacement("1,25")
-            compose.onNodeWithTag("p5b-coordinate-1").performScrollTo().performTextReplacement("0,85")
-            click("Застосувати координати")
+            click("Редагувати розміри")
+            compose.onNode(isDialog()).assertDoesNotExist()
+            click("Уздовж + усередину")
+            compose.onNodeWithText("Від початку вздовж стіни, м").performScrollTo().performTextInput("1,25")
+            compose.onNodeWithText("Відступ усередину, м").performScrollTo().performTextInput("0,85")
+            click("Застосувати розміри")
             val precise = compose.runOnIdle { shown.value.displayPoints().single() }
             assertEquals(added.uuid, precise.uuid)
             assertEquals(1250L, precise.xMm)

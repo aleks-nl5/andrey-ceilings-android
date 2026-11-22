@@ -59,7 +59,48 @@ internal class WorkspacePlacementWriter(
         if (current.updatedAt != original.updatedAt || current.placements != original.placements ||
             current.pointElements != original.pointElements) throw MeasurementEditConflict()
 
+        for ((uuid, version) in additions.replacedMaterials) {
+            val row = elements.find(uuid) ?: throw MeasurementEditConflict()
+            if (row.version != version || row.businessRole?.isWorkspaceMaterial() != true ||
+                row.measurementUuid != measurement || row.placedQuantityMilli != 0L ||
+                current.placements.points.any { it.elementUuid == uuid } ||
+                current.placements.lines.any { it.elementUuid == uuid } ||
+                current.placements.areas.any { it.elementUuid == uuid }) throw MeasurementEditConflict()
+            elements.delete(version, now)
+        }
+        for ((uuid, version) in additions.removedWorks) {
+            val row = elements.find(uuid) ?: throw MeasurementEditConflict()
+            if (row.version != version || row.measurementUuid != measurement ||
+                row.businessRole?.isWorkspaceMaterial() == true) throw MeasurementEditConflict()
+            elements.delete(version, now)
+        }
+        val pointElementVersions = current.pointElements.associate { it.uuid to it.version }.toMutableMap()
+        for ((uuid, point) in additions.removedPoints) {
+            require(uuid == point.uuid && point in original.placements.points)
+            val expected = pointElementVersions[point.elementUuid] ?: throw MeasurementEditConflict()
+            val live = elements.find(point.elementUuid) ?: throw MeasurementEditConflict()
+            if (live.version != expected) throw MeasurementEditConflict()
+            points.removePoint(live.version, point, now)
+            pointElementVersions[point.elementUuid] = checkNotNull(elements.find(point.elementUuid)).version
+        }
+        for ((uuid, work) in additions.editedWorks) {
+            require(uuid == work.uuid && work.measurementUuid == measurement)
+            val baseline = (original.pointElements + original.lineElements + original.areaElements + original.otherElements)
+                .find { it.uuid == uuid } ?: throw MeasurementEditConflict()
+            val live = elements.find(uuid) ?: throw MeasurementEditConflict()
+            if (baseline.version != work.version ||
+                (live.version != work.version && additions.removedPoints.values.none { it.elementUuid == uuid }))
+                throw MeasurementEditConflict()
+            elements.edit(live.version, work.note, work.approval, work.quantity, now)
+        }
         for ((uuid, element) in additions.elements) {
+            if (element.businessRole?.isWorkspaceMaterial() == true) {
+                val role = element.businessRole
+                val expected = original.materialElements.filter { it.businessRole == role }
+                val actual = current.materialElements.filter { it.businessRole == role }
+                if (expected != actual || expected.size > 1 ||
+                    expected.any { it.version !in additions.replacedMaterials.values }) throw MeasurementEditConflict()
+            }
             require(uuid == element.uuid && element.measurementUuid == measurement)
             val source = element.source as ElementSource.CatalogSelection
             if (elements.find(uuid) != null) throw MeasurementEditConflict()
@@ -73,7 +114,7 @@ internal class WorkspacePlacementWriter(
                 throw MeasurementEditConflict()
             }
         }
-        val withCatalog = if (additions.elements.isEmpty()) current else reload()
+        val withCatalog = reload()
         ceilings.save(withCatalog, draft, edits - additions.points.keys, operation, wallToken, now,
             lines, lengths, areas, quantities, workspaceReceipt = receipt)
         if (additions.points.isEmpty()) return
@@ -127,6 +168,24 @@ internal class WorkspacePlacementWriter(
             val versions = mountingCodec.parseToJsonElement(firstResult.elementVersions).jsonObject +
                 mountingCodec.parseToJsonElement(finalResult.elementVersions).jsonObject
             val repositoryElements = MeasurementElementRepository(db)
+            if ((additions.replacedMaterials + additions.removedWorks).any { (uuid, version) ->
+                val row = repositoryElements.find(uuid)
+                row == null || row.deletedAt != maxOf(version.expectedUpdatedAt + 1, first.createdAt)
+            }) return false
+            val pointTombstones = if (additions.removedPoints.isEmpty()) emptyMap()
+                else PointPlacementRepository(db).tombstones().associateBy { it.uuid }
+            if (additions.removedPoints.any { (uuid, point) ->
+                pointTombstones[uuid]?.deletedAt != maxOf(point.updatedAt + 1, first.createdAt)
+            }) return false
+            if (additions.editedWorks.any { (uuid, work) ->
+                val row = repositoryElements.find(uuid)
+                val declared = request["lengths"]?.jsonObject?.get(uuid)?.jsonPrimitive?.longOrNull
+                    ?: request["quantities"]?.jsonObject?.get(uuid)?.jsonPrimitive?.longOrNull
+                val expectedQuantity = declared?.let { ElementQuantity.Exact(it) } ?: work.quantity
+                row == null || row.deletedAt != null || row.quantity != expectedQuantity ||
+                    row.updatedAt != (versions[uuid]?.jsonPrimitive?.longOrNull ?: (maxOf(work.updatedAt + 1, first.createdAt) +
+                        additions.removedPoints.values.count { it.elementUuid == uuid }))
+            }) return false
             return additions.elements.keys.all { uuid ->
                 val expected = versions[uuid]?.jsonPrimitive?.longOrNull ?: first.createdAt
                 repositoryElements.find(uuid)?.let {

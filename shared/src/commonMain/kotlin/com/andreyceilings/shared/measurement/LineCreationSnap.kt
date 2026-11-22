@@ -32,21 +32,15 @@ internal fun previewLineCreation(
         if (wallLength == 0.0) return null
         val ux = wx / wallLength
         val uy = wy / wallLength
-        val ax = (start.xMm - a.xMm).toDouble()
-        val ay = (start.yMm - a.yMm).toDouble()
-        val nearest = (ax * ux + ay * uy).coerceIn(0.0, wallLength)
-        val wallDistance = hypot(ax - nearest * ux, ay - nearest * uy)
         val deviation = abs(dx * uy - dy * ux) / length
-        // Enter within 10 degrees and 300 mm. Release at 16 degrees or 450 mm.
-        if (wallDistance > (if (held) 450.0 else 300.0) ||
-            deviation > (if (held) 0.276 else 0.174)) return null
+        if (deviation > (if (held) 0.276 else 0.174)) return null
         val along = dx * ux + dy * uy
         val end = PointPositionMm(
             start.xMm + (along * ux).roundToLong(),
             start.yMm + (along * uy).roundToLong()
         )
         if (!lineStrictlyInside(geometry, start, end)) return null
-        return LineCreationPreview(start, end, index) to wallDistance
+        return LineCreationPreview(start, end, index) to deviation
     }
 
     return previousWall?.takeIf { it in geometry.vertices.indices }?.let { candidate(it, held = true)?.first }

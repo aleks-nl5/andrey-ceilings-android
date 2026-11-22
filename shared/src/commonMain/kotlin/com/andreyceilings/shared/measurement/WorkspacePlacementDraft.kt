@@ -8,9 +8,14 @@ import kotlinx.serialization.Serializable
 @Serializable
 data class WorkspacePlacementDraft(
     val elements: Map<String, MeasurementElement> = emptyMap(),
-    val points: Map<String, PointPlacement> = emptyMap()
+    val points: Map<String, PointPlacement> = emptyMap(),
+    val replacedMaterials: Map<String, ElementVersion> = emptyMap(),
+    val removedWorks: Map<String, ElementVersion> = emptyMap(),
+    val editedWorks: Map<String, MeasurementElement> = emptyMap(),
+    val removedPoints: Map<String, PointPlacement> = emptyMap()
 ) {
-    val isEmpty: Boolean get() = elements.isEmpty() && points.isEmpty()
+    val isEmpty: Boolean get() = elements.isEmpty() && points.isEmpty() && replacedMaterials.isEmpty() &&
+        removedWorks.isEmpty() && editedWorks.isEmpty() && removedPoints.isEmpty()
 }
 
 internal fun ElementCatalogItem.toWorkspaceElement(
@@ -30,4 +35,19 @@ internal fun ElementCatalogItem.supportsWorkspacePlacement(): Boolean = when (pl
     PlacementKind.LINE -> mode in setOf(QuantityMode.MANUAL, QuantityMode.ENTERED_LENGTH) && unit == "м.п."
     PlacementKind.AREA -> mode == QuantityMode.MANUAL && unit in setOf("шт.", "м²")
     PlacementKind.NONE -> false
+}
+
+internal fun ElementCatalogItem.materialRole(): BusinessRole? = when {
+    placementKind != PlacementKind.NONE -> null
+    mode == QuantityMode.CEILING_AREA && unit == "м²" -> BusinessRole.CANVAS
+    mode == QuantityMode.CEILING_PERIMETER && unit == "м.п." -> BusinessRole.PRIMARY_PROFILE
+    else -> null
+}
+internal fun BusinessRole.isWorkspaceMaterial(): Boolean =
+    this == BusinessRole.CANVAS || this == BusinessRole.PRIMARY_PROFILE
+
+internal fun QuantityMode.workspaceQuantity(): ElementQuantity = when (this) {
+    QuantityMode.CEILING_AREA -> ElementQuantity.CeilingArea
+    QuantityMode.CEILING_PERIMETER -> ElementQuantity.CeilingPerimeter
+    else -> ElementQuantity.Unknown
 }

@@ -39,7 +39,7 @@ data class WallAnchorInput(val pointUuid: String, val kind: WallAnchor.Kind, val
 }
 
 @Composable
-fun WallAnchorEditor(model: MeasurementEditModel) {
+fun WallAnchorEditor(model: MeasurementEditModel, inline: Boolean = false) {
     val state by model.state.collectAsState()
     val input=state.mountingInput ?: return
     if (state.mountingDismiss) {
@@ -54,9 +54,10 @@ fun WallAnchorEditor(model: MeasurementEditModel) {
     val geometry=validateMeasurementCreate(state.draft).geometry
     val walls=model.draftWalls()
     val solution=geometry?.let { g -> input.anchor()?.let { solveWallAnchor(g,walls,it) } }
-    AlertDialog(onDismissRequest=model::dismissMounting,title={Text("Розміри від стін")},
-        text={Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(8.dp)) {
-            Text("Виміряйте відстані від обраних стін до вибраної точки або кінця лінії. Значення у метрах, до 3 знаків після коми або крапки.")
+    val fields: @Composable () -> Unit = { Column(
+        Modifier.fillMaxWidth().then(if (inline) Modifier else Modifier.verticalScroll(rememberScrollState())),
+        verticalArrangement=Arrangement.spacedBy(8.dp)) {
+            if (!inline) Text("Виміряйте відстані від обраних стін до вибраної точки або кінця лінії. Значення у метрах, до 3 знаків після коми або крапки.")
             FlowRow(horizontalArrangement=Arrangement.spacedBy(6.dp)) {
                 FilterChip(input.kind==WallAnchor.Kind.TWO_WALLS,onClick={model.updateMounting { it.copy(kind=WallAnchor.Kind.TWO_WALLS) }},label={Text("Від двох стін")})
                 FilterChip(input.kind==WallAnchor.Kind.ALONG_INWARD,onClick={model.updateMounting { it.copy(kind=WallAnchor.Kind.ALONG_INWARD) }},label={Text("Уздовж + усередину")})
@@ -83,7 +84,17 @@ fun WallAnchorEditor(model: MeasurementEditModel) {
             if(solution==null) Text("Немає однозначної внутрішньої точки з проєкціями на обрані відрізки. Перевірте розміри, оберіть інші стіни або спосіб «Уздовж + усередину».",color=MaterialTheme.colorScheme.error)
             else Text("Фактично після округлення до мм: ${formatPointMetres(solution.firstActualMm.roundToLong())} м / ${formatPointMetres(solution.secondActualMm.roundToLong())} м. Похибка представлення не перевищує 1 мм.")
             state.error?.let {Text(it,color=MaterialTheme.colorScheme.error)}
-            Text("Застосування змінює тільки чернетку. Для запису всієї стелі натисніть «Зберегти».")
-        }},confirmButton={TextButton(enabled=solution!=null,onClick=model::applyMounting){Text("Застосувати розміри")}},
-        dismissButton={TextButton(onClick=model::dismissMounting){Text("Скасувати")}})
+            if (!inline) Text("Застосування змінює тільки чернетку. Для запису всієї стелі натисніть «Зберегти».")
+        } }
+    val apply: @Composable () -> Unit = {
+        TextButton(enabled=solution!=null,onClick=model::applyMounting){Text("Застосувати розміри")}
+    }
+    val cancel: @Composable () -> Unit = {
+        TextButton(onClick=model::dismissMounting){Text("Скасувати")}
+    }
+    if (inline) {
+        fields()
+        FlowRow { apply(); cancel() }
+    } else AlertDialog(onDismissRequest=model::dismissMounting,title={Text("Розміри від стін")},
+        text=fields,confirmButton=apply,dismissButton=cancel)
 }

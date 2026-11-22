@@ -48,18 +48,10 @@ internal fun LinePlacementControls(
         }
         val selected=lines.find {it.uuid==state.selectedLineUuid}
         if(selected!=null) {
-            if (inWorkspace) WorkspaceCoordinatesAction(enabled && !selected.unresolved) {
-                model.openWorkspaceCoordinates(WorkspaceCoordinatesKind.LINE)
-            }
             Text(when {selected.unresolved->"Потребує уточнення";selected.needsReview->"Перевірити розміщення";selected.precision==PointPrecision.EXACT->"За виміряними відступами";else->"Приблизно"},
                 color = if (inWorkspace && (selected.unresolved || selected.needsReview)) MaterialTheme.colorScheme.error else LocalContentColor.current)
             Text(if (inWorkspace) "Довжина · ${formatElementMilli(selected.lengthMm)} м"
                 else "Довжина ${formatElementMilli(selected.lengthMm)} м. Це центральна монтажна вісь; ширина не змінює площу й не перевіряє геометрію вирізу.")
-            FlowRow {
-                listOf("Перемістити сегмент","Початок","Кінець").forEachIndexed {i,label ->
-                    FilterChip(state.lineMoveTarget==i,onClick={model.setLineMoveTarget(i)},enabled=enabled,label={Text(label)})
-                }
-            }
             if (!inWorkspace) Text("Перетягніть вибрану лінію. Змінені кінці стануть приблизними, їх активні прив'язки буде скинуто.")
             FlowRow {
                 TextButton(enabled=enabled,onClick={model.openLineMounting(true)}){Text("Розміри початку від стін")}

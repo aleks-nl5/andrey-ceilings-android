@@ -81,6 +81,6 @@ fun pointFailureMessage(failure: Throwable): String = when (failure) {
     is PointPlacementFailure.StaleVersion -> "Елемент або позначка змінилися. Оберіть актуальний запис."
     is PointPlacementFailure.RetryConflict -> "Ця спроба вже має інші дані або позначку видалено. Перевірте креслення."
     is PointPlacementFailure.RequiresMeasuredAnchor -> "Позначка потребує уточнення. Задайте виміряні відступи від стін у редакторі заміру; вільний drag не підтверджує розміщення."
-    is PointPlacementFailure.InvalidInput -> "Координата поза допустимими межами."
+    is PointPlacementFailure.InvalidInput -> "Положення поза допустимими межами."
     else -> "Захищена база недоступна. Повторіть ту саму спробу після перевірки сесії."
 }

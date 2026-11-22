@@ -130,9 +130,10 @@ class OverlayDragTouchTest {
                 if (mode == "fullscreen") panel.assertDoesNotExist()
                 openFromCanvas(point.xMm, point.yMm)
                 captureSelected("selected-point")
-                click("Задати розміри від стін")
-                captureSelected("point-dialog")
-                compose.onNode(hasText("Скасувати") and hasClickAction() and hasAnyAncestor(isDialog())).performClick()
+                click("Редагувати розміри")
+                captureSelected("point-inline")
+                compose.onNode(isDialog()).assertDoesNotExist()
+                click("Скасувати")
                 if (mode == "fullscreen") click("Закрити панель")
                 clearSelectionByTappingCanvas()
                 tap(point.xMm, point.yMm)
@@ -178,9 +179,10 @@ class OverlayDragTouchTest {
                 openFromCanvas(1300, 1250)
                 captureSelected("selected-area")
                 if (InstrumentationRegistry.getArguments().getString("p5aSelectedScreenshots") == "true") {
-                    click("Властивості фігури")
-                    captureSelected("area-dialog")
-                    compose.onNode(hasText("Скасувати") and hasClickAction() and hasAnyAncestor(isDialog())).performClick()
+                    click("Редагувати розміри")
+                    captureSelected("area-inline")
+                    compose.onNode(isDialog()).assertDoesNotExist()
+                    click("Скасувати")
                 }
                 if (mode == "fullscreen") click("Закрити панель")
                 clearSelectionByTappingCanvas()
@@ -188,13 +190,16 @@ class OverlayDragTouchTest {
                 openFromCanvas(1000, 1500)
             }
             click("Скасувати дію");click("Повторити");click("Скасувати дію")
-            click("Вершина 1");if (mode == "fullscreen") click("Закрити панель")
+            if (mode == "fullscreen") click("Закрити панель")
             drag(500,1000,800,1200)
             if(mode!="details")compose.runOnIdle {
                 val polygon=m.displayAreas().first {it.uuid==f.polygon}
                 assertEquals(PointPositionMm(800,1200),polygon.shape.positions.first(),"Canvas must move the explicit vertex")
                 assertNull(polygon.mountings.first().anchor)
-                assertTrue(polygon.mountings.drop(1).all {it.anchor!=null})
+                assertEquals(AreaShape.rectangle(PointPositionMm(800,1200), PointPositionMm(1500,2000)), polygon.shape)
+                assertNotNull(polygon.mountings[2].anchor)
+                assertNull(polygon.mountings[1].anchor)
+                assertNull(polygon.mountings[3].anchor)
             }
             if (mode == "fullscreen") click("Елементи")
             click("Зняти виділення")
@@ -209,9 +214,10 @@ class OverlayDragTouchTest {
                 openFromCanvas(1000, 950)
                 captureSelected("selected-line")
                 if (InstrumentationRegistry.getArguments().getString("p5aSelectedScreenshots") == "true") {
-                    click("Параметри лінії")
-                    captureSelected("line-dialog")
-                    compose.onNode(hasText("Скасувати") and hasClickAction() and hasAnyAncestor(isDialog())).performClick()
+                    click("Редагувати розміри")
+                    captureSelected("line-inline")
+                    compose.onNode(isDialog()).assertDoesNotExist()
+                    click("Скасувати")
                 }
                 if (mode == "fullscreen") click("Закрити панель")
                 clearSelectionByTappingCanvas()
@@ -223,8 +229,8 @@ class OverlayDragTouchTest {
                 assertEquals(PointPositionMm(800,750),m.displayLines().single().start,"The injected gesture must move the selected LINE")
             }
             openFromCanvas(1300, 750)
-            click("Кінець");if (mode == "fullscreen") click("Закрити панель")
-            drag(1800,750,2400,750)
+            if (mode == "fullscreen") click("Закрити панель")
+            drag(1800,750,2400,840)
             tap(2800,1500)
             if (mode == "fullscreen") panel.assertDoesNotExist()
             drag(2800,1500,3100,1800)
@@ -261,7 +267,8 @@ class OverlayDragTouchTest {
             assertEquals(PointPositionMm(2400,750),line.end);assertNull(line.startMounting.anchor);assertNull(line.endMounting.anchor)
             val area=saved.placements.areas.first {it.uuid==f.polygon}
             assertEquals(PointPositionMm(800,1200),area.shape.positions.first());assertNull(area.mountings.first().anchor)
-            assertEquals(doc.placements.areas.first {it.uuid==f.polygon}.mountings.drop(1).map {it.anchor},area.mountings.drop(1).map {it.anchor})
+            assertEquals(doc.placements.areas.first {it.uuid==f.polygon}.mountings[2].anchor, area.mountings[2].anchor)
+            assertEquals(AreaShape.rectangle(PointPositionMm(800,1200), PointPositionMm(1500,2000)), area.shape)
             assertTrue(area.twiceAreaMm2!=doc.placements.areas.first {it.uuid==f.polygon}.twiceAreaMm2)
             val circle=saved.placements.areas.first {it.uuid==f.circle};assertEquals(AreaShape.Circle(PointPositionMm(3100,1800),200),circle.shape)
             assertEquals(PointPrecision.APPROXIMATE,circle.precision);assertEquals(doc.placements.points,saved.placements.points)
