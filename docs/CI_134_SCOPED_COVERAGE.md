@@ -20,33 +20,36 @@ Android, Windows, macOS/JVM and iOS; `TARGETED` can mix depths.
 | Change | Android | Windows | macOS JVM | iOS |
 | --- | --- | --- | --- | --- |
 | Docs-only | skip | skip | skip | skip |
-| Android app/androidMain known UI-only (`/ui/`, `/theme/`, visual assets) | smoke | skip | skip | skip |
-| Android `MainActivity`, lifecycle, startup, non-UI platform adapters | deep | skip | skip | skip |
+| Android packaged Inter font (exercised by the workspace layout suite) | smoke | skip | skip | skip |
+| Other Android app/androidMain code, including immutable-estimate PDF and document export | deep | skip | skip | skip |
 | Windows JVM JDBC/SQLCipher or Windows test | skip | deep | deep | skip |
 | Desktop UI-only (known presentation paths) | skip | smoke | smoke | skip |
 | Windows/Desktop non-UI platform startup or adapters | skip | deep | deep | skip |
 | iOS-specific `shared/src/iosMain` known UI-only | skip | skip | skip | smoke |
 | iOS-specific native startup/adapters | skip | skip | skip | deep |
 | Native `iosApp/` Xcode/Swift project (not covered by Gradle framework smoke) | deep | deep | deep | deep |
-| Known shared Compose UI/theme/navigation/drawing presentation | smoke | smoke | smoke | smoke |
+| Explicitly mapped shared Compose presentation paths | smoke | smoke | smoke | smoke |
 | Shared DB, SQLDelight, pricing/business/geometry, commonTest | deep | deep | deep | deep |
 | CI, Gradle, dependencies, unknown binaries/deleted/renamed/incomplete diff | deep | deep | deep | deep |
 | Mixed platform changes | union of impact, never downgrade an affected platform |
 
-Default platform code is **deep**, not smoke: `MainActivity.kt` opens SQLCipher
-and runs backup/startup lifecycle even though it is not stored under `/db/`.
-Only known presentation subdirectories and visual assets use smoke.
-
-The shared UI allowlist is *deliberately narrow*: a filename cannot prove a
-data-contract change safe. Expand only with concrete source/consumer evidence
-and tests. Files not recognized by the map must trigger global FULL.
+Android and shared smoke use exact paths. The allowlist covers Android's
+packaged Inter font, the shared edge-gradient renderer and the shared
+measurement canvas. The font and gradient select the workspace layout suite.
+The canvas also selects the overlay-drag and area-touch suites. Mixed changes
+combine the selected classes, and Android deep takes precedence over smoke.
+Unmapped Android files, including PDF export, price list and app lifecycle
+code, require Android deep. Unmapped shared files, including navigation and
+the measurement details screen, require all-platform deep. Add a path only
+after reviewing its responsibilities and the tests that exercise it.
 
 ## What actually runs
 
 - **Android smoke**: checked-out exact head SHA; build debug APK, run
   `:app:testDebugUnitTest` and `:shared:compileKotlinJvm`; Android emulator
-  runs focused `MeasurementWorkspaceLayoutTest`, `OverlayDragTouchTest`,
-  `AreaFeatureTouchTest` (no broad SQLCipher/process-death/ENOSPC run).
+  runs the classes selected by the classifier on Ready and push. Its receipt
+  requires a fresh JUnit report with at least one passing case per selected
+  class and rejects failed cases or cases from an unexpected class.
   APK 7-day retention, XML reports 30 days. No retry of assertion failures.
 - **Android deep**: existing all-instrumentation (including functional P5A
   layout/gesture tests), encrypted SQLDelight, isolated process
@@ -64,6 +67,8 @@ and tests. Files not recognized by the map must trigger global FULL.
   `CeilingsFoundationSceneTest` (no `:shared:jvmTest` native encrypted suite).
 - **Windows deep**: existing native SQLCipher/JDBC `:shared:jvmTest` plus
   `:desktopApp:test`; timings/profiling and 30-day reports preserved.
+  Windows-only JDBC changes still run both complete suites. Per-suite
+  Windows filtering and its runner-time savings remain open.
 - **macOS/JVM smoke**: compile Desktop/shared; **deep**: full existing JVM tests.
 - **iOS smoke**: link real Simulator framework; **deep**: existing iOS
   Simulator SQLCipher tests in addition to framework compile.
@@ -74,7 +79,9 @@ JVM job does **not** replace native Windows encrypted database verification.
 ## Events and gates
 
 - Draft with FAST/TARGETED: independent Draft advisory runs lightweight
-  **smoke** checks. Any **deep** impact (Android DB/startup, Windows
+  **smoke** checks. Draft Android feedback covers debug APK build and JVM unit
+  tests. The focused Android instrumentation runs on Ready and push. Any
+  **deep** impact (Android DB/startup, Windows
   SQLCipher/JDBC, iOS DB or shared risks) executes native risk-specific deep
   tests in the corresponding platform workflow **immediately in Draft**.
   A skipped or failed selected deep job makes the Draft platform receipt red.
@@ -128,6 +135,29 @@ decision.
   corresponding real CI runs. No savings are asserted by this document.
 - Existing #1304 Android keyboard/drag and #1311 PDF scene flakes should be
   diagnosed against main, not removed or masked.
+- The opt-in P5A viewport checks explicitly open the IME to exercise layout
+  with the keyboard visible. Check automatic keyboard appearance on a physical
+  Android device by tapping the length and notes fields with the keyboard
+  closed, including in the fullscreen editor.
+
+### Scoped selection checks
+
+Local Git diffs verified the classifier outputs below. Use these as
+expectations for scoped Actions runs once the policy is in the comparison
+base. The PR that introduces the workflow is itself a FULL case.
+
+| Isolated change | Android | Windows / macOS JVM | iOS |
+| --- | --- | --- | --- |
+| Android Inter font | smoke, workspace layout class | skip | skip |
+| Immutable PDF snapshot or estimate export | deep | skip | skip |
+| Windows JDBC test | skip | deep | skip |
+| Shared measurement canvas | smoke, layout/drag/area classes | smoke | smoke |
+| Shared SQLDelight schema, unknown binary, CI workflow | deep | deep | deep |
+| Docs only | skip | skip | skip |
+
+For each Actions case, compare the classifier summary, executed and skipped
+jobs, and the platform receipts on the same event SHA. On Android Ready and
+push smoke, check the class counts in the job summary and the retained XML.
 
 ## Owner acceptance checklist
 

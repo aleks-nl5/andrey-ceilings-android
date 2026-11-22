@@ -26,6 +26,7 @@ jobs:
     outputs:
       mode: ${{ steps.decide.outputs.mode }}
       android_depth: ${{ steps.decide.outputs.android_depth }}
+      android_smoke_tests: ${{ steps.decide.outputs.android_smoke_tests }}
     steps:
       - name: Checkout exact event commit and PR merge-base history
         uses: actions/checkout@v7
@@ -34,7 +35,10 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
       - name: Verify classifier and gate decision regressions
-        run: python3 -m unittest discover -s ci/tests -p 'test_impact.py' -v && python3 -m unittest discover -s ci/tests -p 'test_full_gate.py' -v
+        run: |
+          python3 -m unittest discover -s ci/tests -p 'test_impact.py' -v
+          python3 -m unittest discover -s ci/tests -p 'test_full_gate.py' -v
+          python3 -m unittest discover -s ci/tests -p 'test_android_smoke_reports.py' -v
       - name: Select the conservative mode
         id: decide
         shell: bash
@@ -303,6 +307,8 @@ jobs:
     # runs real selected Android touch tests and produces the owner debug APK.
     if: ${{ needs.impact.result == 'success' && needs.impact.outputs.android_depth == 'smoke' && (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
     runs-on: ubuntu-24.04
+    env:
+      ANDROID_SMOKE_TESTS: ${{ needs.impact.outputs.android_smoke_tests }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -335,7 +341,11 @@ jobs:
           test -c /dev/kvm
           sudo chmod a+rw /dev/kvm
           test -r /dev/kvm && test -w /dev/kvm
-      - name: Run focused Android UI touch regression (not whole encrypted DB suite)
+      - name: Require a class filter and clear previous Android test reports
+        run: |
+          test -n "$ANDROID_SMOKE_TESTS"
+          rm -rf app/build/outputs/androidTest-results/connected/
+      - name: Run the selected Android UI instrumentation classes
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 35
@@ -346,8 +356,14 @@ jobs:
           disable-animations: true
           script: >-
             gradle --no-daemon :app:connectedDebugAndroidTest
-            -Pandroid.testInstrumentationRunnerArguments.class=com.andreyceilings.app.MeasurementWorkspaceLayoutTest,com.andreyceilings.app.OverlayDragTouchTest,com.andreyceilings.app.AreaFeatureTouchTest
+            "-Pandroid.testInstrumentationRunnerArguments.class=$ANDROID_SMOKE_TESTS"
             --stacktrace --warning-mode all
+      - name: Verify the selected classes ran and passed
+        shell: bash
+        run: |
+          python3 ci/verify_android_smoke_reports.py \
+            --reports app/build/outputs/androidTest-results/connected/ \
+            --classes "$ANDROID_SMOKE_TESTS" | tee -a "$GITHUB_STEP_SUMMARY"
       - name: Keep Android scoped debug APK
         if: always()
         uses: actions/upload-artifact@v7

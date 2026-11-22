@@ -11,6 +11,16 @@ def outcome(*paths):
     return classify([Change("M", p) for p in paths])
 
 
+ANDROID_FONT = "app/src/main/res/font/inter_variable.ttf"
+ANDROID_SCREENS = "app/src/main/java/com/andreyceilings/app/ui/screens"
+SHARED_MEASUREMENT = "shared/src/commonMain/kotlin/com/andreyceilings/shared/measurement"
+SHARED_DRAWING = f"{SHARED_MEASUREMENT}/MeasurementDrawing.kt"
+SHARED_GRADIENT = "shared/src/commonMain/kotlin/com/andreyceilings/shared/theme/CeilingsEdgeGradient.kt"
+WORKSPACE_LAYOUT_TEST = "com.andreyceilings.app.MeasurementWorkspaceLayoutTest"
+OVERLAY_DRAG_TEST = "com.andreyceilings.app.OverlayDragTouchTest"
+AREA_TOUCH_TEST = "com.andreyceilings.app.AreaFeatureTouchTest"
+
+
 class ImpactTest(unittest.TestCase):
     def assert_scope(self, path, mode, depths):
         with self.subTest(path=path):
@@ -25,12 +35,19 @@ class ImpactTest(unittest.TestCase):
         result = outcome("README.md", "docs/architecture/strategy.md")
         self.assertEqual((result.mode, result.depths), ("FAST", ("skip", "skip", "skip")))
 
-    def test_android_ui_is_not_a_windows_native_regression(self):
+    def test_android_presentation_asset_selects_matching_android_smoke_only(self):
+        self.assert_scope(ANDROID_FONT, "TARGETED", ("smoke", "skip", "skip"))
+        self.assertEqual(outcome(ANDROID_FONT).android_smoke_tests, (WORKSPACE_LAYOUT_TEST,))
+
+    def test_android_pdf_and_unmapped_ui_require_android_deep(self):
         for path in (
-            "app/src/main/java/com/andreyceilings/app/ui/Screen.kt",
+            f"{ANDROID_SCREENS}/ImmutableEstimatePdfSnapshot.kt",
+            f"{ANDROID_SCREENS}/EstimateDocumentExport.kt",
+            f"{ANDROID_SCREENS}/PriceListScreen.kt",
             "shared/src/androidMain/kotlin/com/andreyceilings/shared/ui/Ui.kt",
         ):
-            self.assert_scope(path, "TARGETED", ("smoke", "skip", "skip"))
+            self.assert_scope(path, "TARGETED", ("deep", "skip", "skip"))
+            self.assertEqual(outcome(path).android_smoke_tests, ())
 
     def test_platform_lifecycle_and_non_ui_adapter_change_requires_native_deep(self):
         # MainActivity initializes SQLCipher despite living outside /data/db.
@@ -70,18 +87,28 @@ class ImpactTest(unittest.TestCase):
                           ("deep", "skip", "skip"))
 
     def test_shared_ui_consumers_are_all_targeted_without_expensive_native_db(self):
-        for path in (
-            "shared/src/commonMain/kotlin/com/andreyceilings/shared/theme/CeilingsTheme.kt",
-            "shared/src/commonMain/kotlin/com/andreyceilings/shared/navigation/AppNavigationState.kt",
-            "shared/src/commonMain/kotlin/com/andreyceilings/shared/measurement/MeasurementEditScreen.kt",
-            "shared/src/commonMain/kotlin/com/andreyceilings/shared/measurement/MeasurementDrawing.kt",
+        for path, tests in (
+            (SHARED_DRAWING,
+             (AREA_TOUCH_TEST, WORKSPACE_LAYOUT_TEST, OVERLAY_DRAG_TEST)),
+            (SHARED_GRADIENT, (WORKSPACE_LAYOUT_TEST,)),
         ):
             self.assert_scope(path, "TARGETED", ("smoke", "smoke", "smoke"))
+            self.assertEqual(outcome(path).android_smoke_tests, tests)
+
+    def test_android_smoke_unions_mapped_classes_and_deep_overrides_them(self):
+        result = outcome(ANDROID_FONT, SHARED_DRAWING, SHARED_GRADIENT)
+        self.assertEqual(result.android_smoke_tests, (AREA_TOUCH_TEST, WORKSPACE_LAYOUT_TEST, OVERLAY_DRAG_TEST))
+        result = outcome(ANDROID_FONT, SHARED_DRAWING, f"{ANDROID_SCREENS}/EstimateDocumentExport.kt")
+        self.assertEqual(result.depths, ("deep", "smoke", "smoke"))
+        self.assertEqual(result.android_smoke_tests, ())
 
     def test_shared_business_data_database_and_config_fail_closed_full(self):
         for path in (
             "shared/src/commonMain/kotlin/com/a/livepricing/IndividualEstimatePricing.kt",
             "shared/src/commonMain/kotlin/com/a/measurement/MeasurementEditModel.kt",
+            "shared/src/commonMain/kotlin/com/a/ui/UnreviewedScreen.kt",
+            "shared/src/commonMain/kotlin/com/andreyceilings/shared/navigation/AppNavigationState.kt",
+            f"{SHARED_MEASUREMENT}/MeasurementDetailsScreen.kt",
             "shared/src/commonMain/kotlin/com/a/db/EncryptedRepository.kt",
             "shared/src/commonMain/sqldelight/com/a/db/BusinessSchema.sq",
             "shared/src/commonTest/kotlin/com/a/EstimateTest.kt",
@@ -95,7 +122,7 @@ class ImpactTest(unittest.TestCase):
 
     def test_mixed_platform_levels_union_never_downgrades(self):
         result = outcome(
-            "app/src/main/java/com/a/ui/Screen.kt",
+            ANDROID_FONT,
             "shared/src/jvmMain/kotlin/com/a/db/SqlCipherWindowsDriver.kt",
             "shared/src/iosMain/kotlin/com/a/ui/IosUi.kt",
             "docs/info.md",

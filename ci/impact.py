@@ -16,6 +16,22 @@ import sys
 
 SHA = re.compile(r"^[0-9a-fA-F]{40}(?:[0-9a-fA-F]{24})?$")
 TARGETS = ("android", "desktop", "ios")
+ANDROID_TEST_PACKAGE = "com.andreyceilings.app"
+WORKSPACE_LAYOUT_TEST = f"{ANDROID_TEST_PACKAGE}.MeasurementWorkspaceLayoutTest"
+OVERLAY_DRAG_TEST = f"{ANDROID_TEST_PACKAGE}.OverlayDragTouchTest"
+AREA_TOUCH_TEST = f"{ANDROID_TEST_PACKAGE}.AreaFeatureTouchTest"
+
+# Exact paths keep unrelated features, including PDF and persistence code in
+# UI directories, on deep verification. Each entry needs relevant UI evidence.
+ANDROID_SMOKE_TESTS_BY_PATH = {
+    "app/src/main/res/font/inter_variable.ttf": (WORKSPACE_LAYOUT_TEST,),
+    "shared/src/commonMain/kotlin/com/andreyceilings/shared/measurement/MeasurementDrawing.kt": (
+        WORKSPACE_LAYOUT_TEST, OVERLAY_DRAG_TEST, AREA_TOUCH_TEST,
+    ),
+    "shared/src/commonMain/kotlin/com/andreyceilings/shared/theme/CeilingsEdgeGradient.kt": (
+        WORKSPACE_LAYOUT_TEST,
+    ),
+}
 
 
 @dataclass(frozen=True)
@@ -31,6 +47,7 @@ class Impact:
     reason: str
     paths: tuple[str, ...]
     depths: tuple[str, str, str] = ("skip", "skip", "skip")
+    android_smoke_tests: tuple[str, ...] = ()
 
 
 def parse_changes(data: bytes) -> list[Change]:
@@ -106,20 +123,7 @@ def _group(path: str) -> tuple[tuple[str, ...], str] | None:
                        "/db/", "/database/", "/backup/", "sqlcipher", "migration",
                        "keystore", "keychain", "encryption", "credential",
                        "/persistence/", "/storage/", "/security/")))
-    # Shared UI exceptions are carefully scoped to actual Compose presentation
-    # code. Changes to data/geometry/finance contracts do NOT pass this rule.
-    shared_ui = (
-        "/theme/" in lower or "/navigation/" in lower or "/ui/" in lower
-        or lower.endswith((
-            "/measurementeditscreen.kt", "/measurementdrawing.kt",
-            "/measurementdetailsscreen.kt", "/measurementelementsui.kt",
-            "/measurementpricingui.kt", "/pricecatalogtheme.kt"))
-    )
-
-    # Directory/suffix heuristics do not prove application startup, platform
-    # adapters or lifecycle code harmless. Only known presentation paths may
-    # use shallow platform smoke; other platform production code remains deep
-    # on its OWN platform, without forcing unrelated platform regressions.
+    # Desktop/iOS retain their existing platform-specific smoke policy.
     is_platform_ui = (
         "/ui/" in lower or "/theme/" in lower
         or ("/res/" in lower and Path(path).suffix.lower()
@@ -129,8 +133,7 @@ def _group(path: str) -> tuple[tuple[str, ...], str] | None:
     if path.startswith(("app/src/", "shared/src/androidMain/",
                         "shared/src/androidTest/", "shared/src/androidInstrumentedTest/",
                         "shared/src/androidUnitTest/")):
-        return (("android",), "deep" if is_database or is_test
-                or lower.endswith("/androidmanifest.xml") or not is_platform_ui else "smoke")
+        return (("android",), "smoke" if path in ANDROID_SMOKE_TESTS_BY_PATH else "deep")
     if path.startswith(("desktopApp/src/", "shared/src/jvmMain/",
                         "shared/src/jvmTest/")):
         return (("desktop",), "deep" if is_database or is_test
@@ -140,13 +143,9 @@ def _group(path: str) -> tuple[tuple[str, ...], str] | None:
         return (("ios",), "deep" if is_database or is_test
                 or not is_platform_ui else "smoke")
     if path.startswith(("shared/src/commonMain/", "shared/src/commonTest/")):
-        if is_database or is_test:
-            return (TARGETS, "deep")
-        if shared_ui:
-            return (TARGETS, "smoke")
         # Common business/geometry/finance code is coupled to native DB and
         # platform persistence. No optimistic category derived from its name.
-        return (TARGETS, "deep")
+        return (TARGETS, "smoke" if path in ANDROID_SMOKE_TESTS_BY_PATH else "deep")
     return None
 
 
@@ -176,7 +175,13 @@ def classify(changes: list[Change]) -> Impact:
     if shared_deep:
         return Impact("FULL", TARGETS, "shared business/database or test contract; all dependent suites", paths,
                       ("deep", "deep", "deep"))
-    return Impact("TARGETED", selected, "per-platform source-set dependency union; scoped depth", paths, levels)
+    android_smoke_tests = ()
+    if depths["android"] == "smoke":
+        android_smoke_tests = tuple(sorted({
+            test for path in paths for test in ANDROID_SMOKE_TESTS_BY_PATH.get(path, ())
+        }))
+    return Impact("TARGETED", selected, "per-platform source-set dependency union; scoped depth",
+                  paths, levels, android_smoke_tests)
 
 
 def impact_from_git(base: str, head: str) -> Impact:
@@ -206,6 +211,7 @@ def main(argv: list[str] | None = None) -> int:
         "desktop": str("desktop" in result.targets).lower(),
         "ios": str("ios" in result.targets).lower(),
         **{f"{target}_depth": depth for target, depth in zip(TARGETS, result.depths)},
+        "android_smoke_tests": ",".join(result.android_smoke_tests),
         "apple_depth": (result.depths[2] if result.depths[2] != "skip"
                         else "smoke" if result.depths[1] != "skip" else "skip"),
     }
@@ -219,6 +225,7 @@ def main(argv: list[str] | None = None) -> int:
                  f"Commit: {args.head or 'unknown'}", f"Decision: **{result.mode}**",
                  f"Target groups: {', '.join(result.targets) or 'none'}",
                  f"Coverage: {', '.join(f'{t}={d}' for t, d in zip(TARGETS, result.depths))}",
+                 f"Android smoke classes: {', '.join(result.android_smoke_tests) or 'none selected'}",
                  f"Reason: {result.reason.replace(chr(96), '')}",
                  "", "This is a classification, not proof of execution. Skipped platforms are NOT verified; scoped acceptance depends on real matching-SHA job results.",
                  "", f"Changed paths: {len(result.paths)}", ""]
