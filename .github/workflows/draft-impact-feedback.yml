@@ -1,5 +1,5 @@
-# Non-required, low-cost draft feedback. Existing FULL workflows still run
-# on every PR update until the final-SHA gate transition is separately validated.
+# Non-required, low-cost Draft feedback. Scoped Ready checks live in the
+# Android/CMP workflows; a Draft result never authorizes owner merge.
 name: Draft impact feedback (informational)
 
 on:
@@ -50,7 +50,7 @@ jobs:
   android-quick:
     name: Draft TARGETED Android (NOT FULL)
     needs: impact
-    if: needs.impact.outputs.android == 'true'
+    if: needs.impact.outputs.mode == 'TARGETED' && needs.impact.outputs.android == 'true'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
@@ -80,7 +80,7 @@ jobs:
   desktop-quick:
     name: Draft TARGETED Desktop (NOT FULL)
     needs: impact
-    if: needs.impact.outputs.desktop == 'true'
+    if: needs.impact.outputs.mode == 'TARGETED' && needs.impact.outputs.desktop == 'true'
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v7
@@ -103,7 +103,7 @@ jobs:
   ios-quick:
     name: Draft TARGETED iOS (NOT FULL)
     needs: impact
-    if: needs.impact.outputs.ios == 'true'
+    if: needs.impact.outputs.mode == 'TARGETED' && needs.impact.outputs.ios == 'true'
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v7
@@ -147,7 +147,7 @@ jobs:
             selected="${!target}"
             key="${target}_RESULT"
             result="${!key}"
-            if [[ "$selected" == true ]]; then
+            if [[ "$MODE" == TARGETED && "$selected" == true ]]; then
               echo "- $target: $result" >> "$GITHUB_STEP_SUMMARY"
               if [[ "$result" != success ]]; then
                 echo "::error::Selected $target test group did not pass: $result"
@@ -156,9 +156,9 @@ jobs:
             fi
           done
           if [[ "$MODE" == FULL ]]; then
-            echo "FULL fallback required: no focused test selection is safe. Existing Android and CMP workflows must pass." >> "$GITHUB_STEP_SUMMARY"
+            echo "FULL fallback required: current Android/CMP workflows execute all deep native suites on this Draft." >> "$GITHUB_STEP_SUMMARY"
           elif [[ "$MODE" == FAST ]]; then
-            echo "Docs-only FAST: classifier unit tests executed. Production FULL checks still run independently." >> "$GITHUB_STEP_SUMMARY"
+            echo "Docs-only FAST: classifier unit tests executed. Unselected platforms are not verified." >> "$GITHUB_STEP_SUMMARY"
           elif [[ "$MODE" == TARGETED ]]; then
             echo "TARGETED tasks above passed; this is *not* Android instrumentation/Windows/iOS FULL certification." >> "$GITHUB_STEP_SUMMARY"
           else
