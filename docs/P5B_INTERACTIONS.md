@@ -12,7 +12,7 @@ The saved-measurement editor uses one `MeasurementDrawing` in both modes. It own
 | Two or more pointers | Cancel an in-progress overlay move and pan/zoom. | Cancel the drag preview and pan/zoom. Keep any first endpoint committed by a prior tap. |
 | Back | Close the fullscreen panel, then leave fullscreen, then use the existing dirty-exit guard. | Cancel unfinished placement before applying the idle sequence. |
 
-A short projected LINE uses point distance when both projected endpoints coincide. The selected overlay owns drag in its hit zone. For taps, POINT and LINE remain reachable over a selected AREA so an overlapping element can be reselected. LINE snaps to a nearby wall direction only if the snapped segment remains strictly inside the ceiling. The endpoint starts with raw input each time, so bypass immediately restores it.
+A short projected LINE uses point distance when both projected endpoints coincide. The selected overlay owns drag in its hit zone. For taps, POINT remains reachable over a selected AREA. An AREA that was already selected keeps tap priority over a nearby LINE. LINE snaps to a nearby wall direction only if the snapped segment remains strictly inside the ceiling. The endpoint starts with raw input each time, so bypass immediately restores it.
 
 POINT, LINE and AREA selection must stay exclusive. Creating a placement never derives a billed quantity from the new marker count. Existing LINE and AREA controls use the editor transaction already. POINT placement and catalog work creation currently also have separate write paths in the measurement details screen. The shared Add flow must stage any new work or marker in the editor and include it in the same Save and retry receipt.
 

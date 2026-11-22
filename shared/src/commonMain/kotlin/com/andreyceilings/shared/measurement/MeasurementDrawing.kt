@@ -356,8 +356,8 @@ fun MeasurementDrawing(
                         projection.project(DrawingPoint(p.xMm.toDouble(),p.yMm.toDouble()))
                     }
                     val halo=24.dp.toPx()
-                    // Drag ownership follows the selection. Tap priority keeps a POINT or
-                    // LINE reachable inside a selected AREA. Equal AREA hits use paint order.
+                    // Drag ownership follows the selection. A POINT remains selectable
+                    // inside a selected AREA. Equal AREA hits use paint order.
                     val selectedArea=currentAreas.find {it.uuid==currentSelectedArea && areaDistance(it)<=halo}
                     val selectedLine=currentLines.find {it.uuid==currentSelectedLine && lineDistance(it,down.position)<=halo}
                     val selectedMarker=currentPoints.find {it.uuid==currentSelectedPoint}?.takeIf {p ->
@@ -468,7 +468,7 @@ fun MeasurementDrawing(
                                         selectTarget(DrawingTarget.POINT, marker.uuid) { currentPointSelection(marker.uuid) }
                                     } else if (selectedLine != null) {
                                         selectTarget(DrawingTarget.LINE, selectedLine.uuid) { currentLineSelection(selectedLine.uuid) }
-                                    } else if (selectedArea != null && (currentLineCreation == null || line == null)) {
+                                    } else if (selectedArea != null) {
                                         selectTarget(DrawingTarget.AREA, selectedArea.uuid) { currentAreaSelection(selectedArea.uuid) }
                                     } else if (line != null) {
                                         selectTarget(DrawingTarget.LINE, line.uuid) { currentLineSelection(line.uuid) }
