@@ -3,6 +3,8 @@ package com.andreyceilings.shared.db
 import app.cash.sqldelight.TransacterImpl
 import app.cash.sqldelight.db.QueryResult
 import io.github.s0d3s.sqlcipher_multiplatform_jdbc.SqlCipherJdbcProperties
+import java.io.File
+import java.net.URLClassLoader
 import java.nio.file.Files
 import java.nio.file.Path
 import java.sql.Connection
@@ -11,9 +13,11 @@ import java.sql.ResultSet
 import java.sql.SQLException
 import java.util.Properties
 import java.util.concurrent.CompletableFuture
-import java.util.concurrent.CompletionException
+import java.util.concurrent.ExecutionException
 import java.util.concurrent.Executor
 import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit.SECONDS
+import java.util.concurrent.TimeoutException
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -23,7 +27,9 @@ import kotlin.test.assertTrue
 
 class SqlCipherWindowsJdbcHandoffTest {
     @Test
-    fun sequentialHandoffPreservesCommitRollbackAndRecoversFromSqlErrors() = onWindows { file, key ->
+    fun sequentialHandoffPreservesCommitRollbackAndRecoversFromSqlErrors() = runOnWindows("handoff")
+
+    private fun sequentialHandoffPreservesCommitRollbackAndRecoversFromSqlErrors(file: Path, key: ByteArray) {
         val firstOwner = Thread.currentThread()
         Executors.newSingleThreadExecutor().use { worker ->
             open(file, key).use { connection ->
@@ -81,7 +87,9 @@ class SqlCipherWindowsJdbcHandoffTest {
     }
 
     @Test
-    fun repeatedHandoffsPreserveConnectionLocalStateAndCloseQueryResources() = onWindows { file, key ->
+    fun repeatedHandoffsPreserveConnectionLocalStateAndCloseQueryResources() = runOnWindows("repeated")
+
+    private fun repeatedHandoffsPreserveConnectionLocalStateAndCloseQueryResources(file: Path, key: ByteArray) {
         val firstOwner = Thread.currentThread()
         Executors.newSingleThreadExecutor().use { worker ->
             open(file, key).use { connection ->
@@ -120,7 +128,9 @@ class SqlCipherWindowsJdbcHandoffTest {
     }
 
     @Test
-    fun profiledDriverClosesPhysicalConnectionsAfterSqlErrorAndRollback() = onWindows { file, key ->
+    fun profiledDriverClosesPhysicalConnectionsAfterSqlErrorAndRollback() = runOnWindows("driver-close")
+
+    private fun profiledDriverClosesPhysicalConnectionsAfterSqlErrorAndRollback(file: Path, key: ByteArray) {
         val metrics = SqlCipherWindowsConnectionMetrics()
         val driver = SqlCipherWindowsDriverFactory.openProfiled(file.toFile(), key, metrics)
         val database = object : TransacterImpl(driver) {}
@@ -156,7 +166,9 @@ class SqlCipherWindowsJdbcHandoffTest {
     }
 
     @Test
-    fun closeAfterHandoffRollsBackUncommittedWritesAndReleasesWalFiles() = onWindows { file, key ->
+    fun closeAfterHandoffRollsBackUncommittedWritesAndReleasesWalFiles() = runOnWindows("wal-close")
+
+    private fun closeAfterHandoffRollsBackUncommittedWritesAndReleasesWalFiles(file: Path, key: ByteArray) {
         val firstOwner = Thread.currentThread()
         Executors.newSingleThreadExecutor().use { worker ->
             open(file, key).use { connection ->
@@ -191,16 +203,57 @@ class SqlCipherWindowsJdbcHandoffTest {
         Files.delete(moved)
     }
 
-    private fun onWindows(block: (Path, ByteArray) -> Unit) {
+    private fun runOnWindows(scenario: String) {
         if (!System.getProperty("os.name").startsWith("Windows", ignoreCase = true)) return
+
         val directory = Files.createTempDirectory("windows-cipher-handoff-")
-        val key = ByteArray(32) { 67 }
         AutoCloseable {
-            key.fill(0)
             check(directory.toFile().deleteRecursively()) { "Could not remove SQLCipher test files" }
         }.use {
-            block(directory.resolve("handoff.db"), key)
+            val output = directory.resolve("child.log")
+            val java = Path.of(System.getProperty("java.home"), "bin", "java.exe")
+            // Keep the Gradle classpath out of the Windows process command line.
+            val arguments = directory.resolve("child.args")
+            val classpath = childClasspath().replace("\\", "\\\\").replace("\"", "\\\"")
+            Files.writeString(arguments, "-cp \"$classpath\"")
+            val process = ProcessBuilder(
+                java.toString(), "@$arguments", javaClass.name,
+                scenario, directory.resolve("handoff.db").toString()
+            ).redirectErrorStream(true).redirectOutput(output.toFile()).start()
+
+            // This deadline also covers native calls on the child's main thread and its cleanup.
+            AutoCloseable {
+                if (process.isAlive) {
+                    process.destroyForcibly()
+                    check(process.waitFor(10, SECONDS)) {
+                        "Could not reap SQLCipher scenario $scenario (PID ${process.pid()})"
+                    }
+                }
+            }.use {
+                if (!process.waitFor(SCENARIO_TIMEOUT_SECONDS, SECONDS)) {
+                    throw AssertionError(
+                        "SQLCipher scenario $scenario exceeded the child JVM deadline " +
+                            "(${SCENARIO_TIMEOUT_SECONDS}s, PID ${process.pid()})"
+                    )
+                }
+                val exit = process.exitValue()
+                if (exit != 0) {
+                    val reason = if (exit == HANDOFF_TIMEOUT_EXIT) "JDBC handoff timed out" else "child JVM failed"
+                    throw AssertionError("SQLCipher scenario $scenario: $reason (exit $exit)\n${Files.readString(output)}")
+                }
+            }
         }
+    }
+
+    private fun childClasspath(): String {
+        // Gradle's test application classpath is loaded separately from its worker bootstrap.
+        val loaderEntries = generateSequence(javaClass.classLoader) { it.parent }
+            .filterIsInstance<URLClassLoader>()
+            .flatMap { it.urLs.asSequence() }
+            .filter { it.protocol == "file" }
+            .map { Path.of(it.toURI()).toString() }
+        return (loaderEntries + System.getProperty("java.class.path").split(File.pathSeparator))
+            .distinct().joinToString(File.pathSeparator)
     }
 
     private fun open(file: Path, key: ByteArray): Connection {
@@ -248,9 +301,46 @@ class SqlCipherWindowsJdbcHandoffTest {
 
     private fun Executor.runAndAwait(block: () -> Unit) {
         try {
-            CompletableFuture.runAsync({ block() }, this).join()
-        } catch (failure: CompletionException) {
+            CompletableFuture.runAsync({ block() }, this).get(HANDOFF_TIMEOUT_SECONDS, SECONDS)
+        } catch (failure: ExecutionException) {
             throw failure.cause ?: failure
+        } catch (_: TimeoutException) {
+            abortChild("JDBC handoff exceeded ${HANDOFF_TIMEOUT_SECONDS}s")
+        } catch (_: InterruptedException) {
+            abortChild("Interrupted while awaiting JDBC handoff")
+        }
+    }
+
+    private fun abortChild(message: String): Nothing {
+        // This code runs only in the child. A JDBC owner may still be in JNI, so unwinding
+        // would risk concurrent Connection.close() or waiting in ExecutorService.close().
+        System.err.println("$message. The JDBC worker may still be inside a native call.")
+        Runtime.getRuntime().halt(HANDOFF_TIMEOUT_EXIT)
+        error(message)
+    }
+
+    companion object {
+        private const val HANDOFF_TIMEOUT_SECONDS = 30L
+        private const val SCENARIO_TIMEOUT_SECONDS = 90L
+        private const val HANDOFF_TIMEOUT_EXIT = 124
+
+        @JvmStatic
+        fun main(args: Array<String>) {
+            val (scenario, filename) = args
+            val file = Path.of(filename)
+            val key = ByteArray(32) { 67 }
+            try {
+                val probe = SqlCipherWindowsJdbcHandoffTest()
+                when (scenario) {
+                    "handoff" -> probe.sequentialHandoffPreservesCommitRollbackAndRecoversFromSqlErrors(file, key)
+                    "repeated" -> probe.repeatedHandoffsPreserveConnectionLocalStateAndCloseQueryResources(file, key)
+                    "driver-close" -> probe.profiledDriverClosesPhysicalConnectionsAfterSqlErrorAndRollback(file, key)
+                    "wal-close" -> probe.closeAfterHandoffRollsBackUncommittedWritesAndReleasesWalFiles(file, key)
+                    else -> error("Unknown SQLCipher scenario: $scenario")
+                }
+            } finally {
+                key.fill(0)
+            }
         }
     }
 }
