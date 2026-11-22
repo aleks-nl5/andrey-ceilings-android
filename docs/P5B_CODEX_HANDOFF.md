@@ -1,0 +1,52 @@
+# Codex handoff — P5B: unified POINT / LINE / AREA UX
+
+**Owner authorization:** 22.11.2026, «Переходимо до P5B». **Canonical implementation issue:** [#156](https://github.com/aleks-nl5/andrey-ceilings-android/issues/156); umbrellas [#95](https://github.com/aleks-nl5/andrey-ceilings-android/issues/95), [#71](https://github.com/aleks-nl5/andrey-ceilings-android/issues/71), [#76](https://github.com/aleks-nl5/andrey-ceilings-android/issues/76). One deliverable for **all POINT + LINE + AREA**, not three unrelated PRs. This document is a kickoff/handoff, **not implemented functionality**.
+
+## Branch, baseline, sequencing
+
+- Work **only** in `feat/p5b-unified-elements-ux`, one **Draft PR** targeting `main`; never push into `main`, merge, mark Ready, or close umbrella issues. Base is owner-merged localization [PR #155](https://github.com/aleks-nl5/andrey-ceilings-android/pull/155) at `492ca12d833fe3d7c8008667c2b0bdabcbd0bf9e`. Verify current main before implementation and reconcile if it advances.
+- Read `AGENTS.md`, `docs/P5_UX_DISCOVERY.md`, `docs/PROJECT_ROADMAP.md`, `docs/architecture/LOCALIZATION_STRATEGY.md`, `docs/LOCALIZATION_L1_IMPLEMENTATION.md`, #156 and the active code first. Older P5A/P4/CI blocks in docs are historical, not authorization to work on them.
+- Post-merge FULL checks for #155 were still running when this kickoff was written: [Android](https://github.com/aleks-nl5/andrey-ceilings-android/actions/runs/45064977461) and [Windows/iOS](https://github.com/aleks-nl5/andrey-ceilings-android/actions/runs/45064977449). **Verify their actual final conclusion; do not claim success early.** If baseline fails, diagnose/report rather than masking it in P5B.
+- CI policy from merged #152: Draft/Ready FAST/TARGETED according to impact; FULL on merged `main` or intentional manual request, **not unconditionally at Ready**. Preserve all tests and report exact SHA and jobs; owner alone merges. Independent code review and owner physical-Android APK smoke mandatory before Ready/merge.
+
+## Existing architecture to preserve (inspect actual files before edits)
+
+- One persistently mounted shared CMP `MeasurementEditScreen` and `MeasurementDrawing`; `CeilingsWorkspaceScaffold` manages presentation. Normal/fullscreen and contexts «Контур / Елементи / Вартість» must share model, draft, selection, viewport, focus, undo and Save lifecycle.
+- `MeasurementEditModel` owns edit-draft mutations/history, `MeasurementEditStore` admission/CAS/atomic Save. Existing POINT, LINE, AREA models, wall anchors, UUIDs and world **Long-mm** coordinates are source of truth; `MeasurementDrawingGeometry`, `AreaHitTesting`, `MeasurementViewport` are related building blocks. Reuse `LinePlacementControls`, `AreaFeatureControls`, `PointPositionEditor` where useful rather than introducing parallel platform-only editors.
+- Shared price catalog is the **single** source of catalog items and editable group/item names. Declared paid quantity is independent from count of Canvas markers. Existing KMP pricing/revision/PDF contracts are immutable. P5D will introduce *true pre-Save* draft pricing; do not present persisted-only totals as updated live previews before save.
+- New user-facing labels, semantics, errors and plural texts must use the new **shared Compose Multiplatform Resources** and pass `ci/localization.py` baseline-aware guard. Ukrainian is the only supported product locale/fallback today. **Never translate user-authored price group or item names, including starter seed.**
+
+## User interaction contract — implement as ONE cohesive workflow
+
+1. **Selection/gesture priority.** Single tap selects, empty-space tap clears; selected object can drag, empty-space drag pans, pinch zooms. Prevent a drag from accidentally opening properties, creating an object or moving a wall. In **normal** mode, selection shows properties in the lower contextual sheet. In **fullscreen**, single tap only selects; **double tap on selected object** or an explicit accessible action (desktop Enter) opens bottom properties. Back closes transient controls, then fullscreen, then guarded editor exit; do not break dirty draft/Save/Discard.
+2. **Common add flow.** «+ Додати» → compatible existing catalog item/type → on-Canvas creation preview → contextual precise editing → in-memory draft → **one explicit atomic overall Save**. Allow unplaced declared work without fake placement or changing payable quantity. Distinguish start/preview/draft/saved/partial/invalid/conflict. No unnecessary modal chain or separate “save line into draft” confirmation.
+3. **POINT.** Add, select, drag, exact wall-distance/world-mm adjustment, Undo/Redo, reselect after other LINE/AREA movements. Stable persistent UUID, anchors and geometry; no duplicate when reselected/moved.
+4. **LINE.** Two endpoints by tap/tap **or** drag with real-time rubber-band preview; after second endpoint immediately become selected **draft** with both endpoints' precise contextual properties available. Implement default **smart snap parallel to a nearby wall**, optionally nearby existing LINE, in world-mm with visible guide + reason, hysteresis and temporary bypass. Avoid changing the wall or silently corrupting unsnapped coordinates/anchors. Hit-testing must use epsilon/point-distance fallback for zero projected length; never NaN/Infinity, including min zoom and very short lines.
+5. **AREA.** Reuse existing rectangular, round, obstacle/void and catalog AREA types. Add/select/drag/edit diameter/dimensions/wall anchors in normal and fullscreen. Differentiate void/obstacle from billable AREA; **no speculative subtraction of area or new pricing rule**. Owner's six deferred P5A manual checks (below) are part of this acceptance.
+6. **Properties/fields.** One cohesive contextual sheet, with exact numeric inputs for selected kind and wall anchors. A selected wall/element highlights the matching **rounded field bounds**, not a rectangular overflow/only its label. Do not lose IME composition, focus, `.5` behavior or user changes when toggling normal/fullscreen/context. Keep useful keyboard/TalkBack semantics and desktop mouse/Enter behavior.
+7. **Persistence.** All types share Undo/Redo, navigation guard, conflict/retry, cancellation of partial creation, coherent atomic Save/exit/reopen and recovery. Do not duplicate saves, mint new IDs for edits, overwrite historical saved source, or misreport “saved” while data is only an in-memory preview.
+
+## Required implementation order, still ONE PR
+
+- **A — audit + interaction contract:** Map current gesture ownership, property editors and draft transitions across `MeasurementDrawing.kt`, `MeasurementEditScreen.kt`, `MeasurementEditModel.kt`. Write an explicit state/gesture decision table and acceptance test map **before** changing gestures. Identify ambiguities in code and note decisions in PR, don't invent a new UI navigation pattern.
+- **B — shared mechanics and integrated UI:** Implement selection/gesture priorities and common contextual properties once; connect POINT, LINE and AREA, including live line preview/snap and area flows; retain one mounted Canvas and shared state. Keep commits reviewable (input/state, LINE, AREA/POINT integration, tests) without splitting product acceptance into independent PRs.
+- **C — tests + visual/accessibility audit:** Build production-gesture UI tests (not model-only fakes), world-mm/domain regressions, persistence/price assertions, responsive/dark-light checks. Test on actual platform hosts where runnable and document honest iOS coverage.
+- **D — handoff:** Update PR with precise changed files, known limitations, screenshots only if they genuinely validate UX, FAST/TARGETED results on exact SHA, any manual FULL results, independent review checklist and **unmarked** owner APK checklist.
+
+## One acceptance matrix (all must pass)
+
+- [ ] For **each** kind POINT / LINE / AREA, from existing catalog item: add → preview → select → exact properties → drag → reselect → Undo/Redo → Save → exit/reopen; stable geometry, UUID/anchors, quantity and valid canonical pricing after Save.
+- [ ] On narrow portrait and landscape, normal/fullscreen, light/dark: select/double-tap vs drag/pan/pinch, nonblocking sheet, keyboard/accessibility, zoom and context switches retain draft/viewport/focus/history. Test real production gestures/controls; not only `MeasurementEditModel.acceptLineCreation()` or synthetic shortcut buttons.
+- [ ] Regression: short LINE with projected coincident endpoints is selectable and never NaN; snap on/off hysteresis preserves precise raw geometry; POINT remains selectable after dragging LINE or AREA; no wrong wall anchor, duplicate UUID or lost measurement.
+- [ ] Deferred **physical Android owner APK tests from P5A** (not pre-checked): **rectangular obstacle**, **circular hole of 0.2 m**, **catalog-linked AREA**, **Undo/Redo**, **circle selection/properties after fullscreen**, **Save/exit/reopen** — each in normal/fullscreen and both themes.
+- [ ] Failure paths: invalid geometry, partial creation, dirty Back, Save conflict, retry, discard, intermittent persistence; no phantom money or stale “saved” state.
+- [ ] Android, Windows, iOS relevant FAST/TARGETED CI reported truthfully on exact SHA, extra manual FULL if risk requires; owner APK acceptance and independent review **before** Ready. Do not remove/skip tests to achieve green.
+- [ ] Localized strings via L1 resources; guard green. Existing user price names, SQLCipher, WAL, backup/restore, schema, exact money, frozen estimate snapshots/provenance/status/selected pointers and PDFs unchanged.
+
+## Explicitly OUT of P5B
+
+- P5C: new-measurement UX, invalid-contour diagnostics, exterior vertex labels, A/B orientation and fit/rotate.
+- P5D: quick CANVAS / PRIMARY_PROFILE selectors, true unsaved draft-price read model, fourth «Кошториси» tab and frozen-estimate selection UX.
+- Arbitrary-angle solver #70, polylines/multi-turn routed LINE, multi-billable-item-per-element #153, Settings #145, Object #136, Calendar #49, Windows pooled-driver work #147, or new schema/security/finance rules.
+
+**Definition of Done:** owner can comfortably create, move, precisely edit and atomically save/reopen POINT/LINE/AREA in **one shared Ceiling workspace** on a physical phone; same feature behavior in normal/fullscreen, with honest status/pricing and no regressions to prior P5A/L1/frozen data. Only the owner decides final acceptance and merges.
