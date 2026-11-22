@@ -15,7 +15,7 @@ VALID_MODES = frozenset({"FULL", "FAST", "TARGETED"})
 VALID_LEVELS = frozenset({"skip", "smoke", "deep"})
 VALID_RESULTS = frozenset({"success", "failure", "skipped", "cancelled", "timed_out",
                            "neutral", "action_required"})
-VALID_GROUPS = frozenset({"android", "windows", "apple"})
+VALID_GROUPS = frozenset({"android", "windows", "apple", "ios", "macos"})
 SHA = re.compile(r"^[0-9a-f]{40}$")
 
 
