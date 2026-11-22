@@ -1,4 +1,4 @@
-"""Gate decisions: a skipped job can never satisfy a required FULL check."""
+"""An accepted scoped CI receipt must never claim skipped native suites passed."""
 import subprocess
 from pathlib import Path
 import sys
@@ -10,66 +10,107 @@ from verify_full_gate import decide
 
 SCRIPT = Path(__file__).resolve().parents[1] / "verify_full_gate.py"
 SHA = "a" * 40
+GROUPS = ("windows", "apple")
 
 
 class FullGateTest(unittest.TestCase):
-    def test_ready_and_merge_events_require_all_real_jobs(self):
-        for event, draft in (
-            ("pull_request", "false"), ("push", ""), ("merge_group", ""),
-            ("workflow_dispatch", ""),
-        ):
-            for mode in ("FAST", "TARGETED", "FULL"):
-                with self.subTest(event=event, mode=mode):
-                    ok = decide(event, draft, "success", mode, ("success", "success"))
-                    self.assertTrue(ok.passed)
-                    self.assertTrue(ok.is_full_gate)
-                    for bad in ("skipped", "failure", "cancelled", "neutral", ""):
-                        self.assertFalse(decide(event, draft, "success", mode,
-                                                (bad, "success")).passed)
+    def test_ready_scoped_windows_skip_is_safe_only_when_declared(self):
+        ok = decide("pull_request", "false", "success", "TARGETED",
+                    (("windows", "skip", "skipped"), ("apple", "skip", "skipped")),
+                    GROUPS)
+        # A targeted CMP classifier with no CMP platform must be evaluated by
+        # the global Android result, not accepted as a CMP TARGETED run alone.
+        self.assertFalse(ok.passed)
+        # CMP job receives FAST when all its groups are unselected by impact.
+        docs = decide("pull_request", "false", "success", "FAST",
+                      (("windows", "skip", "skipped"), ("apple", "skip", "skipped")),
+                      GROUPS)
+        self.assertTrue(docs.passed)
+        self.assertTrue(docs.is_acceptance)
 
-    def test_draft_noncritical_can_skip_full_jobs_only(self):
-        for mode in ("FAST", "TARGETED"):
-            with self.subTest(mode=mode):
-                ok = decide("pull_request", "true", "success", mode, ("skipped", "skipped"))
-                self.assertTrue(ok.passed)
-                self.assertFalse(ok.is_full_gate)
-                self.assertIn("not merge authorization", ok.message)
-                self.assertFalse(decide("pull_request", "true", "success", mode,
-                                        ("success", "skipped")).passed)
-
-    def test_draft_critical_requires_full_but_cannot_claim_merge_gate(self):
-        ok = decide("pull_request", "true", "success", "FULL", ("success", "success"))
+    def test_windows_only_jdbc_needs_actual_native_windows_and_mac_smoke(self):
+        ok = decide("pull_request", "false", "success", "TARGETED",
+                    (("windows", "deep", "success"), ("apple", "smoke", "success")),
+                    GROUPS)
         self.assertTrue(ok.passed)
-        self.assertFalse(ok.is_full_gate)
-        self.assertFalse(decide("pull_request", "true", "success", "FULL",
-                                ("skipped", "skipped")).passed)
+        for bad in ("skipped", "failed", "failure", "cancelled", "neutral", ""):
+            with self.subTest(status=bad):
+                self.assertFalse(decide("pull_request", "false", "success", "TARGETED",
+                                        (("windows", "deep", bad), ("apple", "smoke", "success")),
+                                        GROUPS).passed)
 
-    def test_fail_closed_on_unknown_mode_event_missing_results_or_classifier(self):
-        for item in (
-            ("pull_request", "false", "failure", "FULL", ("success",)),
-            ("pull_request", "true", "success", "", ("skipped",)),
-            ("pull_request", "", "success", "FULL", ("success",)),
-            ("pull_request", "true", "success", "TARGETED", ()),
-            ("pull_request", "true", "success", "TARGETED", ("foo",)),
-            ("weird", "false", "success", "FULL", ("success",)),
+    def test_shared_ui_requires_all_selected_smoke(self):
+        ok = decide("pull_request", "false", "success", "TARGETED",
+                    (("windows", "smoke", "success"), ("apple", "smoke", "success")),
+                    GROUPS)
+        self.assertTrue(ok.passed)
+        self.assertFalse(decide("pull_request", "false", "success", "TARGETED",
+                                (("windows", "smoke", "skipped"), ("apple", "smoke", "success")),
+                                GROUPS).passed)
+
+    def test_critical_full_requires_all_deep_and_success(self):
+        for event, draft in (("pull_request", "false"), ("push", ""),
+                             ("merge_group", ""), ("workflow_dispatch", "")):
+            with self.subTest(event=event):
+                self.assertTrue(decide(event, draft, "success", "FULL",
+                                       (("windows", "deep", "success"),
+                                        ("apple", "deep", "success")), GROUPS).passed)
+                self.assertFalse(decide(event, draft, "success", "FULL",
+                                        (("windows", "deep", "success"),
+                                         ("apple", "smoke", "success")), GROUPS).passed)
+                self.assertFalse(decide(event, draft, "success", "FULL",
+                                        (("windows", "deep", "success"),
+                                         ("apple", "deep", "skipped")), GROUPS).passed)
+
+    def test_intermediate_draft_is_advisory_not_merge_acceptance(self):
+        good = decide("pull_request", "true", "success", "TARGETED",
+                      (("windows", "smoke", "skipped"), ("apple", "skip", "skipped")),
+                      GROUPS)
+        self.assertTrue(good.passed)
+        self.assertFalse(good.is_acceptance)
+        self.assertFalse(decide("pull_request", "true", "success", "TARGETED",
+                                (("windows", "smoke", "success"), ("apple", "skip", "skipped")),
+                                GROUPS).passed)
+        full_draft = decide("pull_request", "true", "success", "FULL",
+                            (("windows", "deep", "success"), ("apple", "deep", "success")),
+                            GROUPS)
+        self.assertTrue(full_draft.passed)
+        self.assertFalse(full_draft.is_acceptance)
+
+    def test_unknown_inputs_and_missing_group_are_red(self):
+        base = (("windows", "deep", "success"), ("apple", "deep", "success"))
+        for event, draft, classification, mode, data, groups in (
+            ("weird", "false", "success", "FULL", base, GROUPS),
+            ("pull_request", "", "success", "FULL", base, GROUPS),
+            ("pull_request", "false", "failure", "FULL", base, GROUPS),
+            ("pull_request", "false", "success", "unknown", base, GROUPS),
+            ("pull_request", "false", "success", "FULL", base[:1], GROUPS),
+            ("pull_request", "false", "success", "FULL", base + base[:1], GROUPS),
+            ("pull_request", "false", "success", "FULL", base, ("windows", "windows")),
+            ("pull_request", "false", "success", "FULL", (("windows", "deep", ""), base[1]), GROUPS),
         ):
-            with self.subTest(item=item):
-                self.assertFalse(decide(*item).passed)
+            with self.subTest(event=event, mode=mode, data=data):
+                self.assertFalse(decide(event, draft, classification, mode, data, groups).passed)
 
-    def test_real_cli_verifies_exact_checkout_sha(self):
+    def test_cli_pin_and_summary_make_skipped_platform_explicit(self):
         with tempfile.TemporaryDirectory() as d:
             summary = str(Path(d) / "summary.md")
             args = [sys.executable, str(SCRIPT), "--event", "pull_request",
                     "--draft", "false", "--impact-result", "success",
-                    "--mode", "FULL", "--job-result", "success",
+                    "--mode", "TARGETED", "--expected-group", "android",
+                    "--coverage", "android:smoke:success",
                     "--expected-sha", SHA, "--actual-sha", SHA,
                     "--summary", summary]
             good = subprocess.run(args, capture_output=True, text=True)
             self.assertEqual(good.returncode, 0, good.stdout + good.stderr)
-            self.assertIn("FULL verified", Path(summary).read_text())
+            self.assertIn("SCOPED ACCEPTANCE", Path(summary).read_text())
             bad = subprocess.run(args[:-3] + ["b" * 40, "--summary", summary],
                                  capture_output=True, text=True)
             self.assertNotEqual(bad.returncode, 0)
+            malformed = subprocess.run(args[:args.index("--coverage") + 1] +
+                                       ["android:success"] + args[args.index("--expected-sha"):],
+                                       capture_output=True, text=True)
+            self.assertNotEqual(malformed.returncode, 0)
 
 
 if __name__ == "__main__":
