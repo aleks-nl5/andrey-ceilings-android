@@ -1,0 +1,216 @@
+# Fast PR checks for Draft and Ready; full native tests only on main push/manual dispatch.
+# Existing file path retained to preserve workflow identity.
+name: PR fast checks (no FULL)
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
+
+concurrency:
+  group: pr-fast-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  impact:
+    name: Classify PR risk (quick checks only)
+    runs-on: ubuntu-24.04
+    outputs:
+      mode: ${{ steps.classify.outputs.mode }}
+      android: ${{ steps.classify.outputs.android }}
+      desktop: ${{ steps.classify.outputs.desktop }}
+      ios: ${{ steps.classify.outputs.ios }}
+      android_depth: ${{ steps.classify.outputs.android_depth }}
+      desktop_depth: ${{ steps.classify.outputs.desktop_depth }}
+      windows_smoke_tests: ${{ steps.classify.outputs.windows_smoke_tests }}
+      ios_depth: ${{ steps.classify.outputs.ios_depth }}
+    steps:
+      - name: Checkout exact PR head and merge base history
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Regression tests for fail-closed classifier
+        run: |
+          python3 -m unittest discover -s ci/tests -p test_impact.py -v
+          python3 -m unittest discover -s ci/tests -p test_full_gate.py -v
+          python3 -m unittest discover -s ci/tests -p test_android_smoke_reports.py -v
+          python3 -m unittest discover -s ci/tests -p test_pr_merge_trigger_policy.py -v
+
+      - name: Classify complete PR diff
+        id: classify
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$HEAD_SHA"
+          python3 ci/impact.py --base "$BASE_SHA" --head "$HEAD_SHA" \
+            --github-output "$GITHUB_OUTPUT" --summary "$GITHUB_STEP_SUMMARY"
+
+  android-quick:
+    name: PR Android debug APK and JVM unit tests
+    needs: impact
+    if: needs.impact.result == 'success' && needs.impact.outputs.android_depth != 'skip'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Assert current PR head SHA
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: android-actions/setup-android@v4
+      - run: sdkmanager 'platforms;android-37.0'
+      - uses: gradle/actions/setup-gradle@v6
+        with:
+          gradle-version: '9.7.0'
+          cache-read-only: ${{ github.event.pull_request.head.repo.full_name != github.repository }}
+      - name: Build Android debug APK and run Android JVM unit tests
+        run: gradle --no-daemon :app:assembleDebug :app:testDebugUnitTest :shared:compileKotlinJvm --stacktrace --warning-mode all
+      - name: Keep PR Android APK for owner smoke
+        uses: actions/upload-artifact@v7
+        with:
+          name: pr-fast-android-debug-apk
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 7
+
+  desktop-quick:
+    name: PR Windows compile and mapped scene tests
+    needs: impact
+    if: needs.impact.result == 'success' && needs.impact.outputs.desktop_depth != 'skip'
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Assert current PR head SHA
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: android-actions/setup-android@v4
+      - run: sdkmanager 'platforms;android-37.0'
+      - uses: gradle/actions/setup-gradle@v6
+        with:
+          gradle-version: '9.7.0'
+          cache-read-only: ${{ github.event.pull_request.head.repo.full_name != github.repository }}
+      - name: Compile Desktop and shared JVM for affected PR changes
+        run: gradle --no-daemon :desktopApp:compileKotlin :shared:compileKotlinJvm --stacktrace --warning-mode all
+      - name: Run mapped Windows presentation scenes (smoke only)
+        if: needs.impact.outputs.desktop_depth == 'smoke'
+        env:
+          WINDOWS_SMOKE_TESTS: ${{ needs.impact.outputs.windows_smoke_tests }}
+        run: |
+          if (-not $env:WINDOWS_SMOKE_TESTS) { throw 'Windows smoke needs a scene class filter' }
+          $filters = foreach ($class in ($env:WINDOWS_SMOKE_TESTS -split ',')) {
+            '--tests'
+            $class
+          }
+          gradle --no-daemon :desktopApp:test @filters --stacktrace --warning-mode all
+
+  ios-quick:
+    name: PR iOS framework compilation
+    needs: impact
+    if: needs.impact.result == 'success' && needs.impact.outputs.ios_depth != 'skip'
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Assert current PR head SHA
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: android-actions/setup-android@v4
+      - run: sdkmanager 'platforms;android-37.0'
+      - uses: gradle/actions/setup-gradle@v6
+        with:
+          gradle-version: '9.7.0'
+          cache-read-only: ${{ github.event.pull_request.head.repo.full_name != github.repository }}
+      - name: Compile iOS framework on Simulator (UI smoke, no native DB mutation)
+        run: gradle --no-daemon :shared:linkDebugFrameworkIosSimulatorArm64 --stacktrace --warning-mode all
+
+  feedback:
+    name: PR quick-only receipt (NOT full native verification)
+    if: ${{ always() }}
+    needs: [impact, android-quick, desktop-quick, ios-quick]
+    runs-on: ubuntu-24.04
+    env:
+      IMPACT_RESULT: ${{ needs.impact.result }}
+      MODE: ${{ needs.impact.outputs.mode }}
+      ANDROID_DEPTH: ${{ needs.impact.outputs.android_depth }}
+      DESKTOP_DEPTH: ${{ needs.impact.outputs.desktop_depth }}
+      IOS_DEPTH: ${{ needs.impact.outputs.ios_depth }}
+      ANDROID_RESULT: ${{ needs['android-quick'].result }}
+      DESKTOP_RESULT: ${{ needs['desktop-quick'].result }}
+      IOS_RESULT: ${{ needs['ios-quick'].result }}
+    steps:
+      - name: Require actual quick results for every selected platform
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "## PR quick verification (NO FULL before merge)" >> "$GITHUB_STEP_SUMMARY"
+          echo "Impact classifier: $MODE; risk depth is NOT a claim of executed native tests." >> "$GITHUB_STEP_SUMMARY"
+          if [[ "$IMPACT_RESULT" != success ]]; then
+            echo "::error::PR impact classifier failed: $IMPACT_RESULT"
+            exit 1
+          fi
+          if [[ "$MODE" != FULL && "$MODE" != TARGETED && "$MODE" != FAST ]]; then
+            echo "::error::Unknown impact classification: $MODE"
+            exit 1
+          fi
+          for target in ANDROID DESKTOP IOS; do
+            depth_key="${target}_DEPTH"
+            depth="${!depth_key}"
+            key="${target}_RESULT"
+            result="${!key}"
+            if [[ "$depth" == skip ]]; then
+              echo "- $target: NOT VERIFIED (no applicable source changes)" >> "$GITHUB_STEP_SUMMARY"
+              if [[ "$result" != skipped ]]; then
+                echo "::error::Unselected $target job unexpectedly ran: $result"
+                exit 1
+              fi
+            elif [[ "$depth" == smoke || "$depth" == deep ]]; then
+              echo "- $target: $result (quick compile/unit or mapped scenes only; native FULL not run)" >> "$GITHUB_STEP_SUMMARY"
+              if [[ "$result" != success ]]; then
+                echo "::error::Required PR quick $target job did not succeed: $result"
+                exit 1
+              fi
+            else
+              echo "::error::Invalid platform depth for $target: $depth"
+              exit 1
+            fi
+          done
+          echo "FULL native SQLCipher/instrumentation/Windows/iOS regression runs only on main push after merge, or manual workflow_dispatch." >> "$GITHUB_STEP_SUMMARY"

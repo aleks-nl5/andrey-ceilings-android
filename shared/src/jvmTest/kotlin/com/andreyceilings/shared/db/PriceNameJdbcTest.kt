@@ -33,13 +33,16 @@ object PriceNameFileProof {
                 val before: List<List<String?>>
                 val oldSchema: List<List<String?>>
                 open(file).use { driver ->
-                    PriceNameMigrationProof.v5Schema.create(driver)
-                    driver.execute(null, "PRAGMA user_version = 5", 0)
-                    PriceNameMigrationProof.populate(driver, when (scenario) {
-                        "group" -> CatalogNameKind.GROUP
-                        "item" -> CatalogNameKind.ITEM
-                        else -> null
-                    }, scenario == "empty")
+                    // No reader or failure probe touches this fresh file until setup commits.
+                    PrototypeDatabase(driver).transaction {
+                        PriceNameMigrationProof.v5Schema.create(driver)
+                        driver.execute(null, "PRAGMA user_version = 5", 0)
+                        PriceNameMigrationProof.populate(driver, when (scenario) {
+                            "group" -> CatalogNameKind.GROUP
+                            "item" -> CatalogNameKind.ITEM
+                            else -> null
+                        }, scenario == "empty")
+                    }
                     before = PriceNameMigrationProof.snapshot(driver)
                     oldSchema = PriceNameMigrationProof.schema(driver)
                 }

@@ -377,10 +377,25 @@ class MeasurementWorkspaceLayoutTest {
                         assertTrue(bounds.top >= panel.top - 2 && bounds.bottom <= minOf(panel.bottom, keyboardTop.toFloat()) + 2)
                     }
 
+                    // Emulator screenshot runs can retain hardware-keyboard mode
+                    // even with show_ime_with_hard_keyboard enabled. The contract
+                    // under test here is IME-aware layout/viewport, not whether
+                    // the emulator auto-opens the IME on a synthetic click.
+                    // Focus must be real, the keyboard must actually appear,
+                    // and all bounds/Next-action assertions remain mandatory.
+                    fun requireVisibleKeyboard(input: SemanticsNodeInteraction) {
+                        input.assertIsFocused()
+                        compose.runOnUiThread {
+                            val window = compose.activity.window
+                            WindowInsetsControllerCompat(window, window.decorView)
+                                .show(WindowInsetsCompat.Type.ime())
+                        }
+                        compose.waitUntil(15000) { imeVisible() }
+                    }
+
                     val length = field("AB, м")
                     length.performScrollTo().performClick()
-                    compose.waitUntil(15000) { imeVisible() }
-                    length.assertIsFocused()
+                    requireVisibleKeyboard(length)
                     assertAboveKeyboard(length)
                     length.performImeAction()
                     val width = field("BC, м")
@@ -413,7 +428,7 @@ class MeasurementWorkspaceLayoutTest {
                     action("На весь екран").performClick()
                     contextTab("contour").performClick()
                     notes.performScrollTo().performClick()
-                    compose.waitUntil(15000) { imeVisible() }
+                    requireVisibleKeyboard(notes)
                     assertAboveKeyboard(notes)
                     capture("fullscreen-ime")
                     hideKeyboard()

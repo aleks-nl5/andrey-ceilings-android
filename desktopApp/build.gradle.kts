@@ -33,7 +33,13 @@ compose.desktop {
 // Keep test execution and CI gates unchanged; only improve failure diagnostics.
 tasks.withType<org.gradle.api.tasks.testing.Test>().configureEach {
     testLogging {
-        events("failed")
+        // Show test starts on Windows: some physical SQLCipher/Compose scenarios
+        // take minutes before JUnit emits the final XML result.
+        if (System.getProperty("os.name").startsWith("Windows", ignoreCase = true)) {
+            events("started", "failed")
+        } else {
+            events("failed")
+        }
         exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
         showCauses = true
         showStackTraces = true

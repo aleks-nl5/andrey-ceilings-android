@@ -76,9 +76,12 @@ object MeasurementElementFileProof {
         val file = Files.createTempFile("elements-v6-", ".db").toFile()
         try {
             val (before, structure) = open(file).use { driver ->
-                MeasurementElementMigrationProof.v6Schema.create(driver)
-                driver.execute(null, "PRAGMA user_version=6", 0)
-                MeasurementElementMigrationProof.populate(driver)
+                // Publish the complete fixture before taking the persisted baseline snapshot.
+                PrototypeDatabase(driver).transaction {
+                    MeasurementElementMigrationProof.v6Schema.create(driver)
+                    driver.execute(null, "PRAGMA user_version=6", 0)
+                    MeasurementElementMigrationProof.populate(driver)
+                }
                 MeasurementElementMigrationProof.snapshot(driver) to PriceNameMigrationProof.schema(driver)
             }
             open(file).use { driver ->

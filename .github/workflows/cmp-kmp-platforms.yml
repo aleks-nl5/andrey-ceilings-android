@@ -2,23 +2,79 @@ name: Verify CMP KMP platforms
 
 on:
   workflow_dispatch:
-  pull_request:
+  # Automatically run FULL on main updates only (normally after owner merge).
+  push:
     branches: [ main ]
 
 concurrency:
   # Don't waste hosted runners on obsolete commits while iterating on draft PR #22.
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 permissions:
   contents: read
 
 jobs:
+  impact:
+    name: Classify whether FULL is required
+    runs-on: ubuntu-24.04
+    outputs:
+      mode: ${{ steps.decide.outputs.mode }}
+      desktop_depth: ${{ steps.decide.outputs.desktop_depth }}
+      windows_smoke_tests: ${{ steps.decide.outputs.windows_smoke_tests }}
+      ios_depth: ${{ steps.decide.outputs.ios_depth }}
+      apple_depth: ${{ steps.decide.outputs.apple_depth }}
+    steps:
+      - name: Checkout exact event commit and PR merge-base history
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify classifier and gate decision regressions
+        run: python3 -m unittest discover -s ci/tests -p 'test_impact.py' -v && python3 -m unittest discover -s ci/tests -p 'test_full_gate.py' -v
+      - name: Enforce FULL for main push or explicit manual dispatch
+        id: decide
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          HEAD_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$HEAD_SHA"
+          case "$EVENT_NAME" in
+            push|workflow_dispatch)
+              echo 'mode=FULL' >> "$GITHUB_OUTPUT"
+              echo 'android_depth=deep' >> "$GITHUB_OUTPUT"
+              echo 'desktop_depth=deep' >> "$GITHUB_OUTPUT"
+              echo 'ios_depth=deep' >> "$GITHUB_OUTPUT"
+              echo 'apple_depth=deep' >> "$GITHUB_OUTPUT"
+              echo "FULL on main push or explicit manual dispatch: $HEAD_SHA; PRs use quick-only checks." >> "$GITHUB_STEP_SUMMARY"
+              ;;
+            *)
+              echo "::error::Unexpected pre-merge FULL event: $EVENT_NAME"
+              exit 1
+              ;;
+          esac
   ios-and-desktop:
+    needs: [impact]
+    # Native iOS and macOS JVM DB regressions run after merge or manual dispatch.
+    if: ${{ always() && (needs.impact.result != 'success' || needs.impact.outputs.ios_depth == 'deep' || needs.impact.outputs.desktop_depth == 'deep' || (github.event_name != 'pull_request' || !github.event.pull_request.draft) && needs.impact.outputs.apple_depth != 'skip') }}
     runs-on: macos-15
     steps:
       - name: Checkout source
         uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Verify exact source SHA before full tests
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          echo "Post-merge/manual FULL source SHA: $EXPECTED_SHA" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Set up JDK 21
         uses: actions/setup-java@v6
@@ -40,24 +96,45 @@ jobs:
           cache-read-only: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
 
       - name: Verify Xcode toolchain
+        if: ${{ needs.impact.outputs.ios_depth != 'skip' || needs.impact.result != 'success' }}
         run: xcodebuild -version
 
       - name: Compile iOS simulator framework
+        if: ${{ needs.impact.outputs.ios_depth != 'skip' || needs.impact.result != 'success' }}
         run: gradle --no-daemon :shared:linkDebugFrameworkIosSimulatorArm64 --stacktrace --warning-mode all
 
       - name: Run isolated SQLCipher tests on iOS Simulator
+        if: ${{ needs.impact.outputs.ios_depth == 'deep' || needs.impact.result != 'success' }}
         run: gradle --no-daemon :shared:iosSimulatorArm64Test --stacktrace --warning-mode all
 
       # Combine two JVM-focused Gradle invocations; keep iOS framework and SQLCipher
       # tests as separate mandatory checks for actionable failure reporting.
       - name: Compile Desktop and run shared JVM tests on macOS
+        if: ${{ needs.impact.outputs.desktop_depth == 'deep' || needs.impact.result != 'success' }}
         run: gradle --no-daemon :desktopApp:compileKotlin :shared:jvmTest --stacktrace --warning-mode all
+      - name: Compile Desktop host on macOS (scoped UI smoke)
+        if: ${{ needs.impact.outputs.desktop_depth == 'smoke' && needs.impact.result == 'success' }}
+        run: gradle --no-daemon :desktopApp:compileKotlin :shared:compileKotlinJvm --stacktrace --warning-mode all
 
   windows-desktop:
+    needs: [impact]
+    # Full native SQLCipher/JDBC regression runs after main merge or by manual dispatch.
+    if: ${{ always() && (needs.impact.result != 'success' || needs.impact.outputs.desktop_depth == 'deep') }}
     runs-on: windows-latest
     steps:
       - name: Checkout source
         uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Verify exact source SHA before full tests
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          echo "Post-merge/manual FULL source SHA: $EXPECTED_SHA" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Set up JDK 21
         uses: actions/setup-java@v6
@@ -78,6 +155,9 @@ jobs:
           # Forked PRs may restore caches, but cannot write to the repository cache.
           cache-read-only: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
 
+      - name: Verify JUnit timing summary parser
+        run: python -m unittest discover -s ci/tests -p test_windows_test_timings.py
+
       # All original targets are retained while one Gradle invocation avoids
       # redundant startup and repeated configuration.
       - name: Verify transient quote CMP scenes
@@ -85,6 +165,37 @@ jobs:
 
       - name: Compile Windows Desktop and run shared JVM / SQLCipher CRUD tests
         run: gradle --no-daemon :desktopApp:compileKotlin :shared:jvmTest :desktopApp:test --stacktrace --warning-mode all
+
+      # Real encrypted JDBC stage timings; generated only when the fresh
+      # Windows-only diagnostic JUnit test actually executes (never from cache).
+      # It reports only times/counts, not credentials, SQL payloads or DB rows.
+      - name: Summarize Windows SQLCipher JDBC connection profile
+        if: always()
+        shell: pwsh
+        run: |
+          $profile = Join-Path $env:RUNNER_TEMP "windows-sqlcipher-jdbc-profile.md"
+          if (Test-Path $profile) {
+            Get-Content $profile | Add-Content -Path $env:GITHUB_STEP_SUMMARY
+          } else {
+            "## Windows SQLCipher JDBC profile" | Add-Content -Path $env:GITHUB_STEP_SUMMARY
+            "No fresh sample: profile test was cached, skipped, or failed before reporting." | Add-Content -Path $env:GITHUB_STEP_SUMMARY
+          }
+
+      - name: Preserve Windows SQLCipher JDBC profiling data
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: windows-sqlcipher-jdbc-profile
+          path: ${{ runner.temp }}/windows-sqlcipher-jdbc-profile.md
+          if-no-files-found: warn
+          retention-days: 30
+
+      # Diagnostic-only summary from existing XML. Never interpret a missing
+      # report as a successful test run, and never replace Gradle exit status.
+      - name: Summarize Windows JVM and Desktop test timings
+        if: always()
+        shell: pwsh
+        run: python ci/windows_test_timings.py --top 20 --summary "$env:GITHUB_STEP_SUMMARY"
 
       - name: Preserve Windows Desktop and JVM test reports
         if: always()
@@ -97,4 +208,47 @@ jobs:
             shared/build/test-results/
             shared/build/reports/tests/
           if-no-files-found: warn
-          retention-days: 14
+          retention-days: 30
+
+  full-gate:
+    name: ${{ github.event_name == 'pull_request' && github.event.pull_request.draft && 'Draft CMP advisory' || 'CMP scoped CI receipt (owner review)' }}
+    if: ${{ always() }}
+    needs: [impact, ios-and-desktop, windows-desktop]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Prove actual scoped Windows and Apple job conclusions on exact SHA
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          IS_DRAFT: ${{ github.event.pull_request.draft }}
+          IMPACT_RESULT: ${{ needs.impact.result }}
+          IMPACT_MODE: ${{ needs.impact.outputs.mode }}
+          DESKTOP_DEPTH: ${{ needs.impact.outputs.desktop_depth }}
+          IOS_DEPTH: ${{ needs.impact.outputs.ios_depth }}
+          APPLE_DEPTH: ${{ needs.impact.outputs.apple_depth }}
+          WINDOWS_FULL_RESULT: ${{ needs['windows-desktop'].result }}
+          APPLE_RESULT: ${{ needs['ios-and-desktop'].result }}
+          EXPECTED_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          windows_result="$WINDOWS_FULL_RESULT"
+          # A single Apple runner can run macOS JVM and iOS steps independently.
+          # Never turn its success into an iOS verification if iOS was skipped.
+          ios_result=skipped
+          macos_result=skipped
+          if [[ "$IOS_DEPTH" != skip ]]; then ios_result="$APPLE_RESULT"; fi
+          if [[ "$DESKTOP_DEPTH" != skip ]]; then macos_result="$APPLE_RESULT"; fi
+          echo "iOS depth: $IOS_DEPTH; Windows depth: $DESKTOP_DEPTH; macOS/JVM depth: $DESKTOP_DEPTH" >> "$GITHUB_STEP_SUMMARY"
+          python3 ci/verify_full_gate.py \
+            --event "$EVENT_NAME" --draft "$IS_DRAFT" \
+            --impact-result "$IMPACT_RESULT" --mode "$IMPACT_MODE" \
+            --expected-group windows --expected-group ios --expected-group macos \
+            --coverage "windows:$DESKTOP_DEPTH:$windows_result" \
+            --coverage "ios:$IOS_DEPTH:$ios_result" \
+            --coverage "macos:$DESKTOP_DEPTH:$macos_result" \
+            --expected-sha "$EXPECTED_SHA" --actual-sha "$(git rev-parse HEAD)" \
+            --summary "$GITHUB_STEP_SUMMARY"

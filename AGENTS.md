@@ -6,6 +6,26 @@
 
 ---
 
+## CURRENT owner decision — archive Windows #147 investigation, focus CI #134 (22.11.2026)
+
+The owner has decided to **finish PR #148 as a bounded Windows SQLCipher source-audit, metrics and native regression checkpoint** and to **keep issue #147 OPEN but DEFER further physical-connection pooling**. This PR includes opt-in in-memory metrics, safe PreparedStatement finalization and bounded child-JVM thread handoff verification; **NO production connection pool or physical reuse is implemented**. The last code SHA `639377ba` passed Windows/Android/iOS on 22 Nov 2026; docs-only subsequent SHA requires its own check. See [final measured checkpoint](docs/ISSUE_147_SQLDELIGHT_NATIVE_AUDIT.md), [issue #147](https://github.com/aleks-nl5/andrey-ceilings-android/issues/147) and [PR #148](https://github.com/aleks-nl5/andrey-ceilings-android/pull/148).
+
+**Do not continue #147 production work unless the owner explicitly resumes it.** Keep wrong-key, encryption, migrations, WAL, backup, rollback, CAS, concurrent native handoff and complete regression coverage; never suppress tests or downgrade KDF to optimize CI. Do not interpret passing sequential handoff tests as proof of safe cross-thread pooling.
+
+**Active next work:** [issue #134](https://github.com/aleks-nl5/andrey-ceilings-android/issues/134) is a separate CI PR: Android-first platform-scoped FAST/TARGETED checks, avoid unconditional heavy Windows full tests on Android-only PRs, keep relevant encrypted Windows tests for risky shared/Windows DB changes and manual/periodic FULL. After #134, proceed with P5B #95. The owner alone approves Ready/merge; **no Branch Protection / required checks** per owner decision. Keep workstreams and branches separate. Older CURRENT blocks below are historical if they conflict with this decision.
+
+---
+
+## CURRENT active milestone — CI #134 / beginning of P5B (21.11.2026)
+
+Owner merged P5A [PR #132](https://github.com/aleks-nl5/andrey-ceilings-android/pull/132) into main at `b20d185b83a7e38d02d9bea2225b36175eb33887` (final Android/Windows/iOS SUCCESS); #131 completed. **Next approved work is [issue #134](https://github.com/aleks-nl5/andrey-ceilings-android/issues/134), branch `ci/p5b-impact-full-gate`, and [docs/CI_134_CODEX_HANDOFF.md](docs/CI_134_CODEX_HANDOFF.md)**. Begin with Windows timings/diagnostics, then implement a conservative FAST/TARGETED feedback path while keeping FULL mandatory for ready-to-merge PRs. Do NOT disable, skip, remove or weaken tests; do NOT change SQLCipher security, KDF, app business logic or branch-protection rules as a side effect. Actual GitHub branch protection read is forbidden to this integration (403), so document the manual required-check configuration and never claim enforcement without verifying settings.
+
+The current Draft PR includes Windows timing diagnostics and tested FAST/TARGETED impact feedback. Android/CMP workflows now conservatively skip heavy FULL jobs only for noncritical Draft changes, but always run FULL on critical Draft and ready/merge-group/manual/main events. Explicit stable FULL gates must be configured as required checks by the owner; branch protection is still unverified (403). **#134 is not yet owner-accepted or merge-ready.** Codex may implement the bounded remaining scope on this branch/its existing Draft PR only, updating code and tests together. The owner alone approves final SHA, manual APK, Ready and merge. After #134, proceed to P5B unified POINT/LINE/AREA UX (#95); P5C/P5D remain separate.
+
+**Older milestone sections below are historical and superseded for active development.**
+
+---
+
 ## CURRENT implementation — P5A #131 / Draft PR #132 (owner authorized 19.11.2026)
 
 **Codex work ONLY in branch `feat/p5a-ceiling-workspace`, [Draft PR #132](https://github.com/aleks-nl5/andrey-ceilings-android/pull/132).** Main baseline is owner-merged documentation [PR #130](https://github.com/aleks-nl5/andrey-ceilings-android/pull/130), merge `6e5c22226fa22de1731dd13056c9666799ef477f`. **Read [issue #131](https://github.com/aleks-nl5/andrey-ceilings-android/issues/131), [docs/P5A_CODEX_HANDOFF.md](docs/P5A_CODEX_HANDOFF.md), and [docs/P5_UX_DISCOVERY.md](docs/P5_UX_DISCOVERY.md) first.** Initial Draft PR is documentation only; production implementation must now be added by Codex to THIS branch.

@@ -14,6 +14,23 @@ import java.sql.Connection
 import java.sql.DriverManager
 import java.sql.SQLException
 import java.util.Properties
+import java.util.concurrent.atomic.AtomicLong
+
+/**
+ * Opt-in, in-memory, test-only counters. There are deliberately no SQL strings, DB paths,
+ * passwords, keys, statements, or persistent/global metrics. Production opens pass null.
+ * Counters distinguish actual physical connections from SQLDelight logical statements.
+ */
+internal class SqlCipherWindowsConnectionMetrics {
+    val physicalOpens = AtomicLong()
+    val physicalCloses = AtomicLong()
+    val encryptedSchemaGuardAttempts = AtomicLong()
+    val encryptedSchemaGuardsPassed = AtomicLong()
+    val encryptedSchemaGuardNanos = AtomicLong()
+    val logicalStatements = AtomicLong()
+    val statementsOnPinnedTransaction = AtomicLong()
+    val outerTransactionsBegun = AtomicLong()
+}
 
 /**
  * Windows/JVM SQLCipher-backed SQLDelight driver.
@@ -25,12 +42,22 @@ import java.util.Properties
  * The caller owns [key]; this driver retains an independent copy until [SqlDriver.close].
  */
 object SqlCipherWindowsDriverFactory {
-    fun open(databaseFile: File, key: ByteArray): SqlDriver {
+    fun open(databaseFile: File, key: ByteArray): SqlDriver = openInternal(databaseFile, key, null)
+
+    /** Opt-in for isolated JVM/Windows benchmark tests; no production/global telemetry. */
+    internal fun openProfiled(
+        databaseFile: File, key: ByteArray, metrics: SqlCipherWindowsConnectionMetrics
+    ): SqlDriver = openInternal(databaseFile, key, metrics)
+
+    private fun openInternal(
+        databaseFile: File, key: ByteArray, metrics: SqlCipherWindowsConnectionMetrics?
+    ): SqlDriver {
         require(key.size == 32) { "SQLCipher key must be 32 bytes" }
         databaseFile.absoluteFile.parentFile?.mkdirs()
         return ConfiguredSqlCipherJdbcDriver(
             url = "jdbc:sqlcipher:${databaseFile.absolutePath}",
-            key = key
+            key = key,
+            metrics = metrics
         ).also { driver ->
             try {
                 driver.verifyConnection()
@@ -52,7 +79,8 @@ object SqlCipherWindowsDriverFactory {
  */
 private class ConfiguredSqlCipherJdbcDriver(
     private val url: String,
-    key: ByteArray
+    key: ByteArray,
+    private val metrics: SqlCipherWindowsConnectionMetrics?
 ) : JdbcDriver() {
     private val keyLock = Any()
     private val ownedKey = key.copyOf()
@@ -76,6 +104,7 @@ private class ConfiguredSqlCipherJdbcDriver(
         }
         try {
             val connection = DriverManager.getConnection(url, properties)
+            metrics?.physicalOpens?.incrementAndGet()
             try {
                 // All PRAGMAs and schema/authentication checks run on THIS physical connection.
                 // The native facade defaults to no lock wait. Concurrent writers must
@@ -97,15 +126,24 @@ private class ConfiguredSqlCipherJdbcDriver(
                     }
                 }
                 // Force reading the encrypted schema: reject a wrong key before returning.
-                connection.prepareStatement("SELECT count(*) FROM sqlite_master").use { statement ->
-                    statement.executeQuery().use { result ->
-                        check(result.next()) { "SQLCipher schema validation returned no row" }
+                // Count and time the real guard; do not treat an attempted guard as success.
+                val guardStart = if (metrics != null) System.nanoTime() else 0L
+                metrics?.encryptedSchemaGuardAttempts?.incrementAndGet()
+                try {
+                    connection.prepareStatement("SELECT count(*) FROM sqlite_master").use { statement ->
+                        statement.executeQuery().use { result ->
+                            check(result.next()) { "SQLCipher schema validation returned no row" }
+                        }
                     }
+                    metrics?.encryptedSchemaGuardsPassed?.incrementAndGet()
+                } finally {
+                    metrics?.encryptedSchemaGuardNanos?.addAndGet(System.nanoTime() - guardStart)
                 }
                 return connection
             } catch (failure: Throwable) {
                 try {
                     connection.close()
+                    metrics?.physicalCloses?.incrementAndGet()
                 } catch (closeFailure: Throwable) {
                     failure.addSuppressed(closeFailure)
                 }
@@ -118,23 +156,33 @@ private class ConfiguredSqlCipherJdbcDriver(
 
     override fun closeConnection(connection: Connection) {
         connection.close()
+        metrics?.physicalCloses?.incrementAndGet()
     }
 
     override fun execute(
         identifier: Int?, sql: String, parameters: Int,
         binders: (SqlPreparedStatement.() -> Unit)?
     ): QueryResult<Long> {
-        if (!userVersionAssignment.matches(sql)) return super.execute(identifier, sql, parameters, binders)
-        // Core 0.2.13 classifies ALL PRAGMAs as lazy rowsets. execute() alone
-        // never steps this header write. Consume it once on the transaction's
-        // pinned connection so user_version and migration DDL commit/roll back together.
+        metrics?.logicalStatements?.incrementAndGet()
+        if (transaction != null) metrics?.statementsOnPinnedTransaction?.incrementAndGet()
+        // SQLDelight 2.4.1 JdbcDriver.execute() does not close its PreparedStatement
+        // before invoking closeConnection(). That is tolerable with per-statement
+        // physical close but would leak native sqlite3_stmt handles if we reused
+        // a physical SQLCipher connection. Always finalize the statement first.
         val (connection, onClose) = connectionAndClose()
         try {
-            connection.prepareStatement(sql).use { statement ->
+            return connection.prepareStatement(sql).use { statement ->
                 binders?.invoke(JdbcPreparedStatement(statement))
-                statement.executeQuery().use { rows -> while (rows.next()) { /* consume */ } }
+                if (userVersionAssignment.matches(sql)) {
+                    // Core 0.2.13 classifies ALL PRAGMAs as lazy rowsets.
+                    // Consume this transaction's user_version header write once.
+                    statement.executeQuery().use { rows -> while (rows.next()) { /* consume */ } }
+                    QueryResult.Value(0L)
+                } else {
+                    // Exactly match JdbcPreparedStatement.execute() result semantics.
+                    QueryResult.Value(if (statement.execute()) 0L else statement.updateCount.toLong())
+                }
             }
-            return QueryResult.Value(0L)
         } finally {
             onClose()
         }
@@ -147,6 +195,8 @@ private class ConfiguredSqlCipherJdbcDriver(
         parameters: Int,
         binders: (SqlPreparedStatement.() -> Unit)?
     ): QueryResult<R> {
+        metrics?.logicalStatements?.incrementAndGet()
+        if (transaction != null) metrics?.statementsOnPinnedTransaction?.incrementAndGet()
         // Use JdbcDriver's transaction-pinned connection, including nested transactions.
         val (connection, onClose) = connectionAndClose()
         try {
@@ -172,6 +222,7 @@ private class ConfiguredSqlCipherJdbcDriver(
     // Match the SQLite-specific transaction semantics used by JdbcSqliteDriver.
     override fun Connection.beginTransaction() {
         prepareStatement("BEGIN TRANSACTION").use { it.execute() }
+        metrics?.outerTransactionsBegun?.incrementAndGet()
     }
 
     override fun Connection.endTransaction() {

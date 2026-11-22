@@ -2,25 +2,80 @@ name: Build Android APK
 
 on:
   workflow_dispatch:
-  pull_request:
-    branches: [ main ]
+  # Automatically run FULL on main updates only (normally after owner merge).
   push:
-    branches: [ main, master, feat/automatic-and-portable-backups, fix/gradle-8-14-6 ]
+    branches: [ main ]
 
 concurrency:
   # Don't waste hosted runners on obsolete commits while iterating on draft PR #22.
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 permissions:
   contents: read
 
 jobs:
+  impact:
+    name: Classify whether FULL is required
+    runs-on: ubuntu-24.04
+    outputs:
+      mode: ${{ steps.decide.outputs.mode }}
+      android_depth: ${{ steps.decide.outputs.android_depth }}
+      android_smoke_tests: ${{ steps.decide.outputs.android_smoke_tests }}
+    steps:
+      - name: Checkout exact event commit and PR merge-base history
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify classifier and gate decision regressions
+        run: |
+          python3 -m unittest discover -s ci/tests -p 'test_impact.py' -v
+          python3 -m unittest discover -s ci/tests -p 'test_full_gate.py' -v
+          python3 -m unittest discover -s ci/tests -p 'test_android_smoke_reports.py' -v
+      - name: Enforce FULL for main push or explicit manual dispatch
+        id: decide
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          HEAD_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$HEAD_SHA"
+          case "$EVENT_NAME" in
+            push|workflow_dispatch)
+              echo 'mode=FULL' >> "$GITHUB_OUTPUT"
+              echo 'android_depth=deep' >> "$GITHUB_OUTPUT"
+              echo 'desktop_depth=deep' >> "$GITHUB_OUTPUT"
+              echo 'ios_depth=deep' >> "$GITHUB_OUTPUT"
+              echo 'apple_depth=deep' >> "$GITHUB_OUTPUT"
+              echo "FULL on main push or explicit manual dispatch: $HEAD_SHA; PRs use quick-only checks." >> "$GITHUB_STEP_SUMMARY"
+              ;;
+            *)
+              echo "::error::Unexpected pre-merge FULL event: $EVENT_NAME"
+              exit 1
+              ;;
+          esac
   build:
+    needs: [impact]
+    # Real Android SQLCipher/instrumentation/full APK validation runs after merge, or manually.
+    if: ${{ always() && (needs.impact.result != 'success' || needs.impact.outputs.android_depth == 'deep') }}
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout source
         uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Verify exact source SHA before full tests
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          echo "Post-merge/manual FULL source SHA: $EXPECTED_SHA" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Set up JDK 21
         uses: actions/setup-java@v6
@@ -118,6 +173,10 @@ jobs:
             echo "::error::Instrumentation failed without emulator transport loss: no retry for real test failures."
           fi
 
+      # The first run keeps the established SwiftShader renderer. If the AVD
+      # disappears, retry the ENTIRE suite on a fresh AVD with the separately
+      # supported SwiftShader/ANGLE backend, to isolate renderer instability.
+      # This diagnostic fallback never ignores instrumentation failures.
       - name: Retry full instrumentation once on a fresh AVD after emulator loss
         id: android_instrumentation_retry
         if: steps.android_instrumentation.outcome == 'failure' && steps.android_emulator_loss.outputs.lost == 'true'
@@ -127,7 +186,7 @@ jobs:
           arch: x86_64
           profile: pixel_6
           force-avd-creation: true
-          emulator-options: -no-snapshot -no-window -gpu swiftshader -feature -Vulkan -noaudio -no-boot-anim -camera-back none
+          emulator-options: -no-snapshot -no-window -gpu swangle -feature -Vulkan -noaudio -no-boot-anim -camera-back none
           disable-animations: true
           script: bash ci/run-sqlcipher-instrumentation.sh
 
@@ -155,14 +214,16 @@ jobs:
           free -m
           sudo dmesg --ctime | grep -Ei 'out of memory|oom.kill|killed process|qemu.*(segfault|trap)|kvm.*(error|fail)' | tail -40 || true
 
-      - name: Upload P5A Android workspace screenshots
-        if: always()
+      # The automatic pipeline never runs the expensive P5A screenshot matrix.
+      # On a genuine instrumentation failure keep only lightweight evidence.
+      - name: Upload Android failure diagnostics (optional artifact)
+        if: ${{ always() && (steps.android_instrumentation.outcome == 'failure' || steps.android_instrumentation_retry.outcome == 'failure') }}
         uses: actions/upload-artifact@v7
         with:
-          name: p5a-android-workspace
+          name: android-failure-diagnostics
           path: ${{ runner.temp }}/p5a-workspace/
           if-no-files-found: warn
-          retention-days: 14
+          retention-days: 7
 
       - name: Preserve Android instrumentation test reports
         if: always()
@@ -173,7 +234,7 @@ jobs:
             app/build/outputs/androidTest-results/connected/
             app/build/reports/androidTests/connected/
           if-no-files-found: warn
-          retention-days: 14
+          retention-days: 30
 
       - name: Prepare persistent signing
         env:
@@ -207,7 +268,7 @@ jobs:
           name: andrey-ceilings-debug-apk
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 7
 
       - name: Build release APK
         if: env.SIGNING_CONFIGURED == 'true'
@@ -233,3 +294,34 @@ jobs:
           emulator-options: -no-snapshot -no-window -gpu swiftshader -feature -Vulkan -noaudio -no-boot-anim -camera-back none
           disable-animations: true
           script: bash ci/verify-production-release.sh
+
+  full-gate:
+    name: ${{ github.event_name == 'pull_request' && github.event.pull_request.draft && 'Draft Android advisory' || 'Android scoped CI receipt (owner review)' }}
+    if: ${{ always() }}
+    needs: [impact, build]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Prove selected Android depth, job result and exact event SHA
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          IS_DRAFT: ${{ github.event.pull_request.draft }}
+          IMPACT_RESULT: ${{ needs.impact.result }}
+          IMPACT_MODE: ${{ needs.impact.outputs.mode }}
+          ANDROID_DEPTH: ${{ needs.impact.outputs.android_depth }}
+          FULL_RESULT: ${{ needs.build.result }}
+          EXPECTED_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          actual="$(git rev-parse HEAD)"
+          job_result="$FULL_RESULT"
+          python3 ci/verify_full_gate.py \
+            --event "$EVENT_NAME" --draft "$IS_DRAFT" \
+            --impact-result "$IMPACT_RESULT" --mode "$IMPACT_MODE" \
+            --expected-group android --coverage "android:$ANDROID_DEPTH:$job_result" \
+            --expected-sha "$EXPECTED_SHA" --actual-sha "$actual" \
+            --summary "$GITHUB_STEP_SUMMARY"
