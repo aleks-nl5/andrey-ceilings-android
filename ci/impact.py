@@ -116,17 +116,29 @@ def _group(path: str) -> tuple[tuple[str, ...], str] | None:
             "/measurementpricingui.kt", "/pricecatalogtheme.kt"))
     )
 
+    # Directory/suffix heuristics do not prove application startup, platform
+    # adapters or lifecycle code harmless. Only known presentation paths may
+    # use shallow platform smoke; other platform production code remains deep
+    # on its OWN platform, without forcing unrelated platform regressions.
+    is_platform_ui = (
+        "/ui/" in lower or "/theme/" in lower
+        or ("/res/" in lower and Path(path).suffix.lower()
+            in {".png", ".jpg", ".jpeg", ".webp", ".svg", ".ttf", ".otf"})
+    )
+
     if path.startswith(("app/src/", "shared/src/androidMain/",
                         "shared/src/androidTest/", "shared/src/androidInstrumentedTest/",
                         "shared/src/androidUnitTest/")):
         return (("android",), "deep" if is_database or is_test
-                or lower.endswith("/androidmanifest.xml") else "smoke")
+                or lower.endswith("/androidmanifest.xml") or not is_platform_ui else "smoke")
     if path.startswith(("desktopApp/src/", "shared/src/jvmMain/",
                         "shared/src/jvmTest/")):
-        return (("desktop",), "deep" if is_database or is_test else "smoke")
+        return (("desktop",), "deep" if is_database or is_test
+                or not is_platform_ui else "smoke")
     if path.startswith(("shared/src/iosMain/", "shared/src/iosTest/",
                         "iosApp/")):
-        return (("ios",), "deep" if is_database or is_test else "smoke")
+        return (("ios",), "deep" if is_database or is_test
+                or not is_platform_ui else "smoke")
     if path.startswith(("shared/src/commonMain/", "shared/src/commonTest/")):
         if is_database or is_test:
             return (TARGETS, "deep")

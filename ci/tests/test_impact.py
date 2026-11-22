@@ -32,6 +32,25 @@ class ImpactTest(unittest.TestCase):
         ):
             self.assert_scope(path, "TARGETED", ("smoke", "skip", "skip"))
 
+    def test_platform_lifecycle_and_non_ui_adapter_change_requires_native_deep(self):
+        # MainActivity initializes SQLCipher despite living outside /data/db.
+        # Unsafe path-only smoke would skip encrypted startup regression.
+        for path, expected in (
+            ("app/src/main/java/com/andreyceilings/app/MainActivity.kt",
+             ("deep", "skip", "skip")),
+            ("app/src/main/java/com/andreyceilings/app/BackupCoordinator.kt",
+             ("deep", "skip", "skip")),
+            ("shared/src/androidMain/kotlin/com/a/AndroidDriverFactory.kt",
+             ("deep", "skip", "skip")),
+            ("desktopApp/src/main/kotlin/com/a/Main.kt",
+             ("skip", "deep", "skip")),
+            ("shared/src/jvmMain/kotlin/com/a/WindowsLifecycle.kt",
+             ("skip", "deep", "skip")),
+            ("shared/src/iosMain/kotlin/com/a/IosLifecycle.kt",
+             ("skip", "skip", "deep")),
+        ):
+            self.assert_scope(path, "TARGETED", expected)
+
     def test_windows_sqlcipher_and_test_changes_are_windows_deep_only(self):
         for path in (
             "shared/src/jvmMain/kotlin/com/andreyceilings/shared/db/SqlCipherWindowsDriverFactory.kt",
@@ -41,7 +60,7 @@ class ImpactTest(unittest.TestCase):
             self.assert_scope(path, "TARGETED", ("skip", "deep", "skip"))
 
     def test_individual_platforms_and_android_security(self):
-        self.assert_scope("shared/src/iosMain/kotlin/com/a/IosAdapter.kt", "TARGETED",
+        self.assert_scope("shared/src/iosMain/kotlin/com/a/ui/IosScreen.kt", "TARGETED",
                           ("skip", "skip", "smoke"))
         self.assert_scope("shared/src/iosMain/kotlin/com/a/db/IosCipher.kt", "TARGETED",
                           ("skip", "skip", "deep"))
@@ -78,7 +97,7 @@ class ImpactTest(unittest.TestCase):
         result = outcome(
             "app/src/main/java/com/a/Screen.kt",
             "shared/src/jvmMain/kotlin/com/a/db/SqlCipherWindowsDriver.kt",
-            "shared/src/iosMain/kotlin/com/a/IosUi.kt",
+            "shared/src/iosMain/kotlin/com/a/ui/IosUi.kt",
             "docs/info.md",
         )
         self.assertEqual(result.mode, "TARGETED")

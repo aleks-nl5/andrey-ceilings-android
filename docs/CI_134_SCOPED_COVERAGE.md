@@ -20,15 +20,22 @@ Android, Windows, macOS/JVM and iOS; `TARGETED` can mix depths.
 | Change | Android | Windows | macOS JVM | iOS |
 | --- | --- | --- | --- | --- |
 | Docs-only | skip | skip | skip | skip |
-| Android app/androidMain UI-only | smoke | skip | skip | skip |
+| Android app/androidMain known UI-only (`/ui/`, `/theme/`, visual assets) | smoke | skip | skip | skip |
+| Android `MainActivity`, lifecycle, startup, non-UI platform adapters | deep | skip | skip | skip |
 | Windows JVM JDBC/SQLCipher or Windows test | skip | deep | deep | skip |
-| Desktop UI-only | skip | smoke | smoke | skip |
-| iOS-specific `shared/src/iosMain` UI-only | skip | skip | skip | smoke |
+| Desktop UI-only (known presentation paths) | skip | smoke | smoke | skip |
+| Windows/Desktop non-UI platform startup or adapters | skip | deep | deep | skip |
+| iOS-specific `shared/src/iosMain` known UI-only | skip | skip | skip | smoke |
+| iOS-specific native startup/adapters | skip | skip | skip | deep |
 | Native `iosApp/` Xcode/Swift project (not covered by Gradle framework smoke) | deep | deep | deep | deep |
 | Known shared Compose UI/theme/navigation/drawing presentation | smoke | smoke | smoke | smoke |
 | Shared DB, SQLDelight, pricing/business/geometry, commonTest | deep | deep | deep | deep |
 | CI, Gradle, dependencies, unknown binaries/deleted/renamed/incomplete diff | deep | deep | deep | deep |
 | Mixed platform changes | union of impact, never downgrade an affected platform |
+
+Default platform code is **deep**, not smoke: `MainActivity.kt` opens SQLCipher
+and runs backup/startup lifecycle even though it is not stored under `/db/`.
+Only known presentation subdirectories and visual assets use smoke.
 
 The shared UI allowlist is *deliberately narrow*: a filename cannot prove a
 data-contract change safe. Expand only with concrete source/consumer evidence

@@ -48,6 +48,24 @@ class FullGateTest(unittest.TestCase):
                                 (("windows", "smoke", "skipped"), ("apple", "smoke", "success")),
                                 GROUPS).passed)
 
+    def test_combined_apple_job_cannot_hide_unverified_ios(self):
+        groups = ("windows", "ios", "macos")
+        windows_only = (("windows", "deep", "success"), ("ios", "skip", "skipped"),
+                        ("macos", "deep", "success"))
+        self.assertTrue(decide("pull_request", "false", "success", "TARGETED",
+                               windows_only, groups).passed)
+        # The Apple runner passed macOS JVM tests, not iOS tests.
+        self.assertFalse(decide("pull_request", "false", "success", "TARGETED",
+                                (windows_only[0], ("ios", "deep", "skipped"),
+                                 windows_only[2]), groups).passed)
+        self.assertFalse(decide("pull_request", "false", "success", "TARGETED",
+                                (windows_only[0], ("ios", "skip", "success"),
+                                 windows_only[2]), groups).passed)
+        ios_only = (("windows", "skip", "skipped"), ("ios", "smoke", "success"),
+                    ("macos", "skip", "skipped"))
+        self.assertTrue(decide("pull_request", "false", "success", "TARGETED",
+                               ios_only, groups).passed)
+
     def test_critical_full_requires_all_deep_and_success(self):
         for event, draft in (("pull_request", "false"), ("push", ""),
                              ("merge_group", ""), ("workflow_dispatch", "")):
