@@ -13,4 +13,8 @@
         <item quantity="many">%1$d об’єктів</item>
         <item quantity="other">%1$d об’єкта</item>
     </plurals>
+    <string name="p5b_parallel_wall">Паралельно стіні %1$s</string>
+    <string name="p5b_line_start">Торкніться початку лінії або проведіть від початку до кінця.</string>
+    <string name="p5b_line_end">Торкніться кінця лінії або перетягніть до нього.</string>
+    <string name="p5b_line_snap">Вирівнювати паралельно стіні</string>
 </resources>

@@ -70,17 +70,33 @@ class LinePlacementTouchTest {
                     return Offset(p.x.toFloat(),p.y.toFloat())
                 }
                 fun tap(x:Long,y:Long) {val p=world(x,y);canvas.performTouchInput {click(p)}}
-                canvas.performTouchInput {down(center);moveTo(center+Offset(80f,30f));up()}
-                compose.runOnIdle {assertNull(model.state.value.lineStart);assertTrue(model.displayLines().isEmpty())}
-                // Fit removes the pan, using the real UI action.
+                // Pan and pinch without creating an accidental placement.
                 click("Вписати креслення")
                 canvas.performTouchInput {down(center);cancel()}
                 compose.runOnIdle {assertNull(model.state.value.lineStart)}
                 canvas.performTouchInput {pinch(center-Offset(40f,0f),center+Offset(40f,0f),center-Offset(70f,0f),center+Offset(70f,0f))}
                 compose.runOnIdle {assertNull(model.state.value.lineStart)}
                 click("Вписати креслення")
-                tap(500,600);tap(3000,600)
-                val uuid = model.state.value.linePreview!!.uuid
+                val start = world(500, 220)
+                val end = world(3000, 420)
+                if (theme) {
+                    click("Вирівнювати паралельно стіні")
+                    canvas.performTouchInput { down(start); moveTo(end) }
+                    compose.runOnIdle { assertTrue(model.displayLines().isEmpty()) }
+                    canvas.performTouchInput { up() }
+                } else {
+                    tap(500, 220)
+                    compose.runOnIdle {
+                        assertNotNull(model.state.value.lineStart)
+                        assertTrue(model.displayLines().isEmpty())
+                    }
+                    tap(3000, 420)
+                }
+                val placed = model.displayLines().single()
+                val uuid = placed.uuid
+                if (theme) assertTrue(placed.end.yMm - placed.start.yMm > 100)
+                else assertEquals(placed.start.yMm, placed.end.yMm)
+                val midpointY = (placed.start.yMm + placed.end.yMm) / 2
                 if (theme) {
                     compose.onNodeWithTag("measurement-edit-context-cost").assertDoesNotExist()
                     click("Згорнути")
@@ -89,20 +105,21 @@ class LinePlacementTouchTest {
                 compose.onNodeWithText("Розрахунок за останнім збереженим заміром").assertExists()
                 if (theme) click("На весь екран")
                 click("Елементи")
-                compose.runOnIdle { assertEquals(uuid, model.state.value.linePreview?.uuid) }
-                click("Зберегти лінію в чернетці")
+                compose.onNodeWithText("Зберегти лінію в чернетці").assertDoesNotExist()
                 compose.runOnIdle {
+                    assertNull(model.state.value.linePreview)
+                    assertEquals(uuid, model.state.value.selectedLineUuid)
                     assertEquals(uuid,model.displayLines().single().uuid)
                     assertEquals(0L,PriceNameUniquenessProof.scalar(driver,"SELECT count(*) FROM line_placements WHERE deletedAt IS NULL"))
                 }
                 if (theme) click("Закрити панель")
-                tap(1800,600)
+                tap(1800,midpointY)
                 compose.runOnIdle {assertEquals(uuid,model.state.value.selectedLineUuid)}
                 // A cancelled selected drag and pinch may not commit a move.
                 val before=model.displayLines().single()
                 val panel = compose.onNodeWithTag("measurement-edit-context-panel")
                 if (theme) panel.assertDoesNotExist()
-                val selectedPosition=world(1800,600)
+                val selectedPosition=world(1800,midpointY)
                 canvas.performTouchInput {down(selectedPosition);moveTo(selectedPosition+Offset(60f,40f));cancel()}
                 compose.runOnIdle {assertEquals(before,model.displayLines().single())}
                 if (theme) {

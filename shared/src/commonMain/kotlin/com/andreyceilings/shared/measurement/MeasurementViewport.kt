@@ -16,6 +16,15 @@ data class MeasurementViewport(val zoom: Float = 1f, val panX: Float = 0f, val p
             panX = (panX + dx).coerceIn(-100_000f, 100_000f), panY = (panY + dy).coerceIn(-100_000f, 100_000f))
 }
 
+internal fun projectedSegmentDistance(point: DrawingPoint, a: DrawingPoint, b: DrawingPoint): Double {
+    val dx = b.x - a.x
+    val dy = b.y - a.y
+    val lengthSquared = dx * dx + dy * dy
+    if (lengthSquared <= 1e-12) return hypot(point.x - a.x, point.y - a.y)
+    val t = (((point.x - a.x) * dx + (point.y - a.y) * dy) / lengthSquared).coerceIn(0.0, 1.0)
+    return hypot(point.x - a.x - t * dx, point.y - a.y - t * dy)
+}
+
 fun measurementWallAt(points: List<DrawingPoint>, x: Float, y: Float, tolerance: Float): Int? {
     if (points.size < 3) return null
     fun distance(i: Int): Double {

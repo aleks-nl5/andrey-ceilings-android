@@ -12,18 +12,37 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
+import com.andreyceilings.shared.resources.Res
+import com.andreyceilings.shared.resources.p5b_line_start
+import com.andreyceilings.shared.resources.p5b_line_end
+import com.andreyceilings.shared.resources.p5b_line_snap
+import org.jetbrains.compose.resources.stringResource
 
 @Composable
-internal fun LinePlacementControls(model:MeasurementEditModel,enabled:Boolean,inWorkspace:Boolean=false) {
+internal fun LinePlacementControls(
+    model: MeasurementEditModel,
+    enabled: Boolean,
+    inWorkspace: Boolean = false,
+    lineSnapEnabled: Boolean = true,
+    onLineSnapChanged: (Boolean) -> Unit = {}
+) {
     val state by model.state.collectAsState()
     val scope=rememberCoroutineScope()
     val lines=model.displayLines()
     Column(Modifier.fillMaxWidth(),verticalArrangement=Arrangement.spacedBy(4.dp)) {
         if(!inWorkspace && state.original.lineElements.isNotEmpty())Text("Елементи стелі · Лінії",style=MaterialTheme.typography.titleMedium)
         if(state.lineElementUuid!=null) {
-            Text(if(state.lineStart==null)"Торкніться початку лінії." else if(state.linePreview==null)"Торкніться кінця лінії." else "Приблизна лінія: ${formatElementMilli(state.linePreview!!.lengthMm)} м")
+            if (inWorkspace) {
+                Text(stringResource(if (state.lineStart == null) Res.string.p5b_line_start else Res.string.p5b_line_end))
+                FilterChip(
+                    selected = lineSnapEnabled,
+                    onClick = { onLineSnapChanged(!lineSnapEnabled) },
+                    enabled = enabled,
+                    label = { Text(stringResource(Res.string.p5b_line_snap)) }
+                )
+            } else Text(if(state.lineStart==null)"Торкніться початку лінії." else if(state.linePreview==null)"Торкніться кінця лінії." else "Приблизна лінія: ${formatElementMilli(state.linePreview!!.lengthMm)} м")
             FlowRow {
-                TextButton(enabled=enabled && state.linePreview!=null,onClick=model::acceptLineCreation){Text("Зберегти лінію в чернетці")}
+                if (!inWorkspace) TextButton(enabled=enabled && state.linePreview!=null,onClick=model::acceptLineCreation){Text("Зберегти лінію в чернетці")}
                 TextButton(enabled=enabled,onClick=model::cancelLineCreation){Text("Скасувати лінію")}
             }
         }

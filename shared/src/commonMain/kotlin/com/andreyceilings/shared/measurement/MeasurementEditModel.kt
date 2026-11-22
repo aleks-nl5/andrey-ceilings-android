@@ -375,6 +375,21 @@ class MeasurementEditModel(
             mutableState.value=state.value.copy(linePreview=LinePlacement(newRecordUuid(),element,start,end,state.value.original.updatedAt,0,0))
         }
     }
+    internal fun finishWorkspaceLine(start: PointPositionMm, end: PointPositionMm): Boolean {
+        val element = state.value.lineElementUuid ?: return false
+        if (!editable()) return false
+        val geometry = validateMeasurementCreate(state.value.draft).geometry ?: return false
+        if (!lineStrictlyInside(geometry, start, end)) {
+            mutableState.value = state.value.copy(error = LinePlacementFailure.InvalidSegment().message)
+            return false
+        }
+        val id = newRecordUuid()
+        stageLine(LinePlacement(id, element, start, end, state.value.original.updatedAt, 0, 0))
+        mutableState.value = state.value.copy(
+            lineStart = null, linePreview = null, lineElementUuid = null, selectedLineUuid = id
+        )
+        return true
+    }
     fun cancelLineCreation() {mutableState.value=state.value.copy(lineStart=null,linePreview=null,lineElementUuid=null)}
     fun acceptLineCreation() {
         if(!editable())return

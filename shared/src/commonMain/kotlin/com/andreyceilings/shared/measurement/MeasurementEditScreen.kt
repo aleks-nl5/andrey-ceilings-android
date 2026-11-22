@@ -168,6 +168,9 @@ fun MeasurementEditScreen(
     val fullscreenContourScroll = rememberScrollState()
     val contourScroll = if (fullscreen) fullscreenContourScroll else normalContourScroll
     var reloadConfirm by remember { mutableStateOf(false) }
+    var lineSnapEnabled by rememberSaveable(measurementUuid) { mutableStateOf(true) }
+    val lineToolActive by rememberUpdatedState(state.lineElementUuid != null)
+    val areaToolActive by rememberUpdatedState(state.area.tool != null)
     val currentFocus by rememberUpdatedState(focus)
     fun closeSheet() {
         currentFocus.clearFocus()
@@ -182,6 +185,8 @@ fun MeasurementEditScreen(
     val surfaceBack = remember(model, measurementUuid, navigationGuard) {
         {
             when {
+                lineToolActive -> { model.cancelLineCreation(); true }
+                areaToolActive -> { model.cancelAreaCreation(); true }
                 !fullscreen -> false
                 sheet != MeasurementSheet.CLOSED -> { closeSheet(); true }
                 else -> { exitFullscreen(); true }
@@ -469,7 +474,11 @@ fun MeasurementEditScreen(
                                             when (section) {
                                                 MeasurementElementSection.POINTS ->
                                                     MeasurementPointControls(model, state, overlay, validation, savedGeometry, enabled)
-                                                MeasurementElementSection.LINES -> LinePlacementControls(model, canEditGeometry, inWorkspace = true)
+                                                MeasurementElementSection.LINES -> LinePlacementControls(
+                                                    model, canEditGeometry, inWorkspace = true,
+                                                    lineSnapEnabled = lineSnapEnabled,
+                                                    onLineSnapChanged = { lineSnapEnabled = it }
+                                                )
                                                 MeasurementElementSection.AREAS -> AreaFeatureControls(model, canEditGeometry, inWorkspace = true)
                                             }
                                             if (section == activeSection && selectedFeature != null) {
@@ -651,6 +660,16 @@ fun MeasurementEditScreen(
                     onBeginAreaDrag=model::beginAreaDrag,onPreviewAreaDrag=model::previewAreaDrag,onFinishAreaDrag=model::finishAreaDrag,onCancelAreaDrag=model::cancelAreaDrag,
                     linePlacements=model.displayLines()+listOfNotNull(state.linePreview),selectedLineUuid=state.selectedLineUuid,
                     linePlacementMode=enabled && state.lineElementUuid!=null,onLineTap=model::lineTap,onSelectLine = { selectElement(it, model::selectLine) },
+                    lineCreationKey = state.lineElementUuid,
+                    lineSnapEnabled = lineSnapEnabled,
+                    onFinishLineCreation = { start, end ->
+                        model.finishWorkspaceLine(start, end).also { completed ->
+                            if (completed) {
+                                selected = null
+                                showElements()
+                            }
+                        }
+                    },
                     lineStartPoint=state.lineStart,lineEditingEnabled=enabled && validation.geometry!=null,lineDrag=state.lineDrag,onBeginLineDrag=model::beginLineDrag,
                     onPreviewLineDrag=model::previewLineDrag,onFinishLineDrag=model::finishLineDrag,onCancelLineDrag=model::cancelLineDrag,
                     mountingWallOrdinals=if(validation.geometry==null) emptyList() else model.displayPoints().find { it.uuid==state.selectedPointUuid }?.mounting?.anchor?.let { a ->
