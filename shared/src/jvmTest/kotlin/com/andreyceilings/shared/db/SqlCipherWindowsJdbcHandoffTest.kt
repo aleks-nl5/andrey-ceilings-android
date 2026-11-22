@@ -1,5 +1,7 @@
 package com.andreyceilings.shared.db
 
+import app.cash.sqldelight.TransacterImpl
+import app.cash.sqldelight.db.QueryResult
 import io.github.s0d3s.sqlcipher_multiplatform_jdbc.SqlCipherJdbcProperties
 import java.nio.file.Files
 import java.nio.file.Path
@@ -76,6 +78,81 @@ class SqlCipherWindowsJdbcHandoffTest {
                 assertEquals(2L, connection.scalar("SELECT id FROM child"))
             }
         }
+    }
+
+    @Test
+    fun repeatedHandoffsPreserveConnectionLocalStateAndCloseQueryResources() = onWindows { file, key ->
+        val firstOwner = Thread.currentThread()
+        Executors.newSingleThreadExecutor().use { worker ->
+            open(file, key).use { connection ->
+                // A second physical connection could not read this connection-local table.
+                connection.exec("CREATE TEMP TABLE handoff_counter (value INTEGER NOT NULL)")
+                connection.exec("INSERT INTO handoff_counter VALUES (0)")
+
+                repeat(32) { round ->
+                    val expected = round.toLong()
+                    worker.runAndAwait {
+                        assertNotSame(firstOwner, Thread.currentThread())
+                        connection.exec("BEGIN TRANSACTION")
+                        val statement = connection.prepareStatement("SELECT value FROM handoff_counter")
+                        statement.use {
+                            val rows = it.executeQuery()
+                            rows.use {
+                                assertTrue(it.next())
+                                assertEquals(expected, it.getLong(1))
+                                assertFalse(it.next())
+                            }
+                            assertTrue(rows.isClosed)
+                        }
+                        assertTrue(statement.isClosed)
+                        connection.exec("UPDATE handoff_counter SET value = -1")
+                        connection.exec("ROLLBACK")
+                    }
+                    connection.exec("BEGIN TRANSACTION")
+                    assertEquals(expected, connection.scalar("SELECT value FROM handoff_counter"))
+                    connection.exec("UPDATE handoff_counter SET value = value + 1")
+                    connection.exec("COMMIT")
+                }
+                assertEquals(32L, connection.scalar("SELECT value FROM handoff_counter"))
+            }
+        }
+        Files.delete(file)
+    }
+
+    @Test
+    fun profiledDriverClosesPhysicalConnectionsAfterSqlErrorAndRollback() = onWindows { file, key ->
+        val metrics = SqlCipherWindowsConnectionMetrics()
+        val driver = SqlCipherWindowsDriverFactory.openProfiled(file.toFile(), key, metrics)
+        val database = object : TransacterImpl(driver) {}
+        val countRows = {
+            driver.executeQuery(null, "SELECT count(*) FROM proof", { cursor ->
+                assertTrue(cursor.next().value)
+                QueryResult.Value(cursor.getLong(0))
+            }, 0).value
+        }
+
+        driver.use {
+            it.execute(null, "CREATE TABLE proof (id INTEGER PRIMARY KEY)", 0)
+            it.execute(null, "INSERT INTO proof VALUES (1)", 0)
+            assertFailsWith<SQLException> {
+                database.transaction {
+                    it.execute(null, "INSERT INTO proof VALUES (2)", 0)
+                    it.execute(null, "INSERT INTO proof VALUES (1)", 0)
+                }
+            }
+            assertEquals(null, it.currentTransaction())
+            assertEquals(1L, countRows())
+        }
+
+        assertTrue(metrics.physicalOpens.get() > 0)
+        assertEquals(metrics.physicalOpens.get(), metrics.physicalCloses.get())
+        assertEquals(metrics.physicalOpens.get(), metrics.encryptedSchemaGuardAttempts.get())
+        assertEquals(metrics.physicalOpens.get(), metrics.encryptedSchemaGuardsPassed.get())
+        assertEquals(2L, metrics.statementsOnPinnedTransaction.get())
+        val opensAfterClose = metrics.physicalOpens.get()
+        assertFailsWith<IllegalStateException> { countRows() }
+        assertEquals(opensAfterClose, metrics.physicalOpens.get())
+        Files.delete(file)
     }
 
     @Test
