@@ -25,6 +25,7 @@ jobs:
     runs-on: ubuntu-24.04
     outputs:
       mode: ${{ steps.decide.outputs.mode }}
+      android_depth: ${{ steps.decide.outputs.android_depth }}
     steps:
       - name: Checkout exact event commit and PR merge-base history
         uses: actions/checkout@v7
@@ -48,13 +49,14 @@ jobs:
             python3 ci/impact.py --base "$BASE_SHA" --head "$HEAD_SHA" --github-output "$GITHUB_OUTPUT" --summary "$GITHUB_STEP_SUMMARY"
           else
             echo 'mode=FULL' >> "$GITHUB_OUTPUT"
-            echo "FULL mandatory for $EVENT_NAME on $HEAD_SHA" >> "$GITHUB_STEP_SUMMARY"
+            echo 'android_depth=deep' >> "$GITHUB_OUTPUT"
+            echo "Manual/main/merge-group: FULL for $EVENT_NAME on $HEAD_SHA" >> "$GITHUB_STEP_SUMMARY"
           fi
   build:
     needs: [impact]
-    # Critical/unknown changes still run FULL in a Draft. Classifier failure
-    # also falls back to FULL, never to a cheap path.
-    if: ${{ always() && (github.event_name != 'pull_request' || !github.event.pull_request.draft || needs.impact.result != 'success' || needs.impact.outputs.mode == 'FULL') }}
+    # Run real Android FULL only for Android deep impact or unsafe classifier.
+    # Draft TARGETED is handled by the distinct feedback workflow.
+    if: ${{ always() && (needs.impact.result != 'success' || (needs.impact.outputs.android_depth == 'deep' && (github.event_name != 'pull_request' || !github.event.pull_request.draft || needs.impact.outputs.mode == 'FULL'))) }}
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout source
@@ -287,36 +289,110 @@ jobs:
           disable-animations: true
           script: bash ci/verify-production-release.sh
 
-  full-gate:
-    # A Draft result has a *different check name* and must NOT satisfy the
-    # branch-protected FULL required context when tests were skipped.
-    name: ${{ github.event_name == 'pull_request' && github.event.pull_request.draft && 'Draft Android advisory' || 'FULL Android merge gate' }}
-    if: ${{ always() }}
-    needs: [impact, build]
+  build-smoke:
+    name: Android focused UI and compile checks
+    needs: [impact]
+    # No heavy instrumentation suite for Android-only UI changes; this still
+    # runs real selected Android touch tests and produces the owner debug APK.
+    if: ${{ needs.impact.result == 'success' && needs.impact.outputs.android_depth == 'smoke' && (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
-      - name: Validate actual jobs, source SHA and gate result
+      - name: Pin Android scoped source commit
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          echo "Android selected depth: smoke; commit: $EXPECTED_SHA" >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: android-actions/setup-android@v4
+      - run: sdkmanager 'platforms;android-37.0'
+      - uses: gradle/actions/setup-gradle@v6
+        with:
+          gradle-version: '9.7.0'
+          cache-read-only: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
+      - name: Android compile, debug APK and unit tests
+        run: gradle --no-daemon :app:assembleDebug :app:testDebugUnitTest :shared:compileKotlinJvm --stacktrace --warning-mode all
+      - name: Check emulator hardware acceleration
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -c /dev/kvm
+          sudo chmod a+rw /dev/kvm
+          test -r /dev/kvm && test -w /dev/kvm
+      - name: Run focused Android UI touch regression (not whole encrypted DB suite)
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          profile: pixel_6
+          force-avd-creation: true
+          emulator-options: -no-snapshot -no-window -gpu swiftshader -feature -Vulkan -noaudio -no-boot-anim -camera-back none
+          disable-animations: true
+          script: >-
+            gradle --no-daemon :app:connectedDebugAndroidTest
+            -Pandroid.testInstrumentationRunnerArguments.class=com.andreyceilings.app.MeasurementWorkspaceLayoutTest,com.andreyceilings.app.OverlayDragTouchTest,com.andreyceilings.app.AreaFeatureTouchTest
+            --stacktrace --warning-mode all
+      - name: Keep Android scoped debug APK
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: android-scoped-debug-apk
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: warn
+          retention-days: 7
+      - name: Keep focused UI XML and HTML reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: android-scoped-ui-test-reports
+          path: |
+            app/build/outputs/androidTest-results/connected/
+            app/build/reports/androidTests/connected/
+          if-no-files-found: warn
+          retention-days: 30
+
+  full-gate:
+    name: ${{ github.event_name == 'pull_request' && github.event.pull_request.draft && 'Draft Android advisory' || 'Android scoped CI receipt (owner review)' }}
+    if: ${{ always() }}
+    needs: [impact, build, build-smoke]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Prove selected Android depth, job result and exact event SHA
         shell: bash
         env:
           EVENT_NAME: ${{ github.event_name }}
           IS_DRAFT: ${{ github.event.pull_request.draft }}
           IMPACT_RESULT: ${{ needs.impact.result }}
           IMPACT_MODE: ${{ needs.impact.outputs.mode }}
+          ANDROID_DEPTH: ${{ needs.impact.outputs.android_depth }}
+          FULL_RESULT: ${{ needs.build.result }}
+          SMOKE_RESULT: ${{ needs['build-smoke'].result }}
           EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-          JOB1_RESULT: ${{ needs['build'].result }}
         run: |
           set -euo pipefail
-          ACTUAL_SHA="$(git rev-parse HEAD)"
+          actual="$(git rev-parse HEAD)"
+          job_result=skipped
+          if [[ "$IMPACT_RESULT" != success || "$ANDROID_DEPTH" == deep ]]; then
+            job_result="$FULL_RESULT"
+          elif [[ "$ANDROID_DEPTH" == smoke ]]; then
+            job_result="$SMOKE_RESULT"
+          fi
           python3 ci/verify_full_gate.py \
-            --event "$EVENT_NAME" \
-            --draft "$IS_DRAFT" \
-            --impact-result "$IMPACT_RESULT" \
-            --mode "$IMPACT_MODE" \
-            --job-result "$JOB1_RESULT" \
-            --expected-sha "$EXPECTED_SHA" \
-            --actual-sha "$ACTUAL_SHA" \
+            --event "$EVENT_NAME" --draft "$IS_DRAFT" \
+            --impact-result "$IMPACT_RESULT" --mode "$IMPACT_MODE" \
+            --expected-group android --coverage "android:$ANDROID_DEPTH:$job_result" \
+            --expected-sha "$EXPECTED_SHA" --actual-sha "$actual" \
             --summary "$GITHUB_STEP_SUMMARY"
