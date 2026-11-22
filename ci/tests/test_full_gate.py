@@ -18,9 +18,9 @@ class FullGateTest(unittest.TestCase):
         ok = decide("pull_request", "false", "success", "TARGETED",
                     (("windows", "skip", "skipped"), ("apple", "skip", "skipped")),
                     GROUPS)
-        # A targeted CMP classifier with no CMP platform must be evaluated by
-        # the global Android result, not accepted as a CMP TARGETED run alone.
-        self.assertFalse(ok.passed)
+        # A targeted Android-only PR correctly leaves CMP untested; it must
+        # not turn those skips into a false Windows/iOS verification claim.
+        self.assertTrue(ok.passed)
         # CMP job receives FAST when all its groups are unselected by impact.
         docs = decide("pull_request", "false", "success", "FAST",
                       (("windows", "skip", "skipped"), ("apple", "skip", "skipped")),
