@@ -5,6 +5,8 @@ plugins {
 
 android {
     val productionReleaseSmoke = providers.gradleProperty("productionReleaseSmoke").orNull == "true"
+    // FAST PR builds must not receive the persistent production signing key.
+    val quickUnsignedRelease = providers.gradleProperty("quickUnsignedRelease").orNull == "true"
     testBuildType = if(productionReleaseSmoke) "release" else "debug"
     namespace = "com.andreyceilings.app"
     compileSdk = 37
@@ -14,10 +16,22 @@ android {
         minSdk = 30
         targetSdk = 37
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        // GitHub Actions run number is appended to the visible version for test builds.
+        // GitHub run numbers are per workflow. Both quick PR and post-merge
+        // release builds need globally increasing codes for safe in-place updates.
         val actionsRunNumber = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 0
-        versionCode = 600000 + actionsRunNumber
-        versionName = "0.6.2" + if (actionsRunNumber > 0) "-$actionsRunNumber" else ""
+        val ciVersionCode = System.getenv("GITHUB_RUN_ID")?.let { id ->
+            val candidate = id.toLongOrNull()?.div(1000L)
+            require(candidate != null && candidate in 600_000L..2_099_999_999L) {
+                "Invalid GitHub Actions run id for Android versionCode"
+            }
+            candidate.toInt()
+        }
+        versionCode = ciVersionCode ?: (600000 + actionsRunNumber)
+        versionName = "0.6.2" + when {
+            ciVersionCode != null -> "-ci$ciVersionCode"
+            actionsRunNumber > 0 -> "-$actionsRunNumber"
+            else -> ""
+        }
     }
 
     signingConfigs {
@@ -35,7 +49,7 @@ android {
 
     buildTypes {
         getByName("release") {
-            signingConfig = signingConfigs.getByName("release")
+            signingConfig = if (quickUnsignedRelease) null else signingConfigs.getByName("release")
             isMinifyEnabled = false
         }
     }

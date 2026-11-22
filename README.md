@@ -29,7 +29,16 @@ gradle --no-daemon :shared:jvmTest :app:assembleDebug
 
 APK: `app/build/outputs/apk/debug/app-debug.apk`.
 
-**Go toolchain, NDK та генерація `ceilings-core.aar` більше не потрібні.** GitHub Actions `Build Android APK` збирає Debug, за наявності signing secrets — Release, запускає unit та Android instrumentation тести. `Verify CMP KMP platforms` перевіряє Windows/JVM та iOS Simulator.
+**Go toolchain, NDK та генерація `ceilings-core.aar` більше не потрібні.** Після об'єднання в `main` workflow `Build Android APK` збирає Debug та за наявності secrets — підписаний Release, запускає unit й Android instrumentation/production smoke тести. `Verify CMP KMP platforms` перевіряє Windows/JVM та iOS Simulator.
+
+### Release APK для перевірки Draft/Ready PR (FAST/TARGETED)
+
+Workflow `PR fast checks (no FULL)` тепер збирає **release-варіант** (`assembleRelease`), а не debug APK. Android JVM unit-тести (`testDebugUnitTest`) залишаються; повний instrumentation/SQLCipher/regression прогін автоматично виконується **лише після merge в main**, або за ручним викликом.
+
+- В PR-збірці Gradle працює з `-PquickUnsignedRelease=true`; production keystore/паролі **не надходять** у PR job. Внутрішній `pr-internal-unsigned-release-apk` **не можна встановити** — це лише проміжний артефакт.
+- Після успіху **всіх обраних** швидких перевірок окремий trusted workflow `Sign PR Android release APK` (конфігурація виключно з `main`) завантажує APK як дані та підписує постійним production key. Готовий інстальований файл — артефакт **`pr-fast-android-release-apk`** у запуску цього workflow, `app-release.apk`. Підпис доступний лише для PR з цього самого репозиторію та за налаштованих signing secrets. Для документаційних PR, де Android класифікатор повернув `skip`, APK немає.
+- Для всіх GitHub Actions Android збірок `versionCode` береться зі спільного `GITHUB_RUN_ID` (у межах Android-ліміту), а не різних `GITHUB_RUN_NUMBER`: це запобігає помилці «downgrade» під час переходу між FAST і FULL релізами на пристрої.
+- Підписаний PR APK призначено **лише для ручного smoke** власника, він не є доказом FULL CI/рев'ю/схвалення до merge. Сам workflow підпису почне працювати після того, як цей CI PR буде об'єднаний у `main`.
 
 ## Калькулятор у замірі (P4B1, Draft PR #109)
 

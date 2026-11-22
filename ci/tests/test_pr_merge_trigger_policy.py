@@ -40,14 +40,18 @@ class PrMergeTriggerPolicyTest(unittest.TestCase):
 
     def test_pr_quick_does_not_use_native_db_or_all_instrumentation(self):
         contents = QUICK.read_text(encoding="utf-8")
-        self.assertIn(":app:assembleDebug", contents)
+        self.assertIn("-PquickUnsignedRelease=true", contents)
+        self.assertIn(":app:assembleRelease", contents)
         self.assertIn(":app:testDebugUnitTest", contents)
+        self.assertIn("pr-internal-unsigned-release-apk", contents)
+        self.assertNotIn(":app:assembleDebug", contents)
+        self.assertNotIn("secrets.ANDROID_KEYSTORE", contents)
         self.assertIn(":desktopApp:compileKotlin", contents)
         self.assertIn(":shared:linkDebugFrameworkIosSimulatorArm64", contents)
         for banned in (
             ":shared:jvmTest", ":shared:iosSimulatorArm64Test",
             "connectedDebugAndroidTest", ":shared:verifySqlDelightMigration",
-            ":app:assembleRelease", "ci/run-sqlcipher-instrumentation.sh",
+            "ci/run-sqlcipher-instrumentation.sh",
         ):
             self.assertNotIn(banned, contents)
 
