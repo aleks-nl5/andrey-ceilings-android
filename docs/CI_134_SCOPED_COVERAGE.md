@@ -48,9 +48,18 @@ and tests. Files not recognized by the map must trigger global FULL.
   runs focused `MeasurementWorkspaceLayoutTest`, `OverlayDragTouchTest`,
   `AreaFeatureTouchTest` (no broad SQLCipher/process-death/ENOSPC run).
   APK 7-day retention, XML reports 30 days. No retry of assertion failures.
-- **Android deep**: existing all-instrumentation, encrypted SQLDelight,
-  isolate process death/upgrade/ENOSPC, signed APK/release verification exactly
-  as before, with the existing transport-disconnect-only retry.
+- **Android deep**: existing all-instrumentation (including functional P5A
+  layout/gesture tests), encrypted SQLDelight, isolated process
+  death/upgrade/ENOSPC and signed APK/release verification. The
+  transport-disconnect-only retry is unchanged. **No screenshot matrix** is
+  generated on normal Draft/Ready/main CI.
+- **Optional screenshots**: use Actions → **Android workspace screenshots
+  (manual)** → Run workflow against the desired branch when visual evidence is
+  actually useful. This is a separate manual-only workflow with its own
+  screenshots artifact (7-day retention) and must never block ordinary CI.
+  On an automatic Android instrumentation failure, the gate attempts one
+  diagnostic emulator `screencap` and uploads failure evidence only; failure
+  to capture images does not affect the original test result.
 - **Windows smoke**: real Windows runner, Desktop compile and
   `CeilingsFoundationSceneTest` (no `:shared:jvmTest` native encrypted suite).
 - **Windows deep**: existing native SQLCipher/JDBC `:shared:jvmTest` plus
@@ -81,11 +90,15 @@ JVM job does **not** replace native Windows encrypted database verification.
 - Push to main: classify the verified `github.event.before...github.sha`
   diff; if the before SHA or history is not available, FULL. A normal Android
   UI merge does not restart Windows deep suites just because it reached main.
-- Manual `workflow_dispatch` and merge queue candidates always request
-  all-platform **deep FULL**. To run Windows FULL intentionally, dispatch
+- Manual `workflow_dispatch` of the **verification** workflows and merge
+  queue candidates always request all-platform **deep FULL**. To run Windows FULL intentionally, dispatch
   **Verify CMP KMP platforms** against the chosen branch; check the exact
   source SHA and all native job conclusions. For Android FULL, dispatch
   **Build Android APK** separately.
+
+P5A screenshots are **not** an acceptance artifact or prerequisite. The
+optional capture workflow is separate from security verification; its PNGs
+do not replace functional assertions or SQLCipher tests.
 
 The Draft feedback summary never certifies security-related native suites:
 only the real platform receipts can validate deep DB results on that SHA.

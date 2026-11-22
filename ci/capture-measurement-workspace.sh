@@ -7,13 +7,21 @@ artifact_dir="${RUNNER_TEMP:-app/build}/p5a-workspace"
 mkdir -p "$artifact_dir"
 previous_ime_setting="$(adb shell settings get secure show_ime_with_hard_keyboard | tr -d '\r')"
 restore_display() {
-  adb shell run-as "$app" rm -rf "$device_dir"
-  adb shell wm size reset
-  adb shell wm density reset
+  local status=$?
+  # A failed manually requested UI case is useful for diagnosis too.
+  # Preserve already captured PNGs before deleting their device cache.
+  if [[ "$status" -ne 0 ]]; then
+    adb exec-out run-as "$app" tar -C "$device_dir" -cf - . 2>/dev/null \
+      | tar -xf - -C "$artifact_dir" || true
+    echo "::warning::Manual screenshot regression failed; retained any partial PNG evidence."
+  fi
+  adb shell run-as "$app" rm -rf "$device_dir" || true
+  adb shell wm size reset || true
+  adb shell wm density reset || true
   if [[ "$previous_ime_setting" == null ]]; then
-    adb shell settings delete secure show_ime_with_hard_keyboard
+    adb shell settings delete secure show_ime_with_hard_keyboard || true
   else
-    adb shell settings put secure show_ime_with_hard_keyboard "$previous_ime_setting"
+    adb shell settings put secure show_ime_with_hard_keyboard "$previous_ime_setting" || true
   fi
 }
 trap restore_display EXIT

@@ -215,14 +215,16 @@ jobs:
           free -m
           sudo dmesg --ctime | grep -Ei 'out of memory|oom.kill|killed process|qemu.*(segfault|trap)|kvm.*(error|fail)' | tail -40 || true
 
-      - name: Upload P5A Android workspace screenshots
-        if: always()
+      # The automatic pipeline never runs the expensive P5A screenshot matrix.
+      # On a genuine instrumentation failure keep only lightweight evidence.
+      - name: Upload Android failure diagnostics (optional artifact)
+        if: ${{ always() && (steps.android_instrumentation.outcome == 'failure' || steps.android_instrumentation_retry.outcome == 'failure') }}
         uses: actions/upload-artifact@v7
         with:
-          name: p5a-android-workspace
+          name: android-failure-diagnostics
           path: ${{ runner.temp }}/p5a-workspace/
           if-no-files-found: warn
-          retention-days: 14
+          retention-days: 7
 
       - name: Preserve Android instrumentation test reports
         if: always()
