@@ -322,6 +322,12 @@ fun MeasurementDetailsScreen(
                         drawingEditor?.let {DetailsDrawingControls(it,drawingEnabled)}
                         MeasurementDrawing(row.geometry, Modifier.fillMaxWidth(), interactive = true,
                             selectedSide = selectedSide, onSelectSide = { selectedSide = it },
+                            onEmptyTap = {
+                                if (canDrag) {
+                                    selectedSide = null
+                                    drawingEditor?.clearDrawingSelection()
+                                }
+                            },
                             areaFeatures=drawingEditor?.displayAreas() ?: areaFeatures,selectedAreaUuid=selectedAreaUuid,onSelectArea=onSelectArea,
                             areaEditingEnabled=canDrag,areaDrag=drawingState?.area?.drag,
                             onBeginAreaDrag={drawingEditor?.beginAreaDrag(it)},
