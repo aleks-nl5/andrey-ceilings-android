@@ -5,19 +5,37 @@ import kotlinx.coroutines.runBlocking
 import kotlin.test.*
 
 class PriceCatalogWindowsCipherTest {
+    // Count real opens on the expensive representative suite without logging key, SQL,
+    // database names or paths. Every JUnit test instance owns an independent counter.
+    private val nativeMetrics = SqlCipherWindowsConnectionMetrics()
+
+    @AfterTest fun printConnectionCounts() {
+        if (!System.getProperty("os.name").startsWith("Windows", ignoreCase = true)) return
+        println(
+            "PriceCatalogWindowsCipherTest native JDBC metrics: " +
+                "physicalOpens=${nativeMetrics.physicalOpens.get()}, " +
+                "physicalCloses=${nativeMetrics.physicalCloses.get()}, " +
+                "schemaGuardsPassed=${nativeMetrics.encryptedSchemaGuardsPassed.get()}, " +
+                "schemaGuardAttempts=${nativeMetrics.encryptedSchemaGuardAttempts.get()}, " +
+                "guardTotalMs=${nativeMetrics.encryptedSchemaGuardNanos.get() / 1_000_000}, " +
+                "logicalStatements=${nativeMetrics.logicalStatements.get()}, " +
+                "pinnedStatements=${nativeMetrics.statementsOnPinnedTransaction.get()}, " +
+                "outerBegins=${nativeMetrics.outerTransactionsBegun.get()}"
+        )
+    }
     @Test fun encryptedPointPlacementsV8UpgradeRollbackReopenRacesAndDomainProof(): Unit = runBlocking {
         if (!System.getProperty("os.name").startsWith("Windows", ignoreCase = true)) return@runBlocking
         val key = ByteArray(32) { 76 }
         try {
-            LinePlacementFileProof.concurrent {SqlCipherWindowsDriverFactory.open(it,key)}
-            LinePlacementFileProof.run { SqlCipherWindowsDriverFactory.open(it,key) }
-            PointPlacementFileProof.run { SqlCipherWindowsDriverFactory.open(it, key) }
-            PointPositionFileProof.run { SqlCipherWindowsDriverFactory.open(it, key) }
-            WallAnchorFileProof.run { SqlCipherWindowsDriverFactory.open(it,key) }
-            LegacyWallSeedFileProof.run { SqlCipherWindowsDriverFactory.open(it,key) }
+            LinePlacementFileProof.concurrent {SqlCipherWindowsDriverFactory.openProfiled(it, key, nativeMetrics)}
+            LinePlacementFileProof.run { SqlCipherWindowsDriverFactory.openProfiled(it, key, nativeMetrics) }
+            PointPlacementFileProof.run { SqlCipherWindowsDriverFactory.openProfiled(it, key, nativeMetrics) }
+            PointPositionFileProof.run { SqlCipherWindowsDriverFactory.openProfiled(it, key, nativeMetrics) }
+            WallAnchorFileProof.run { SqlCipherWindowsDriverFactory.openProfiled(it, key, nativeMetrics) }
+            LegacyWallSeedFileProof.run { SqlCipherWindowsDriverFactory.openProfiled(it, key, nativeMetrics) }
             val file = Files.createTempFile("points-cipher-", ".db").toFile()
             try {
-                SqlCipherWindowsDriverFactory.open(file, key).use { driver ->
+                SqlCipherWindowsDriverFactory.openProfiled(file, key, nativeMetrics).use { driver ->
                     openDesktopPriceCatalog(driver, false)
                     PointPlacementProof.run(driver)
                     PointPlacementProof.geometryAndDeletionGuards(driver)
@@ -32,10 +50,10 @@ class PriceCatalogWindowsCipherTest {
         if (!System.getProperty("os.name").startsWith("Windows", ignoreCase = true)) return@runBlocking
         val key = ByteArray(32) { 64 }
         try {
-            MeasurementElementFileProof.run { SqlCipherWindowsDriverFactory.open(it, key) }
+            MeasurementElementFileProof.run { SqlCipherWindowsDriverFactory.openProfiled(it, key, nativeMetrics) }
             val file = Files.createTempFile("elements-fresh-cipher-", ".db").toFile()
             try {
-                SqlCipherWindowsDriverFactory.open(file, key).use { driver ->
+                SqlCipherWindowsDriverFactory.openProfiled(file, key, nativeMetrics).use { driver ->
                     openDesktopPriceCatalog(driver, false)
                     LivePricingProof.run(driver)
                     MeasurementElementsPresentationProof.run(PrototypeDatabase(driver))
@@ -53,7 +71,7 @@ class PriceCatalogWindowsCipherTest {
         val key = ByteArray(32) { 54 }
         try {
             val before: List<List<String?>>
-            SqlCipherWindowsDriverFactory.open(file, key).use { driver ->
+            SqlCipherWindowsDriverFactory.openProfiled(file, key, nativeMetrics).use { driver ->
                 PriceCatalogMigrationProof.legacySchema.create(driver)
                 PriceCatalogMigrationProof.populateLegacy(driver)
                 // v3 never tracked payment; unchanged 3.sqm adds 'unknown'
@@ -64,13 +82,13 @@ class PriceCatalogWindowsCipherTest {
                 driver.execute(null, "ALTER TABLE projects DROP COLUMN paymentStatus", 0)
                 driver.execute(null, "PRAGMA user_version=3", 0)
             }
-            SqlCipherWindowsDriverFactory.open(file, key).use { driver ->
+            SqlCipherWindowsDriverFactory.openProfiled(file, key, nativeMetrics).use { driver ->
                 openDesktopPriceCatalog(driver, true)
                 PriceCatalogMigrationProof.assertReplaced(PrototypeDatabase(driver))
                 assertEquals(before, PriceCatalogMigrationProof.untouchedRows(driver))
                 PriceNameUniquenessProof.assertKeys(driver)
             }
-            SqlCipherWindowsDriverFactory.open(file, key).use { driver ->
+            SqlCipherWindowsDriverFactory.openProfiled(file, key, nativeMetrics).use { driver ->
                 val schema = PriceNameMigrationProof.schema(driver)
                 openDesktopPriceCatalog(driver, true)
                 assertEquals(schema, PriceNameMigrationProof.schema(driver))
@@ -83,10 +101,10 @@ class PriceCatalogWindowsCipherTest {
         if (!System.getProperty("os.name").startsWith("Windows", ignoreCase = true)) return
         val key = ByteArray(32) { 57 }
         try {
-            PriceNameFileProof.run { SqlCipherWindowsDriverFactory.open(it, key) }
+            PriceNameFileProof.run { SqlCipherWindowsDriverFactory.openProfiled(it, key, nativeMetrics) }
             val file = Files.createTempFile("price-names-crud-", ".db").toFile()
             try {
-                SqlCipherWindowsDriverFactory.open(file, key).use { driver ->
+                SqlCipherWindowsDriverFactory.openProfiled(file, key, nativeMetrics).use { driver ->
                     PriceCatalogSchema.create(driver)
                     PriceNameUniquenessProof.crud(driver)
                 }
@@ -100,7 +118,7 @@ class PriceCatalogWindowsCipherTest {
         val key = ByteArray(32) { 58 }
         try {
             var before = emptyList<List<String?>>()
-            SqlCipherWindowsDriverFactory.open(file, key).use { driver ->
+            SqlCipherWindowsDriverFactory.openProfiled(file, key, nativeMetrics).use { driver ->
                 PriceCatalogMigrationProof.legacySchema.create(driver)
                 PriceCatalogMigrationProof.populateLegacy(driver)
                 before = PriceCatalogMigrationProof.untouchedRows(driver)
@@ -108,7 +126,7 @@ class PriceCatalogWindowsCipherTest {
                 PriceCatalogMigrationProof.assertOldPrice(driver)
                 assertEquals(before, PriceCatalogMigrationProof.untouchedRows(driver))
             }
-            SqlCipherWindowsDriverFactory.open(file, key).use { driver ->
+            SqlCipherWindowsDriverFactory.openProfiled(file, key, nativeMetrics).use { driver ->
                 openDesktopPriceCatalog(driver, true)
                 val db = PrototypeDatabase(driver)
                 PriceCatalogMigrationProof.assertReplaced(db)
@@ -117,7 +135,7 @@ class PriceCatalogWindowsCipherTest {
                 PriceCatalogP2Proof.run(db)
                 PriceCatalogPersistenceProof.removeEverything(db)
             }
-            SqlCipherWindowsDriverFactory.open(file, key).use { driver ->
+            SqlCipherWindowsDriverFactory.openProfiled(file, key, nativeMetrics).use { driver ->
                 openDesktopPriceCatalog(driver, true)
                 assertEquals(0L, PriceRepository(PrototypeDatabase(driver)).count())
                 assertTrue(PriceGroupRepository(PrototypeDatabase(driver)).all().isEmpty())
