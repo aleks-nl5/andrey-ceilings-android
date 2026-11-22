@@ -63,7 +63,7 @@ jobs:
             --github-output "$GITHUB_OUTPUT" --summary "$GITHUB_STEP_SUMMARY"
 
   android-quick:
-    name: PR Android debug APK and JVM unit tests
+    name: PR Android release candidate and JVM unit tests
     needs: impact
     if: needs.impact.result == 'success' && needs.impact.outputs.android_depth != 'skip'
     runs-on: ubuntu-24.04
@@ -84,20 +84,36 @@ jobs:
           distribution: temurin
           java-version: '21'
       - uses: android-actions/setup-android@v4
-      - run: sdkmanager 'platforms;android-37.0'
+      - run: sdkmanager 'platforms;android-37.0' 'build-tools;36.0.0'
       - uses: gradle/actions/setup-gradle@v6
         with:
           gradle-version: '9.7.0'
           cache-read-only: ${{ github.event.pull_request.head.repo.full_name != github.repository }}
-      - name: Build Android debug APK and run Android JVM unit tests
-        run: gradle --no-daemon :app:assembleDebug :app:testDebugUnitTest :shared:compileKotlinJvm --stacktrace --warning-mode all
-      - name: Keep PR Android APK for owner smoke
+      # Build actual release variant, but NEVER expose production signing secrets
+      # to pull_request code or Gradle. A trusted workflow_run signs the output
+      # after all selected quick jobs pass, on the default-branch workflow only.
+      - name: Build unsigned Android release and run unchanged JVM unit tests
+        run: gradle --no-daemon -PquickUnsignedRelease=true :app:assembleRelease :app:testDebugUnitTest :shared:compileKotlinJvm --stacktrace --warning-mode all
+      - name: Verify unsigned release candidate for trusted signing
+        shell: bash
+        run: |
+          set -euo pipefail
+          apk=app/build/outputs/apk/release/app-release-unsigned.apk
+          test -s "$apk"
+          unzip -tq "$apk"
+          if "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify "$apk" >/dev/null 2>&1; then
+            echo "::error::PR release candidate must be unsigned; no signing key may enter PR jobs."
+            exit 1
+          fi
+          echo "Unsigned RELEASE candidate built from PR head SHA: ${{ github.event.pull_request.head.sha }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "Owner-installable, production-signed release is uploaded by the separate trusted signer after PR quick checks succeed." >> "$GITHUB_STEP_SUMMARY"
+      - name: Hand off unsigned release for trusted signing (internal)
         uses: actions/upload-artifact@v7
         with:
-          name: pr-fast-android-debug-apk
-          path: app/build/outputs/apk/debug/app-debug.apk
+          name: pr-internal-unsigned-release-apk
+          path: app/build/outputs/apk/release/app-release-unsigned.apk
           if-no-files-found: error
-          retention-days: 7
+          retention-days: 3
 
   desktop-quick:
     name: PR Windows compile and mapped scene tests
