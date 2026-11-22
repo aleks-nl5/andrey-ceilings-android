@@ -8,12 +8,14 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
 import org.jetbrains.compose.resources.ComposeEnvironment
+import org.jetbrains.compose.resources.InternalResourceApi
 import org.jetbrains.compose.resources.LanguageQualifier
 import org.jetbrains.compose.resources.LocalComposeEnvironment
 import org.jetbrains.compose.resources.RegionQualifier
 import org.jetbrains.compose.resources.ResourceEnvironment
 import org.jetbrains.compose.resources.ScriptQualifier
 
+@OptIn(InternalResourceApi::class)
 internal fun ResourceEnvironment.withAppLanguage(language: AppLanguage): ResourceEnvironment =
     ResourceEnvironment(LanguageQualifier(language.tag), ScriptQualifier(""), RegionQualifier(""), theme, density)
 

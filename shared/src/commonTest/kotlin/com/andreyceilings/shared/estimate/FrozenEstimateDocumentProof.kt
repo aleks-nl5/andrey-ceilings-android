@@ -3,11 +3,17 @@ package com.andreyceilings.shared.estimate
 import app.cash.sqldelight.db.SqlDriver
 import com.andreyceilings.shared.db.FrozenIndividualEstimateProof
 import com.andreyceilings.shared.db.FrozenRevisionProof
+import com.andreyceilings.shared.db.MeasurementElementRepository
 import com.andreyceilings.shared.db.MeasurementPricingFixture
 import com.andreyceilings.shared.db.MeasurementRepository
+import com.andreyceilings.shared.db.PriceGroupRepository
 import com.andreyceilings.shared.db.PriceRepository
 import com.andreyceilings.shared.db.ProjectRepository
 import com.andreyceilings.shared.db.PrototypeDatabase
+import com.andreyceilings.shared.localization.AppLanguage
+import com.andreyceilings.shared.localization.AppLanguagePreference
+import com.andreyceilings.shared.localization.AppLanguageState
+import com.andreyceilings.shared.localization.AppLanguageStorage
 import com.andreyceilings.shared.measurement.MeasurementCreateIntent
 import com.andreyceilings.shared.measurement.MeasurementEditStore
 import com.andreyceilings.shared.measurement.MeasurementElementsStore
@@ -120,6 +126,26 @@ internal suspend fun proveExactEstimateDocuments(driver: SqlDriver) {
         assertTrue(documents.all { it.publicNumber == documents.first().publicNumber })
         assertNotEquals(documents.first().drawing.contour, documents.last().drawing.contour)
         assertNull(store.estimateDocument(first.seriesUuid, fixture.elementUuid))
+
+        val liveMeasurements = MeasurementRepository(db).all()
+        val liveElements = MeasurementElementRepository(db).forMeasurement(fixture.measurementUuid)
+        val livePrices = prices.all()
+        val liveGroups = PriceGroupRepository(db).all()
+        val languages = AppLanguageState(object : AppLanguageStorage {
+            override fun read(): String? = null
+            override fun write(value: String) = Unit
+        })
+        for (preference in listOf(AppLanguagePreference.Explicit(AppLanguage.UKRAINIAN), AppLanguagePreference.System)) {
+            languages.select(preference)
+            assertEquals(liveMeasurements, MeasurementRepository(db).all())
+            assertEquals(liveElements, MeasurementElementRepository(db).forMeasurement(fixture.measurementUuid))
+            assertEquals(livePrices, prices.all())
+            assertEquals(liveGroups, PriceGroupRepository(db).all())
+            assertEquals(frozen, ids.map { history.exactIndividual(series, it) })
+            val onSelectedLanguage = ids.map { assertNotNull(store.estimateDocument(series, it)) }
+            assertEquals(documents.map { it.rows }, onSelectedLanguage.map { it.rows })
+            assertEquals(documents.map { it.amounts }, onSelectedLanguage.map { it.amounts })
+        }
 
         projects.update(project.id, project.clientId, "Renamed project", "Changed address",
             project.status, project.notes, 608)
