@@ -47,6 +47,7 @@ jobs:
         uses: actions/download-artifact@v7
         with:
           artifact-ids: ${{ steps.candidate.outputs.artifact_id }}
+          merge-multiple: true
           run-id: ${{ github.event.workflow_run.id }}
           repository: ${{ github.repository }}
           github-token: ${{ github.token }}
@@ -70,7 +71,7 @@ jobs:
           test "$(find "$RUNNER_TEMP/pr-unsigned-release" -maxdepth 1 -type f | wc -l)" -eq 1
           unzip -tq "$apk"
           "$ANDROID_HOME/build-tools/36.0.0/zipalign" -c -v 4 "$apk"
-          package_line="$("$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$apk" | head -n 1)"
+          package_line="$("$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$apk" | sed -n '1p')"
           if [[ ! "$package_line" =~ ^package:\ name=\'com\.andreyceilings\.app\'\  ]]; then
             echo "::error::Unexpected release package name"; exit 1
           fi
