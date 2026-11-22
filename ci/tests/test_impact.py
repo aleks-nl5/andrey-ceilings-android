@@ -13,12 +13,15 @@ def outcome(*paths):
 
 ANDROID_FONT = "app/src/main/res/font/inter_variable.ttf"
 ANDROID_SCREENS = "app/src/main/java/com/andreyceilings/app/ui/screens"
-SHARED_MEASUREMENT = "shared/src/commonMain/kotlin/com/andreyceilings/shared/measurement"
+SHARED_SOURCE = "shared/src/commonMain/kotlin/com/andreyceilings/shared"
+SHARED_MEASUREMENT = f"{SHARED_SOURCE}/measurement"
 SHARED_DRAWING = f"{SHARED_MEASUREMENT}/MeasurementDrawing.kt"
-SHARED_GRADIENT = "shared/src/commonMain/kotlin/com/andreyceilings/shared/theme/CeilingsEdgeGradient.kt"
+SHARED_GRADIENT = f"{SHARED_SOURCE}/theme/CeilingsEdgeGradient.kt"
 WORKSPACE_LAYOUT_TEST = "com.andreyceilings.app.MeasurementWorkspaceLayoutTest"
 OVERLAY_DRAG_TEST = "com.andreyceilings.app.OverlayDragTouchTest"
 AREA_TOUCH_TEST = "com.andreyceilings.app.AreaFeatureTouchTest"
+FOUNDATION_SCENE_TEST = "com.andreyceilings.desktop.CeilingsFoundationSceneTest"
+MEASUREMENT_SCENE_TEST = "com.andreyceilings.desktop.MeasurementEditSceneTest"
 
 
 class ImpactTest(unittest.TestCase):
@@ -87,13 +90,33 @@ class ImpactTest(unittest.TestCase):
                           ("deep", "skip", "skip"))
 
     def test_shared_ui_consumers_are_all_targeted_without_expensive_native_db(self):
-        for path, tests in (
-            (SHARED_DRAWING,
-             (AREA_TOUCH_TEST, WORKSPACE_LAYOUT_TEST, OVERLAY_DRAG_TEST)),
-            (SHARED_GRADIENT, (WORKSPACE_LAYOUT_TEST,)),
+        for path, android_tests, windows_tests in (
+            (SHARED_DRAWING, (AREA_TOUCH_TEST, WORKSPACE_LAYOUT_TEST, OVERLAY_DRAG_TEST),
+             (FOUNDATION_SCENE_TEST, MEASUREMENT_SCENE_TEST)),
+            (SHARED_GRADIENT, (WORKSPACE_LAYOUT_TEST,), (FOUNDATION_SCENE_TEST,)),
+            (f"{SHARED_SOURCE}/ui/CeilingsWorkspaceScaffold.kt", (WORKSPACE_LAYOUT_TEST,),
+             (FOUNDATION_SCENE_TEST, MEASUREMENT_SCENE_TEST)),
+            (f"{SHARED_SOURCE}/ui/CeilingsFab.kt", (WORKSPACE_LAYOUT_TEST,), (FOUNDATION_SCENE_TEST,)),
+            (f"{SHARED_SOURCE}/theme/CeilingsTheme.kt", (WORKSPACE_LAYOUT_TEST,), (FOUNDATION_SCENE_TEST,)),
+            (f"{SHARED_SOURCE}/theme/CeilingsTypography.kt", (WORKSPACE_LAYOUT_TEST,),
+             (FOUNDATION_SCENE_TEST, MEASUREMENT_SCENE_TEST)),
         ):
-            self.assert_scope(path, "TARGETED", ("smoke", "smoke", "smoke"))
-            self.assertEqual(outcome(path).android_smoke_tests, tests)
+            with self.subTest(path=path):
+                self.assert_scope(path, "TARGETED", ("smoke", "smoke", "smoke"))
+                result = outcome(path)
+                self.assertEqual(result.android_smoke_tests, android_tests)
+                self.assertEqual(result.windows_smoke_tests, windows_tests)
+
+    def test_windows_smoke_unions_scenes_and_deep_overrides_them(self):
+        desktop_ui = "desktopApp/src/main/kotlin/com/a/ui/Scene.kt"
+        self.assertEqual(outcome(desktop_ui).windows_smoke_tests, (FOUNDATION_SCENE_TEST,))
+        result = outcome(desktop_ui, SHARED_GRADIENT, SHARED_DRAWING)
+        self.assertEqual(result.windows_smoke_tests, (FOUNDATION_SCENE_TEST, MEASUREMENT_SCENE_TEST))
+        result = outcome(SHARED_DRAWING,
+                         "shared/src/jvmTest/kotlin/com/andreyceilings/shared/db/PriceCatalogWindowsCipherTest.kt")
+        self.assertEqual(result.depths, ("smoke", "deep", "smoke"))
+        self.assertEqual(result.windows_smoke_tests, ())
+        self.assertTrue(result.android_smoke_tests)
 
     def test_android_smoke_unions_mapped_classes_and_deep_overrides_them(self):
         result = outcome(ANDROID_FONT, SHARED_DRAWING, SHARED_GRADIENT)
@@ -104,13 +127,17 @@ class ImpactTest(unittest.TestCase):
 
     def test_shared_business_data_database_and_config_fail_closed_full(self):
         for path in (
-            "shared/src/commonMain/kotlin/com/a/livepricing/IndividualEstimatePricing.kt",
+            f"{SHARED_SOURCE}/livepricing/IndividualEstimatePricing.kt",
             "shared/src/commonMain/kotlin/com/a/measurement/MeasurementEditModel.kt",
             "shared/src/commonMain/kotlin/com/a/ui/UnreviewedScreen.kt",
             "shared/src/commonMain/kotlin/com/andreyceilings/shared/navigation/AppNavigationState.kt",
             f"{SHARED_MEASUREMENT}/MeasurementDetailsScreen.kt",
+            f"{SHARED_MEASUREMENT}/MeasurementEditScreen.kt",
+            f"{SHARED_MEASUREMENT}/MeasurementDrawingGeometry.kt",
+            f"{SHARED_SOURCE}/estimate/FrozenEstimateDocument.kt",
+            f"{SHARED_SOURCE}/db/FrozenRevisionAudit.kt",
             "shared/src/commonMain/kotlin/com/a/db/EncryptedRepository.kt",
-            "shared/src/commonMain/sqldelight/com/a/db/BusinessSchema.sq",
+            "shared/src/commonMain/sqldelight/com/andreyceilings/shared/db/BusinessSchema.sq",
             "shared/src/commonTest/kotlin/com/a/EstimateTest.kt",
             "shared/build.gradle.kts", "gradle.properties", "settings.gradle.kts",
             "ci/impact.py", ".github/workflows/cmp-kmp-platforms.yml",

@@ -20,17 +20,28 @@ ANDROID_TEST_PACKAGE = "com.andreyceilings.app"
 WORKSPACE_LAYOUT_TEST = f"{ANDROID_TEST_PACKAGE}.MeasurementWorkspaceLayoutTest"
 OVERLAY_DRAG_TEST = f"{ANDROID_TEST_PACKAGE}.OverlayDragTouchTest"
 AREA_TOUCH_TEST = f"{ANDROID_TEST_PACKAGE}.AreaFeatureTouchTest"
+WINDOWS_TEST_PACKAGE = "com.andreyceilings.desktop"
+FOUNDATION_SCENE_TEST = f"{WINDOWS_TEST_PACKAGE}.CeilingsFoundationSceneTest"
+MEASUREMENT_SCENE_TEST = f"{WINDOWS_TEST_PACKAGE}.MeasurementEditSceneTest"
+SHARED_SOURCE = "shared/src/commonMain/kotlin/com/andreyceilings/shared"
 
 # Exact paths keep unrelated features, including PDF and persistence code in
 # UI directories, on deep verification. Each entry needs relevant UI evidence.
 ANDROID_SMOKE_TESTS_BY_PATH = {
     "app/src/main/res/font/inter_variable.ttf": (WORKSPACE_LAYOUT_TEST,),
-    "shared/src/commonMain/kotlin/com/andreyceilings/shared/measurement/MeasurementDrawing.kt": (
-        WORKSPACE_LAYOUT_TEST, OVERLAY_DRAG_TEST, AREA_TOUCH_TEST,
+}
+# Each shared presentation path has Android instrumentation and a Windows scene.
+SHARED_SMOKE_TESTS_BY_PATH = {
+    f"{SHARED_SOURCE}/measurement/MeasurementDrawing.kt": (
+        (WORKSPACE_LAYOUT_TEST, OVERLAY_DRAG_TEST, AREA_TOUCH_TEST), MEASUREMENT_SCENE_TEST,
     ),
-    "shared/src/commonMain/kotlin/com/andreyceilings/shared/theme/CeilingsEdgeGradient.kt": (
-        WORKSPACE_LAYOUT_TEST,
+    f"{SHARED_SOURCE}/ui/CeilingsWorkspaceScaffold.kt": (
+        (WORKSPACE_LAYOUT_TEST,), MEASUREMENT_SCENE_TEST,
     ),
+    f"{SHARED_SOURCE}/ui/CeilingsFab.kt": ((WORKSPACE_LAYOUT_TEST,), FOUNDATION_SCENE_TEST),
+    f"{SHARED_SOURCE}/theme/CeilingsEdgeGradient.kt": ((WORKSPACE_LAYOUT_TEST,), FOUNDATION_SCENE_TEST),
+    f"{SHARED_SOURCE}/theme/CeilingsTheme.kt": ((WORKSPACE_LAYOUT_TEST,), FOUNDATION_SCENE_TEST),
+    f"{SHARED_SOURCE}/theme/CeilingsTypography.kt": ((WORKSPACE_LAYOUT_TEST,), MEASUREMENT_SCENE_TEST),
 }
 
 
@@ -48,6 +59,7 @@ class Impact:
     paths: tuple[str, ...]
     depths: tuple[str, str, str] = ("skip", "skip", "skip")
     android_smoke_tests: tuple[str, ...] = ()
+    windows_smoke_tests: tuple[str, ...] = ()
 
 
 def parse_changes(data: bytes) -> list[Change]:
@@ -145,7 +157,7 @@ def _group(path: str) -> tuple[tuple[str, ...], str] | None:
     if path.startswith(("shared/src/commonMain/", "shared/src/commonTest/")):
         # Common business/geometry/finance code is coupled to native DB and
         # platform persistence. No optimistic category derived from its name.
-        return (TARGETS, "smoke" if path in ANDROID_SMOKE_TESTS_BY_PATH else "deep")
+        return (TARGETS, "smoke" if path in SHARED_SMOKE_TESTS_BY_PATH else "deep")
     return None
 
 
@@ -176,12 +188,21 @@ def classify(changes: list[Change]) -> Impact:
         return Impact("FULL", TARGETS, "shared business/database or test contract; all dependent suites", paths,
                       ("deep", "deep", "deep"))
     android_smoke_tests = ()
+    windows_smoke_tests = ()
+    shared_suites = [SHARED_SMOKE_TESTS_BY_PATH[path]
+                     for path in paths if path in SHARED_SMOKE_TESTS_BY_PATH]
     if depths["android"] == "smoke":
-        android_smoke_tests = tuple(sorted({
+        android_tests = {
             test for path in paths for test in ANDROID_SMOKE_TESTS_BY_PATH.get(path, ())
-        }))
+        }
+        android_tests.update(test for tests, _ in shared_suites for test in tests)
+        android_smoke_tests = tuple(sorted(android_tests))
+    if depths["desktop"] == "smoke":
+        windows_tests = {FOUNDATION_SCENE_TEST}
+        windows_tests.update(scene for _, scene in shared_suites)
+        windows_smoke_tests = tuple(sorted(windows_tests))
     return Impact("TARGETED", selected, "per-platform source-set dependency union; scoped depth",
-                  paths, levels, android_smoke_tests)
+                  paths, levels, android_smoke_tests, windows_smoke_tests)
 
 
 def impact_from_git(base: str, head: str) -> Impact:
@@ -212,6 +233,7 @@ def main(argv: list[str] | None = None) -> int:
         "ios": str("ios" in result.targets).lower(),
         **{f"{target}_depth": depth for target, depth in zip(TARGETS, result.depths)},
         "android_smoke_tests": ",".join(result.android_smoke_tests),
+        "windows_smoke_tests": ",".join(result.windows_smoke_tests),
         "apple_depth": (result.depths[2] if result.depths[2] != "skip"
                         else "smoke" if result.depths[1] != "skip" else "skip"),
     }
@@ -226,6 +248,7 @@ def main(argv: list[str] | None = None) -> int:
                  f"Target groups: {', '.join(result.targets) or 'none'}",
                  f"Coverage: {', '.join(f'{t}={d}' for t, d in zip(TARGETS, result.depths))}",
                  f"Android smoke classes: {', '.join(result.android_smoke_tests) or 'none selected'}",
+                 f"Windows smoke classes: {', '.join(result.windows_smoke_tests) or 'none selected'}",
                  f"Reason: {result.reason.replace(chr(96), '')}",
                  "", "This is a classification, not proof of execution. Skipped platforms are NOT verified; scoped acceptance depends on real matching-SHA job results.",
                  "", f"Changed paths: {len(result.paths)}", ""]

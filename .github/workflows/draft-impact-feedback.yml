@@ -26,6 +26,7 @@ jobs:
       ios: ${{ steps.classify.outputs.ios }}
       android_depth: ${{ steps.classify.outputs.android_depth }}
       desktop_depth: ${{ steps.classify.outputs.desktop_depth }}
+      windows_smoke_tests: ${{ steps.classify.outputs.windows_smoke_tests }}
       ios_depth: ${{ steps.classify.outputs.ios_depth }}
     steps:
       - name: Checkout exact PR head and merge base history
@@ -101,7 +102,15 @@ jobs:
           gradle-version: '9.7.0'
           cache-read-only: ${{ github.event.pull_request.head.repo.full_name != github.repository }}
       - name: Compile Desktop and exercise production Compose scene smoke
-        run: gradle --no-daemon :desktopApp:compileKotlin :desktopApp:test --tests "com.andreyceilings.desktop.CeilingsFoundationSceneTest" --stacktrace --warning-mode all
+        env:
+          WINDOWS_SMOKE_TESTS: ${{ needs.impact.outputs.windows_smoke_tests }}
+        run: |
+          if (-not $env:WINDOWS_SMOKE_TESTS) { throw 'Windows smoke needs a scene class filter' }
+          $filters = foreach ($class in ($env:WINDOWS_SMOKE_TESTS -split ',')) {
+            '--tests'
+            $class
+          }
+          gradle --no-daemon :desktopApp:compileKotlin :desktopApp:test @filters --stacktrace --warning-mode all
 
   ios-quick:
     name: Draft TARGETED iOS (NOT FULL)

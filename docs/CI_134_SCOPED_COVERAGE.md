@@ -33,15 +33,27 @@ Android, Windows, macOS/JVM and iOS; `TARGETED` can mix depths.
 | CI, Gradle, dependencies, unknown binaries/deleted/renamed/incomplete diff | deep | deep | deep | deep |
 | Mixed platform changes | union of impact, never downgrade an affected platform |
 
-Android and shared smoke use exact paths. The allowlist covers Android's
-packaged Inter font, the shared edge-gradient renderer and the shared
-measurement canvas. The font and gradient select the workspace layout suite.
-The canvas also selects the overlay-drag and area-touch suites. Mixed changes
-combine the selected classes, and Android deep takes precedence over smoke.
-Unmapped Android files, including PDF export, price list and app lifecycle
-code, require Android deep. Unmapped shared files, including navigation and
-the measurement details screen, require all-platform deep. Add a path only
-after reviewing its responsibilities and the tests that exercise it.
+Android and shared smoke use exact paths. Changes to the packaged Android
+Inter font select `MeasurementWorkspaceLayoutTest`. The shared components
+below use that same Android suite and their corresponding Windows scenes.
+
+| Shared presentation file | Behavior exercised | Windows scene |
+| --- | --- | --- |
+| `CeilingsWorkspaceScaffold.kt` | Insets, header placement, and canvas continuity across workspace sizes | `MeasurementEditSceneTest` |
+| `CeilingsFab.kt` | Fullscreen, zoom and editor action targets | `CeilingsFoundationSceneTest` |
+| `CeilingsEdgeGradient.kt` | Edge fades and readable foreground in light and dark themes | `CeilingsFoundationSceneTest` |
+| `CeilingsTheme.kt` | Light and dark palette rendering | `CeilingsFoundationSceneTest` |
+| `CeilingsTypography.kt` in `theme/` | Text and control layout in narrow and short workspaces | `MeasurementEditSceneTest` |
+| `MeasurementDrawing.kt` | Canvas viewport, overlay drag and area touch | `MeasurementEditSceneTest` |
+
+The canvas also selects `OverlayDragTouchTest` and `AreaFeatureTouchTest`
+on Android. Mixed changes combine the selected classes. Deep verification
+takes precedence on its platform. Unmapped Android files, including PDF
+export, price list and lifecycle code, require Android deep. Unmapped shared
+files require all-platform deep. This includes `MeasurementEditScreen.kt`
+with save, reload and exit actions and `MeasurementDetailsScreen.kt` with
+navigation, element editing and saved-estimate actions. Add a path after
+reviewing its responsibilities and the tests that exercise it.
 
 ## What actually runs
 
@@ -49,7 +61,8 @@ after reviewing its responsibilities and the tests that exercise it.
   `:app:testDebugUnitTest` and `:shared:compileKotlinJvm`; Android emulator
   runs the classes selected by the classifier on Ready and push. Its receipt
   requires a fresh JUnit report with at least one passing case per selected
-  class and rejects failed cases or cases from an unexpected class.
+  class. A failed or skipped testcase, or a case from an unexpected class,
+  fails the receipt.
   APK 7-day retention, XML reports 30 days. No retry of assertion failures.
 - **Android deep**: existing all-instrumentation (including functional P5A
   layout/gesture tests), encrypted SQLDelight, isolated process
@@ -64,7 +77,9 @@ after reviewing its responsibilities and the tests that exercise it.
   diagnostic emulator `screencap` and uploads failure evidence only; failure
   to capture images does not affect the original test result.
 - **Windows smoke**: real Windows runner, Desktop compile and
-  `CeilingsFoundationSceneTest` (no `:shared:jvmTest` native encrypted suite).
+  `CeilingsFoundationSceneTest`, with additional scene classes selected by
+  the classifier on Draft, Ready and push. The job runs filtered
+  `:desktopApp:test`. Native encrypted regression runs at deep depth.
 - **Windows deep**: existing native SQLCipher/JDBC `:shared:jvmTest` plus
   `:desktopApp:test`; timings/profiling and 30-day reports preserved.
   Windows-only JDBC changes still run both complete suites. Per-suite
@@ -151,7 +166,9 @@ base. The PR that introduces the workflow is itself a FULL case.
 | Android Inter font | smoke, workspace layout class | skip | skip |
 | Immutable PDF snapshot or estimate export | deep | skip | skip |
 | Windows JDBC test | skip | deep | skip |
-| Shared measurement canvas | smoke, layout/drag/area classes | smoke | smoke |
+| Shared workspace scaffold or typography | smoke, workspace layout class | smoke, foundation and measurement scenes | smoke |
+| Shared FAB or theme palette | smoke, workspace layout class | smoke, foundation scene | smoke |
+| Shared measurement canvas | smoke, layout/drag/area classes | smoke, foundation and measurement scenes | smoke |
 | Shared SQLDelight schema, unknown binary, CI workflow | deep | deep | deep |
 | Docs only | skip | skip | skip |
 

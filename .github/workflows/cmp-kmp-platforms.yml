@@ -27,6 +27,7 @@ jobs:
     outputs:
       mode: ${{ steps.decide.outputs.mode }}
       desktop_depth: ${{ steps.decide.outputs.desktop_depth }}
+      windows_smoke_tests: ${{ steps.decide.outputs.windows_smoke_tests }}
       ios_depth: ${{ steps.decide.outputs.ios_depth }}
       apple_depth: ${{ steps.decide.outputs.apple_depth }}
     steps:
@@ -247,7 +248,15 @@ jobs:
           gradle-version: '9.7.0'
           cache-read-only: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
       - name: Compile Windows/Desktop and exercise production scene smoke
-        run: gradle --no-daemon :desktopApp:compileKotlin :desktopApp:test --tests "com.andreyceilings.desktop.CeilingsFoundationSceneTest" --stacktrace --warning-mode all
+        env:
+          WINDOWS_SMOKE_TESTS: ${{ needs.impact.outputs.windows_smoke_tests }}
+        run: |
+          if (-not $env:WINDOWS_SMOKE_TESTS) { throw 'Windows smoke needs a scene class filter' }
+          $filters = foreach ($class in ($env:WINDOWS_SMOKE_TESTS -split ',')) {
+            '--tests'
+            $class
+          }
+          gradle --no-daemon :desktopApp:compileKotlin :desktopApp:test @filters --stacktrace --warning-mode all
       - name: Preserve Windows targeted smoke reports
         if: always()
         uses: actions/upload-artifact@v7

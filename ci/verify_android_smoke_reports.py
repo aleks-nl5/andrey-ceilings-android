@@ -20,8 +20,9 @@ def verify_reports(report_dir: Path, expected: set[str]) -> Counter[str]:
                 raise ValueError(f"Unexpected Android testcase: {classname}.{name}")
             if case.find("failure") is not None or case.find("error") is not None:
                 raise ValueError(f"Failed Android testcase: {classname}.{name}")
-            if case.find("skipped") is None:
-                passed[classname] += 1
+            if case.find("skipped") is not None:
+                raise ValueError(f"Skipped Android testcase: {classname}.{name}")
+            passed[classname] += 1
 
     missing = expected - passed.keys()
     if missing:
