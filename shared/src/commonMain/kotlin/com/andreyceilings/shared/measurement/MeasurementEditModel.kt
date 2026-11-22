@@ -453,6 +453,7 @@ class MeasurementEditModel(
                 val source = displayPoints().find { it.uuid == input.uuid } ?: return
                 val target = positions.single()
                 if (!pointStrictlyInside(geometry, target.xMm, target.yMm)) false else {
+                    closeWorkspaceCoordinates()
                     if (target != PointPositionMm(source.xMm, source.yMm))
                         stagePoint(source.uuid, PointMountingEdit(freeX = target.xMm, freeY = target.yMm))
                     true
