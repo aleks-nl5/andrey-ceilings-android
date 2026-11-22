@@ -3,6 +3,7 @@ package com.andreyceilings.shared.measurement
 import com.andreyceilings.shared.calculation.MeasurementPrecision
 import com.andreyceilings.shared.db.*
 import com.andreyceilings.shared.prices.PlacementKind
+import com.andreyceilings.shared.prices.QuantityMode
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.flow.*
@@ -70,6 +71,21 @@ class MeasurementEditStore(private val database: PrototypeDatabase, private val 
             }.onStart<PointOverlayState> { emit(PointOverlayState.Loading) }
                 .catch { if (it is CancellationException) throw it else emit(PointOverlayState.Unavailable) }
     }
+    internal suspend fun placementCatalog(): List<ElementCatalogItem> = withContext(Dispatchers.Default) {
+        pointRead.withLock {
+            check(!sessionClosed.value)
+            database.transactionWithResult {
+                val prices = PriceRepository(database)
+                val groupIds = prices.groups.all().map { it.uuid }.toSet()
+                prices.all().filter { it.groupUuid in groupIds }.map { item ->
+                    ElementCatalogItem(item.uuid, item.groupUuid, item.title, item.code, item.unit,
+                        QuantityMode.entries.single { it.value == item.quantityMode },
+                        PlacementKind.entries.single { it.value == item.placementKind })
+                }.filter(ElementCatalogItem::supportsWorkspacePlacement)
+            }
+        }
+    }
+
     private val measurements = MeasurementRepository(database)
     private val projects = ProjectRepository(database)
     // Only an in-flight/delivered write is retained, scoped to this unlocked database session.
@@ -136,7 +152,7 @@ class MeasurementEditStore(private val database: PrototypeDatabase, private val 
 
     fun update(original: MeasurementEditDocument, draft: MeasurementCreateDraft,
         edits: Map<String, PointMountingEdit> = emptyMap(), operationUuid: String = newRecordUuid(),
-        wallToken: String = operationUuid, now: Long = nowMillis(), acceptedWrite: kotlinx.coroutines.CompletableDeferred<Unit>? = null, lineEdits: Map<String,LinePlacementEdit> = emptyMap(), declaredLengths: Map<String,Long> = emptyMap(), areaEdits: Map<String,AreaFeatureEdit> = emptyMap(), declaredAreas: Map<String,Long> = emptyMap()): MeasurementEditDocument {
+        wallToken: String = operationUuid, now: Long = nowMillis(), acceptedWrite: kotlinx.coroutines.CompletableDeferred<Unit>? = null, lineEdits: Map<String,LinePlacementEdit> = emptyMap(), declaredLengths: Map<String,Long> = emptyMap(), areaEdits: Map<String,AreaFeatureEdit> = emptyMap(), declaredAreas: Map<String,Long> = emptyMap(), additions: WorkspacePlacementDraft = WorkspacePlacementDraft()): MeasurementEditDocument {
         check(!sessionClosed.value || acceptedWrite in writes.value.pending) { "Сесію закрито." }
         var rolledBack = false
         try {
@@ -144,8 +160,16 @@ class MeasurementEditStore(private val database: PrototypeDatabase, private val 
                 // Runs after endTransaction succeeds, only for the outer rollback. Do not infer
                 // this from a platform exception class/message or from absence of a receipt.
                 afterRollback { rolledBack = true }
-                CeilingEditRepository(database).save(original,draft,edits,operationUuid,wallToken,now,lineEdits,declaredLengths,areaEdits,declaredAreas)
-                loadDocument(draft.projectId,original.measurementId,allowClosing = true)
+                if (additions.isEmpty) {
+                    CeilingEditRepository(database).save(original, draft, edits, operationUuid, wallToken, now,
+                        lineEdits, declaredLengths, areaEdits, declaredAreas)
+                } else {
+                    WorkspacePlacementWriter(database) {
+                        loadDocument(draft.projectId, original.measurementId, allowClosing = true)
+                    }.save(original, draft, edits, operationUuid, wallToken, now, lineEdits, declaredLengths,
+                        areaEdits, declaredAreas, additions)
+                }
+                loadDocument(draft.projectId, original.measurementId, allowClosing = true)
             }
         } catch (failure: Throwable) {
             if (!rolledBack) throw MeasurementEditUncertain(failure)
@@ -158,8 +182,10 @@ class MeasurementEditStore(private val database: PrototypeDatabase, private val 
     fun now(): Long = nowMillis()
     fun operationCommitted(uuid:String,measurement:String,version:Long):Boolean {
         if(sessionClosed.value)return false
-        val op=database.ceilingEditsQueries.selectOperation(uuid).executeAsOneOrNull() ?: return false
-        return op.measurementUuid==measurement && maxOf(op.expectedUpdatedAt+1,op.createdAt)==version && CeilingEditRepository(database).isCurrentResult(uuid,measurement,version)
+        return database.transactionWithResult {
+            measurements.findByUuid(measurement)?.updatedAt == version &&
+                WorkspacePlacementWriter.currentResult(database, uuid, measurement, version)
+        }
     }
 
     private data class Writes(val closed: Boolean = false, val pending: Set<kotlinx.coroutines.CompletableDeferred<Unit>> = emptySet())

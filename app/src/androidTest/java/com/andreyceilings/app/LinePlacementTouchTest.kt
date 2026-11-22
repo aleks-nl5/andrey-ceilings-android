@@ -61,8 +61,8 @@ class LinePlacementTouchTest {
                 }
                 if (theme) click("На весь екран")
                 click("Елементи")
-                compose.onNodeWithTag("measurement-edit-section-lines").performScrollTo().performClick()
-                click("Розмістити лінію")
+                compose.onNodeWithTag("measurement-workspace-add").performScrollTo().assertIsEnabled().performClick()
+                compose.onNodeWithTag("p5b-linked-${element.uuid}").performScrollTo().assertIsEnabled().performClick()
                 val canvas=compose.onNode(matcher)
                 fun world(x:Long,y:Long):Offset {
                     val projection = canvas.fetchSemanticsNode().config[MeasurementDrawingSemantics.Projection]

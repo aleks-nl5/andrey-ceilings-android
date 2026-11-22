@@ -48,6 +48,9 @@ internal fun LinePlacementControls(
         }
         val selected=lines.find {it.uuid==state.selectedLineUuid}
         if(selected!=null) {
+            if (inWorkspace) WorkspaceCoordinatesAction(enabled && !selected.unresolved) {
+                model.openWorkspaceCoordinates(WorkspaceCoordinatesKind.LINE)
+            }
             Text(when {selected.unresolved->"Потребує уточнення";selected.needsReview->"Перевірити розміщення";selected.precision==PointPrecision.EXACT->"За виміряними відступами";else->"Приблизно"},
                 color = if (inWorkspace && (selected.unresolved || selected.needsReview)) MaterialTheme.colorScheme.error else LocalContentColor.current)
             Text(if (inWorkspace) "Довжина · ${formatElementMilli(selected.lengthMm)} м"
@@ -74,7 +77,7 @@ internal fun LinePlacementControls(
                 } ?: Text("$title: виміряних прив'язок немає")
             }
         }
-        state.original.lineElements.forEach {element ->
+        model.lineElements().forEach {element ->
             val placed=lines.filter {it.elementUuid==element.uuid && !it.unresolved}.sumOf {it.lengthMm}
             val unresolved=lines.count {it.elementUuid==element.uuid && it.unresolved}
             val declared=state.declaredLengths[element.uuid]?.let {ElementQuantity.Exact(it)} ?: element.quantity

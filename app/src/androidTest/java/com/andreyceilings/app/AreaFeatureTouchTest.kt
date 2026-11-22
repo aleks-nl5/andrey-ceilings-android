@@ -115,8 +115,10 @@ class AreaFeatureTouchTest {
             }
         }
 
-        fun begin(label: String, tool: AreaTool) {
-            click(label)
+        fun begin(label: String?, tool: AreaTool) {
+            compose.onNodeWithTag("measurement-workspace-add").performScrollTo().assertIsEnabled().performClick()
+            if (label != null) click(label)
+            else compose.onNodeWithTag("p5b-linked-${element.uuid}").performScrollTo().assertIsEnabled().performClick()
             compose.runOnIdle {
                 assertEquals(tool, model.state.value.area.tool, "Area tool must be active; ${stateSummary()}")
                 assertTrue(model.state.value.area.vertices.isEmpty(), stateSummary())
@@ -141,14 +143,13 @@ class AreaFeatureTouchTest {
         try {
             settledCanvas()
             click("Елементи")
-            compose.onNodeWithTag("measurement-edit-section-areas").performScrollTo().assertIsEnabled().performClick()
 
-            begin("Позначити перешкоду", AreaTool.RECTANGLE)
+            begin("Перешкода", AreaTool.RECTANGLE)
             tap(500,500,1)
             tap(1000,1000,2)
             finish(1, AreaRole.OBSTACLE)
 
-            begin("Позначити отвір", AreaTool.CIRCLE)
+            begin("Отвір", AreaTool.CIRCLE)
             compose.onNodeWithText("Діаметр, м (парні мм)").performScrollTo().performTextInput("0,2")
             compose.runOnIdle {
                 assertEquals("0,2", model.state.value.area.diameter, "Circle diameter input; ${stateSummary()}")
@@ -163,7 +164,7 @@ class AreaFeatureTouchTest {
                 assertEquals(100L, circle.radiusMm, stateSummary())
             }
 
-            begin("Розмістити область: ${element.label}", AreaTool.RECTANGLE)
+            begin(null, AreaTool.RECTANGLE)
             tap(1500,500,1)
             tap(2000,1000,2)
             finish(3, AreaRole.GENERAL_AREA)
@@ -180,6 +181,19 @@ class AreaFeatureTouchTest {
             settledCanvas()
             canvas.performTouchInput {pinch(center-Offset(30f,0f),center+Offset(30f,0f),center-Offset(50f,0f),center+Offset(50f,0f))}
             click("Вписати креслення")
+            val circleInFullscreen = compose.runOnIdle {
+                model.displayAreas().single { it.shape is AreaShape.Circle }
+            }
+            val fullscreenCenter = (circleInFullscreen.shape as AreaShape.Circle).center
+            val fullscreenProjection = settledCanvas().config[MeasurementDrawingSemantics.Projection]
+            val screenPoint = fullscreenProjection.project(DrawingPoint(
+                fullscreenCenter.xMm.toDouble(), fullscreenCenter.yMm.toDouble()))
+            canvas.performTouchInput {
+                advanceEventTime(400)
+                doubleClick(Offset(screenPoint.x.toFloat(), screenPoint.y.toFloat()))
+            }
+            compose.runOnIdle { assertEquals(circleInFullscreen.uuid, model.state.value.area.selected) }
+            compose.onNodeWithText("Властивості фігури").assertExists()
             click("Згорнути")
             // Wait until the normal canvas and its viewport have replaced the fullscreen layout.
             compose.onNodeWithTag("measurement-edit-normal-panel").assertExists()

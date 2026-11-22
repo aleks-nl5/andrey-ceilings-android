@@ -169,6 +169,8 @@ fun MeasurementEditScreen(
     val contourScroll = if (fullscreen) fullscreenContourScroll else normalContourScroll
     var reloadConfirm by remember { mutableStateOf(false) }
     var lineSnapEnabled by rememberSaveable(measurementUuid) { mutableStateOf(true) }
+    var showAdd by rememberSaveable(measurementUuid) { mutableStateOf(false) }
+    val pointToolActive by rememberUpdatedState(state.pointElementUuid != null)
     val lineToolActive by rememberUpdatedState(state.lineElementUuid != null)
     val areaToolActive by rememberUpdatedState(state.area.tool != null)
     val currentFocus by rememberUpdatedState(focus)
@@ -185,8 +187,8 @@ fun MeasurementEditScreen(
     val surfaceBack = remember(model, measurementUuid, navigationGuard) {
         {
             when {
-                lineToolActive -> { model.cancelLineCreation(); true }
-                areaToolActive -> { model.cancelAreaCreation(); true }
+                showAdd -> { showAdd = false; true }
+                pointToolActive || lineToolActive || areaToolActive -> { model.cancelPlacement(); true }
                 !fullscreen -> false
                 sheet != MeasurementSheet.CLOSED -> { closeSheet(); true }
                 else -> { exitFullscreen(); true }
@@ -255,7 +257,7 @@ fun MeasurementEditScreen(
     }
 
     val selectedFeature = state.selectedPointUuid ?: state.selectedLineUuid ?: state.area.selected
-    val activeElementControls = selectedFeature ?: state.lineElementUuid ?: state.area.tool?.name
+    val activeElementControls = selectedFeature ?: state.pointElementUuid ?: state.lineElementUuid ?: state.area.tool?.name
     val savedGeometry = (overlay as? PointOverlayState.Loaded)?.savedGeometry
         ?: validateMeasurementCreate(state.original.draft).geometry
     val geometry = validation.geometry ?: savedGeometry
@@ -436,8 +438,13 @@ fun MeasurementEditScreen(
                                     }
                                 }
                                 MeasurementEditContext.ELEMENTS -> {
+                                    WorkspaceAddAction(
+                                        enabled = enabled && validation.geometry != null && overlay is PointOverlayState.Loaded,
+                                        onClick = { focus.clearFocus(); showAdd = true }
+                                    )
+                                    state.coordinates?.let { WorkspaceCoordinatesEditor(it, model, enabled) }
                                     val activeSection = when {
-                                        state.selectedPointUuid != null -> MeasurementElementSection.POINTS
+                                        state.selectedPointUuid != null || state.pointElementUuid != null -> MeasurementElementSection.POINTS
                                         state.selectedLineUuid != null || state.lineElementUuid != null -> MeasurementElementSection.LINES
                                         state.area.selected != null || state.area.tool != null -> MeasurementElementSection.AREAS
                                         else -> null
@@ -645,6 +652,14 @@ fun MeasurementEditScreen(
                     },
                     pointPlacements = if(overlay is PointOverlayState.Loaded) model.displayPoints() else emptyList(), fitPointPlacements = true,
                     selectedPointUuid=state.selectedPointUuid,onSelectPoint = { selectElement(it, model::selectPoint) },
+                    placementMode = enabled && state.pointElementUuid != null,
+                    workspacePointPlacement = true,
+                    onPlacePoint = { x, y ->
+                        if (model.placeWorkspacePoint(x, y)) {
+                            selected = null
+                            showElements()
+                        }
+                    },
                     pointEditingEnabled=enabled && overlay is PointOverlayState.Loaded && validation.geometry!=null,editPointsInFullscreen=true,
                     pointDrag=state.drag,onBeginPointDrag=model::beginPointDrag,onPreviewPointDrag=model::previewPointDrag,
                     onFinishPointDrag=model::finishPointDrag,onCancelPointDrag=model::cancelPointDrag,
@@ -678,6 +693,15 @@ fun MeasurementEditScreen(
             if (!fullscreen) Spacer(Modifier.height(normalPanelHeight - tabBleed))
         }
     }
+    if (showAdd) WorkspaceAddDialog(
+        model = model,
+        onDismiss = { showAdd = false },
+        onPlacedTool = {
+            selected = null
+            showAdd = false
+            showElements()
+        }
+    )
     if (statusDetails && status != null) {
         AlertDialog(
             onDismissRequest = { statusDetails = false },
@@ -831,7 +855,8 @@ private fun MeasurementPointControls(
         is PointOverlayState.Loaded -> {
             val points = model.displayPoints()
             val marker = points.find { it.uuid == state.selectedPointUuid }
-            val elements = state.original.pointElements.associateBy { it.uuid }
+            val elements = model.pointElements().associateBy { it.uuid }
+            if (state.pointElementUuid != null) WorkspacePointPlacementHint(onCancel = model::cancelPlacement)
             val reviewCount = points.count { it.mounting.needsReview }
             if (marker != null) {
                 Text(elements[marker.elementUuid]?.label ?: "Вибрана позначка", style = MaterialTheme.typography.titleMedium)
@@ -854,6 +879,9 @@ private fun MeasurementPointControls(
                     Text(if (anchor.kind == WallAnchor.Kind.TWO_WALLS)
                         "${name(anchor.firstWall)}: $first м · ${name(anchor.secondWall)}: $second м"
                     else "${name(anchor.firstWall)}: уздовж $first м · усередину $second м")
+                }
+                WorkspaceCoordinatesAction(enabled && validation.geometry != null && !marker.mounting.unresolved) {
+                    model.openWorkspaceCoordinates(WorkspaceCoordinatesKind.POINT)
                 }
                 TextButton(enabled = enabled && validation.geometry != null, onClick = model::openMounting) {
                     Text("Задати розміри від стін")

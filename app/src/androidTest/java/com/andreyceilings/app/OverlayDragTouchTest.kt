@@ -236,6 +236,14 @@ class OverlayDragTouchTest {
                 compose.onNodeWithText("Закрити").performClick()
             } else compose.onNodeWithText(invalidDrag).assertExists()
             assertEquals(before,OverlayDragFixture.snapshot(driver))
+            if (mode != "details") {
+                val stablePoint = m.displayPoints().single()
+                tap(stablePoint.xMm, stablePoint.yMm)
+                compose.runOnIdle {
+                    assertEquals(stablePoint.uuid, m.state.value.selectedPointUuid)
+                    assertEquals(stablePoint, m.displayPoints().single())
+                }
+            }
             if (mode == "editor") {
                 click("Вартість")
                 compose.onNodeWithText("Розрахунок за останнім збереженим заміром").assertExists()
