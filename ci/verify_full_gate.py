@@ -1,84 +1,116 @@
 #!/usr/bin/env python3
-"""Fail-closed decision for an explicit FULL CI gate.
+"""Fail-closed per-platform CI result receipt for owner-controlled manual merge.
 
-A green Draft advisory must never impersonate the required full merge check.
-Consumes GitHub needs results; no status is inferred from an earlier run,
-cached artifact, matching branch name, or skipped job.
+A green scoped result NEVER represents verification of skipped platforms.
+Draft results are advisory, and only actual current-run job conclusions count.
 """
 from __future__ import annotations
 
 import argparse
 from dataclasses import dataclass
 from pathlib import Path
+import re
 
 VALID_MODES = frozenset({"FULL", "FAST", "TARGETED"})
-VALID_RESULTS = frozenset({"success", "failure", "skipped", "cancelled", "timed_out", "neutral", "action_required"})
+VALID_LEVELS = frozenset({"skip", "smoke", "deep"})
+VALID_RESULTS = frozenset({"success", "failure", "skipped", "cancelled", "timed_out",
+                           "neutral", "action_required"})
+VALID_GROUPS = frozenset({"android", "windows", "apple"})
+SHA = re.compile(r"^[0-9a-f]{40}$")
 
 
 @dataclass(frozen=True)
 class GateDecision:
     passed: bool
-    is_full_gate: bool
+    is_acceptance: bool
     message: str
 
 
 def decide(event: str, draft: str, classifier_result: str, mode: str,
-           jobs: tuple[str, ...]) -> GateDecision:
+           coverage: tuple[tuple[str, str, str], ...],
+           expected_groups: tuple[str, ...]) -> GateDecision:
+    deny = lambda why: GateDecision(False, False, why)
     if event not in {"pull_request", "push", "merge_group", "workflow_dispatch"}:
-        return GateDecision(False, False, "unrecognized event")
-    if draft not in {"true", "false", ""}:
-        return GateDecision(False, False, "invalid PR draft state")
-    if event == "pull_request" and draft not in {"true", "false"}:
-        return GateDecision(False, False, "missing PR draft state")
+        return deny("unknown event")
+    if draft not in {"true", "false", ""} or (
+            event == "pull_request" and draft not in {"true", "false"}):
+        return deny("missing or invalid PR draft state")
     if classifier_result != "success" or mode not in VALID_MODES:
-        return GateDecision(False, False, "impact classifier failed or returned an unknown mode")
-    if not jobs or any(result not in VALID_RESULTS for result in jobs):
-        return GateDecision(False, False, "missing or invalid job result")
-    # Only PR drafts can be FAST/TARGETED without a full run. A manual run,
-    # merge queue candidate, ready PR, and main push require real FULL tests.
-    is_full_gate = event != "pull_request" or draft == "false"
-    must_run = is_full_gate or mode == "FULL"
-    if must_run:
-        if any(result != "success" for result in jobs):
-            return GateDecision(False, is_full_gate,
-                                "FULL requested but at least one real platform job did not succeed")
-        return GateDecision(True, is_full_gate,
-                            "FULL completed on this run" if is_full_gate
-                            else "Draft critical changes: FULL completed but not merge authorization")
-    if any(result != "skipped" for result in jobs):
-        return GateDecision(False, False,
-                            "Draft FAST/TARGETED expected FULL jobs to be skipped")
-    return GateDecision(True, False,
-                        "Draft FAST/TARGETED only; no full result and not merge authorization")
+        return deny("impact classifier failed or returned unknown mode")
+    if (not expected_groups or len(set(expected_groups)) != len(expected_groups)
+            or any(g not in VALID_GROUPS for g in expected_groups)):
+        return deny("invalid required job groups")
+    names = tuple(x[0] for x in coverage)
+    if (len(names) != len(expected_groups) or set(names) != set(expected_groups)
+            or len(set(names)) != len(names)):
+        return deny("missing, repeated or extra platform job group")
+    if any(level not in VALID_LEVELS or status not in VALID_RESULTS
+           for _, level, status in coverage):
+        return deny("missing or invalid platform depth/job result")
+    if mode == "FULL" and any(level != "deep" for _, level, _ in coverage):
+        return deny("FULL fallback must run every platform suite deeply")
+    if mode == "FAST" and any(level != "skip" for _, level, _ in coverage):
+        return deny("FAST only valid for documentation without platform work")
+    if mode == "TARGETED" and all(level == "skip" for _, level, _ in coverage):
+        return deny("TARGETED with no tested platform")
+
+    is_draft = event == "pull_request" and draft == "true"
+    # Intermediate FAST/TARGETED Draft runs are handled by a separate advice
+    # workflow; these expensive workflows must remain skipped, not turn green
+    # by confusing target results with FULL completion.
+    if is_draft and mode != "FULL":
+        if any(status != "skipped" for _, _, status in coverage):
+            return deny("draft scoped jobs must remain in independent advisory workflow")
+        return GateDecision(True, False, "Draft classification only; no merge authorization")
+
+    for group, level, status in coverage:
+        if level == "skip" and status != "skipped":
+            return deny(f"{group}: unselected job did not remain skipped ({status})")
+        if level != "skip" and status != "success":
+            return deny(f"{group}: required {level} job did not succeed ({status})")
+    if is_draft:
+        return GateDecision(True, False, "Draft FULL passed, not final merge authorization")
+    return GateDecision(True, True, "All selected platform jobs succeeded on this run")
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--event", required=True)
-    parser.add_argument("--draft", required=True)
-    parser.add_argument("--impact-result", required=True)
-    parser.add_argument("--mode", required=True)
-    parser.add_argument("--job-result", action="append", required=True)
-    parser.add_argument("--summary", type=Path)
-    parser.add_argument("--expected-sha", required=True)
-    parser.add_argument("--actual-sha", required=True)
-    args = parser.parse_args(argv)
-    choice = decide(args.event, args.draft, args.impact_result, args.mode,
-                    tuple(args.job_result))
-    # For a PR use pull_request.head.sha; for merge_group use merge queue github.sha.
-    sha_matches = (len(args.expected_sha) == 40
-                   and args.expected_sha == args.actual_sha)
-    passed = choice.passed and sha_matches
-    label = "FULL verified" if passed and choice.is_full_gate else "Draft only" if passed else "FAILED"
-    message = choice.message if sha_matches else "checked-out code SHA differs from required event SHA"
-    print(f"{label}: {message}; tested checkout {args.actual_sha}; requested {args.expected_sha}")
+    p = argparse.ArgumentParser(description=__doc__)
+    p.add_argument("--event", required=True)
+    p.add_argument("--draft", required=True)
+    p.add_argument("--impact-result", required=True)
+    p.add_argument("--mode", required=True)
+    p.add_argument("--expected-group", action="append", required=True)
+    p.add_argument("--coverage", action="append", required=True,
+                   help="group:skip|smoke|deep:job-result")
+    p.add_argument("--summary", type=Path)
+    p.add_argument("--expected-sha", required=True)
+    p.add_argument("--actual-sha", required=True)
+    args = p.parse_args(argv)
+
+    # Invalid triples must fail closed instead of throwing or being ignored.
+    triples = tuple(tuple(c.split(":")) for c in args.coverage)
+    valid_shape = all(len(x) == 3 for x in triples)
+    decision = (decide(args.event, args.draft, args.impact_result, args.mode,
+                       triples, tuple(args.expected_group)) if valid_shape else
+                GateDecision(False, False, "malformed platform coverage"))
+    sha_ok = bool(SHA.fullmatch(args.expected_sha)) and args.expected_sha == args.actual_sha
+    passed = decision.passed and sha_ok
+    label = ("SCOPED ACCEPTANCE" if passed and decision.is_acceptance else
+             "DRAFT ADVISORY" if passed else "FAILED")
+    reason = decision.message if sha_ok else "checkout SHA does not match current event head"
+    untested = [name for name, level, _ in triples if len((name, level)) == 2 and level == "skip"]
+    print(f"{label}: {reason}; source={args.actual_sha}; expected={args.expected_sha}")
     if args.summary:
         with args.summary.open("a", encoding="utf-8") as out:
-            out.write(f"## {label}\n\n{message}\n\n")
-            out.write(f"Expected commit: {args.expected_sha}\n\n")
-            out.write(f"Actual checkout: {args.actual_sha}\n\n")
-            out.write(f"Platform job conclusions: {', '.join(args.job_result)}\n\n")
-            out.write("A Draft-only result is never the stable required FULL check.\n")
+            out.write(f"## {label}\n\n{reason}\n\n")
+            out.write(f"Head SHA: `{args.expected_sha}` (checkout: `{args.actual_sha}`)\n\n")
+            out.write("| Platform job | Required depth | Actual result |\n| --- | --- | --- |\n")
+            for group, level, status in triples:
+                out.write(f"| {group} | {level} | {status} |\n")
+            out.write("\nNot verified on this run: " +
+                      (", ".join(untested) if untested else "none") +
+                      ". A skipped Windows FULL is **not** Windows verified.\n\n")
+            out.write("Owner manually reviews this scope and merges; there is no Branch Protection.\n")
     return 0 if passed else 1
 
 
