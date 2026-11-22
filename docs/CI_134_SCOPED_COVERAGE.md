@@ -1,198 +1,41 @@
-# Issue #134 — platform-scoped CI acceptance (22 Nov 2026)
+# CI policy — PR quick checks; FULL only after merge (22 Nov 2026)
 
-> Status: implementation proposed on a **separate Draft PR**; not accepted or merged.
-> Supersedes the old "FULL on every Ready PR and main push" policy in
-> `docs/CI_134_CODEX_HANDOFF.md`. The repository owner reviews and merges manually.
-> No Branch Protection, required checks, or automatic merge.
+**Owner decision:** automatic expensive native FULL tests run **after** an actual commit is pushed to `main` (normally after the owner manually merges a PR). They never run automatically at Draft, Ready for review, PR synchronize, or merge queue events. Explicit `workflow_dispatch` FULL is retained for emergencies and high-risk manual verification.
 
-## Why
+**Trade-off accepted by owner:** a merged PR can pass pre-merge compilation/unit checks yet break encrypted DB migrations, Android instrumentation, native Windows/iOS regressions, signing, or production recovery. The post-merge red run detects this **after the code is already in main**, not before. No Branch Protection, required checks, auto-merge, or hidden suppression is enabled. If a post-merge FULL fails, pause further merges and fix or revert the bad commit.
 
-Windows-native SQLCipher/JDBC regression and headless Desktop Compose suites
-are intentionally expensive. A typical Android UI change is not proof of any
-Windows database regression. Do not delete tests or silently mislabel skips.
+## Event execution contract
 
-## Source-set mapping and supported depth
-
-`ci/impact.py` computes a **union** of changed-file impact. Each platform
-receives one of `skip`, `smoke`, `deep` (highest wins). `FULL` means deep on
-Android, Windows, macOS/JVM and iOS; `TARGETED` can mix depths.
-
-| Change | Android | Windows | macOS JVM | iOS |
+| GitHub event | Android | Windows / macOS | iOS | Verification meaning |
 | --- | --- | --- | --- | --- |
-| Docs-only | skip | skip | skip | skip |
-| Android packaged Inter font (exercised by the workspace layout suite) | smoke | skip | skip | skip |
-| Other Android app/androidMain code, including immutable-estimate PDF and document export | deep | skip | skip | skip |
-| Windows JVM JDBC/SQLCipher or Windows test | skip | deep | deep | skip |
-| Desktop and JVM source sets, including platform UI, assets and adapters | skip | deep | deep | skip |
-| iOS-specific `shared/src/iosMain` or `shared/src/iosTest`, including platform UI and assets | skip | skip | skip | deep |
-| Native `iosApp/` Xcode/Swift project (not covered by Gradle framework smoke) | deep | deep | deep | deep |
-| Explicitly mapped shared Compose presentation paths | smoke | smoke | smoke | smoke |
-| Shared DB, SQLDelight, pricing/business/geometry, commonTest | deep | deep | deep | deep |
-| CI, Gradle, dependencies, unknown binaries/deleted/renamed/incomplete diff | deep | deep | deep | deep |
-| Mixed platform changes | union of impact, never downgrade an affected platform |
+| Draft PR / synchronize | selected quick compile, JVM unit tests and debug APK | affected Windows compile; mapped presentation scene tests | affected iOS framework link | **QUICK**, not FULL |
+| Ready for review / synchronize | exactly the same selected QUICK policy | exactly the same QUICK policy | exactly the same QUICK policy | No second deep run |
+| PR docs-only | classifier and Python regression tests only | skip | skip | FAST; platforms not verified |
+| Merge completed → `push` on `main` | FULL Android instrumentation, SQLCipher recovery, ENOSPC, signed APK | FULL Windows encrypted JVM/SQLCipher and Desktop scenes; macOS JVM | FULL native Simulator | Full post-merge validation of exact main SHA |
+| Explicit manual `workflow_dispatch` of Android and/or CMP workflow | selected manual FULL | selected manual FULL | selected manual FULL | Owner-triggered exception, not automatic PR testing |
 
-Android and shared smoke use exact paths. Changes to the packaged Android
-Inter font select `MeasurementWorkspaceLayoutTest`. The shared components
-below use that same Android suite and their corresponding Windows scenes.
+Both heavy workflows (`android-debug-apk.yml`, `cmp-kmp-platforms.yml`) are triggered **only** by `push` to `main` and `workflow_dispatch`, and unconditionally request FULL for those events. No diff classifier can downgrade a main push to FAST/TARGETED. The heavy workflows do not use `pull_request` or `merge_group` triggers. Distinct post-merge runs are not cancelled by later main pushes.
 
-| Shared presentation file | Behavior exercised | Windows scene |
-| --- | --- | --- |
-| `CeilingsWorkspaceScaffold.kt` | Insets, header placement, and canvas continuity across workspace sizes | `MeasurementEditSceneTest` |
-| `CeilingsFab.kt` | Fullscreen, zoom and editor action targets | `CeilingsFoundationSceneTest` |
-| `CeilingsEdgeGradient.kt` | Edge fades and readable foreground in light and dark themes | `CeilingsFoundationSceneTest` |
-| `CeilingsTheme.kt` | Light and dark palette rendering | `CeilingsFoundationSceneTest` |
-| `CeilingsTypography.kt` in `theme/` | Text and control layout in narrow and short workspaces | `MeasurementEditSceneTest` |
-| `MeasurementDrawing.kt` | Canvas viewport, overlay drag and area touch | `MeasurementEditSceneTest` |
+`.github/workflows/draft-impact-feedback.yml` now serves **all PR phases**, despite its historical filename. It checks the exact PR head SHA, executes classifier/gate regressions, and runs quick jobs on every affected platform. A severe / unknown / CI / common DB change may still be classified `FULL` **as an impact risk label**, but its PR jobs remain quick: affected platform builds and units only, without deep native or all Android instrumentation. The summary expressly reports that deeper suites are **NOT VERIFIED** before merge. Unknown/unclassified changes select all three quick jobs, never silently skip them. Quick job failures fail the PR quick receipt.
 
-The canvas also selects `OverlayDragTouchTest` and `AreaFeatureTouchTest`
-on Android. Mixed changes combine the selected classes. Deep verification
-takes precedence on its platform. Unmapped Android files, including PDF
-export, price list and lifecycle code, require Android deep. Unmapped shared
-files require all-platform deep. This includes `MeasurementEditScreen.kt`
-with save, reload and exit actions and `MeasurementDetailsScreen.kt` with
-navigation, element editing and saved-estimate actions. Add a path after
-reviewing its responsibilities and the tests that exercise it.
+## Platform and feature selection
 
-Desktop and iOS platform-specific code, tests and assets require deep checks
-on the affected platform. A directory name such as `ui/` or `theme/`
-does not establish that a file is presentation-only. Desktop and iOS smoke
-come from the audited shared CMP paths above. Unrecognized paths and native
-`iosApp/` project changes still trigger all-platform FULL.
+The reviewed mapping in `ci/impact.py` is kept:
+- Android presentation-only Inter font: Android quick build/units; shared CMP mapped drawing/scaffold/theme/FAB/typography: affected Android, Windows and iOS quick jobs. Windows presentation paths additionally execute the relevant `CeilingsFoundationSceneTest` / `MeasurementEditSceneTest` classes.
+- Other Android code, including PDF and immutable estimates: Android quick build/units; **full Android security/instrumentation after merge**.
+- Desktop/JVM-only code including SQLCipher: Windows quick compile + shared Kotlin compile; **full native Windows JDBC/SQLCipher after merge**.
+- iOS-only code: iOS framework link; **full Simulator security/integrity tests after merge**.
+- Common business/geometry/financial/SQLDelight, workflows/build, unknown or deleted/renamed files: all three quick jobs; **all-platform FULL after merge**.
+- Documentation-only: classifier regressions; all platforms unverified until the next `main` push, which still runs FULL unconditionally.
 
-## What actually runs
+`deep` and `FULL` outputs of the classifier describe **risk and intended post-merge scope**, not proof that any pre-merge native suite ran. Maintain a strict distinction between compilation, mapped UI smoke, and real encrypted database tests.
 
-- **Android smoke**: checked-out exact head SHA; build debug APK, run
-  `:app:testDebugUnitTest` and `:shared:compileKotlinJvm`; Android emulator
-  runs the classes selected by the classifier on Ready and push. Its receipt
-  requires a fresh JUnit report with at least one passing case per selected
-  class. A failed or skipped testcase, or a case from an unexpected class,
-  fails the receipt.
-  APK 7-day retention, XML reports 30 days. No retry of assertion failures.
-- **Android deep**: existing all-instrumentation (including functional P5A
-  layout/gesture tests), encrypted SQLDelight, isolated process
-  death/upgrade/ENOSPC and signed APK/release verification. The
-  transport-disconnect-only retry is unchanged. **No screenshot matrix** is
-  generated on normal Draft/Ready/main CI.
-- **Optional screenshots**: use Actions → **Android workspace screenshots
-  (manual)** → Run workflow against the desired branch when visual evidence is
-  actually useful. This is a separate manual-only workflow with its own
-  screenshots artifact (7-day retention) and must never block ordinary CI.
-  On an automatic Android instrumentation failure, the gate attempts one
-  diagnostic emulator `screencap` and uploads failure evidence only; failure
-  to capture images does not affect the original test result.
-- **Windows smoke**: real Windows runner, Desktop compile and
-  `CeilingsFoundationSceneTest`, with additional scene classes selected by
-  the classifier on Draft, Ready and push. The job runs filtered
-  `:desktopApp:test`. Native encrypted regression runs at deep depth.
-- **Windows deep**: existing native SQLCipher/JDBC `:shared:jvmTest` plus
-  `:desktopApp:test`; timings/profiling and 30-day reports preserved.
-  Windows-only JDBC changes still run both complete suites. Per-suite
-  Windows filtering and its runner-time savings remain open.
-- **macOS/JVM smoke**: compile Desktop/shared; **deep**: full existing JVM tests.
-- **iOS smoke**: link real Simulator framework; **deep**: existing iOS
-  Simulator SQLCipher tests in addition to framework compile.
+## Acceptance and diagnostics
 
-Smoke is NOT deep platform certification. In particular, a successful macOS
-JVM job does **not** replace native Windows encrypted database verification.
+- Review each PR diff; run quick checks for the exact head SHA; owner alone changes Ready status and merges.
+- For important changes (database schema, encryption, migrations, startup/recovery, backup, payment/immutable estimates), **manually dispatch Android and CMP FULL before merging if rollback risk is unacceptable**. This is optional owner action, not an automatic pre-merge requirement.
+- Observe both post-merge FULL workflow runs on the new `main` SHA and fix/revert failures before further merges. Preserve original tests, security guards, release recovery, isolated process-death/ENOSPC checks and report artifacts.
+- Never interpret skipped checks as passed. Do not re-enable automatic screenshots; visual screenshot matrix stays manual.
+- Follow-up review: check a real PR workflow Ready event (only quick jobs) and the subsequent main-push runs (all FULL) before treating the new policy as fully proven.
 
-## Events and gates
-
-- Draft with FAST/TARGETED: independent Draft advisory runs lightweight
-  **smoke** checks. Draft Android feedback covers debug APK build and JVM unit
-  tests. The focused Android instrumentation runs on Ready and push. Any
-  **deep** impact (Android DB/startup, Windows
-  SQLCipher/JDBC, iOS DB or shared risks) executes native risk-specific deep
-  tests in the corresponding platform workflow **immediately in Draft**.
-  A skipped or failed selected deep job makes the Draft platform receipt red.
-  These receipts remain *Draft*, never final merge authorization. Mixed
-  smoke/deep changes run a union; smoke-only Draft does not trigger Windows
-  native SQLCipher regression.
-- Draft with FULL fallback: deep all-platform suites run, but still no Ready
-  acceptance.
-- Ready PR, reopened Ready, or Ready synchronize: select and execute actual
-  impacted platform depth on the **current PR head SHA**. The stable
-  Android/CMP receipts report each requested group and its real job conclusion,
-  including **NOT VERIFIED** for every skipped platform.
-- Push to main: classify the verified `github.event.before...github.sha`
-  diff; if the before SHA or history is not available, FULL. A normal Android
-  UI merge does not restart Windows deep suites just because it reached main.
-- Manual `workflow_dispatch` of the **verification** workflows and merge
-  queue candidates always request all-platform **deep FULL**. To run Windows FULL intentionally, dispatch
-  **Verify CMP KMP platforms** against the chosen branch; check the exact
-  source SHA and all native job conclusions. For Android FULL, dispatch
-  **Build Android APK** separately.
-
-P5A screenshots are **not** an acceptance artifact or prerequisite. The
-optional capture workflow is separate from security verification; its PNGs
-do not replace functional assertions or SQLCipher tests.
-
-The Draft feedback summary never certifies security-related native suites:
-only the real platform receipts can validate deep DB results on that SHA.
-
-The CI receipt checks concrete job conclusions and exact event SHA. A skipped,
-failed, cancelled or missing **selected** job cannot pass. An unselected job can
-be skipped, but must never be called verified. Both Android and CMP receipts
-are reviewed together; green scoped receipts are **not all-platform FULL**.
-
-This is an owner-reviewed policy without GitHub Branch Protection. Do not
-enable rulesets, required checks or automatic PR merging without a new owner
-decision.
-
-## Risk-specific exceptions and evidence
-
-- Production Windows SQLCipher/JDBC pooling (#147 / Draft PR #148) remains a
-  distinct high-risk task requiring native Windows encrypted security/integrity
-  regression. Its own final acceptance may demand manual all-platform FULL
-  beyond the automatic source impact scope; do not weaken that issue.
-- This CI-policy PR itself touches `.github/` and `ci/` and must therefore
-  trigger full native regression as the safe fallback.
-- Validate job **selection** in real Actions for Android UI-only, Windows
-  JDBC-only, shared CMP UI, shared DB, unknown and CI changes. Unit tests alone
-  do not prove Actions condition evaluation.
-- Baseline Windows run in #134 had 499 cases and multi-hour cumulative timings.
-  Measure before/after **actual** runner wall-clock and runner minutes after
-  corresponding real CI runs. No savings are asserted by this document.
-- Existing #1304 Android keyboard/drag and #1311 PDF scene flakes should be
-  diagnosed against main, not removed or masked.
-- The opt-in P5A viewport checks explicitly open the IME to exercise layout
-  with the keyboard visible. Check automatic keyboard appearance on a physical
-  Android device by tapping the length and notes fields with the keyboard
-  closed, including in the fullscreen editor.
-
-### Scoped selection checks
-
-Local Git diffs verified the classifier outputs below. Use these as
-expectations for scoped Actions runs once the policy is in the comparison
-base. The PR that introduces the workflow is itself a FULL case.
-
-| Isolated change | Android | Windows / macOS JVM | iOS |
-| --- | --- | --- | --- |
-| Android Inter font | smoke, workspace layout class | skip | skip |
-| Immutable PDF snapshot or estimate export | deep | skip | skip |
-| Windows JDBC test | skip | deep | skip |
-| Desktop or JVM platform UI exporter | skip | deep | skip |
-| iOS platform UI exporter | skip | skip | deep |
-| Shared workspace scaffold or typography | smoke, workspace layout class | smoke, foundation and measurement scenes | smoke |
-| Shared FAB or theme palette | smoke, workspace layout class | smoke, foundation scene | smoke |
-| Shared measurement canvas | smoke, layout/drag/area classes | smoke, foundation and measurement scenes | smoke |
-| Shared SQLDelight schema, unknown binary, CI workflow | deep | deep | deep |
-| Docs only | skip | skip | skip |
-
-For each Actions case, compare the classifier summary, executed and skipped
-jobs, and the platform receipts on the same event SHA. On Android Ready and
-push smoke, check the class counts in the job summary and the retained XML.
-
-## Owner acceptance checklist
-
-1. Inspect classifier outputs, skipped groups and both Ready receipts on the
-   identical final head SHA; confirm that every impacted group actually ran.
-2. Review native Windows security results for Windows DB changes, and explicit
-   full-run evidence when #147 or a Windows release requires it.
-3. Review debug APK and test on device when UI changes are involved.
-4. Get independent code review; the owner alone changes Draft to Ready and
-   performs merge. Issue #134 stays open until the real Actions scenarios and
-   comparative costs are verified.
-
-A recurring Windows FULL schedule is **not enabled automatically**. The manual
-FULL workflow remains available; consider a weekly schedule only after
-estimating runner cost and obtaining owner approval.
+Historical investigation and prior milestone handoff remain in `docs/CI_134_CODEX_HANDOFF.md` and GitHub issue #134 (closed).

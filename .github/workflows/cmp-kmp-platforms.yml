@@ -2,20 +2,14 @@ name: Verify CMP KMP platforms
 
 on:
   workflow_dispatch:
-  pull_request:
-    branches: [ main ]
-    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
-  # If merge queue is enabled, verify the merge-group candidate itself.
-  merge_group:
-    types: [checks_requested]
-  # Main pushes use commit impact; manual dispatch and merge queue force FULL.
+  # Automatically run FULL on main updates only (normally after owner merge).
   push:
     branches: [ main ]
 
 concurrency:
   # Don't waste hosted runners on obsolete commits while iterating on draft PR #22.
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 permissions:
   contents: read
@@ -34,55 +28,53 @@ jobs:
       - name: Checkout exact event commit and PR merge-base history
         uses: actions/checkout@v7
         with:
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          ref: ${{ github.sha }}
           fetch-depth: 0
           persist-credentials: false
       - name: Verify classifier and gate decision regressions
         run: python3 -m unittest discover -s ci/tests -p 'test_impact.py' -v && python3 -m unittest discover -s ci/tests -p 'test_full_gate.py' -v
-      - name: Select the conservative mode
+      - name: Enforce FULL for main push or explicit manual dispatch
         id: decide
         shell: bash
         env:
           EVENT_NAME: ${{ github.event_name }}
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          BEFORE_SHA: ${{ github.event.before }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          HEAD_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$HEAD_SHA"
-          if [[ "$EVENT_NAME" == pull_request || "$EVENT_NAME" == push ]]; then
-            # On main push compare the actual before/after history so an Android
-            # UI merge does not restart Windows deep suites. Missing/zero or
-            # unresolvable before SHA triggers classifier FULL fallback.
-            if [[ "$EVENT_NAME" == push ]]; then BASE_SHA="$BEFORE_SHA"; fi
-            python3 ci/impact.py --base "$BASE_SHA" --head "$HEAD_SHA" --github-output "$GITHUB_OUTPUT" --summary "$GITHUB_STEP_SUMMARY"
-          else
-            echo 'mode=FULL' >> "$GITHUB_OUTPUT"
-            echo 'desktop_depth=deep' >> "$GITHUB_OUTPUT"
-            echo 'ios_depth=deep' >> "$GITHUB_OUTPUT"
-            echo 'apple_depth=deep' >> "$GITHUB_OUTPUT"
-            echo "Manual/main/merge group: FULL on $HEAD_SHA" >> "$GITHUB_STEP_SUMMARY"
-          fi
+          case "$EVENT_NAME" in
+            push|workflow_dispatch)
+              echo 'mode=FULL' >> "$GITHUB_OUTPUT"
+              echo 'android_depth=deep' >> "$GITHUB_OUTPUT"
+              echo 'desktop_depth=deep' >> "$GITHUB_OUTPUT"
+              echo 'ios_depth=deep' >> "$GITHUB_OUTPUT"
+              echo 'apple_depth=deep' >> "$GITHUB_OUTPUT"
+              echo "FULL on main push or explicit manual dispatch: $HEAD_SHA; PRs use quick-only checks." >> "$GITHUB_STEP_SUMMARY"
+              ;;
+            *)
+              echo "::error::Unexpected pre-merge FULL event: $EVENT_NAME"
+              exit 1
+              ;;
+          esac
   ios-and-desktop:
     needs: [impact]
-    # Native iOS and macOS JVM DB regressions execute even in Draft when
-    # selected depth is deep. Smoke-only Draft uses lightweight feedback.
+    # Native iOS and macOS JVM DB regressions run after merge or manual dispatch.
     if: ${{ always() && (needs.impact.result != 'success' || needs.impact.outputs.ios_depth == 'deep' || needs.impact.outputs.desktop_depth == 'deep' || (github.event_name != 'pull_request' || !github.event.pull_request.draft) && needs.impact.outputs.apple_depth != 'skip') }}
     runs-on: macos-15
     steps:
       - name: Checkout source
         uses: actions/checkout@v7
         with:
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          ref: ${{ github.sha }}
           persist-credentials: false
       - name: Verify exact source SHA before full tests
         shell: bash
         env:
-          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          EXPECTED_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
-          echo "FULL tests source SHA: $EXPECTED_SHA" >> "$GITHUB_STEP_SUMMARY"
+          echo "Post-merge/manual FULL source SHA: $EXPECTED_SHA" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Set up JDK 21
         uses: actions/setup-java@v6
@@ -126,24 +118,23 @@ jobs:
 
   windows-desktop:
     needs: [impact]
-    # Native Windows SQLCipher/JDBC deep regression is mandatory even in a
-    # Draft Windows DB PR; no cross-platform regression for Android-only UI.
+    # Full native SQLCipher/JDBC regression runs after main merge or by manual dispatch.
     if: ${{ always() && (needs.impact.result != 'success' || needs.impact.outputs.desktop_depth == 'deep') }}
     runs-on: windows-latest
     steps:
       - name: Checkout source
         uses: actions/checkout@v7
         with:
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          ref: ${{ github.sha }}
           persist-credentials: false
       - name: Verify exact source SHA before full tests
         shell: bash
         env:
-          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          EXPECTED_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
-          echo "FULL tests source SHA: $EXPECTED_SHA" >> "$GITHUB_STEP_SUMMARY"
+          echo "Post-merge/manual FULL source SHA: $EXPECTED_SHA" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Set up JDK 21
         uses: actions/setup-java@v6
@@ -219,64 +210,15 @@ jobs:
           if-no-files-found: warn
           retention-days: 30
 
-  windows-desktop-smoke:
-    name: Windows Desktop scoped Compose smoke
-    needs: [impact]
-    if: ${{ needs.impact.result == 'success' && needs.impact.outputs.desktop_depth == 'smoke' && (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
-          persist-credentials: false
-      - name: Pin Windows smoke source
-        shell: bash
-        env:
-          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-        run: |
-          set -euo pipefail
-          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
-          echo "Windows scoped smoke: $EXPECTED_SHA" >> "$GITHUB_STEP_SUMMARY"
-      - uses: actions/setup-java@v6
-        with:
-          distribution: temurin
-          java-version: '21'
-      - uses: android-actions/setup-android@v4
-      - run: sdkmanager 'platforms;android-37.0'
-      - uses: gradle/actions/setup-gradle@v6
-        with:
-          gradle-version: '9.7.0'
-          cache-read-only: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
-      - name: Compile Windows/Desktop and exercise production scene smoke
-        env:
-          WINDOWS_SMOKE_TESTS: ${{ needs.impact.outputs.windows_smoke_tests }}
-        run: |
-          if (-not $env:WINDOWS_SMOKE_TESTS) { throw 'Windows smoke needs a scene class filter' }
-          $filters = foreach ($class in ($env:WINDOWS_SMOKE_TESTS -split ',')) {
-            '--tests'
-            $class
-          }
-          gradle --no-daemon :desktopApp:compileKotlin :desktopApp:test @filters --stacktrace --warning-mode all
-      - name: Preserve Windows targeted smoke reports
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: windows-scoped-ui-test-reports
-          path: |
-            desktopApp/build/test-results/test/
-            desktopApp/build/reports/tests/test/
-          if-no-files-found: warn
-          retention-days: 30
-
   full-gate:
     name: ${{ github.event_name == 'pull_request' && github.event.pull_request.draft && 'Draft CMP advisory' || 'CMP scoped CI receipt (owner review)' }}
     if: ${{ always() }}
-    needs: [impact, ios-and-desktop, windows-desktop, windows-desktop-smoke]
+    needs: [impact, ios-and-desktop, windows-desktop]
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          ref: ${{ github.sha }}
           persist-credentials: false
       - name: Prove actual scoped Windows and Apple job conclusions on exact SHA
         shell: bash
@@ -289,17 +231,11 @@ jobs:
           IOS_DEPTH: ${{ needs.impact.outputs.ios_depth }}
           APPLE_DEPTH: ${{ needs.impact.outputs.apple_depth }}
           WINDOWS_FULL_RESULT: ${{ needs['windows-desktop'].result }}
-          WINDOWS_SMOKE_RESULT: ${{ needs['windows-desktop-smoke'].result }}
           APPLE_RESULT: ${{ needs['ios-and-desktop'].result }}
-          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          EXPECTED_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
-          windows_result=skipped
-          if [[ "$IMPACT_RESULT" != success || "$DESKTOP_DEPTH" == deep ]]; then
-            windows_result="$WINDOWS_FULL_RESULT"
-          elif [[ "$DESKTOP_DEPTH" == smoke ]]; then
-            windows_result="$WINDOWS_SMOKE_RESULT"
-          fi
+          windows_result="$WINDOWS_FULL_RESULT"
           # A single Apple runner can run macOS JVM and iOS steps independently.
           # Never turn its success into an iOS verification if iOS was skipped.
           ios_result=skipped
