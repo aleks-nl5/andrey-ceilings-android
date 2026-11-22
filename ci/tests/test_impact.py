@@ -95,7 +95,7 @@ class ImpactTest(unittest.TestCase):
 
     def test_mixed_platform_levels_union_never_downgrades(self):
         result = outcome(
-            "app/src/main/java/com/a/Screen.kt",
+            "app/src/main/java/com/a/ui/Screen.kt",
             "shared/src/jvmMain/kotlin/com/a/db/SqlCipherWindowsDriver.kt",
             "shared/src/iosMain/kotlin/com/a/ui/IosUi.kt",
             "docs/info.md",
