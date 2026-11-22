@@ -127,6 +127,9 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
+import com.andreyceilings.shared.resources.Res
+import com.andreyceilings.shared.resources.client_project_count
+import org.jetbrains.compose.resources.pluralStringResource
 
 enum class ObjectsClientsTab { PROJECTS, CLIENTS }
 enum class ContactAction { GOOGLE_MAPS, WAZE, WHATSAPP, TELEGRAM, VIBER }
@@ -1132,17 +1135,6 @@ internal fun PaymentStateTag(status: String, prefix: String = "") {
     }
 }
 
-private fun projectCountText(count: Int): String {
-    val last100 = count % 100
-    val suffix = when {
-        last100 in 11..14 -> "об'єктів"
-        count % 10 == 1 -> "об'єкт"
-        count % 10 in 2..4 -> "об'єкти"
-        else -> "об'єктів"
-    }
-    return "$count $suffix"
-}
-
 @Composable
 private fun ClientExperienceMark(count: Int) {
     val symbol = when {
@@ -1300,7 +1292,10 @@ private fun ClientCard(
                                 CircleShape)
                                 .padding(horizontal = 9.dp, vertical = 4.dp)
                         ) {
-                            Text(projectCountText(item.activeProjectCount),
+                            Text(
+                                pluralStringResource(
+                                    Res.plurals.client_project_count, item.activeProjectCount, item.activeProjectCount
+                                ),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onPrimaryContainer,
                                 maxLines = 1)

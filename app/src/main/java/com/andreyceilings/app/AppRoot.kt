@@ -67,6 +67,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.andreyceilings.shared.localization.AndroidAppLanguageResources
+import com.andreyceilings.shared.localization.AndroidAppLanguageStorage
+import com.andreyceilings.shared.localization.AppLanguageState
 import com.andreyceilings.shared.theme.CeilingsEdge
 import com.andreyceilings.shared.theme.CeilingsEdgeDefaults
 import com.andreyceilings.shared.theme.CeilingsEdgeGradient
@@ -111,12 +114,32 @@ internal val navigationStateSaver = Saver<AppNavigationState, ArrayList<String>>
     restore = { AppNavigationState.restore(it) }
 )
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun CeilingsApp(
     databaseStatus: String, database: CeilingsDatabase?, onDatabaseReplaced: (CeilingsDatabase) -> Unit,
     themeMode: ThemeMode, onThemeModeChange: (ThemeMode) -> Unit,
     initialNavigation: AppNavigationState = AppNavigationState()
+) {
+    val context = LocalContext.current.applicationContext
+    val appLanguage = remember(context) { AppLanguageState(AndroidAppLanguageStorage(context)) }
+    AndroidAppLanguageResources(appLanguage) {
+        CeilingsAppContent(
+            databaseStatus, database, onDatabaseReplaced, themeMode, onThemeModeChange,
+            initialNavigation, appLanguage
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun CeilingsAppContent(
+    databaseStatus: String,
+    database: CeilingsDatabase?,
+    onDatabaseReplaced: (CeilingsDatabase) -> Unit,
+    themeMode: ThemeMode,
+    onThemeModeChange: (ThemeMode) -> Unit,
+    initialNavigation: AppNavigationState,
+    appLanguage: AppLanguageState
 ) {
     var navigation by rememberSaveable(stateSaver = navigationStateSaver) {
         mutableStateOf(initialNavigation)
@@ -682,6 +705,7 @@ internal fun CeilingsApp(
                         AppTab.SETTINGS -> SettingsScreen(
                             databaseStatus, database, onDatabaseReplaced, themeMode, onThemeModeChange,
                             onOpenPriceList = { openNested(AppTab.PRICES) },
+                            appLanguage = appLanguage,
                             measurementPrecision = measurementPrecision,
                             onMeasurementPrecision = { selected ->
                                 capturedCalculatorPrecision = null

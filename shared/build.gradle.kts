@@ -12,6 +12,7 @@ kotlin {
         namespace = "com.andreyceilings.shared"
         compileSdk = 37
         minSdk = 30
+        androidResources.enable = true
     }
 
     jvm()
@@ -27,6 +28,7 @@ kotlin {
 
     sourceSets {
         commonMain.dependencies {
+            implementation(compose.components.resources)
             implementation(compose.runtime)
             implementation(compose.foundation)
             // Slow, localized urgency pulse for upcoming scheduled-work badges.
@@ -77,6 +79,10 @@ kotlin {
             implementation("io.github.yet300:sqlcipher-driver:0.1.0")
         }
     }
+}
+
+compose.resources {
+    packageOfResClass = "com.andreyceilings.shared.resources"
 }
 
 sqldelight {

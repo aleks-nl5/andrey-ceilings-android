@@ -1,5 +1,7 @@
 package com.andreyceilings.app.ui.screens
 
+import com.andreyceilings.shared.localization.AppLanguageSettings
+import com.andreyceilings.shared.localization.AppLanguageState
 import com.andreyceilings.app.ui.theme.AppAlertDialog
 import com.andreyceilings.app.ui.theme.AppExposedDropdownMenu
 import com.andreyceilings.app.*
@@ -51,7 +53,17 @@ import kotlinx.coroutines.flow.flowOf
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-internal fun SettingsScreen(databaseStatus: String, database: CeilingsDatabase?, onDatabaseReplaced: (CeilingsDatabase) -> Unit, themeMode: ThemeMode, onThemeModeChange: (ThemeMode) -> Unit, onOpenPriceList: () -> Unit, measurementPrecision: MeasurementPrecision, onMeasurementPrecision: (MeasurementPrecision) -> Unit) {
+internal fun SettingsScreen(
+    databaseStatus: String,
+    database: CeilingsDatabase?,
+    onDatabaseReplaced: (CeilingsDatabase) -> Unit,
+    themeMode: ThemeMode,
+    onThemeModeChange: (ThemeMode) -> Unit,
+    onOpenPriceList: () -> Unit,
+    measurementPrecision: MeasurementPrecision,
+    onMeasurementPrecision: (MeasurementPrecision) -> Unit,
+    appLanguage: AppLanguageState
+) {
     var fileCheck by remember { mutableStateOf("Натисніть кнопку, щоб перевірити записи та файли бази даних.") }
     var lastWalCheckpoint by remember(database) { mutableStateOf<String?>(null) }
     var exportStatus by remember { mutableStateOf("Експорт створює копію зашифрованого файла БД без ключа.") }
@@ -194,7 +206,7 @@ internal fun SettingsScreen(databaseStatus: String, database: CeilingsDatabase?,
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             ListItem(colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surface), leadingContent = { Icon(Icons.Default.Info, null, tint = MaterialTheme.colorScheme.primary) }, headlineContent = { Text("Версія застосунку") }, supportingContent = { Text(appVersionLabel) })
             HorizontalDivider()
-            ListItem(colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surface), leadingContent = { Icon(Icons.Default.Language, null, tint = MaterialTheme.colorScheme.primary) }, headlineContent = { Text("Мова") }, supportingContent = { Text("Українська") }, trailingContent = { Text("UA", color = MaterialTheme.colorScheme.primary) })
+            AppLanguageSettings(appLanguage)
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Column {
                     Text("Тема оформлення", style = MaterialTheme.typography.titleSmall)

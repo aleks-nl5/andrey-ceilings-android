@@ -30,6 +30,11 @@ import androidx.compose.runtime.key
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.LaunchedEffect
+import com.andreyceilings.shared.localization.AppLanguageResources
+import com.andreyceilings.shared.localization.AppLanguageState
+import com.andreyceilings.shared.localization.DesktopAppLanguageStorage
+import java.util.Locale
+import java.util.prefs.Preferences
 import com.andreyceilings.shared.dashboard.CurrencyRatesStore
 import com.andreyceilings.shared.dashboard.MonobankCurrencyGateway
 import com.andreyceilings.shared.dashboard.dashboardClockMillis
@@ -82,6 +87,9 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 fun main() = application {
+    val appLanguage = remember {
+        AppLanguageState(DesktopAppLanguageStorage(Preferences.userNodeForPackage(DesktopAppLanguageStorage::class.java)))
+    }
     var navigation by remember { mutableStateOf(AppNavigationState()) }
     val availableRoutes = remember { setOf(AppRoute.DASHBOARD, AppRoute.PRICES, AppRoute.OBJECTS, AppRoute.ESTIMATES) }
     val measurementCreateNavigationGuard = remember { com.andreyceilings.shared.measurement.MeasurementCreateNavigationGuard() }
@@ -98,17 +106,19 @@ fun main() = application {
             handleNavigationKeyEvent(event, navigation, availableRoutes, measurementCreateNavigationGuard, ::updateNavigation)
         }
     ) {
-        PriceCatalogTheme(
-            darkTheme = isSystemInDarkTheme(),
-            typography = remember { ceilingsTypography() }
-        ) {
-            Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-                DesktopPriceHost(
-                    navigation = navigation,
-                    availableRoutes = availableRoutes,
-                    onNavigate = ::updateNavigation,
-                    measurementCreateNavigationGuard = measurementCreateNavigationGuard
-                )
+        AppLanguageResources(appLanguage.preference, Locale.getDefault().toLanguageTag()) {
+            PriceCatalogTheme(
+                darkTheme = isSystemInDarkTheme(),
+                typography = remember { ceilingsTypography() }
+            ) {
+                Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                    DesktopPriceHost(
+                        navigation = navigation,
+                        availableRoutes = availableRoutes,
+                        onNavigate = ::updateNavigation,
+                        measurementCreateNavigationGuard = measurementCreateNavigationGuard
+                    )
+                }
             }
         }
     }
