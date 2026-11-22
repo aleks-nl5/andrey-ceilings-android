@@ -59,9 +59,9 @@ jobs:
           fi
   build:
     needs: [impact]
-    # Run real Android FULL only for Android deep impact or unsafe classifier.
-    # Draft TARGETED is handled by the distinct feedback workflow.
-    if: ${{ always() && (needs.impact.result != 'success' || (needs.impact.outputs.android_depth == 'deep' && (github.event_name != 'pull_request' || !github.event.pull_request.draft || needs.impact.outputs.mode == 'FULL'))) }}
+    # Risk-specific Android DB/lifecycle changes require deep SQLCipher
+    # regression immediately, including Draft. UI-only Draft remains quick.
+    if: ${{ always() && (needs.impact.result != 'success' || needs.impact.outputs.android_depth == 'deep') }}
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout source

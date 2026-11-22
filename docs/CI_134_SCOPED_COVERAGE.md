@@ -64,9 +64,14 @@ JVM job does **not** replace native Windows encrypted database verification.
 
 ## Events and gates
 
-- Draft with FAST/TARGETED: existing independent Draft advisory does the
-  lightweight work; Android and CMP full/scoped jobs remain skipped and are
-  clearly marked *Draft*, **not** merge authorization.
+- Draft with FAST/TARGETED: independent Draft advisory runs lightweight
+  **smoke** checks. Any **deep** impact (Android DB/startup, Windows
+  SQLCipher/JDBC, iOS DB or shared risks) executes native risk-specific deep
+  tests in the corresponding platform workflow **immediately in Draft**.
+  A skipped or failed selected deep job makes the Draft platform receipt red.
+  These receipts remain *Draft*, never final merge authorization. Mixed
+  smoke/deep changes run a union; smoke-only Draft does not trigger Windows
+  native SQLCipher regression.
 - Draft with FULL fallback: deep all-platform suites run, but still no Ready
   acceptance.
 - Ready PR, reopened Ready, or Ready synchronize: select and execute actual
@@ -81,6 +86,9 @@ JVM job does **not** replace native Windows encrypted database verification.
   **Verify CMP KMP platforms** against the chosen branch; check the exact
   source SHA and all native job conclusions. For Android FULL, dispatch
   **Build Android APK** separately.
+
+The Draft feedback summary never certifies security-related native suites:
+only the real platform receipts can validate deep DB results on that SHA.
 
 The CI receipt checks concrete job conclusions and exact event SHA. A skipped,
 failed, cancelled or missing **selected** job cannot pass. An unselected job can

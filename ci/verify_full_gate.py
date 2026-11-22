@@ -53,13 +53,19 @@ def decide(event: str, draft: str, classifier_result: str, mode: str,
         return deny("FAST only valid for documentation without platform work")
 
     is_draft = event == "pull_request" and draft == "true"
-    # Intermediate FAST/TARGETED Draft runs are handled by a separate advice
-    # workflow; these expensive workflows must remain skipped, not turn green
-    # by confusing target results with FULL completion.
+    # Draft smoke is handled by independent quick feedback; risk-specific deep
+    # checks are NOT deferred: they must succeed immediately on the Draft SHA.
+    # A combined Apple job can also run a smoke group alongside its deep group.
     if is_draft and mode != "FULL":
-        if any(status != "skipped" for _, _, status in coverage):
-            return deny("draft scoped jobs must remain in independent advisory workflow")
-        return GateDecision(True, False, "Draft classification only; no merge authorization")
+        for group, level, status in coverage:
+            if level == "deep" and status != "success":
+                return deny(f"{group}: Draft risk-specific deep regression did not succeed ({status})")
+            if level == "skip" and status != "skipped":
+                return deny(f"{group}: unselected Draft job was unexpectedly executed ({status})")
+            if level == "smoke" and status not in {"skipped", "success"}:
+                return deny(f"{group}: Draft smoke job failed ({status})")
+        return GateDecision(True, False,
+                            "Draft: required deep regressions passed; smoke uses separate advisory; no merge authorization")
 
     for group, level, status in coverage:
         if level == "skip" and status != "skipped":

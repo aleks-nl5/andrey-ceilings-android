@@ -64,9 +64,9 @@ jobs:
           fi
   ios-and-desktop:
     needs: [impact]
-    # Combined Apple runner is selected when iOS or macOS JVM is impacted.
-    # Intermediate Draft TARGETED goes to the separate cheap advice workflow.
-    if: ${{ always() && (needs.impact.result != 'success' || (needs.impact.outputs.apple_depth != 'skip' && (github.event_name != 'pull_request' || !github.event.pull_request.draft || needs.impact.outputs.mode == 'FULL'))) }}
+    # Native iOS and macOS JVM DB regressions execute even in Draft when
+    # selected depth is deep. Smoke-only Draft uses lightweight feedback.
+    if: ${{ always() && (needs.impact.result != 'success' || needs.impact.outputs.ios_depth == 'deep' || needs.impact.outputs.desktop_depth == 'deep' || (github.event_name != 'pull_request' || !github.event.pull_request.draft) && needs.impact.outputs.apple_depth != 'skip') }}
     runs-on: macos-15
     steps:
       - name: Checkout source
@@ -125,8 +125,9 @@ jobs:
 
   windows-desktop:
     needs: [impact]
-    # Windows native security/full regression only for Windows deep impact.
-    if: ${{ always() && (needs.impact.result != 'success' || (needs.impact.outputs.desktop_depth == 'deep' && (github.event_name != 'pull_request' || !github.event.pull_request.draft || needs.impact.outputs.mode == 'FULL'))) }}
+    # Native Windows SQLCipher/JDBC deep regression is mandatory even in a
+    # Draft Windows DB PR; no cross-platform regression for Android-only UI.
+    if: ${{ always() && (needs.impact.result != 'success' || needs.impact.outputs.desktop_depth == 'deep') }}
     runs-on: windows-latest
     steps:
       - name: Checkout source

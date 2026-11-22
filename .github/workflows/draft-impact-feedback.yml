@@ -24,6 +24,9 @@ jobs:
       android: ${{ steps.classify.outputs.android }}
       desktop: ${{ steps.classify.outputs.desktop }}
       ios: ${{ steps.classify.outputs.ios }}
+      android_depth: ${{ steps.classify.outputs.android_depth }}
+      desktop_depth: ${{ steps.classify.outputs.desktop_depth }}
+      ios_depth: ${{ steps.classify.outputs.ios_depth }}
     steps:
       - name: Checkout exact PR head and merge base history
         uses: actions/checkout@v7
@@ -50,7 +53,7 @@ jobs:
   android-quick:
     name: Draft TARGETED Android (NOT FULL)
     needs: impact
-    if: needs.impact.outputs.mode == 'TARGETED' && needs.impact.outputs.android == 'true'
+    if: needs.impact.outputs.mode == 'TARGETED' && needs.impact.outputs.android_depth == 'smoke'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
@@ -80,7 +83,7 @@ jobs:
   desktop-quick:
     name: Draft TARGETED Desktop (NOT FULL)
     needs: impact
-    if: needs.impact.outputs.mode == 'TARGETED' && needs.impact.outputs.desktop == 'true'
+    if: needs.impact.outputs.mode == 'TARGETED' && needs.impact.outputs.desktop_depth == 'smoke'
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v7
@@ -103,7 +106,7 @@ jobs:
   ios-quick:
     name: Draft TARGETED iOS (NOT FULL)
     needs: impact
-    if: needs.impact.outputs.mode == 'TARGETED' && needs.impact.outputs.ios == 'true'
+    if: needs.impact.outputs.mode == 'TARGETED' && needs.impact.outputs.ios_depth == 'smoke'
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v7
@@ -120,8 +123,8 @@ jobs:
         with:
           gradle-version: '9.7.0'
           cache-read-only: ${{ github.event.pull_request.head.repo.full_name != github.repository }}
-      - name: Compile iOS framework and verify SQLCipher on iOS Simulator
-        run: gradle --no-daemon :shared:linkDebugFrameworkIosSimulatorArm64 :shared:iosSimulatorArm64Test --stacktrace --warning-mode all
+      - name: Compile iOS framework on Simulator (UI smoke, no native DB mutation)
+        run: gradle --no-daemon :shared:linkDebugFrameworkIosSimulatorArm64 --stacktrace --warning-mode all
 
   feedback:
     name: Draft impact result (advisory, NOT merge gate)
@@ -130,9 +133,9 @@ jobs:
     runs-on: ubuntu-24.04
     env:
       MODE: ${{ needs.impact.outputs.mode }}
-      ANDROID: ${{ needs.impact.outputs.android }}
-      DESKTOP: ${{ needs.impact.outputs.desktop }}
-      IOS: ${{ needs.impact.outputs.ios }}
+      ANDROID_DEPTH: ${{ needs.impact.outputs.android_depth }}
+      DESKTOP_DEPTH: ${{ needs.impact.outputs.desktop_depth }}
+      IOS_DEPTH: ${{ needs.impact.outputs.ios_depth }}
       ANDROID_RESULT: ${{ needs['android-quick'].result }}
       DESKTOP_RESULT: ${{ needs['desktop-quick'].result }}
       IOS_RESULT: ${{ needs['ios-quick'].result }}
@@ -144,15 +147,18 @@ jobs:
           echo "## Draft feedback results" >> "$GITHUB_STEP_SUMMARY"
           echo "Mode: **$MODE**. This is NOT a required FULL merge check." >> "$GITHUB_STEP_SUMMARY"
           for target in ANDROID DESKTOP IOS; do
-            selected="${!target}"
+            depth_key="${target}_DEPTH"
+            depth="${!depth_key}"
             key="${target}_RESULT"
             result="${!key}"
-            if [[ "$MODE" == TARGETED && "$selected" == true ]]; then
+            if [[ "$MODE" == TARGETED && "$depth" == smoke ]]; then
               echo "- $target: $result" >> "$GITHUB_STEP_SUMMARY"
               if [[ "$result" != success ]]; then
                 echo "::error::Selected $target test group did not pass: $result"
                 exit 1
               fi
+            elif [[ "$MODE" == TARGETED && "$depth" == deep ]]; then
+              echo "- $target: DEEP required in platform workflow (not certified by this advisory)" >> "$GITHUB_STEP_SUMMARY"
             fi
           done
           if [[ "$MODE" == FULL ]]; then
@@ -160,7 +166,7 @@ jobs:
           elif [[ "$MODE" == FAST ]]; then
             echo "Docs-only FAST: classifier unit tests executed. Unselected platforms are not verified." >> "$GITHUB_STEP_SUMMARY"
           elif [[ "$MODE" == TARGETED ]]; then
-            echo "TARGETED tasks above passed; this is *not* Android instrumentation/Windows/iOS FULL certification." >> "$GITHUB_STEP_SUMMARY"
+            echo "Draft smoke only was checked here. Deep DB/security runs are mandatory in the platform workflows; this advisory does NOT certify them." >> "$GITHUB_STEP_SUMMARY"
           else
             echo "::error::Unknown mode $MODE"
             exit 1

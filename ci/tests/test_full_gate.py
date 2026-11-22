@@ -86,14 +86,47 @@ class FullGateTest(unittest.TestCase):
                       GROUPS)
         self.assertTrue(good.passed)
         self.assertFalse(good.is_acceptance)
-        self.assertFalse(decide("pull_request", "true", "success", "TARGETED",
-                                (("windows", "smoke", "success"), ("apple", "skip", "skipped")),
-                                GROUPS).passed)
+        # Draft smoke may execute together with another deep Apple group.
+        self.assertTrue(decide("pull_request", "true", "success", "TARGETED",
+                               (("windows", "smoke", "success"), ("apple", "skip", "skipped")),
+                               GROUPS).passed)
         full_draft = decide("pull_request", "true", "success", "FULL",
                             (("windows", "deep", "success"), ("apple", "deep", "success")),
                             GROUPS)
         self.assertTrue(full_draft.passed)
         self.assertFalse(full_draft.is_acceptance)
+
+    def test_draft_database_changes_require_real_deep_security_tests(self):
+        for group in ("android", "windows", "ios"):
+            with self.subTest(group=group):
+                ok = decide("pull_request", "true", "success", "TARGETED",
+                            ((group, "deep", "success"),), (group,))
+                self.assertTrue(ok.passed)
+                self.assertFalse(ok.is_acceptance)
+                for result in ("skipped", "failure", "cancelled", "neutral"):
+                    self.assertFalse(decide("pull_request", "true", "success", "TARGETED",
+                                            ((group, "deep", result),), (group,)).passed)
+        # Shared Android DB + Windows JDBC: no deep suite can be skipped.
+        groups = ("android", "windows", "ios")
+        self.assertTrue(decide("pull_request", "true", "success", "TARGETED",
+                               (("android", "deep", "success"),
+                                ("windows", "deep", "success"),
+                                ("ios", "skip", "skipped")), groups).passed)
+        self.assertFalse(decide("pull_request", "true", "success", "TARGETED",
+                                (("android", "deep", "success"),
+                                 ("windows", "deep", "skipped"),
+                                 ("ios", "skip", "skipped")), groups).passed)
+
+    def test_draft_mixed_smoke_and_deep_on_combined_apple_runner(self):
+        groups = ("windows", "ios", "macos")
+        coverage = (("windows", "deep", "success"), ("ios", "smoke", "success"),
+                    ("macos", "deep", "success"))
+        result = decide("pull_request", "true", "success", "TARGETED", coverage, groups)
+        self.assertTrue(result.passed)
+        self.assertFalse(result.is_acceptance)
+        self.assertFalse(decide("pull_request", "true", "success", "TARGETED",
+                                (("windows", "deep", "success"), ("ios", "smoke", "failure"),
+                                 ("macos", "deep", "success")), groups).passed)
 
     def test_unknown_inputs_and_missing_group_are_red(self):
         base = (("windows", "deep", "success"), ("apple", "deep", "success"))
