@@ -1,0 +1,119 @@
+# This workflow is loaded exclusively from the default branch, never from
+# pull_request source. DO NOT run PR code, Gradle scripts or package scripts here.
+# The production keystore is only used to sign an already-built APK after all
+# selected FAST/TARGETED jobs succeed; no signing secrets enter PR runners.
+name: Sign PR Android release APK
+
+on:
+  workflow_run:
+    workflows: ["PR fast checks (no FULL)"]
+    types: [completed]
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  sign-pr-release:
+    name: Sign successful in-repository PR release (trusted)
+    # Never sign fork PRs or failed, cancelled or non-PR runs.
+    if: ${{ github.event.workflow_run.event == 'pull_request' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_repository.full_name == github.repository }}
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Find candidate from exact successful quick run
+        id: candidate
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+          SOURCE_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+          [[ "$RUN_ID" =~ ^[0-9]+$ ]]
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          artifact_id="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID/artifacts?per_page=100" --jq '.artifacts[] | select(.name == "pr-internal-unsigned-release-apk" and .expired == false) | .id')"
+          if [[ -z "$artifact_id" ]]; then
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "No Android artifact: Android may have been intentionally skipped by impact classification." >> "$GITHUB_STEP_SUMMARY"
+          else
+            [[ "$artifact_id" =~ ^[0-9]+$ ]]
+            echo "available=true" >> "$GITHUB_OUTPUT"
+            echo "artifact_id=$artifact_id" >> "$GITHUB_OUTPUT"
+            echo "Approved FAST/TARGETED PR run: $RUN_ID; source SHA: $SOURCE_SHA" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Download exact unsigned artifact (data only; NEVER execute it)
+        if: steps.candidate.outputs.available == 'true'
+        uses: actions/download-artifact@v7
+        with:
+          artifact-ids: ${{ steps.candidate.outputs.artifact_id }}
+          merge-multiple: true
+          run-id: ${{ github.event.workflow_run.id }}
+          repository: ${{ github.repository }}
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/pr-unsigned-release
+
+      - name: Set up Android SDK tools for independent signature verification
+        if: steps.candidate.outputs.available == 'true'
+        uses: android-actions/setup-android@v4
+
+      - name: Install trusted APK signing tools
+        if: steps.candidate.outputs.available == 'true'
+        run: sdkmanager 'build-tools;36.0.0'
+
+      - name: Validate unsigned APK structure, identity and zip alignment
+        if: steps.candidate.outputs.available == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          apk="$RUNNER_TEMP/pr-unsigned-release/app-release-unsigned.apk"
+          test -s "$apk"
+          test "$(find "$RUNNER_TEMP/pr-unsigned-release" -maxdepth 1 -type f | wc -l)" -eq 1
+          unzip -tq "$apk"
+          "$ANDROID_HOME/build-tools/36.0.0/zipalign" -c -v 4 "$apk"
+          package_line="$("$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$apk" | sed -n '1p')"
+          if [[ ! "$package_line" =~ ^package:\ name=\'com\.andreyceilings\.app\'\  ]]; then
+            echo "::error::Unexpected release package name"; exit 1
+          fi
+          if "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify "$apk" >/dev/null 2>&1; then
+            echo "::error::Unsigned PR candidate unexpectedly already contains a valid signature"; exit 1
+          fi
+
+      - name: Sign with persistent release key (no PR code execution)
+        if: steps.candidate.outputs.available == 'true'
+        shell: bash
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$KEYSTORE_BASE64" || -z "$ANDROID_KEYSTORE_PASSWORD" || -z "$ANDROID_KEY_ALIAS" || -z "$ANDROID_KEY_PASSWORD" ]]; then
+            echo "::error::Production signing secrets are incomplete; refusing to publish a pseudo-release."
+            exit 1
+          fi
+          keyfile="$RUNNER_TEMP/pr-release-keystore.p12"
+          trap 'rm -f "$keyfile"' EXIT
+          umask 077
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$keyfile"
+          mkdir -p "$RUNNER_TEMP/pr-signed-release"
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" sign \
+            --ks "$keyfile" --ks-type PKCS12 --ks-key-alias "$ANDROID_KEY_ALIAS" \
+            --ks-pass env:ANDROID_KEYSTORE_PASSWORD --key-pass env:ANDROID_KEY_PASSWORD \
+            --out "$RUNNER_TEMP/pr-signed-release/app-release.apk" \
+            "$RUNNER_TEMP/pr-unsigned-release/app-release-unsigned.apk"
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs \
+            "$RUNNER_TEMP/pr-signed-release/app-release.apk"
+          sha256sum "$RUNNER_TEMP/pr-signed-release/app-release.apk" >> "$GITHUB_STEP_SUMMARY"
+          echo "Signed installable release APK; PR source run ${{ github.event.workflow_run.id }}, SHA ${{ github.event.workflow_run.head_sha }}." >> "$GITHUB_STEP_SUMMARY"
+          echo "This is a PR smoke artifact, NOT reviewed/merged production and NOT a FULL-test receipt." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload signed release APK for owner smoke
+        if: steps.candidate.outputs.available == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: pr-fast-android-release-apk
+          path: ${{ runner.temp }}/pr-signed-release/app-release.apk
+          if-no-files-found: error
+          retention-days: 14
