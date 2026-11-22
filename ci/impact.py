@@ -84,6 +84,18 @@ def _group(path: str) -> tuple[tuple[str, ...], str] | None:
             or lower.endswith((".gradle.kts", ".gradle", ".toml", ".properties"))):
         return None
 
+    # Native Swift/Xcode app configuration is not validated by the current
+    # Gradle iOS framework smoke; never label it as a scoped iOS verification.
+    if path.startswith("iosApp/"):
+        return None
+    if (path.startswith(("app/src/", "desktopApp/src/", "shared/src/"))
+            and Path(path).suffix.lower() not in {
+                ".kt", ".java", ".xml", ".sql", ".sq", ".sqm",
+                ".png", ".jpg", ".jpeg", ".webp", ".svg", ".json",
+                ".ttf", ".otf"
+            }):
+        return None
+
     is_test = any(part in lower for part in (
         "/androidtest/", "/androidinstrumentedtest/", "/commontest/",
         "/jvmtest/", "/iostest/", "/testfixtures/", "/src/test/",
