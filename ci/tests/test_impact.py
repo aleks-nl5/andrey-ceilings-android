@@ -69,6 +69,8 @@ class ImpactTest(unittest.TestCase):
             "shared/build.gradle.kts", "gradle.properties", "settings.gradle.kts",
             "ci/impact.py", ".github/workflows/cmp-kmp-platforms.yml",
             "AGENTS.md", "assets/mystery.dat",
+            "iosApp/iosApp.xcodeproj/project.pbxproj",
+            "app/src/main/assets/unknown-native.bin",
         ):
             self.assert_scope(path, "FULL", ("deep", "deep", "deep"))
 
