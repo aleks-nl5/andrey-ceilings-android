@@ -1,6 +1,6 @@
 # Codex handoff — P5B: unified POINT / LINE / AREA UX
 
-**Owner authorization:** 22.11.2026, «Переходимо до P5B». **Canonical implementation issue:** [#156](https://github.com/aleks-nl5/andrey-ceilings-android/issues/156); umbrellas [#95](https://github.com/aleks-nl5/andrey-ceilings-android/issues/95), [#71](https://github.com/aleks-nl5/andrey-ceilings-android/issues/71), [#76](https://github.com/aleks-nl5/andrey-ceilings-android/issues/76). One deliverable for **all POINT + LINE + AREA**, not three unrelated PRs. This document is a kickoff/handoff, **not implemented functionality**.
+**Owner authorization:** 22.11.2026, «Переходимо до P5B». **Canonical implementation issue:** [#156](https://github.com/aleks-nl5/andrey-ceilings-android/issues/156); umbrellas [#95](https://github.com/aleks-nl5/andrey-ceilings-android/issues/95), [#71](https://github.com/aleks-nl5/andrey-ceilings-android/issues/71), [#76](https://github.com/aleks-nl5/andrey-ceilings-android/issues/76). One deliverable for **all POINT + LINE + AREA**, not three unrelated PRs. This document began as kickoff; PR #157 now contains initial implementation undergoing UX corrections. **The later owner-approved UI behavior is canonical in [P5B UX spec](P5B_UX_SPEC.md) and #156; this handoff must not override it.**
 
 ## Branch, baseline, sequencing
 
@@ -18,8 +18,10 @@
 
 ## User interaction contract — implement as ONE cohesive workflow
 
+**REVISED owner UX contract (22.11.2026):** [P5B UX spec](P5B_UX_SPEC.md). Always-visible CANVAS/PRIMARY_PROFILE pickers **are part of P5B** (per P5 UX discovery §6.4), not P5D. The top-right «+» opens catalog search immediately with compact «Перешкода»/«Отвір» above results. The list is minimalist, pencil expands exact fields inline in the existing sheet, and contextual «…» holds only rare actions. Do not implement old multi-step «+ Додати» AlertDialog or unapproved replacement tabs. If implementation and original bullets differ, this revised owner spec wins.
+
 1. **Selection/gesture priority.** Single tap selects, empty-space tap clears; selected object can drag, empty-space drag pans, pinch zooms. Prevent a drag from accidentally opening properties, creating an object or moving a wall. In **normal** mode, selection shows properties in the lower contextual sheet. In **fullscreen**, single tap only selects; **double tap on selected object** or an explicit accessible action (desktop Enter) opens bottom properties. Back closes transient controls, then fullscreen, then guarded editor exit; do not break dirty draft/Save/Discard.
-2. **Common add flow.** «+ Додати» → compatible existing catalog item/type → on-Canvas creation preview → contextual precise editing → in-memory draft → **one explicit atomic overall Save**. Allow unplaced declared work without fake placement or changing payable quantity. Distinguish start/preview/draft/saved/partial/invalid/conflict. No unnecessary modal chain or separate “save line into draft” confirmation.
+2. **Common add flow (superseded entry route: see P5B UX spec).** Top-right «+» → immediate search in existing catalog (obstacle/void shortcuts separately above results) → new work compact quantity choice or existing work compact card → optional on-Canvas creation preview → contextual precise editing → in-memory draft → **one explicit atomic overall Save**. Allow unplaced declared work without fake placement or changing payable quantity. Distinguish start/preview/draft/saved/partial/invalid/conflict. No unnecessary modal chain or separate “save line into draft” confirmation.
 3. **POINT.** Add, select, drag, exact wall-distance/world-mm adjustment, Undo/Redo, reselect after other LINE/AREA movements. Stable persistent UUID, anchors and geometry; no duplicate when reselected/moved.
 4. **LINE.** Two endpoints by tap/tap **or** drag with real-time rubber-band preview; after second endpoint immediately become selected **draft** with both endpoints' precise contextual properties available. Implement default **smart snap parallel to a nearby wall**, optionally nearby existing LINE, in world-mm with visible guide + reason, hysteresis and temporary bypass. Avoid changing the wall or silently corrupting unsnapped coordinates/anchors. Hit-testing must use epsilon/point-distance fallback for zero projected length; never NaN/Infinity, including min zoom and very short lines.
 5. **AREA.** Reuse existing rectangular, round, obstacle/void and catalog AREA types. Add/select/drag/edit diameter/dimensions/wall anchors in normal and fullscreen. Differentiate void/obstacle from billable AREA; **no speculative subtraction of area or new pricing rule**. Owner's six deferred P5A manual checks (below) are part of this acceptance.
@@ -35,6 +37,8 @@
 
 ## One acceptance matrix (all must pass)
 
+- [ ] **Owner UX acceptance is mandatory in addition to the original geometry matrix:** validate every scenario in [P5B UX spec §6](P5B_UX_SPEC.md), particularly persistent two primary selectors, «+» direct search rather than AlertDialog, compact rows/status/action icons, existing/new work quantity and no duplicates, inline-pencil fields, conditional «…», both modes and narrow phone.
+
 - [ ] For **each** kind POINT / LINE / AREA, from existing catalog item: add → preview → select → exact properties → drag → reselect → Undo/Redo → Save → exit/reopen; stable geometry, UUID/anchors, quantity and valid canonical pricing after Save.
 - [ ] On narrow portrait and landscape, normal/fullscreen, light/dark: select/double-tap vs drag/pan/pinch, nonblocking sheet, keyboard/accessibility, zoom and context switches retain draft/viewport/focus/history. Test real production gestures/controls; not only `MeasurementEditModel.acceptLineCreation()` or synthetic shortcut buttons.
 - [ ] Regression: short LINE with projected coincident endpoints is selectable and never NaN; snap on/off hysteresis preserves precise raw geometry; POINT remains selectable after dragging LINE or AREA; no wrong wall anchor, duplicate UUID or lost measurement.
@@ -46,7 +50,7 @@
 ## Explicitly OUT of P5B
 
 - P5C: new-measurement UX, invalid-contour diagnostics, exterior vertex labels, A/B orientation and fit/rotate.
-- P5D: quick CANVAS / PRIMARY_PROFILE selectors, true unsaved draft-price read model, fourth «Кошториси» tab and frozen-estimate selection UX.
+- P5D: true unsaved draft-price read model, fourth «Кошториси» tab and frozen-estimate selection UX. **The quick CANVAS / PRIMARY_PROFILE selectors are IN P5B**, as already agreed in discovery §6.4 and re-confirmed by the owner.
 - Arbitrary-angle solver #70, polylines/multi-turn routed LINE, multi-billable-item-per-element #153, Settings #145, Object #136, Calendar #49, Windows pooled-driver work #147, or new schema/security/finance rules.
 
 **Definition of Done:** owner can comfortably create, move, precisely edit and atomically save/reopen POINT/LINE/AREA in **one shared Ceiling workspace** on a physical phone; same feature behavior in normal/fullscreen, with honest status/pricing and no regressions to prior P5A/L1/frozen data. Only the owner decides final acceptance and merges.
