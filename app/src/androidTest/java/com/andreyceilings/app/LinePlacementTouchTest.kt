@@ -62,7 +62,7 @@ class LinePlacementTouchTest {
                 }
                 if (theme) click("На весь екран")
                 click("Елементи")
-                compose.onNodeWithTag("measurement-workspace-add").performScrollTo().assertIsEnabled().performClick()
+                compose.onNodeWithTag("measurement-workspace-add").assertIsDisplayed().assertIsEnabled().performClick()
                 compose.onNodeWithTag("p5b-linked-${element.uuid}").performScrollTo().assertIsEnabled().performClick()
                 assertNull(model.state.value.lineElementUuid)
                 click("Розмістити ще")

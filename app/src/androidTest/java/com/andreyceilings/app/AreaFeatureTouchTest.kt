@@ -116,7 +116,7 @@ class AreaFeatureTouchTest {
         }
 
         fun begin(label: String?, tool: AreaTool) {
-            compose.onNodeWithTag("measurement-workspace-add").performScrollTo().assertIsEnabled().performClick()
+            compose.onNodeWithTag("measurement-workspace-add").assertIsDisplayed().assertIsEnabled().performClick()
             if (label != null) click(label)
             else {
                 compose.onNodeWithTag("p5b-linked-${element.uuid}").performScrollTo().assertIsEnabled().performClick()
@@ -216,7 +216,7 @@ class AreaFeatureTouchTest {
             }
             click("Редагувати розміри")
             compose.onNode(isDialog()).assertDoesNotExist()
-            compose.onNodeWithText("Примітка фігури").performTextInput("Тестова позначка")
+            compose.onNodeWithText("Примітка фігури").performScrollTo().performTextInput("Тестова позначка")
             click("Застосувати розміри")
             click("Додаткові дії");click("Видалити розміщення");compose.onNodeWithText("Видалити",useUnmergedTree=true).performClick()
             compose.runOnIdle {assertEquals(2,model.displayAreas().size)}
