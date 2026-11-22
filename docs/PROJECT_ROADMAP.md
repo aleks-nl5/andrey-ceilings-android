@@ -6,6 +6,8 @@
 
 **Later separately:** **P5C** new-measurement UX, invalid contour diagnostics, vertex letters, A/B and viewport fit; **P5D** in-memory pre-Save draft pricing, fourth saved «Кошториси» tab and version selection. **Quick «Полотно» / «Основний профіль» selection is in P5B**, per [owner-approved UX spec](P5B_UX_SPEC.md) and discovery §6.4. #71/#76/#95 remain umbrella OPEN until corresponding product acceptance; #154 localization foundation is independently trackable. No bleed into unrelated workstreams.
 
+**Owner P5B extension (22.11.2026):** UI must not show X/Y/coordinate labels; direct LINE endpoint drag adjusts length and angle, AREA polygon vertex/rectangle corner drag adjusts shape; actual wall-direction parallel snapping must work away from walls and during LINE endpoint editing. Test real gestures, geometric constraints, Undo/Redo and Save/reopen; [single UX contract](P5B_UX_SPEC.md) §4.1. Internal world-mm retained. These are P5B blockers; P5C/P5D scope unchanged.
+
 ---
 
 # CURRENT — P5A implementation, owner authorized 19.11.2026

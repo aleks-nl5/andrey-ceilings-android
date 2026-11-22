@@ -35,6 +35,16 @@
 - **C — tests + visual/accessibility audit:** Build production-gesture UI tests (not model-only fakes), world-mm/domain regressions, persistence/price assertions, responsive/dark-light checks. Test on actual platform hosts where runnable and document honest iOS coverage.
 - **D — handoff:** Update PR with precise changed files, known limitations, screenshots only if they genuinely validate UX, FAST/TARGETED results on exact SHA, any manual FULL results, independent review checklist and **unmarked** owner APK checklist.
 
+## Owner APK UX corrections — coordinates, direct vertex/endpoint drags, wall-parallel snap (22.11.2026)
+
+**Mandatory owner additions:** The [canonical P5B UX spec §4.1](P5B_UX_SPEC.md) is an acceptance-blocking extension to #156, **not future P5C/P5D**:
+- **No end-user XYZ/XY/«Координати» UI** anywhere in this ceiling drawing interaction (including Details/POINT and resource-backed labels); preserve internal world-mm precision but present wall distances, measured lengths/diameter and contextual physical dimensions in the **existing inline bottom panel**. Do not simply rename X/Y controls.
+- **Direct selected LINE endpoint handles:** press/drag either endpoint → change length and angle left/right; press/drag body → move whole line. Remove need for preliminary «Початок/Кінець» movement-mode chips. Preserve other end, previews, Undo, validation and anchor review. Screen-space handles/hit-test, multi-pointer cancel.
+- **Direct selected AREA vertex handles:** polygon vertex drag changes vertex without a chip; rectangle corner drag changes size **and remains rectangular**; body drag translates whole figure; circle edits retain a center/diameter model, not fake vertex. Validate contour and self-intersections.
+- **Make LINE wall-parallel snapping actually usable** for creation and endpoint drag even at center of room. Current [`LineCreationSnap.kt`](../shared/src/commonMain/kotlin/com/andreyceilings/shared/measurement/LineCreationSnap.kt) gates candidate by wall proximity (300/450 mm) and the current screen only calls it in creation; remove the proximity-only limitation, keep angular hysteresis, bypass toggle, clear compact preview guide, valid geometry and precise source. **Tests must demonstrate snap from >0.45 m away from each wall**, for create and edit.
+
+**Owner acceptance is pending.** UI checks on physical APK, normal/fullscreen, dark/light, Android/Windows, geometry, Undo/Redo and persistence must be repeated. Never treat these as done simply because low-level `lineMoveTarget` / `area.moveVertex` or `previewLineCreation` exist.
+
 ## One acceptance matrix (all must pass)
 
 - [ ] **Owner UX acceptance is mandatory in addition to the original geometry matrix:** validate every scenario in [P5B UX spec §6](P5B_UX_SPEC.md), particularly persistent two primary selectors, «+» direct search rather than AlertDialog, compact rows/status/action icons, existing/new work quantity and no duplicates, inline-pencil fields, conditional «…», both modes and narrow phone.
