@@ -157,7 +157,7 @@ def classify(changes: list[Change]) -> Impact:
 
 def impact_from_git(base: str, head: str) -> Impact:
     if not SHA.fullmatch(base) or not SHA.fullmatch(head):
-        return Impact("FULL", (), "missing or malformed base/head SHA", ())
+        return _full("missing or malformed base/head SHA", ())
     try:
         output = subprocess.run(
             ["git", "diff", "--name-status", "-z", "--find-renames", f"{base}...{head}", "--"],
@@ -165,7 +165,7 @@ def impact_from_git(base: str, head: str) -> Impact:
         )
         return classify(parse_changes(output.stdout))
     except (OSError, ValueError, subprocess.SubprocessError, UnicodeError) as error:
-        return Impact("FULL", (), f"could not verify complete git diff ({type(error).__name__})", ())
+        return _full(f"could not verify complete git diff ({type(error).__name__})", ())
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -191,7 +191,7 @@ def main(argv: list[str] | None = None) -> int:
                 f.write(f"{key}={value}\n")
     print(f"Change impact: {result.mode}; targets={','.join(result.targets) or 'none'}; reason={result.reason}")
     if args.summary:
-        lines = ["## Draft change impact - advisory only", "",
+        lines = ["## Change impact - platform/depth classification (not CI proof)", "",
                  f"Commit: {args.head or 'unknown'}", f"Decision: **{result.mode}**",
                  f"Target groups: {', '.join(result.targets) or 'none'}",
                  f"Coverage: {', '.join(f'{t}={d}' for t, d in zip(TARGETS, result.depths))}",
