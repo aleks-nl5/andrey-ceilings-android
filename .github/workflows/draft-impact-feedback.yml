@@ -41,6 +41,7 @@ jobs:
           python3 -m unittest discover -s ci/tests -p test_full_gate.py -v
           python3 -m unittest discover -s ci/tests -p test_android_smoke_reports.py -v
           python3 -m unittest discover -s ci/tests -p test_pr_merge_trigger_policy.py -v
+          python3 -m unittest discover -s ci/tests -p test_pr_release_artifacts.py -v
 
       - name: Check new presentation strings against the localization baseline
         env:
