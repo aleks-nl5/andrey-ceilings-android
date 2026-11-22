@@ -32,6 +32,7 @@ class LinePlacementTouchTest {
         val prices=PriceRepository(db)
         val id=prices.createInGroup("line.touch","Лінія",PriceGroupRepository(db).all().first().uuid,1.0,5,"м.п.",QuantityMode.ENTERED_LENGTH,PlacementKind.LINE)
         val element=MeasurementElementRepository(db).createCatalogSelection(f.element.measurementUuid,prices.find(id)!!.uuid,ElementQuantity.Exact(4500),6, businessRole = com.andreyceilings.shared.livepricing.BusinessRole.ADDITIONAL_WORK)
+        val existingPoint = PointPlacementRepository(db).addPoint(f.element.version, f.contourVersion, 500, 220, 8)
         val store=MeasurementEditStore(db){100}
         var model=MeasurementEditModel(store,store.load(f.project,f.id))
         var dark by mutableStateOf(false)
@@ -77,7 +78,8 @@ class LinePlacementTouchTest {
                 canvas.performTouchInput {pinch(center-Offset(40f,0f),center+Offset(40f,0f),center-Offset(70f,0f),center+Offset(70f,0f))}
                 compose.runOnIdle {assertNull(model.state.value.lineStart)}
                 click("Вписати креслення")
-                val start = world(500, 220)
+                // The active LINE tool owns this press even though it hits an existing POINT.
+                val start = world(existingPoint.xMm, existingPoint.yMm)
                 val end = world(3000, 420)
                 if (theme) {
                     click("Вирівнювати паралельно стіні")
@@ -93,6 +95,9 @@ class LinePlacementTouchTest {
                     tap(3000, 420)
                 }
                 val placed = model.displayLines().single()
+                assertEquals(existingPoint.uuid, model.displayPoints().single().uuid)
+                assertEquals(existingPoint.xMm, model.displayPoints().single().xMm)
+                assertEquals(existingPoint.yMm, model.displayPoints().single().yMm)
                 val uuid = placed.uuid
                 if (theme) assertTrue(placed.end.yMm - placed.start.yMm > 100)
                 else assertEquals(placed.start.yMm, placed.end.yMm)

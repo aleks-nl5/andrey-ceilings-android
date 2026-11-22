@@ -119,15 +119,15 @@ class OverlayDragTouchTest {
                 if (mode == "fullscreen") {
                     panel.assertDoesNotExist()
                     captureSelected("single-tap-point")
-                    drag(point.xMm, point.yMm, 2900, 2150)
-                    panel.assertDoesNotExist()
-                    compose.runOnIdle {
-                        assertEquals(2900L, m.displayPoints().single().xMm)
-                        assertEquals(2150L, m.displayPoints().single().yMm)
-                    }
-                    click("Скасувати дію")
-                    panel.assertDoesNotExist()
                 }
+                drag(point.xMm, point.yMm, 2900, 2150)
+                if (mode == "fullscreen") panel.assertDoesNotExist()
+                compose.runOnIdle {
+                    assertEquals(2900L, m.displayPoints().single().xMm)
+                    assertEquals(2150L, m.displayPoints().single().yMm)
+                }
+                click("Скасувати дію")
+                if (mode == "fullscreen") panel.assertDoesNotExist()
                 openFromCanvas(point.xMm, point.yMm)
                 captureSelected("selected-point")
                 click("Задати розміри від стін")
