@@ -2,6 +2,8 @@ package com.andreyceilings.shared.db
 
 import java.nio.file.Files
 import kotlinx.coroutines.runBlocking
+import org.junit.Rule
+import org.junit.rules.TestName
 import kotlin.test.*
 
 class PriceCatalogWindowsCipherTest {
@@ -9,19 +11,29 @@ class PriceCatalogWindowsCipherTest {
     // database names or paths. Every JUnit test instance owns an independent counter.
     private val nativeMetrics = SqlCipherWindowsConnectionMetrics()
 
+    @get:Rule
+    val testName = TestName()
+
     @AfterTest fun printConnectionCounts() {
         if (!System.getProperty("os.name").startsWith("Windows", ignoreCase = true)) return
+        val opens = nativeMetrics.physicalOpens.get()
+        val closes = nativeMetrics.physicalCloses.get()
+        val guardsPassed = nativeMetrics.encryptedSchemaGuardsPassed.get()
+        val guardAttempts = nativeMetrics.encryptedSchemaGuardAttempts.get()
         println(
             "PriceCatalogWindowsCipherTest native JDBC metrics: " +
-                "physicalOpens=${nativeMetrics.physicalOpens.get()}, " +
-                "physicalCloses=${nativeMetrics.physicalCloses.get()}, " +
-                "schemaGuardsPassed=${nativeMetrics.encryptedSchemaGuardsPassed.get()}, " +
-                "schemaGuardAttempts=${nativeMetrics.encryptedSchemaGuardAttempts.get()}, " +
+                "testCase=${testName.methodName}, " +
+                "physicalOpens=$opens, physicalCloses=$closes, " +
+                "schemaGuardsPassed=$guardsPassed, schemaGuardAttempts=$guardAttempts, " +
                 "guardTotalMs=${nativeMetrics.encryptedSchemaGuardNanos.get() / 1_000_000}, " +
                 "logicalStatements=${nativeMetrics.logicalStatements.get()}, " +
                 "pinnedStatements=${nativeMetrics.statementsOnPinnedTransaction.get()}, " +
                 "outerBegins=${nativeMetrics.outerTransactionsBegun.get()}"
         )
+        assertTrue(opens > 0, "The Windows test must open a physical encrypted connection")
+        assertEquals(opens, closes, "Each physical connection must be closed")
+        assertEquals(opens, guardAttempts, "Each physical connection must attempt the encrypted schema guard")
+        assertEquals(opens, guardsPassed, "Each physical connection must pass the encrypted schema guard")
     }
     @Test fun encryptedPointPlacementsV8UpgradeRollbackReopenRacesAndDomainProof(): Unit = runBlocking {
         if (!System.getProperty("os.name").startsWith("Windows", ignoreCase = true)) return@runBlocking
