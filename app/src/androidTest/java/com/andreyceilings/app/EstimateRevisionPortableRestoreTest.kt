@@ -13,11 +13,17 @@ import com.andreyceilings.app.data.security.PortableBackupPayload
 import com.andreyceilings.app.data.security.SqlCipherRestoreManager
 import com.andreyceilings.app.ui.screens.loadImmutableEstimatePdfSnapshot
 import com.andreyceilings.app.ui.screens.writeEstimatePdf
+import com.andreyceilings.shared.db.PriceGroupRepository
 import com.andreyceilings.shared.db.PriceRepository
 import com.andreyceilings.shared.db.ProjectRepository
 import com.andreyceilings.shared.estimate.ImmutableEstimateDraft
 import com.andreyceilings.shared.estimate.ImmutableEstimateLine
 import com.andreyceilings.shared.estimate.ImmutableEstimateRepository
+import com.andreyceilings.shared.localization.AndroidAppLanguageStorage
+import com.andreyceilings.shared.localization.AppLanguage
+import com.andreyceilings.shared.localization.AppLanguagePreference
+import com.andreyceilings.shared.localization.AppLanguageState
+import com.andreyceilings.shared.prices.StarterPriceCatalog
 import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.assertArrayEquals
@@ -86,6 +92,8 @@ class EstimateRevisionPortableRestoreTest {
         val password = "Test revs v1-v2-v3 backup 2026".toCharArray()
         var validatedContents: PortableBackupPayload.Contents? = null
         val renderedPdfFiles = mutableListOf<File>()
+        val preferences = context.getSharedPreferences("revision_restore_language_test", Context.MODE_PRIVATE)
+        val language = AppLanguageState(AndroidAppLanguageStorage(preferences))
         try {
             assertEquals("wal", original.queryText("PRAGMA journal_mode")?.lowercase())
             val project = ProjectRepository(original.database).createReturningId(
@@ -107,6 +115,19 @@ class EstimateRevisionPortableRestoreTest {
             val exactRevisions = listOf(first.initialRevisionUuid, second, third)
             val originalNumber = repo.series(first.seriesUuid)!!.documentNumber
             val expectedTotals = listOf(110.0, 180.0, 220.0)
+            val expectedLabels = listOf("Frozen version one", "Frozen version two", "Frozen version three")
+            StarterPriceCatalog.initialize(original.database)
+            val customGroup = PriceGroupRepository(original.database).create("Éclairage • Моя група", 13100L, "шт.")
+            val prices = PriceRepository(original.database)
+            prices.createInGroup("localization.backup.custom", "Éclairage • Моя позиція", customGroup, 123.45, 13200L)
+            val catalogBefore = prices.all()
+            val groupsBefore = PriceGroupRepository(original.database).all()
+            val revisionsBefore = repo.revisions(first.seriesUuid)
+
+            language.select(AppLanguagePreference.Explicit(AppLanguage.UKRAINIAN))
+            assertEquals(catalogBefore, prices.all())
+            assertEquals(groupsBefore, PriceGroupRepository(original.database).all())
+            assertEquals(revisionsBefore, repo.revisions(first.seriesUuid))
             val exported = PortableBackupManager.create(context, original, password)
 
             // A bad password must reject before changing the live database.
@@ -131,13 +152,18 @@ class EstimateRevisionPortableRestoreTest {
 
             val decoded = PortableBackupManager.validate(context, exported, password)
             validatedContents = decoded
+            language.select(AppLanguagePreference.System)
             val replaced = SqlCipherRestoreManager.restore(context, decoded)
+            assertEquals(AppLanguagePreference.System, AppLanguageState(AndroidAppLanguageStorage(preferences)).preference)
             assertEquals("wal", replaced.queryText("PRAGMA journal_mode")?.lowercase())
             assertTrue(replaced.checkIntegrity())
 
             fun verifyAll(db: CeilingsDatabase) {
                 val history = ImmutableEstimateRepository(db.database)
                 val actual = history.revisions(first.seriesUuid)
+                assertEquals(revisionsBefore, actual)
+                assertEquals(catalogBefore, PriceRepository(db.database).all())
+                assertEquals(groupsBefore, PriceGroupRepository(db.database).all())
                 assertEquals(listOf(1L, 2L, 3L), actual.map { it.versionNumber })
                 assertEquals(exactRevisions, actual.map { it.revisionUuid })
                 assertEquals(expectedTotals, actual.map { it.totalCost })
@@ -158,6 +184,11 @@ class EstimateRevisionPortableRestoreTest {
                             .getJSONArray("lineItems").getJSONObject(0)
                             .getDouble("unitPrice"),
                         0.0
+                    )
+                    assertEquals(
+                        expectedLabels[index],
+                        JSONObject(pdf.estimate.detailsJson).getJSONArray("lineItems")
+                            .getJSONObject(0).getString("title")
                     )
                     assertFalse(pdf.printableNumber.contains(first.seriesUuid))
                     assertFalse(pdf.estimate.detailsJson.contains("999.0"))
@@ -214,6 +245,7 @@ class EstimateRevisionPortableRestoreTest {
                 validatedContents?.database?.fill(0)
                 validatedContents?.passphrase?.fill(0)
                 renderedPdfFiles.forEach { it.delete() }
+                preferences.edit().clear().commit()
                 baseline.delete()
                 baselineImage.fill(0)
                 initialKey.fill(0)

@@ -42,6 +42,14 @@ jobs:
           python3 -m unittest discover -s ci/tests -p test_android_smoke_reports.py -v
           python3 -m unittest discover -s ci/tests -p test_pr_merge_trigger_policy.py -v
 
+      - name: Check new presentation strings against the localization baseline
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          python3 -m unittest discover -s ci/tests -p test_localization.py -v
+          python3 ci/localization.py check --base "$BASE_SHA" --head "$HEAD_SHA"
+
       - name: Classify complete PR diff
         id: classify
         shell: bash

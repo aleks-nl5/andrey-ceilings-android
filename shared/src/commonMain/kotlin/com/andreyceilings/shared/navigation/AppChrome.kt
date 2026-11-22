@@ -52,6 +52,12 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.andreyceilings.shared.resources.Res
+import com.andreyceilings.shared.resources.app_name
+import com.andreyceilings.shared.resources.app_tagline
+import com.andreyceilings.shared.resources.navigate_action
+import com.andreyceilings.shared.resources.settings_action
+import org.jetbrains.compose.resources.stringResource
 
 /**
  * Stable cross-platform navigation descriptor. UI and navigation behavior are common CMP.
@@ -162,7 +168,7 @@ private fun AppFloatingItem(
                 indication = null,
                 enabled = destination.enabled,
                 role = Role.Tab,
-                onClickLabel = "Перейти: ${destination.title}",
+                onClickLabel = stringResource(Res.string.navigate_action, destination.title),
                 onLongClickLabel = destination.quickCreateLabel,
                 onLongClick = if (destination.quickCreateLabel != null) onQuickCreate else null,
                 onClick = onSelect
@@ -242,15 +248,15 @@ fun AppHeader(
             ),
             title = {
                 Column {
-                    Text("СтеляПро", fontWeight = FontWeight.Bold)
-                    Text("Майстер натяжних стель", style = MaterialTheme.typography.labelSmall)
+                    Text(stringResource(Res.string.app_name), fontWeight = FontWeight.Bold)
+                    Text(stringResource(Res.string.app_tagline), style = MaterialTheme.typography.labelSmall)
                 }
             },
             actions = {
                 extraActions()
                 if (onSettings != null) {
                     IconButton(onClick = onSettings) {
-                        Icon(Icons.Default.Settings, contentDescription = "Налаштування")
+                        Icon(Icons.Default.Settings, contentDescription = stringResource(Res.string.settings_action))
                     }
                 }
             }

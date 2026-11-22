@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">СтеляПро</string>
+    <string name="app_tagline">Майстер натяжних стель</string>
+    <string name="settings_action">Налаштування</string>
+    <string name="navigate_action">Перейти: %1$s</string>
+    <string name="app_language">Мова</string>
+    <string name="language_system">Системна</string>
+    <string name="language_ukrainian">Українська</string>
+    <plurals name="client_project_count">
+        <item quantity="one">%1$d об’єкт</item>
+        <item quantity="few">%1$d об’єкти</item>
+        <item quantity="many">%1$d об’єктів</item>
+        <item quantity="other">%1$d об’єкта</item>
+    </plurals>
+</resources>
