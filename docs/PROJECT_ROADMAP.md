@@ -4,6 +4,17 @@ Following docs-only [PR #130](https://github.com/aleks-nl5/andrey-ceilings-andro
 
 **Next P5 delivery slices AFTER separate owner approval:** **P5B** = one **unified** POINT + LINE + AREA interaction/redesign task (not three issues), LINE default parallel-to-wall smart snapping; **P5C** = invalid contour diagnostics, exterior vertex letters, AB orientation/fit; **P5D** = quick CANVAS/PRIMARY_PROFILE catalog selectors and true KMP in-memory unsaved draft price preview. Future multi-turn polyline is separate. Preserve SQLCipher/WAL/backup, exact geometry, immutable frozen quotes/PDF. Follow final-SHA all-platform CI, independent code review, owner APK and owner-only merge.
 
+## Нова постійна вимога — локалізація StelaPro (22.11.2026)
+
+**Власник підтвердив: багатомовність була початковою вимогою, яку не перенесли в реалізацію.** Визнати її обов'язковою архітектурною вимогою для Android/iOS/Windows; чинний стан — hardcoded українська в CMP/Android, статусах, датах, starter-прайсі та PDF. **Реалізації, перекладів і CI-gate ще немає.**
+
+**Пріоритет:** в найближчому окремо узгодженому архітектурному етапі виконати інвентаризацію (L0) і спільний фундамент (L1) **до подальшого значного нарощування UI**; далі інкрементально мігрувати екрани (L2), окремо **інтерфейс** прайсу та frozen документи (L3), перевірити наступну локаль на Android/Windows/iOS (L4). Не змішувати з поточним P5A/P5B та не починати реалізацію без окремого погодженого issue/PR.
+
+**Непорушні правила:** українська — source/fallback; нові UI тексти — через resources/тимчасово централізовані до L1; мови UI/PDF, валюта, формат чисел — окремі налаштування; **не перекладати назви позицій/груп прайсу (включно з seed) у UI або PDF**, не переписувати frozen vN, точні суми, SQLCipher/backup, ID чи geometry. Після L1 — baseline-aware CI check на новий hardcode, тести локалізації/збереження даних і звичайні final-SHA gates.
+
+**Канонічний контракт:** [docs/architecture/LOCALIZATION_STRATEGY.md](architecture/LOCALIZATION_STRATEGY.md); [AGENTS.md](../AGENTS.md) — обов'язкові правила для Codex/PR. Конкретні локалі та розбивку на issues визначає власник.
+
+
 ---
 
 # CURRENT — P4 completed; P5 UX discovery (#95), 19.11.2026
