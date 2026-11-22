@@ -290,12 +290,19 @@ jobs:
           elif [[ "$DESKTOP_DEPTH" == smoke ]]; then
             windows_result="$WINDOWS_SMOKE_RESULT"
           fi
-          echo "iOS selected depth: $IOS_DEPTH; Windows depth: $DESKTOP_DEPTH" >> "$GITHUB_STEP_SUMMARY"
+          # A single Apple runner can run macOS JVM and iOS steps independently.
+          # Never turn its success into an iOS verification if iOS was skipped.
+          ios_result=skipped
+          macos_result=skipped
+          if [[ "$IOS_DEPTH" != skip ]]; then ios_result="$APPLE_RESULT"; fi
+          if [[ "$DESKTOP_DEPTH" != skip ]]; then macos_result="$APPLE_RESULT"; fi
+          echo "iOS depth: $IOS_DEPTH; Windows depth: $DESKTOP_DEPTH; macOS/JVM depth: $DESKTOP_DEPTH" >> "$GITHUB_STEP_SUMMARY"
           python3 ci/verify_full_gate.py \
             --event "$EVENT_NAME" --draft "$IS_DRAFT" \
             --impact-result "$IMPACT_RESULT" --mode "$IMPACT_MODE" \
-            --expected-group windows --expected-group apple \
+            --expected-group windows --expected-group ios --expected-group macos \
             --coverage "windows:$DESKTOP_DEPTH:$windows_result" \
-            --coverage "apple:$APPLE_DEPTH:$APPLE_RESULT" \
+            --coverage "ios:$IOS_DEPTH:$ios_result" \
+            --coverage "macos:$DESKTOP_DEPTH:$macos_result" \
             --expected-sha "$EXPECTED_SHA" --actual-sha "$(git rev-parse HEAD)" \
             --summary "$GITHUB_STEP_SUMMARY"
