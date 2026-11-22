@@ -165,17 +165,24 @@ private class ConfiguredSqlCipherJdbcDriver(
     ): QueryResult<Long> {
         metrics?.logicalStatements?.incrementAndGet()
         if (transaction != null) metrics?.statementsOnPinnedTransaction?.incrementAndGet()
-        if (!userVersionAssignment.matches(sql)) return super.execute(identifier, sql, parameters, binders)
-        // Core 0.2.13 classifies ALL PRAGMAs as lazy rowsets. execute() alone
-        // never steps this header write. Consume it once on the transaction's
-        // pinned connection so user_version and migration DDL commit/roll back together.
+        // SQLDelight 2.4.1 JdbcDriver.execute() does not close its PreparedStatement
+        // before invoking closeConnection(). That is tolerable with per-statement
+        // physical close but would leak native sqlite3_stmt handles if we reused
+        // a physical SQLCipher connection. Always finalize the statement first.
         val (connection, onClose) = connectionAndClose()
         try {
-            connection.prepareStatement(sql).use { statement ->
+            return connection.prepareStatement(sql).use { statement ->
                 binders?.invoke(JdbcPreparedStatement(statement))
-                statement.executeQuery().use { rows -> while (rows.next()) { /* consume */ } }
+                if (userVersionAssignment.matches(sql)) {
+                    // Core 0.2.13 classifies ALL PRAGMAs as lazy rowsets.
+                    // Consume this transaction's user_version header write once.
+                    statement.executeQuery().use { rows -> while (rows.next()) { /* consume */ } }
+                    QueryResult.Value(0L)
+                } else {
+                    // Exactly match JdbcPreparedStatement.execute() result semantics.
+                    QueryResult.Value(if (statement.execute()) 0L else statement.updateCount.toLong())
+                }
             }
-            return QueryResult.Value(0L)
         } finally {
             onClose()
         }
