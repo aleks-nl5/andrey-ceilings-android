@@ -125,35 +125,17 @@ def _group(path: str) -> tuple[tuple[str, ...], str] | None:
             }):
         return None
 
-    is_test = any(part in lower for part in (
-        "/androidtest/", "/androidinstrumentedtest/", "/commontest/",
-        "/jvmtest/", "/iostest/", "/testfixtures/", "/src/test/",
-        "/src/androidunittest/"))
-    is_database = (lower.endswith((".sql", ".sq", ".sqm"))
-                   or "/sqldelight/" in lower
-                   or any(fragment in lower for fragment in (
-                       "/db/", "/database/", "/backup/", "sqlcipher", "migration",
-                       "keystore", "keychain", "encryption", "credential",
-                       "/persistence/", "/storage/", "/security/")))
-    # Desktop/iOS retain their existing platform-specific smoke policy.
-    is_platform_ui = (
-        "/ui/" in lower or "/theme/" in lower
-        or ("/res/" in lower and Path(path).suffix.lower()
-            in {".png", ".jpg", ".jpeg", ".webp", ".svg", ".ttf", ".otf"})
-    )
-
     if path.startswith(("app/src/", "shared/src/androidMain/",
                         "shared/src/androidTest/", "shared/src/androidInstrumentedTest/",
                         "shared/src/androidUnitTest/")):
         return (("android",), "smoke" if path in ANDROID_SMOKE_TESTS_BY_PATH else "deep")
+    # Platform directories do not establish presentation-only behavior.
+    # Desktop and iOS smoke are selected only by audited shared paths below.
     if path.startswith(("desktopApp/src/", "shared/src/jvmMain/",
                         "shared/src/jvmTest/")):
-        return (("desktop",), "deep" if is_database or is_test
-                or not is_platform_ui else "smoke")
-    if path.startswith(("shared/src/iosMain/", "shared/src/iosTest/",
-                        "iosApp/")):
-        return (("ios",), "deep" if is_database or is_test
-                or not is_platform_ui else "smoke")
+        return (("desktop",), "deep")
+    if path.startswith(("shared/src/iosMain/", "shared/src/iosTest/")):
+        return (("ios",), "deep")
     if path.startswith(("shared/src/commonMain/", "shared/src/commonTest/")):
         # Common business/geometry/finance code is coupled to native DB and
         # platform persistence. No optimistic category derived from its name.

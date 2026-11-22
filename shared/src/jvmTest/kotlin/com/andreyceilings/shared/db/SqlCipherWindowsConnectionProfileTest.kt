@@ -9,6 +9,7 @@ import java.sql.DriverManager
 import java.util.Locale
 import java.util.Properties
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
@@ -32,6 +33,12 @@ class SqlCipherWindowsConnectionProfileTest {
             "Physical close", "SQLDelight outside transaction", "SQLDelight inside transaction"
         )
         val elapsed = List(labels.size) { mutableListOf<Long>() }
+        // Real production-driver counters, kept in memory and discarded after the test.
+        val metrics = SqlCipherWindowsConnectionMetrics()
+        var outsideOpens = 0L
+        var insideOpens = 0L
+        var outsideLogical = 0L
+        var insideLogical = 0L
 
         try {
             SqlCipherWindowsDriverFactory.open(file, key).use { driver ->
@@ -83,17 +90,34 @@ class SqlCipherWindowsConnectionProfileTest {
                 }
             }
 
-            SqlCipherWindowsDriverFactory.open(file, key).use { driver ->
+            SqlCipherWindowsDriverFactory.openProfiled(file, key, metrics).use { driver ->
+                val physicalBeforeOutside = metrics.physicalOpens.get()
+                val logicalBeforeOutside = metrics.logicalStatements.get()
                 repeat(samples) {
                     assertTrue(time(elapsed[7]) { tableCount(driver) } > 0L)
                 }
+                outsideOpens = metrics.physicalOpens.get() - physicalBeforeOutside
+                outsideLogical = metrics.logicalStatements.get() - logicalBeforeOutside
+
                 // SQLDelight pins one connection for the entire transaction.
+                val physicalBeforeInside = metrics.physicalOpens.get()
+                val logicalBeforeInside = metrics.logicalStatements.get()
                 PrototypeDatabase(driver).transaction {
                     repeat(samples) {
                         assertTrue(time(elapsed[8]) { tableCount(driver) } > 0L)
                     }
                 }
+                insideOpens = metrics.physicalOpens.get() - physicalBeforeInside
+                insideLogical = metrics.logicalStatements.get() - logicalBeforeInside
             }
+            // Each fresh physical connection was authenticated exactly once and
+            // each native handle was closed, even after future pooling/reuse.
+            assertEquals(metrics.physicalOpens.get(), metrics.encryptedSchemaGuardsPassed.get())
+            assertEquals(metrics.physicalOpens.get(), metrics.physicalCloses.get())
+            assertEquals(samples.toLong(), outsideLogical)
+            assertEquals(samples.toLong(), insideLogical)
+            assertTrue(metrics.outerTransactionsBegun.get() >= 1L)
+            assertTrue(metrics.statementsOnPinnedTransaction.get() >= samples.toLong())
 
             val summary = buildString {
                 appendLine("## Real Windows SQLCipher JDBC timings (diagnostic only)")
@@ -108,6 +132,20 @@ class SqlCipherWindowsConnectionProfileTest {
                     appendLine("| $label | ${sorted.size} | ${format(sorted.sum() / 1_000_000.0)} | " +
                         "${format(median)} | ${format(sorted.last() / 1_000_000.0)} |")
                 }
+                appendLine()
+                appendLine("### Actual production SQLDelight driver counts (test-only opt-in)")
+                appendLine()
+                appendLine("| Physical opens | Physical closes | Encrypted schema guards passed | Guard attempts | Logical statements | Pinned logical statements | BEGIN calls |")
+                appendLine("| ---: | ---: | ---: | ---: | ---: | ---: | ---: |")
+                appendLine("| ${metrics.physicalOpens.get()} | ${metrics.physicalCloses.get()} | " +
+                    "${metrics.encryptedSchemaGuardsPassed.get()} | ${metrics.encryptedSchemaGuardAttempts.get()} | " +
+                    "${metrics.logicalStatements.get()} | ${metrics.statementsOnPinnedTransaction.get()} | " +
+                    "${metrics.outerTransactionsBegun.get()} |")
+                appendLine()
+                appendLine("Outside transaction: $outsideLogical statements / $outsideOpens actual physical opens; " +
+                    "inside one transaction: $insideLogical statements / $insideOpens actual physical opens.")
+                appendLine("Total encrypted-schema guard time (production driver): " +
+                    "${format(metrics.encryptedSchemaGuardNanos.get() / 1_000_000.0)} ms.")
             }
             // Captured in JUnit XML even if Gradle test stdout is hidden.
             println(summary)

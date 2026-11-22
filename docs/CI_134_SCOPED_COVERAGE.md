@@ -23,10 +23,8 @@ Android, Windows, macOS/JVM and iOS; `TARGETED` can mix depths.
 | Android packaged Inter font (exercised by the workspace layout suite) | smoke | skip | skip | skip |
 | Other Android app/androidMain code, including immutable-estimate PDF and document export | deep | skip | skip | skip |
 | Windows JVM JDBC/SQLCipher or Windows test | skip | deep | deep | skip |
-| Desktop UI-only (known presentation paths) | skip | smoke | smoke | skip |
-| Windows/Desktop non-UI platform startup or adapters | skip | deep | deep | skip |
-| iOS-specific `shared/src/iosMain` known UI-only | skip | skip | skip | smoke |
-| iOS-specific native startup/adapters | skip | skip | skip | deep |
+| Desktop and JVM source sets, including platform UI, assets and adapters | skip | deep | deep | skip |
+| iOS-specific `shared/src/iosMain` or `shared/src/iosTest`, including platform UI and assets | skip | skip | skip | deep |
 | Native `iosApp/` Xcode/Swift project (not covered by Gradle framework smoke) | deep | deep | deep | deep |
 | Explicitly mapped shared Compose presentation paths | smoke | smoke | smoke | smoke |
 | Shared DB, SQLDelight, pricing/business/geometry, commonTest | deep | deep | deep | deep |
@@ -54,6 +52,12 @@ files require all-platform deep. This includes `MeasurementEditScreen.kt`
 with save, reload and exit actions and `MeasurementDetailsScreen.kt` with
 navigation, element editing and saved-estimate actions. Add a path after
 reviewing its responsibilities and the tests that exercise it.
+
+Desktop and iOS platform-specific code, tests and assets require deep checks
+on the affected platform. A directory name such as `ui/` or `theme/`
+does not establish that a file is presentation-only. Desktop and iOS smoke
+come from the audited shared CMP paths above. Unrecognized paths and native
+`iosApp/` project changes still trigger all-platform FULL.
 
 ## What actually runs
 
@@ -166,6 +170,8 @@ base. The PR that introduces the workflow is itself a FULL case.
 | Android Inter font | smoke, workspace layout class | skip | skip |
 | Immutable PDF snapshot or estimate export | deep | skip | skip |
 | Windows JDBC test | skip | deep | skip |
+| Desktop or JVM platform UI exporter | skip | deep | skip |
+| iOS platform UI exporter | skip | skip | deep |
 | Shared workspace scaffold or typography | smoke, workspace layout class | smoke, foundation and measurement scenes | smoke |
 | Shared FAB or theme palette | smoke, workspace layout class | smoke, foundation scene | smoke |
 | Shared measurement canvas | smoke, layout/drag/area classes | smoke, foundation and measurement scenes | smoke |
