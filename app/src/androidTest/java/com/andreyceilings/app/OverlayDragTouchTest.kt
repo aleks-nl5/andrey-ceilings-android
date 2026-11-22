@@ -107,6 +107,12 @@ class OverlayDragTouchTest {
             val before=OverlayDragFixture.snapshot(driver)
             if (mode != "details") {
                 val point = doc.placements.points.single()
+                val idleViewport = canvas().fetchSemanticsNode().config[MeasurementDrawingSemantics.Viewport]
+                drag(point.xMm, point.yMm, point.xMm - 800, point.yMm - 900)
+                val afterIdleDrag = canvas().fetchSemanticsNode().config
+                assertNull(afterIdleDrag.getOrNull(MeasurementDrawingSemantics.SelectedPoint))
+                assertEquals(idleViewport, afterIdleDrag[MeasurementDrawingSemantics.Viewport])
+                assertEquals(point, m.displayPoints().single())
                 tap(point.xMm, point.yMm)
                 val selected = canvas().fetchSemanticsNode()
                 assertEquals(point.uuid, selected.config[MeasurementDrawingSemantics.SelectedPoint])

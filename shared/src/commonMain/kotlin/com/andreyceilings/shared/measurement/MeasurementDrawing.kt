@@ -406,7 +406,7 @@ fun MeasurementDrawing(
                                     val target = world(position)
                                     currentPreviewDrag(checkNotNull(marker).xMm + target.x - startWorld.x,
                                         marker.yMm + target.y - startWorld.y)
-                                } else if (currentLineCreation != null || marker == null || fullscreen && !editPointsInFullscreen) {
+                                } else if (marker == null || fullscreen && !editPointsInFullscreen) {
                                     val delta = position - last
                                     move(delta.x, delta.y)
                                 }
