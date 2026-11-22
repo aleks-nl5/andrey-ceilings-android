@@ -84,15 +84,20 @@ class PriceCatalogWindowsCipherTest {
         try {
             val before: List<List<String?>>
             SqlCipherWindowsDriverFactory.openProfiled(file, key, nativeMetrics).use { driver ->
-                PriceCatalogMigrationProof.legacySchema.create(driver)
-                PriceCatalogMigrationProof.populateLegacy(driver)
-                // v3 never tracked payment; unchanged 3.sqm adds 'unknown'
-                // for this active legacy project. Build the expected v4+ row.
-                driver.execute(null, "UPDATE projects SET paymentStatus='unknown'", 0)
+                val database = PrototypeDatabase(driver)
+                database.transaction {
+                    PriceCatalogMigrationProof.legacySchema.create(driver)
+                    PriceCatalogMigrationProof.populateLegacy(driver)
+                    // v3 never tracked payment; unchanged 3.sqm adds 'unknown'
+                    // for this active legacy project. Build the expected v4+ row.
+                    driver.execute(null, "UPDATE projects SET paymentStatus='unknown'", 0)
+                }
                 before = PriceCatalogMigrationProof.untouchedRows(driver)
-                driver.execute(null, "DROP INDEX index_projects_paymentStatus", 0)
-                driver.execute(null, "ALTER TABLE projects DROP COLUMN paymentStatus", 0)
-                driver.execute(null, "PRAGMA user_version=3", 0)
+                database.transaction {
+                    driver.execute(null, "DROP INDEX index_projects_paymentStatus", 0)
+                    driver.execute(null, "ALTER TABLE projects DROP COLUMN paymentStatus", 0)
+                    driver.execute(null, "PRAGMA user_version=3", 0)
+                }
             }
             SqlCipherWindowsDriverFactory.openProfiled(file, key, nativeMetrics).use { driver ->
                 openDesktopPriceCatalog(driver, true)
@@ -131,8 +136,10 @@ class PriceCatalogWindowsCipherTest {
         try {
             var before = emptyList<List<String?>>()
             SqlCipherWindowsDriverFactory.openProfiled(file, key, nativeMetrics).use { driver ->
-                PriceCatalogMigrationProof.legacySchema.create(driver)
-                PriceCatalogMigrationProof.populateLegacy(driver)
+                PrototypeDatabase(driver).transaction {
+                    PriceCatalogMigrationProof.legacySchema.create(driver)
+                    PriceCatalogMigrationProof.populateLegacy(driver)
+                }
                 before = PriceCatalogMigrationProof.untouchedRows(driver)
                 assertFails { PriceCatalogSchema.migrate(PriceCatalogMigrationProof.failing(driver), 4, 6) }
                 PriceCatalogMigrationProof.assertOldPrice(driver)
