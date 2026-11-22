@@ -8,18 +8,25 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
 import org.jetbrains.compose.resources.ComposeEnvironment
+import org.jetbrains.compose.resources.DensityQualifier
 import org.jetbrains.compose.resources.InternalResourceApi
 import org.jetbrains.compose.resources.LanguageQualifier
 import org.jetbrains.compose.resources.LocalComposeEnvironment
 import org.jetbrains.compose.resources.RegionQualifier
 import org.jetbrains.compose.resources.ResourceEnvironment
 import org.jetbrains.compose.resources.ScriptQualifier
+import org.jetbrains.compose.resources.ThemeQualifier
 
 @OptIn(InternalResourceApi::class)
-internal fun ResourceEnvironment.withAppLanguage(language: AppLanguage): ResourceEnvironment =
+internal fun appLanguageResourceEnvironment(
+    language: AppLanguage,
+    theme: ThemeQualifier,
+    density: DensityQualifier
+): ResourceEnvironment =
     ResourceEnvironment(LanguageQualifier(language.tag), ScriptQualifier(""), RegionQualifier(""), theme, density)
 
 /** Updates the resource environment without keying the content or modifying platform locale. */
+@OptIn(InternalResourceApi::class)
 @Composable
 fun AppLanguageResources(
     preference: AppLanguagePreference,
@@ -33,7 +40,9 @@ fun AppLanguageResources(
             @Composable
             override fun rememberEnvironment(): ResourceEnvironment {
                 val parent = parentEnvironment.rememberEnvironment()
-                return remember(parent, language) { parent.withAppLanguage(language) }
+                return remember(parent, language) {
+                    appLanguageResourceEnvironment(language, parent.theme, parent.density)
+                }
             }
         }
     }

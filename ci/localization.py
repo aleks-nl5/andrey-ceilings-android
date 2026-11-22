@@ -17,7 +17,7 @@ SOURCE_SUFFIXES = {".kt", ".java", ".swift", ".xml", ".strings", ".sql", ".sq", 
 GUARDED = {"ui", "accessibility", "notification", "pdf"}
 CYRILLIC = re.compile(r"[\u0400-\u052f]")
 TOKEN = re.compile(r'//[^\n]*|/\*|"""|"|\'(?:\\.|[^\'\\])\'|[\w]+|[^\s]')
-TEMPLATE = re.compile(r"\$\{[^}]*\}|\$[A-Za-z_]\w*")
+TEMPLATE = re.compile(r"(?<!\\)\$(?:\{[^}]*\}|[A-Za-z_]\w*)")
 SQL = re.compile(
     r"\s*(?:SELECT\b.+\bFROM\b|INSERT\s+INTO\b|UPDATE\s+\w+\s+SET\b|DELETE\s+FROM\b|"
     r"(?:CREATE|ALTER|DROP)\s+(?:TABLE|INDEX|TRIGGER|VIEW)\b|PRAGMA\s+\w+\s*[=(]|"
@@ -72,7 +72,11 @@ def sources(paths):
 
 def decode_string(value):
     escapes = {"n": "\n", "r": "\r", "t": "\t", "b": "\b"}
-    return ESCAPE.sub(lambda m: chr(int(m[1], 16)) if m[1] else escapes.get(m[2], m[2]), value)
+    def decode(match):
+        char = chr(int(match[1], 16)) if match[1] else escapes.get(match[2], match[2])
+        return r"\$" if char == "$" else char
+
+    return ESCAPE.sub(decode, value)
 
 
 def kotlin_tokens(source):
@@ -136,7 +140,7 @@ def literal_category(path, value, call, parents, assignment):
         return "technical"
     if re.fullmatch(r"(?:Log|PerformanceDiagnosticsLog|logger)\.\w+", call):
         return "log"
-    visible = TEMPLATE.sub("", value)
+    visible = TEMPLATE.sub("", value) if file.endswith(".kt") else value
     has_letters = any(c.isalpha() for c in visible)
     if assignment in ACCESSIBILITY or call.rsplit(".", 1)[-1] in ACCESSIBILITY:
         return "accessibility" if has_letters else "technical"

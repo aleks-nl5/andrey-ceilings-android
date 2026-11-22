@@ -28,6 +28,13 @@ class ScannerTest(unittest.TestCase):
             [entry.key for entry in lint.scan(f"{SHARED}/Screen.kt", source)],
         )
 
+    def test_escaped_dollar_is_visible_but_a_template_variable_alone_is_not(self):
+        entries = lint.scan(f"{SHARED}/Screen.kt", r'Text("\$Literal"); Text("$variable")')
+        self.assertEqual(
+            [("ui", r"\$Literal"), ("technical", "$variable")],
+            [entry.key for entry in entries],
+        )
+
     def test_technical_catalog_and_test_exclusions(self):
         source = '''
             Text(row.name)

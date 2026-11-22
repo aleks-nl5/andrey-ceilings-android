@@ -2,6 +2,7 @@ package com.andreyceilings.desktop
 
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.runtime.snapshots.Snapshot
@@ -28,6 +29,7 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 class AppLanguageSceneTest {
+    @OptIn(ExperimentalMaterial3Api::class)
     @Test
     fun rootUsesUkrainianChromeSemanticsAndClientCountsWithAnUnsupportedSystemLocale() {
         val state = AppLanguageState(object : AppLanguageStorage {

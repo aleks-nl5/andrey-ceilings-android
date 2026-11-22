@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.res.Configuration
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.TextField
 import androidx.compose.runtime.CompositionLocalProvider
@@ -46,6 +47,7 @@ import java.util.Locale
 class AppLanguageUiTest {
     @get:Rule val compose = createComposeRule()
 
+    @OptIn(ExperimentalMaterial3Api::class)
     @Test
     fun unsupportedAndroidLocaleUsesUkrainianResourcesAndSelectionKeepsActiveDraft() {
         val context = ApplicationProvider.getApplicationContext<Context>()

@@ -5,9 +5,11 @@ import com.andreyceilings.shared.resources.app_name
 import com.andreyceilings.shared.resources.client_project_count
 import com.andreyceilings.shared.resources.navigate_action
 import kotlinx.coroutines.runBlocking
+import org.jetbrains.compose.resources.DensityQualifier
+import org.jetbrains.compose.resources.InternalResourceApi
+import org.jetbrains.compose.resources.ThemeQualifier
 import org.jetbrains.compose.resources.getPluralString
 import org.jetbrains.compose.resources.getString
-import org.jetbrains.compose.resources.getSystemResourceEnvironment
 import java.util.Locale
 import java.util.UUID
 import java.util.prefs.Preferences
@@ -15,11 +17,14 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 
 class AppLanguageResourcesTest {
+    @OptIn(InternalResourceApi::class)
     @Test
     fun generatedAccessorsLoadDefaultAndUseUkrainianPluralRules() = runBlocking {
         val processLocale = Locale.getDefault()
-        val env = getSystemResourceEnvironment().withAppLanguage(
-            AppLanguagePreference.System.effectiveLanguage("ja-JP")
+        val env = appLanguageResourceEnvironment(
+            AppLanguagePreference.System.effectiveLanguage("ja-JP"),
+            ThemeQualifier.LIGHT,
+            DensityQualifier.MDPI
         )
         assertEquals("СтеляПро", getString(env, Res.string.app_name))
         assertEquals("Перейти: Об’єкти", getString(env, Res.string.navigate_action, "Об’єкти"))
