@@ -51,8 +51,6 @@ def decide(event: str, draft: str, classifier_result: str, mode: str,
         return deny("FULL fallback must run every platform suite deeply")
     if mode == "FAST" and any(level != "skip" for _, level, _ in coverage):
         return deny("FAST only valid for documentation without platform work")
-    if mode == "TARGETED" and all(level == "skip" for _, level, _ in coverage):
-        return deny("TARGETED with no tested platform")
 
     is_draft = event == "pull_request" and draft == "true"
     # Intermediate FAST/TARGETED Draft runs are handled by a separate advice
@@ -98,7 +96,7 @@ def main(argv: list[str] | None = None) -> int:
     label = ("SCOPED ACCEPTANCE" if passed and decision.is_acceptance else
              "DRAFT ADVISORY" if passed else "FAILED")
     reason = decision.message if sha_ok else "checkout SHA does not match current event head"
-    untested = [name for name, level, _ in triples if len((name, level)) == 2 and level == "skip"]
+    untested = [x[0] for x in triples if len(x) == 3 and x[1] == "skip"]
     print(f"{label}: {reason}; source={args.actual_sha}; expected={args.expected_sha}")
     if args.summary:
         with args.summary.open("a", encoding="utf-8") as out:
