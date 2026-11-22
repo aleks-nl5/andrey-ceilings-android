@@ -36,7 +36,7 @@ object MixedOverlayProof {
     }
     fun exerciseUnresolved(f:Fixture,c:Canvas) {
         assertTrue(c.points().single().mounting.unresolved)
-        c.tap(1500,950);c.drag(1500,950,1800,750)
+        c.tap(1500,950);c.drag(1000,950,1300,750)
         assertEquals(PointPositionMm(800,750),c.lines().single().start)
         c.tap(3500,2500);assertEquals(f.point,c.selectedPoint())
         c.drag(3500,2500,3200,2200)
@@ -63,7 +63,10 @@ object MixedOverlayProof {
             val end=PointPositionMm(l.xMm+1000,l.yMm)
             c.tap(end.xMm,end.yMm);assertEquals(f.overlay.line,c.selectedLine())
             assertNull(c.selectedPoint());assertNull(c.selectedArea())
-            c.drag(end.xMm,end.yMm,end.xMm+dx,end.yMm+dy);l=PointPositionMm(l.xMm+dx,l.yMm+dy)
+            // The grip adjusts one endpoint. Translate the whole segment by dragging its body.
+            val middleX = (l.xMm + end.xMm) / 2
+            c.drag(middleX, l.yMm, middleX + dx, l.yMm + dy)
+            l=PointPositionMm(l.xMm+dx,l.yMm+dy)
             val actual=c.lines().single();assertEquals(l,actual.start);assertEquals(1000,actual.lengthMm)
             assertNull(actual.startMounting.anchor);assertNull(actual.endMounting.anchor);c.databaseUnchanged()
         }
