@@ -38,3 +38,42 @@ An `internal` opt-in `SqlCipherWindowsConnectionMetrics` is passed only via `Sql
 The representative expensive `PriceCatalogWindowsCipherTest` now also uses the opt-in profiled factory for its real encrypted driver openings, with per-JUnit-case in-memory counters printed after each test (no DB contents or secrets). This gives measured connection counts and guard cost within the slowest physical Windows class, without changing its SQL operations or expectations.
 
 **Verification still required:** collect fresh Windows-native results on this branch; run isolated profile and slow classes with `--rerun-tasks`, and ALL unchanged Windows tests, plus Android/iOS FULL on the exact final SHA. Instrumentation does not make the pool safe. Source-level comparison is not a substitute for actual native concurrency/migration/corruption regressions.
+
+---
+
+## Final investigation checkpoint — 22 November 2026 (PR #148)
+
+**Owner decision:** complete the bounded research/observability PR #148, leave issue #147 OPEN for deferred Windows performance work, and prioritize CI routing #134 followed by Android P5B. This PR does **not** deliver connection pooling or claim a measured Windows performance improvement. The owner alone decides when to merge; do not mark #147 done.
+
+### Verified successful CI and duration (Gradle Windows full block, not whole job)
+
+| Run | GitHub Actions | Windows Gradle duration | JUnit | Outcome |
+| --- | --- | --- | --- | --- |
+| #1048 | [44963316600](https://github.com/aleks-nl5/andrey-ceilings-android/actions/runs/44963316600) | 45m 03s | 500 | PASS |
+| #1055 | [44998739477](https://github.com/aleks-nl5/andrey-ceilings-android/actions/runs/44998739477) | 1h 26m 06s | 500 | PASS |
+| #1059 | [45012364505](https://github.com/aleks-nl5/andrey-ceilings-android/actions/runs/45012364505) | 44m 22s | 504 | PASS |
+| #1063 | [45017088673](https://github.com/aleks-nl5/andrey-ceilings-android/actions/runs/45017088673) | 57m 07s | 504 | PASS |
+
+The latest **code/test** HEAD `639377baf174e3cb845f303997ab5182b10fdfea` passed Windows, Android [#1319](https://github.com/aleks-nl5/andrey-ceilings-android/actions/runs/45017088701), and iOS. The later documentation commit is a different SHA and must not be called tested until its CI finishes. Variation from 44 to 86 minutes demonstrates **no stable full-suite speedup**. In #1063 `:desktopApp:test` was `FROM-CACHE`; most elapsed time was `:shared:jvmTest`. Do not compare cached Desktop timing with uncached source changes as if they were equivalent.
+
+### Root cause proven for the expensive PriceCatalogWindowsCipherTest
+
+Source: JUnit XML `shared/build/test-results/jvmTest/TEST-com.andreyceilings.shared.db.PriceCatalogWindowsCipherTest.xml`, artifact **windows-desktop-test-reports** ID **14754117571**, Windows run #1063. Five real encrypted-DB testcases, all passed, accumulated suite time **1,624.765 s (27m 04.8s)**.
+
+- **6,637 physical JDBC opens and 6,637 closes**; each one passed its encrypted-schema validation.
+- **1,583,837 ms = 26m 23.8s** spent in the schema-guard instrumented region across those five tests — **97.48%** of their summed elapsed JUnit testcase time, as an *observed ratio*, not an independent causal estimate or CPU profile. Avoid assuming there is no overhead overlap.
+- 34,187 logical statements, 28,580 issued on pinned transaction connections, 894 counted outer transaction begins. Physical-open count is far larger than expected for efficient reuse.
+- Slowest methods: `encryptedPointPlacementsV8UpgradeRollbackReopenRacesAndDomainProof` **641.632 s**; `encryptedV5NamesRollbackAndConcurrentConnections` **513.483 s**; `encryptedMeasurementElementsV7MigrationRacesAndSharedContracts` **252.169 s**; `encryptedMigrationRollbackCrudAndReopen` **130.883 s**; `encryptedV3UpgradeAndV6Reopen` **86.598 s**.
+- The JUnit `system-out` contains five independent metric lines, but their order need not correspond to each `testcase` ordering; totals above are accurate **for the full class**, not per-method attribution.
+- Test purpose: prove native SQLCipher migration from legacy price and geometry schemas, genuine encrypted persistence, POINT/LINE/wall anchors, measurement elements, naming constraints, rollback and recovery, parallel connections, reopen, repository CRUD and integrity. These tests **must remain**; do not switch to plaintext, reduce KDF, or simply delete coverage to cut CI time.
+
+This is a **proven dominant cost for this single class**. It does not explain all Windows CI duration: Desktop `MixedDetailsSceneTest` has its own expensive scene behavior and cache/runtime differences. SQLCipher's exact internal KDF/native cost breakdown has not been proven.
+
+### Outcome of #148 and next actions
+
+1. Keep only the already-tested safeguards in #148: opt-in in-memory metrics, proper native PreparedStatement closure, protected error/rollback tests, and the bounded child-JVM thread handoff investigation (30s handoff deadline, 90s child process deadline). The successful path is verified; a deliberately forced native deadlock has **not** been demonstrated.
+2. **No production pool/reuse implemented.** The native JDBC `Connection` has mutable, unsynchronized proxy state; sequential cross-thread tests passing does **not** establish production pool safety. A safe production change requires bounded exclusive lease, transaction pinning, failure invalidation, close/drain and encrypted-file/security proofs, reviewed separately.
+3. #134: route Android-only work without native Windows full-suite execution; shared/critical DB changes still get relevant Windows encrypted checks. Keep Windows full suite available as deliberate manual/periodic/Windows-release verification with transparent skipped coverage. Branch protection remains disabled by owner's decision.
+4. Future #147 work: benchmark and potentially optimize SQLCipher open churn, inspect `PriceCatalogWindowsCipherTest` test-fixture repetition and run `MixedDetailsSceneTest` **uncached** in isolation, then compare uncached full-suite wall time. Preserve complete checks and real encryption. Issue #147 remains open; this is **not** a request to resume now.
+
+**Documentation supersedes the earlier “verification still required” paragraph above for the code HEAD `639377ba` only.** Any subsequent commit, including this documentation update, requires a fresh CI status assessment before merging. No new Android/Windows/iOS host functionality is promised by this checkpoint.
