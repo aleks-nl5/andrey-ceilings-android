@@ -1,3 +1,13 @@
+# CURRENT — P5B unified POINT / LINE / AREA UX (owner authorized 22.11.2026)
+
+**Accepted prerequisites:** P5A [#132](https://github.com/aleks-nl5/andrey-ceilings-android/pull/132), CI optimization including owner-merge-only automatic FULL [#152](https://github.com/aleks-nl5/andrey-ceilings-android/pull/152), and L0/L1 localization [#155](https://github.com/aleks-nl5/andrey-ceilings-android/pull/155) merged. [#155](https://github.com/aleks-nl5/andrey-ceilings-android/pull/155) is on `main` at `492ca12d833fe3d7c8008667c2b0bdabcbd0bf9e`. Post-merge Android and Windows/iOS FULL checks were **in progress at P5B kickoff**; verify outcomes before reporting them. Older milestones below are historical where superseded.
+
+**Now authorized:** [#156](https://github.com/aleks-nl5/andrey-ceilings-android/issues/156) is the **single** POINT/LINE/AREA UX implementation issue, covering shared add→preview→precise editing→draft→atomic Save/reopen on the persistent CMP Canvas, normal/fullscreen selection/drag/pan/pinch, LINE rubber-band and default smart snap, AREA/POINT editing and six deferred P5A manual acceptance scenarios. Use **one Draft PR** `feat/p5b-unified-elements-ux` and [P5B Codex handoff](P5B_CODEX_HANDOFF.md). Preserve domain geometry and existing finances/immutable records; all new user strings use L1 shared resources, while user price names never get translated. PR FAST/TARGETED; automatic FULL after owner merge only; independent review and owner APK acceptance before merge. Do not claim implementation complete from this documentation-only kickoff.
+
+**Later separately:** **P5C** new-measurement UX, invalid contour diagnostics, vertex letters, A/B and viewport fit; **P5D** in-memory pre-Save draft pricing, quick canvas/profile pickers, fourth saved «Кошториси» tab and version selection. #71/#76/#95 remain umbrella OPEN until corresponding product acceptance; #154 localization foundation is independently trackable. No bleed into unrelated workstreams.
+
+---
+
 # CURRENT — P5A implementation, owner authorized 19.11.2026
 
 Following docs-only [PR #130](https://github.com/aleks-nl5/andrey-ceilings-android/pull/130) merged to main, active P5 slice is **[issue #131](https://github.com/aleks-nl5/andrey-ceilings-android/issues/131) / [Draft PR #132](https://github.com/aleks-nl5/andrey-ceilings-android/pull/132)** in `feat/p5a-ceiling-workspace`. Codex [handoff](P5A_CODEX_HANDOFF.md) is authoritative for the next implementation: single persistent CMP Canvas + model, contextual Contour/Elements/Cost panel and full existing functionality in normal/fullscreen. Create/edit existing measurements must keep functioning; new measurement creation workflow retains current screen until P5C. Initial Draft PR contains documentation only.
