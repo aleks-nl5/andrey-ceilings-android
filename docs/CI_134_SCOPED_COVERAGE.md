@@ -23,10 +23,11 @@ Android, Windows, macOS/JVM and iOS; `TARGETED` can mix depths.
 | Android app/androidMain UI-only | smoke | skip | skip | skip |
 | Windows JVM JDBC/SQLCipher or Windows test | skip | deep | deep | skip |
 | Desktop UI-only | skip | smoke | smoke | skip |
-| iOS-specific app/iosMain UI-only | skip | skip | skip | smoke |
+| iOS-specific `shared/src/iosMain` UI-only | skip | skip | skip | smoke |
+| Native `iosApp/` Xcode/Swift project (not covered by Gradle framework smoke) | deep | deep | deep | deep |
 | Known shared Compose UI/theme/navigation/drawing presentation | smoke | smoke | smoke | smoke |
 | Shared DB, SQLDelight, pricing/business/geometry, commonTest | deep | deep | deep | deep |
-| CI, Gradle, dependencies, unknown/deleted/renamed/incomplete diff | deep | deep | deep | deep |
+| CI, Gradle, dependencies, unknown binaries/deleted/renamed/incomplete diff | deep | deep | deep | deep |
 | Mixed platform changes | union of impact, never downgrade an affected platform |
 
 The shared UI allowlist is *deliberately narrow*: a filename cannot prove a
