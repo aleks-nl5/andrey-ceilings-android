@@ -1,3 +1,10 @@
+> **Update — 22.11.2026:** PR #135 was merged. The previously documented
+> mandatory Windows FULL on every Ready PR/main push and Branch Protection
+> instructions are historical and superseded by the owner's revised #134
+> decision. See [CI_134_SCOPED_COVERAGE.md](CI_134_SCOPED_COVERAGE.md) for the
+> current platform/depth policy, owner-only merge, manual full recovery and
+> remaining real Actions validation. Do not apply old rules below blindly.
+>
 # #134 — CI performance, FAST / TARGETED / FULL — developer handoff
 
 > Status 21.11.2026: initial Windows observability slice committed on branch `ci/p5b-impact-full-gate`. **Not implementation-complete; Draft PR only.** Base: owner-merged P5A #132 (`b20d185b83a7e38d02d9bea2225b36175eb33887`), #131 completed. Main contract: [issue #134](https://github.com/aleks-nl5/andrey-ceilings-android/issues/134). Read it fully, AGENTS.md, and actual current workflows before coding.
