@@ -73,10 +73,34 @@ class LinePlacementTouchTest {
             val placedLinePencil = compose.onNodeWithTag("p5b-edit-work-${short.uuid}")
                 .performScrollTo().assertIsEnabled()
             placedLinePencil.performClick()
+            val inlineLength = compose.onNodeWithTag("p5b-work-quantity-${short.uuid}")
+                .performScrollTo()
+            inlineLength.assertTextContains("2,5")
+            compose.onNodeWithTag("p5b-line-declared-length").assertDoesNotExist()
+            assertNull(model.state.value.lineProperties,
+                "Pencil must edit declared length inline without opening gear parameters")
+            inlineLength.performTextReplacement("2,6")
+            click("Застосувати кількість до чернетки")
+            assertEquals(ElementQuantity.Exact(2600),
+                model.workspaceWorks().single { it.uuid == short.uuid }.quantity)
+            assertEquals(original, model.displayLines().single { it.uuid == original.uuid },
+                "Manual length must not resize the drawn line")
+            // Work-list pencil can be reopened after the first placed segment.
+            compose.onNodeWithTag("p5b-edit-work-${short.uuid}")
+                .performScrollTo().performClick()
+            compose.onNodeWithTag("p5b-work-quantity-${short.uuid}")
+                .performScrollTo().performTextReplacement("2,5")
+            click("Застосувати кількість до чернетки")
+            assertEquals(ElementQuantity.Exact(2500),
+                model.workspaceWorks().single { it.uuid == short.uuid }.quantity)
+            // Gear is deliberately different: it opens the placed-line
+            // geometry editor, not the inline work-quantity field.
+            compose.onNodeWithTag("p5b-open-geometry-${short.uuid}")
+                .performScrollTo().performClick()
+            assertEquals(original.uuid, model.state.value.lineProperties?.uuid)
             compose.onNodeWithTag("p5b-line-declared-length")
                 .performScrollTo().assertTextContains("2,5")
-            assertEquals(1, compose.onAllNodesWithTag("p5b-line-declared-length").fetchSemanticsNodes().size,
-                "Pencil must open the single declared length input, not a second quantity field")
+            compose.onNodeWithTag("p5b-work-quantity-${short.uuid}").assertDoesNotExist()
             compose.runOnIdle { model.discardLineProperties(); model.clearDrawingSelection() }
             compose.onNodeWithTag("measurement-workspace-add").performClick()
             compose.onNodeWithTag("p5b-linked-${full.uuid}").performScrollTo().performClick()

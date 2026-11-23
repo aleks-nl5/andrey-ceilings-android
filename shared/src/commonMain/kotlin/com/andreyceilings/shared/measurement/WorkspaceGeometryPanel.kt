@@ -655,6 +655,7 @@ internal fun WorkspaceWorkList(
             }
             IconButton(onClick = {
                 if (model.selectFirstWorkspacePlacement(work.uuid)) {
+                    quantityEditingWork = null
                     onOpenGeometry()
                 }
             }, enabled = enabled && hasPlacement,
@@ -663,17 +664,11 @@ internal fun WorkspaceWorkList(
             }
             val source = work.source as? ElementSource.CatalogSelection
             val editableQuantity = source?.quantityMode?.workspaceQuantity() == ElementQuantity.Unknown
-            // Keep the pencil present even after the first LINE placement.
-            // Placed LINE uses the SAME "Довжина" editor as the geometry panel;
-            // the separate work-list quantity field must not be duplicated.
+            // Pencil edits the work's declared length below this row.
+            // Gear edits the drawing placement's geometry and coordinates.
             IconButton(onClick = {
-                if (work.supportsLinePlacement() && hasPlacement) {
-                    if (model.selectFirstWorkspacePlacement(work.uuid)) {
-                        quantityEditingWork = null
-                        onOpenGeometry()
-                    }
-                } else {
-                    val closingSameEditor = isSelected && quantityEditingWork == work.uuid
+                val closingSameEditor = isSelected && quantityEditingWork == work.uuid
+                if (!model.promptForDirtyElementBeforeNavigation()) {
                     onSelect(work.uuid)
                     quantityEditingWork = if (closingSameEditor) null else work.uuid
                 }
@@ -686,8 +681,7 @@ internal fun WorkspaceWorkList(
                 Icon(Icons.Default.Delete, stringResource(Res.string.p5b_delete_work))
             }
         }
-        if (isSelected && quantityEditingWork == work.uuid &&
-            (!work.supportsLinePlacement() || !hasPlacement)) {
+        if (isSelected && quantityEditingWork == work.uuid) {
             var quantity by rememberSaveable(work.quantity) {
                 mutableStateOf((work.quantity as? ElementQuantity.Exact)?.let { formatElementMilli(it.milli) }.orEmpty())
             }
@@ -695,8 +689,10 @@ internal fun WorkspaceWorkList(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(Modifier.weight(1f)) {
                     DecimalInputField(quantity, { quantity = it; invalid = false },
-                        stringResource(Res.string.p5b_declared_quantity, work.unit.orEmpty()),
-                        modifier = measurementFieldFocusModifier().fillMaxWidth(),
+                        if (work.supportsLinePlacement()) stringResource(Res.string.p5b_line_length)
+                        else stringResource(Res.string.p5b_declared_quantity, work.unit.orEmpty()),
+                        modifier = measurementFieldFocusModifier().fillMaxWidth()
+                            .testTag("p5b-work-quantity-${work.uuid}"),
                         compact = true, isError = invalid, allowDecimalSeparator = work.unit != "шт.")
                     WorkspaceQuantityHelp(Modifier.align(Alignment.CenterEnd).padding(end = 2.dp))
                 }
