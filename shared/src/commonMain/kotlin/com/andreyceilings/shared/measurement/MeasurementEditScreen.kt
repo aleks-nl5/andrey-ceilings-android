@@ -279,8 +279,8 @@ fun MeasurementEditScreen(
         }
         state.area.properties?.dirty == true -> {
             val input = state.area.properties
-            val area = model.displayAreas().find { it.uuid == input.uuid }
-            if (area != null && model.areaPropertiesCandidate(area, input) == null)
+            val area = model.displayAreas().find { it.uuid == input?.uuid }
+            if (input != null && area != null && model.areaPropertiesCandidate(area, input) == null)
                 stringResource(Res.string.p5b_save_area_invalid)
             else stringResource(Res.string.p5b_save_apply_fields)
         }
