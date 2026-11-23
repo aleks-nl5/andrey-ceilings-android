@@ -1,45 +1,132 @@
 # This workflow is loaded exclusively from the default branch, never from
 # pull_request source. DO NOT run PR code, Gradle scripts or package scripts here.
-# The production keystore is only used to sign an already-built APK after all
-# selected FAST/TARGETED jobs succeed; no signing secrets enter PR runners.
+# The production keystore is only used to sign an already-built APK from a
+# verified same-repo PR. Automatic signing waits for all FAST/TARGETED jobs;
+# manual signing allows queued iOS ONLY after Android and Windows passed.
+# PR code, Gradle, and PR-provided scripts are NEVER executed with secrets.
 name: Sign PR Android release APK
 
 on:
   workflow_run:
     workflows: ["PR fast checks (no FULL)"]
     types: [completed]
+  workflow_dispatch:
+    inputs:
+      source_run_id:
+        description: "FAST workflow run ID (Android and Windows green; iOS may be queued)"
+        required: true
+        type: string
 
 permissions:
   actions: read
   contents: read
 
+concurrency:
+  group: pr-sign-${{ github.event.inputs.source_run_id || github.event.workflow_run.id }}
+  cancel-in-progress: false
+
 jobs:
   sign-pr-release:
     name: Sign successful in-repository PR release (trusted)
-    # Never sign fork PRs or failed, cancelled or non-PR runs.
-    if: ${{ github.event.workflow_run.event == 'pull_request' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_repository.full_name == github.repository }}
+    # Trusted main branch only. No failed Android/Windows CI may be bypassed.
+    if: ${{ (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_run' && github.event.workflow_run.event == 'pull_request' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_repository.full_name == github.repository) }}
     runs-on: ubuntu-24.04
     steps:
-      - name: Find candidate from exact successful quick run
+      - name: Verify exact current PR source, FAST jobs, and unsigned artifact
         id: candidate
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-          RUN_ID: ${{ github.event.workflow_run.id }}
-          SOURCE_SHA: ${{ github.event.workflow_run.head_sha }}
+          RUN_ID: ${{ inputs.source_run_id || github.event.workflow_run.id }}
+          TRIGGER: ${{ github.event_name }}
         run: |
           set -euo pipefail
-          [[ "$RUN_ID" =~ ^[0-9]+$ ]]
-          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
-          artifact_id="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID/artifacts?per_page=100" --jq '.artifacts[] | select(.name == "pr-internal-unsigned-release-apk" and .expired == false) | .id')"
+          [[ "$RUN_ID" =~ ^[0-9]+$ ]] || { echo "::error::Enter a numeric FAST workflow run ID"; exit 1; }
+          [[ "$TRIGGER" == workflow_dispatch || "$TRIGGER" == workflow_run ]]
+
+          # Load metadata exclusively from the GitHub REST API, never from PR files.
+          quick_workflow_id="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/draft-impact-feedback.yml" --jq '.id')"
+          [[ "$quick_workflow_id" =~ ^[0-9]+$ ]]
+          source="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID")"
+          jq -e --arg repo "$GITHUB_REPOSITORY" --argjson workflow "$quick_workflow_id" '
+            .event == "pull_request" and
+            .workflow_id == $workflow and
+            .name == "PR fast checks (no FULL)" and
+            .head_repository.full_name == $repo and
+            (.pull_requests | length) == 1 and
+            (.head_sha | test("^[0-9a-f]{40}$"))
+          ' <<<"$source" >/dev/null || {
+            echo "::error::Run must belong to the trusted FAST workflow and a same-repository PR."
+            exit 1
+          }
+
+          source_sha="$(jq -r '.head_sha' <<<"$source")"
+          pr_number="$(jq -r '.pull_requests[0].number' <<<"$source")"
+          attempt="$(jq -r '.run_attempt' <<<"$source")"
+          [[ "$pr_number" =~ ^[0-9]+$ && "$attempt" =~ ^[0-9]+$ ]]
+          pr="$(gh api "repos/$GITHUB_REPOSITORY/pulls/$pr_number")"
+          jq -e --arg sha "$source_sha" --arg repo "$GITHUB_REPOSITORY" '
+            .state == "open" and .base.ref == "main" and
+            .head.repo.full_name == $repo and .head.sha == $sha
+          ' <<<"$pr" >/dev/null || {
+            echo "::error::Source must match the CURRENT head of an open PR from this repository."
+            exit 1
+          }
+
+          if [[ "$TRIGGER" == workflow_run ]]; then
+            # Preserve the original automatic-signing gate.
+            jq -e '.conclusion == "success"' <<<"$source" >/dev/null
+          else
+            # Manual signing skips ONLY the iOS runner wait. An iOS failure,
+            # Windows failure, Android failure or missing test job is NEVER OK.
+            jobs="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID/jobs?per_page=100")"
+            jq -e --argjson attempt "$attempt" '
+              .total_count == (.jobs | length) and
+              ([.jobs[] | select(.run_attempt == $attempt and
+                .name == "Classify PR risk (quick checks only)" and
+                .status == "completed" and .conclusion == "success")] | length) == 1 and
+              ([.jobs[] | select(.run_attempt == $attempt and
+                .name == "PR Android release candidate and JVM unit tests" and
+                .status == "completed" and .conclusion == "success")] | length) == 1 and
+              ([.jobs[] | select(.run_attempt == $attempt and
+                .name == "PR Windows compile and mapped scene tests" and
+                .status == "completed" and .conclusion == "success")] | length) == 1 and
+              ([.jobs[] | select(.run_attempt == $attempt and
+                .name == "PR iOS framework compilation" and
+                ((.conclusion == "success") or (.conclusion == "skipped") or
+                 (.conclusion == null and
+                  (.status == "queued" or .status == "in_progress" or
+                   .status == "waiting" or .status == "pending" or
+                   .status == "requested"))))] | length) == 1
+            ' <<<"$jobs" >/dev/null || {
+              echo "::error::Android, Windows, classification must be green and iOS cannot be failed or cancelled."
+              exit 1
+            }
+            echo "Manual APK signing bypasses ONLY an unfinished iOS check. It does NOT approve CI, PR or merge." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+          artifacts="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID/artifacts?per_page=100")"
+          jq -e '.total_count <= 100 and .total_count == (.artifacts | length)' <<<"$artifacts" >/dev/null
+          artifact_id="$(jq -r '
+            [.artifacts[] | select(.name == "pr-internal-unsigned-release-apk" and
+                .expired == false and .size_in_bytes > 0)] |
+            if length == 1 then .[0].id else "" end
+          ' <<<"$artifacts")"
           if [[ -z "$artifact_id" ]]; then
+            if [[ "$TRIGGER" == workflow_dispatch ]]; then
+              echo "::error::No unique, unexpired unsigned APK in FAST run $RUN_ID."
+              exit 1
+            fi
             echo "available=false" >> "$GITHUB_OUTPUT"
-            echo "No Android artifact: Android may have been intentionally skipped by impact classification." >> "$GITHUB_STEP_SUMMARY"
+            echo "Android APK absent: signing skipped." >> "$GITHUB_STEP_SUMMARY"
           else
             [[ "$artifact_id" =~ ^[0-9]+$ ]]
             echo "available=true" >> "$GITHUB_OUTPUT"
             echo "artifact_id=$artifact_id" >> "$GITHUB_OUTPUT"
-            echo "Approved FAST/TARGETED PR run: $RUN_ID; source SHA: $SOURCE_SHA" >> "$GITHUB_STEP_SUMMARY"
+            echo "run_id=$RUN_ID" >> "$GITHUB_OUTPUT"
+            echo "source_sha=$source_sha" >> "$GITHUB_OUTPUT"
+            echo "pr_number=$pr_number" >> "$GITHUB_OUTPUT"
+            echo "Verified source: PR #$pr_number, FAST $RUN_ID, SHA $source_sha" >> "$GITHUB_STEP_SUMMARY"
           fi
 
       - name: Download exact unsigned artifact (data only; NEVER execute it)
@@ -48,7 +135,7 @@ jobs:
         with:
           artifact-ids: ${{ steps.candidate.outputs.artifact_id }}
           merge-multiple: true
-          run-id: ${{ github.event.workflow_run.id }}
+          run-id: ${{ steps.candidate.outputs.run_id }}
           repository: ${{ github.repository }}
           github-token: ${{ github.token }}
           path: ${{ runner.temp }}/pr-unsigned-release
@@ -106,7 +193,7 @@ jobs:
           "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs \
             "$RUNNER_TEMP/pr-signed-release/app-release.apk"
           sha256sum "$RUNNER_TEMP/pr-signed-release/app-release.apk" >> "$GITHUB_STEP_SUMMARY"
-          echo "Signed installable release APK; PR source run ${{ github.event.workflow_run.id }}, SHA ${{ github.event.workflow_run.head_sha }}." >> "$GITHUB_STEP_SUMMARY"
+          echo "Signed installable release APK for PR #${{ steps.candidate.outputs.pr_number }}, FAST run ${{ steps.candidate.outputs.run_id }}, source SHA ${{ steps.candidate.outputs.source_sha }}." >> "$GITHUB_STEP_SUMMARY"
           echo "This is a PR smoke artifact, NOT reviewed/merged production and NOT a FULL-test receipt." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload signed release APK for owner smoke
