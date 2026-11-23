@@ -127,8 +127,9 @@ internal fun WorkspaceGeometryPanel(
         }
     }
 
-    if ((review && !unresolved) || (line != null && work != null && !line.unresolved) ||
-        (area != null && work != null && !area.unresolved)) {
+    if ((review && !unresolved) || (edit && (
+        line != null && work != null && !line.unresolved ||
+            area != null && work != null && !area.unresolved))) {
         FlowRow {
             if (review && !unresolved) TextButton(onClick = {
                 when {
@@ -137,11 +138,11 @@ internal fun WorkspaceGeometryPanel(
                     area != null -> model.confirmArea()
                 }
             }) { Text(stringResource(Res.string.p5b_review_confirm)) }
-            if (line != null && work != null && !line.unresolved)
+            if (edit && line != null && work != null && !line.unresolved)
                 TextButton(onClick = { model.requestDeclaredLength(work.uuid) }) {
                     Text(stringResource(Res.string.p5b_take_length))
                 }
-            if (area != null && work != null && !area.unresolved)
+            if (edit && area != null && work != null && !area.unresolved)
                 TextButton(onClick = { model.requestAreaQuantity(work.uuid) }) {
                     Text(stringResource(Res.string.p5b_take_quantity))
                 }

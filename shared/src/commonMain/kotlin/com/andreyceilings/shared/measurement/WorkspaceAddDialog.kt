@@ -186,6 +186,8 @@ internal fun WorkspaceCatalogSearch(
         }
         TextButton(onClick = onDismiss) { Text(stringResource(Res.string.p5b_cancel_placement)) }
     }
+    if (materialSelectionFailed) Text(stringResource(Res.string.p5b_material_selection_failed),
+        color = MaterialTheme.colorScheme.error)
     if (unavailable) Text(stringResource(Res.string.p5b_catalog_unavailable))
     else if (catalog == null) Text(stringResource(Res.string.p5b_catalog_loading))
     val term = normalizedNameKey(query)
@@ -216,8 +218,6 @@ internal fun WorkspaceCatalogSearch(
             } else { quantity = ""; selectedCatalog = choice.uuid }
         }
     }
-    if (materialSelectionFailed) Text(stringResource(Res.string.p5b_material_selection_failed),
-        color = MaterialTheme.colorScheme.error)
     if (catalog != null && listed.isEmpty() && matching.isEmpty()) Text(stringResource(Res.string.p5b_catalog_empty))
 }
 

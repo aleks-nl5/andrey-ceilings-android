@@ -472,6 +472,7 @@ fun MeasurementEditScreen(
                                             model.clearDrawingSelection()
                                             selectedWork = workId
                                             dismissCatalog()
+                                            scope.launch { scroll.scrollTo(0) }
                                         }
                                     ) {
                                         selected = null
