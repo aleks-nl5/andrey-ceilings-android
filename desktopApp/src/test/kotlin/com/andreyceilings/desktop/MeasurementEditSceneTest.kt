@@ -180,7 +180,7 @@ class MeasurementEditSceneTest {
                 scene.click("До заміру"); scene.frame()
                 assertTrue(scene.text().contains("Незбережені зміни")); assertEquals(0, backs)
                 scene.click("Продовжити редагування"); scene.frame(); assertTrue(model.state.value.dirty)
-                scene.click("До заміру"); scene.frame(); scene.click("Відхилити зміни")
+                scene.click("До заміру"); scene.frame(); scene.click("Відхилити зміни й вийти")
                 assertEquals(1, backs); assertFalse(model.state.value.dirty)
                 assertEquals(MeasurementDetails(7, 3), route.measurementDetails)
             } finally { scene.close() }

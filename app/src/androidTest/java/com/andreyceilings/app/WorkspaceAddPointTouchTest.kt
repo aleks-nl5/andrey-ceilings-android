@@ -145,7 +145,7 @@ class WorkspaceAddPointTouchTest {
                     "Settings must open actual wall-distance inputs")
                 assertEquals(point.uuid, shown.value.state.value.selectedPointUuid)
             }
-            compose.onNodeWithText("Відстань, м").assertExists()
+            compose.onAllNodesWithText("Відстань, м").assertCountEquals(2)
         } finally {
             store.closePointReads()
             driver.close()
