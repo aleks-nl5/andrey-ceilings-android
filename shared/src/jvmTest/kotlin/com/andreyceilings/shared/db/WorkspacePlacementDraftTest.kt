@@ -29,6 +29,8 @@ class WorkspacePlacementDraftTest {
             val pointId = editor.displayPoints().single().uuid
             assertTrue(editor.selectFirstWorkspacePlacement(workId))
             assertEquals(pointId, editor.state.value.selectedPointUuid)
+            assertEquals(pointId, editor.state.value.mountingInput?.pointUuid,
+                "Settings must open the point wall-distance editor, not just select a marker")
             assertEquals(1, editor.workspaceWorks().count { it.uuid == workId })
             assertFalse(editor.selectFirstWorkspacePlacement("missing"))
         }

@@ -503,14 +503,33 @@ class MeasurementEditModel(
         publish()
     }
 
-    /** Open the same geometry parameters from a work row without creating another paid work. */
+    /**
+     * A work-row settings action must open actual geometry inputs, not merely select
+     * a marker that is already visible on the drawing. Never create a second work.
+     */
     internal fun selectFirstWorkspacePlacement(workUuid: String): Boolean {
+        if (!editable()) return false
         val point = displayPoints().firstOrNull { it.elementUuid == workUuid }
-        if (point != null) { selectPoint(point.uuid); return state.value.selectedPointUuid == point.uuid }
+        if (point != null) {
+            selectPoint(point.uuid)
+            if (state.value.selectedPointUuid != point.uuid) return false
+            openMounting()
+            return state.value.mountingInput?.pointUuid == point.uuid
+        }
         val line = displayLines().firstOrNull { it.elementUuid == workUuid }
-        if (line != null) { selectLine(line.uuid); return state.value.selectedLineUuid == line.uuid }
+        if (line != null) {
+            selectLine(line.uuid)
+            if (state.value.selectedLineUuid != line.uuid) return false
+            openLineProperties()
+            return state.value.lineProperties?.uuid == line.uuid
+        }
         val area = displayAreas().firstOrNull { it.elementUuid == workUuid }
-        if (area != null) { selectArea(area.uuid); return state.value.area.selected == area.uuid }
+        if (area != null) {
+            selectArea(area.uuid)
+            if (state.value.area.selected != area.uuid) return false
+            openAreaProperties()
+            return state.value.area.properties?.uuid == area.uuid
+        }
         return false
     }
 

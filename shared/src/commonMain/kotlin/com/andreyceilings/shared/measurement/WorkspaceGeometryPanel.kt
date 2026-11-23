@@ -113,7 +113,13 @@ internal fun WorkspaceGeometryPanel(
     val uuid = point?.uuid ?: line?.uuid ?: area?.uuid ?: return
     val coincidentPoints = if (point != null) model.overlappingPointsForSelected() else emptyList()
     val coincidentIndex = coincidentPoints.indexOfFirst { it.uuid == uuid }
-    var edit by rememberSaveable(uuid) { mutableStateOf(false) }
+    // A work-list settings action may open the editor before this panel is composed.
+    val parametersOpened = state.mountingInput?.pointUuid == uuid ||
+        state.lineProperties?.uuid == uuid || state.area.properties?.uuid == uuid
+    var edit by rememberSaveable(uuid) { mutableStateOf(parametersOpened) }
+    LaunchedEffect(uuid, parametersOpened) {
+        if (parametersOpened) edit = true
+    }
     var deletion by remember(uuid) { mutableStateOf(false) }
     val workId = point?.elementUuid ?: line?.elementUuid ?: area?.elementUuid
     val work = model.workspaceWorks().find { it.uuid == workId }
