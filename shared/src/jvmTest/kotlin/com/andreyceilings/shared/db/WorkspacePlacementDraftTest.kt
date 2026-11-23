@@ -98,6 +98,18 @@ class WorkspacePlacementDraftTest {
             assertEquals(ElementQuantity.Exact(2000), editor.workspaceWorks().single { it.uuid == workId }.quantity)
             assertTrue(editor.canSaveMountingDraft(), "A greater declared quantity must not block Save")
             assertTrue(workId !in editor.state.value.declaredLengths)
+            val initial = editor.displayLines().single()
+            editor.selectLine(initial.uuid)
+            editor.openLineProperties()
+            editor.changeLineProperties(length = "1.5")
+            val proposed = assertNotNull(editor.state.value.lineProperties)
+            assertNotNull(editor.linePropertiesCandidate(initial, proposed),
+                "Declared 2m must allow extending geometry from 1m to 1.5m")
+            editor.applyLineProperties()
+            assertEquals(1500L, editor.displayLines().single().lengthMm)
+            assertEquals(ElementQuantity.Exact(2000),
+                editor.workspaceWorks().single { it.uuid == workId }.quantity)
+            assertTrue(editor.canSaveMountingDraft())
         }
     }
 

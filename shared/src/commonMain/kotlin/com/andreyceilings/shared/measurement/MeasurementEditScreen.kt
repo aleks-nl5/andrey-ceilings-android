@@ -70,6 +70,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.andreyceilings.shared.calculation.*
+import com.andreyceilings.shared.input.CompactOutlinedStringField
 import com.andreyceilings.shared.estimate.FrozenPolygonGeometry
 import com.andreyceilings.shared.resources.*
 import org.jetbrains.compose.resources.stringResource
@@ -500,9 +501,11 @@ fun MeasurementEditScreen(
                                         style = MaterialTheme.typography.titleSmall,
                                         modifier = Modifier.padding(top = 6.dp, start = 8.dp))
                                     if (detailsVisible) {
-                                        OutlinedTextField(draft.name, { model.accept(MeasurementCreateIntent.Name(it), grouped = true) },
-                                            enabled = enabled, label = { Text("Назва заміру *") }, singleLine = true,
-                                            modifier = measurementFieldFocusModifier().fillMaxWidth().height(56.dp).focusRequester(nameFocus)
+                                        CompactOutlinedStringField(draft.name,
+                                            { model.accept(MeasurementCreateIntent.Name(it), grouped = true) },
+                                            label = stringResource(Res.string.p5b_measurement_name),
+                                            enabled = enabled,
+                                            modifier = measurementFieldFocusModifier().fillMaxWidth().focusRequester(nameFocus)
                                                 .onFocusChanged { if (it.isFocused) model.beginInput() else model.commitInput() },
                                             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
                                             keyboardActions = KeyboardActions(onNext = { notesFocus.requestFocus() }),

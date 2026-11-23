@@ -911,8 +911,6 @@ class MeasurementEditModel(
         // command: the user may subsequently change the quantity independently.
         if (length > 0 && editWorkspaceQuantity(id, ElementQuantity.Exact(length))) {
             mutableState.value = state.value.copy(lengthConfirm = null)
-        } else {
-            mutableState.value = state.value.copy(error = "Не вдалося перенести довжину. Перевірте тип кількості та наявні розміщення.")
         }
     }
 
@@ -1141,8 +1139,6 @@ class MeasurementEditModel(
         val qty = areaQuantityMilli(displayAreas().filter { it.elementUuid == id }, checkNotNull(work.unit))
         if (qty > 0 && editWorkspaceQuantity(id, ElementQuantity.Exact(qty))) {
             updateArea { it.copy(quantityConfirm = null) }
-        } else {
-            mutableState.value = state.value.copy(error = "Не вдалося перенести кількість. Перевірте одиницю та наявні розміщення.")
         }
     }
 

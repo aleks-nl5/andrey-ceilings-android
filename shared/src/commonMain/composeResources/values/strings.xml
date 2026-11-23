@@ -143,10 +143,13 @@
     <string name="p5b_work_status">%1$s · %2$s</string>
     <string name="p5b_details_drag_hint">Перетягніть вибраний об’єкт. Після руху положення буде приблизним.</string>
     <string name="p5b_capacity_full">Досягнуто заявленої кількості.</string>
-    <string name="p5b_line_length">Довжина, м</string>
+    <string name="p5b_line_length">Довжина лінії, м</string>
     <string name="p5b_rectangle_width">Ширина, м</string>
     <string name="p5b_rectangle_height">Висота, м</string>
+    <string name="p5b_line_declared_value">Для кошторису заявлено: %1$s</string>
+    <string name="p5b_line_more_than_declared">Довжина ліній перевищить заявлені %1$s. Змініть кількість олівцем вище або скоротіть лінію.</string>
     <string name="p5b_dimensions_invalid">Перевірте розміри, контур і заявлену кількість.</string>
+    <string name="p5b_measurement_name">Назва заміру *</string>
     <string name="p5b_measurement_details">Деталі заміру</string>
     <string name="p5b_live_area_value">%1$s м²</string>
     <string name="p5b_live_perimeter_value">%1$s м</string>

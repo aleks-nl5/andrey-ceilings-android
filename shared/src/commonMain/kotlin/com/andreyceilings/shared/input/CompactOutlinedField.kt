@@ -12,6 +12,11 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.text.TextRange
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.SolidColor
@@ -62,5 +67,30 @@ fun CompactOutlinedField(
                 contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
             )
         }
+    )
+}
+
+/** Text name variant with the same compact *interior* padding as numeric fields. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun CompactOutlinedStringField(
+    value: String, onValueChange: (String) -> Unit, label: String,
+    modifier: Modifier = Modifier, enabled: Boolean = true, isError: Boolean = false,
+    keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
+    keyboardActions: KeyboardActions = KeyboardActions.Default
+) {
+    var field by remember { mutableStateOf(TextFieldValue(value, selection = TextRange(value.length))) }
+    LaunchedEffect(value) {
+        if (field.text != value) field = field.copy(
+            text = value, selection = TextRange(
+                field.selection.start.coerceIn(0, value.length),
+                field.selection.end.coerceIn(0, value.length)))
+    }
+    CompactOutlinedField(
+        field, onValueChange = { next ->
+            field = next
+            if (next.text != value) onValueChange(next.text)
+        }, label = label, modifier = modifier, enabled = enabled, isError = isError,
+        keyboardOptions = keyboardOptions, keyboardActions = keyboardActions
     )
 }
