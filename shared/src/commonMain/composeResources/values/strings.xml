@@ -53,6 +53,8 @@
     <string name="p5b_in_measurement">У замірі</string>
     <string name="p5b_material_selection_failed">Не вдалося обрати матеріал. Перевірте наявні розміщення й стан прайсу.</string>
     <string name="p5b_line_kind_required">Щоб креслити цю роботу, встановіть тип «Лінія» у прайсі.</string>
+    <string name="p5b_wall_anchor_invalid">Немає допустимої точки. Перевірте відступи або оберіть «Уздовж + усередину».</string>
+    <string name="p5b_wall_anchor_verified">Перевірено: %1$s м / %2$s м</string>
     <string name="p5b_quantity_unknown">Кількість невідома</string>
     <string name="p5b_placement_unavailable">Розміщення недоступне для цієї кількості або типу.</string>
     <string name="p5b_work_quantities">Заявлено %1$s · На кресленні %2$s %3$s</string>

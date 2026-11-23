@@ -57,6 +57,10 @@ Use `validation.geometry` from the **current in-memory draft** directly and exis
 
 **Live price amount, third indicator and full coherent unsaved draft-pricing projection remain P5D.** Never add placeholder third cell, pricing writes, duplicate financial formula or live-pricing engine dependencies in P5B. See [P5B_UX_SPEC.md §1.2](P5B_UX_SPEC.md).
 
+## Owner Android APK screenshots — direct edits in PR #157 (23.11.2026)
+
+See [canonical UX §4.2](P5B_UX_SPEC.md): owner approved **~60% normal bottom sheet**, top live geometry moved higher, 2-decimal area **display only**, compact work rows and separators, typed existing-item navigation/declared-quantity edit, **multi-POINT placement until N or cancel**, small action icons to the right of numerical inputs, **trash instead of ⋯** with destructive confirmation, conditional rare actions moved inline, same working POINT pencil for chandelier/spot, no early wall-position error. New starter `work.curtain_niche` supports `LINE`, existing custom-priced `NONE` requires explicit catalog edit — no forced metadata rewrite. The assistant is applying code directly to this Draft PR, **not assigning Codex**. Pending physical Android owner validation, scoped CI, and independent code review. Do not mark Ready/merge.
+
 ## One acceptance matrix (all must pass)
 
 - [ ] **Owner UX acceptance is mandatory in addition to the original geometry matrix:** validate every scenario in [P5B UX spec §6](P5B_UX_SPEC.md), particularly persistent two primary selectors, «+» direct search rather than AlertDialog, compact rows/status/action icons, existing/new work quantity and no duplicates, inline-pencil fields, conditional «…», both modes and narrow phone.

@@ -1,6 +1,8 @@
 package com.andreyceilings.shared.measurement
 
 import com.andreyceilings.shared.input.DecimalInputField
+import com.andreyceilings.shared.resources.*
+import org.jetbrains.compose.resources.stringResource
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -83,10 +85,12 @@ fun WallAnchorEditor(model: MeasurementEditModel, inline: Boolean = false) {
                 modifier = measurementFieldFocusModifier().focusRequester(secondField))
             // Do not show a large red geometry error before the user has typed both dimensions.
             if (input.firstText.isNotBlank() && input.secondText.isNotBlank() && solution == null)
-                Text("Немає допустимої точки. Перевірте відступи або оберіть «Уздовж + усередину».",
+                Text(stringResource(Res.string.p5b_wall_anchor_invalid),
                     color = MaterialTheme.colorScheme.error)
             else if (solution != null && !inline)
-                Text("Перевірено: ${formatPointMetres(solution.firstActualMm.roundToLong())} м / ${formatPointMetres(solution.secondActualMm.roundToLong())} м")
+                Text(stringResource(Res.string.p5b_wall_anchor_verified,
+                    formatPointMetres(solution.firstActualMm.roundToLong()),
+                    formatPointMetres(solution.secondActualMm.roundToLong())))
             state.error?.let {Text(it,color=MaterialTheme.colorScheme.error)}
             if (!inline) Text("Застосування змінює тільки чернетку. Для запису всієї стелі натисніть «Зберегти».")
         } }
