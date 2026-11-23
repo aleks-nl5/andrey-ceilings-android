@@ -24,6 +24,7 @@ class WorkspacePlacementDraftTest {
             val editor = MeasurementEditModel(store, store.load(fixture.project, fixture.id))
             val item = store.placementCatalog().single { it.code.startsWith("fixture.") }
             editor.addCatalogWork(item, ElementQuantity.Exact(3000), place = true)
+            val workId = assertNotNull(editor.state.value.pointElementUuid)
             repeat(3) { assertTrue(editor.placeWorkspacePoint(1100, 900)) }
             val ids = editor.displayPoints().map { it.uuid }
             assertEquals(3, ids.toSet().size)
@@ -36,7 +37,7 @@ class WorkspacePlacementDraftTest {
                 assertEquals(additions, editor.state.value.additions)
                 assertEquals(setOf(1100L to 900L), editor.displayPoints().map { it.xMm to it.yMm }.toSet())
             }
-            assertEquals(ElementQuantity.Exact(3000), editor.workspaceWorks().single().quantity)
+            assertEquals(ElementQuantity.Exact(3000), editor.workspaceWorks().single { it.uuid == workId }.quantity)
             editor.undo()
             assertEquals(2, editor.displayPoints().size)
             editor.redo()
