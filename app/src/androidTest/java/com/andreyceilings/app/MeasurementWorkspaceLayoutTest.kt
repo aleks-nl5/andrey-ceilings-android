@@ -315,6 +315,7 @@ class MeasurementWorkspaceLayoutTest {
                 }
                 assertEquals(initialProjection, canvas().config[MeasurementDrawingSemantics.Projection])
                 compose.onNodeWithTag("ceilings-workspace-normal-gradient").assertExists()
+                compose.onNodeWithTag("ceilings-workspace-bottom-gradient").assertExists()
                 fun assertZoomTargets() {
                     val targets = compose.onAllNodesWithTag("measurement-edit-zoom-target", useUnmergedTree = true).fetchSemanticsNodes()
                     val discs = compose.onAllNodesWithTag("measurement-edit-zoom-disc", useUnmergedTree = true).fetchSemanticsNodes()
@@ -352,6 +353,25 @@ class MeasurementWorkspaceLayoutTest {
                 contextTab("cost").assertDoesNotExist()
                 compose.onNodeWithTag("ceilings-workspace-normal-gradient").assertDoesNotExist()
                 assertSharedFadeBounds("ceilings-workspace-fullscreen-gradient", canvas())
+                val navigationInset = compose.runOnIdle {
+                    ViewCompat.getRootWindowInsets(compose.activity.window.decorView)
+                        ?.getInsets(WindowInsetsCompat.Type.navigationBars())?.bottom ?: 0
+                }
+                val bottomFade = compose.onNodeWithTag("ceilings-workspace-bottom-gradient")
+                    .fetchSemanticsNode().boundsInRoot
+                val bottomTail = CeilingsEdgeDefaults.FadeHeight.value * compose.density.density
+                assertEquals(navigationInset + bottomTail, bottomFade.height, 3f,
+                    "Workspace bottom fade must include the Android navigation inset and shared tail")
+                assertEquals(canvas().boundsInRoot.bottom, bottomFade.bottom, 2f,
+                    "Fullscreen grid/canvas should draw behind the transparent system buttons")
+                val viewportSafe = canvas().config[MeasurementDrawingSemantics.ViewportBounds]
+                assertEquals(canvas().size.height - navigationInset.toFloat(), viewportSafe.bottom, 3f,
+                    "Drawing fit and touch input must exclude the Android navigation buttons")
+                assertEquals(android.graphics.Color.TRANSPARENT, compose.activity.window.navigationBarColor,
+                    "Android system navigation bar itself must remain transparent")
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q)
+                    assertFalse(compose.activity.window.isNavigationBarContrastEnforced,
+                        "Android navigation contrast scrim must remain disabled")
                 assertZoomTargets()
                 panel.assertDoesNotExist()
                 capture("fullscreen")

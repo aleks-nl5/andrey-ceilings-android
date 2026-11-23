@@ -745,6 +745,10 @@ class MeasurementEditSceneTest {
             assertNull(tagged("measurement-edit-save").config.getOrNull(SemanticsActions.OnClick))
             val contourHeight = fittedHeight()
             val canvasHeight = scene.projectedDrawing().size.height
+            val bottomFadeNormal = tagged("ceilings-workspace-bottom-gradient").boundsInRoot
+            assertEquals(580f, bottomFadeNormal.bottom, 1f)
+            assertEquals(24f + CeilingsEdgeDefaults.FadeHeight.value, bottomFadeNormal.height, 1f,
+                "Editor uses the same bottom fade as the rest of the app")
             val normalPanel = tagged("measurement-edit-normal-panel")
             val viewportHeight = scene.projectedDrawing().config[MeasurementDrawingSemantics.ViewportBounds].height
             val viewportTop = scene.projectedDrawing().config[MeasurementDrawingSemantics.ViewportBounds].top
@@ -777,6 +781,14 @@ class MeasurementEditSceneTest {
             scene.frame()
             scene.click("На весь екран")
             repeat(6) { scene.frame() }
+            val fullscreenCanvas = scene.projectedDrawing()
+            val fullscreenViewport = fullscreenCanvas.config[MeasurementDrawingSemantics.ViewportBounds]
+            assertEquals(580f, fullscreenCanvas.boundsInRoot.bottom, 1f,
+                "Fullscreen drawing should extend under the transparent bottom system bar")
+            assertEquals(fullscreenCanvas.size.height - 24f, fullscreenViewport.bottom, 1f,
+                "Actual contour/canvas gestures must still stop above the bottom safe inset")
+            assertEquals(fullscreenCanvas.boundsInRoot.bottom,
+                tagged("ceilings-workspace-bottom-gradient").boundsInRoot.bottom, 1f)
             assertTrue(scene.projectedDrawing().size.height > canvasHeight + 35)
             assertTrue(fittedHeight() >= contourHeight,
                 "Fullscreen refit must keep the contour visible and can use extra screen space")

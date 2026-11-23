@@ -52,8 +52,12 @@ internal fun CeilingsWorkspaceScaffold(
     val drawPadding = PaddingValues(
         start = safePadding.calculateStartPadding(layoutDirection),
         end = safePadding.calculateEndPadding(layoutDirection),
-        bottom = safePadding.calculateBottomPadding()
+        bottom = if (fullscreen) 0.dp else safePadding.calculateBottomPadding()
     )
+    // Fullscreen drawing continues under the transparent Android navigation bar,
+    // just as it already does behind the status bar. The editor passes the safe
+    // bottom inset to MeasurementDrawing.viewportPadding so geometry fit and
+    // pointer hit-testing remain ABOVE the system buttons.
     // The canvas must reach the physical top edge, behind the transparent system bar.
     // Only foreground controls are kept inside the host's safe system-bar padding.
     val drawingWorkspace = Modifier.fillMaxSize().padding(drawPadding)
@@ -71,6 +75,14 @@ internal fun CeilingsWorkspaceScaffold(
                 CeilingsEdge.TOP,
                 Modifier.fillMaxWidth().height(topInset + headerHeight + CeilingsEdgeDefaults.FadeHeight)
                     .testTag(if (fullscreen) "ceilings-workspace-fullscreen-gradient" else "ceilings-workspace-normal-gradient")
+            )
+            // Identical bottom fade to CeilingsScreenScaffold/AppRoot: 50% edge
+            // shade with the shared 36dp tail, not a solid navigation-bar strip.
+            CeilingsEdgeGradient(
+                CeilingsEdge.BOTTOM,
+                Modifier.align(Alignment.BottomCenter).fillMaxWidth()
+                    .height(safePadding.calculateBottomPadding() + CeilingsEdgeDefaults.FadeHeight)
+                    .testTag("ceilings-workspace-bottom-gradient")
             )
             BoxWithConstraints(safeWorkspace) {
                 val workspace = this

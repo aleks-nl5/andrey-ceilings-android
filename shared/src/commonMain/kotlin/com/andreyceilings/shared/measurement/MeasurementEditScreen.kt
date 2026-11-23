@@ -670,9 +670,11 @@ fun MeasurementEditScreen(
                                 maxLines = tabLines, softWrap = tabLines > 1, overflow = TextOverflow.Ellipsis) },
                             modifier = Modifier.weight(1f).testTag("measurement-edit-context-${mode.name.lowercase()}"),
                             colors = FilterChipDefaults.filterChipColors(
-                                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                                // Let the workspace grid show softly through all three chips.
+                                // Preserve stronger fill/contrast for the selected context.
+                                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.72f),
                                 labelColor = MaterialTheme.colorScheme.onSurface,
-                                selectedContainerColor = MaterialTheme.colorScheme.secondaryContainer,
+                                selectedContainerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.82f),
                                 selectedLabelColor = MaterialTheme.colorScheme.onSecondaryContainer
                             )
                         )
@@ -769,7 +771,10 @@ fun MeasurementEditScreen(
                     // grid/gestures, but exclude the measured tab-row height from
                     // camera fit, hit testing and viewport controls. Do NOT
                     // subtract normalPanelHeight a second time.
-                    viewportPadding = PaddingValues(top = headerBleed, bottom = tabBleed),
+                    viewportPadding = PaddingValues(
+                        top = headerBleed,
+                        bottom = if (fullscreen) editorPadding.calculateBottomPadding() else tabBleed
+                    ),
                     onOpenSelection = if (fullscreen) { wall ->
                         if (enabled) {
                             if (wall) {
