@@ -93,6 +93,20 @@ class AreaFeatureSceneTest {
                 scene.click("Завершити фігуру в чернетці")
                 assertEquals(3,model.displayAreas().size)
                 assertEquals(element.uuid, model.displayAreas().single { it.role == AreaRole.GENERAL_AREA }.elementUuid)
+                // A catalog work selected from the drawing must also move above
+                // the simulated navigation buttons, not only standalone notes.
+                scene.tapWorld(1750, 750)
+                withTimeout(5_000) {
+                    while (scene.nodes().first {
+                        it.config.getOrNull(SemanticsProperties.TestTag) == "p5b-work-row-${element.uuid}"
+                    }.boundsInRoot.bottom > 1340f) {
+                        scene.frame()
+                        delay(20)
+                    }
+                }
+                assertTrue(scene.nodes().first {
+                    it.config.getOrNull(SemanticsProperties.TestTag) == "p5b-work-row-${element.uuid}"
+                }.boundsInRoot.bottom <= 1340f)
                 assertTrue(AreaFeatureRepository(db).all().isEmpty())
                 scene.click("Скасувати дію");assertEquals(2,model.displayAreas().size);scene.click("Повторити")
                 scene.click("На весь екран");scene.click("Вписати креслення")

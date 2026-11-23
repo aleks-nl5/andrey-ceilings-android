@@ -577,7 +577,7 @@ internal fun WorkspaceStandaloneAreaList(
     if (annotations.isEmpty()) return
     Text(stringResource(Res.string.p5b_annotations_title),
         style = MaterialTheme.typography.labelMedium,
-        modifier = Modifier.padding(top = 5.dp, bottom = 2.dp))
+        modifier = Modifier.padding(start = 8.dp, top = 5.dp, bottom = 2.dp))
     annotations.forEachIndexed { index, feature ->
         key(feature.uuid) {
             val isSelected = feature.uuid == selected
