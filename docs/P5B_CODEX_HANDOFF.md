@@ -2,6 +2,8 @@
 
 **Owner authorization:** 22.11.2026, «Переходимо до P5B». **Canonical implementation issue:** [#156](https://github.com/aleks-nl5/andrey-ceilings-android/issues/156); umbrellas [#95](https://github.com/aleks-nl5/andrey-ceilings-android/issues/95), [#71](https://github.com/aleks-nl5/andrey-ceilings-android/issues/71), [#76](https://github.com/aleks-nl5/andrey-ceilings-android/issues/76). One deliverable for **all POINT + LINE + AREA**, not three unrelated PRs. This document began as kickoff; PR #157 now contains initial implementation undergoing UX corrections. **The later owner-approved UI behavior is canonical in [P5B UX spec](P5B_UX_SPEC.md) and #156; this handoff must not override it.**
 
+**Mandatory for any further UX changes:** [global Master-first UX and delivery workflow](architecture/MASTER_FIRST_UX_AND_DELIVERY.md) (owner 23.11.2026) and the latest owner corrections. The original kickoff has historical descriptions that may conflict with later acceptance. Do not restore superseded behaviors just because an earlier handoff names a text button, a one-tap properties panel, or a compulsory quantity. Validate the complete master journey, not individual UI controls, and require an owner-approved whole-card reference before changing layout. Keep Draft until owner APK acceptance.
+
 ## Branch, baseline, sequencing
 
 - Work **only** in `feat/p5b-unified-elements-ux`, one **Draft PR** targeting `main`; never push into `main`, merge, mark Ready, or close umbrella issues. Base is owner-merged localization [PR #155](https://github.com/aleks-nl5/andrey-ceilings-android/pull/155) at `492ca12d833fe3d7c8008667c2b0bdabcbd0bf9e`. Verify current main before implementation and reconcile if it advances.

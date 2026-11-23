@@ -11,6 +11,8 @@ The pre-change inventory and CI baseline are in
 
 **Універсальний UX-контракт для форм:** [контекстна довідка `?`, warning/error `!` та popover](architecture/CONTEXT_HELP_AND_FEEDBACK.md). Не додавати постійні пояснення/інструкції внизу екрана; критичні blocking errors не ховати за іконкою. Нові й змінювані CMP-екрани мають дотримуватися цього стандарту.
 
+**Продуктове правило:** [«Майстер насамперед» — простий UX і порядок планування](architecture/MASTER_FIRST_UX_AND_DELIVERY.md). Обов'язково погоджувати макет **усієї** складної картки та стани до реалізації; вирівнювання, компактність, великі доступні touch targets і незмінність погодженого рішення перевіряти нарівні з коректністю Compose.
+
 ## Checklist for new CMP screens
 
 - Use the shared scaffold for lists and forms. Use the workspace scaffold for a persistent drawing with pinned controls and a temporary overlay. It shares the same background/content roles and owns the top fade and layer order in both modes.

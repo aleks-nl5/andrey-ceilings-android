@@ -2,6 +2,8 @@
 
 > **Стан: DISCOVERY / PLAN ONLY, 19.11.2026.** Ніякого implementation approval чи готового UI-макета. Потрібно окреме погодження власником перед створенням вузьких реалізаційних issues/PR.
 
+> **Пізніше погодження власника (23.11.2026):** цей документ — історія discovery, а не чинний макет. За конфлікту із [«Майстер насамперед»](architecture/MASTER_FIRST_UX_AND_DELIVERY.md) та актуальним [P5B UX spec](P5B_UX_SPEC.md) використовувати **пізніше явне owner-рішення**. Зокрема §6.1 «тап → відкрити параметри» замінено на «тап → підсвітити роботу у списку; відкрити параметри явною дією». Кроки планування тепер включають обов'язковий цілісний погоджений макет, фіксацію станів, незалежне UX-рев'ю та фізичне APK-приймання.
+
 ## 0. Вихідна точка та межі
 
 - P4 завершено: [#44](https://github.com/aleks-nl5/andrey-ceilings-android/issues/44) closed/completed після owner-merged [PR #129](https://github.com/aleks-nl5/andrey-ceilings-android/pull/129), [аудит](https://github.com/aleks-nl5/andrey-ceilings-android/issues/44#issuecomment-7019985840). P4A–P4C4: live measurement pricing → transient quote → immutable vN → individual/consolidated frozen PDF.
