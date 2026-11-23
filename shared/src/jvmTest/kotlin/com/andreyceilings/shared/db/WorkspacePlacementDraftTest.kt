@@ -114,6 +114,35 @@ class WorkspacePlacementDraftTest {
     }
 
     @Test
+    fun switchingWorkCannotSilentlyDiscardDirtyLineProperties() = runBlocking {
+        JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).use { driver ->
+            PriceCatalogSchema.create(driver)
+            val db = PrototypeDatabase(driver)
+            val fixture = PointPlacementProof.fixture(db)
+            val store = MeasurementEditStore(db) { 101 }
+            val editor = MeasurementEditModel(store, store.load(fixture.project, fixture.id))
+            val item = addItem(db, "Two placed lines", PlacementKind.LINE, "м.п.")
+            editor.addCatalogWork(item, ElementQuantity.Exact(3000), place = true)
+            assertTrue(editor.finishWorkspaceLine(PointPositionMm(500, 600), PointPositionMm(1300, 600)))
+            val original = editor.displayLines().single()
+            editor.selectLine(original.uuid)
+            editor.openLineProperties()
+            editor.changeLineProperties(note = "Not yet applied")
+            assertTrue(editor.state.value.lineProperties?.dirty == true)
+            assertFalse(editor.selectFirstWorkspacePlacement(original.elementUuid))
+            assertTrue(editor.state.value.linePropertiesDismiss)
+            assertEquals("Not yet applied", editor.state.value.lineProperties?.note)
+            assertEquals(original.uuid, editor.state.value.lineProperties?.uuid)
+            editor.continueLineProperties()
+            assertFalse(editor.state.value.linePropertiesDismiss)
+            assertTrue(editor.promptForDirtyElementBeforeNavigation())
+            assertTrue(editor.state.value.linePropertiesDismiss)
+            editor.discardLineProperties()
+            assertNull(editor.state.value.lineProperties)
+        }
+    }
+
+    @Test
     fun globalSaveRemainsAvailableWhileMorePointsCanStillBePlaced() = runBlocking {
         JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).use { driver ->
             PriceCatalogSchema.create(driver)

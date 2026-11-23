@@ -309,7 +309,7 @@ fun MeasurementEditScreen(
         }
     }
     fun selectSideFromField(side: Int) {
-        if (!enabled) return
+        if (!enabled || model.promptForDirtyElementBeforeNavigation()) return
         selected = side
         model.clearDrawingSelection()
     }
@@ -323,7 +323,7 @@ fun MeasurementEditScreen(
     }
     fun showElements() = openContext(MeasurementEditContext.ELEMENTS)
     fun selectElement(uuid: String, select: (String) -> Unit) {
-        if (!enabled) return
+        if (!enabled || model.promptForDirtyElementBeforeNavigation()) return
         select(uuid)
         if (showAdd) dismissCatalog()
         val placedWork = (model.displayPoints().firstOrNull { it.uuid == uuid }?.elementUuid
@@ -502,18 +502,22 @@ fun MeasurementEditScreen(
                                 activeRole = if (showAdd) materialPicker else null,
                                 enabled = enabled && validation.geometry != null && overlay is PointOverlayState.Loaded,
                                 onMaterial = { role ->
-                                    focus.clearFocus()
-                                    materialPicker = role
-                                    showAdd = true
-                                    if (fullscreen) sheet = MeasurementSheet.EXPANDED
-                                    scope.launch { scroll.scrollTo(0) }
+                                    if (!model.promptForDirtyElementBeforeNavigation()) {
+                                        focus.clearFocus()
+                                        materialPicker = role
+                                        showAdd = true
+                                        if (fullscreen) sheet = MeasurementSheet.EXPANDED
+                                        scope.launch { scroll.scrollTo(0) }
+                                    }
                                 },
                                 onAdd = {
-                                    focus.clearFocus()
-                                    materialPicker = null
-                                    showAdd = true
-                                    if (fullscreen) sheet = MeasurementSheet.EXPANDED
-                                    scope.launch { scroll.scrollTo(0) }
+                                    if (!model.promptForDirtyElementBeforeNavigation()) {
+                                        focus.clearFocus()
+                                        materialPicker = null
+                                        showAdd = true
+                                        if (fullscreen) sheet = MeasurementSheet.EXPANDED
+                                        scope.launch { scroll.scrollTo(0) }
+                                    }
                                 }
                             )
                             val scrollBounds = if (!elementsContext && !fullscreen) Modifier.fillMaxSize() else Modifier.fillMaxWidth()
@@ -558,10 +562,12 @@ fun MeasurementEditScreen(
                                     if (showAdd) WorkspaceCatalogSearch(model, materialPicker, ::dismissCatalog,
                                         onNestedBackChange = { catalogSubpageBack = it },
                                         onExistingWork = { workId ->
-                                            model.clearDrawingSelection()
-                                            selectedWork = workId
-                                            highlightedWorkId = workId
-                                            dismissCatalog()
+                                            if (!model.promptForDirtyElementBeforeNavigation()) {
+                                                model.clearDrawingSelection()
+                                                selectedWork = workId
+                                                highlightedWorkId = workId
+                                                dismissCatalog()
+                                            }
                                         }
                                     ) {
                                         selected = null
@@ -577,8 +583,10 @@ fun MeasurementEditScreen(
                                             (selectedFeature != null && selectedWork != null)) WorkspaceWorkList(
                                             model, canEdit, selectedWork, highlightedWorkId,
                                             onSelect = { work ->
-                                                model.clearDrawingSelection()
-                                                selectedWork = work
+                                                if (!model.promptForDirtyElementBeforeNavigation()) {
+                                                    model.clearDrawingSelection()
+                                                    selectedWork = work
+                                                }
                                             },
                                             onOpenGeometry = {
                                                 selectedWork = null
@@ -733,7 +741,7 @@ fun MeasurementEditScreen(
                     cameraFitReady = overlay !is PointOverlayState.Loading && !state.checking,
                     selectedSide = selected, onSelectSide = ::select, fullscreen = fullscreen,
                     onEmptyTap = {
-                        if (enabled) {
+                        if (enabled && !model.promptForDirtyElementBeforeNavigation()) {
                             selected = null
                             selectedWork = null
                             model.clearDrawingSelection()

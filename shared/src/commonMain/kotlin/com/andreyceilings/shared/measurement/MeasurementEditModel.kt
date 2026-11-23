@@ -520,11 +520,26 @@ class MeasurementEditModel(
     }
 
     /**
+     * Don't orphan a dirty geometry editor when changing work, material,
+     * context or selected placement. The existing confirmation UI remains visible
+     * on the original selection; the user can then retry the intended action.
+     */
+    internal fun promptForDirtyElementBeforeNavigation(): Boolean {
+        when {
+            state.value.mountingInput?.dirty == true -> dismissMounting()
+            state.value.lineProperties?.dirty == true -> dismissLineProperties()
+            state.value.area.properties?.dirty == true -> dismissAreaProperties()
+            else -> return false
+        }
+        return true
+    }
+
+    /**
      * A work-row settings action must open actual geometry inputs, not merely select
      * a marker that is already visible on the drawing. Never create a second work.
      */
     internal fun selectFirstWorkspacePlacement(workUuid: String): Boolean {
-        if (!editable()) return false
+        if (!editable() || promptForDirtyElementBeforeNavigation()) return false
         val point = displayPoints().firstOrNull { it.elementUuid == workUuid }
         if (point != null) {
             selectPoint(point.uuid)
