@@ -36,6 +36,8 @@ class WorkspacePlacementDraftTest {
             val pointItem = store.placementCatalog().single { item -> item.code.startsWith("fixture.") }
             editor.addCatalogWork(pointItem, ElementQuantity.Exact(3000), place = true)
             assertTrue(editor.placeWorkspacePoint(700, 800))
+            // One tap must not end placement for a multi-point work.
+            assertEquals(editor.displayPoints().single().elementUuid, editor.state.value.pointElementUuid)
             val point = editor.displayPoints().single()
             editor.openWorkspaceCoordinates(WorkspaceCoordinatesKind.POINT)
             editor.changeWorkspaceCoordinate(0, "0,75")

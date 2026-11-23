@@ -217,8 +217,8 @@ class AreaFeatureTouchTest {
             click("Редагувати розміри")
             compose.onNode(isDialog()).assertDoesNotExist()
             compose.onNodeWithText("Примітка фігури").performScrollTo().performTextInput("Тестова позначка")
-            click("Застосувати розміри")
-            click("Додаткові дії");click("Видалити розміщення");compose.onNodeWithText("Видалити",useUnmergedTree=true).performClick()
+            click("Оновити на кресленні (у чернетці)")
+            click("Видалити розміщення");compose.onNodeWithText("Видалити",useUnmergedTree=true).performClick()
             compose.runOnIdle {assertEquals(2,model.displayAreas().size)}
             click("Скасувати дію")
             val ids=model.displayAreas().map {it.uuid}.toSet()

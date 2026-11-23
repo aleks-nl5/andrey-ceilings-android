@@ -629,7 +629,7 @@ class MeasurementEditModel(
             additions = additions.copy(points = additions.points + (id to point)),
             // One point per tap; preserve placement until the declared count is reached.
             pointElementUuid = uuid.takeIf { remaining },
-            selectedPointUuid = id.takeUnless { remaining }
+            selectedPointUuid = id
         )
         publish()
         return true

@@ -197,7 +197,6 @@ class PointEditingSceneTest {
                     assertEquals(marker.uuid, scene.canvas().config.getOrNull(MeasurementDrawingSemantics.SelectedPoint),
                         "Review marker ${index + 1} at ${marker.xMm}, ${marker.yMm}")
                     scene.awaitText("На перевірці")
-                    scene.click("Додаткові дії")
                     scene.click("Підтвердити розміщення")
                     withTimeout(5000) {
                         while (scene.text().contains("Підтвердити розміщення") ||

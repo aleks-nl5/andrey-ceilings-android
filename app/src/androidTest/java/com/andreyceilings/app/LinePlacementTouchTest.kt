@@ -96,7 +96,7 @@ class LinePlacementTouchTest {
             click("Скасувати дію")
             click("Редагувати розміри")
             compose.onNodeWithText("Довжина, м").performScrollTo().performTextReplacement("0,325")
-            click("Застосувати розміри")
+            click("Оновити на кресленні (у чернетці)")
             val resized = model.displayLines().single { it.uuid == original.uuid }
             assertEquals(original.start, resized.start)
             assertEquals(325L, resized.lengthMm)
