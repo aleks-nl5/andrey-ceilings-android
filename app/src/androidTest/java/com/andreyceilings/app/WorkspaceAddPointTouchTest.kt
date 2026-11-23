@@ -151,6 +151,22 @@ class WorkspaceAddPointTouchTest {
                 assertEquals(point.uuid, shown.value.state.value.selectedPointUuid)
             }
             compose.onAllNodesWithText("Відстань, м").assertCountEquals(2)
+            compose.runOnIdle { shown.value.discardMounting() }
+            click("На весь екран")
+            compose.onNodeWithTag("measurement-edit-context-panel").assertDoesNotExist()
+            click("Вписати креслення")
+            val marker = position(point.xMm, point.yMm)
+            canvas.performTouchInput { click(marker) }
+            compose.onNodeWithTag("measurement-edit-context-panel").assertDoesNotExist()
+            assertEquals(point.uuid, shown.value.state.value.selectedPointUuid)
+            // Double tap opens the *point editor* rather than just the element list.
+            canvas.performTouchInput { doubleClick(marker) }
+            compose.waitUntil(5000) {
+                compose.onAllNodes(hasTestTag("measurement-edit-context-panel")).fetchSemanticsNodes().isNotEmpty()
+            }
+            assertEquals(point.uuid, shown.value.state.value.mountingInput?.pointUuid)
+            click("Закрити панель")
+            compose.onNodeWithTag("measurement-edit-context-panel").assertDoesNotExist()
         } finally {
             store.closePointReads()
             driver.close()

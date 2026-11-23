@@ -274,7 +274,9 @@ class MeasurementWorkspaceLayoutTest {
                 val normalPanel = panel.fetchSemanticsNode().boundsInRoot
                 val panelHeight = compose.onNodeWithTag("measurement-edit-normal-panel").fetchSemanticsNode().size.height
                 val normalViewport = canvas().config[MeasurementDrawingSemantics.ViewportBounds]
-                assertEquals(normalViewport.height, panelHeight.toFloat(), 1f)
+                assertEquals(canvas().size.height - normalViewport.top - panelHeight,
+                    normalViewport.height, 2f,
+                    "Drawing viewport must stop above the overlay panel, not underneath it")
                 val tabs = compose.onNodeWithTag("measurement-edit-tab-row").fetchSemanticsNode().boundsInRoot
                 assertEquals(normal.bottom, tabs.bottom, 1f)
                 drawingInput.performTouchInput {
@@ -314,7 +316,9 @@ class MeasurementWorkspaceLayoutTest {
                 action("На весь екран").performClick()
                 compose.onNodeWithTag("global-bottom-navigation").assertDoesNotExist()
                 assertTrue(canvas().size.height > normal.height)
-                assertEquals(unzoomed, scale(), 0.0001)
+                compose.waitForIdle()
+                assertDrawingFit()
+                val fullscreenFitScale = scale()
                 contextTab("cost").assertDoesNotExist()
                 compose.onNodeWithTag("ceilings-workspace-normal-gradient").assertDoesNotExist()
                 assertSharedFadeBounds("ceilings-workspace-fullscreen-gradient", canvas())
@@ -334,7 +338,7 @@ class MeasurementWorkspaceLayoutTest {
                     startY = centerY, endY = centerY - 85f * density) }
                 assertTrue(panel.fetchSemanticsNode().size.height > compactHeight)
                 assertEquals(fullscreenBounds, canvas().boundsInRoot)
-                assertEquals(unzoomed, scale(), 0.0001)
+                assertEquals(fullscreenFitScale, scale(), 0.0001)
                 capture("fullscreen-expanded")
                 contextTab("elements").performClick()
                 capture("fullscreen-elements")
@@ -354,7 +358,10 @@ class MeasurementWorkspaceLayoutTest {
                 capture("fullscreen-zoom")
                 compose.onNodeWithTag("measurement-edit-back").performClick()
                 action("На весь екран").assertExists()
-                assertEquals(zoomed, scale(), 0.0001)
+                compose.waitForIdle()
+                assertDrawingFit()
+                assertTrue(kotlin.math.abs(zoomed - scale()) > 0.0001,
+                    "Leaving fullscreen must refit after manual zoom")
                 compose.onNodeWithText("Розрахунок за останнім збереженим заміром").assertExists()
                 action("Зменшити масштаб").performClick()
                 action("Вписати креслення").performClick()

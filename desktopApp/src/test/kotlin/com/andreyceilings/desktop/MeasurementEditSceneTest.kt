@@ -304,7 +304,9 @@ class MeasurementEditSceneTest {
             scene.frame()
             assertTrue(drawing().boundsInRoot.height > 0)
             assertEquals(initial.id, drawing().id)
-            assertEquals(zoomed, drawing().config[MeasurementDrawingSemantics.Viewport])
+            repeat(5) { scene.frame() }
+            assertEquals(MeasurementViewport(), drawing().config[MeasurementDrawingSemantics.Viewport],
+                "Fullscreen transition must fit the drawing instead of retaining a zoomed camera")
             assertEquals(0, drawing().config[MeasurementDrawingSemantics.SelectedWall])
             assertFalse(scene.text().contains("Вартість"))
             scene.click("Контур")
@@ -318,14 +320,14 @@ class MeasurementEditSceneTest {
             scene.sendPointerEvent(PointerEventType.Scroll, panelBounds.center, scrollDelta = Offset(0f, 2f))
             repeat(12) { scene.frame(); Thread.sleep(10) }
             assertTrue(scrollAxis.value() > 0f)
-            assertEquals(zoomed, drawing().config[MeasurementDrawingSemantics.Viewport])
+            assertEquals(MeasurementViewport(), drawing().config[MeasurementDrawingSemantics.Viewport])
             scene.click("Вписати креслення")
             scene.frame()
             assertEquals(MeasurementViewport(), drawing().config[MeasurementDrawingSemantics.Viewport])
         } finally { scene.close() }
     }
 
-    @Test fun workspaceKeepsWorldCenterAndPixelScaleAcrossResizeAndFullscreen() {
+    @Test fun fullscreenTransitionsRefitButTabsAndKeyboardPreserveWorldCamera() {
         for ((width, height) in listOf(360 to 760, 760 to 430)) {
             var keyboardInset by mutableIntStateOf(0)
             val model = MeasurementEditModel(null, MeasurementEditDocument(3, 1, draft()))
@@ -362,13 +364,15 @@ class MeasurementEditSceneTest {
                 val initial = drawing()
                 val expectedDistance = pixelDistance(initial)
                 val expectedCenter = worldCenter(initial)
+                var activeDistance = expectedDistance
+                var activeCenter = expectedCenter
                 assertTrue(kotlin.math.abs(originalCenter.x - expectedCenter.x) > 1.0, "The pointer gesture must pan the drawing")
                 fun assertCamera() {
                     val current = drawing()
                     assertEquals(initial.id, current.id)
-                    assertEquals(expectedDistance, pixelDistance(current), 0.01)
-                    assertEquals(expectedCenter.x, worldCenter(current).x, 0.01)
-                    assertEquals(expectedCenter.y, worldCenter(current).y, 0.01)
+                    assertEquals(activeDistance, pixelDistance(current), 0.01)
+                    assertEquals(activeCenter.x, worldCenter(current).x, 0.01)
+                    assertEquals(activeCenter.y, worldCenter(current).y, 0.01)
                 }
                 scene.click("Елементи")
                 scene.frame()
@@ -379,11 +383,14 @@ class MeasurementEditSceneTest {
                 assertEquals(normalExpandedHeight, drawing().size.height)
                 assertCamera()
                 scene.click("На весь екран")
-                scene.frame()
+                repeat(6) { scene.frame() }
                 val fullscreenHeight = drawing().size.height
                 assertTrue(fullscreenHeight > normalViewportHeight * 1.3, "Fullscreen should give the drawing substantially more room")
                 assertFalse(scene.text().contains("Вартість"))
                 assertTrue(scene.nodes().any { it.config.getOrNull(SemanticsProperties.TestTag) == "measurement-edit-save" })
+                assertEquals(MeasurementViewport(), drawing().config[MeasurementDrawingSemantics.Viewport])
+                activeDistance = pixelDistance(drawing())
+                activeCenter = worldCenter(drawing())
                 assertCamera()
                 keyboardInset = if (height > width) 208 else 72
                 scene.frame()
@@ -396,12 +403,19 @@ class MeasurementEditSceneTest {
                 assertEquals(fullscreenHeight, drawing().size.height)
                 assertCamera()
                 scene.click("Згорнути")
-                scene.frame()
+                repeat(6) { scene.frame() }
                 assertEquals(normalExpandedHeight, drawing().size.height)
+                assertEquals(MeasurementViewport(), drawing().config[MeasurementDrawingSemantics.Viewport])
+                activeDistance = pixelDistance(drawing())
+                activeCenter = worldCenter(drawing())
                 assertCamera()
+                scene.click("Збільшити масштаб")
+                scene.frame()
+                val manualZoom = pixelDistance(drawing())
                 scene.click("Вписати креслення")
                 scene.frame()
-                assertTrue(kotlin.math.abs(expectedDistance - pixelDistance(drawing())) > 1.0)
+                assertEquals(MeasurementViewport(), drawing().config[MeasurementDrawingSemantics.Viewport])
+                assertTrue(kotlin.math.abs(manualZoom - pixelDistance(drawing())) > 1.0)
             } finally { scene.close() }
         }
     }
@@ -516,7 +530,8 @@ class MeasurementEditSceneTest {
                 scene.finishSheetMotion()
                 val current = scene.projectedDrawing()
                 assertEquals(initial.id, current.id)
-                assertEquals(initial.config[MeasurementDrawingSemantics.Projection], current.config[MeasurementDrawingSemantics.Projection])
+                assertEquals(MeasurementViewport(), current.config[MeasurementDrawingSemantics.Viewport])
+                assertTrue(current.config[MeasurementDrawingSemantics.Projection].scale > 0.0)
             }
         } finally { scene.close() }
     }
