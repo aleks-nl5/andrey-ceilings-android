@@ -37,6 +37,11 @@ class WorkspaceAddPointTouchTest {
         val catalogId = prices.createInGroup("p5b.ui.point", "Тестова позначка", PriceGroupRepository(database).all().first().uuid,
             1.0, 6, "шт.", com.andreyceilings.shared.prices.QuantityMode.MANUAL, com.andreyceilings.shared.prices.PlacementKind.POINT)
         val itemUuid = checkNotNull(prices.find(catalogId)).uuid
+        val helpCatalogId = prices.createInGroup("p5b.ui.none.length", "Ніша для штор (тест)",
+            PriceGroupRepository(database).all().first().uuid, 1.0, 6, "м.п.",
+            com.andreyceilings.shared.prices.QuantityMode.ENTERED_LENGTH,
+            com.andreyceilings.shared.prices.PlacementKind.NONE)
+        val helpItemUuid = checkNotNull(prices.find(helpCatalogId)).uuid
         val canvasItem = prices.all().single { it.code == "canvas.pvc_matte" }
         val matchCanvas = SemanticsMatcher("measurement drawing") { node ->
             node.config.getOrNull(SemanticsProperties.ContentDescription).orEmpty().any { it.startsWith("Контур стелі") }
@@ -98,6 +103,13 @@ class WorkspaceAddPointTouchTest {
             compose.onNodeWithTag("measurement-workspace-add").performClick()
             compose.onNodeWithTag("p5b-catalog-search").assertIsDisplayed()
             compose.onNode(isDialog()).assertDoesNotExist()
+            val helpTag = "p5b-catalog-$helpItemUuid"
+            compose.onNodeWithTag(helpTag).performScrollTo().performClick()
+            val catalogTitle = compose.onNodeWithTag("p5b-catalog-detail-title").fetchSemanticsNode().boundsInRoot
+            val lineHelp = compose.onNodeWithTag("p5b-line-kind-help").fetchSemanticsNode().boundsInRoot
+            assertTrue(kotlin.math.abs(catalogTitle.center.y - lineHelp.center.y) <= 2f,
+                "Help for non-drawable length must sit beside the item title, not below its quantity")
+            compose.onNodeWithTag("measurement-edit-back").performClick()
             val itemTag = "p5b-catalog-$itemUuid"
             compose.waitUntil(15_000) { compose.onAllNodes(hasTestTag(itemTag)).fetchSemanticsNodes().isNotEmpty() }
             compose.onNodeWithTag(itemTag).performScrollTo().performClick()

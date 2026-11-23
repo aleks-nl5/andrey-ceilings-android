@@ -208,7 +208,21 @@ internal fun WorkspaceCatalogSearch(
                     Icon(Icons.Default.ArrowBack, stringResource(Res.string.p5b_back_to_catalog))
                 }
                 Text(item.title, style = MaterialTheme.typography.titleSmall,
-                    modifier = Modifier.weight(1f), maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    modifier = Modifier.weight(1f).testTag("p5b-catalog-detail-title"), maxLines = 2, overflow = TextOverflow.Ellipsis)
+                if (item.placementKind == PlacementKind.NONE && item.mode == com.andreyceilings.shared.prices.QuantityMode.ENTERED_LENGTH) {
+                    var helpOpen by remember(item.uuid) { mutableStateOf(false) }
+                    Box {
+                        IconButton(onClick = { helpOpen = true }, modifier = Modifier.size(40.dp).testTag("p5b-line-kind-help")) {
+                            Icon(Icons.Default.HelpOutline, stringResource(Res.string.p5b_line_kind_help))
+                        }
+                        DropdownMenu(expanded = helpOpen, onDismissRequest = { helpOpen = false }) {
+                            DropdownMenuItem(text = {
+                                Text(stringResource(Res.string.p5b_line_kind_required),
+                                    style = MaterialTheme.typography.bodySmall)
+                            }, onClick = { helpOpen = false })
+                        }
+                    }
+                }
             }
             Text(stringResource(placementLabel(item.placementKind)), style = MaterialTheme.typography.bodySmall)
             val default = item.mode.workspaceQuantity()
@@ -235,20 +249,7 @@ internal fun WorkspaceCatalogSearch(
                     onPlacedTool()
                 }) { Icon(Icons.Default.Check, stringResource(Res.string.p5b_add_unplaced)) }
             }
-            if (item.placementKind == PlacementKind.NONE && item.mode == com.andreyceilings.shared.prices.QuantityMode.ENTERED_LENGTH) {
-                var helpOpen by remember(item.uuid) { mutableStateOf(false) }
-                Box {
-                    IconButton(onClick = { helpOpen = true }, modifier = Modifier.size(40.dp)) {
-                        Icon(Icons.Default.HelpOutline, stringResource(Res.string.p5b_line_kind_help))
-                    }
-                    DropdownMenu(expanded = helpOpen, onDismissRequest = { helpOpen = false }) {
-                        DropdownMenuItem(text = {
-                            Text(stringResource(Res.string.p5b_line_kind_required),
-                                style = MaterialTheme.typography.bodySmall)
-                        }, onClick = { helpOpen = false })
-                    }
-                }
-            }
+
         }
         return
     }

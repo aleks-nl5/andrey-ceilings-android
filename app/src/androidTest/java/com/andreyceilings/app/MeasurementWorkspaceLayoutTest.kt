@@ -224,9 +224,8 @@ class MeasurementWorkspaceLayoutTest {
             }
             fun field(label: String) = compose.onNode(hasSetTextAction() and hasText(label, substring = true))
             fun showContourDetails() {
-                if (compose.onAllNodes(hasSetTextAction() and hasText("Назва заміру", substring = true)).fetchSemanticsNodes().isEmpty()) {
-                    compose.onNodeWithText("Деталі заміру").performScrollTo()
-                }
+                compose.onNodeWithText("Деталі заміру").assertDoesNotExist()
+                field("Назва заміру").performScrollTo()
             }
             try {
                 enterEditor()
@@ -450,9 +449,7 @@ class MeasurementWorkspaceLayoutTest {
                 }
 
                 contextTab("contour").performClick()
-                if (compose.onAllNodes(hasSetTextAction() and hasText("Назва заміру", substring = true)).fetchSemanticsNodes().isEmpty()) {
-                    compose.onNodeWithText("Деталі заміру").performScrollTo()
-                }
+                showContourDetails()
                 val nameField = field("Назва заміру")
                 val notes = field("Примітки")
                 fun saveInPlace() {
@@ -478,7 +475,7 @@ class MeasurementWorkspaceLayoutTest {
                 contextTab("cost").performClick()
                 compose.onNodeWithText("Переглянути збережений розрахунок у картці заміру").performScrollTo().performClick()
                 enterEditor()
-                compose.onNodeWithText("Деталі заміру").performScrollTo()
+                showContourDetails()
                 field("Назва заміру").assertTextContains("Кухня після збереження")
                 field("Примітки").assertTextContains("Другий запис")
                 field("Примітки").performScrollTo().performTextReplacement("Збережено перед виходом")
