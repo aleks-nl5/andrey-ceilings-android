@@ -269,9 +269,14 @@ internal fun WorkspaceCatalogSearch(
                     onDismissRequest = { annotationMenu = false }) {
                     DropdownMenuItem(
                         leadingIcon = { Icon(Icons.Default.CropSquare, null) },
-                        text = { Text(stringResource(Res.string.p5b_obstacle)) },
-                        supportingText = { Text(stringResource(Res.string.p5b_obstacle_explain),
-                            style = MaterialTheme.typography.labelSmall) },
+                        text = {
+                            Column {
+                                Text(stringResource(Res.string.p5b_obstacle))
+                                Text(stringResource(Res.string.p5b_obstacle_explain),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        },
                         onClick = {
                             annotationMenu = false
                             model.beginArea(AreaRole.OBSTACLE, tool = AreaTool.RECTANGLE)
@@ -279,9 +284,14 @@ internal fun WorkspaceCatalogSearch(
                         })
                     DropdownMenuItem(
                         leadingIcon = { Icon(Icons.Default.RadioButtonUnchecked, null) },
-                        text = { Text(stringResource(Res.string.p5b_void)) },
-                        supportingText = { Text(stringResource(Res.string.p5b_void_explain),
-                            style = MaterialTheme.typography.labelSmall) },
+                        text = {
+                            Column {
+                                Text(stringResource(Res.string.p5b_void))
+                                Text(stringResource(Res.string.p5b_void_explain),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        },
                         onClick = {
                             annotationMenu = false
                             model.beginArea(AreaRole.VOID_MARKER, tool = AreaTool.CIRCLE)
