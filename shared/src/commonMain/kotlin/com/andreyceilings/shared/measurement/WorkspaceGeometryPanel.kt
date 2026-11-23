@@ -464,7 +464,9 @@ internal fun WorkspaceGeometryPanel(
         ) else 0L
         val currentQuantity = work?.quantity
         val proposedQuantity = ElementQuantity.Exact(proposed)
-        val canTransfer = work != null && proposed > 0 && currentQuantity != proposedQuantity
+        val canTransfer = work != null && proposed > 0 &&
+            currentQuantity != proposedQuantity &&
+            model.canEditWorkspaceQuantity(work.uuid, proposedQuantity)
         val cancel = { model.requestDeclaredLength(null); model.requestAreaQuantity(null) }
         AlertDialog(onDismissRequest = cancel,
             title = { Text(stringResource(Res.string.p5b_confirm_quantity_title)) },
@@ -481,6 +483,10 @@ internal fun WorkspaceGeometryPanel(
                         color = MaterialTheme.colorScheme.error)
                     else if (currentQuantity == proposedQuantity) Text(
                         stringResource(Res.string.p5b_drawing_quantity_equal),
+                        style = MaterialTheme.typography.bodySmall)
+                    else if (!canTransfer) Text(
+                        stringResource(Res.string.p5b_drawing_quantity_not_allowed),
+                        color = MaterialTheme.colorScheme.error,
                         style = MaterialTheme.typography.bodySmall)
                 }
             },

@@ -442,7 +442,7 @@ class MeasurementEditModel(
     internal fun lineElements() = workspaceWorks().filter { it.supportsLinePlacement() }
     internal fun areaElements() = workspaceWorks().filter { it.supportsAreaPlacement() }
 
-    internal fun editWorkspaceQuantity(uuid: String, quantity: ElementQuantity): Boolean {
+    internal fun canEditWorkspaceQuantity(uuid: String, quantity: ElementQuantity): Boolean {
         if (!editable()) return false
         val work = workspaceWorks().find { it.uuid == uuid } ?: return false
         val source = work.source as? ElementSource.CatalogSelection ?: return false
@@ -454,6 +454,13 @@ class MeasurementEditModel(
         if (capacity != null && (displayLines().filter { it.elementUuid == uuid }.sumOf { it.lengthMm } > capacity ||
                 changed.supportsAreaPlacement() && areaQuantityMilli(displayAreas().filter { it.elementUuid == uuid },
                     checkNotNull(work.unit), includeUnresolved = true) > capacity)) return false
+        return true
+    }
+
+    internal fun editWorkspaceQuantity(uuid: String, quantity: ElementQuantity): Boolean {
+        if (!canEditWorkspaceQuantity(uuid, quantity)) return false
+        val work = workspaceWorks().first { it.uuid == uuid }
+        val changed = work.copy(quantity = quantity)
         val state = state.value
         val pendingFromDrawing = uuid in state.declaredLengths || uuid in state.area.quantities
         if (changed == work && !pendingFromDrawing) return true
@@ -896,13 +903,17 @@ class MeasurementEditModel(
     }
     fun requestDeclaredLength(element:String?) {if(editable())mutableState.value=state.value.copy(lengthConfirm=element)}
     fun takeDeclaredLength() {
-        if(!editable())return
-        val element=state.value.lengthConfirm ?: return
-        val lines=displayLines().filter {it.elementUuid==element && !it.unresolved}
-        val length=lines.sumOf {it.lengthMm}
-        if(length<=0)return
-        commitInput();undo.add(form());redo.clear()
-        mutableState.value=state.value.copy(declaredLengths=state.value.declaredLengths+(element to length),lengthConfirm=null);publish()
+        if (!editable()) return
+        val id = state.value.lengthConfirm ?: return
+        val length = displayLines().filter { it.elementUuid == id && !it.unresolved }.sumOf { it.lengthMm }
+        // Explicit transfer changes *declared quantity*, not the drawn geometry.
+        // Stage it as an ordinary work edit rather than an equality-locked geometry
+        // command: the user may subsequently change the quantity independently.
+        if (length > 0 && editWorkspaceQuantity(id, ElementQuantity.Exact(length))) {
+            mutableState.value = state.value.copy(lengthConfirm = null)
+        } else {
+            mutableState.value = state.value.copy(error = "Не вдалося перенести довжину. Перевірте тип кількості та наявні розміщення.")
+        }
     }
 
 
@@ -1124,12 +1135,15 @@ class MeasurementEditModel(
     }
     fun requestAreaQuantity(id:String?) {if(editable())updateArea {it.copy(quantityConfirm=id)}}
     fun takeAreaQuantity() {
-        if(!editable())return
-        val id=state.value.area.quantityConfirm ?: return
-        val e=areaElements().find {it.uuid==id} ?: return
-        val qty=areaQuantityMilli(displayAreas().filter {it.elementUuid==id},e.unit!!)
-        if(qty<=0)return
-        commitInput();undo.add(form());redo.clear();updateArea {it.copy(quantities=it.quantities+(id to qty),quantityConfirm=null)};publish()
+        if (!editable()) return
+        val id = state.value.area.quantityConfirm ?: return
+        val work = areaElements().find { it.uuid == id } ?: return
+        val qty = areaQuantityMilli(displayAreas().filter { it.elementUuid == id }, checkNotNull(work.unit))
+        if (qty > 0 && editWorkspaceQuantity(id, ElementQuantity.Exact(qty))) {
+            updateArea { it.copy(quantityConfirm = null) }
+        } else {
+            mutableState.value = state.value.copy(error = "Не вдалося перенести кількість. Перевірте одиницю та наявні розміщення.")
+        }
     }
 
     /** Local saveable data, never commands or route payloads. History is bounded. */

@@ -74,7 +74,7 @@ class WorkspacePlacementDraftTest {
     }
 
     @Test
-    fun drawingLengthShowsPendingDeclaredQuantityAndManualEditOverridesIt() = runBlocking {
+    fun drawingLengthTransfersToEditableWorkAndManualQuantityMayBeLarger() = runBlocking {
         JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).use { driver ->
             PriceCatalogSchema.create(driver)
             val db = PrototypeDatabase(driver)
@@ -91,11 +91,13 @@ class WorkspacePlacementDraftTest {
             assertEquals(ElementQuantity.Exact(1000),
                 editor.workspaceWorks().single { it.uuid == workId }.quantity,
                 "Pending drawing length must be visible before global Save")
-            assertEquals(1000L, editor.state.value.declaredLengths[workId])
+            assertTrue(workId !in editor.state.value.declaredLengths,
+                "Transferring a quantity must not lock it to geometry equality")
+            assertTrue(editor.state.value.additions.elements[workId]?.quantity == ElementQuantity.Exact(1000))
             assertTrue(editor.editWorkspaceQuantity(workId, ElementQuantity.Exact(2000)))
             assertEquals(ElementQuantity.Exact(2000), editor.workspaceWorks().single { it.uuid == workId }.quantity)
-            assertFalse(workId in editor.state.value.declaredLengths,
-                "Manual quantity must supersede the drawing-length transfer")
+            assertTrue(editor.canSaveMountingDraft(), "A greater declared quantity must not block Save")
+            assertTrue(workId !in editor.state.value.declaredLengths)
         }
     }
 
