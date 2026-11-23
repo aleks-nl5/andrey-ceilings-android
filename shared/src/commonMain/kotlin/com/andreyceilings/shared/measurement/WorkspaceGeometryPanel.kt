@@ -1,6 +1,11 @@
 package com.andreyceilings.shared.measurement
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.background
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -9,7 +14,7 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.KeyboardArrowRight
-import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -22,6 +27,11 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.geometry.Offset
 import com.andreyceilings.shared.input.DecimalInputField
 import com.andreyceilings.shared.resources.*
 import org.jetbrains.compose.resources.stringResource
@@ -68,7 +78,28 @@ private fun WorkspaceCancelPlacement(model: MeasurementEditModel) {
 @Composable
 private fun WorkspaceSnapControl(snap: Boolean, enabled: Boolean, onSnapChanged: (Boolean) -> Unit) {
     FilterChip(selected = snap, onClick = { onSnapChanged(!snap) }, enabled = enabled,
-        label = { Text(stringResource(Res.string.p5b_line_snap)) })
+        leadingIcon = { WorkspaceMagnetIcon() },
+        label = { Text(stringResource(Res.string.p5b_line_snap_short), maxLines = 1) })
+}
+
+/** Compact, theme-aware horseshoe magnet; no emoji or platform-specific icon. */
+@Composable
+private fun WorkspaceMagnetIcon() {
+    val ink = LocalContentColor.current
+    Canvas(Modifier.size(18.dp)) {
+        val scale = size.minDimension / 24f
+        val path = Path().apply {
+            moveTo(5f * scale, 5f * scale)
+            lineTo(5f * scale, 13f * scale)
+            cubicTo(5f * scale, 22f * scale, 19f * scale, 22f * scale, 19f * scale, 13f * scale)
+            lineTo(19f * scale, 5f * scale)
+        }
+        drawPath(path, ink, style = Stroke(width = 2.5f * scale, cap = StrokeCap.Round))
+        drawLine(ink, Offset(3f * scale, 5f * scale), Offset(7f * scale, 5f * scale),
+            strokeWidth = 4f * scale)
+        drawLine(ink, Offset(17f * scale, 5f * scale), Offset(21f * scale, 5f * scale),
+            strokeWidth = 4f * scale)
+    }
 }
 
 @Composable
@@ -159,12 +190,18 @@ internal fun WorkspaceGeometryPanel(
                 }
             }) { Text(stringResource(Res.string.p5b_review_confirm)) }
             if (edit && line != null && work != null && !line.unresolved)
-                TextButton(onClick = { model.requestDeclaredLength(work.uuid) }) {
-                    Text(stringResource(Res.string.p5b_take_length))
+                OutlinedButton(onClick = { model.requestDeclaredLength(work.uuid) },
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
+                    modifier = Modifier.heightIn(min = 36.dp)) {
+                    Text(stringResource(Res.string.p5b_take_length),
+                        style = MaterialTheme.typography.labelSmall)
                 }
             if (edit && area != null && work != null && !area.unresolved)
-                TextButton(onClick = { model.requestAreaQuantity(work.uuid) }) {
-                    Text(stringResource(Res.string.p5b_take_quantity))
+                OutlinedButton(onClick = { model.requestAreaQuantity(work.uuid) },
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
+                    modifier = Modifier.heightIn(min = 36.dp)) {
+                    Text(stringResource(Res.string.p5b_take_quantity),
+                        style = MaterialTheme.typography.labelSmall)
                 }
         }
     }
@@ -201,7 +238,7 @@ internal fun WorkspaceGeometryPanel(
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     OutlinedTextField(input.note, { model.changeLineProperties(note = it) },
-                        modifier = Modifier.weight(1f).height(52.dp), singleLine = true,
+                        modifier = Modifier.weight(1f).height(60.dp), singleLine = true,
                         textStyle = MaterialTheme.typography.bodySmall,
                         label = { Text(stringResource(Res.string.p5b_line_note)) })
                     IconButton(onClick = model::applyLineProperties, enabled = valid) {
@@ -245,7 +282,7 @@ internal fun WorkspaceGeometryPanel(
                 val valid = model.areaPropertiesCandidate(area, input) != null
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     OutlinedTextField(input.note, { value -> model.changeAreaProperties { it.copy(note = value) } },
-                        modifier = Modifier.weight(1f).height(52.dp), singleLine = true,
+                        modifier = Modifier.weight(1f).height(60.dp), singleLine = true,
                         textStyle = MaterialTheme.typography.bodySmall,
                         label = { Text(stringResource(Res.string.p5b_placement_note)) })
                     IconButton(onClick = model::applyAreaProperties, enabled = valid) {
@@ -303,19 +340,27 @@ private fun WorkspaceShortAction(label: String, icon: ImageVector, onClick: () -
 
 @Composable
 internal fun WorkspaceWorkList(
-    model: MeasurementEditModel, enabled: Boolean, selected: String?, onSelect: (String?) -> Unit
+    model: MeasurementEditModel, enabled: Boolean, selected: String?,
+    highlightedWorkId: String?, onSelect: (String?) -> Unit, onOpenGeometry: () -> Unit
 ) {
     val works = model.workspaceWorks()
     for (work in works) key(work.uuid) {
         var edit by rememberSaveable { mutableStateOf(false) }
         var deletion by remember { mutableStateOf(false) }
         val isSelected = selected == work.uuid
+        val isHighlighted = highlightedWorkId == work.uuid
+        val bringIntoView = remember(work.uuid) { BringIntoViewRequester() }
+        LaunchedEffect(isHighlighted) { if (isHighlighted) bringIntoView.bringIntoView() }
         val namesakes = works.filter { it.label == work.label }
         val shownTitle = if (namesakes.size > 1)
             "${work.label} #${namesakes.indexOfFirst { it.uuid == work.uuid } + 1}"
         else work.label
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f).heightIn(min = 48.dp).semantics { this.selected = isSelected }.clickable(enabled = enabled) {
+        Row(Modifier.fillMaxWidth().bringIntoViewRequester(bringIntoView)
+            .background(if (isHighlighted) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent,
+                RoundedCornerShape(10.dp)),
+            verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f).heightIn(min = 48.dp)
+                .semantics { this.selected = isSelected || isHighlighted }.clickable(enabled = enabled) {
                 onSelect(if (isSelected) null else work.uuid)
             }, verticalArrangement = Arrangement.Center) {
                 Text(shownTitle,
@@ -341,9 +386,12 @@ internal fun WorkspaceWorkList(
                 model.displayLines().any { it.elementUuid == work.uuid } ||
                 model.displayAreas().any { it.elementUuid == work.uuid }
             IconButton(onClick = {
-                if (model.selectFirstWorkspacePlacement(work.uuid)) onSelect(null)
+                if (model.selectFirstWorkspacePlacement(work.uuid)) {
+                    onSelect(null)
+                    onOpenGeometry()
+                }
             }, enabled = enabled && hasPlacement) {
-                Icon(Icons.Default.Info, stringResource(Res.string.p5b_open_geometry_parameters))
+                Icon(Icons.Default.Settings, stringResource(Res.string.p5b_open_geometry_parameters))
             }
             val source = work.source as? ElementSource.CatalogSelection
             IconButton(onClick = { onSelect(work.uuid); edit = !edit },

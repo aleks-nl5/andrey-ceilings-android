@@ -17,6 +17,7 @@
     <string name="p5b_line_start">Торкніться початку лінії або проведіть від початку до кінця.</string>
     <string name="p5b_line_end">Торкніться кінця лінії або перетягніть до нього.</string>
     <string name="p5b_line_snap">Вирівнювати паралельно стіні</string>
+    <string name="p5b_line_snap_short">Паралельно стіні</string>
     <string name="p5b_add">+ Додати</string>
     <string name="p5b_add_title">Додати елемент стелі</string>
     <string name="p5b_point_tap">Торкніться креслення, щоб розмістити точку.</string>
@@ -76,8 +77,8 @@
     <string name="p5b_vertex_short">Вершина %1$d</string>
     <string name="p5b_more_actions">Додаткові дії</string>
     <string name="p5b_review_confirm">Підтвердити розміщення</string>
-    <string name="p5b_take_length">Взяти довжину з креслення</string>
-    <string name="p5b_take_quantity">Взяти кількість з креслення</string>
+    <string name="p5b_take_length">Довжина з креслення</string>
+    <string name="p5b_take_quantity">Кількість з креслення</string>
     <string name="p5b_delete_placement">Видалити розміщення</string>
     <string name="p5b_delete_placement_explain">Після збереження позначку буде видалено. Заявлена кількість роботи збережеться.</string>
     <string name="p5b_delete_work">Видалити роботу</string>
@@ -112,6 +113,10 @@
     <string name="p5b_anchor_first_wall">Перша стіна</string>
     <string name="p5b_anchor_direction_wall">Стіна й напрямок</string>
     <string name="p5b_anchor_second_wall">Друга стіна</string>
+    <string name="p5b_anchor_distance_short">Відстань, м</string>
+    <string name="p5b_anchor_along_distance_short">Уздовж, м</string>
+    <string name="p5b_anchor_inward_title">Відступ від стіни</string>
+    <string name="p5b_anchor_inward_distance_short">Усередину, м</string>
     <string name="p5b_anchor_two_short">2 стіни</string>
     <string name="p5b_anchor_two_full">Від двох стін</string>
     <string name="p5b_anchor_along_short">Уздовж</string>
@@ -121,8 +126,8 @@
     <string name="p5b_details_drag_hint">Перетягніть вибраний об’єкт. Після руху положення буде приблизним.</string>
     <string name="p5b_capacity_full">Досягнуто заявленої кількості.</string>
     <string name="p5b_line_length">Довжина, м</string>
-    <string name="p5b_rectangle_width">Ширина прямокутника, м</string>
-    <string name="p5b_rectangle_height">Висота прямокутника, м</string>
+    <string name="p5b_rectangle_width">Ширина, м</string>
+    <string name="p5b_rectangle_height">Висота, м</string>
     <string name="p5b_dimensions_invalid">Перевірте розміри, контур і заявлену кількість.</string>
     <string name="p5b_live_area_value">%1$s м²</string>
     <string name="p5b_live_perimeter_value">%1$s м</string>
