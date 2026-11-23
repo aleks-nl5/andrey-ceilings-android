@@ -72,7 +72,7 @@ class LinePlacementTouchTest {
             click("Елементи")
             compose.onNodeWithTag("measurement-workspace-add").performClick()
             compose.onNodeWithTag("p5b-linked-${full.uuid}").performScrollTo().performClick()
-            compose.onNodeWithText("Розмістити ще").assertIsNotEnabled()
+            compose.onNodeWithContentDescription("Розмістити ще").assertIsNotEnabled()
             compose.onNodeWithText("Досягнуто заявленої кількості.").assertExists()
             assertNull(model.state.value.lineElementUuid)
             val canvas = compose.onNode(matcher)

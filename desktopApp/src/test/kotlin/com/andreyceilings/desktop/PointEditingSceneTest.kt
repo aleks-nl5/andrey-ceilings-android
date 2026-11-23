@@ -221,7 +221,7 @@ class PointEditingSceneTest {
                 val beforeName=points.forMeasurement(original.uuid)
                 val geometryBeforeName=MeasurementRepository(db).find(id)!!.drawingJson
                 scene.click("Контур")
-                scene.click("Деталі заміру")
+                scene.frame()
                 scene.setField("Назва заміру","Нова назва");scene.click("Зберегти замір")
                 withTimeout(15000) {
                     while (MeasurementRepository(db).find(id)?.name != "Нова назва") { scene.frame(); delay(20) }

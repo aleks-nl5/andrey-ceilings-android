@@ -225,7 +225,7 @@ class MeasurementWorkspaceLayoutTest {
             fun field(label: String) = compose.onNode(hasSetTextAction() and hasText(label, substring = true))
             fun showContourDetails() {
                 if (compose.onAllNodes(hasSetTextAction() and hasText("Назва заміру", substring = true)).fetchSemanticsNodes().isEmpty()) {
-                    compose.onNodeWithText("Деталі заміру").performScrollTo().performClick()
+                    compose.onNodeWithText("Деталі заміру").performScrollTo()
                 }
             }
             try {
@@ -441,7 +441,7 @@ class MeasurementWorkspaceLayoutTest {
 
                 contextTab("contour").performClick()
                 if (compose.onAllNodes(hasSetTextAction() and hasText("Назва заміру", substring = true)).fetchSemanticsNodes().isEmpty()) {
-                    compose.onNodeWithText("Деталі заміру").performScrollTo().performClick()
+                    compose.onNodeWithText("Деталі заміру").performScrollTo()
                 }
                 val nameField = field("Назва заміру")
                 val notes = field("Примітки")
@@ -468,15 +468,15 @@ class MeasurementWorkspaceLayoutTest {
                 contextTab("cost").performClick()
                 compose.onNodeWithText("Переглянути збережений розрахунок у картці заміру").performScrollTo().performClick()
                 enterEditor()
-                compose.onNodeWithText("Деталі заміру").performScrollTo().performClick()
+                compose.onNodeWithText("Деталі заміру").performScrollTo()
                 field("Назва заміру").assertTextContains("Кухня після збереження")
                 field("Примітки").assertTextContains("Другий запис")
                 field("Примітки").performScrollTo().performTextReplacement("Збережено перед виходом")
                 compose.onNodeWithTag("measurement-edit-back").performClick()
-                compose.onNodeWithContentDescription("Продовжити редагування").performClick()
+                compose.onNodeWithText("Продовжити").performClick()
                 action("На весь екран").assertExists()
                 compose.onNodeWithTag("measurement-edit-back").performClick()
-                compose.onNodeWithContentDescription("Зберегти й вийти").performClick()
+                compose.onNodeWithText("Зберегти й вийти").performClick()
                 compose.waitUntil(15000) {
                     compose.onAllNodes(hasText("Редагувати") and hasClickAction()).fetchSemanticsNodes().isNotEmpty()
                 }

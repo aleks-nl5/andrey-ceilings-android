@@ -102,7 +102,7 @@ class WorkspaceAddPointTouchTest {
             compose.waitUntil(15_000) { compose.onAllNodes(hasTestTag(itemTag)).fetchSemanticsNodes().isNotEmpty() }
             compose.onNodeWithTag(itemTag).performScrollTo().performClick()
             compose.onNodeWithText("Заявлена кількість, шт.").performTextInput("3")
-            click("Додати й розмістити")
+            click("Додати на креслення")
             click("Вписати креслення")
             val approximate = position(1200, 800)
             canvas.performTouchInput { click(approximate) }

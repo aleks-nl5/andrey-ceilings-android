@@ -157,7 +157,7 @@ class MeasurementEditSceneTest {
             }
             try {
                 scene.render().close()
-                scene.click("Деталі заміру")
+                scene.frame()
                 scene.frame()
                 val name = scene.nodes().single {
                     it.config.getOrNull(SemanticsActions.SetText) != null && it.textTree().contains("Назва заміру")
@@ -169,7 +169,7 @@ class MeasurementEditSceneTest {
                 scene.click("Повторити"); scene.frame(); assertEquals("Нова кухня", model.state.value.draft.name)
                 scene.click("На весь екран"); scene.frame(); assertTrue(guard.fullscreen.value)
                 scene.click("Контур"); scene.frame()
-                scene.click("Деталі заміру"); scene.frame()
+                scene.frame(); scene.frame()
                 assertTrue(scene.text().contains("Назва заміру"))
                 scene.click("До заміру")
                 scene.finishSheetMotion()
@@ -179,8 +179,8 @@ class MeasurementEditSceneTest {
                 assertFalse(guard.fullscreen.value)
                 scene.click("До заміру"); scene.frame()
                 assertTrue(scene.text().contains("Незбережені зміни")); assertEquals(0, backs)
-                scene.click("Продовжити редагування"); scene.frame(); assertTrue(model.state.value.dirty)
-                scene.click("До заміру"); scene.frame(); scene.click("Відхилити зміни й вийти")
+                scene.click("Продовжити"); scene.frame(); assertTrue(model.state.value.dirty)
+                scene.click("До заміру"); scene.frame(); scene.click("Відхилити зміни")
                 assertEquals(1, backs); assertFalse(model.state.value.dirty)
                 assertEquals(MeasurementDetails(7, 3), route.measurementDetails)
             } finally { scene.close() }
@@ -280,7 +280,7 @@ class MeasurementEditSceneTest {
             scene.click("Контур")
             scene.finishSheetMotion()
             assertTrue(scene.nodes().any { it.config.getOrNull(SemanticsProperties.EditableText)?.text == "5,25" })
-            scene.click("Деталі заміру")
+            scene.frame()
             scene.finishSheetMotion()
             val scrollAxis = panel().config[SemanticsProperties.VerticalScrollAxisRange]
             assertTrue(scrollAxis.maxValue() > 0)
@@ -576,7 +576,7 @@ class MeasurementEditSceneTest {
             val entering = y()
             tick(22)
             assertBetween(closed, entering, y())
-            scene.click("Деталі заміру")
+            scene.frame()
             tick(24)
             val compact = y()
 
@@ -744,7 +744,7 @@ class MeasurementEditSceneTest {
         try {
             repeat(4) { scene.frame() }
             val scale = scene.projectedDrawing().config[MeasurementDrawingSemantics.Projection].scale
-            scene.click("Деталі заміру")
+            scene.frame()
             scene.frame()
             assertTrue(field("Назва заміру").config[SemanticsActions.RequestFocus].action?.invoke() == true)
             keyboardInset = 228
@@ -777,7 +777,7 @@ class MeasurementEditSceneTest {
         try {
             repeat(4) { scene.frame() }
             val scale = scene.projectedDrawing().config[MeasurementDrawingSemantics.Projection].scale
-            scene.click("Деталі заміру")
+            scene.frame()
             scene.frame()
             assertTrue(notes().config[SemanticsActions.RequestFocus].action?.invoke() == true)
             keyboardInset = 220
