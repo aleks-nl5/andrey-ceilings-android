@@ -206,6 +206,18 @@ class MeasurementWorkspaceLayoutTest {
                     "Contour ${width}×${height}px must use the settled $viewport viewport ($projection)")
                 assertTrue(a.x >= 0 && a.y >= viewport.top && b.x <= viewport.right && b.y <= viewport.bottom,
                     "Projected contour $a–$b must fit $viewport")
+                // The Canvas deliberately extends BEHIND the context tabs.
+                // Its usable viewport must end at their TOP, not at the
+                // Canvas bottom (the bug seen after leaving fullscreen).
+                val tabs = compose.onAllNodesWithTag("measurement-edit-tab-row").fetchSemanticsNodes().singleOrNull()
+                if (tabs != null) {
+                    val canvasTop = node.boundsInRoot.top
+                    val tabsTop = tabs.boundsInRoot.top
+                    assertEquals(tabsTop, canvasTop + viewport.bottom, 2f,
+                        "Normal viewport must exclude the context tabs' overlaid height")
+                    assertTrue(canvasTop + b.y < tabsTop - 4f * compose.density.density,
+                        "Lower ceiling edge must remain visibly ABOVE the tabs after fit/fullscreen transition")
+                }
             }
             fun contextTab(name: String) = compose.onNodeWithTag("measurement-edit-context-$name")
             val panel = compose.onNodeWithTag("measurement-edit-context-panel")

@@ -349,11 +349,27 @@ class MeasurementEditSceneTest {
                 val center = node.config[MeasurementDrawingSemantics.ViewportBounds].center
                 return projection.inverse(DrawingPoint(center.x.toDouble(), center.y.toDouble()))
             }
+            fun assertContourClearOfNormalTabs() {
+                val current = drawing()
+                val tabs = scene.nodes().single {
+                    it.config.getOrNull(SemanticsProperties.TestTag) == "measurement-edit-tab-row"
+                }
+                val viewport = current.config[MeasurementDrawingSemantics.ViewportBounds]
+                assertEquals(tabs.boundsInRoot.top, current.boundsInRoot.top + viewport.bottom, 1.5f,
+                    "Normal canvas must reserve the actual tab-row height for camera fit")
+                val geometry = checkNotNull(validateMeasurementCreate(model.state.value.draft).geometry)
+                val contour = checkNotNull(measurementDrawingContour(MeasurementGeometryView.Captured(geometry)))
+                val projection = current.config[MeasurementDrawingSemantics.Projection]
+                val bottomEdge = contour.points.maxOf { projection.project(it).y }.toFloat() + current.boundsInRoot.top
+                assertTrue(bottomEdge < tabs.boundsInRoot.top - 4f,
+                    "Ceiling contour overlaps tab buttons after normal/fullscreen refit")
+            }
             try {
                 scene.frame()
                 val normalExpandedHeight = drawing().size.height
                 val normalViewportHeight = drawing().config[MeasurementDrawingSemantics.ViewportBounds].height
                 val originalCenter = worldCenter(drawing())
+                assertContourClearOfNormalTabs()
                 val center = drawing().boundsInRoot.center
                 scene.sendPointerEvent(PointerEventType.Press, center, type = PointerType.Mouse)
                 scene.sendPointerEvent(PointerEventType.Move, center + Offset(32f, 0f), type = PointerType.Mouse)
@@ -406,6 +422,7 @@ class MeasurementEditSceneTest {
                 repeat(6) { scene.frame() }
                 assertEquals(normalExpandedHeight, drawing().size.height)
                 assertEquals(MeasurementViewport(), drawing().config[MeasurementDrawingSemantics.Viewport])
+                assertContourClearOfNormalTabs()
                 activeDistance = pixelDistance(drawing())
                 activeCenter = worldCenter(drawing())
                 assertCamera()
@@ -415,6 +432,7 @@ class MeasurementEditSceneTest {
                 scene.click("Вписати креслення")
                 scene.frame()
                 assertEquals(MeasurementViewport(), drawing().config[MeasurementDrawingSemantics.Viewport])
+                assertContourClearOfNormalTabs()
                 assertTrue(kotlin.math.abs(manualZoom - pixelDistance(drawing())) > 1.0)
             } finally { scene.close() }
         }
@@ -730,8 +748,11 @@ class MeasurementEditSceneTest {
             val normalPanel = tagged("measurement-edit-normal-panel")
             val viewportHeight = scene.projectedDrawing().config[MeasurementDrawingSemantics.ViewportBounds].height
             val viewportTop = scene.projectedDrawing().config[MeasurementDrawingSemantics.ViewportBounds].top
-            assertEquals(canvasHeight - viewportTop, viewportHeight, 1f,
-                "Normal mode must not subtract the already-reserved panel from drawing height")
+            val tabs = tagged("measurement-edit-tab-row").boundsInRoot
+            assertEquals(tabs.top, scene.projectedDrawing().boundsInRoot.top + viewportTop + viewportHeight, 1f,
+                "Normal viewport ends at the visible tab-row TOP, not behind its buttons")
+            assertEquals(canvasHeight - viewportTop - tabs.height, viewportHeight, 1f,
+                "Reserve only the overlaid tabs, never subtract the lower panel twice")
             assertTrue(viewportHeight > 64f,
                 "The normal drawing viewport must be non-empty so the contour and grid render")
             assertTrue(normalPanel.size.height > 0)

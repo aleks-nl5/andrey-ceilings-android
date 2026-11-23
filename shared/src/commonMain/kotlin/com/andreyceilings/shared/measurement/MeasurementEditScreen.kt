@@ -763,13 +763,13 @@ fun MeasurementEditScreen(
                     Modifier.fillMaxSize(), interactive = true, fillAvailableHeight = true, showSideLegend = false,
                     retainCameraOnResize = true, autoFitOnFullscreenChange = true,
                     verticalViewControls = !keyboardVisible, showWorkspaceGrid = true,
-                    // IMPORTANT: In normal mode the Column below ALREADY reserves
-                    // normalPanelHeight - tabBleed via its bottom Spacer. Canvas's
-                    // measured height ends at the tab row; subtracting the panel
-                    // height again here collapses viewportHeight to zero, hiding
-                    // BOTH contour and grid (while fullscreen keeps rendering).
-                    // Reserve only the overlaid header INSIDE this Canvas.
-                    viewportPadding = PaddingValues(top = headerBleed, bottom = 0.dp),
+                    // The Spacer below already reserves the panel EXCEPT its
+                    // overlaid tab row. Canvas therefore ends at the tab row's
+                    // BOTTOM, not its visible TOP. Keep Canvas full sized for the
+                    // grid/gestures, but exclude the measured tab-row height from
+                    // camera fit, hit testing and viewport controls. Do NOT
+                    // subtract normalPanelHeight a second time.
+                    viewportPadding = PaddingValues(top = headerBleed, bottom = tabBleed),
                     onOpenSelection = if (fullscreen) { wall ->
                         if (enabled) {
                             if (wall) {
