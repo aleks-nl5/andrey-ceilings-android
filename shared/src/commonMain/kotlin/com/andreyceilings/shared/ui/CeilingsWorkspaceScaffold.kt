@@ -76,6 +76,16 @@ internal fun CeilingsWorkspaceScaffold(
                 Modifier.fillMaxWidth().height(topInset + headerHeight + CeilingsEdgeDefaults.FadeHeight)
                     .testTag(if (fullscreen) "ceilings-workspace-fullscreen-gradient" else "ceilings-workspace-normal-gradient")
             )
+            BoxWithConstraints(safeWorkspace) {
+                val workspace = this
+                Box(Modifier.fillMaxWidth().align(Alignment.TopCenter).onSizeChanged { measuredHeader = it.height }) {
+                    header(workspace, headerHeight)
+                }
+                overlay(headerHeight)
+            }
+            // Paint AFTER the scrollable editor panel, so the content can pass
+            // beneath the transparent Android system navigation buttons while
+            // receiving the same bottom fade as the rest of the application.
             // Identical bottom fade to CeilingsScreenScaffold/AppRoot: 50% edge
             // shade with the shared 36dp tail, not a solid navigation-bar strip.
             CeilingsEdgeGradient(
@@ -84,13 +94,6 @@ internal fun CeilingsWorkspaceScaffold(
                     .height(safePadding.calculateBottomPadding() + CeilingsEdgeDefaults.FadeHeight)
                     .testTag("ceilings-workspace-bottom-gradient")
             )
-            BoxWithConstraints(safeWorkspace) {
-                val workspace = this
-                Box(Modifier.fillMaxWidth().align(Alignment.TopCenter).onSizeChanged { measuredHeader = it.height }) {
-                    header(workspace, headerHeight)
-                }
-                overlay(headerHeight)
-            }
         }
     }
 }

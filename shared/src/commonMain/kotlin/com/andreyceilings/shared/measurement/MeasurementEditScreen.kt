@@ -476,6 +476,11 @@ fun MeasurementEditScreen(
                 }
             }
             val normalPanelHeight = normalPanelHeight(headerHeight)
+            // Keep tabs and their camera-fit boundary EXACTLY where they were.
+            // Only the scrolling panel grows beneath the transparent OS navigation
+            // bar when the keyboard is hidden; the last item gets safe scroll padding.
+            val normalNavigationUnderlay =
+                if (!fullscreen && !keyboardVisible) editorPadding.calculateBottomPadding() else 0.dp
             val bodyHeight = bodyHeight(headerHeight)
             val sheetContentHeight = when {
                 inlineKeyboardPanel -> maxHeight
@@ -529,7 +534,7 @@ fun MeasurementEditScreen(
                             Column(scrollBounds.then(if (elementsContext) Modifier else panelTag)
                                 .verticalScroll(scroll)
                                 .padding(top = if (context == MeasurementEditContext.CONTOUR) 14.dp else 6.dp,
-                                    bottom = 12.dp),
+                                    bottom = 12.dp + normalNavigationUnderlay),
                                 verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             when (context) {
                                 MeasurementEditContext.CONTOUR -> {
@@ -654,7 +659,10 @@ fun MeasurementEditScreen(
                 }
             }
             Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().then(
-                if (fullscreen) Modifier else Modifier.height(normalPanelHeight).testTag("measurement-edit-normal-panel")
+                if (fullscreen) Modifier else Modifier
+                    .height(normalPanelHeight + normalNavigationUnderlay)
+                    .offset(y = normalNavigationUnderlay)
+                    .testTag("measurement-edit-normal-panel")
             ).then(if (inlineKeyboardPanel) Modifier.padding(start = 60.dp,
                 end = if (statusIsProblem) 112.dp else 60.dp) else Modifier)) {
                 if (!fullscreen && !keyboardVisible) Row(
@@ -670,11 +678,11 @@ fun MeasurementEditScreen(
                                 maxLines = tabLines, softWrap = tabLines > 1, overflow = TextOverflow.Ellipsis) },
                             modifier = Modifier.weight(1f).testTag("measurement-edit-context-${mode.name.lowercase()}"),
                             colors = FilterChipDefaults.filterChipColors(
-                                // Let the workspace grid show softly through all three chips.
-                                // Preserve stronger fill/contrast for the selected context.
-                                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.72f),
+                                // The three tabs remain unchanged: only the content
+                                // below them scrolls beneath the OS navigation bar.
+                                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                                 labelColor = MaterialTheme.colorScheme.onSurface,
-                                selectedContainerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.82f),
+                                selectedContainerColor = MaterialTheme.colorScheme.secondaryContainer,
                                 selectedLabelColor = MaterialTheme.colorScheme.onSecondaryContainer
                             )
                         )

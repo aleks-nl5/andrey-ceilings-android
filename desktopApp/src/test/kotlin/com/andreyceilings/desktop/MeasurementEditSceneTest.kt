@@ -749,6 +749,9 @@ class MeasurementEditSceneTest {
             assertEquals(580f, bottomFadeNormal.bottom, 1f)
             assertEquals(24f + CeilingsEdgeDefaults.FadeHeight.value, bottomFadeNormal.height, 1f,
                 "Editor uses the same bottom fade as the rest of the app")
+            val scrollPanelNormal = tagged("measurement-edit-panel-surface").boundsInRoot
+            assertEquals(bottomFadeNormal.bottom, scrollPanelNormal.bottom, 1f,
+                "Panel content extends behind the bottom OS navigation region instead of showing the drawing")
             val normalPanel = tagged("measurement-edit-normal-panel")
             val viewportHeight = scene.projectedDrawing().config[MeasurementDrawingSemantics.ViewportBounds].height
             val viewportTop = scene.projectedDrawing().config[MeasurementDrawingSemantics.ViewportBounds].top

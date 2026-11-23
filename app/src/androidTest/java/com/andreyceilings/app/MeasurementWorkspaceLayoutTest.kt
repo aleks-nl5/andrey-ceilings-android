@@ -299,6 +299,10 @@ class MeasurementWorkspaceLayoutTest {
                     }
                 }
                 val normalPanel = panel.fetchSemanticsNode().boundsInRoot
+                val bottomFadeNormal = compose.onNodeWithTag("ceilings-workspace-bottom-gradient")
+                    .fetchSemanticsNode().boundsInRoot
+                assertEquals(bottomFadeNormal.bottom, normalPanel.bottom, 2f,
+                    "Scrollable editor panel should reach behind the transparent Android navigation bar")
                 val panelHeight = compose.onNodeWithTag("measurement-edit-normal-panel").fetchSemanticsNode().size.height
                 val normalViewport = canvas().config[MeasurementDrawingSemantics.ViewportBounds]
                 assertEquals(canvas().size.height - normalViewport.top,
