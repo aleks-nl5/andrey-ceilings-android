@@ -228,6 +228,19 @@ fun MeasurementEditScreen(
     val saveConfirmed = savedFeedback && !state.dirty && !state.saving
     val canSave = canLeaveSurface && validation.canSave && model.canSaveMountingDraft() &&
         !state.conflict && overlay is PointOverlayState.Loaded
+    val saveBlockedReason = if (!state.dirty || canSave) null else when {
+        state.conflict -> stringResource(Res.string.p5b_save_conflict)
+        !validation.canSave -> stringResource(Res.string.p5b_save_invalid_contour)
+        state.mountingInput?.dirty == true || state.coordinates?.dirty == true ||
+            state.lineProperties != null || state.area.properties != null ->
+                stringResource(Res.string.p5b_save_apply_fields)
+        state.lineStart != null || state.linePreview != null ||
+            (state.area.tool != null && (state.area.vertices.isNotEmpty() || state.area.diameter.isNotBlank())) ->
+                stringResource(Res.string.p5b_save_finish_placement)
+        overlay !is PointOverlayState.Loaded -> stringResource(Res.string.p5b_save_wait_points)
+        !model.canSaveMountingDraft() -> stringResource(Res.string.p5b_save_check_elements)
+        else -> null
+    }
     fun save(exit: Boolean = false) {
         focus.clearFocus(); model.commitInput()
         scope.launch(start = CoroutineStart.UNDISPATCHED) {
@@ -360,6 +373,7 @@ fun MeasurementEditScreen(
                             stateDescription = when {
                                 state.saving -> "Збереження…"
                                 saveConfirmed -> "Збережено"
+                                saveBlockedReason != null -> saveBlockedReason
                                 state.dirty -> "Незбережено"
                                 else -> "Змін немає"
                             }
@@ -712,7 +726,12 @@ fun MeasurementEditScreen(
         dismissButton={TextButton(enabled=!state.saving && !state.checking,onClick={scope.launch {model.reviewLater(inWorkspace = true)}}){Text("Пізніше")}})
     if (state.exitRequested) AlertDialog(onDismissRequest = model::continueEditing,
         title = { Text("Незбережені зміни") }, text = {
-            Text(state.error ?: "Зберегти зміни перед поверненням до картки заміру?")
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(state.error ?: "Зберегти зміни перед поверненням до картки заміру?")
+                if (!canSave && saveBlockedReason != null)
+                    Text(saveBlockedReason, style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error)
+            }
         },
         confirmButton = { TextButton(onClick = { save(exit = true) }, enabled = canSave) {
             Text(if (state.uncertain) "Повторити ту саму спробу" else "Зберегти й вийти")

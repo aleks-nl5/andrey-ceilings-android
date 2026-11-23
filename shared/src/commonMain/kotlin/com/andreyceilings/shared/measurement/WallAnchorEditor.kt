@@ -8,6 +8,9 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -61,16 +64,24 @@ fun WallAnchorEditor(model: MeasurementEditModel, inline: Boolean = false) {
         verticalArrangement=Arrangement.spacedBy(8.dp)) {
             if (!inline) Text("Виміряйте відстані від обраних стін до вибраної точки або кінця лінії. Значення у метрах, до 3 знаків після коми або крапки.")
             FlowRow(horizontalArrangement=Arrangement.spacedBy(6.dp)) {
-                FilterChip(input.kind==WallAnchor.Kind.TWO_WALLS,onClick={model.updateMounting { it.copy(kind=WallAnchor.Kind.TWO_WALLS) }},label={Text("Від двох стін")})
-                FilterChip(input.kind==WallAnchor.Kind.ALONG_INWARD,onClick={model.updateMounting { it.copy(kind=WallAnchor.Kind.ALONG_INWARD) }},label={Text("Уздовж + усередину")})
+                FilterChip(input.kind==WallAnchor.Kind.TWO_WALLS,
+                    onClick={model.updateMounting { it.copy(kind=WallAnchor.Kind.TWO_WALLS) }},
+                    label={Text(stringResource(if (inline) Res.string.p5b_anchor_two_short else Res.string.p5b_anchor_two_full),
+                        style = MaterialTheme.typography.labelSmall)})
+                FilterChip(input.kind==WallAnchor.Kind.ALONG_INWARD,
+                    onClick={model.updateMounting { it.copy(kind=WallAnchor.Kind.ALONG_INWARD) }},
+                    label={Text(stringResource(if (inline) Res.string.p5b_anchor_along_short else Res.string.p5b_anchor_along_full),
+                        style = MaterialTheme.typography.labelSmall)})
             }
-            Text(if(input.kind==WallAnchor.Kind.TWO_WALLS) "Перша опорна стіна" else "Обрана стіна й початок її напрямку")
+            Text(stringResource(if (input.kind == WallAnchor.Kind.TWO_WALLS)
+                Res.string.p5b_anchor_first_wall else Res.string.p5b_anchor_direction_wall),
+                style = MaterialTheme.typography.labelMedium)
             FlowRow(horizontalArrangement=Arrangement.spacedBy(6.dp)) { walls.forEach { wall ->
                 FilterChip(input.firstWall==wall.uuid,onClick={model.updateMounting { it.copy(firstWall=wall.uuid) }},
                     label={Text("1: ${measurementSideLabels(walls.size)[wall.ordinal]}")})
             } }
             if(input.kind==WallAnchor.Kind.TWO_WALLS) {
-                Text("Друга опорна стіна")
+                Text(stringResource(Res.string.p5b_anchor_second_wall), style = MaterialTheme.typography.labelMedium)
                 FlowRow(horizontalArrangement=Arrangement.spacedBy(6.dp)) { walls.forEach { wall ->
                     FilterChip(input.secondWall==wall.uuid,onClick={model.updateMounting { it.copy(secondWall=wall.uuid) }},
                         label={Text("2: ${measurementSideLabels(walls.size)[wall.ordinal]}")})
@@ -78,11 +89,11 @@ fun WallAnchorEditor(model: MeasurementEditModel, inline: Boolean = false) {
             }
             DecimalInputField(input.firstText, { value -> model.updateMounting { it.copy(firstText = value) } },
                 if (input.kind == WallAnchor.Kind.TWO_WALLS) "Від першої стіни, м" else "Від початку вздовж стіни, м",
-                modifier = measurementFieldFocusModifier(),
+                modifier = measurementFieldFocusModifier(), compact = inline,
                 onNext = if (editorFocus) ({ secondField.requestFocus() }) else null)
             DecimalInputField(input.secondText, { value -> model.updateMounting { it.copy(secondText = value) } },
                 if (input.kind == WallAnchor.Kind.TWO_WALLS) "Від другої стіни, м" else "Відступ усередину, м",
-                modifier = measurementFieldFocusModifier().focusRequester(secondField))
+                modifier = measurementFieldFocusModifier().focusRequester(secondField), compact = inline)
             // Do not show a large red geometry error before the user has typed both dimensions.
             if (input.firstText.isNotBlank() && input.secondText.isNotBlank() && solution == null)
                 Text(stringResource(Res.string.p5b_wall_anchor_invalid),
@@ -102,7 +113,14 @@ fun WallAnchorEditor(model: MeasurementEditModel, inline: Boolean = false) {
     }
     if (inline) {
         fields()
-        FlowRow { apply(); cancel() }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+            IconButton(onClick = model::dismissMounting) {
+                Icon(Icons.Default.Close, stringResource(Res.string.p5b_cancel_placement))
+            }
+            IconButton(enabled = solution != null, onClick = model::applyMounting) {
+                Icon(Icons.Default.Check, stringResource(Res.string.p5b_apply_dimensions))
+            }
+        }
     } else AlertDialog(onDismissRequest=model::dismissMounting,title={Text("Розміри від стін")},
         text=fields,confirmButton=apply,dismissButton=cancel)
 }
