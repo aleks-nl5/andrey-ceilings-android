@@ -95,12 +95,24 @@ class LinePlacementTouchTest {
             assertTrue(moved.start.xMm < original.start.xMm - 700)
             click("Скасувати дію")
             click("Редагувати розміри")
-            compose.onNodeWithText("Довжина, м").performScrollTo().performTextReplacement("0,325")
-            click("Оновити на кресленні (у чернетці)")
-            val resized = model.displayLines().single { it.uuid == original.uuid }
-            assertEquals(original.start, resized.start)
-            assertEquals(325L, resized.lengthMm)
-            assertEquals(ElementQuantity.Exact(2500), elements.find(short.uuid)?.quantity)
+            compose.onNodeWithTag("p5b-line-declared-length").performScrollTo().performTextReplacement("0,325")
+            click("Застосувати зміни")
+            val unchanged = model.displayLines().single { it.uuid == original.uuid }
+            assertEquals(original.start, unchanged.start)
+            assertEquals(original.end, unchanged.end)
+            assertEquals(250L, unchanged.lengthMm)
+            assertEquals(ElementQuantity.Exact(325),
+                model.workspaceWorks().single { it.uuid == short.uuid }.quantity)
+            assertEquals(ElementQuantity.Exact(2500), elements.find(short.uuid)?.quantity,
+                "Draft claim must not hit the database before overall Save")
+            click("Редагувати розміри")
+            compose.onNodeWithTag("p5b-line-declared-length").assertTextContains("0,325")
+            compose.onNodeWithTag("p5b-line-take-length").performClick()
+            click("Оновити кошторис")
+            assertEquals(ElementQuantity.Exact(250),
+                model.workspaceWorks().single { it.uuid == short.uuid }.quantity)
+            compose.onNodeWithTag("p5b-line-declared-length").assertTextContains("0,25")
+            assertEquals(unchanged, model.displayLines().single { it.uuid == original.uuid })
         } finally {
             store.closePointReads()
             driver.close()

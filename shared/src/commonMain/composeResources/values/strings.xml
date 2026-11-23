@@ -69,7 +69,7 @@
     <string name="p5b_place_more">Розмістити ще</string>
     <string name="p5b_go_to_work">До елементу</string>
     <string name="p5b_apply_quantity">Застосувати кількість до чернетки</string>
-    <string name="p5b_apply_draft">Оновити на кресленні (у чернетці)</string>
+    <string name="p5b_apply_draft">Застосувати зміни</string>
     <string name="p5b_in_measurement">У замірі</string>
     <string name="p5b_material_selection_failed">Не вдалося обрати матеріал. Перевірте наявні розміщення й стан прайсу.</string>
     <string name="p5b_line_kind_required">Ця позиція додається до заміру без позначки. Щоб креслити її як лінію, змініть тип розміщення в прайсі.</string>

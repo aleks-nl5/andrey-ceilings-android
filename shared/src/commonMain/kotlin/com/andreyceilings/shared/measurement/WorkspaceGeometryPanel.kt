@@ -275,74 +275,8 @@ internal fun WorkspaceGeometryPanel(
             WorkspaceShortAction(stringResource(Res.string.p5b_wall_short), Icons.Default.Edit, model::openMounting)
         }
         if (line != null) {
-            // One-tap edit of the declared (billing) quantity, separate from the
-            // geometry length below. It is intentionally NOT tied to drawing length.
-            val claimedEditable = (work?.source as? ElementSource.CatalogSelection)
-                ?.quantityMode?.workspaceQuantity() == ElementQuantity.Unknown
             val canTakeLength = work != null && !line.unresolved &&
                 model.displayLines().any { it.elementUuid == work.uuid && !it.unresolved }
-            var editingClaim by remember(line.uuid) { mutableStateOf(false) }
-            var claimText by rememberSaveable(line.uuid, work?.quantity) {
-                mutableStateOf((work?.quantity as? ElementQuantity.Exact)?.let {
-                    formatElementMilli(it.milli)
-                }.orEmpty())
-            }
-            var claimInvalid by remember(line.uuid) { mutableStateOf(false) }
-            if (work != null) {
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text(stringResource(Res.string.p5b_line_declared_value,
-                            formatElementQuantity(work.quantity, work.unit)),
-                            style = MaterialTheme.typography.labelSmall,
-                            maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        if (canTakeLength) Text(stringResource(Res.string.p5b_line_drawing_total,
-                            formatElementQuantity(ElementQuantity.Exact(model.displayLines()
-                                .filter { it.elementUuid == work.uuid && !it.unresolved }
-                                .sumOf { it.lengthMm }), work.unit)),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    }
-                    if (claimedEditable) IconButton(onClick = {
-                        claimText = (work.quantity as? ElementQuantity.Exact)?.let {
-                            formatElementMilli(it.milli)
-                        }.orEmpty()
-                        editingClaim = !editingClaim
-                        claimInvalid = false
-                    }, modifier = Modifier.size(40.dp)) {
-                        Icon(Icons.Default.Edit, stringResource(Res.string.p5b_edit_work))
-                    }
-                    IconButton(onClick = { model.requestDeclaredLength(work.uuid) },
-                        enabled = enabled && canTakeLength,
-                        modifier = Modifier.size(40.dp).testTag("p5b-line-take-length")) {
-                        WorkspaceDrawingLengthIcon()
-                    }
-                }
-                if (editingClaim && claimedEditable) {
-                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        Box(Modifier.weight(1f)) {
-                            DecimalInputField(claimText, { claimText = it; claimInvalid = false },
-                                stringResource(Res.string.p5b_declared_quantity, work.unit.orEmpty()),
-                                modifier = Modifier.fillMaxWidth(), compact = true,
-                                isError = claimInvalid, allowDecimalSeparator = work.unit != "шт.")
-                            WorkspaceQuantityHelp(Modifier.align(Alignment.CenterEnd).padding(end = 2.dp))
-                        }
-                        IconButton(onClick = {
-                            val qty = if (claimText.isBlank()) ElementQuantity.Unknown
-                                else parseElementMilli(claimText, work.unit)?.let { ElementQuantity.Exact(it) }
-                            if (qty != null && model.editWorkspaceQuantity(work.uuid, qty)) {
-                                editingClaim = false
-                            } else claimInvalid = true
-                        }) { Icon(Icons.Default.Check, stringResource(Res.string.p5b_apply_quantity)) }
-                        IconButton(onClick = { editingClaim = false }) {
-                            Icon(Icons.Default.Close, stringResource(Res.string.p5b_cancel_placement))
-                        }
-                    }
-                    if (claimInvalid) Text(stringResource(Res.string.p5b_quantity_invalid),
-                        color = MaterialTheme.colorScheme.error,
-                        style = MaterialTheme.typography.labelSmall)
-                }
-            }
             // Stable one-row toolbar. Selecting an endpoint changes the active field, not
             // the structure or position of the controls; no unsaved input is discarded.
             val endpointOpen = state.mountingInput?.pointUuid == line.uuid
@@ -397,14 +331,19 @@ internal fun WorkspaceGeometryPanel(
                     }
                 }
                 WorkspaceSnapControl(snap, enabled, onSnapChanged)
+                IconButton(onClick = { work?.let { model.requestDeclaredLength(it.uuid) } },
+                    enabled = enabled && canTakeLength,
+                    modifier = Modifier.size(40.dp).testTag("p5b-line-take-length")) {
+                    WorkspaceDrawingLengthIcon()
+                }
             }
             state.lineProperties?.let { input ->
                 val valid = model.linePropertiesCandidate(line, input) != null
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    DecimalInputField(input.length ?: formatPointMetres(line.lengthMm),
+                    DecimalInputField(input.length.orEmpty(),
                         { model.changeLineProperties(length = it) },
                         stringResource(Res.string.p5b_line_length),
-                        modifier = measurementFieldFocusModifier().weight(1f), compact = true)
+                        modifier = measurementFieldFocusModifier().weight(1f).testTag("p5b-line-declared-length"), compact = true)
                     Spacer(Modifier.width(6.dp))
                     DecimalInputField(input.width, { model.changeLineProperties(width = it) },
                         stringResource(Res.string.p5b_line_size),
@@ -424,17 +363,7 @@ internal fun WorkspaceGeometryPanel(
                     }
                 }
                 if (!valid) {
-                    val claimedMaximum = work?.lineCapacityMm()
-                    val proposedLength = input.length?.let { parsePointMetres(it, 3_000_000) }
-                    val alreadyPlaced = model.displayLines()
-                        .filter { it.elementUuid == work?.uuid && it.uuid != line.uuid }
-                        .sumOf { it.lengthMm }
-                    val exceedsClaim = claimedMaximum != null && proposedLength != null &&
-                        proposedLength + alreadyPlaced > claimedMaximum
-                    Text(if (exceedsClaim && work != null)
-                            stringResource(Res.string.p5b_line_more_than_declared,
-                                formatElementQuantity(work.quantity, work.unit))
-                        else stringResource(Res.string.p5b_dimensions_invalid),
+                    Text(stringResource(Res.string.p5b_quantity_invalid),
                         color = MaterialTheme.colorScheme.error,
                         style = MaterialTheme.typography.labelSmall)
                 }
@@ -736,7 +665,8 @@ internal fun WorkspaceWorkList(
                 onSelect(work.uuid)
                 quantityEditingWork = if (closingSameEditor) null else work.uuid
             },
-                enabled = enabled && source?.quantityMode?.workspaceQuantity() == ElementQuantity.Unknown) {
+                enabled = enabled && source?.quantityMode?.workspaceQuantity() == ElementQuantity.Unknown &&
+                    (!work.supportsLinePlacement() || !hasPlacement)) {
                 Icon(Icons.Default.Edit, stringResource(Res.string.p5b_edit_work))
             }
             IconButton(onClick = { deletion = true }, enabled = enabled) {

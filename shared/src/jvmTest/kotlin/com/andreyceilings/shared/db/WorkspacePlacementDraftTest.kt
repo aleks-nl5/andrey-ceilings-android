@@ -101,21 +101,30 @@ class WorkspacePlacementDraftTest {
             val initial = editor.displayLines().single()
             editor.selectLine(initial.uuid)
             editor.openLineProperties()
+            assertEquals("2", editor.state.value.lineProperties?.length,
+                "Visible length must start from the declared billable quantity")
             editor.changeLineProperties(length = "1.5")
             val proposed = assertNotNull(editor.state.value.lineProperties)
-            assertNotNull(editor.linePropertiesCandidate(initial, proposed),
-                "Declared 2m must allow extending geometry from 1m to 1.5m")
+            assertEquals(initial, editor.linePropertiesCandidate(initial, proposed),
+                "Editing declared length must never resize the drawing")
             editor.applyLineProperties()
-            assertEquals(1500L, editor.displayLines().single().lengthMm)
-            assertEquals(ElementQuantity.Exact(2000),
+            assertEquals(initial, editor.displayLines().single())
+            assertEquals(ElementQuantity.Exact(1500),
                 editor.workspaceWorks().single { it.uuid == workId }.quantity)
+            editor.beginLineHandleDrag(initial.uuid, 2)
+            editor.previewLineDrag(200.0, 0.0)
+            editor.finishLineDrag()
+            assertEquals(1200L, editor.displayLines().single().lengthMm)
+            assertEquals(ElementQuantity.Exact(1500),
+                editor.workspaceWorks().single { it.uuid == workId }.quantity,
+                "Dragging a line endpoint must never overwrite the declared amount")
             assertTrue(editor.canSaveMountingDraft())
             editor.saveInWorkspace()
             assertFalse(editor.state.value.dirty, editor.state.value.error)
             val saved = assertNotNull(MeasurementElementRepository(db).find(workId))
-            assertEquals(ElementQuantity.Exact(2000), saved.quantity)
-            assertEquals(1500L, saved.placedQuantityMilli,
-                "Claimed 2m and drawn 1.5m must persist independently in one Save")
+            assertEquals(ElementQuantity.Exact(1500), saved.quantity)
+            assertEquals(1200L, saved.placedQuantityMilli,
+                "Claimed 1.5m and drawn 1.2m must persist independently in one Save")
         }
     }
 
@@ -143,12 +152,21 @@ class WorkspacePlacementDraftTest {
                 "A pending typed length must not silently transfer the old drawing sum")
             assertEquals(1000L, editor.displayLines().single().lengthMm)
             editor.applyLineProperties()
-            assertEquals(1500L, editor.displayLines().single().lengthMm)
-            editor.takeDeclaredLength()
+            assertEquals(1000L, editor.displayLines().single().lengthMm)
             assertEquals(ElementQuantity.Exact(1500),
                 editor.workspaceWorks().single { it.uuid == workId }.quantity,
-                "Transfer changes billed quantity, not the already applied line length")
-            assertEquals(1500L, editor.displayLines().single().lengthMm)
+                "Typing in the length field changes only the declared amount")
+            editor.openLineProperties()
+            assertEquals("1,5", editor.state.value.lineProperties?.length)
+            editor.takeDeclaredLength()
+            assertEquals(ElementQuantity.Exact(1000),
+                editor.workspaceWorks().single { it.uuid == workId }.quantity,
+                "Transfer changes billed quantity, not the drawn segment")
+            assertEquals(1000L, editor.displayLines().single().lengthMm)
+            assertEquals("1", editor.state.value.lineProperties?.length,
+                "The existing visible field must refresh on explicit drawing transfer")
+            assertFalse(editor.state.value.lineProperties?.dirty ?: true)
+            editor.discardLineProperties()
             assertTrue(editor.canSaveMountingDraft())
         }
     }

@@ -863,8 +863,10 @@ class MeasurementEditModel(
     fun openLineProperties() {
         if(!editable())return
         val line=displayLines().find {it.uuid==state.value.selectedLineUuid} ?: return
+        val claimed = (workspaceWorks().find { it.uuid == line.elementUuid }?.quantity as? ElementQuantity.Exact)
+            ?.let { formatElementMilli(it.milli) }.orEmpty()
         mutableState.value=state.value.copy(lineProperties=LinePropertiesInput(line.uuid, line.widthMm?.toString().orEmpty(), line.note,
-            length = formatPointMetres(line.lengthMm)))
+            length = claimed))
     }
     fun changeLineProperties(width: String? = null, note: String? = null, length: String? = null) {
         if(!editable())return
@@ -875,35 +877,62 @@ class MeasurementEditModel(
     }
     fun discardLineProperties() {mutableState.value=state.value.copy(lineProperties=null,linePropertiesDismiss=false)}
     fun continueLineProperties() {mutableState.value=state.value.copy(linePropertiesDismiss=false)}
+    /** The length field is the declared billable amount, never a geometry resize. */
+    private fun declaredLineQuantity(work: MeasurementElement, input: LinePropertiesInput): ElementQuantity? {
+        val value = input.length ?: return work.quantity
+        if (value.isBlank()) return ElementQuantity.Unknown
+        val amount = parseElementMilli(value, work.unit) ?: return null
+        val quantity = ElementQuantity.Exact(amount)
+        val mode = (work.source as? ElementSource.CatalogSelection)?.quantityMode ?: return null
+        if (runCatching { ElementQuantityRules.validate(quantity, work.unit, mode) }.isFailure) return null
+        return quantity
+    }
+
     fun applyLineProperties() {
-        if(!editable())return
-        val input=state.value.lineProperties?.takeIf {it.valid} ?: return
+        if (!editable()) return
+        val input = state.value.lineProperties?.takeIf { it.valid } ?: return
         val line = displayLines().find { it.uuid == input.uuid } ?: return
+        val work = workspaceWorks().find { it.uuid == line.elementUuid } ?: return
+        val quantity = declaredLineQuantity(work, input) ?: return
         val candidate = linePropertiesCandidate(line, input) ?: return
-        stageLine(candidate, remeasuredEnd = if (candidate.end != line.end) false else null)
-        discardLineProperties()
+        val quantityChanged = quantity != work.quantity
+        val geometryMetadataChanged = candidate != line
+        if (!quantityChanged && !geometryMetadataChanged) {
+            discardLineProperties()
+            return
+        }
+        commitInput()
+        undo.add(form())
+        redo.clear()
+        val before = state.value
+        val additions = before.additions
+        val changedWork = work.copy(quantity = quantity)
+        val nextAdditions = if (!quantityChanged) additions
+            else if (work.uuid in additions.elements)
+                additions.copy(elements = additions.elements + (work.uuid to changedWork))
+            else additions.copy(editedWorks = additions.editedWorks + (work.uuid to changedWork))
+        val previousEdit = before.lineEdits[line.uuid]
+        mutableState.value = before.copy(
+            lineEdits = if (geometryMetadataChanged) before.lineEdits + (line.uuid to
+                (previousEdit?.copy(value = candidate) ?: LinePlacementEdit(candidate))) else before.lineEdits,
+            declaredLengths = if (quantityChanged) before.declaredLengths - work.uuid else before.declaredLengths,
+            area = if (quantityChanged) before.area.copy(quantities = before.area.quantities - work.uuid) else before.area,
+            additions = nextAdditions,
+            lineProperties = null,
+            linePropertiesDismiss = false
+        )
+        publish()
+        lineCapacityError()?.let { mutableState.value = state.value.copy(error = it) }
     }
 
     internal fun linePropertiesCandidate(line: LinePlacement, input: LinePropertiesInput): LinePlacement? {
         if (!input.valid) return null
-        val length = input.length?.let { parsePointMetres(it, 3_000_000)?.takeIf { mm -> mm > 0 } ?: return null }
-        val details = line.copy(widthMm = input.width.toLongOrNull(), note = input.note)
-        if (length == null || length == line.lengthMm) return details
-        if (line.unresolved) return null
-        val geometry = validateMeasurementCreate(state.value.draft).geometry ?: return null
-        val dx = (line.end.xMm - line.start.xMm).toDouble()
-        val dy = (line.end.yMm - line.start.yMm).toDouble()
-        val scale = length / hypot(dx, dy)
-        val x = line.start.xMm + dx * scale
-        val y = line.start.yMm + dy * scale
-        val end = (-1L..1L).flatMap { ox ->
-            (-1L..1L).map { oy -> PointPositionMm(x.roundToLong() + ox, y.roundToLong() + oy) }
-        }.sortedBy { hypot(it.xMm - x, it.yMm - y) }.firstOrNull {
-            lineStrictlyInside(geometry, line.start, it) && lineLengthMm(line.start, it) == length
-        } ?: return null
-        return details.copy(end = end, endMounting = line.endMounting.freeMoved(),
-            needsReview = line.needsReview || line.endMounting.anchor != null)
-            .takeIf { lineHasCapacity(line.elementUuid, it) }
+        val work = workspaceWorks().find { it.uuid == line.elementUuid } ?: return null
+        val quantity = declaredLineQuantity(work, input) ?: return null
+        if (quantity != work.quantity && !canEditWorkspaceQuantity(work.uuid, quantity)) return null
+        // Width and note describe the line. The line endpoints and measured length
+        // stay unchanged when the billable length field is edited.
+        return line.copy(widthMm = input.width.toLongOrNull(), note = input.note)
     }
     fun requestLineDelete() {if(editable())mutableState.value=state.value.copy(lineDeleteConfirm=true)}
     fun cancelLineDelete() {mutableState.value=state.value.copy(lineDeleteConfirm=false)}
@@ -927,7 +956,15 @@ class MeasurementEditModel(
         // Stage it as an ordinary work edit rather than an equality-locked geometry
         // command: the user may subsequently change the quantity independently.
         if (length > 0 && editWorkspaceQuantity(id, ElementQuantity.Exact(length))) {
-            mutableState.value = state.value.copy(lengthConfirm = null)
+            // The visible "Довжина" field must reflect an explicit drawing transfer,
+            // including when the clean line editor is still open.
+            val editor = state.value.lineProperties
+            val editedLine = editor?.let { input -> displayLines().find { it.uuid == input.uuid } }
+            val updatedEditor = if (editor != null && !editor.dirty && editedLine?.elementUuid == id) {
+                val formatted = formatElementMilli(length)
+                editor.copy(length = formatted, initialLength = formatted)
+            } else editor
+            mutableState.value = state.value.copy(lengthConfirm = null, lineProperties = updatedEditor)
         }
     }
 
