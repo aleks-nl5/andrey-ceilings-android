@@ -110,6 +110,68 @@ class WorkspacePlacementDraftTest {
             assertEquals(ElementQuantity.Exact(2000),
                 editor.workspaceWorks().single { it.uuid == workId }.quantity)
             assertTrue(editor.canSaveMountingDraft())
+            editor.saveInWorkspace()
+            assertFalse(editor.state.value.dirty, editor.state.value.error)
+            val saved = assertNotNull(MeasurementElementRepository(db).find(workId))
+            assertEquals(ElementQuantity.Exact(2000), saved.quantity)
+            assertEquals(1500L, saved.placedQuantityMilli,
+                "Claimed 2m and drawn 1.5m must persist independently in one Save")
+        }
+    }
+
+    @Test
+    fun areaTransferAndManualIncreasePersistWithTheDrawing() = runBlocking {
+        JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).use { driver ->
+            PriceCatalogSchema.create(driver)
+            val db = PrototypeDatabase(driver)
+            val fixture = PointPlacementProof.fixture(db)
+            val store = MeasurementEditStore(db) { 101 }
+            val editor = MeasurementEditModel(store, store.load(fixture.project, fixture.id))
+            val item = addItem(db, "Measured area", PlacementKind.AREA, "шт.")
+            editor.addCatalogWork(item, ElementQuantity.Unknown, place = true)
+            editor.areaTap(700, 900)
+            editor.areaTap(1200, 1300)
+            editor.acceptAreaCreation()
+            val workId = assertNotNull(editor.displayAreas().single().elementUuid)
+            assertEquals(ElementQuantity.Unknown,
+                editor.workspaceWorks().single { it.uuid == workId }.quantity)
+            editor.requestAreaQuantity(workId)
+            editor.takeAreaQuantity()
+            assertEquals(ElementQuantity.Exact(1000),
+                editor.workspaceWorks().single { it.uuid == workId }.quantity)
+            assertTrue(workId !in editor.state.value.area.quantities)
+            assertTrue(editor.editWorkspaceQuantity(workId, ElementQuantity.Exact(2000)))
+            assertEquals(ElementQuantity.Exact(2000),
+                editor.workspaceWorks().single { it.uuid == workId }.quantity)
+            assertTrue(editor.canSaveMountingDraft())
+            editor.saveInWorkspace()
+            assertFalse(editor.state.value.dirty, editor.state.value.error)
+            val saved = assertNotNull(MeasurementElementRepository(db).find(workId))
+            assertEquals(ElementQuantity.Exact(2000), saved.quantity)
+            assertEquals(1000L, saved.placedQuantityMilli)
+        }
+    }
+
+    @Test
+    fun optionalWorkWithoutQuantityCanBeSavedAndLaterCompleted() = runBlocking {
+        JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).use { driver ->
+            PriceCatalogSchema.create(driver)
+            val db = PrototypeDatabase(driver)
+            val fixture = PointPlacementProof.fixture(db)
+            val store = MeasurementEditStore(db) { 101 }
+            val editor = MeasurementEditModel(store, store.load(fixture.project, fixture.id))
+            val item = addItem(db, "Unspecified optional work", PlacementKind.LINE, "м.п.")
+            editor.addCatalogWork(item, ElementQuantity.Unknown, place = false)
+            val workId = editor.workspaceWorks().single { it.label == item.title }.uuid
+            assertTrue(editor.canSaveMountingDraft())
+            editor.saveInWorkspace()
+            assertFalse(editor.state.value.dirty, editor.state.value.error)
+            assertEquals(ElementQuantity.Unknown,
+                assertNotNull(MeasurementElementRepository(db).find(workId)).quantity)
+            assertTrue(editor.editWorkspaceQuantity(workId, ElementQuantity.Exact(2000)))
+            editor.saveInWorkspace()
+            assertEquals(ElementQuantity.Exact(2000),
+                assertNotNull(MeasurementElementRepository(db).find(workId)).quantity)
         }
     }
 
