@@ -49,6 +49,14 @@
 
 [Canonical UX spec §1.1](P5B_UX_SPEC.md): the owner **overrode review finding #4**, explicitly choosing **automatic approval of the two main materials**. Whenever the user chooses/replaces the selected item in the sticky «Полотно» / «Основний профіль» picker, stage `ElementApproval.APPROVED` on that material only (one atomic overall Save, not an immediate DB write); show no additional approval button or modal. Re-selecting an already-current `DISCUSSING` row must also approve that row **without duplicating the typed base role or changing its UUID**. **Do not migrate untouched legacy statuses at screen open.** Never auto-approve `ADDITIONAL_WORK`, obstacles/voids, or automatically finalize/price a quote. Preserve derived area/perimeter, CAS/Undo/Redo, immutable revisions/PDF and existing mandatory readiness validation. Add shared/JVM DB tests for new/replace/reselect, Undo/Redo, Save/reopen, with optional rows unaffected.
 
+## Owner-approved LIVE area/perimeter strip IN P5B; price deferred P5D (23.11.2026)
+
+**This new requirement overrides only the prior deferral of *all* three always-on indicators.** Implement now on Draft PR #157 a slim **top row with only current live area (m²) and perimeter (m)** beneath header controls, visible in normal/fullscreen and all contexts. Tiny icons + values, **no large visible labels**, use shared Compose Resources for a11y, no third cost placeholder. Reuse the **same existing transparent top gradient** from `CeilingsWorkspaceScaffold`/`CeilingsEdgeGradient`; no opaque overlay or duplicate gradient.
+
+Use `validation.geometry` from the **current in-memory draft** directly and existing number formatters. **Do NOT** take the `savedGeometry` fallback: while editing invalid contour, show em-dash units with a subtle warning rather than persisted-but-stale area/perimeter. Update per valid edit and Undo/Redo **without overall Save**; keep Canvas camera/fit/viewport, safe insets, 50%-height bottom sheet, full screen, IME, light/dark and 48dp gesture controls stable. Test production editor layouts/semantics + invalid recovery Android/Windows.
+
+**Live price amount, third indicator and full coherent unsaved draft-pricing projection remain P5D.** Never add placeholder third cell, pricing writes, duplicate financial formula or live-pricing engine dependencies in P5B. See [P5B_UX_SPEC.md §1.2](P5B_UX_SPEC.md).
+
 ## One acceptance matrix (all must pass)
 
 - [ ] **Owner UX acceptance is mandatory in addition to the original geometry matrix:** validate every scenario in [P5B UX spec §6](P5B_UX_SPEC.md), particularly persistent two primary selectors, «+» direct search rather than AlertDialog, compact rows/status/action icons, existing/new work quantity and no duplicates, inline-pencil fields, conditional «…», both modes and narrow phone.

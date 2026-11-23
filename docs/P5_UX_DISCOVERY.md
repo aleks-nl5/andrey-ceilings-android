@@ -75,6 +75,10 @@
 - Filter available candidates by typed roles and compatible units (CANVAS m²; PRIMARY_PROFILE м.п.) and show clear missing/retired/conflicting item state; do not quietly change an existing selection or invent zero price.
 - Other POINT/LINE/AREA works via common «+ Додати». Keep primary choices in saved measurement/source binding and recompute dependent live estimate via the same KMP rules. For valid estimate readiness exactly one accepted canvas and one accepted primary profile are needed; historical frozen revisions remain untouched.
 
+### 6.5a Owner staging update — 23.11.2026
+
+In current P5B, ship **always-visible dynamic area and perimeter only**, as tiny icons + values in the existing transparent-gradient top header (not inside scrollable context sheet). Compute from current valid geometry before Save; no stale fallback on invalid drafts. In P5D, **add** live indicative cost as the third value in the same place, using a complete coherent in-memory draft-pricing read model; keep frozen estimates immutable. No cost placeholder in P5B. The original §6.5 goal is preserved but its implementation is **staged** per owner.
+
 ### 6.5 Real-time **in-memory draft pricing** is part of target UX
 
 - Owner requests amounts update as dimension/element/quantity/primary selection changes, **before draft Save**. Do not fake this with current persisted-only `LivePricingReader.read`. Provide a validated pure-KMP draft projection/read-model shared with current pricing engine, bound to a coherent **draft revision + current catalog snapshot and explicit status**. Debounce UI only if necessary; correctness on every event wins over visual animation.
