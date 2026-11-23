@@ -45,6 +45,10 @@
 
 **Owner acceptance is pending.** UI checks on physical APK, normal/fullscreen, dark/light, Android/Windows, geometry, Undo/Redo and persistence must be repeated. Never treat these as done simply because low-level `lineMoveTarget` / `area.moveVertex` or `previewLineCreation` exist.
 
+## Owner decision: automatically approve selected CANVAS / PRIMARY_PROFILE (23.11.2026)
+
+[Canonical UX spec §1.1](P5B_UX_SPEC.md): the owner **overrode review finding #4**, explicitly choosing **automatic approval of the two main materials**. Whenever the user chooses/replaces the selected item in the sticky «Полотно» / «Основний профіль» picker, stage `ElementApproval.APPROVED` on that material only (one atomic overall Save, not an immediate DB write); show no additional approval button or modal. Re-selecting an already-current `DISCUSSING` row must also approve that row **without duplicating the typed base role or changing its UUID**. **Do not migrate untouched legacy statuses at screen open.** Never auto-approve `ADDITIONAL_WORK`, obstacles/voids, or automatically finalize/price a quote. Preserve derived area/perimeter, CAS/Undo/Redo, immutable revisions/PDF and existing mandatory readiness validation. Add shared/JVM DB tests for new/replace/reselect, Undo/Redo, Save/reopen, with optional rows unaffected.
+
 ## One acceptance matrix (all must pass)
 
 - [ ] **Owner UX acceptance is mandatory in addition to the original geometry matrix:** validate every scenario in [P5B UX spec §6](P5B_UX_SPEC.md), particularly persistent two primary selectors, «+» direct search rather than AlertDialog, compact rows/status/action icons, existing/new work quantity and no duplicates, inline-pencil fields, conditional «…», both modes and narrow phone.
