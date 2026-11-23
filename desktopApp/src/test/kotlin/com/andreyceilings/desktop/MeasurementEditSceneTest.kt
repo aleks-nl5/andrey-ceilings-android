@@ -915,6 +915,34 @@ class MeasurementEditSceneTest {
         } finally { image.close() }
     }
 
+    @Test fun ceilingShapePickerOpensCenteredDialogAndAppliesChoice() {
+        val model = MeasurementEditModel(null, MeasurementEditDocument(3, 1, draft()))
+        val scene = ImageComposeScene(360, 780) {
+            CeilingsTheme(false) { MeasurementEditScreen(model, onBack = {}) }
+        }
+        fun tagged(id: String) = scene.nodes().single {
+            it.config.getOrNull(SemanticsProperties.TestTag) == id
+        }
+        try {
+            repeat(4) { scene.frame() }
+            assertTrue(tagged("measurement-shape-picker")
+                .config[SemanticsActions.OnClick].action?.invoke() == true)
+            scene.frame()
+            val dialog = tagged("measurement-shape-dialog")
+            assertEquals(180f, dialog.boundsInRoot.center.x, 6f,
+                "Shape choices should open centered rather than at the left edge")
+            for (id in listOf("rectangle", "l_shaped", "polygon"))
+                assertNotNull(tagged("measurement-shape-option-$id"))
+            assertTrue(tagged("measurement-shape-option-l_shaped")
+                .config[SemanticsActions.OnClick].action?.invoke() == true)
+            scene.frame()
+            assertEquals("l_shaped", model.state.value.draft.shape)
+            assertFalse(scene.nodes().any {
+                it.config.getOrNull(SemanticsProperties.TestTag) == "measurement-shape-dialog"
+            }, "Choosing a shape should close the picker")
+        } finally { scene.close() }
+    }
+
     @Test fun lShapeFieldsKeepTwoColumnsAndFocusSelectsTheMappedWall() {
         val source = draft().copy(outline = MeasurementOutlineDraft.Template("l_shaped",
             mapOf("A" to "5", "B" to "4", "C" to "2", "D" to "2")))
