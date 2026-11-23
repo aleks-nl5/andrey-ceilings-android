@@ -114,7 +114,9 @@ internal fun WorkspaceGeometryPanel(
                 style = MaterialTheme.typography.labelSmall,
                 modifier = Modifier.semantics { contentDescription = positionDescription })
             IconButton(onClick = model::selectNextOverlappingPoint,
-                modifier = Modifier.testTag("p5b-overlap-next"), enabled = enabled) {
+                modifier = Modifier.testTag("p5b-overlap-next"),
+                enabled = enabled && state.mountingInput == null && state.coordinates == null &&
+                    state.pointElementUuid == null) {
                 Icon(Icons.Default.KeyboardArrowRight, stringResource(Res.string.p5b_overlap_next))
             }
         }

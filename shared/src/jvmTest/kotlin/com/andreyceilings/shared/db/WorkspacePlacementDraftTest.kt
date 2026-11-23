@@ -30,6 +30,11 @@ class WorkspacePlacementDraftTest {
             assertEquals(3, ids.toSet().size)
             editor.selectPoint(ids.first())
             assertEquals(ids, editor.overlappingPointsForSelected().map { it.uuid })
+            editor.openMounting()
+            assertNotNull(editor.state.value.mountingInput)
+            editor.selectNextOverlappingPoint()
+            assertEquals(ids.first(), editor.state.value.selectedPointUuid)
+            editor.discardMounting()
             val additions = editor.state.value.additions
             for (index in 1..3) {
                 editor.selectNextOverlappingPoint()

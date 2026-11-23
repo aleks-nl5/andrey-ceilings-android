@@ -295,6 +295,8 @@ class MeasurementEditModel(
     }
 
     internal fun selectNextOverlappingPoint() {
+        if (state.value.mountingInput != null || state.value.coordinates != null ||
+            state.value.pointElementUuid != null) return
         val coincident = overlappingPointsForSelected()
         val index = coincident.indexOfFirst { it.uuid == state.value.selectedPointUuid }
         if (index >= 0) selectPoint(coincident[(index + 1) % coincident.size].uuid)
