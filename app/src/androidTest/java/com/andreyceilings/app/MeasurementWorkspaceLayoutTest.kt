@@ -250,6 +250,13 @@ class MeasurementWorkspaceLayoutTest {
                 }
                 assertCompact("measurement-edit-contour-name")
                 assertCompact("measurement-edit-contour-notes")
+                compose.onNodeWithTag("measurement-shape-picker").performScrollTo().performClick()
+                compose.onNodeWithTag("measurement-shape-dialog").assertIsDisplayed()
+                compose.onNodeWithTag("measurement-shape-option-rectangle").assertExists()
+                compose.onNodeWithTag("measurement-shape-option-l_shaped").assertExists()
+                compose.onNodeWithTag("measurement-shape-option-polygon").assertExists()
+                compose.onNodeWithText("Скасувати").performClick()
+                compose.onNodeWithTag("measurement-shape-dialog").assertDoesNotExist()
                 save.assertIsNotEnabled()
                 val header = compose.onNodeWithTag("measurement-edit-header").fetchSemanticsNode()
                 val statusBar = compose.runOnIdle {

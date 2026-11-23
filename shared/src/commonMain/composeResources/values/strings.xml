@@ -13,6 +13,8 @@
         <item quantity="many">%1$d об’єктів</item>
         <item quantity="other">%1$d об’єкта</item>
     </plurals>
+    <string name="p5b_shape_current">Форма: %1$s</string>
+    <string name="p5b_shape_selection_title">Форма стелі</string>
     <string name="p5b_context_contour">Контур</string>
     <string name="p5b_context_elements">Елементи</string>
     <string name="p5b_context_cost">Вартість</string>

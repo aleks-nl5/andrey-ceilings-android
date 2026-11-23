@@ -42,7 +42,8 @@ fun CompactOutlinedField(
     keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
     keyboardActions: KeyboardActions = KeyboardActions.Default,
     leadingIcon: (@Composable () -> Unit)? = null,
-    textStyle: TextStyle = MaterialTheme.typography.bodyMedium,
+    // Compact height must never imply a smaller value font: standard M3 input is bodyLarge.
+    textStyle: TextStyle = MaterialTheme.typography.bodyLarge,
     maxLines: Int = 1
 ) {
     require(maxLines > 0)
@@ -63,8 +64,8 @@ fun CompactOutlinedField(
                 value = value.text, innerTextField = inner,
                 enabled = enabled, singleLine = singleLine, visualTransformation = transformation,
                 interactionSource = interactionSource, isError = isError,
-                label = { Text(label, style = MaterialTheme.typography.labelSmall,
-                    maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                // Let Material3 animate its default expanded/floating label typography.
+                label = { Text(label, maxLines = 1, overflow = TextOverflow.Ellipsis) },
                 leadingIcon = leadingIcon, colors = colors,
                 contentPadding = CeilingsFieldDefaults.CompactContentPadding
             )

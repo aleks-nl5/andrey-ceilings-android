@@ -70,6 +70,14 @@ class LinePlacementTouchTest {
                 compose.onNode(action).assertIsEnabled().performClick()
             }
             click("Елементи")
+            val placedLinePencil = compose.onNodeWithTag("p5b-edit-work-${short.uuid}")
+                .performScrollTo().assertIsEnabled()
+            placedLinePencil.performClick()
+            compose.onNodeWithTag("p5b-line-declared-length")
+                .performScrollTo().assertTextContains("2,5")
+            assertEquals(1, compose.onAllNodesWithTag("p5b-line-declared-length").fetchSemanticsNodes().size,
+                "Pencil must open the single declared length input, not a second quantity field")
+            compose.runOnIdle { model.discardLineProperties(); model.clearDrawingSelection() }
             compose.onNodeWithTag("measurement-workspace-add").performClick()
             compose.onNodeWithTag("p5b-linked-${full.uuid}").performScrollTo().performClick()
             compose.onNodeWithContentDescription("Розмістити ще").assertIsNotEnabled()

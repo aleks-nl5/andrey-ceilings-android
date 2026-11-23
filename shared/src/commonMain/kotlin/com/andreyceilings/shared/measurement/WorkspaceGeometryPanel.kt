@@ -621,12 +621,14 @@ internal fun WorkspaceWorkList(
             "${work.label} #${namesakes.indexOfFirst { it.uuid == work.uuid } + 1}"
         else work.label
         Row(Modifier.fillMaxWidth().bringIntoViewRequester(bringIntoView)
+            .testTag("p5b-work-row-${work.uuid}")
             .clip(RoundedCornerShape(10.dp))
             .background(if (isHighlighted || isSelected) MaterialTheme.colorScheme.secondaryContainer.copy(
                 alpha = if (isHighlighted) 0.9f else 0.48f) else Color.Transparent,
                 RoundedCornerShape(10.dp)),
             verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f).heightIn(min = 48.dp)
+                .padding(start = 8.dp)
                 .clip(RoundedCornerShape(10.dp))
                 .semantics { this.selected = isSelected || isHighlighted }.clickable(enabled = enabled) {
                 onSelect(if (isSelected) null else work.uuid)
@@ -647,7 +649,8 @@ internal fun WorkspaceWorkList(
                     style = MaterialTheme.typography.labelSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
             }
             IconButton(onClick = { onSelect(null); model.startWorkspacePlacement(work) },
-                enabled = enabled && workspaceCanPlace(model, work)) {
+                enabled = enabled && workspaceCanPlace(model, work),
+                modifier = Modifier.size(44.dp).testTag("p5b-place-work-${work.uuid}")) {
                 Icon(Icons.Default.OpenWith, stringResource(Res.string.p5b_place_more))
             }
             IconButton(onClick = {
@@ -655,22 +658,31 @@ internal fun WorkspaceWorkList(
                     onOpenGeometry()
                 }
             }, enabled = enabled && hasPlacement,
-                modifier = Modifier.testTag("p5b-open-geometry-${work.uuid}")) {
+                modifier = Modifier.size(44.dp).testTag("p5b-open-geometry-${work.uuid}")) {
                 Icon(Icons.Default.Settings, stringResource(Res.string.p5b_open_geometry_parameters))
             }
             val source = work.source as? ElementSource.CatalogSelection
-            // Drawn LINE quantities are edited only in the single "Довжина" field
-            // inside that segment's geometry panel, not a duplicate work-list pencil.
-            if (!work.supportsLinePlacement() || !hasPlacement) {
-                IconButton(onClick = {
+            val editableQuantity = source?.quantityMode?.workspaceQuantity() == ElementQuantity.Unknown
+            // Keep the pencil present even after the first LINE placement.
+            // Placed LINE uses the SAME "Довжина" editor as the geometry panel;
+            // the separate work-list quantity field must not be duplicated.
+            IconButton(onClick = {
+                if (work.supportsLinePlacement() && hasPlacement) {
+                    if (model.selectFirstWorkspacePlacement(work.uuid)) {
+                        quantityEditingWork = null
+                        onOpenGeometry()
+                    }
+                } else {
                     val closingSameEditor = isSelected && quantityEditingWork == work.uuid
                     onSelect(work.uuid)
                     quantityEditingWork = if (closingSameEditor) null else work.uuid
-                }, enabled = enabled && source?.quantityMode?.workspaceQuantity() == ElementQuantity.Unknown) {
-                    Icon(Icons.Default.Edit, stringResource(Res.string.p5b_edit_work))
                 }
+            }, enabled = enabled && editableQuantity,
+                modifier = Modifier.size(44.dp).testTag("p5b-edit-work-${work.uuid}")) {
+                Icon(Icons.Default.Edit, stringResource(Res.string.p5b_edit_work))
             }
-            IconButton(onClick = { deletion = true }, enabled = enabled) {
+            IconButton(onClick = { deletion = true }, enabled = enabled,
+                modifier = Modifier.size(44.dp).testTag("p5b-delete-work-${work.uuid}")) {
                 Icon(Icons.Default.Delete, stringResource(Res.string.p5b_delete_work))
             }
         }

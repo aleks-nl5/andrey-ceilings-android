@@ -4,6 +4,9 @@ import com.andreyceilings.shared.input.filterNumericEdit
 import com.andreyceilings.shared.input.CompactOutlinedField
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.text.KeyboardActions
@@ -21,6 +24,9 @@ import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.LocalFocusManager
@@ -35,6 +41,8 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.text.style.TextOverflow
 import com.andreyceilings.shared.calculation.*
+import com.andreyceilings.shared.resources.*
+import org.jetbrains.compose.resources.stringResource
 import com.andreyceilings.shared.ui.CeilingsFab
 import com.andreyceilings.shared.ui.CeilingsFabProfile
 import com.andreyceilings.shared.ui.CeilingsScreenScaffold
@@ -305,15 +313,40 @@ internal fun MeasurementLengthField(value: String, label: String, error: String?
 @Composable
 internal fun MeasurementShapePicker(shape: String, enabled: Boolean, onChange: (String) -> Unit) {
     var expanded by remember { mutableStateOf(false) }
-    Box {
-        OutlinedButton(onClick = { expanded = true }, enabled = enabled, modifier = Modifier.fillMaxWidth()) {
-            Text("Форма: ${CeilingShapeTemplates.template(shape)?.title ?: "Багатокутник (прямі кути)"}")
-        }
-        DropdownMenu(expanded, onDismissRequest = { expanded = false }) {
-            (CeilingShapeTemplates.templates.map { it.shapeType to it.title } +
-                ("polygon" to "Багатокутник (прямі кути)")).forEach { (id, title) ->
-                DropdownMenuItem(text = { Text(title) }, onClick = { onChange(id); expanded = false })
+    val options = CeilingShapeTemplates.templates.map { it.shapeType to it.title } +
+        ("polygon" to "Багатокутник (прямі кути)")
+    OutlinedButton(onClick = { expanded = true }, enabled = enabled,
+        modifier = Modifier.fillMaxWidth().testTag("measurement-shape-picker")) {
+        Text(stringResource(Res.string.p5b_shape_current,
+            options.firstOrNull { it.first == shape }?.second ?: options.last().second),
+            maxLines = 2, overflow = TextOverflow.Ellipsis)
+    }
+    if (expanded) AlertDialog(
+        onDismissRequest = { expanded = false },
+        modifier = Modifier.testTag("measurement-shape-dialog"),
+        title = { Text(stringResource(Res.string.p5b_shape_selection_title)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                options.forEach { (id, title) ->
+                    val selected = shape == id
+                    Row(Modifier.fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(if (selected) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent)
+                        .clickable { expanded = false; onChange(id) }
+                        .testTag("measurement-shape-option-$id")
+                        .padding(horizontal = 8.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically) {
+                        RadioButton(selected = selected, onClick = null)
+                        Spacer(Modifier.width(8.dp))
+                        Text(title, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { expanded = false }) {
+                Text(stringResource(Res.string.p5b_cancel_placement))
             }
         }
-    }
+    )
 }
