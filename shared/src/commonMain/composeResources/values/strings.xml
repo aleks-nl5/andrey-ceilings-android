@@ -68,6 +68,12 @@
     <string name="p5b_unresolved">Потрібно уточнити</string>
     <string name="p5b_edit_dimensions">Редагувати розміри</string>
     <string name="p5b_edit_work">Редагувати кількість</string>
+    <string name="p5b_open_geometry_parameters">Відкрити параметри розміщення</string>
+    <string name="p5b_wall_short">Від стін</string>
+    <string name="p5b_start_short">Початок</string>
+    <string name="p5b_end_short">Кінець</string>
+    <string name="p5b_size_short">Розміри</string>
+    <string name="p5b_vertex_short">Вершина %1$d</string>
     <string name="p5b_more_actions">Додаткові дії</string>
     <string name="p5b_review_confirm">Підтвердити розміщення</string>
     <string name="p5b_take_length">Взяти довжину з креслення</string>

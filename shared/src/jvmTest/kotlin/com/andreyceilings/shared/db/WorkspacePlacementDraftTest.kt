@@ -15,6 +15,26 @@ import kotlin.test.*
 
 class WorkspacePlacementDraftTest {
     @Test
+    fun workListDetailsUsesExistingPlacementAndWorkUuid() = runBlocking {
+        JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).use { driver ->
+            PriceCatalogSchema.create(driver)
+            val db = PrototypeDatabase(driver)
+            val fixture = PointPlacementProof.fixture(db)
+            val store = MeasurementEditStore(db) { 101 }
+            val editor = MeasurementEditModel(store, store.load(fixture.project, fixture.id))
+            val item = store.placementCatalog().single { it.code.startsWith("fixture.") }
+            editor.addCatalogWork(item, ElementQuantity.Exact(2000), place = true)
+            val workId = assertNotNull(editor.state.value.pointElementUuid)
+            assertTrue(editor.placeWorkspacePoint(900, 950))
+            val pointId = editor.displayPoints().single().uuid
+            assertTrue(editor.selectFirstWorkspacePlacement(workId))
+            assertEquals(pointId, editor.state.value.selectedPointUuid)
+            assertEquals(1, editor.workspaceWorks().count { it.uuid == workId })
+            assertFalse(editor.selectFirstWorkspacePlacement("missing"))
+        }
+    }
+
+    @Test
     fun globalSaveRemainsAvailableWhileMorePointsCanStillBePlaced() = runBlocking {
         JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).use { driver ->
             PriceCatalogSchema.create(driver)

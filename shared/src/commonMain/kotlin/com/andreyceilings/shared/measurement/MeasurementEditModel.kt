@@ -501,6 +501,17 @@ class MeasurementEditModel(
         publish()
     }
 
+    /** Open the same geometry parameters from a work row without creating another paid work. */
+    internal fun selectFirstWorkspacePlacement(workUuid: String): Boolean {
+        val point = displayPoints().firstOrNull { it.elementUuid == workUuid }
+        if (point != null) { selectPoint(point.uuid); return state.value.selectedPointUuid == point.uuid }
+        val line = displayLines().firstOrNull { it.elementUuid == workUuid }
+        if (line != null) { selectLine(line.uuid); return state.value.selectedLineUuid == line.uuid }
+        val area = displayAreas().firstOrNull { it.elementUuid == workUuid }
+        if (area != null) { selectArea(area.uuid); return state.value.area.selected == area.uuid }
+        return false
+    }
+
     internal fun pointCanBePlaced(uuid: String): Boolean {
         val capacity = pointElements().find { it.uuid == uuid }?.pointCapacity() ?: return false
         return displayPoints().count { it.elementUuid == uuid } < capacity

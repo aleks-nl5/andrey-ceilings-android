@@ -9,6 +9,7 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -20,6 +21,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.graphics.vector.ImageVector
 import com.andreyceilings.shared.input.DecimalInputField
 import com.andreyceilings.shared.resources.*
 import org.jetbrains.compose.resources.stringResource
@@ -47,7 +49,7 @@ internal fun WorkspacePlacementTools(
         }
         if (state.area.tool == AreaTool.CIRCLE) {
             DecimalInputField(state.area.diameter, model::setAreaDiameter, stringResource(Res.string.p5b_numeric_diameter),
-                modifier = measurementFieldFocusModifier(), enabled = enabled)
+                modifier = measurementFieldFocusModifier(), enabled = enabled, compact = true)
         }
         FlowRow {
             TextButton(enabled = enabled && model.areaCreationShape() != null, onClick = model::acceptAreaCreation) {
@@ -169,33 +171,38 @@ internal fun WorkspaceGeometryPanel(
 
     if (edit) {
         if (point != null && state.mountingInput == null) {
-            TextButton(onClick = model::openMounting) { Text(stringResource(Res.string.p5b_wall_distances)) }
+            WorkspaceShortAction(stringResource(Res.string.p5b_wall_short), Icons.Default.Edit, model::openMounting)
         }
         if (line != null) {
             WorkspaceSnapControl(snap, enabled, onSnapChanged)
-            if (state.mountingInput == null) FlowRow {
-                TextButton(onClick = { model.openLineMounting(true) }) { Text(stringResource(Res.string.p5b_start_distances)) }
-                TextButton(onClick = { model.openLineMounting(false) }) { Text(stringResource(Res.string.p5b_end_distances)) }
+            if (state.mountingInput == null) FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                WorkspaceShortAction(stringResource(Res.string.p5b_start_short), Icons.Default.Edit) {
+                    model.openLineMounting(true)
+                }
+                WorkspaceShortAction(stringResource(Res.string.p5b_end_short), Icons.Default.Edit) {
+                    model.openLineMounting(false)
+                }
             }
-            if (state.lineProperties == null) TextButton(onClick = model::openLineProperties) {
-                Text(stringResource(Res.string.p5b_line_size))
-            }
+            if (state.lineProperties == null)
+                WorkspaceShortAction(stringResource(Res.string.p5b_size_short), Icons.Default.Edit,
+                    model::openLineProperties)
             state.lineProperties?.let { input ->
                 val valid = model.linePropertiesCandidate(line, input) != null
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     DecimalInputField(input.length ?: formatPointMetres(line.lengthMm),
                         { model.changeLineProperties(length = it) },
                         stringResource(Res.string.p5b_line_length),
-                        modifier = measurementFieldFocusModifier().weight(1f))
+                        modifier = measurementFieldFocusModifier().weight(1f), compact = true)
                     Spacer(Modifier.width(6.dp))
                     DecimalInputField(input.width, { model.changeLineProperties(width = it) },
                         stringResource(Res.string.p5b_line_size),
                         modifier = measurementFieldFocusModifier().weight(1f),
-                        allowDecimalSeparator = false, isError = !input.valid)
+                        allowDecimalSeparator = false, isError = !input.valid, compact = true)
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     OutlinedTextField(input.note, { model.changeLineProperties(note = it) },
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier.weight(1f).height(52.dp), singleLine = true,
+                        textStyle = MaterialTheme.typography.bodySmall,
                         label = { Text(stringResource(Res.string.p5b_line_note)) })
                     IconButton(onClick = model::applyLineProperties, enabled = valid) {
                         Icon(Icons.Default.Check, stringResource(Res.string.p5b_apply_draft))
@@ -211,34 +218,35 @@ internal fun WorkspaceGeometryPanel(
         if (area != null) {
             if (state.mountingInput == null) FlowRow {
                 area.shape.positions.indices.forEach { index ->
-                    TextButton(onClick = { model.openAreaMounting(index) }) {
-                        Text(if (area.shape is AreaShape.Circle) stringResource(Res.string.p5b_wall_distances)
-                            else stringResource(Res.string.p5b_vertex_distances, index + 1))
-                    }
+                    WorkspaceShortAction(
+                        if (area.shape is AreaShape.Circle) stringResource(Res.string.p5b_wall_short)
+                        else stringResource(Res.string.p5b_vertex_short, index + 1),
+                        Icons.Default.Edit) { model.openAreaMounting(index) }
                 }
             }
-            if (state.area.properties == null) TextButton(onClick = model::openAreaProperties) {
-                Text(stringResource(Res.string.p5b_area_properties))
-            }
+            if (state.area.properties == null)
+                WorkspaceShortAction(stringResource(Res.string.p5b_size_short), Icons.Default.Edit,
+                    model::openAreaProperties)
             state.area.properties?.let { input ->
                 if (input.width != null && input.height != null) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         DecimalInputField(input.width, { value -> model.changeAreaProperties { it.copy(width = value) } },
                             stringResource(Res.string.p5b_rectangle_width),
-                            modifier = measurementFieldFocusModifier().weight(1f))
+                            modifier = measurementFieldFocusModifier().weight(1f), compact = true)
                         Spacer(Modifier.width(6.dp))
                         DecimalInputField(input.height, { value -> model.changeAreaProperties { it.copy(height = value) } },
                             stringResource(Res.string.p5b_rectangle_height),
-                            modifier = measurementFieldFocusModifier().weight(1f))
+                            modifier = measurementFieldFocusModifier().weight(1f), compact = true)
                     }
                 }
                 if (area.shape is AreaShape.Circle) DecimalInputField(input.diameter,
                     { value -> model.changeAreaProperties { it.copy(diameter = value, diameterMeasured = true) } },
-                    stringResource(Res.string.p5b_numeric_diameter), modifier = measurementFieldFocusModifier())
+                    stringResource(Res.string.p5b_numeric_diameter), modifier = measurementFieldFocusModifier(), compact = true)
                 val valid = model.areaPropertiesCandidate(area, input) != null
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     OutlinedTextField(input.note, { value -> model.changeAreaProperties { it.copy(note = value) } },
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier.weight(1f).height(52.dp), singleLine = true,
+                        textStyle = MaterialTheme.typography.bodySmall,
                         label = { Text(stringResource(Res.string.p5b_placement_note)) })
                     IconButton(onClick = model::applyAreaProperties, enabled = valid) {
                         Icon(Icons.Default.Check, stringResource(Res.string.p5b_apply_draft))
@@ -284,6 +292,16 @@ internal fun WorkspaceGeometryPanel(
 }
 
 @Composable
+private fun WorkspaceShortAction(label: String, icon: ImageVector, onClick: () -> Unit) {
+    OutlinedButton(onClick = onClick, modifier = Modifier.height(38.dp),
+        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)) {
+        Icon(icon, contentDescription = null, modifier = Modifier.size(16.dp))
+        Spacer(Modifier.width(4.dp))
+        Text(label, style = MaterialTheme.typography.labelSmall, maxLines = 1)
+    }
+}
+
+@Composable
 internal fun WorkspaceWorkList(
     model: MeasurementEditModel, enabled: Boolean, selected: String?, onSelect: (String?) -> Unit
 ) {
@@ -319,6 +337,14 @@ internal fun WorkspaceWorkList(
                 enabled = enabled && workspaceCanPlace(model, work)) {
                 Icon(Icons.Default.Add, stringResource(Res.string.p5b_place_more))
             }
+            val hasPlacement = model.displayPoints().any { it.elementUuid == work.uuid } ||
+                model.displayLines().any { it.elementUuid == work.uuid } ||
+                model.displayAreas().any { it.elementUuid == work.uuid }
+            IconButton(onClick = {
+                if (model.selectFirstWorkspacePlacement(work.uuid)) onSelect(null)
+            }, enabled = enabled && hasPlacement) {
+                Icon(Icons.Default.Info, stringResource(Res.string.p5b_open_geometry_parameters))
+            }
             val source = work.source as? ElementSource.CatalogSelection
             IconButton(onClick = { onSelect(work.uuid); edit = !edit },
                 enabled = enabled && source?.quantityMode?.workspaceQuantity() == ElementQuantity.Unknown) {
@@ -336,7 +362,7 @@ internal fun WorkspaceWorkList(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 DecimalInputField(quantity, { quantity = it; invalid = false },
                     stringResource(Res.string.p5b_declared_quantity, work.unit.orEmpty()),
-                    modifier = measurementFieldFocusModifier().weight(1f), isError = invalid,
+                    modifier = measurementFieldFocusModifier().weight(1f), compact = true, isError = invalid,
                     allowDecimalSeparator = work.unit != "шт.")
                 IconButton(onClick = {
                     val value = if (quantity.isBlank()) ElementQuantity.Unknown
