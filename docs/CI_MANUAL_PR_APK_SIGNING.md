@@ -14,7 +14,7 @@
 
 - Ніколи не виконується код/скрипт із PR у trusted signing job; workflow читається з `main`, має тільки `actions: read` та `contents: read`.
 - `source_run_id` повинен належати справжньому `PR fast checks (no FULL)` у цьому репозиторії та поточному SHA відкритого PR, спрямованого в `main`; форки та застарілі коміти відхиляються.
-- **Manual:** успішні Classify PR risk, Android release/JVM і Windows compile/scene jobs **того самого run attempt**; iOS може бути у стані очікування/виконання або успішним, **але не failed/cancelled**. Автоматичний `workflow_run` шлях, як і раніше, вимагає **повного success**.
+- **Manual:** успішні Classify PR risk, Android release/JVM і Windows compile/scene jobs **того самого run attempt**; iOS може бути у стані очікування/виконання чи успішним. Додатково дозволяється **cancelled тільки якщо iOS не отримав раннер і не виконав жодного кроку** (runner ID 0/порожній та steps = 0). **Реальний запуск iOS із failure/cancelled не допускається.** Супровідний failure «quick-only receipt» допустимий **тільки** при такому незапущеному iOS; інші failed/cancelled jobs відхиляються. Автоматичний `workflow_run` шлях, як і раніше, вимагає **повного success**.
 - Підписується тільки однозначно визначений, непротермінований **unsigned** APK артефакт цього run; перевіряються ZIP, zipalign, package name, відсутність попереднього підпису; перевіряється результат `apksigner`.
 - Production signing secrets існують тільки в trusted workflow на GitHub runner, не в PR. Вони не друкуються в логах і не завантажуються в артефакти.
 - Підписаний APK — **для тестування**, а не перевірка iOS, не дозвіл публікації чи об'єднання.

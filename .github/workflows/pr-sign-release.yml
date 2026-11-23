@@ -77,8 +77,9 @@ jobs:
             # Preserve the original automatic-signing gate.
             jq -e '.conclusion == "success"' <<<"$source" >/dev/null
           else
-            # Manual signing skips ONLY the iOS runner wait. An iOS failure,
-            # Windows failure, Android failure or missing test job is NEVER OK.
+            # Manual signing skips ONLY unexecuted iOS checks (queued OR
+            # runner-starved and cancelled without ever acquiring a runner).
+            # Android/Windows failure or a real iOS test failure is NEVER OK.
             jobs="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID/jobs?per_page=100")"
             jq -e --argjson attempt "$attempt" '
               .total_count == (.jobs | length) and
@@ -97,9 +98,29 @@ jobs:
                  (.conclusion == null and
                   (.status == "queued" or .status == "in_progress" or
                    .status == "waiting" or .status == "pending" or
-                   .status == "requested"))))] | length) == 1
+                   .status == "requested")) or
+                 # GitHub can cancel an iOS job after runner starvation. Allow
+                 # only when it NEVER ran: no runner allocated, zero steps.
+                 (.conclusion == "cancelled" and
+                  ((.runner_id // 0) == 0) and
+                  ((.runner_name // "") == "") and
+                  ((.steps // []) | length) == 0)))] | length) == 1 and
+              # Other failures must not be bypassed. The quick-only receipt
+              # may fail solely because iOS was cancelled without starting.
+              ([.jobs[] | select(.run_attempt == $attempt and
+                .conclusion != null and .conclusion != "success" and
+                .conclusion != "skipped" and .name != "PR iOS framework compilation" and
+                .name != "PR quick-only receipt (NOT full native verification)")] | length) == 0 and
+              (([.jobs[] | select(.run_attempt == $attempt and
+                .name == "PR quick-only receipt (NOT full native verification)" and
+                .conclusion == "failure")] | length) == 0 or
+               ([.jobs[] | select(.run_attempt == $attempt and
+                .name == "PR iOS framework compilation" and
+                .conclusion == "cancelled" and
+                ((.runner_id // 0) == 0) and ((.runner_name // "") == "") and
+                ((.steps // []) | length) == 0)] | length) == 1)
             ' <<<"$jobs" >/dev/null || {
-              echo "::error::Android, Windows, classification must be green and iOS cannot be failed or cancelled."
+              echo "::error::Manual signing requires green Android and Windows; iOS may wait or be cancelled without starting, but a real test failure is forbidden."
               exit 1
             }
             echo "Manual APK signing bypasses ONLY an unfinished iOS check. It does NOT approve CI, PR or merge." >> "$GITHUB_STEP_SUMMARY"
