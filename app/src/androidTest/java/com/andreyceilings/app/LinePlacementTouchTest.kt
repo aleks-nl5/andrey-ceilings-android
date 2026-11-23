@@ -70,6 +70,18 @@ class LinePlacementTouchTest {
                 compose.onNode(action).assertIsEnabled().performClick()
             }
             click("Елементи")
+            // The work label is inset, but the actual click/ripple bounds must
+            // begin at the card's left edge, not at its text padding.
+            val rowBounds = compose.onNodeWithTag("p5b-work-row-${short.uuid}",
+                useUnmergedTree = true).performScrollTo().fetchSemanticsNode().boundsInRoot
+            val clickableBounds = compose.onNodeWithTag("p5b-work-label-click-${short.uuid}",
+                useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+            val textBounds = compose.onNodeWithTag("p5b-work-label-text-${short.uuid}",
+                useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+            assertEquals(rowBounds.left, clickableBounds.left, 1f,
+                "Work label ripple/click area must start at the card edge")
+            assertTrue(textBounds.left >= clickableBounds.left + 7f * compose.density.density,
+                "Title text must keep its 8dp left inset inside the clickable surface")
             val placedLinePencil = compose.onNodeWithTag("p5b-edit-work-${short.uuid}")
                 .performScrollTo().assertIsEnabled()
             placedLinePencil.performClick()

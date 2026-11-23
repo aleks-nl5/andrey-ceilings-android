@@ -627,13 +627,15 @@ internal fun WorkspaceWorkList(
                 alpha = if (isHighlighted) 0.9f else 0.48f) else Color.Transparent,
                 RoundedCornerShape(10.dp)),
             verticalAlignment = Alignment.CenterVertically) {
+            // The 8dp text indent belongs INSIDE the clickable surface.
+            // Click/ripple must still extend all the way to the card's left edge.
             Column(Modifier.weight(1f).heightIn(min = 48.dp)
-                .padding(start = 8.dp)
                 .clip(RoundedCornerShape(10.dp))
+                .testTag("p5b-work-label-click-${work.uuid}")
                 .semantics { this.selected = isSelected || isHighlighted }.clickable(enabled = enabled) {
                 onSelect(if (isSelected) null else work.uuid)
-            }, verticalArrangement = Arrangement.Center) {
-                Text(shownTitle,
+            }.padding(start = 8.dp), verticalArrangement = Arrangement.Center) {
+                Text(shownTitle, modifier = Modifier.testTag("p5b-work-label-text-${work.uuid}"),
                     style = if (isSelected) MaterialTheme.typography.titleSmall else MaterialTheme.typography.bodyMedium,
                     maxLines = 1, overflow = TextOverflow.Ellipsis)
                 val details = workQuantityText(model, work)
