@@ -613,6 +613,9 @@ internal fun WorkspaceWorkList(
         val isSelected = selected == work.uuid
         val isHighlighted = highlightedWorkId == work.uuid
         val bringIntoView = remember(work.uuid) { BringIntoViewRequester() }
+        val hasPlacement = model.displayPoints().any { it.elementUuid == work.uuid } ||
+            model.displayLines().any { it.elementUuid == work.uuid } ||
+            model.displayAreas().any { it.elementUuid == work.uuid }
         LaunchedEffect(isHighlighted) { if (isHighlighted) bringIntoView.bringIntoView() }
         val namesakes = works.filter { it.label == work.label }
         val shownTitle = if (namesakes.size > 1)
@@ -648,9 +651,6 @@ internal fun WorkspaceWorkList(
                 enabled = enabled && workspaceCanPlace(model, work)) {
                 Icon(Icons.Default.OpenWith, stringResource(Res.string.p5b_place_more))
             }
-            val hasPlacement = model.displayPoints().any { it.elementUuid == work.uuid } ||
-                model.displayLines().any { it.elementUuid == work.uuid } ||
-                model.displayAreas().any { it.elementUuid == work.uuid }
             IconButton(onClick = {
                 if (model.selectFirstWorkspacePlacement(work.uuid)) {
                     onOpenGeometry()
