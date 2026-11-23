@@ -393,7 +393,6 @@ internal fun WorkspaceWorkList(
                 model.displayAreas().any { it.elementUuid == work.uuid }
             IconButton(onClick = {
                 if (model.selectFirstWorkspacePlacement(work.uuid)) {
-                    onSelect(null)
                     onOpenGeometry()
                 }
             }, enabled = enabled && hasPlacement,

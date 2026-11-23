@@ -526,7 +526,10 @@ fun MeasurementEditScreen(
                                                 model.clearDrawingSelection()
                                                 selectedWork = work
                                             },
-                                            onOpenGeometry = { scope.launch { scroll.animateScrollTo(0) } }
+                                            onOpenGeometry = {
+                                                selectedWork = null
+                                                scope.launch { scroll.animateScrollTo(0) }
+                                            }
                                         )
                                     }
                                 }
