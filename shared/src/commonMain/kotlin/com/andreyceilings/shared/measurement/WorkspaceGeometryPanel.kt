@@ -612,6 +612,9 @@ internal fun WorkspaceStandaloneAreaList(
                     else Color.Transparent, RoundedCornerShape(10.dp))
                 .testTag("p5b-standalone-area-${feature.uuid}"),
                 verticalAlignment = Alignment.CenterVertically) {
+                // Reserve the same leading 36dp status slot as catalog work.
+                // Notes have no approval, but both title columns stay aligned.
+                Spacer(Modifier.size(36.dp))
                 Column(Modifier.weight(1f).heightIn(min = 48.dp)
                     .clip(RoundedCornerShape(10.dp))
                     .testTag("p5b-standalone-label-click-${feature.uuid}")

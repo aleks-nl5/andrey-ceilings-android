@@ -154,6 +154,14 @@ class AreaFeatureSceneTest {
                 assertEquals(beforeListTap.top, afterListTap.top, 2f,
                     "Tapping a note in the list must preserve scroll position")
                 assertEquals(beforeListTap.bottom, afterListTap.bottom, 2f)
+                // Repeated list tap does NOT toggle selection off or scroll.
+                scene.click("Позначка отвору", tag = "p5b-standalone-label-click-$noteId")
+                repeat(4) { scene.frame() }
+                assertEquals(noteId, model.state.value.area.selected)
+                val afterSecondTap = scene.nodes().first {
+                    it.config.getOrNull(SemanticsProperties.TestTag) == "p5b-standalone-area-$noteId"
+                }.boundsInRoot
+                assertEquals(beforeListTap.top, afterSecondTap.top, 2f)
                 scene.click("Відкрити параметри розміщення", tag = "p5b-open-standalone-area-$noteId")
                 scene.setField("Діаметр, м (парні мм)", "")
                 scene.setField("Діаметр, м (парні мм)", ".")
