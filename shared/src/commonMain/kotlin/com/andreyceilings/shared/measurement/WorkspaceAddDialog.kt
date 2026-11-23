@@ -3,6 +3,13 @@ package com.andreyceilings.shared.measurement
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.Canvas
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
@@ -15,12 +22,14 @@ import androidx.compose.material.icons.filled.CenterFocusStrong
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.ArrowForward
 import androidx.compose.material.icons.filled.OpenWith
+import androidx.compose.material.icons.filled.HelpOutline
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.text.style.TextOverflow
@@ -56,8 +65,9 @@ internal fun WorkspaceElementsHeader(
                 }
                 val active = role == activeRole
                 val shape = RoundedCornerShape(12.dp)
-                Column(Modifier.weight(1f).heightIn(min = 48.dp)
-                    .then(if (active) Modifier.background(MaterialTheme.colorScheme.secondaryContainer, shape)
+                Column(Modifier.weight(1f).padding(horizontal = 2.dp, vertical = 2.dp)
+                    .heightIn(min = 48.dp).clip(shape)
+                    .then(if (active) Modifier.background(MaterialTheme.colorScheme.secondaryContainer)
                         .border(1.dp, MaterialTheme.colorScheme.primary, shape) else Modifier)
                     .clickable(enabled = enabled && current.size <= 1) { onMaterial(role) }
                     .testTag("p5b-material-${role.name}").semantics { selected = active }
@@ -114,27 +124,30 @@ internal fun WorkspaceCatalogSearch(
     val work = works.find { it.uuid == selectedWork }
     val item = catalog?.find { it.uuid == selectedCatalog }
     if (work != null || item != null) {
-        IconButton(onClick = { selectedCatalog = null; selectedWork = null },
-            modifier = Modifier.testTag("p5b-back-to-catalog")) {
-            Icon(Icons.Default.ArrowBack, stringResource(Res.string.p5b_back_to_catalog))
-        }
         if (work != null) {
-            Text(work.label, style = MaterialTheme.typography.titleSmall)
-            Text(workQuantityText(model, work), style = MaterialTheme.typography.bodySmall)
             val canPlace = workspaceCanPlace(model, work)
             val editableQuantity = (work.source as? ElementSource.CatalogSelection)?.quantityMode
                 ?.workspaceQuantity() == ElementQuantity.Unknown
-            Row(verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                OutlinedButton(onClick = { onExistingWork(work.uuid) },
-                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                    modifier = Modifier.testTag("p5b-go-to-element")) {
-                    Icon(Icons.Default.ArrowForward, null, Modifier.size(16.dp))
-                    Spacer(Modifier.width(4.dp))
-                    Text(stringResource(Res.string.p5b_go_to_work), style = MaterialTheme.typography.labelSmall)
+            val goLabel = stringResource(Res.string.p5b_go_to_work)
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(0.dp)) {
+                IconButton(onClick = { selectedCatalog = null; selectedWork = null },
+                    modifier = Modifier.size(40.dp).testTag("p5b-back-to-catalog")) {
+                    Icon(Icons.Default.ArrowBack, stringResource(Res.string.p5b_back_to_catalog))
+                }
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.Center) {
+                    Text(work.label, style = MaterialTheme.typography.titleSmall,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(workQuantityText(model, work), style = MaterialTheme.typography.labelSmall,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+                FilledTonalIconButton(onClick = { onExistingWork(work.uuid) },
+                    modifier = Modifier.size(40.dp).testTag("p5b-go-to-element")
+                        .semantics { contentDescription = goLabel }) {
+                    WorkspaceBinocularsIcon()
                 }
                 IconButton(onClick = { model.startWorkspacePlacement(work); onPlacedTool() }, enabled = canPlace,
-                    modifier = Modifier.testTag("p5b-place-existing")) {
+                    modifier = Modifier.size(40.dp).testTag("p5b-place-existing")) {
                     Icon(Icons.Default.OpenWith, stringResource(Res.string.p5b_place_more))
                 }
                 if (editableQuantity) IconButton(onClick = {
@@ -142,7 +155,7 @@ internal fun WorkspaceCatalogSearch(
                         ?.let { formatElementMilli(it.milli) }.orEmpty()
                     editExisting = true
                     existingQuantityInvalid = false
-                }, modifier = Modifier.testTag("p5b-edit-existing-quantity")) {
+                }, modifier = Modifier.size(40.dp).testTag("p5b-edit-existing-quantity")) {
                     Icon(Icons.Default.Edit, stringResource(Res.string.p5b_edit_work))
                 }
             }
@@ -170,7 +183,14 @@ internal fun WorkspaceCatalogSearch(
             if (!canPlace && !editExisting)
                 Text(stringResource(Res.string.p5b_capacity_full), style = MaterialTheme.typography.labelSmall)
         } else if (item != null) {
-            Text(item.title, style = MaterialTheme.typography.titleSmall)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = { selectedCatalog = null; selectedWork = null },
+                    modifier = Modifier.size(40.dp).testTag("p5b-back-to-catalog")) {
+                    Icon(Icons.Default.ArrowBack, stringResource(Res.string.p5b_back_to_catalog))
+                }
+                Text(item.title, style = MaterialTheme.typography.titleSmall,
+                    modifier = Modifier.weight(1f), maxLines = 2, overflow = TextOverflow.Ellipsis)
+            }
             Text(stringResource(placementLabel(item.placementKind)), style = MaterialTheme.typography.bodySmall)
             val default = item.mode.workspaceQuantity()
             val entered = if (default != ElementQuantity.Unknown || quantity.isBlank()) default
@@ -193,8 +213,20 @@ internal fun WorkspaceCatalogSearch(
                     onPlacedTool()
                 }) { Icon(Icons.Default.Check, stringResource(Res.string.p5b_add_unplaced)) }
             }
-            if (item.placementKind == PlacementKind.NONE && item.mode == com.andreyceilings.shared.prices.QuantityMode.ENTERED_LENGTH)
-                Text(stringResource(Res.string.p5b_line_kind_required), style = MaterialTheme.typography.labelSmall)
+            if (item.placementKind == PlacementKind.NONE && item.mode == com.andreyceilings.shared.prices.QuantityMode.ENTERED_LENGTH) {
+                var helpOpen by remember(item.uuid) { mutableStateOf(false) }
+                Box {
+                    IconButton(onClick = { helpOpen = true }, modifier = Modifier.size(40.dp)) {
+                        Icon(Icons.Default.HelpOutline, stringResource(Res.string.p5b_line_kind_help))
+                    }
+                    DropdownMenu(expanded = helpOpen, onDismissRequest = { helpOpen = false }) {
+                        DropdownMenuItem(text = {
+                            Text(stringResource(Res.string.p5b_line_kind_required),
+                                style = MaterialTheme.typography.bodySmall)
+                        }, onClick = { helpOpen = false })
+                    }
+                }
+            }
         }
         return
     }
@@ -294,5 +326,29 @@ private fun placementLabel(kind: PlacementKind) = when (kind) {
     PlacementKind.POINT -> Res.string.p5b_point_type
     PlacementKind.LINE -> Res.string.p5b_line_type
     PlacementKind.AREA -> Res.string.p5b_area_type
-    PlacementKind.NONE -> Res.string.p5b_add_unplaced
+    PlacementKind.NONE -> Res.string.p5b_catalog_no_drawing
+}
+
+// A clearly recognizable binocular action, independent of platform icon packs.
+@Composable
+private fun WorkspaceBinocularsIcon() {
+    val ink = LocalContentColor.current
+    Canvas(Modifier.size(24.dp)) {
+        val unit = size.minDimension / 24f
+        drawCircle(ink, radius = 5f * unit,
+            center = Offset(6.7f * unit, 15f * unit),
+            style = Stroke(width = 2.3f * unit))
+        drawCircle(ink, radius = 5f * unit,
+            center = Offset(17.3f * unit, 15f * unit),
+            style = Stroke(width = 2.3f * unit))
+        drawLine(ink, Offset(10f * unit, 10.5f * unit),
+            Offset(14f * unit, 10.5f * unit), strokeWidth = 2.5f * unit,
+            cap = StrokeCap.Round)
+        drawLine(ink, Offset(6.7f * unit, 6f * unit),
+            Offset(6.7f * unit, 9f * unit), strokeWidth = 4f * unit,
+            cap = StrokeCap.Round)
+        drawLine(ink, Offset(17.3f * unit, 6f * unit),
+            Offset(17.3f * unit, 9f * unit), strokeWidth = 4f * unit,
+            cap = StrokeCap.Round)
+    }
 }

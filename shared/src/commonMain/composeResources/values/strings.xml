@@ -35,8 +35,10 @@
     <string name="p5b_catalog_unavailable">Прайс недоступний.</string>
     <string name="p5b_catalog_empty">Позицій не знайдено.</string>
     <string name="p5b_typed_item">%1$s · %2$s</string>
-    <string name="p5b_add_and_place">Додати й розмістити</string>
-    <string name="p5b_add_unplaced">Додати без розміщення</string>
+    <string name="p5b_add_and_place">Додати на креслення</string>
+    <string name="p5b_add_unplaced">Додати до заміру</string>
+    <string name="p5b_catalog_no_drawing">Без позначки на кресленні</string>
+    <string name="p5b_line_kind_help">Чому немає розміщення?</string>
     <string name="p5b_back_to_catalog">До вибору</string>
     <string name="p5b_obstacle">Перешкода</string>
     <string name="p5b_void">Отвір</string>
@@ -54,7 +56,7 @@
     <string name="p5b_apply_draft">Оновити на кресленні (у чернетці)</string>
     <string name="p5b_in_measurement">У замірі</string>
     <string name="p5b_material_selection_failed">Не вдалося обрати матеріал. Перевірте наявні розміщення й стан прайсу.</string>
-    <string name="p5b_line_kind_required">Щоб креслити цю роботу, встановіть тип «Лінія» у прайсі.</string>
+    <string name="p5b_line_kind_required">Ця позиція додається до заміру без позначки. Щоб креслити її як лінію, змініть тип розміщення в прайсі.</string>
     <string name="p5b_wall_anchor_invalid">Немає допустимої точки. Перевірте відступи або оберіть «Уздовж + усередину».</string>
     <string name="p5b_wall_anchor_verified">Перевірено: %1$s м / %2$s м</string>
     <string name="p5b_quantity_unknown">Кількість невідома</string>
@@ -81,7 +83,7 @@
     <string name="p5b_take_quantity">Кількість з креслення</string>
     <string name="p5b_delete_placement">Видалити розміщення</string>
     <string name="p5b_delete_placement_explain">Після збереження позначку буде видалено. Заявлена кількість роботи збережеться.</string>
-    <string name="p5b_delete_work">Видалити роботу</string>
+    <string name="p5b_delete_work">Видалення елементу</string>
     <string name="p5b_delete_work_explain">Після збереження роботу «%1$s» та всі її позначки буде видалено із заміру.</string>
     <string name="p5b_delete">Видалити</string>
     <string name="p5b_clear_selection">Зняти виділення</string>
@@ -102,8 +104,8 @@
     <string name="p5b_exit_question">Зберегти перед виходом?</string>
     <string name="p5b_exit_blocked">Зараз зберегти не можна.</string>
     <string name="p5b_exit_save">Зберегти й вийти</string>
-    <string name="p5b_exit_discard">Відхилити зміни й вийти</string>
-    <string name="p5b_exit_continue">Продовжити редагування</string>
+    <string name="p5b_exit_discard">Відхилити зміни</string>
+    <string name="p5b_exit_continue">Продовжити</string>
     <string name="p5b_save_conflict">Дані змінилися. Перевірте чернетку й перезавантажте запис.</string>
     <string name="p5b_save_invalid_contour">Перевірте розміри та форму контуру.</string>
     <string name="p5b_save_apply_fields">Застосуйте або скасуйте відкриті параметри.</string>

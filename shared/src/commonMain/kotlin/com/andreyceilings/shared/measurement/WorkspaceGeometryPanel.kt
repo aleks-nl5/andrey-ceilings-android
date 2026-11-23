@@ -316,7 +316,9 @@ internal fun WorkspaceGeometryPanel(
                     line != null -> model.deleteLine()
                     area != null -> model.deleteArea()
                 }
-            }) { Text(stringResource(Res.string.p5b_delete)) }
+            }, colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)) {
+                Text(stringResource(Res.string.p5b_delete))
+            }
         },
         dismissButton = { TextButton(onClick = { deletion = false }) { Text(stringResource(Res.string.p5b_cancel_placement)) } })
     val lengthId = state.lengthConfirm
@@ -440,11 +442,15 @@ internal fun WorkspaceWorkList(
         if (deletion) AlertDialog(onDismissRequest = { deletion = false },
             title = { Text(stringResource(Res.string.p5b_delete_work)) },
             text = { Text(stringResource(Res.string.p5b_delete_work_explain, work.label)) },
-            confirmButton = { TextButton(onClick = {
+            confirmButton = { TextButton(onClick = { deletion = false }) {
+                Text(stringResource(Res.string.p5b_cancel_placement))
+            } },
+            dismissButton = { TextButton(onClick = {
                 deletion = false
                 onSelect(null)
                 model.deleteWorkspaceWork(work.uuid)
-            }) { Text(stringResource(Res.string.p5b_delete)) } },
-            dismissButton = { TextButton(onClick = { deletion = false }) { Text(stringResource(Res.string.p5b_cancel_placement)) } })
+            }, colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)) {
+                Text(stringResource(Res.string.p5b_delete))
+            } })
     }
 }

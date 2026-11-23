@@ -776,19 +776,21 @@ fun MeasurementEditScreen(
             }
         },
         confirmButton = {
-            Row(verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                FilledTonalIconButton(onClick = model::discardAndExit,
-                    modifier = Modifier.testTag("measurement-exit-discard")) {
-                    Icon(Icons.Default.Delete, stringResource(Res.string.p5b_exit_discard))
+            TextButton(onClick = { save(exit = true) }, enabled = canSave,
+                modifier = Modifier.testTag("measurement-exit-save")) {
+                Text(stringResource(Res.string.p5b_exit_save))
+            }
+        },
+        dismissButton = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                TextButton(onClick = model::discardAndExit,
+                    modifier = Modifier.testTag("measurement-exit-discard"),
+                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)) {
+                    Text(stringResource(Res.string.p5b_exit_discard))
                 }
-                FilledTonalIconButton(onClick = model::continueEditing,
+                TextButton(onClick = model::continueEditing,
                     modifier = Modifier.testTag("measurement-exit-continue")) {
-                    Icon(Icons.Default.Edit, stringResource(Res.string.p5b_exit_continue))
-                }
-                FilledIconButton(onClick = { save(exit = true) }, enabled = canSave,
-                    modifier = Modifier.testTag("measurement-exit-save")) {
-                    Icon(Icons.Default.Save, stringResource(Res.string.p5b_exit_save))
+                    Text(stringResource(Res.string.p5b_exit_continue))
                 }
             }
         })
