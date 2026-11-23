@@ -183,7 +183,24 @@ class PointEditingSceneTest {
                     }
                 }
                 assertTrue(editing)
+                // Workspace Save preserves the selected placement intentionally.
+                // Back first clears that selection, then the next Back navigates.
+                // Do not change production navigation simply to satisfy a stale
+                // one-click expectation (and do not skip review/DB assertions).
+                assertNotNull(
+                    scene.canvas().config.getOrNull(MeasurementDrawingSemantics.SelectedPoint),
+                    "Review-later must preserve the selected point until explicitly deselected"
+                )
                 scene.click("До заміру")
+                assertTrue(editing, "First Back should clear selection without leaving the editor")
+                assertNull(
+                    scene.canvas().config.getOrNull(MeasurementDrawingSemantics.SelectedPoint),
+                    "Back must clear the selected point before navigating"
+                )
+                scene.click("До заміру")
+                withTimeout(15_000) {
+                    while (editing) { scene.frame(); delay(20) }
+                }
                 assertFalse(editing)
                 scene.awaitText("Перевірити (2)")
                 scene.tapWorld(1500,600)
