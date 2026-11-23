@@ -29,6 +29,7 @@
     <string name="p5b_linked_work">Роботи цього заміру</string>
     <string name="p5b_catalog_work">Додати з прайсу</string>
     <string name="p5b_catalog_search">Пошук за назвою або кодом</string>
+    <string name="p5b_search_short">Пошук</string>
     <string name="p5b_catalog_loading">Завантаження прайсу…</string>
     <string name="p5b_catalog_unavailable">Прайс недоступний.</string>
     <string name="p5b_catalog_empty">Позицій не знайдено.</string>

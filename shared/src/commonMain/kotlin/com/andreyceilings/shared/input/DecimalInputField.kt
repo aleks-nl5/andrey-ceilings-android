@@ -1,6 +1,7 @@
 package com.andreyceilings.shared.input
 
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
@@ -14,6 +15,7 @@ import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.unit.dp
 
 /** Initial separators gain a display zero; domain validation never rewrites the editor state. */
 @Composable
@@ -21,7 +23,8 @@ fun DecimalInputField(
     value: String, onValueChange: (String) -> Unit, label: String,
     modifier: Modifier = Modifier, enabled: Boolean = true, isError: Boolean = false,
     signed: Boolean = false, allowDecimalSeparator: Boolean = true,
-    onNext: (() -> Unit)? = null
+    onNext: (() -> Unit)? = null,
+    compact: Boolean = false
 ) {
     val requester = remember { FocusRequester() }
     var field by remember { mutableStateOf(TextFieldValue(value, TextRange(value.length))) }
@@ -36,7 +39,8 @@ fun DecimalInputField(
         if (changed) onValueChange(edited.text)
     }
     OutlinedTextField(field, { update(it) }, label = { Text(label) },
-        modifier = modifier.fillMaxWidth().focusRequester(requester), enabled = enabled,
+        modifier = modifier.fillMaxWidth().focusRequester(requester)
+            .then(if (compact) Modifier.height(52.dp) else Modifier), enabled = enabled,
         singleLine = true, isError = isError,
         keyboardOptions = KeyboardOptions(
             keyboardType = if (allowDecimalSeparator) KeyboardType.Decimal else KeyboardType.Number,

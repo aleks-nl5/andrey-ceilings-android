@@ -7,6 +7,8 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.CropSquare
+import androidx.compose.material.icons.filled.CenterFocusStrong
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -127,7 +129,7 @@ internal fun WorkspaceCatalogSearch(
                         existingQuantity = it
                         existingQuantityInvalid = false
                     }, stringResource(Res.string.p5b_declared_quantity, work.unit.orEmpty()),
-                        modifier = Modifier.weight(1f), isError = existingQuantityInvalid,
+                        modifier = Modifier.weight(1f), compact = true, isError = existingQuantityInvalid,
                         allowDecimalSeparator = work.unit != "шт.")
                     IconButton(onClick = {
                         val parsed = if (existingQuantity.isBlank()) ElementQuantity.Unknown
@@ -156,7 +158,7 @@ internal fun WorkspaceCatalogSearch(
                 if (default == ElementQuantity.Unknown) {
                     DecimalInputField(quantity, { quantity = it },
                         stringResource(Res.string.p5b_declared_quantity, item.unit),
-                        modifier = Modifier.weight(1f), isError = entered == null,
+                        modifier = Modifier.weight(1f), compact = true, isError = entered == null,
                         allowDecimalSeparator = item.unit != "шт.")
                 } else Text(formatElementQuantity(default, item.unit), modifier = Modifier.weight(1f))
                 if (item.placementKind != PlacementKind.NONE) IconButton(enabled = canPlace, onClick = {
@@ -174,18 +176,25 @@ internal fun WorkspaceCatalogSearch(
         return
     }
 
-    OutlinedTextField(query, { query = it }, Modifier.fillMaxWidth().testTag("p5b-catalog-search"),
-        singleLine = true, label = { Text(stringResource(Res.string.p5b_catalog_search)) })
-    FlowRow {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+        OutlinedTextField(query, { query = it },
+            Modifier.weight(1f).height(52.dp).testTag("p5b-catalog-search"),
+            singleLine = true, textStyle = MaterialTheme.typography.bodySmall,
+            label = { Text(stringResource(Res.string.p5b_search_short)) })
         if (role == null) {
-            TextButton({ model.beginArea(AreaRole.OBSTACLE); onPlacedTool() }) {
-                Text(stringResource(Res.string.p5b_obstacle))
+            IconButton(onClick = { model.beginArea(AreaRole.OBSTACLE); onPlacedTool() },
+                modifier = Modifier.size(44.dp)) {
+                Icon(Icons.Default.CropSquare, stringResource(Res.string.p5b_obstacle))
             }
-            TextButton({ model.beginArea(AreaRole.VOID_MARKER, tool = AreaTool.CIRCLE); onPlacedTool() }) {
-                Text(stringResource(Res.string.p5b_void))
+            IconButton(onClick = { model.beginArea(AreaRole.VOID_MARKER, tool = AreaTool.CIRCLE); onPlacedTool() },
+                modifier = Modifier.size(44.dp)) {
+                Icon(Icons.Default.CenterFocusStrong, stringResource(Res.string.p5b_void))
             }
         }
-        TextButton(onClick = onDismiss) { Text(stringResource(Res.string.p5b_cancel_placement)) }
+        IconButton(onClick = onDismiss, modifier = Modifier.size(44.dp)) {
+            Icon(Icons.Default.Close, stringResource(Res.string.p5b_cancel_placement))
+        }
     }
     if (materialSelectionFailed) Text(stringResource(Res.string.p5b_material_selection_failed),
         color = MaterialTheme.colorScheme.error)

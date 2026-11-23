@@ -449,14 +449,14 @@ fun MeasurementEditScreen(
                                     if (detailsVisible) {
                                         OutlinedTextField(draft.name, { model.accept(MeasurementCreateIntent.Name(it), grouped = true) },
                                             enabled = enabled, label = { Text("Назва заміру *") }, singleLine = true,
-                                            modifier = measurementFieldFocusModifier().fillMaxWidth().focusRequester(nameFocus)
+                                            modifier = measurementFieldFocusModifier().fillMaxWidth().height(52.dp).focusRequester(nameFocus)
                                                 .onFocusChanged { if (it.isFocused) model.beginInput() else model.commitInput() },
                                             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
                                             keyboardActions = KeyboardActions(onNext = { notesFocus.requestFocus() }),
                                             isError = validation.nameError != null)
                                         OutlinedTextField(draft.notes, { model.accept(MeasurementCreateIntent.Notes(it), grouped = true) },
                                             enabled = enabled, label = { Text("Примітки") }, maxLines = 3,
-                                            modifier = measurementFieldFocusModifier().fillMaxWidth().focusRequester(notesFocus)
+                                            modifier = measurementFieldFocusModifier().fillMaxWidth().height(88.dp).focusRequester(notesFocus)
                                                 .onFocusChanged { if (it.isFocused) model.beginInput() else model.commitInput() })
                                         MeasurementShapePicker(draft.shape, enabled) {
                                             focus.clearFocus()
@@ -878,6 +878,7 @@ private fun MeasurementSelectedFields(
                         else -> key
                     }
                     MeasurementLengthField(outline.fields.getValue(key), "$wall, м", validation.fieldErrors[key], enabled,
+                        compact = true,
                         modifier = cell.focusRequester(requesters[index]),
                         onNext = (requesters.getOrNull(index + 1) ?: followingField)?.let { next -> { next.requestFocus() } },
                         selected = selected != null && key in measurementWallParameters(draft.shape, selected),
@@ -896,6 +897,7 @@ private fun MeasurementSelectedFields(
                     val side = outline.sides[i]
                     key(side.inputId) {
                         MeasurementLengthField(side.length, "${labels[i]}, м", validation.fieldErrors[side.inputId], enabled,
+                            compact = true,
                             modifier = cell.focusRequester(requesters[i]),
                             onNext = (requesters.getOrNull(i + 1) ?: followingField)?.let { next -> { next.requestFocus() } },
                             selected = selected == i, onFocus = { focused ->

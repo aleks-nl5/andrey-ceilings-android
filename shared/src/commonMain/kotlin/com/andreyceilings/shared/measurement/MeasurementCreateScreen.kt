@@ -243,7 +243,7 @@ fun MeasurementCreateScreen(
 @Composable
 internal fun MeasurementLengthField(value: String, label: String, error: String?, enabled: Boolean,
     modifier: Modifier = Modifier, selected: Boolean = false, onFocus: (Boolean) -> Unit = {},
-    onNext: (() -> Unit)? = null, onChange: (String) -> Unit) {
+    onNext: (() -> Unit)? = null, compact: Boolean = false, onChange: (String) -> Unit) {
     var field by remember { mutableStateOf(TextFieldValue(value, selection = TextRange(value.length))) }
     LaunchedEffect(value) {
         if (field.text != value) {
@@ -279,6 +279,7 @@ internal fun MeasurementLengthField(value: String, label: String, error: String?
     }
     OutlinedTextField(value = field, onValueChange = ::update, label = { Text(label) }, enabled = enabled, singleLine = true,
         modifier = modifier.then(measurementFieldFocusModifier()).fillMaxWidth()
+            .then(if (compact && error == null) Modifier.height(52.dp) else Modifier)
             .onFocusChanged {
                 hasRealFocus = it.isFocused
                 onFocus(it.isFocused)
@@ -291,7 +292,7 @@ internal fun MeasurementLengthField(value: String, label: String, error: String?
         ),
         keyboardActions = KeyboardActions(onNext = onNext?.let { next -> { next() } }),
         isError = value.isNotEmpty() && error != null,
-        supportingText = { error?.let { Text(it) } })
+        supportingText = if (error == null) null else ({ Text(error) }))
 }
 
 @Composable
