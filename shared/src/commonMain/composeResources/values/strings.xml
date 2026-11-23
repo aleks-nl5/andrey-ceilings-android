@@ -13,6 +13,12 @@
         <item quantity="many">%1$d об’єктів</item>
         <item quantity="other">%1$d об’єкта</item>
     </plurals>
+    <string name="p5b_context_contour">Контур</string>
+    <string name="p5b_context_elements">Елементи</string>
+    <string name="p5b_context_cost">Вартість</string>
+    <string name="p5b_fit_drawing">Вписати креслення</string>
+    <string name="p5b_open_properties">Відкрити параметри</string>
+    <string name="p5b_drawing_canvas_description">Контур стелі, %1$d вершин, позначок: %2$d, ліній: %3$d, площинних об’єктів: %4$d</string>
     <string name="p5b_parallel_wall">Паралельно стіні %1$s</string>
     <string name="p5b_line_start">Торкніться початку лінії або проведіть від початку до кінця.</string>
     <string name="p5b_line_end">Торкніться кінця лінії або перетягніть до нього.</string>

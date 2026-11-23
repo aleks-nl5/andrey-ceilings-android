@@ -8,6 +8,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.relocation.BringIntoViewRequester
 import androidx.compose.foundation.relocation.bringIntoViewRequester
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -598,11 +599,13 @@ internal fun WorkspaceWorkList(
             "${work.label} #${namesakes.indexOfFirst { it.uuid == work.uuid } + 1}"
         else work.label
         Row(Modifier.fillMaxWidth().bringIntoViewRequester(bringIntoView)
+            .clip(RoundedCornerShape(10.dp))
             .background(if (isHighlighted || isSelected) MaterialTheme.colorScheme.secondaryContainer.copy(
                 alpha = if (isHighlighted) 0.9f else 0.48f) else Color.Transparent,
                 RoundedCornerShape(10.dp)),
             verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f).heightIn(min = 48.dp)
+                .clip(RoundedCornerShape(10.dp))
                 .semantics { this.selected = isSelected || isHighlighted }.clickable(enabled = enabled) {
                 onSelect(if (isSelected) null else work.uuid)
             }, verticalArrangement = Arrangement.Center) {

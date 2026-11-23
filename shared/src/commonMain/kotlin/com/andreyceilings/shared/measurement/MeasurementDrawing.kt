@@ -21,6 +21,9 @@ import androidx.compose.material3.TextButton
 import androidx.compose.ui.unit.IntSize
 import com.andreyceilings.shared.resources.Res
 import com.andreyceilings.shared.resources.p5b_parallel_wall
+import com.andreyceilings.shared.resources.p5b_fit_drawing
+import com.andreyceilings.shared.resources.p5b_open_properties
+import com.andreyceilings.shared.resources.p5b_drawing_canvas_description
 import org.jetbrains.compose.resources.stringResource
 import kotlin.math.pow
 import kotlin.math.hypot
@@ -127,6 +130,7 @@ fun MeasurementDrawing(
     fillAvailableHeight: Boolean = fullscreen,
     showSideLegend: Boolean = !fullscreen,
     retainCameraOnResize: Boolean = false,
+    autoFitOnFullscreenChange: Boolean = false,
     verticalViewControls: Boolean = false,
     cameraFitReady: Boolean = true,
     showWorkspaceGrid: Boolean = false,
@@ -144,6 +148,10 @@ fun MeasurementDrawing(
     onFinishLineCreation: ((PointPositionMm, PointPositionMm) -> Boolean)? = null
 ) {
     val contour = remember(geometry) { measurementDrawingContour(geometry) }
+    val fitActionLabel = stringResource(Res.string.p5b_fit_drawing)
+    val openPropertiesLabel = stringResource(Res.string.p5b_open_properties)
+    val drawingDescription = stringResource(Res.string.p5b_drawing_canvas_description,
+        contour?.points?.size ?: 0, pointPlacements.size, linePlacements.size, areaFeatures.size)
     if (contour == null) {
         Text("Креслення недоступне: неповна або некоректна геометрія.", modifier,
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -277,6 +285,29 @@ fun MeasurementDrawing(
         panY = 0f
     }
 
+    // A change between normal and fullscreen must fit the entire drawing into
+    // the NEW visible viewport. Ordinary context tabs, IME and resize preserve
+    // camera adjustments as before. Skip the initial composition (already fitted).
+    var lastFullscreenMode by remember { mutableStateOf(fullscreen) }
+    var pendingModeFit by remember { mutableStateOf(false) }
+    LaunchedEffect(fullscreen, autoFitOnFullscreenChange) {
+        if (lastFullscreenMode != fullscreen) {
+            lastFullscreenMode = fullscreen
+            pendingModeFit = autoFitOnFullscreenChange
+        }
+    }
+    LaunchedEffect(pendingModeFit, fullscreen, canvasSize, cameraFitReady,
+        fitTop, fitBottom, topPx, bottomPx) {
+        if (pendingModeFit && cameraFitReady &&
+            canvasSize.width > 0 && viewportHeight(canvasSize.height.toFloat()) > 0) {
+            // A mode switch changes both chrome and viewport in different layouts.
+            withFrameNanos { }
+            withFrameNanos { }
+            fit()
+            pendingModeFit = false
+        }
+    }
+
     fun projectDrawing(width: Float, height: Float): MeasurementDrawingProjection? {
         val viewHeight = viewportHeight(height)
         if (width <= 0f || viewHeight <= 0f) return null
@@ -317,7 +348,7 @@ fun MeasurementDrawing(
     val vertexLayouts = contour.vertexNames.map { measurer.measure(it, labelStyle) }
     Column(modifier, verticalArrangement = Arrangement.spacedBy(6.dp)) {
         if (interactive && !verticalViewControls) Row {
-            TextButton(enabled = !markerGesture, onClick = ::fit) { Text("Вписати креслення") }
+            TextButton(enabled = !markerGesture, onClick = ::fit) { Text(fitActionLabel) }
             TextButton(onClick = { move(0f, 0f, 1 / 1.25f) }) { Text("−") }
             TextButton(onClick = { move(0f, 0f, 1.25f) }) { Text("+") }
         } else if (!interactive) Text("Креслення заміру", style = MaterialTheme.typography.titleSmall)
@@ -605,7 +636,7 @@ fun MeasurementDrawing(
             Canvas(Modifier.fillMaxSize()
                 .clipToBounds().onSizeChanged { canvasSize = it }.then(inputModifier)
                 .semantics {
-                    contentDescription = "Контур стелі, ${contour.points.size} вершин, позначок: ${pointPlacements.size}, ліній: ${linePlacements.size}, площинних об’єктів: ${areaFeatures.size}"
+                    contentDescription = drawingDescription
                     snapReason?.let { stateDescription = it }
                     this[MeasurementDrawingSemantics.Points]=pointPlacements
                     this[MeasurementDrawingSemantics.Lines]=linePlacements
@@ -624,7 +655,7 @@ fun MeasurementDrawing(
                     pointDrag?.let {this[MeasurementDrawingSemantics.PointDrag]=it}
                     if (onOpenSelection != null && (selectedSide != null || selectedPointUuid != null ||
                             selectedLineUuid != null || selectedAreaUuid != null)) {
-                        customActions = listOf(CustomAccessibilityAction("Відкрити параметри", ::openSelected))
+                        customActions = listOf(CustomAccessibilityAction(openPropertiesLabel, ::openSelected))
                     }
                 }) {
                 val projection = projectDrawing(size.width, size.height) ?: return@Canvas
@@ -746,7 +777,7 @@ fun MeasurementDrawing(
             }
             if (interactive && verticalViewControls) {
                 val actions: @Composable () -> Unit = {
-                    MeasurementIconAction("Вписати креслення", Icons.Default.CenterFocusStrong, !markerGesture, true, onClick = ::fit)
+                    MeasurementIconAction(fitActionLabel, Icons.Default.CenterFocusStrong, !markerGesture, true, onClick = ::fit)
                     MeasurementIconAction("Збільшити масштаб", Icons.Default.ZoomIn, !markerGesture, true) {
                         move(0f, 0f, 1.25f)
                     }

@@ -87,11 +87,14 @@ private enum class MeasurementSheet { CLOSED, COMPACT, EXPANDED }
 private const val SheetMotionMillis = 240
 private val WorkspacePanelShape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp)
 
-private enum class MeasurementEditContext(val label: String) {
-    CONTOUR("Контур"),
-    ELEMENTS("Елементи"),
-    COST("Вартість")
-}
+private enum class MeasurementEditContext { CONTOUR, ELEMENTS, COST }
+
+@Composable
+private fun MeasurementEditContext.displayLabel(): String = stringResource(when (this) {
+    MeasurementEditContext.CONTOUR -> Res.string.p5b_context_contour
+    MeasurementEditContext.ELEMENTS -> Res.string.p5b_context_elements
+    MeasurementEditContext.COST -> Res.string.p5b_context_cost
+})
 
 @Composable
 fun MeasurementEditScreen(
@@ -269,8 +272,8 @@ fun MeasurementEditScreen(
         !validation.canSave -> stringResource(Res.string.p5b_save_invalid_contour)
         state.lineProperties?.dirty == true -> {
             val input = state.lineProperties
-            val line = model.displayLines().find { it.uuid == input.uuid }
-            if (line != null && model.linePropertiesCandidate(line, input) == null)
+            val line = model.displayLines().find { it.uuid == input?.uuid }
+            if (input != null && line != null && model.linePropertiesCandidate(line, input) == null)
                 stringResource(Res.string.p5b_save_line_invalid)
             else stringResource(Res.string.p5b_save_apply_fields)
         }
@@ -333,7 +336,9 @@ fun MeasurementEditScreen(
         selectedWork = placedWork
         highlightedWorkId = placedWork
         selected = null
-        showElements()
+        // In fullscreen, the double-tap callback (onOpenSelection) owns the sheet.
+        // A single selection or a drag must never expand it.
+        if (!fullscreen) showElements()
     }
 
     val selectedFeature = state.selectedPointUuid ?: state.selectedLineUuid ?: state.area.selected
@@ -632,7 +637,7 @@ fun MeasurementEditScreen(
                         FilterChip(
                             selected = context == mode,
                             onClick = { if (context != mode) { focus.clearFocus(); openContext(mode) } },
-                            label = { Text(mode.label, Modifier.fillMaxWidth(), textAlign = TextAlign.Center,
+                            label = { Text(mode.displayLabel(), Modifier.fillMaxWidth(), textAlign = TextAlign.Center,
                                 maxLines = tabLines, softWrap = tabLines > 1, overflow = TextOverflow.Ellipsis) },
                             modifier = Modifier.weight(1f).testTag("measurement-edit-context-${mode.name.lowercase()}"),
                             colors = FilterChipDefaults.filterChipColors(
@@ -651,7 +656,7 @@ fun MeasurementEditScreen(
                         for (mode in listOf(MeasurementEditContext.CONTOUR, MeasurementEditContext.ELEMENTS)) {
                             val expanded = sheet != MeasurementSheet.CLOSED && context == mode
                             MeasurementEditorFab(
-                                label = mode.label,
+                                label = mode.displayLabel(),
                                 icon = if (mode == MeasurementEditContext.CONTOUR) Icons.Default.CropSquare else Icons.Default.Category,
                                 enabled = canLeaveSurface,
                                 modifier = Modifier.testTag("measurement-edit-context-${mode.name.lowercase()}")
@@ -727,8 +732,14 @@ fun MeasurementEditScreen(
                 )
                 else MeasurementDrawing(MeasurementGeometryView.Captured(geometry),
                     Modifier.fillMaxSize(), interactive = true, fillAvailableHeight = true, showSideLegend = false,
-                    retainCameraOnResize = true, verticalViewControls = !keyboardVisible, showWorkspaceGrid = true,
-                    viewportPadding = PaddingValues(top = headerBleed, bottom = tabBleed),
+                    retainCameraOnResize = true, autoFitOnFullscreenChange = true,
+                    verticalViewControls = !keyboardVisible, showWorkspaceGrid = true,
+                    // The normal panel covers the bottom of the Canvas: reserve it in the
+                    // *viewport*, otherwise "fit" draws most of the room under the card.
+                    viewportPadding = PaddingValues(
+                        top = headerBleed,
+                        bottom = if (fullscreen) 0.dp else normalPanelHeight
+                    ),
                     onOpenSelection = if (fullscreen) { wall ->
                         if (enabled) {
                             if (wall) {
