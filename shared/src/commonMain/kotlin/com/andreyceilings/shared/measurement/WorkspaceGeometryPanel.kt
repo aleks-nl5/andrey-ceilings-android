@@ -83,7 +83,13 @@ internal fun WorkspacePlacementTools(
                     Icon(shape, label)
                 }
             }
-            Spacer(Modifier.weight(1f))
+            Text(stringResource(when (state.area.role) {
+                AreaRole.OBSTACLE -> Res.string.p5b_obstacle
+                AreaRole.VOID_MARKER -> Res.string.p5b_void_short
+                AreaRole.GENERAL_AREA -> Res.string.p5b_area_type
+            }), modifier = Modifier.weight(1f), maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                style = MaterialTheme.typography.labelSmall)
             IconButton(enabled = enabled && model.areaCreationShape() != null,
                 onClick = model::acceptAreaCreation) {
                 Icon(Icons.Default.Check, stringResource(Res.string.p5b_finish_area))
@@ -577,6 +583,69 @@ private fun WorkspaceShortAction(label: String, icon: ImageVector, onClick: () -
         Icon(icon, contentDescription = null, modifier = Modifier.size(16.dp))
         Spacer(Modifier.width(4.dp))
         Text(label, style = MaterialTheme.typography.labelSmall, maxLines = 1)
+    }
+}
+
+/**
+ * Non-priced areas are geometric notes, not catalog work. Show them as
+ * selectable rows so tapping them never jumps straight into parameters.
+ */
+@Composable
+internal fun WorkspaceStandaloneAreaList(
+    model: MeasurementEditModel, enabled: Boolean, selected: String?,
+    onSelect: (String?) -> Unit, onOpenGeometry: (String) -> Unit
+) {
+    val annotations = model.displayAreas().filter { it.elementUuid == null }
+    if (annotations.isEmpty()) return
+    Text(stringResource(Res.string.p5b_annotations_title),
+        style = MaterialTheme.typography.labelMedium,
+        modifier = Modifier.padding(top = 5.dp, bottom = 2.dp))
+    annotations.forEachIndexed { index, feature ->
+        key(feature.uuid) {
+            val isSelected = feature.uuid == selected
+            val requester = remember(feature.uuid) { BringIntoViewRequester() }
+            LaunchedEffect(isSelected) { if (isSelected) requester.bringIntoView() }
+            val role = stringResource(if (feature.role == AreaRole.VOID_MARKER)
+                Res.string.p5b_void else Res.string.p5b_obstacle)
+            val shape = stringResource(when {
+                feature.shape is AreaShape.Circle -> Res.string.p5b_circle
+                feature.shape is AreaShape.Polygon && feature.shape.positions.isAxisAlignedRectangle() ->
+                    Res.string.p5b_rectangle
+                else -> Res.string.p5b_polygon
+            })
+            val size = if (feature.shape is AreaShape.Circle)
+                stringResource(Res.string.p5b_diameter_value,
+                    formatMillimetres(feature.shape.radiusMm * 2))
+            else formatMeasurementAreaCompact(feature.twiceAreaMm2 / 2_000_000.0) + " м²"
+            Row(Modifier.fillMaxWidth()
+                .bringIntoViewRequester(requester)
+                .clip(RoundedCornerShape(10.dp))
+                .background(if (isSelected) MaterialTheme.colorScheme.secondaryContainer
+                    else Color.Transparent, RoundedCornerShape(10.dp))
+                .testTag("p5b-standalone-area-${feature.uuid}"),
+                verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f).heightIn(min = 48.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .semantics { this.selected = isSelected }
+                    .clickable(enabled = enabled) {
+                        onSelect(if (isSelected) null else feature.uuid)
+                    }, verticalArrangement = Arrangement.Center) {
+                    Text(stringResource(Res.string.p5b_annotation_row_title,
+                        role, index + 1), style = MaterialTheme.typography.bodyMedium,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(stringResource(Res.string.p5b_annotation_row_detail, shape, size),
+                        style = MaterialTheme.typography.labelSmall,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+                IconButton(onClick = { onOpenGeometry(feature.uuid) }, enabled = enabled,
+                    modifier = Modifier.testTag("p5b-open-standalone-area-${feature.uuid}")) {
+                    Icon(Icons.Default.Settings,
+                        stringResource(Res.string.p5b_open_geometry_parameters))
+                }
+            }
+            HorizontalDivider(Modifier.padding(top = 5.dp, bottom = 6.dp),
+                color = MaterialTheme.colorScheme.outlineVariant)
+        }
     }
 }
 

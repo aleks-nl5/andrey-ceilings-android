@@ -19,6 +19,8 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.CropSquare
 import androidx.compose.material.icons.filled.CenterFocusStrong
+import androidx.compose.material.icons.filled.Category
+import androidx.compose.material.icons.filled.RadioButtonUnchecked
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.ArrowForward
 import androidx.compose.material.icons.filled.OpenWith
@@ -114,6 +116,7 @@ internal fun WorkspaceCatalogSearch(
     var query by rememberSaveable(role?.name) { mutableStateOf("") }
     var quantity by rememberSaveable(role?.name) { mutableStateOf("") }
     var materialSelectionFailed by remember(role) { mutableStateOf(false) }
+    var annotationMenu by remember { mutableStateOf(false) }
     var editExisting by remember(selectedWork) { mutableStateOf(false) }
     var existingQuantity by remember(selectedWork) { mutableStateOf("") }
     var existingQuantityInvalid by remember(selectedWork) { mutableStateOf(false) }
@@ -257,13 +260,34 @@ internal fun WorkspaceCatalogSearch(
             singleLine = true, textStyle = MaterialTheme.typography.bodySmall,
             label = { Text(stringResource(Res.string.p5b_search_short)) })
         if (role == null) {
-            IconButton(onClick = { model.beginArea(AreaRole.OBSTACLE); onPlacedTool() },
-                modifier = Modifier.size(44.dp)) {
-                Icon(Icons.Default.CropSquare, stringResource(Res.string.p5b_obstacle))
-            }
-            IconButton(onClick = { model.beginArea(AreaRole.VOID_MARKER, tool = AreaTool.CIRCLE); onPlacedTool() },
-                modifier = Modifier.size(44.dp)) {
-                Icon(Icons.Default.CenterFocusStrong, stringResource(Res.string.p5b_void))
+            Box {
+                IconButton(onClick = { annotationMenu = true },
+                    modifier = Modifier.size(44.dp).testTag("p5b-add-annotation")) {
+                    Icon(Icons.Default.Category, stringResource(Res.string.p5b_annotation_add))
+                }
+                DropdownMenu(expanded = annotationMenu,
+                    onDismissRequest = { annotationMenu = false }) {
+                    DropdownMenuItem(
+                        leadingIcon = { Icon(Icons.Default.CropSquare, null) },
+                        text = { Text(stringResource(Res.string.p5b_obstacle)) },
+                        supportingText = { Text(stringResource(Res.string.p5b_obstacle_explain),
+                            style = MaterialTheme.typography.labelSmall) },
+                        onClick = {
+                            annotationMenu = false
+                            model.beginArea(AreaRole.OBSTACLE, tool = AreaTool.RECTANGLE)
+                            onPlacedTool()
+                        })
+                    DropdownMenuItem(
+                        leadingIcon = { Icon(Icons.Default.RadioButtonUnchecked, null) },
+                        text = { Text(stringResource(Res.string.p5b_void)) },
+                        supportingText = { Text(stringResource(Res.string.p5b_void_explain),
+                            style = MaterialTheme.typography.labelSmall) },
+                        onClick = {
+                            annotationMenu = false
+                            model.beginArea(AreaRole.VOID_MARKER, tool = AreaTool.CIRCLE)
+                            onPlacedTool()
+                        })
+                }
             }
         }
         IconButton(onClick = onDismiss, modifier = Modifier.size(44.dp)) {

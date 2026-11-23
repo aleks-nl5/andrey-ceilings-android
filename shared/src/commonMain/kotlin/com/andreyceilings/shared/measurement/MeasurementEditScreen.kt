@@ -581,24 +581,55 @@ fun MeasurementEditScreen(
                                         dismissCatalog()
                                     } else {
                                         WorkspacePlacementTools(model, state, canEdit, lineSnapEnabled) { lineSnapEnabled = it }
-                                        // Tapping an object on the drawing selects its WORK ROW first.
-                                        // Geometry inputs open only through the explicit settings action.
-                                        if (selectedWork == null) WorkspaceGeometryPanel(
-                                            model, state, canEdit, lineSnapEnabled) { lineSnapEnabled = it }
-                                        if (activeElementControls == null ||
-                                            (selectedFeature != null && selectedWork != null)) WorkspaceWorkList(
-                                            model, canEdit, selectedWork, highlightedWorkId,
-                                            onSelect = { work ->
-                                                if (!model.promptForDirtyElementBeforeNavigation()) {
-                                                    model.clearDrawingSelection()
-                                                    selectedWork = work
-                                                }
-                                            },
-                                            onOpenGeometry = {
-                                                selectedWork = null
-                                                scope.launch { scroll.animateScrollTo(0) }
-                                            }
+                                        // Free obstacles/holes are NOT paid catalog work. They
+                                        // must still be selectable in the same Elements list.
+                                        val standaloneArea = model.displayAreas().firstOrNull {
+                                            it.uuid == state.area.selected && it.elementUuid == null
+                                        }
+                                        val standaloneEditorOpen = standaloneArea != null && (
+                                            state.area.properties?.uuid == standaloneArea.uuid ||
+                                            (state.area.mountingIndex != null && state.mountingInput != null)
                                         )
+                                        // A single tap shows/highlights the row; only an explicit
+                                        // settings action or fullscreen double-tap opens the editor.
+                                        if (selectedWork == null && (standaloneArea == null || standaloneEditorOpen))
+                                            WorkspaceGeometryPanel(model, state, canEdit, lineSnapEnabled) { lineSnapEnabled = it }
+                                        if (activeElementControls == null ||
+                                            (selectedFeature != null && selectedWork != null) ||
+                                            (standaloneArea != null && !standaloneEditorOpen)) {
+                                            WorkspaceWorkList(
+                                                model, canEdit, selectedWork, highlightedWorkId,
+                                                onSelect = { work ->
+                                                    if (!model.promptForDirtyElementBeforeNavigation()) {
+                                                        model.clearDrawingSelection()
+                                                        selectedWork = work
+                                                    }
+                                                },
+                                                onOpenGeometry = {
+                                                    selectedWork = null
+                                                    scope.launch { scroll.animateScrollTo(0) }
+                                                }
+                                            )
+                                            WorkspaceStandaloneAreaList(
+                                                model, canEdit, state.area.selected,
+                                                onSelect = { id ->
+                                                    if (!model.promptForDirtyElementBeforeNavigation()) {
+                                                        if (id == null) model.clearDrawingSelection()
+                                                        else model.selectArea(id)
+                                                        selectedWork = null
+                                                        highlightedWorkId = null
+                                                    }
+                                                },
+                                                onOpenGeometry = { id ->
+                                                    if (!model.promptForDirtyElementBeforeNavigation()) {
+                                                        model.selectArea(id)
+                                                        model.openAreaProperties()
+                                                        selectedWork = null
+                                                        scope.launch { scroll.animateScrollTo(0) }
+                                                    }
+                                                }
+                                            )
+                                        }
                                     }
                                 }
                                 MeasurementEditContext.COST -> {

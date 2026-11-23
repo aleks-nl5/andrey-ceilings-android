@@ -49,7 +49,14 @@
     <string name="p5b_line_kind_help">Чому немає розміщення?</string>
     <string name="p5b_back_to_catalog">До вибору</string>
     <string name="p5b_obstacle">Перешкода</string>
-    <string name="p5b_void">Отвір</string>
+    <string name="p5b_void">Позначка отвору</string>
+    <string name="p5b_void_short">Отвір</string>
+    <string name="p5b_annotation_add">Позначка на кресленні</string>
+    <string name="p5b_annotations_title">Позначки на кресленні</string>
+    <string name="p5b_annotation_row_title">%1$s №%2$d</string>
+    <string name="p5b_annotation_row_detail">%1$s · %2$s</string>
+    <string name="p5b_obstacle_explain">Перешкода монтажу · початкова форма — прямокутник</string>
+    <string name="p5b_void_explain">Отвір · початкова форма — коло. Не змінює площу стелі.</string>
     <string name="p5b_numeric_diameter">Діаметр, м (парні мм)</string>
     <string name="p5b_material_canvas">Полотно</string>
     <string name="p5b_material_profile">Основний профіль</string>
