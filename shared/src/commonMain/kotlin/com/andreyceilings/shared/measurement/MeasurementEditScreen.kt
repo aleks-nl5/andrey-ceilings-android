@@ -467,7 +467,13 @@ fun MeasurementEditScreen(
                                 }
                                 MeasurementEditContext.ELEMENTS -> {
                                     val canEdit = enabled && validation.geometry != null && overlay is PointOverlayState.Loaded
-                                    if (showAdd) WorkspaceCatalogSearch(model, materialPicker, ::dismissCatalog) {
+                                    if (showAdd) WorkspaceCatalogSearch(model, materialPicker, ::dismissCatalog,
+                                        onExistingWork = { workId ->
+                                            model.clearDrawingSelection()
+                                            selectedWork = workId
+                                            dismissCatalog()
+                                        }
+                                    ) {
                                         selected = null
                                         selectedWork = null
                                         dismissCatalog()

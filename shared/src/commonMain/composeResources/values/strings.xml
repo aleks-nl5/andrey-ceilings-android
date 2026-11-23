@@ -45,8 +45,13 @@
     <string name="p5b_material_missing">Не обрано</string>
     <string name="p5b_material_archived">%1$s · архів</string>
     <string name="p5b_existing_item">У замірі · %1$s</string>
-    <string name="p5b_catalog_metadata">%1$s · %2$s · %3$s</string>
+    <string name="p5b_catalog_metadata">%1$s · %2$s</string>
     <string name="p5b_place_more">Розмістити ще</string>
+    <string name="p5b_go_to_work">Перейти до роботи</string>
+    <string name="p5b_apply_quantity">Застосувати кількість до чернетки</string>
+    <string name="p5b_in_measurement">У замірі</string>
+    <string name="p5b_material_selection_failed">Не вдалося обрати матеріал. Перевірте наявні розміщення й стан прайсу.</string>
+    <string name="p5b_line_kind_required">Щоб креслити цю роботу, встановіть тип «Лінія» у прайсі.</string>
     <string name="p5b_quantity_unknown">Кількість невідома</string>
     <string name="p5b_placement_unavailable">Розміщення недоступне для цієї кількості або типу.</string>
     <string name="p5b_work_quantities">Заявлено %1$s · На кресленні %2$s %3$s</string>

@@ -4,6 +4,9 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -67,6 +70,7 @@ internal fun WorkspaceCatalogSearch(
     model: MeasurementEditModel,
     role: BusinessRole?,
     onDismiss: () -> Unit,
+    onExistingWork: (String) -> Unit,
     onPlacedTool: () -> Unit
 ) {
     var catalog by remember(model) { mutableStateOf<List<ElementCatalogItem>?>(null) }
@@ -75,6 +79,10 @@ internal fun WorkspaceCatalogSearch(
     var selectedWork by rememberSaveable(role?.name) { mutableStateOf<String?>(null) }
     var query by rememberSaveable(role?.name) { mutableStateOf("") }
     var quantity by rememberSaveable(role?.name) { mutableStateOf("") }
+    var materialSelectionFailed by remember(role) { mutableStateOf(false) }
+    var editExisting by remember(selectedWork) { mutableStateOf(false) }
+    var existingQuantity by remember(selectedWork) { mutableStateOf("") }
+    var existingQuantityInvalid by remember(selectedWork) { mutableStateOf(false) }
     LaunchedEffect(model) {
         try {
             catalog = model.placementCatalog()
@@ -96,35 +104,71 @@ internal fun WorkspaceCatalogSearch(
             Text(work.label, style = MaterialTheme.typography.titleSmall)
             Text(workQuantityText(model, work), style = MaterialTheme.typography.bodySmall)
             val canPlace = workspaceCanPlace(model, work)
-            TextButton(onClick = { model.startWorkspacePlacement(work); onPlacedTool() }, enabled = canPlace) {
-                Text(stringResource(Res.string.p5b_place_more))
+            val editableQuantity = (work.source as? ElementSource.CatalogSelection)?.quantityMode
+                ?.workspaceQuantity() == ElementQuantity.Unknown
+            FlowRow {
+                TextButton(onClick = { onExistingWork(work.uuid) }) {
+                    Text(stringResource(Res.string.p5b_go_to_work))
+                }
+                TextButton(onClick = { model.startWorkspacePlacement(work); onPlacedTool() }, enabled = canPlace) {
+                    Text(stringResource(Res.string.p5b_place_more))
+                }
+                if (editableQuantity) TextButton(onClick = {
+                    existingQuantity = (work.quantity as? ElementQuantity.Exact)
+                        ?.let { formatElementMilli(it.milli) }.orEmpty()
+                    editExisting = true
+                    existingQuantityInvalid = false
+                }) { Text(stringResource(Res.string.p5b_edit_work)) }
             }
-            if (!canPlace) Text(stringResource(
-                if (work.supportsLinePlacement() || work.supportsAreaPlacement()) Res.string.p5b_capacity_full
-                else Res.string.p5b_placement_unavailable), style = MaterialTheme.typography.bodySmall)
+            if (editExisting && editableQuantity) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    DecimalInputField(existingQuantity, {
+                        existingQuantity = it
+                        existingQuantityInvalid = false
+                    }, stringResource(Res.string.p5b_declared_quantity, work.unit.orEmpty()),
+                        modifier = Modifier.weight(1f), isError = existingQuantityInvalid,
+                        allowDecimalSeparator = work.unit != "шт.")
+                    IconButton(onClick = {
+                        val parsed = if (existingQuantity.isBlank()) ElementQuantity.Unknown
+                            else parseElementMilli(existingQuantity, work.unit)?.let { ElementQuantity.Exact(it) }
+                        if (parsed != null && model.editWorkspaceQuantity(work.uuid, parsed)) editExisting = false
+                        else existingQuantityInvalid = true
+                    }) { Icon(Icons.Default.Check, stringResource(Res.string.p5b_apply_quantity)) }
+                    IconButton(onClick = { editExisting = false }) {
+                        Icon(Icons.Default.Close, stringResource(Res.string.p5b_cancel_placement))
+                    }
+                }
+                if (existingQuantityInvalid) Text(stringResource(Res.string.p5b_quantity_invalid),
+                    color = MaterialTheme.colorScheme.error)
+            }
+            if (!canPlace && !editExisting)
+                Text(stringResource(Res.string.p5b_capacity_full), style = MaterialTheme.typography.labelSmall)
         } else if (item != null) {
             Text(item.title, style = MaterialTheme.typography.titleSmall)
             Text(stringResource(placementLabel(item.placementKind)), style = MaterialTheme.typography.bodySmall)
             val default = item.mode.workspaceQuantity()
             val entered = if (default != ElementQuantity.Unknown || quantity.isBlank()) default
                 else parseElementMilli(quantity, item.unit)?.let { ElementQuantity.Exact(it) }
-            if (default == ElementQuantity.Unknown) {
-                DecimalInputField(quantity, { quantity = it }, stringResource(Res.string.p5b_declared_quantity, item.unit),
-                    isError = entered == null, allowDecimalSeparator = item.unit != "шт.")
-                if (quantity.isBlank()) Text(stringResource(Res.string.p5b_quantity_unknown))
-            } else Text(formatElementQuantity(default, item.unit))
             val canPlace = entered != null && item.supportsWorkspacePlacement() &&
                 (item.placementKind != PlacementKind.POINT || entered is ElementQuantity.Exact)
-            FlowRow {
-                if (item.placementKind != PlacementKind.NONE) TextButton(enabled = canPlace, onClick = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (default == ElementQuantity.Unknown) {
+                    DecimalInputField(quantity, { quantity = it },
+                        stringResource(Res.string.p5b_declared_quantity, item.unit),
+                        modifier = Modifier.weight(1f), isError = entered == null,
+                        allowDecimalSeparator = item.unit != "шт.")
+                } else Text(formatElementQuantity(default, item.unit), modifier = Modifier.weight(1f))
+                if (item.placementKind != PlacementKind.NONE) IconButton(enabled = canPlace, onClick = {
                     model.addCatalogWork(item, checkNotNull(entered), place = true)
                     onPlacedTool()
-                }) { Text(stringResource(Res.string.p5b_add_and_place)) }
-                TextButton(enabled = entered != null, onClick = {
+                }) { Icon(Icons.Default.Add, stringResource(Res.string.p5b_add_and_place)) }
+                IconButton(enabled = entered != null, onClick = {
                     model.addCatalogWork(item, checkNotNull(entered), place = false)
                     onPlacedTool()
-                }) { Text(stringResource(Res.string.p5b_add_unplaced)) }
+                }) { Icon(Icons.Default.Check, stringResource(Res.string.p5b_add_unplaced)) }
             }
+            if (item.placementKind == PlacementKind.NONE && item.mode == com.andreyceilings.shared.prices.QuantityMode.ENTERED_LENGTH)
+                Text(stringResource(Res.string.p5b_line_kind_required), style = MaterialTheme.typography.labelSmall)
         }
         return
     }
@@ -154,8 +198,8 @@ internal fun WorkspaceCatalogSearch(
     }
     listed.forEach { (element, source) ->
         val peers = linked.filter { it.first.label == element.label }
-        val id = if (peers.size > 1) "#${peers.indexOfFirst { it.first.uuid == element.uuid } + 1}" else source.code
-        WorkspaceCatalogRow(element.label, stringResource(Res.string.p5b_existing_item, id),
+        val suffix = if (peers.size > 1) " #${peers.indexOfFirst { it.first.uuid == element.uuid } + 1}" else ""
+        WorkspaceCatalogRow(element.label + suffix, stringResource(Res.string.p5b_in_measurement),
             Modifier.testTag("p5b-linked-${element.uuid}")) { selectedWork = element.uuid }
     }
     val matching = catalog.orEmpty().filter { choice ->
@@ -164,12 +208,16 @@ internal fun WorkspaceCatalogSearch(
     }
     matching.forEach { choice ->
         WorkspaceCatalogRow(choice.title,
-            stringResource(Res.string.p5b_catalog_metadata, stringResource(placementLabel(choice.placementKind)), choice.unit, choice.code),
+            stringResource(Res.string.p5b_catalog_metadata, stringResource(placementLabel(choice.placementKind)), choice.unit),
             Modifier.testTag("p5b-catalog-${choice.uuid}")) {
-            if (role != null) { model.chooseMaterial(role, choice); onDismiss() }
-            else { quantity = ""; selectedCatalog = choice.uuid }
+            if (role != null) {
+                materialSelectionFailed = !model.chooseMaterial(role, choice)
+                if (!materialSelectionFailed) onDismiss()
+            } else { quantity = ""; selectedCatalog = choice.uuid }
         }
     }
+    if (materialSelectionFailed) Text(stringResource(Res.string.p5b_material_selection_failed),
+        color = MaterialTheme.colorScheme.error)
     if (catalog != null && listed.isEmpty() && matching.isEmpty()) Text(stringResource(Res.string.p5b_catalog_empty))
 }
 
@@ -195,8 +243,15 @@ internal fun workQuantityText(model: MeasurementEditModel, work: MeasurementElem
         work.supportsAreaPlacement() -> areaQuantityMilli(model.displayAreas().filter { it.elementUuid == work.uuid }, checkNotNull(work.unit))
         else -> model.displayPoints().count { it.elementUuid == work.uuid && !it.mounting.unresolved } * 1000L
     }
-    return stringResource(Res.string.p5b_work_quantities, formatElementQuantity(work.quantity, work.unit),
-        formatElementMilli(placed), work.unit.orEmpty())
+    fun compact(value: Long): String = if (work.unit == "м²")
+        formatMeasurementAreaCompact(value / 1000.0) else formatElementMilli(value)
+    val declared = when (val quantity = work.quantity) {
+        ElementQuantity.Unknown -> "?"
+        is ElementQuantity.Exact -> compact(quantity.milli)
+        is ElementQuantity.Range -> "${compact(quantity.minMilli)}–${compact(quantity.maxMilli)}"
+        else -> formatElementQuantity(quantity, work.unit)
+    }
+    return "$declared / ${compact(placed)} ${work.unit.orEmpty()}"
 }
 
 private fun materialLabel(role: BusinessRole) =
