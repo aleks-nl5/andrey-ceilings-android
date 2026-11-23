@@ -605,8 +605,11 @@ internal fun WorkspaceStandaloneAreaList(
             val isSelected = feature.uuid == selected
             val requester = remember(feature.uuid) { BringIntoViewRequester() }
             LaunchedEffect(isSelected) { if (isSelected) requester.bringIntoView() }
-            val role = stringResource(if (feature.role == AreaRole.VOID_MARKER)
-                Res.string.p5b_void else Res.string.p5b_obstacle)
+            val role = stringResource(when (feature.role) {
+                AreaRole.OBSTACLE -> Res.string.p5b_obstacle
+                AreaRole.VOID_MARKER -> Res.string.p5b_void
+                AreaRole.GENERAL_AREA -> Res.string.p5b_area_type
+            })
             val shape = stringResource(when {
                 feature.shape is AreaShape.Circle -> Res.string.p5b_circle
                 feature.shape is AreaShape.Polygon && feature.shape.positions.isAxisAlignedRectangle() ->
@@ -616,7 +619,8 @@ internal fun WorkspaceStandaloneAreaList(
             val size = if (feature.shape is AreaShape.Circle)
                 stringResource(Res.string.p5b_diameter_value,
                     formatMillimetres(feature.shape.radiusMm * 2))
-            else formatMeasurementAreaCompact(feature.twiceAreaMm2 / 2_000_000.0) + " м²"
+            else stringResource(Res.string.p5b_annotation_area_value,
+                formatMeasurementAreaCompact(feature.twiceAreaMm2 / 2_000_000.0))
             Row(Modifier.fillMaxWidth()
                 .bringIntoViewRequester(requester)
                 .clip(RoundedCornerShape(10.dp))

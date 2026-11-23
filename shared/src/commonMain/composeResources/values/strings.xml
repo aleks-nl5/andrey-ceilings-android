@@ -55,6 +55,7 @@
     <string name="p5b_annotations_title">Позначки на кресленні</string>
     <string name="p5b_annotation_row_title">%1$s №%2$d</string>
     <string name="p5b_annotation_row_detail">%1$s · %2$s</string>
+    <string name="p5b_annotation_area_value">%1$s м²</string>
     <string name="p5b_obstacle_explain">Перешкода монтажу · початкова форма — прямокутник</string>
     <string name="p5b_void_explain">Отвір · початкова форма — коло. Не змінює площу стелі.</string>
     <string name="p5b_numeric_diameter">Діаметр, м (парні мм)</string>
