@@ -572,6 +572,7 @@ fun MeasurementEditScreen(
                                     ) {
                                         selected = null
                                         selectedWork = null
+                                        model.clearDrawingSelection()
                                         dismissCatalog()
                                     } else {
                                         WorkspacePlacementTools(model, state, canEdit, lineSnapEnabled) { lineSnapEnabled = it }
