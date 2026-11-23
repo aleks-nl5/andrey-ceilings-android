@@ -8,6 +8,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -114,7 +115,7 @@ internal fun WorkspaceGeometryPanel(
                 modifier = Modifier.semantics { contentDescription = positionDescription })
             IconButton(onClick = model::selectNextOverlappingPoint,
                 modifier = Modifier.testTag("p5b-overlap-next"), enabled = enabled) {
-                Icon(Icons.Default.ChevronRight, stringResource(Res.string.p5b_overlap_next))
+                Icon(Icons.Default.KeyboardArrowRight, stringResource(Res.string.p5b_overlap_next))
             }
         }
         IconButton(onClick = {
