@@ -4,6 +4,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.relocation.BringIntoViewRequester
 import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.layout.*
@@ -15,6 +16,9 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.CropSquare
+import androidx.compose.material.icons.filled.RadioButtonUnchecked
+import androidx.compose.material.icons.filled.ChangeHistory
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -43,43 +47,70 @@ internal fun WorkspacePlacementTools(
 ) {
     if (state.pointElementUuid != null) WorkspacePointPlacementHint(model::cancelPlacement)
     if (state.lineElementUuid != null) {
-        Text(stringResource(if (state.lineStart == null) Res.string.p5b_line_start else Res.string.p5b_line_end))
-        WorkspaceSnapControl(snap, enabled, onSnapChanged)
-        WorkspaceCancelPlacement(model)
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(stringResource(if (state.lineStart == null)
+                Res.string.p5b_line_start_short else Res.string.p5b_line_end_short),
+                modifier = Modifier.weight(1f), maxLines = 2,
+                style = MaterialTheme.typography.labelSmall)
+            WorkspaceSnapControl(snap, enabled, onSnapChanged)
+            WorkspaceCancelPlacement(model)
+        }
     }
     if (state.area.tool != null) {
-        FlowRow {
-            for (tool in AreaTool.entries) FilterChip(selected = state.area.tool == tool,
-                onClick = { model.setAreaTool(tool) }, enabled = enabled,
-                label = { Text(stringResource(when(tool) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+            for (tool in AreaTool.entries) {
+                val label = stringResource(when(tool) {
                     AreaTool.RECTANGLE -> Res.string.p5b_rectangle
                     AreaTool.CIRCLE -> Res.string.p5b_circle
                     AreaTool.POLYGON -> Res.string.p5b_polygon
-                })) })
+                })
+                val shape = when(tool) {
+                    AreaTool.RECTANGLE -> Icons.Default.CropSquare
+                    AreaTool.CIRCLE -> Icons.Default.RadioButtonUnchecked
+                    AreaTool.POLYGON -> Icons.Default.ChangeHistory
+                }
+                val isActive = state.area.tool == tool
+                IconButton(onClick = { model.setAreaTool(tool) },
+                    enabled = enabled, modifier = Modifier.size(44.dp)
+                        .background(if (isActive) MaterialTheme.colorScheme.secondaryContainer
+                            else Color.Transparent, CircleShape)
+                        .semantics { this.selected = isActive }) {
+                    Icon(shape, label)
+                }
+            }
+            Spacer(Modifier.weight(1f))
+            IconButton(enabled = enabled && model.areaCreationShape() != null,
+                onClick = model::acceptAreaCreation) {
+                Icon(Icons.Default.Check, stringResource(Res.string.p5b_finish_area))
+            }
+            WorkspaceCancelPlacement(model)
         }
         if (state.area.tool == AreaTool.CIRCLE) {
             DecimalInputField(state.area.diameter, model::setAreaDiameter, stringResource(Res.string.p5b_numeric_diameter),
                 modifier = measurementFieldFocusModifier(), enabled = enabled, compact = true)
-        }
-        FlowRow {
-            TextButton(enabled = enabled && model.areaCreationShape() != null, onClick = model::acceptAreaCreation) {
-                Text(stringResource(Res.string.p5b_finish_area))
-            }
-            WorkspaceCancelPlacement(model)
         }
     }
 }
 
 @Composable
 private fun WorkspaceCancelPlacement(model: MeasurementEditModel) {
-    TextButton(onClick = model::cancelPlacement) { Text(stringResource(Res.string.p5b_cancel_placement)) }
+    IconButton(onClick = model::cancelPlacement) {
+        Icon(Icons.Default.Close, stringResource(Res.string.p5b_cancel_placement))
+    }
 }
 
 @Composable
 private fun WorkspaceSnapControl(snap: Boolean, enabled: Boolean, onSnapChanged: (Boolean) -> Unit) {
-    FilterChip(selected = snap, onClick = { onSnapChanged(!snap) }, enabled = enabled,
-        leadingIcon = { WorkspaceMagnetIcon() },
-        label = { Text(stringResource(Res.string.p5b_line_snap_short), maxLines = 1) })
+    val label = stringResource(Res.string.p5b_line_snap_short)
+    IconButton(onClick = { onSnapChanged(!snap) }, enabled = enabled,
+        modifier = Modifier.size(44.dp)
+            .background(if (snap) MaterialTheme.colorScheme.secondaryContainer
+                else Color.Transparent, CircleShape)
+            .semantics { contentDescription = label; selected = snap }) {
+        WorkspaceMagnetIcon()
+    }
 }
 
 /** Compact, theme-aware horseshoe magnet; no emoji or platform-specific icon. */

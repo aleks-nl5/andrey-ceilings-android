@@ -88,8 +88,14 @@ internal fun WorkspaceElementsHeader(
 
 @Composable
 internal fun WorkspacePointPlacementHint(onCancel: () -> Unit) {
-    Text(stringResource(Res.string.p5b_point_tap))
-    TextButton(onCancel) { Text(stringResource(Res.string.p5b_cancel_placement)) }
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(stringResource(Res.string.p5b_point_tap), modifier = Modifier.weight(1f),
+            maxLines = 2, style = MaterialTheme.typography.labelSmall)
+        IconButton(onClick = onCancel) {
+            Icon(Icons.Default.Close, stringResource(Res.string.p5b_cancel_placement))
+        }
+    }
 }
 
 @Composable

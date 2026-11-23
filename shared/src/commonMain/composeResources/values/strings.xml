@@ -16,6 +16,8 @@
     <string name="p5b_parallel_wall">Паралельно стіні %1$s</string>
     <string name="p5b_line_start">Торкніться початку лінії або проведіть від початку до кінця.</string>
     <string name="p5b_line_end">Торкніться кінця лінії або перетягніть до нього.</string>
+    <string name="p5b_line_start_short">Початок лінії</string>
+    <string name="p5b_line_end_short">Кінець лінії</string>
     <string name="p5b_line_snap">Вирівнювати паралельно стіні</string>
     <string name="p5b_line_snap_short">Паралельно стіні</string>
     <string name="p5b_add">+ Додати</string>
