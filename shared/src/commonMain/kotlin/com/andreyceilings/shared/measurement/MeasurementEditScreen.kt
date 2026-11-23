@@ -29,6 +29,9 @@ import androidx.compose.material.icons.filled.FullscreenExit
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.CropSquare
 import androidx.compose.material.icons.filled.Category
 import androidx.compose.material.icons.filled.Straighten
@@ -165,6 +168,7 @@ fun MeasurementEditScreen(
     SideEffect { if (sheet != MeasurementSheet.CLOSED) lastOpenSheet = sheet }
     val context = if (fullscreen) fullscreenContext else normalContext
     var statusDetails by rememberSaveable(measurementUuid) { mutableStateOf(false) }
+    var saveBlockOpen by remember { mutableStateOf(false) }
     val panelState = rememberSaveableStateHolder()
     val normalContourScroll = rememberScrollState()
     val fullscreenContourScroll = rememberScrollState()
@@ -232,7 +236,7 @@ fun MeasurementEditScreen(
         state.conflict -> stringResource(Res.string.p5b_save_conflict)
         !validation.canSave -> stringResource(Res.string.p5b_save_invalid_contour)
         state.mountingInput?.dirty == true || state.coordinates?.dirty == true ||
-            state.lineProperties != null || state.area.properties != null ->
+            state.lineProperties?.dirty == true || state.area.properties?.dirty == true ->
                 stringResource(Res.string.p5b_save_apply_fields)
         state.lineStart != null || state.linePreview != null ||
             (state.area.tool != null && (state.area.vertices.isNotEmpty() || state.area.diameter.isNotBlank())) ->
@@ -364,6 +368,18 @@ fun MeasurementEditScreen(
                             }
                         }
                     }
+                    if (saveBlockedReason != null && state.dirty && enabled) Box {
+                        IconButton(onClick = { saveBlockOpen = true },
+                            modifier = Modifier.testTag("measurement-edit-save-block-reason")) {
+                            Icon(Icons.Default.Warning, stringResource(Res.string.p5b_save_show_reason),
+                                tint = MaterialTheme.colorScheme.error)
+                        }
+                        DropdownMenu(expanded = saveBlockOpen, onDismissRequest = { saveBlockOpen = false }) {
+                            DropdownMenuItem(text = {
+                                Text(saveBlockedReason, style = MaterialTheme.typography.bodySmall)
+                            }, onClick = { saveBlockOpen = false })
+                        }
+                    }
                     MeasurementEditorFab(
                         label = "Зберегти замір",
                         icon = if (saveConfirmed) Icons.Default.Check else Icons.Default.Save,
@@ -463,7 +479,7 @@ fun MeasurementEditScreen(
                                     if (detailsVisible) {
                                         OutlinedTextField(draft.name, { model.accept(MeasurementCreateIntent.Name(it), grouped = true) },
                                             enabled = enabled, label = { Text("Назва заміру *") }, singleLine = true,
-                                            modifier = measurementFieldFocusModifier().fillMaxWidth().height(52.dp).focusRequester(nameFocus)
+                                            modifier = measurementFieldFocusModifier().fillMaxWidth().height(60.dp).focusRequester(nameFocus)
                                                 .onFocusChanged { if (it.isFocused) model.beginInput() else model.commitInput() },
                                             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
                                             keyboardActions = KeyboardActions(onNext = { notesFocus.requestFocus() }),
@@ -725,21 +741,33 @@ fun MeasurementEditScreen(
         confirmButton={TextButton(enabled=!state.saving && !state.checking,onClick={ model.reviewNow(); showElements() }){Text("Перевірити")}},
         dismissButton={TextButton(enabled=!state.saving && !state.checking,onClick={scope.launch {model.reviewLater(inWorkspace = true)}}){Text("Пізніше")}})
     if (state.exitRequested) AlertDialog(onDismissRequest = model::continueEditing,
-        title = { Text("Незбережені зміни") }, text = {
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text(state.error ?: "Зберегти зміни перед поверненням до картки заміру?")
+        title = { Text(stringResource(Res.string.p5b_exit_title), style = MaterialTheme.typography.titleMedium) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(state.error ?: stringResource(if (canSave) Res.string.p5b_exit_question
+                    else Res.string.p5b_exit_blocked), style = MaterialTheme.typography.bodyMedium)
                 if (!canSave && saveBlockedReason != null)
                     Text(saveBlockedReason, style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.error)
             }
         },
-        confirmButton = { TextButton(onClick = { save(exit = true) }, enabled = canSave) {
-            Text(if (state.uncertain) "Повторити ту саму спробу" else "Зберегти й вийти")
-        } },
-        dismissButton = { Row {
-            TextButton(onClick = model::discardAndExit) { Text("Відхилити зміни") }
-            TextButton(onClick = model::continueEditing) { Text("Продовжити редагування") }
-        } })
+        confirmButton = {
+            Row(verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                FilledTonalIconButton(onClick = model::discardAndExit,
+                    modifier = Modifier.testTag("measurement-exit-discard")) {
+                    Icon(Icons.Default.Delete, stringResource(Res.string.p5b_exit_discard))
+                }
+                FilledTonalIconButton(onClick = model::continueEditing,
+                    modifier = Modifier.testTag("measurement-exit-continue")) {
+                    Icon(Icons.Default.Edit, stringResource(Res.string.p5b_exit_continue))
+                }
+                FilledIconButton(onClick = { save(exit = true) }, enabled = canSave,
+                    modifier = Modifier.testTag("measurement-exit-save")) {
+                    Icon(Icons.Default.Save, stringResource(Res.string.p5b_exit_save))
+                }
+            }
+        })
     if (reloadConfirm) AlertDialog(onDismissRequest = { reloadConfirm = false }, title = { Text("Перезавантажити замір?") },
         text = { Text("Незбережені зміни буде відхилено. Відкриються поточні дані з бази.") },
         confirmButton = { TextButton(onClick = { reloadConfirm = false; scope.launch { model.reload() } }) { Text("Перезавантажити") } },

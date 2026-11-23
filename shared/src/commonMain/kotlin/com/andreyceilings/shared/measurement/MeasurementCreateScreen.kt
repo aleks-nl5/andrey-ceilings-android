@@ -32,6 +32,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.text.style.TextOverflow
 import com.andreyceilings.shared.calculation.*
 import com.andreyceilings.shared.ui.CeilingsFab
 import com.andreyceilings.shared.ui.CeilingsFabProfile
@@ -277,9 +278,10 @@ internal fun MeasurementLengthField(value: String, label: String, error: String?
             }
         }
     }
-    OutlinedTextField(value = field, onValueChange = ::update, label = { Text(label) }, enabled = enabled, singleLine = true,
+    OutlinedTextField(value = field, onValueChange = ::update, label = { Text(label, style = if (compact) MaterialTheme.typography.labelSmall else MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis) }, enabled = enabled, singleLine = true,
+        textStyle = if (compact) MaterialTheme.typography.bodyMedium else MaterialTheme.typography.bodyLarge,
         modifier = modifier.then(measurementFieldFocusModifier()).fillMaxWidth()
-            .then(if (compact && error == null) Modifier.height(52.dp) else Modifier)
+            .then(if (compact) Modifier.height(60.dp) else Modifier)
             .onFocusChanged {
                 hasRealFocus = it.isFocused
                 onFocus(it.isFocused)

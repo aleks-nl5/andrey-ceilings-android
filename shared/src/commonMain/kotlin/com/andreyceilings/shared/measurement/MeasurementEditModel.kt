@@ -184,7 +184,9 @@ class MeasurementEditModel(
     private suspend fun saveAttempt(keepEditing:Boolean,preserveExitAction:Boolean,workspace:Boolean = false):Boolean {
         if (!mutex.tryLock()) return false
         try {
-            if (state.value.saving || state.value.checking || state.value.saved || state.value.exitReady || state.value.area.properties!=null || state.value.conflict || state.value.mountingInput!=null || state.value.lineProperties!=null) return false
+            if (state.value.saving || state.value.checking || state.value.saved || state.value.exitReady ||
+            state.value.area.properties?.dirty == true || state.value.conflict ||
+            state.value.mountingInput?.dirty == true || state.value.lineProperties?.dirty == true) return false
             commitInput()
             val before=state.value
             if (!validateMeasurementCreate(before.draft).canSave || !canSaveMountingDraft()) return false
@@ -265,7 +267,7 @@ class MeasurementEditModel(
     fun canSaveMountingDraft():Boolean = state.value.coordinates?.dirty != true &&
         state.value.mountingInput?.dirty != true &&
         (state.value.area.tool == null || (state.value.area.vertices.isEmpty() && state.value.area.diameter.isBlank())) &&
-        state.value.area.properties==null && areaCapacityError()==null && state.value.lineProperties==null &&
+        state.value.area.properties?.dirty != true && areaCapacityError()==null && state.value.lineProperties?.dirty != true &&
         state.value.linePreview==null && state.value.lineStart==null &&
         displayLines().none { it.unresolved && state.value.lineEdits[it.uuid]?.let {e ->
             val old=state.value.original.placements.lines.find {line ->line.uuid==it.uuid}

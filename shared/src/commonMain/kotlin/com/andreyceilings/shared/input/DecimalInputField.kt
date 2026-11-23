@@ -2,6 +2,7 @@ package com.andreyceilings.shared.input
 
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
@@ -38,10 +39,10 @@ fun DecimalInputField(
         field = edited
         if (changed) onValueChange(edited.text)
     }
-    OutlinedTextField(field, { update(it) }, label = { Text(label) },
+    OutlinedTextField(field, { update(it) }, label = { Text(label, style = if (compact) MaterialTheme.typography.labelSmall else MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis) },
         modifier = modifier.fillMaxWidth().focusRequester(requester)
-            .then(if (compact) Modifier.height(52.dp) else Modifier), enabled = enabled,
-        singleLine = true, isError = isError,
+            .then(if (compact) Modifier.height(60.dp) else Modifier), enabled = enabled,
+        singleLine = true, isError = isError, textStyle = if (compact) MaterialTheme.typography.bodyMedium else MaterialTheme.typography.bodyLarge,
         keyboardOptions = KeyboardOptions(
             keyboardType = if (allowDecimalSeparator) KeyboardType.Decimal else KeyboardType.Number,
             imeAction = if (onNext == null) ImeAction.Default else ImeAction.Next
