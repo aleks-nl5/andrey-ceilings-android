@@ -168,6 +168,7 @@
     <string name="p5b_line_more_than_declared">Довжина ліній перевищить заявлені %1$s. Змініть кількість олівцем вище або скоротіть лінію.</string>
     <string name="p5b_dimensions_invalid">Перевірте розміри, контур і заявлену кількість.</string>
     <string name="p5b_measurement_name">Назва заміру *</string>
+    <string name="p5b_measurement_notes">Примітки</string>
     <string name="p5b_measurement_details">Деталі заміру</string>
     <string name="p5b_live_area_value">%1$s м²</string>
     <string name="p5b_live_perimeter_value">%1$s м</string>

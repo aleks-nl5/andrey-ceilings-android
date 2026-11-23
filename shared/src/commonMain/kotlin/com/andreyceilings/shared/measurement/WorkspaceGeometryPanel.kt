@@ -39,6 +39,7 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.geometry.Offset
+import com.andreyceilings.shared.input.CompactOutlinedStringField
 import com.andreyceilings.shared.input.DecimalInputField
 import com.andreyceilings.shared.resources.*
 import org.jetbrains.compose.resources.stringResource
@@ -351,10 +352,9 @@ internal fun WorkspaceGeometryPanel(
                         allowDecimalSeparator = false, isError = !input.valid, compact = true)
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    OutlinedTextField(input.note, { model.changeLineProperties(note = it) },
-                        modifier = Modifier.weight(1f).height(56.dp), singleLine = true,
-                        textStyle = MaterialTheme.typography.bodySmall,
-                        label = { Text(stringResource(Res.string.p5b_line_note)) })
+                    CompactOutlinedStringField(input.note, { model.changeLineProperties(note = it) },
+                        label = stringResource(Res.string.p5b_line_note),
+                        modifier = Modifier.weight(1f).testTag("p5b-line-note"))
                     IconButton(onClick = model::applyLineProperties, enabled = valid) {
                         Icon(Icons.Default.Check, stringResource(Res.string.p5b_apply_draft))
                     }
@@ -392,10 +392,9 @@ internal fun WorkspaceGeometryPanel(
                     stringResource(Res.string.p5b_numeric_diameter), modifier = measurementFieldFocusModifier(), compact = true)
                 val valid = model.areaPropertiesCandidate(area, input) != null
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    OutlinedTextField(input.note, { value -> model.changeAreaProperties { it.copy(note = value) } },
-                        modifier = Modifier.weight(1f).height(56.dp), singleLine = true,
-                        textStyle = MaterialTheme.typography.bodySmall,
-                        label = { Text(stringResource(Res.string.p5b_placement_note)) })
+                    CompactOutlinedStringField(input.note, { value -> model.changeAreaProperties { it.copy(note = value) } },
+                        label = stringResource(Res.string.p5b_placement_note),
+                        modifier = Modifier.weight(1f).testTag("p5b-area-note"))
                     IconButton(onClick = model::applyAreaProperties, enabled = valid) {
                         Icon(Icons.Default.Check, stringResource(Res.string.p5b_apply_draft))
                     }

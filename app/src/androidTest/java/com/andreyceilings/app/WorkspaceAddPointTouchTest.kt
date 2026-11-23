@@ -101,7 +101,9 @@ class WorkspaceAddPointTouchTest {
             compose.onNodeWithTag("p5b-material-CANVAS").assertIsDisplayed()
             compose.onNodeWithTag("p5b-material-PRIMARY_PROFILE").assertIsDisplayed()
             compose.onNodeWithTag("measurement-workspace-add").performClick()
-            compose.onNodeWithTag("p5b-catalog-search").assertIsDisplayed()
+            val search = compose.onNodeWithTag("p5b-catalog-search").assertIsDisplayed()
+            assertEquals(52f * compose.density.density, search.fetchSemanticsNode().size.height.toFloat(), 1f,
+                "Catalog search must use the compact 52 dp ceiling field")
             compose.onNode(isDialog()).assertDoesNotExist()
             val helpTag = "p5b-catalog-$helpItemUuid"
             compose.onNodeWithTag(helpTag).performScrollTo().performClick()

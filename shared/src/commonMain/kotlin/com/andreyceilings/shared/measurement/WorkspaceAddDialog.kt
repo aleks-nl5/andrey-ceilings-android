@@ -36,6 +36,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.andreyceilings.shared.input.CompactOutlinedStringField
 import com.andreyceilings.shared.input.DecimalInputField
 import com.andreyceilings.shared.livepricing.BusinessRole
 import com.andreyceilings.shared.prices.PlacementKind
@@ -256,10 +257,9 @@ internal fun WorkspaceCatalogSearch(
 
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-        OutlinedTextField(query, { query = it },
-            Modifier.weight(1f).height(56.dp).testTag("p5b-catalog-search"),
-            singleLine = true, textStyle = MaterialTheme.typography.bodySmall,
-            label = { Text(stringResource(Res.string.p5b_search_short)) })
+        CompactOutlinedStringField(query, { query = it },
+            label = stringResource(Res.string.p5b_search_short),
+            modifier = Modifier.weight(1f).testTag("p5b-catalog-search"))
         if (role == null) {
             Box {
                 IconButton(onClick = { annotationMenu = true },

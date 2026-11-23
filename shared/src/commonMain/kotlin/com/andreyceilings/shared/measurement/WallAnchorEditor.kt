@@ -126,11 +126,11 @@ fun WallAnchorEditor(model: MeasurementEditModel, inline: Boolean = false) {
                 }
                 DecimalInputField(input.firstText, { value -> model.updateMounting { it.copy(firstText = value) } },
                     if (input.kind == WallAnchor.Kind.TWO_WALLS) "Від першої стіни, м" else "Від початку вздовж стіни, м",
-                    modifier = measurementFieldFocusModifier(),
+                    modifier = measurementFieldFocusModifier(), compact = true,
                     onNext = if (editorFocus) ({ secondField.requestFocus() }) else null)
                 DecimalInputField(input.secondText, { value -> model.updateMounting { it.copy(secondText = value) } },
                     if (input.kind == WallAnchor.Kind.TWO_WALLS) "Від другої стіни, м" else "Відступ усередину, м",
-                    modifier = measurementFieldFocusModifier().focusRequester(secondField))
+                    modifier = measurementFieldFocusModifier().focusRequester(secondField), compact = true)
             }
             // Do not show a large red geometry error before the user has typed both dimensions.
             if (input.firstText.isNotBlank() && input.secondText.isNotBlank() && solution == null)

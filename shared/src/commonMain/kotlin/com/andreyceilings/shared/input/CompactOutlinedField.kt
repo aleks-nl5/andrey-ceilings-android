@@ -1,9 +1,8 @@
 package com.andreyceilings.shared.input
 
 import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -24,7 +23,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.dp
+import com.andreyceilings.shared.theme.CeilingsFieldDefaults
 
 /**
  * Compact outlined input with genuinely smaller interior padding.
@@ -43,14 +42,17 @@ fun CompactOutlinedField(
     keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
     keyboardActions: KeyboardActions = KeyboardActions.Default,
     leadingIcon: (@Composable () -> Unit)? = null,
-    textStyle: TextStyle = MaterialTheme.typography.bodyMedium
+    textStyle: TextStyle = MaterialTheme.typography.bodyMedium,
+    maxLines: Int = 1
 ) {
+    require(maxLines > 0)
+    val singleLine = maxLines == 1
     val transformation = VisualTransformation.None
     val colors = OutlinedTextFieldDefaults.colors()
     BasicTextField(
         value = value, onValueChange = onValueChange,
-        modifier = modifier.fillMaxWidth().height(52.dp),
-        enabled = enabled, singleLine = true,
+        modifier = modifier.fillMaxWidth().heightIn(min = CeilingsFieldDefaults.CompactHeight),
+        enabled = enabled, singleLine = singleLine, maxLines = maxLines,
         keyboardOptions = keyboardOptions, keyboardActions = keyboardActions,
         textStyle = textStyle.copy(color = if (enabled) MaterialTheme.colorScheme.onSurface
             else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)),
@@ -59,12 +61,12 @@ fun CompactOutlinedField(
         decorationBox = { inner ->
             OutlinedTextFieldDefaults.DecorationBox(
                 value = value.text, innerTextField = inner,
-                enabled = enabled, singleLine = true, visualTransformation = transformation,
+                enabled = enabled, singleLine = singleLine, visualTransformation = transformation,
                 interactionSource = interactionSource, isError = isError,
                 label = { Text(label, style = MaterialTheme.typography.labelSmall,
                     maxLines = 1, overflow = TextOverflow.Ellipsis) },
                 leadingIcon = leadingIcon, colors = colors,
-                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+                contentPadding = CeilingsFieldDefaults.CompactContentPadding
             )
         }
     )
@@ -77,7 +79,8 @@ fun CompactOutlinedStringField(
     value: String, onValueChange: (String) -> Unit, label: String,
     modifier: Modifier = Modifier, enabled: Boolean = true, isError: Boolean = false,
     keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
-    keyboardActions: KeyboardActions = KeyboardActions.Default
+    keyboardActions: KeyboardActions = KeyboardActions.Default,
+    maxLines: Int = 1
 ) {
     var field by remember { mutableStateOf(TextFieldValue(value, selection = TextRange(value.length))) }
     LaunchedEffect(value) {
@@ -91,6 +94,6 @@ fun CompactOutlinedStringField(
             field = next
             if (next.text != value) onValueChange(next.text)
         }, label = label, modifier = modifier, enabled = enabled, isError = isError,
-        keyboardOptions = keyboardOptions, keyboardActions = keyboardActions
+        keyboardOptions = keyboardOptions, keyboardActions = keyboardActions, maxLines = maxLines
     )
 }

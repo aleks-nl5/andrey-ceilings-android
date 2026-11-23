@@ -229,6 +229,15 @@ class MeasurementWorkspaceLayoutTest {
             }
             try {
                 enterEditor()
+                // The ceiling editor opts into the 52 dp input style. Multiline
+                // notes expand when needed rather than clipping inside a fixed box.
+                fun assertCompact(tag: String) {
+                    val node = compose.onNodeWithTag(tag).performScrollTo().fetchSemanticsNode()
+                    assertEquals(52f * compose.density.density, node.size.height.toFloat(), 1f,
+                        "Compact ceiling field $tag must measure 52 dp at normal font scale")
+                }
+                assertCompact("measurement-edit-contour-name")
+                assertCompact("measurement-edit-contour-notes")
                 save.assertIsNotEnabled()
                 val header = compose.onNodeWithTag("measurement-edit-header").fetchSemanticsNode()
                 val statusBar = compose.runOnIdle {

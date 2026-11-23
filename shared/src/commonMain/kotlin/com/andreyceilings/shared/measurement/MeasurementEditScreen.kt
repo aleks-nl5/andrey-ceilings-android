@@ -541,14 +541,18 @@ fun MeasurementEditScreen(
                                         { model.accept(MeasurementCreateIntent.Name(it), grouped = true) },
                                         label = stringResource(Res.string.p5b_measurement_name),
                                         enabled = enabled,
-                                        modifier = measurementFieldFocusModifier().fillMaxWidth().focusRequester(nameFocus)
+                                        modifier = measurementFieldFocusModifier().fillMaxWidth()
+                                            .testTag("measurement-edit-contour-name").focusRequester(nameFocus)
                                             .onFocusChanged { if (it.isFocused) model.beginInput() else model.commitInput() },
                                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
                                         keyboardActions = KeyboardActions(onNext = { notesFocus.requestFocus() }),
                                         isError = validation.nameError != null)
-                                    OutlinedTextField(draft.notes, { model.accept(MeasurementCreateIntent.Notes(it), grouped = true) },
-                                        enabled = enabled, label = { Text("Примітки") }, maxLines = 3,
-                                        modifier = measurementFieldFocusModifier().fillMaxWidth().height(72.dp).focusRequester(notesFocus)
+                                    CompactOutlinedStringField(draft.notes,
+                                        { model.accept(MeasurementCreateIntent.Notes(it), grouped = true) },
+                                        label = stringResource(Res.string.p5b_measurement_notes),
+                                        enabled = enabled, maxLines = 3,
+                                        modifier = measurementFieldFocusModifier().fillMaxWidth()
+                                            .testTag("measurement-edit-contour-notes").focusRequester(notesFocus)
                                             .onFocusChanged { if (it.isFocused) model.beginInput() else model.commitInput() })
                                     MeasurementShapePicker(draft.shape, enabled) {
                                         focus.clearFocus()
