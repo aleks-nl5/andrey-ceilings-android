@@ -25,7 +25,8 @@ import org.jetbrains.compose.resources.stringResource
 
 @Composable
 internal fun WorkspaceElementsHeader(
-    model: MeasurementEditModel,
+    canvas: List<MeasurementElement>,
+    profile: List<MeasurementElement>,
     enabled: Boolean,
     onMaterial: (BusinessRole) -> Unit,
     onAdd: () -> Unit
@@ -33,7 +34,7 @@ internal fun WorkspaceElementsHeader(
     Column {
         Row(verticalAlignment = Alignment.CenterVertically) {
             for (role in listOf(BusinessRole.CANVAS, BusinessRole.PRIMARY_PROFILE)) {
-                val current = model.materials(role)
+                val current = if (role == BusinessRole.CANVAS) canvas else profile
                 val item = current.singleOrNull()
                 val state = when {
                     current.size > 1 -> stringResource(Res.string.p5b_material_conflict)

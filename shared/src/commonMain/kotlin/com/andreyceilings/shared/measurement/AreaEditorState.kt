@@ -23,7 +23,8 @@ data class AreaEditorState(
     val mountingIndex: Int? = null, val properties: AreaPropertiesInput? = null,
     val dismissProperties: Boolean = false, val deleteConfirm: Boolean = false, val quantityConfirm: String? = null
 ) {
-    val dirty get()=edits.isNotEmpty() || quantities.isNotEmpty() || tool!=null || properties?.dirty==true
+    val dirty get()=edits.isNotEmpty() || quantities.isNotEmpty() ||
+        (tool!=null && (vertices.isNotEmpty() || diameter.isNotBlank())) || properties?.dirty==true
     fun history()=copy(tool=null,vertices=emptyList(),drag=null,mountingIndex=null,properties=null,
         dismissProperties=false,deleteConfirm=false,quantityConfirm=null)
 }

@@ -15,6 +15,49 @@ import kotlin.test.*
 
 class WorkspacePlacementDraftTest {
     @Test
+    fun globalSaveRemainsAvailableWhileMorePointsCanStillBePlaced() = runBlocking {
+        JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).use { driver ->
+            PriceCatalogSchema.create(driver)
+            val db = PrototypeDatabase(driver)
+            val fixture = PointPlacementProof.fixture(db)
+            val store = MeasurementEditStore(db) { 101 }
+            val editor = MeasurementEditModel(store, store.load(fixture.project, fixture.id))
+            val item = store.placementCatalog().single { it.code.startsWith("fixture.") }
+            editor.addCatalogWork(item, ElementQuantity.Exact(3000), place = true)
+            val workId = assertNotNull(editor.state.value.pointElementUuid)
+            assertTrue(editor.placeWorkspacePoint(800, 800))
+            assertEquals(workId, editor.state.value.pointElementUuid)
+            assertTrue(editor.state.value.dirty)
+            assertTrue(editor.canSaveMountingDraft(), "An active POINT tool must not disable global Save")
+            editor.saveInWorkspace()
+            assertFalse(editor.state.value.dirty, editor.state.value.error)
+            val loaded = store.load(fixture.project, fixture.id)
+            assertEquals(1, loaded.placements.points.size)
+            assertEquals(ElementQuantity.Exact(3000),
+                MeasurementElementRepository(db).find(workId)?.quantity)
+            assertEquals(1000L, MeasurementElementRepository(db).find(workId)?.placedQuantityMilli)
+        }
+    }
+
+    @Test
+    fun unusedAreaToolDoesNotCreateDirtyExitButIncompleteAreaBlocksSave() = runBlocking {
+        JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).use { driver ->
+            PriceCatalogSchema.create(driver)
+            val db = PrototypeDatabase(driver)
+            val fixture = PointPlacementProof.fixture(db)
+            val editor = MeasurementEditModel(MeasurementEditStore(db) { 101 },
+                MeasurementEditStore(db) { 101 }.load(fixture.project, fixture.id))
+            editor.beginArea(AreaRole.OBSTACLE)
+            assertFalse(editor.state.value.dirty, "Entering an empty tool is a UI state, not a database change")
+            editor.areaTap(1100, 1200)
+            assertTrue(editor.state.value.dirty)
+            assertFalse(editor.canSaveMountingDraft(), "Incomplete AREA must not silently persist")
+            editor.cancelPlacement()
+            assertFalse(editor.state.value.dirty)
+        }
+    }
+
+    @Test
     fun coincidentPointMarkersCanBeSelectedIndividuallyWithoutMovingGeometry() = runBlocking {
         JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).use { driver ->
             PriceCatalogSchema.create(driver)

@@ -259,7 +259,14 @@ class MeasurementEditModel(
         if(!state.value.saving && !state.value.saved) mutableState.value=state.value.copy(conflict=true,error="Позначки змінено іншим редактором. Чернетку збережено; перезавантажте актуальні дані.",drag=null)
     }
     fun draftWalls() = ceilingDraftWalls(state.value.original,state.value.draft,state.value.wallGeneration)
-    fun canSaveMountingDraft():Boolean = state.value.coordinates?.dirty != true && state.value.lineElementUuid==null && state.value.pointElementUuid==null && state.value.area.tool==null && state.value.area.properties==null && areaCapacityError()==null && state.value.lineProperties==null && state.value.linePreview==null && state.value.lineStart==null &&
+    // Active placement tools are transient UI modes. A partially filled POINT quantity and an
+    // idle LINE/AREA tool do not invalidate the persistent draft or block the global Save.
+    // In-progress vertices, line endpoints and un-applied numerical input still block it.
+    fun canSaveMountingDraft():Boolean = state.value.coordinates?.dirty != true &&
+        state.value.mountingInput?.dirty != true &&
+        (state.value.area.tool == null || (state.value.area.vertices.isEmpty() && state.value.area.diameter.isBlank())) &&
+        state.value.area.properties==null && areaCapacityError()==null && state.value.lineProperties==null &&
+        state.value.linePreview==null && state.value.lineStart==null &&
         displayLines().none { it.unresolved && state.value.lineEdits[it.uuid]?.let {e ->
             val old=state.value.original.placements.lines.find {line ->line.uuid==it.uuid}
             !e.defer && e.value.deletedAt==null && (old==null || e.confirm || e.remeasuredStart || e.remeasuredEnd ||

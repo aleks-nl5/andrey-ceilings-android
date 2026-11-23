@@ -413,7 +413,8 @@ fun MeasurementEditScreen(
                         val panelTag = Modifier.testTag("measurement-edit-context-panel")
                         Column(panelModifier.fillMaxWidth().then(if (elementsContext) panelTag else Modifier)) {
                             if (context == MeasurementEditContext.ELEMENTS) WorkspaceElementsHeader(
-                                model = model,
+                                canvas = model.materials(com.andreyceilings.shared.livepricing.BusinessRole.CANVAS),
+                                profile = model.materials(com.andreyceilings.shared.livepricing.BusinessRole.PRIMARY_PROFILE),
                                 enabled = enabled && validation.geometry != null && overlay is PointOverlayState.Loaded,
                                 onMaterial = { role ->
                                     focus.clearFocus()

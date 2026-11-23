@@ -86,6 +86,7 @@ class WorkspaceAddPointTouchTest {
             val canvasTag = "p5b-catalog-${canvasItem.uuid}"
             compose.waitUntil(15_000) { compose.onAllNodes(hasTestTag(canvasTag)).fetchSemanticsNodes().isNotEmpty() }
             compose.onNodeWithTag(canvasTag).performScrollTo().performClick()
+            compose.onNodeWithTag("p5b-material-CANVAS").assertTextContains(canvasItem.title, substring = true)
             compose.runOnIdle {
                 assertTrue(shown.value.state.value.additions.elements.values.any {
                     it.businessRole == com.andreyceilings.shared.livepricing.BusinessRole.CANVAS &&
