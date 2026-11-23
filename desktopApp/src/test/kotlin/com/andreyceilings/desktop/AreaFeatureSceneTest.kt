@@ -152,12 +152,15 @@ class AreaFeatureSceneTest {
     private fun ImageComposeScene.click(label: String, tag: String? = null) {
         repeat(240) { frame(); nodes().firstOrNull {
             it.config.getOrNull(SemanticsActions.OnClick) != null &&
+                it.config.getOrNull(SemanticsProperties.Disabled) == null &&
                 (if (tag != null) it.config.getOrNull(SemanticsProperties.TestTag) == tag
                 else it.textTree() == label || label in it.config.getOrNull(SemanticsProperties.ContentDescription).orEmpty())
         }?.let {
-            assertNull(it.config.getOrNull(SemanticsProperties.Disabled), label)
-            assertTrue(it.config.getOrNull(SemanticsActions.OnClick)?.action?.invoke() == true); frame(); return }; Thread.sleep(25) }
-        fail("Missing action '$label': ${text().take(2000)}")
+            assertTrue(it.config.getOrNull(SemanticsActions.OnClick)?.action?.invoke() == true)
+            frame()
+            return
+        }; Thread.sleep(25) }
+        fail("Missing enabled action '$label': ${text().take(2000)}")
     }
     private fun ImageComposeScene.setField(label: String, value: String) {
         repeat(240) { frame(); nodes().firstOrNull { it.config.getOrNull(SemanticsActions.SetText) != null && it.textTree().contains(label) }?.let {
