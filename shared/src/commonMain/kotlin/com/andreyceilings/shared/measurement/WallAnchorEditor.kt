@@ -81,8 +81,12 @@ fun WallAnchorEditor(model: MeasurementEditModel, inline: Boolean = false) {
             DecimalInputField(input.secondText, { value -> model.updateMounting { it.copy(secondText = value) } },
                 if (input.kind == WallAnchor.Kind.TWO_WALLS) "Від другої стіни, м" else "Відступ усередину, м",
                 modifier = measurementFieldFocusModifier().focusRequester(secondField))
-            if(solution==null) Text("Немає однозначної внутрішньої точки з проєкціями на обрані відрізки. Перевірте розміри, оберіть інші стіни або спосіб «Уздовж + усередину».",color=MaterialTheme.colorScheme.error)
-            else Text("Фактично після округлення до мм: ${formatPointMetres(solution.firstActualMm.roundToLong())} м / ${formatPointMetres(solution.secondActualMm.roundToLong())} м. Похибка представлення не перевищує 1 мм.")
+            // Do not show a large red geometry error before the user has typed both dimensions.
+            if (input.firstText.isNotBlank() && input.secondText.isNotBlank() && solution == null)
+                Text("Немає допустимої точки. Перевірте відступи або оберіть «Уздовж + усередину».",
+                    color = MaterialTheme.colorScheme.error)
+            else if (solution != null && !inline)
+                Text("Перевірено: ${formatPointMetres(solution.firstActualMm.roundToLong())} м / ${formatPointMetres(solution.secondActualMm.roundToLong())} м")
             state.error?.let {Text(it,color=MaterialTheme.colorScheme.error)}
             if (!inline) Text("Застосування змінює тільки чернетку. Для запису всієї стелі натисніть «Зберегти».")
         } }
