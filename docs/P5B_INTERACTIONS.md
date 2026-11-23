@@ -16,6 +16,12 @@ A short projected LINE uses point distance when both projected endpoints coincid
 
 POINT, LINE and AREA selection must stay exclusive. Creating a placement never derives a billed quantity from the new marker count. Existing LINE and AREA controls use the editor transaction already. The shared Add flow stages new catalog work and POINT in the editor. Existing LINE and AREA writers handle their draft overlays. Save uses one SQLDelight transaction. The first journal applies the contour, existing overlays and catalog-linked additions. For new POINTs, the existing guarded insertion uses the resulting contour. A second journal records those POINT versions and applies any measured anchors. Both journals commit or roll back together. Each retry checks the original request and the resulting versions before returning the saved measurement.
 
+## Owner correction: free obstacle/hole selection and one annotation picker (23.11.2026)
+
+- Free OBSTACLE and VOID_MARKER features have no catalog MeasurementElement: **their own selectable rows** are mandatory in the Elements list. A single tap on either shape must highlight its row (and scroll if needed) **without opening its properties**. Explicit settings action or fullscreen double tap opens the geometry editor.
+- The two visually duplicative shortcuts next to search are replaced with one "Позначка на кресленні" entry whose menu chooses "Перешкода" (initial RECTANGLE) or "Позначка отвору" (initial CIRCLE). Role and geometry tool are separate; neither changes ceiling area or billed quantity.
+- The originally written 2-quick-actions description in P5B UX spec is historical and superseded by the owner correction above. Do not reintroduce it just because a prior test expects two shortcuts.
+
 ## Acceptance mapping
 
 - Exercise tap/tap, drag, snap, bypass, zoom and short LINE inputs through the production drawing. Verify both placement endpoints, selected UUID and Undo/Redo on the production model.

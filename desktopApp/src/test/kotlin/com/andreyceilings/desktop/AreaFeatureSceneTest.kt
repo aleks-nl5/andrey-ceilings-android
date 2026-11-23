@@ -48,6 +48,7 @@ class AreaFeatureSceneTest {
                 }
                 scene.click("Елементи")
                 scene.click("Додати елемент стелі")
+                scene.click("Позначка на кресленні")
                 scene.click("Перешкода")
                 scene.tapWorld(500,500)
                 assertEquals(1,model.state.value.area.vertices.size,"First area corner must be delivered in $dark theme")
@@ -55,14 +56,23 @@ class AreaFeatureSceneTest {
                 assertEquals(2,model.state.value.area.vertices.size,"Second area corner must be delivered in $dark theme")
                 scene.click("Завершити фігуру в чернетці")
                 assertEquals(1,model.displayAreas().size)
-                scene.click("Редагувати розміри")
+                val firstNoteId = model.displayAreas().single().uuid
+                assertTrue(scene.nodes().any {
+                    it.config.getOrNull(SemanticsProperties.TestTag) ==
+                        "p5b-standalone-area-$firstNoteId"
+                }, "An unlinked obstacle must appear in the Elements list")
+                assertFalse(scene.text().contains("Ширина, м"),
+                    "A selected obstacle must not automatically open geometry fields")
+                scene.click("Відкрити параметри розміщення",
+                    tag = "p5b-open-standalone-area-$firstNoteId")
                 scene.setField("Ширина прямокутника, м", "0,7")
                 scene.setField("Висота прямокутника, м", "0,6")
                 scene.click("Оновити на кресленні (у чернетці)")
                 assertEquals(AreaShape.rectangle(PointPositionMm(500, 500), PointPositionMm(1200, 1100)),
                     model.displayAreas().single().shape)
                 scene.click("Додати елемент стелі")
-                scene.click("Отвір")
+                scene.click("Позначка на кресленні")
+                scene.click("Позначка отвору")
                 scene.setField("Діаметр, м (парні мм)", "0,2")
                 scene.tapWorld(2500, 1500)
                 assertEquals(1, model.state.value.area.vertices.size, "Circle center must be delivered in $dark theme")
@@ -81,8 +91,12 @@ class AreaFeatureSceneTest {
                 scene.click("На весь екран");scene.click("Вписати креслення")
                 scene.click("Згорнути")
                 scene.tapWorld(2500,1500)
-                assertEquals(AreaRole.VOID_MARKER,model.displayAreas().first {it.uuid==model.state.value.area.selected}.role)
-                scene.click("Редагувати розміри")
+                val noteId = model.displayAreas().first {it.uuid==model.state.value.area.selected}.uuid
+                assertEquals(AreaRole.VOID_MARKER,model.displayAreas().first {it.uuid==noteId}.role)
+                assertTrue(scene.nodes().any {
+                    it.config.getOrNull(SemanticsProperties.TestTag) == "p5b-standalone-area-$noteId"
+                }, "A single tap must reveal/highlight the annotation row")
+                scene.click("Відкрити параметри розміщення", tag = "p5b-open-standalone-area-$noteId")
                 scene.setField("Діаметр, м (парні мм)", "")
                 scene.setField("Діаметр, м (парні мм)", ".")
                 assertEquals("0.", model.state.value.area.properties?.diameter)
@@ -92,6 +106,7 @@ class AreaFeatureSceneTest {
                 scene.setField("Діаметр, м (парні мм)", ".008")
                 scene.setField("Примітка фігури","Вентиляція");scene.click("Оновити на кресленні (у чернетці)")
                 assertEquals(4L, (model.displayAreas().first { it.role == AreaRole.VOID_MARKER }.shape as AreaShape.Circle).radiusMm)
+                scene.click("Відкрити параметри розміщення", tag = "p5b-open-standalone-area-$noteId")
                 scene.click("Видалити розміщення");scene.click("Видалити");assertEquals(2,model.displayAreas().size)
                 scene.click("Скасувати дію");assertEquals(3,model.displayAreas().size)
                 val ids=model.displayAreas().map {it.uuid}.toSet()

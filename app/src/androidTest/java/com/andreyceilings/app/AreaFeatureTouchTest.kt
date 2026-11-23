@@ -117,7 +117,10 @@ class AreaFeatureTouchTest {
 
         fun begin(label: String?, tool: AreaTool) {
             compose.onNodeWithTag("measurement-workspace-add").assertIsDisplayed().assertIsEnabled().performClick()
-            if (label != null) click(label)
+            if (label != null) {
+                click("Позначка на кресленні")
+                click(label)
+            }
             else {
                 compose.onNodeWithTag("p5b-linked-${element.uuid}").performScrollTo().assertIsEnabled().performClick()
                 assertNull(model.state.value.area.tool)
@@ -140,6 +143,10 @@ class AreaFeatureTouchTest {
                 val selected = model.displayAreas().singleOrNull { it.uuid == model.state.value.area.selected }
                 assertNotNull(selected, stateSummary())
                 assertEquals(role, selected.role, stateSummary())
+                if (selected.elementUuid == null) {
+                    compose.onNodeWithTag("p5b-standalone-area-${selected.uuid}").assertExists()
+                    compose.onNodeWithTag("p5b-open-standalone-area-${selected.uuid}").assertExists()
+                }
                 assertTrue(AreaFeatureRepository(db).all().isEmpty(), "Only Save may persist areas")
             }
         }
@@ -153,7 +160,7 @@ class AreaFeatureTouchTest {
             tap(1000,1000,2)
             finish(1, AreaRole.OBSTACLE)
 
-            begin("Отвір", AreaTool.CIRCLE)
+            begin("Позначка отвору", AreaTool.CIRCLE)
             compose.onNodeWithText("Діаметр, м (парні мм)").performScrollTo().performTextInput("0,2")
             compose.runOnIdle {
                 assertEquals("0,2", model.state.value.area.diameter, "Circle diameter input; ${stateSummary()}")
@@ -197,7 +204,9 @@ class AreaFeatureTouchTest {
                 doubleClick(Offset(screenPoint.x.toFloat(), screenPoint.y.toFloat()))
             }
             compose.runOnIdle { assertEquals(circleInFullscreen.uuid, model.state.value.area.selected) }
-            compose.onNodeWithContentDescription("Редагувати розміри").assertExists()
+            compose.runOnIdle { assertEquals(circleInFullscreen.uuid,
+                model.state.value.area.properties?.uuid) }
+            compose.onNodeWithText("Діаметр, м (парні мм)").assertExists()
             click("Згорнути")
             // Wait until the normal canvas and its viewport have replaced the fullscreen layout.
             compose.onNodeWithTag("measurement-edit-normal-panel").assertExists()
@@ -206,7 +215,14 @@ class AreaFeatureTouchTest {
                 model.displayAreas().single { it.shape is AreaShape.Circle }
             }
             val center = (circle.shape as AreaShape.Circle).center
+            compose.runOnIdle {
+                model.discardAreaProperties()
+                model.clearDrawingSelection()
+            }
             tap(center.xMm, center.yMm)
+            compose.onNodeWithTag("p5b-standalone-area-${circle.uuid}").assertExists()
+            compose.onNodeWithTag("p5b-open-standalone-area-${circle.uuid}").assertExists()
+            compose.onNodeWithText("Примітка фігури").assertDoesNotExist()
             compose.runOnIdle {
                 assertEquals(
                     circle.uuid, model.state.value.area.selected,
@@ -214,10 +230,11 @@ class AreaFeatureTouchTest {
                         "areaTool=${model.state.value.area.tool}; areas=${model.displayAreas().map { it.uuid }}"
                 )
             }
-            click("Редагувати розміри")
+            compose.onNodeWithTag("p5b-open-standalone-area-${circle.uuid}").performClick()
             compose.onNode(isDialog()).assertDoesNotExist()
             compose.onNodeWithText("Примітка фігури").performScrollTo().performTextInput("Тестова позначка")
             click("Оновити на кресленні (у чернетці)")
+            compose.onNodeWithTag("p5b-open-standalone-area-${circle.uuid}").performClick()
             click("Видалити розміщення");compose.onNodeWithText("Видалити",useUnmergedTree=true).performClick()
             compose.runOnIdle {assertEquals(2,model.displayAreas().size)}
             click("Скасувати дію")
