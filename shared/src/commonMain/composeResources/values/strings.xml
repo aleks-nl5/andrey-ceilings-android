@@ -39,6 +39,8 @@
     <string name="p5b_point_requires_quantity">Щоб розмістити точку, введіть цілу заявлену кількість.</string>
     <string name="p5b_linked_work">Роботи цього заміру</string>
     <string name="p5b_catalog_work">Додати з прайсу</string>
+    <string name="p5b_approval_discussing">Обговорюється</string>
+    <string name="p5b_approval_approved">Погоджено</string>
     <string name="p5b_catalog_search">Пошук за назвою або кодом</string>
     <string name="p5b_search_short">Пошук</string>
     <string name="p5b_catalog_loading">Завантаження прайсу…</string>

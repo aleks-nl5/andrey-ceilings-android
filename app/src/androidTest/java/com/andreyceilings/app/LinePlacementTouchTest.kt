@@ -70,16 +70,20 @@ class LinePlacementTouchTest {
                 compose.onNode(action).assertIsEnabled().performClick()
             }
             click("Елементи")
-            // The work label is inset, but the actual click/ripple bounds must
-            // begin at the card's left edge, not at its text padding.
+            // A leading approval icon now takes the first slot. The work label
+            // remains separately clickable with an 8dp text inset.
             val rowBounds = compose.onNodeWithTag("p5b-work-row-${short.uuid}",
                 useUnmergedTree = true).performScrollTo().fetchSemanticsNode().boundsInRoot
             val clickableBounds = compose.onNodeWithTag("p5b-work-label-click-${short.uuid}",
                 useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
             val textBounds = compose.onNodeWithTag("p5b-work-label-text-${short.uuid}",
                 useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
-            assertEquals(rowBounds.left, clickableBounds.left, 1f,
-                "Work label ripple/click area must start at the card edge")
+            val approvalBounds = compose.onNodeWithTag("p5b-approval-${short.uuid}",
+                useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+            assertTrue(approvalBounds.left >= rowBounds.left,
+                "Approval button should start in the leading slot")
+            assertTrue(clickableBounds.left > rowBounds.left,
+                "Work label must follow the approval button")
             assertTrue(textBounds.left >= clickableBounds.left + 7f * compose.density.density,
                 "Title text must keep its 8dp left inset inside the clickable surface")
             val placedLinePencil = compose.onNodeWithTag("p5b-edit-work-${short.uuid}")
@@ -107,7 +111,7 @@ class LinePlacementTouchTest {
             inlineLength.performTextReplacement("2,6")
             click("Застосувати кількість до чернетки")
             assertEquals(ElementQuantity.Exact(2600),
-                model.workspaceWorks().single { it.uuid == short.uuid }.quantity)
+                model.state.value.additions.editedWorks[short.uuid]?.quantity)
             assertEquals(original, model.displayLines().single { it.uuid == original.uuid },
                 "Manual length must not resize the drawn line")
             // Work-list pencil can be reopened after the first placed segment.
@@ -117,7 +121,7 @@ class LinePlacementTouchTest {
                 .performScrollTo().performTextReplacement("2,5")
             click("Застосувати кількість до чернетки")
             assertEquals(ElementQuantity.Exact(2500),
-                model.workspaceWorks().single { it.uuid == short.uuid }.quantity)
+                model.state.value.additions.editedWorks[short.uuid]?.quantity)
             // Gear is deliberately different: it opens the placed-line
             // geometry editor, not the inline work-quantity field.
             compose.onNodeWithTag("p5b-open-geometry-${short.uuid}")
@@ -159,7 +163,7 @@ class LinePlacementTouchTest {
             assertEquals(original.end, unchanged.end)
             assertEquals(250L, unchanged.lengthMm)
             assertEquals(ElementQuantity.Exact(325),
-                model.workspaceWorks().single { it.uuid == short.uuid }.quantity)
+                model.state.value.additions.editedWorks[short.uuid]?.quantity)
             assertEquals(ElementQuantity.Exact(2500), elements.find(short.uuid)?.quantity,
                 "Draft claim must not hit the database before overall Save")
             click("Редагувати розміри")
@@ -167,7 +171,7 @@ class LinePlacementTouchTest {
             compose.onNodeWithTag("p5b-line-take-length").performClick()
             click("Оновити кошторис")
             assertEquals(ElementQuantity.Exact(250),
-                model.workspaceWorks().single { it.uuid == short.uuid }.quantity)
+                model.state.value.additions.editedWorks[short.uuid]?.quantity)
             compose.onNodeWithTag("p5b-line-declared-length").assertTextContains("0,25")
             assertEquals(unchanged, model.displayLines().single { it.uuid == original.uuid })
         } finally {

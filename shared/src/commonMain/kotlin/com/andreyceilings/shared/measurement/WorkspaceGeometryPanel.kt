@@ -17,6 +17,8 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.ChatBubbleOutline
 import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.CropSquare
@@ -35,6 +37,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.StrokeCap
@@ -614,7 +617,7 @@ internal fun WorkspaceStandaloneAreaList(
                     .testTag("p5b-standalone-label-click-${feature.uuid}")
                     .semantics { this.selected = isSelected }
                     .clickable(enabled = enabled) {
-                        onSelect(if (isSelected) null else feature.uuid)
+                        onSelect(feature.uuid)
                     }.padding(start = 8.dp), verticalArrangement = Arrangement.Center) {
                     Text(stringResource(Res.string.p5b_annotation_row_title,
                         role, index + 1), style = MaterialTheme.typography.bodyMedium,
@@ -623,18 +626,16 @@ internal fun WorkspaceStandaloneAreaList(
                         style = MaterialTheme.typography.labelSmall,
                         maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
-                // Match the four compact action columns of the paid-work rows.
-                // Annotations are already placed and have no payable quantity,
-                // so the place/pencil slots remain empty rather than fake actions.
-                Spacer(Modifier.size(44.dp))
+                // Gear and trash occupy the last two compact action slots.
+                Spacer(Modifier.size(40.dp))
+                Spacer(Modifier.size(40.dp))
                 IconButton(onClick = { onOpenGeometry(feature.uuid) }, enabled = enabled,
-                    modifier = Modifier.size(44.dp).testTag("p5b-open-standalone-area-${feature.uuid}")) {
+                    modifier = Modifier.size(40.dp).testTag("p5b-open-standalone-area-${feature.uuid}")) {
                     Icon(Icons.Default.Settings,
                         stringResource(Res.string.p5b_open_geometry_parameters))
                 }
-                Spacer(Modifier.size(44.dp))
                 IconButton(onClick = { deletion = true }, enabled = enabled,
-                    modifier = Modifier.size(44.dp).testTag("p5b-delete-standalone-area-${feature.uuid}")) {
+                    modifier = Modifier.size(40.dp).testTag("p5b-delete-standalone-area-${feature.uuid}")) {
                     Icon(Icons.Default.Delete, stringResource(Res.string.p5b_delete_placement))
                 }
             }
@@ -674,6 +675,7 @@ internal fun WorkspaceWorkList(
     var quantityEditingWork by rememberSaveable { mutableStateOf<String?>(null) }
     for (work in works) key(work.uuid) {
         var deletion by remember { mutableStateOf(false) }
+        var approvalMenu by remember { mutableStateOf(false) }
         val isSelected = selected == work.uuid
         val isHighlighted = highlightedWorkId == work.uuid
         val relocation = workspaceRowRelocation(
@@ -705,13 +707,48 @@ internal fun WorkspaceWorkList(
                 alpha = if (isHighlighted) 0.9f else 0.48f) else Color.Transparent,
                 RoundedCornerShape(10.dp)),
             verticalAlignment = Alignment.CenterVertically) {
-            // The 8dp text indent belongs INSIDE the clickable surface.
-            // Click/ripple must still extend all the way to the card's left edge.
+            // The compact status button is separate from the row selection.
+            val approvedTint = if (MaterialTheme.colorScheme.surface.luminance() > 0.5f)
+                Color(0xFF2E7D32) else Color(0xFF81C784)
+            Box(Modifier.size(36.dp)) {
+                IconButton(onClick = { approvalMenu = true }, enabled = enabled,
+                    modifier = Modifier.size(36.dp).testTag("p5b-approval-${work.uuid}")) {
+                    Icon(if (work.approval == ElementApproval.APPROVED) Icons.Default.CheckCircle
+                        else Icons.Default.ChatBubbleOutline,
+                        contentDescription = stringResource(if (work.approval == ElementApproval.APPROVED)
+                            Res.string.p5b_approval_approved else Res.string.p5b_approval_discussing),
+                        tint = if (work.approval == ElementApproval.APPROVED) approvedTint
+                            else MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(20.dp))
+                }
+                DropdownMenu(expanded = approvalMenu, onDismissRequest = { approvalMenu = false }) {
+                    for (approval in listOf(ElementApproval.DISCUSSING, ElementApproval.APPROVED)) {
+                        DropdownMenuItem(
+                            text = { Text(stringResource(if (approval == ElementApproval.APPROVED)
+                                Res.string.p5b_approval_approved else Res.string.p5b_approval_discussing)) },
+                            leadingIcon = {
+                                Icon(if (approval == ElementApproval.APPROVED) Icons.Default.CheckCircle
+                                    else Icons.Default.ChatBubbleOutline, contentDescription = null,
+                                    tint = if (approval == ElementApproval.APPROVED) approvedTint
+                                        else MaterialTheme.colorScheme.onSurfaceVariant)
+                            },
+                            trailingIcon = {
+                                if (work.approval == approval) Icon(Icons.Default.Check, contentDescription = null)
+                            },
+                            onClick = {
+                                if (model.changeWorkspaceApproval(work.uuid, approval)) approvalMenu = false
+                            },
+                            modifier = Modifier.testTag("p5b-set-approval-${approval.name}-${work.uuid}")
+                        )
+                    }
+                }
+            }
+            // The 8dp label inset remains within the clickable text surface.
             Column(Modifier.weight(1f).heightIn(min = 48.dp)
                 .clip(RoundedCornerShape(10.dp))
                 .testTag("p5b-work-label-click-${work.uuid}")
                 .semantics { this.selected = isSelected || isHighlighted }.clickable(enabled = enabled) {
-                onSelect(if (isSelected) null else work.uuid)
+                onSelect(work.uuid)
             }.padding(start = 8.dp), verticalArrangement = Arrangement.Center) {
                 Text(shownTitle, modifier = Modifier.testTag("p5b-work-label-text-${work.uuid}"),
                     style = if (isSelected) MaterialTheme.typography.titleSmall else MaterialTheme.typography.bodyMedium,
@@ -730,7 +767,7 @@ internal fun WorkspaceWorkList(
             }
             IconButton(onClick = { onSelect(null); model.startWorkspacePlacement(work) },
                 enabled = enabled && workspaceCanPlace(model, work),
-                modifier = Modifier.size(44.dp).testTag("p5b-place-work-${work.uuid}")) {
+                modifier = Modifier.size(40.dp).testTag("p5b-place-work-${work.uuid}")) {
                 Icon(Icons.Default.OpenWith, stringResource(Res.string.p5b_place_more))
             }
             IconButton(onClick = {
@@ -739,7 +776,7 @@ internal fun WorkspaceWorkList(
                     onOpenGeometry()
                 }
             }, enabled = enabled && hasPlacement,
-                modifier = Modifier.size(44.dp).testTag("p5b-open-geometry-${work.uuid}")) {
+                modifier = Modifier.size(40.dp).testTag("p5b-open-geometry-${work.uuid}")) {
                 Icon(Icons.Default.Settings, stringResource(Res.string.p5b_open_geometry_parameters))
             }
             val source = work.source as? ElementSource.CatalogSelection
@@ -754,11 +791,11 @@ internal fun WorkspaceWorkList(
                     quantityEditingWork = if (closingSameEditor) null else work.uuid
                 }
             }, enabled = enabled && editableQuantity,
-                modifier = Modifier.size(44.dp).testTag("p5b-edit-work-${work.uuid}")) {
+                modifier = Modifier.size(40.dp).testTag("p5b-edit-work-${work.uuid}")) {
                 Icon(Icons.Default.Edit, stringResource(Res.string.p5b_edit_work))
             }
             IconButton(onClick = { deletion = true }, enabled = enabled,
-                modifier = Modifier.size(44.dp).testTag("p5b-delete-work-${work.uuid}")) {
+                modifier = Modifier.size(40.dp).testTag("p5b-delete-work-${work.uuid}")) {
                 Icon(Icons.Default.Delete, stringResource(Res.string.p5b_delete_work))
             }
         }

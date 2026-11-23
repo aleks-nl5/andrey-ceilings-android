@@ -15,6 +15,54 @@ import kotlin.test.*
 
 class WorkspacePlacementDraftTest {
     @Test
+    fun catalogApprovalDefaultsToDiscussingAndCanBeApprovedWithUndoRedoAndSave() = runBlocking {
+        JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).use { driver ->
+            PriceCatalogSchema.create(driver)
+            val db = PrototypeDatabase(driver)
+            val fixture = PointPlacementProof.fixture(db)
+            val store = MeasurementEditStore(db) { 101 }
+            val item = addItem(db, "Approval work", PlacementKind.POINT, "шт.")
+            val editor = MeasurementEditModel(store, store.load(fixture.project, fixture.id))
+
+            editor.addCatalogWork(item, ElementQuantity.Exact(2000), place = false)
+            val newWork = editor.workspaceWorks().single { it.label == item.title }
+            assertEquals(ElementApproval.DISCUSSING, newWork.approval)
+            assertNull(MeasurementElementRepository(db).find(newWork.uuid),
+                "Approval changes must not bypass global Save")
+            assertTrue(editor.changeWorkspaceApproval(newWork.uuid, ElementApproval.APPROVED))
+            assertEquals(ElementApproval.APPROVED,
+                editor.workspaceWorks().single { it.uuid == newWork.uuid }.approval)
+            editor.undo()
+            assertEquals(ElementApproval.DISCUSSING,
+                editor.workspaceWorks().single { it.uuid == newWork.uuid }.approval)
+            editor.redo()
+            assertEquals(ElementApproval.APPROVED,
+                editor.workspaceWorks().single { it.uuid == newWork.uuid }.approval)
+            editor.saveInWorkspace()
+            assertEquals(ElementApproval.APPROVED,
+                MeasurementElementRepository(db).find(newWork.uuid)?.approval)
+
+            val second = MeasurementEditModel(store, store.load(fixture.project, fixture.id))
+            second.addCatalogWork(item, ElementQuantity.Exact(1000), place = false,
+                approval = ElementApproval.APPROVED)
+            val approvedWork = second.workspaceWorks()
+                .single { it.uuid != newWork.uuid && it.label == item.title }
+            assertEquals(ElementApproval.APPROVED, approvedWork.approval)
+            second.saveInWorkspace()
+            assertEquals(ElementApproval.APPROVED,
+                MeasurementElementRepository(db).find(approvedWork.uuid)?.approval)
+
+            val existing = MeasurementEditModel(store, store.load(fixture.project, fixture.id))
+            assertTrue(existing.changeWorkspaceApproval(approvedWork.uuid, ElementApproval.DISCUSSING))
+            existing.saveInWorkspace()
+            assertEquals(ElementApproval.DISCUSSING,
+                MeasurementElementRepository(db).find(approvedWork.uuid)?.approval)
+            assertEquals(ElementQuantity.Exact(1000),
+                MeasurementElementRepository(db).find(approvedWork.uuid)?.quantity)
+        }
+    }
+
+    @Test
     fun workListDetailsUsesExistingPlacementAndWorkUuid() = runBlocking {
         JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).use { driver ->
             PriceCatalogSchema.create(driver)

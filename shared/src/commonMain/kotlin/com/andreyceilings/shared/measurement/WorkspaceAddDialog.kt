@@ -116,6 +116,7 @@ internal fun WorkspaceCatalogSearch(
     var selectedWork by rememberSaveable(role?.name) { mutableStateOf<String?>(null) }
     var query by rememberSaveable(role?.name) { mutableStateOf("") }
     var quantity by rememberSaveable(role?.name) { mutableStateOf("") }
+    var approvedNewWork by rememberSaveable(selectedCatalog) { mutableStateOf(false) }
     var materialSelectionFailed by remember(role) { mutableStateOf(false) }
     var annotationMenu by remember { mutableStateOf(false) }
     var editExisting by remember(selectedWork) { mutableStateOf(false) }
@@ -226,6 +227,12 @@ internal fun WorkspaceCatalogSearch(
                 }
             }
             Text(stringResource(placementLabel(item.placementKind)), style = MaterialTheme.typography.bodySmall)
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text(stringResource(Res.string.p5b_approval_approved),
+                    modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                Checkbox(checked = approvedNewWork, onCheckedChange = { approvedNewWork = it },
+                    modifier = Modifier.testTag("p5b-add-approved"))
+            }
             val default = item.mode.workspaceQuantity()
             val entered = if (default != ElementQuantity.Unknown || quantity.isBlank()) default
                 else parseElementMilli(quantity, item.unit)?.let { ElementQuantity.Exact(it) }
@@ -242,11 +249,13 @@ internal fun WorkspaceCatalogSearch(
                     }
                 } else Text(formatElementQuantity(default, item.unit), modifier = Modifier.weight(1f))
                 if (item.placementKind != PlacementKind.NONE) IconButton(enabled = canPlace, onClick = {
-                    model.addCatalogWork(item, checkNotNull(entered), place = true)
+                    model.addCatalogWork(item, checkNotNull(entered), place = true,
+                        approval = if (approvedNewWork) ElementApproval.APPROVED else ElementApproval.DISCUSSING)
                     onPlacedTool()
                 }) { Icon(Icons.Default.OpenWith, stringResource(Res.string.p5b_add_and_place)) }
                 IconButton(enabled = entered != null, onClick = {
-                    model.addCatalogWork(item, checkNotNull(entered), place = false)
+                    model.addCatalogWork(item, checkNotNull(entered), place = false,
+                        approval = if (approvedNewWork) ElementApproval.APPROVED else ElementApproval.DISCUSSING)
                     onPlacedTool()
                 }) { Icon(Icons.Default.Check, stringResource(Res.string.p5b_add_unplaced)) }
             }

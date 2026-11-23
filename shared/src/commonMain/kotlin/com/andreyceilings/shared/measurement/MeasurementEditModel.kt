@@ -479,6 +479,24 @@ class MeasurementEditModel(
         return true
     }
 
+    /** Approval is work metadata, independent of the drawn placement and quantity. */
+    internal fun changeWorkspaceApproval(uuid: String, approval: ElementApproval): Boolean {
+        if (!editable() || promptForDirtyElementBeforeNavigation()) return false
+        val work = workspaceWorks().find { it.uuid == uuid } ?: return false
+        if (work.approval == approval) return true
+        commitInput()
+        undo.add(form())
+        redo.clear()
+        val before = state.value
+        val additions = before.additions
+        val updated = work.copy(approval = approval)
+        mutableState.value = before.copy(additions = if (uuid in additions.elements)
+            additions.copy(elements = additions.elements + (uuid to updated))
+        else additions.copy(editedWorks = additions.editedWorks + (uuid to updated)))
+        publish()
+        return true
+    }
+
     internal fun deleteWorkspacePoint(uuid: String) {
         if (!editable()) return
         val state = state.value
@@ -569,11 +587,15 @@ class MeasurementEditModel(
         return displayPoints().count { it.elementUuid == uuid } < capacity
     }
 
-    internal fun addCatalogWork(item: ElementCatalogItem, quantity: ElementQuantity, place: Boolean) {
+    internal fun addCatalogWork(
+        item: ElementCatalogItem, quantity: ElementQuantity, place: Boolean,
+        approval: ElementApproval = ElementApproval.DISCUSSING
+    ) {
         if (!editable() || (place && !item.supportsWorkspacePlacement())) return
         ElementQuantityRules.validate(quantity, item.unit, item.mode)
         val uuid = newRecordUuid()
         val itemDraft = item.toWorkspaceElement(uuid, state.value.draft.recordUuid, quantity)
+            .copy(approval = approval)
         if (place && item.placementKind == PlacementKind.POINT && itemDraft.pointCapacity() == null) return
         cancelPlacement()
         commitInput()
