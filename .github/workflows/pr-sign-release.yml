@@ -10,10 +10,12 @@ on:
   workflow_run:
     workflows: ["PR fast checks (no FULL)"]
     types: [completed]
+  issue_comment:
+    types: [created]
   workflow_dispatch:
     inputs:
-      source_run_id:
-        description: "FAST workflow run ID (Android and Windows green; iOS may be queued)"
+      pr_number:
+        description: "PR number to sign (e.g. 157); source branch is found automatically"
         required: true
         type: string
 
@@ -22,14 +24,15 @@ permissions:
   contents: read
 
 concurrency:
-  group: pr-sign-${{ github.event.inputs.source_run_id || github.event.workflow_run.id }}
+  group: pr-sign-${{ github.event.inputs.pr_number || github.event.issue.number || github.event.workflow_run.id }}
   cancel-in-progress: false
 
 jobs:
   sign-pr-release:
     name: Sign successful in-repository PR release (trusted)
-    # Trusted main branch only. No failed Android/Windows CI may be bypassed.
-    if: ${{ (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_run' && github.event.workflow_run.event == 'pull_request' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_repository.full_name == github.repository) }}
+    # Both manual triggers run the reviewed workflow on main (never PR code).
+    # /sign-apk may be requested ONLY by the repository owner on a PR.
+    if: ${{ (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') || (github.event_name == 'issue_comment' && github.event.issue.pull_request != null && github.event.comment.body == '/sign-apk' && github.actor == github.repository_owner && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_run' && github.event.workflow_run.event == 'pull_request' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_repository.full_name == github.repository) }}
     runs-on: ubuntu-24.04
     steps:
       - name: Verify exact current PR source, FAST jobs, and unsigned artifact
@@ -37,16 +40,57 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-          RUN_ID: ${{ inputs.source_run_id || github.event.workflow_run.id }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+          PR_NUMBER: ${{ inputs.pr_number || github.event.issue.number }}
           TRIGGER: ${{ github.event_name }}
         run: |
           set -euo pipefail
-          [[ "$RUN_ID" =~ ^[0-9]+$ ]] || { echo "::error::Enter a numeric FAST workflow run ID"; exit 1; }
-          [[ "$TRIGGER" == workflow_dispatch || "$TRIGGER" == workflow_run ]]
+          [[ "$TRIGGER" == workflow_dispatch || "$TRIGGER" == workflow_run || "$TRIGGER" == issue_comment ]]
 
           # Load metadata exclusively from the GitHub REST API, never from PR files.
           quick_workflow_id="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/draft-impact-feedback.yml" --jq '.id')"
           [[ "$quick_workflow_id" =~ ^[0-9]+$ ]]
+
+          if [[ "$TRIGGER" != workflow_run ]]; then
+            # The owner supplies only the PR number (or writes /sign-apk on the
+            # PR). This trusted job chooses the newest FAST run for that PR's
+            # CURRENT branch and SHA. Never sign a stale/replaced APK.
+            [[ "$PR_NUMBER" =~ ^[1-9][0-9]*$ ]] || {
+              echo "::error::Please enter a PR number (e.g. 157)."
+              exit 1
+            }
+            selected_pr="$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER")"
+            jq -e --arg repo "$GITHUB_REPOSITORY" '
+              .state == "open" and .base.ref == "main" and
+              .head.repo.full_name == $repo and
+              (.head.sha | test("^[0-9a-f]{40}$"))
+            ' <<<"$selected_pr" >/dev/null || {
+              echo "::error::Select an open PR in this repository targeting main."
+              exit 1
+            }
+            expected_sha="$(jq -r '.head.sha' <<<"$selected_pr")"
+            source_branch="$(jq -r '.head.ref' <<<"$selected_pr")"
+
+            # GitHub returns runs newest first. A later failed FAST attempt for
+            # this SHA must NOT be circumvented by using an older green run.
+            candidates="$(gh api -X GET \
+              -f branch="$source_branch" -f event=pull_request -f per_page=100 \
+              "repos/$GITHUB_REPOSITORY/actions/workflows/$quick_workflow_id/runs")"
+            RUN_ID="$(jq -r --arg sha "$expected_sha" --arg repo "$GITHUB_REPOSITORY" --argjson number "$PR_NUMBER" '
+              [.workflow_runs[] | select(
+                .head_sha == $sha and
+                .head_repository.full_name == $repo and
+                any(.pull_requests[]?; .number == $number)
+              )] | sort_by(.run_number, .run_attempt) |
+              if length == 0 then empty else last.id end
+            ' <<<"$candidates")"
+            [[ "$RUN_ID" =~ ^[0-9]+$ ]] || {
+              echo "::error::No FAST run found for the latest commit of PR #$PR_NUMBER. Run FAST checks first."
+              exit 1
+            }
+          fi
+          [[ "$RUN_ID" =~ ^[0-9]+$ ]]
+
           source="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID")"
           jq -e --arg repo "$GITHUB_REPOSITORY" --argjson workflow "$quick_workflow_id" '
             .event == "pull_request" and
@@ -64,6 +108,10 @@ jobs:
           pr_number="$(jq -r '.pull_requests[0].number' <<<"$source")"
           attempt="$(jq -r '.run_attempt' <<<"$source")"
           [[ "$pr_number" =~ ^[0-9]+$ && "$attempt" =~ ^[0-9]+$ ]]
+          if [[ "$TRIGGER" != workflow_run && "$PR_NUMBER" != "$pr_number" ]]; then
+            echo "::error::The chosen FAST run belongs to a different PR."
+            exit 1
+          fi
           pr="$(gh api "repos/$GITHUB_REPOSITORY/pulls/$pr_number")"
           jq -e --arg sha "$source_sha" --arg repo "$GITHUB_REPOSITORY" '
             .state == "open" and .base.ref == "main" and
@@ -135,7 +183,7 @@ jobs:
           ' <<<"$artifacts")"
           if [[ -z "$artifact_id" ]]; then
             if [[ "$TRIGGER" == workflow_dispatch ]]; then
-              echo "::error::No unique, unexpired unsigned APK in FAST run $RUN_ID."
+              echo "::error::The latest FAST run for PR #$pr_number has no usable unsigned APK. Check Android CI."
               exit 1
             fi
             echo "available=false" >> "$GITHUB_OUTPUT"
