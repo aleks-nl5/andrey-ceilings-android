@@ -88,6 +88,19 @@ class LinePlacementTouchTest {
             val inlineLength = compose.onNodeWithTag("p5b-work-quantity-${short.uuid}")
                 .performScrollTo()
             inlineLength.assertTextContains("2,5")
+            // Unsaved typing must survive moving temporarily between work
+            // pencils; pressing cancel intentionally discards it.
+            inlineLength.performTextReplacement("2,7")
+            compose.onNodeWithTag("p5b-edit-work-${full.uuid}").performScrollTo().performClick()
+            compose.onNodeWithTag("p5b-work-quantity-${full.uuid}")
+                .performScrollTo().assertTextContains("1")
+            compose.onNodeWithTag("p5b-edit-work-${short.uuid}").performScrollTo().performClick()
+            inlineLength.performScrollTo().assertTextContains("2,7")
+            compose.onNodeWithTag("p5b-work-quantity-cancel-${short.uuid}")
+                .performScrollTo().performClick()
+            compose.onNodeWithTag("p5b-edit-work-${short.uuid}")
+                .performScrollTo().performClick()
+            inlineLength.performScrollTo().assertTextContains("2,5")
             compose.onNodeWithTag("p5b-line-declared-length").assertDoesNotExist()
             assertNull(model.state.value.lineProperties,
                 "Pencil must edit declared length inline without opening gear parameters")

@@ -612,6 +612,17 @@ internal fun WorkspaceWorkList(
         val isSelected = selected == work.uuid
         val isHighlighted = highlightedWorkId == work.uuid
         val bringIntoView = remember(work.uuid) { BringIntoViewRequester() }
+        // Keep each work's un-applied input while switching pencils. Previously
+        // these were remembered only INSIDE the currently open editor and thus
+        // silently discarded when another work's pencil was tapped.
+        var quantity by rememberSaveable(work.quantity) {
+            mutableStateOf((work.quantity as? ElementQuantity.Exact)?.let { formatElementMilli(it.milli) }.orEmpty())
+        }
+        var invalidQuantity by remember { mutableStateOf(false) }
+        fun discardQuantityInput() {
+            quantity = (work.quantity as? ElementQuantity.Exact)?.let { formatElementMilli(it.milli) }.orEmpty()
+            invalidQuantity = false
+        }
         val hasPlacement = model.displayPoints().any { it.elementUuid == work.uuid } ||
             model.displayLines().any { it.elementUuid == work.uuid } ||
             model.displayAreas().any { it.elementUuid == work.uuid }
@@ -671,6 +682,7 @@ internal fun WorkspaceWorkList(
             IconButton(onClick = {
                 val closingSameEditor = isSelected && quantityEditingWork == work.uuid
                 if (!model.promptForDirtyElementBeforeNavigation()) {
+                    if (closingSameEditor) discardQuantityInput()
                     onSelect(work.uuid)
                     quantityEditingWork = if (closingSameEditor) null else work.uuid
                 }
@@ -684,30 +696,32 @@ internal fun WorkspaceWorkList(
             }
         }
         if (isSelected && quantityEditingWork == work.uuid) {
-            var quantity by rememberSaveable(work.quantity) {
-                mutableStateOf((work.quantity as? ElementQuantity.Exact)?.let { formatElementMilli(it.milli) }.orEmpty())
-            }
-            var invalid by remember { mutableStateOf(false) }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(Modifier.weight(1f)) {
-                    DecimalInputField(quantity, { quantity = it; invalid = false },
+                    DecimalInputField(quantity, { quantity = it; invalidQuantity = false },
                         if (work.supportsLinePlacement()) stringResource(Res.string.p5b_line_length)
                         else stringResource(Res.string.p5b_declared_quantity, work.unit.orEmpty()),
                         modifier = measurementFieldFocusModifier().fillMaxWidth()
                             .testTag("p5b-work-quantity-${work.uuid}"),
-                        compact = true, isError = invalid, allowDecimalSeparator = work.unit != "шт.")
+                        compact = true, isError = invalidQuantity, allowDecimalSeparator = work.unit != "шт.")
                     WorkspaceQuantityHelp(Modifier.align(Alignment.CenterEnd).padding(end = 2.dp))
                 }
                 IconButton(onClick = {
                     val value = if (quantity.isBlank()) ElementQuantity.Unknown
                         else parseElementMilli(quantity, work.unit)?.let { ElementQuantity.Exact(it) }
-                    if (value != null && model.editWorkspaceQuantity(work.uuid, value)) quantityEditingWork = null else invalid = true
+                    if (value != null && model.editWorkspaceQuantity(work.uuid, value)) {
+                        invalidQuantity = false
+                        quantityEditingWork = null
+                    } else invalidQuantity = true
                 }) { Icon(Icons.Default.Check, stringResource(Res.string.p5b_apply_quantity)) }
-                IconButton(onClick = { quantityEditingWork = null }) {
+                IconButton(onClick = {
+                    discardQuantityInput()
+                    quantityEditingWork = null
+                }, modifier = Modifier.testTag("p5b-work-quantity-cancel-${work.uuid}")) {
                     Icon(Icons.Default.Close, stringResource(Res.string.p5b_cancel_placement))
                 }
             }
-            if (invalid) Text(stringResource(Res.string.p5b_quantity_invalid), color = MaterialTheme.colorScheme.error)
+            if (invalidQuantity) Text(stringResource(Res.string.p5b_quantity_invalid), color = MaterialTheme.colorScheme.error)
         }
         HorizontalDivider(Modifier.padding(top = 5.dp, bottom = 6.dp),
             color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
