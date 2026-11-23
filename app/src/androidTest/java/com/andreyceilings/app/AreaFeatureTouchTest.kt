@@ -137,17 +137,20 @@ class AreaFeatureTouchTest {
                 assertNotNull(model.areaCreationShape(), "A valid draft shape must exist; ${stateSummary()}")
             }
             click("Завершити фігуру в чернетці")
+            var standaloneId: String? = null
             compose.runOnIdle {
                 assertEquals(expectedCount, model.displayAreas().size, "Finish $role; ${stateSummary()}")
                 assertNull(model.state.value.area.tool, "Creation must finish; ${stateSummary()}")
                 val selected = model.displayAreas().singleOrNull { it.uuid == model.state.value.area.selected }
                 assertNotNull(selected, stateSummary())
                 assertEquals(role, selected.role, stateSummary())
-                if (selected.elementUuid == null) {
-                    compose.onNodeWithTag("p5b-standalone-area-${selected.uuid}").assertExists()
-                    compose.onNodeWithTag("p5b-open-standalone-area-${selected.uuid}").assertExists()
-                }
+                if (selected.elementUuid == null) standaloneId = selected.uuid
                 assertTrue(AreaFeatureRepository(db).all().isEmpty(), "Only Save may persist areas")
+            }
+            // Never wait for Compose semantics from within runOnIdle's UI thread.
+            standaloneId?.let { id ->
+                compose.onNodeWithTag("p5b-standalone-area-$id").assertExists()
+                compose.onNodeWithTag("p5b-open-standalone-area-$id").assertExists()
             }
         }
 

@@ -65,8 +65,8 @@ class AreaFeatureSceneTest {
                     "A selected obstacle must not automatically open geometry fields")
                 scene.click("Відкрити параметри розміщення",
                     tag = "p5b-open-standalone-area-$firstNoteId")
-                scene.setField("Ширина прямокутника, м", "0,7")
-                scene.setField("Висота прямокутника, м", "0,6")
+                scene.setField("Ширина, м", "0,7")
+                scene.setField("Висота, м", "0,6")
                 scene.click("Оновити на кресленні (у чернетці)")
                 assertEquals(AreaShape.rectangle(PointPositionMm(500, 500), PointPositionMm(1200, 1100)),
                     model.displayAreas().single().shape)
