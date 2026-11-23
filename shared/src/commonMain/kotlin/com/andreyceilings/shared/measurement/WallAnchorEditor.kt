@@ -17,6 +17,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.focus.FocusRequester
@@ -180,8 +181,12 @@ private fun WallAnchorCompactWallRow(
                         FilterChip(selected == wall.uuid, onClick = { onWall(wall.uuid) },
                             modifier = Modifier.weight(1f).heightIn(min = 36.dp)
                                 .semantics { contentDescription = "$title: $side" },
-                            label = { Text(side, maxLines = 1,
-                                style = MaterialTheme.typography.labelSmall) })
+                            label = {
+                                Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                                    Text(side, maxLines = 1, textAlign = TextAlign.Center,
+                                        style = MaterialTheme.typography.labelSmall)
+                                }
+                            })
                     }
                     if (pair.size == 1) Spacer(Modifier.weight(1f))
                 }

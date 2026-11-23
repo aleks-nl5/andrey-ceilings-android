@@ -286,9 +286,14 @@ fun MeasurementEditScreen(
         if (!enabled) return
         select(uuid)
         if (showAdd) dismissCatalog()
-        selectedWork = null
+        val placedWork = (model.displayPoints().firstOrNull { it.uuid == uuid }?.elementUuid
+            ?: model.displayLines().firstOrNull { it.uuid == uuid }?.elementUuid
+            ?: model.displayAreas().firstOrNull { it.uuid == uuid }?.elementUuid)
+            ?.takeIf { id -> model.workspaceWorks().any { it.uuid == id } }
+        selectedWork = placedWork
+        highlightedWorkId = placedWork
         selected = null
-        if (!fullscreen) showElements()
+        showElements()
     }
 
     val selectedFeature = state.selectedPointUuid ?: state.selectedLineUuid ?: state.area.selected
@@ -519,8 +524,12 @@ fun MeasurementEditScreen(
                                         dismissCatalog()
                                     } else {
                                         WorkspacePlacementTools(model, state, canEdit, lineSnapEnabled) { lineSnapEnabled = it }
-                                        WorkspaceGeometryPanel(model, state, canEdit, lineSnapEnabled) { lineSnapEnabled = it }
-                                        if (activeElementControls == null) WorkspaceWorkList(
+                                        // Tapping an object on the drawing selects its WORK ROW first.
+                                        // Geometry inputs open only through the explicit settings action.
+                                        if (selectedWork == null) WorkspaceGeometryPanel(
+                                            model, state, canEdit, lineSnapEnabled) { lineSnapEnabled = it }
+                                        if (activeElementControls == null ||
+                                            (selectedFeature != null && selectedWork != null)) WorkspaceWorkList(
                                             model, canEdit, selectedWork, highlightedWorkId,
                                             onSelect = { work ->
                                                 model.clearDrawingSelection()

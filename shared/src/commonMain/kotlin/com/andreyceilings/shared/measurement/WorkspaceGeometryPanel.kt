@@ -350,8 +350,9 @@ internal fun WorkspaceWorkList(
     highlightedWorkId: String?, onSelect: (String?) -> Unit, onOpenGeometry: () -> Unit
 ) {
     val works = model.workspaceWorks()
+    // One editor for the whole list: switching pencils must open the next one in one click.
+    var quantityEditingWork by rememberSaveable { mutableStateOf<String?>(null) }
     for (work in works) key(work.uuid) {
-        var edit by rememberSaveable { mutableStateOf(false) }
         var deletion by remember { mutableStateOf(false) }
         val isSelected = selected == work.uuid
         val isHighlighted = highlightedWorkId == work.uuid
@@ -362,7 +363,8 @@ internal fun WorkspaceWorkList(
             "${work.label} #${namesakes.indexOfFirst { it.uuid == work.uuid } + 1}"
         else work.label
         Row(Modifier.fillMaxWidth().bringIntoViewRequester(bringIntoView)
-            .background(if (isHighlighted) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent,
+            .background(if (isHighlighted || isSelected) MaterialTheme.colorScheme.secondaryContainer.copy(
+                alpha = if (isHighlighted) 0.9f else 0.48f) else Color.Transparent,
                 RoundedCornerShape(10.dp)),
             verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f).heightIn(min = 48.dp)
@@ -400,7 +402,11 @@ internal fun WorkspaceWorkList(
                 Icon(Icons.Default.Settings, stringResource(Res.string.p5b_open_geometry_parameters))
             }
             val source = work.source as? ElementSource.CatalogSelection
-            IconButton(onClick = { onSelect(work.uuid); edit = !edit },
+            IconButton(onClick = {
+                val closingSameEditor = isSelected && quantityEditingWork == work.uuid
+                onSelect(work.uuid)
+                quantityEditingWork = if (closingSameEditor) null else work.uuid
+            },
                 enabled = enabled && source?.quantityMode?.workspaceQuantity() == ElementQuantity.Unknown) {
                 Icon(Icons.Default.Edit, stringResource(Res.string.p5b_edit_work))
             }
@@ -408,7 +414,7 @@ internal fun WorkspaceWorkList(
                 Icon(Icons.Default.Delete, stringResource(Res.string.p5b_delete_work))
             }
         }
-        if (isSelected && edit) {
+        if (isSelected && quantityEditingWork == work.uuid) {
             var quantity by rememberSaveable(work.quantity) {
                 mutableStateOf((work.quantity as? ElementQuantity.Exact)?.let { formatElementMilli(it.milli) }.orEmpty())
             }
@@ -421,9 +427,9 @@ internal fun WorkspaceWorkList(
                 IconButton(onClick = {
                     val value = if (quantity.isBlank()) ElementQuantity.Unknown
                         else parseElementMilli(quantity, work.unit)?.let { ElementQuantity.Exact(it) }
-                    if (value != null && model.editWorkspaceQuantity(work.uuid, value)) edit = false else invalid = true
+                    if (value != null && model.editWorkspaceQuantity(work.uuid, value)) quantityEditingWork = null else invalid = true
                 }) { Icon(Icons.Default.Check, stringResource(Res.string.p5b_apply_quantity)) }
-                IconButton(onClick = { edit = false }) {
+                IconButton(onClick = { quantityEditingWork = null }) {
                     Icon(Icons.Default.Close, stringResource(Res.string.p5b_cancel_placement))
                 }
             }
