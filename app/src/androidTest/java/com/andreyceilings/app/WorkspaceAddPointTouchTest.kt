@@ -112,9 +112,9 @@ class WorkspaceAddPointTouchTest {
 
             click("Редагувати розміри")
             compose.onNode(isDialog()).assertDoesNotExist()
-            click("Уздовж + усередину")
-            compose.onNodeWithText("Від початку вздовж стіни, м").performScrollTo().performTextInput("1,25")
-            compose.onNodeWithText("Відступ усередину, м").performScrollTo().performTextInput("0,85")
+            click("Уздовж")
+            compose.onNodeWithText("Уздовж, м").performScrollTo().performTextInput("1,25")
+            compose.onNodeWithText("Усередину, м").performScrollTo().performTextInput("0,85")
             click("Застосувати розміри")
             val precise = compose.runOnIdle { shown.value.displayPoints().single() }
             assertEquals(added.uuid, precise.uuid)
@@ -139,6 +139,13 @@ class WorkspaceAddPointTouchTest {
             assertEquals(1000L, work.placedQuantityMilli)
             compose.runOnIdle { shown.value = MeasurementEditModel(store, reopened) }
             compose.waitUntil(15_000) { canvas.fetchSemanticsNode().config.getOrNull(MeasurementDrawingSemantics.Points)?.singleOrNull()?.uuid == point.uuid }
+            compose.onNodeWithTag("p5b-open-geometry-${work.uuid}").performScrollTo().performClick()
+            compose.runOnIdle {
+                assertEquals(point.uuid, shown.value.state.value.mountingInput?.pointUuid,
+                    "Settings must open actual wall-distance inputs")
+                assertEquals(point.uuid, shown.value.state.value.selectedPointUuid)
+            }
+            compose.onNodeWithText("Відстань, м").assertExists()
         } finally {
             store.closePointReads()
             driver.close()

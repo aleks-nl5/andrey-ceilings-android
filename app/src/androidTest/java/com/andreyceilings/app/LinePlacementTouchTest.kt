@@ -171,7 +171,7 @@ class LinePlacementTouchTest {
                 val start = world(existingPoint.xMm, existingPoint.yMm)
                 val end = world(3000, 1300)
                 if (theme) {
-                    click("Вирівнювати паралельно стіні")
+                    click("Паралельно стіні")
                     canvas.performTouchInput { down(start); moveTo(end) }
                     compose.runOnIdle { assertTrue(model.displayLines().isEmpty()) }
                     canvas.performTouchInput { up() }

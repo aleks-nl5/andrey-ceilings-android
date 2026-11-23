@@ -473,10 +473,10 @@ class MeasurementWorkspaceLayoutTest {
                 field("Примітки").assertTextContains("Другий запис")
                 field("Примітки").performScrollTo().performTextReplacement("Збережено перед виходом")
                 compose.onNodeWithTag("measurement-edit-back").performClick()
-                compose.onNodeWithText("Продовжити редагування").performClick()
+                compose.onNodeWithContentDescription("Продовжити редагування").performClick()
                 action("На весь екран").assertExists()
                 compose.onNodeWithTag("measurement-edit-back").performClick()
-                compose.onNodeWithText("Зберегти й вийти").performClick()
+                compose.onNodeWithContentDescription("Зберегти й вийти").performClick()
                 compose.waitUntil(15000) {
                     compose.onAllNodes(hasText("Редагувати") and hasClickAction()).fetchSemanticsNodes().isNotEmpty()
                 }

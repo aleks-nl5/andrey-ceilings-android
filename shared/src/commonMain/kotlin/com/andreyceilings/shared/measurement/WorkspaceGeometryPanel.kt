@@ -396,7 +396,8 @@ internal fun WorkspaceWorkList(
                     onSelect(null)
                     onOpenGeometry()
                 }
-            }, enabled = enabled && hasPlacement) {
+            }, enabled = enabled && hasPlacement,
+                modifier = Modifier.testTag("p5b-open-geometry-${work.uuid}")) {
                 Icon(Icons.Default.Settings, stringResource(Res.string.p5b_open_geometry_parameters))
             }
             val source = work.source as? ElementSource.CatalogSelection

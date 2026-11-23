@@ -37,6 +37,43 @@ class WorkspacePlacementDraftTest {
     }
 
     @Test
+    fun workSettingsOpensLineAndAreaParametersWithoutChangingPayableQuantities() = runBlocking {
+        JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).use { driver ->
+            PriceCatalogSchema.create(driver)
+            val db = PrototypeDatabase(driver)
+            val fixture = PointPlacementProof.fixture(db)
+            val store = MeasurementEditStore(db) { 101 }
+            val editor = MeasurementEditModel(store, store.load(fixture.project, fixture.id))
+
+            val lineItem = addItem(db, "Line settings", PlacementKind.LINE, "м.п.")
+            editor.addCatalogWork(lineItem, ElementQuantity.Exact(3000), place = true)
+            assertTrue(editor.finishWorkspaceLine(PointPositionMm(500, 600), PointPositionMm(1500, 600)))
+            val line = editor.displayLines().single()
+            editor.clearDrawingSelection()
+            assertTrue(editor.selectFirstWorkspacePlacement(line.elementUuid))
+            assertEquals(line.uuid, editor.state.value.selectedLineUuid)
+            assertEquals(line.uuid, editor.state.value.lineProperties?.uuid)
+            editor.discardLineProperties()
+
+            val areaItem = addItem(db, "Area settings", PlacementKind.AREA, "шт.")
+            editor.addCatalogWork(areaItem, ElementQuantity.Exact(2000), place = true)
+            editor.areaTap(1100, 900)
+            editor.areaTap(1700, 1300)
+            editor.acceptAreaCreation()
+            val area = editor.displayAreas().single()
+            editor.clearDrawingSelection()
+            assertTrue(editor.selectFirstWorkspacePlacement(area.elementUuid))
+            assertEquals(area.uuid, editor.state.value.area.selected)
+            assertEquals(area.uuid, editor.state.value.area.properties?.uuid)
+            assertEquals(2, editor.workspaceWorks().size)
+            assertEquals(ElementQuantity.Exact(3000),
+                editor.workspaceWorks().single { it.uuid == line.elementUuid }.quantity)
+            assertEquals(ElementQuantity.Exact(2000),
+                editor.workspaceWorks().single { it.uuid == area.elementUuid }.quantity)
+        }
+    }
+
+    @Test
     fun globalSaveRemainsAvailableWhileMorePointsCanStillBePlaced() = runBlocking {
         JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).use { driver ->
             PriceCatalogSchema.create(driver)
