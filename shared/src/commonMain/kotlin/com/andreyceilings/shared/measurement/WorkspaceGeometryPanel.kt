@@ -15,6 +15,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.andreyceilings.shared.input.DecimalInputField
@@ -75,6 +76,8 @@ internal fun WorkspaceGeometryPanel(
     val line = model.displayLines().find { it.uuid == state.selectedLineUuid }
     val area = model.displayAreas().find { it.uuid == state.area.selected }
     val uuid = point?.uuid ?: line?.uuid ?: area?.uuid ?: return
+    val coincidentPoints = if (point != null) model.overlappingPointsForSelected() else emptyList()
+    val coincidentIndex = coincidentPoints.indexOfFirst { it.uuid == uuid }
     var edit by rememberSaveable(uuid) { mutableStateOf(false) }
     var deletion by remember(uuid) { mutableStateOf(false) }
     val workId = point?.elementUuid ?: line?.elementUuid ?: area?.elementUuid
@@ -101,6 +104,17 @@ internal fun WorkspaceGeometryPanel(
             if (detail != null) Text(detail, style = MaterialTheme.typography.bodySmall)
             if (unresolved || review) Text(stringResource(if (unresolved) Res.string.p5b_unresolved else Res.string.p5b_review),
                 style = MaterialTheme.typography.bodySmall)
+        }
+        if (coincidentPoints.size > 1) {
+            val positionDescription = stringResource(Res.string.p5b_overlap_position,
+                coincidentIndex + 1, coincidentPoints.size)
+            Text("${coincidentIndex + 1}/${coincidentPoints.size}",
+                style = MaterialTheme.typography.labelSmall,
+                modifier = Modifier.semantics { contentDescription = positionDescription })
+            IconButton(onClick = model::selectNextOverlappingPoint,
+                modifier = Modifier.testTag("p5b-overlap-next"), enabled = enabled) {
+                Icon(Icons.Default.ChevronRight, stringResource(Res.string.p5b_overlap_next))
+            }
         }
         IconButton(onClick = {
             if (!edit) {

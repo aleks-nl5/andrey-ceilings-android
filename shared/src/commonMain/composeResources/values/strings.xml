@@ -77,6 +77,8 @@
     <string name="p5b_delete_work_explain">Після збереження роботу «%1$s» та всі її позначки буде видалено із заміру.</string>
     <string name="p5b_delete">Видалити</string>
     <string name="p5b_clear_selection">Зняти виділення</string>
+    <string name="p5b_overlap_position">Позначка %1$d із %2$d у цій точці</string>
+    <string name="p5b_overlap_next">Вибрати наступну накладену позначку</string>
     <string name="p5b_wall_distances">Розміри від стін</string>
     <string name="p5b_start_distances">Розміри початку від стін</string>
     <string name="p5b_end_distances">Розміри кінця від стін</string>

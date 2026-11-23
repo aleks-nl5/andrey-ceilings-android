@@ -285,6 +285,20 @@ class MeasurementEditModel(
         if (state.value.saving || state.value.uncertain || state.value.checking || state.value.exitReady) return
         if (displayPoints().any { it.uuid==uuid }) mutableState.value=state.value.copy(area=state.value.area.copy(selected=null,tool=null,vertices=emptyList()),selectedPointUuid=uuid,selectedLineUuid=null,lineElementUuid=null,lineStart=null,linePreview=null,pointElementUuid=null)
     }
+
+    /** Exact coincident POINTs share a Canvas hit target; cycle selection without moving them. */
+    internal fun overlappingPointsForSelected(): List<PointPlacement> {
+        val points = displayPoints()
+        val selected = points.firstOrNull { it.uuid == state.value.selectedPointUuid } ?: return emptyList()
+        return points.filter { it.xMm == selected.xMm && it.yMm == selected.yMm }
+            .takeIf { it.size > 1 }.orEmpty()
+    }
+
+    internal fun selectNextOverlappingPoint() {
+        val coincident = overlappingPointsForSelected()
+        val index = coincident.indexOfFirst { it.uuid == state.value.selectedPointUuid }
+        if (index >= 0) selectPoint(coincident[(index + 1) % coincident.size].uuid)
+    }
     fun beginPointDrag(uuid: String) {
         if (state.value.saving || state.value.uncertain || state.value.checking || validateMeasurementCreate(state.value.draft).geometry==null || state.value.selectedPointUuid!=uuid) return
         val point=displayPoints().find { it.uuid==uuid } ?: return

@@ -15,6 +15,37 @@ import kotlin.test.*
 
 class WorkspacePlacementDraftTest {
     @Test
+    fun coincidentPointMarkersCanBeSelectedIndividuallyWithoutMovingGeometry() = runBlocking {
+        JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).use { driver ->
+            PriceCatalogSchema.create(driver)
+            val db = PrototypeDatabase(driver)
+            val fixture = PointPlacementProof.fixture(db)
+            val store = MeasurementEditStore(db) { 100 }
+            val editor = MeasurementEditModel(store, store.load(fixture.project, fixture.id))
+            val item = store.placementCatalog().single { it.code.startsWith("fixture.") }
+            editor.addCatalogWork(item, ElementQuantity.Exact(3000), place = true)
+            repeat(3) { assertTrue(editor.placeWorkspacePoint(1100, 900)) }
+            val ids = editor.displayPoints().map { it.uuid }
+            assertEquals(3, ids.toSet().size)
+            editor.selectPoint(ids.first())
+            assertEquals(ids, editor.overlappingPointsForSelected().map { it.uuid })
+            val additions = editor.state.value.additions
+            for (index in 1..3) {
+                editor.selectNextOverlappingPoint()
+                assertEquals(ids[index % 3], editor.state.value.selectedPointUuid)
+                assertEquals(additions, editor.state.value.additions)
+                assertEquals(setOf(1100L to 900L), editor.displayPoints().map { it.xMm to it.yMm }.toSet())
+            }
+            assertEquals(ElementQuantity.Exact(3000), editor.workspaceWorks().single().quantity)
+            editor.undo()
+            assertEquals(2, editor.displayPoints().size)
+            editor.redo()
+            assertEquals(3, editor.displayPoints().size)
+            assertTrue(store.load(fixture.project, fixture.id).placements.points.isEmpty())
+        }
+    }
+
+    @Test
     fun multiplePointPlacementsKeepModeUntilDeclaredCapacity() = runBlocking {
         JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).use { driver ->
             PriceCatalogSchema.create(driver)
