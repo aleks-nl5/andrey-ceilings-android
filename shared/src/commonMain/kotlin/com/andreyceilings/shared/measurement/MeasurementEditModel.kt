@@ -880,7 +880,13 @@ class MeasurementEditModel(
     /** The length field is the declared billable amount, never a geometry resize. */
     private fun declaredLineQuantity(work: MeasurementElement, input: LinePropertiesInput): ElementQuantity? {
         val value = input.length ?: return work.quantity
-        if (value.isBlank()) return ElementQuantity.Unknown
+        if (value.isBlank()) {
+            // A range cannot be represented by this single numeric input. Merely
+            // editing line width/note must not silently erase an existing range.
+            if (input.initialLength.isNullOrBlank() && work.quantity is ElementQuantity.Range)
+                return work.quantity
+            return ElementQuantity.Unknown
+        }
         val amount = parseElementMilli(value, work.unit) ?: return null
         val quantity = ElementQuantity.Exact(amount)
         val mode = (work.source as? ElementSource.CatalogSelection)?.quantityMode ?: return null

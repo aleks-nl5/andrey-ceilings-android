@@ -172,6 +172,33 @@ class WorkspacePlacementDraftTest {
     }
 
     @Test
+    fun editingLineWidthDoesNotEraseExistingRangeQuantity() = runBlocking {
+        JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).use { driver ->
+            PriceCatalogSchema.create(driver)
+            val db = PrototypeDatabase(driver)
+            val fixture = PointPlacementProof.fixture(db)
+            val store = MeasurementEditStore(db) { 101 }
+            val editor = MeasurementEditModel(store, store.load(fixture.project, fixture.id))
+            val item = addItem(db, "Range line", PlacementKind.LINE, "м.п.")
+            editor.addCatalogWork(item, ElementQuantity.Range(1500, 3000), place = true)
+            assertTrue(editor.finishWorkspaceLine(PointPositionMm(500, 600), PointPositionMm(1500, 600)))
+            val segment = editor.displayLines().single()
+            val workId = segment.elementUuid
+            editor.openLineProperties()
+            assertEquals("", editor.state.value.lineProperties?.length)
+            editor.changeLineProperties(width = "15")
+            editor.applyLineProperties()
+            assertEquals(ElementQuantity.Range(1500, 3000),
+                editor.workspaceWorks().single { it.uuid == workId }.quantity)
+            assertEquals(15L, editor.displayLines().single().widthMm)
+            editor.saveInWorkspace()
+            assertFalse(editor.state.value.dirty, editor.state.value.error)
+            assertEquals(ElementQuantity.Range(1500, 3000),
+                assertNotNull(MeasurementElementRepository(db).find(workId)).quantity)
+        }
+    }
+
+    @Test
     fun areaTransferAndManualIncreasePersistWithTheDrawing() = runBlocking {
         JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).use { driver ->
             PriceCatalogSchema.create(driver)
