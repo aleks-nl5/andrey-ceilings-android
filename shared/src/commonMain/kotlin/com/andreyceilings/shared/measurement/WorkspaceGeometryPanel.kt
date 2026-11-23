@@ -5,6 +5,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.relocation.BringIntoViewRequester
 import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.layout.*
@@ -133,6 +134,34 @@ private fun WorkspaceMagnetIcon() {
     }
 }
 
+/** Horizontal measurement glyph. The action updates the declared LENGTH, not the drawing. */
+@Composable
+private fun WorkspaceDrawingLengthIcon() {
+    val ink = LocalContentColor.current
+    val label = stringResource(Res.string.p5b_take_length)
+    Box(Modifier.size(24.dp).semantics { contentDescription = label },
+        contentAlignment = Alignment.Center) {
+        Canvas(Modifier.size(22.dp)) {
+            val unit = size.minDimension / 24f
+            val y = 12f * unit
+            drawLine(ink, Offset(3f * unit, y), Offset(21f * unit, y),
+                strokeWidth = 1.8f * unit, cap = StrokeCap.Round)
+            drawLine(ink, Offset(5f * unit, 6f * unit), Offset(5f * unit, 18f * unit),
+                strokeWidth = 1.8f * unit, cap = StrokeCap.Round)
+            drawLine(ink, Offset(19f * unit, 6f * unit), Offset(19f * unit, 18f * unit),
+                strokeWidth = 1.8f * unit, cap = StrokeCap.Round)
+            drawLine(ink, Offset(7f * unit, 9f * unit), Offset(10f * unit, y),
+                strokeWidth = 1.8f * unit, cap = StrokeCap.Round)
+            drawLine(ink, Offset(7f * unit, 15f * unit), Offset(10f * unit, y),
+                strokeWidth = 1.8f * unit, cap = StrokeCap.Round)
+            drawLine(ink, Offset(17f * unit, 9f * unit), Offset(14f * unit, y),
+                strokeWidth = 1.8f * unit, cap = StrokeCap.Round)
+            drawLine(ink, Offset(17f * unit, 15f * unit), Offset(14f * unit, y),
+                strokeWidth = 1.8f * unit, cap = StrokeCap.Round)
+        }
+    }
+}
+
 @Composable
 internal fun WorkspaceGeometryPanel(
     model: MeasurementEditModel, state: MeasurementEditState, enabled: Boolean,
@@ -215,9 +244,8 @@ internal fun WorkspaceGeometryPanel(
         }
     }
 
-    if ((review && !unresolved) || (edit && (
-        line != null && work != null && !line.unresolved ||
-            area != null && work != null && !area.unresolved))) {
+    if ((review && !unresolved) ||
+        (edit && area != null && work != null && !area.unresolved)) {
         FlowRow {
             if (review && !unresolved) TextButton(onClick = {
                 when {
@@ -226,13 +254,6 @@ internal fun WorkspaceGeometryPanel(
                     area != null -> model.confirmArea()
                 }
             }) { Text(stringResource(Res.string.p5b_review_confirm)) }
-            if (edit && line != null && work != null && !line.unresolved)
-                OutlinedButton(onClick = { model.requestDeclaredLength(work.uuid) },
-                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
-                    modifier = Modifier.heightIn(min = 36.dp)) {
-                    Text(stringResource(Res.string.p5b_take_length),
-                        style = MaterialTheme.typography.labelSmall)
-                }
             if (edit && area != null && work != null && !area.unresolved)
                 OutlinedButton(onClick = { model.requestAreaQuantity(work.uuid) },
                     contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
@@ -248,18 +269,68 @@ internal fun WorkspaceGeometryPanel(
             WorkspaceShortAction(stringResource(Res.string.p5b_wall_short), Icons.Default.Edit, model::openMounting)
         }
         if (line != null) {
-            WorkspaceSnapControl(snap, enabled, onSnapChanged)
-            if (state.mountingInput == null) FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                WorkspaceShortAction(stringResource(Res.string.p5b_start_short), Icons.Default.Edit) {
-                    model.openLineMounting(true)
+            // Stable one-row toolbar. Selecting an endpoint changes the active field, not
+            // the structure or position of the controls; no unsaved input is discarded.
+            val endpointOpen = state.mountingInput?.pointUuid == line.uuid
+                && state.mountingLineStart != null
+            val startActive = endpointOpen && state.mountingLineStart == true
+            val endActive = endpointOpen && state.mountingLineStart == false
+            val dimensionsActive = state.lineProperties?.uuid == line.uuid
+            val canTakeLength = work != null && !line.unresolved &&
+                model.displayLines().any { it.elementUuid == work.uuid && !it.unresolved }
+            fun chooseEndpoint(first: Boolean) {
+                if (state.lineProperties?.dirty == true) {
+                    model.dismissLineProperties()
+                    return
                 }
-                WorkspaceShortAction(stringResource(Res.string.p5b_end_short), Icons.Default.Edit) {
-                    model.openLineMounting(false)
+                if (state.lineProperties != null) model.discardLineProperties()
+                if (state.mountingInput?.dirty == true) {
+                    model.dismissMounting()
+                    return
+                }
+                if (endpointOpen && state.mountingLineStart == first) {
+                    model.dismissMounting()
+                } else {
+                    model.discardMounting()
+                    model.openLineMounting(first)
                 }
             }
-            if (state.lineProperties == null)
-                WorkspaceShortAction(stringResource(Res.string.p5b_size_short), Icons.Default.Edit,
-                    model::openLineProperties)
+            fun chooseDimensions() {
+                if (state.mountingInput?.dirty == true) {
+                    model.dismissMounting()
+                    return
+                }
+                if (state.mountingInput != null) model.discardMounting()
+                if (dimensionsActive) model.dismissLineProperties()
+                else model.openLineProperties()
+            }
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                val actions = listOf(
+                    Triple(stringResource(Res.string.p5b_start_short), startActive, { chooseEndpoint(true) }),
+                    Triple(stringResource(Res.string.p5b_end_short), endActive, { chooseEndpoint(false) }),
+                    Triple(stringResource(Res.string.p5b_size_short), dimensionsActive, { chooseDimensions() })
+                )
+                actions.forEach { (label, active, action) ->
+                    OutlinedButton(onClick = action, modifier = Modifier.weight(1f).heightIn(min = 36.dp),
+                        enabled = enabled,
+                        contentPadding = PaddingValues(horizontal = 2.dp, vertical = 0.dp),
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            containerColor = if (active) MaterialTheme.colorScheme.secondaryContainer
+                                else MaterialTheme.colorScheme.surface),
+                        border = BorderStroke(1.dp, if (active) MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.outlineVariant)) {
+                        Text(label, style = MaterialTheme.typography.labelSmall,
+                            maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                }
+                WorkspaceSnapControl(snap, enabled, onSnapChanged)
+                IconButton(onClick = { work?.let { model.requestDeclaredLength(it.uuid) } },
+                    enabled = enabled && canTakeLength, modifier = Modifier.size(40.dp)
+                        .testTag("p5b-line-take-length")) {
+                    WorkspaceDrawingLengthIcon()
+                }
+            }
             state.lineProperties?.let { input ->
                 val valid = model.linePropertiesCandidate(line, input) != null
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -333,7 +404,16 @@ internal fun WorkspaceGeometryPanel(
                     Text(stringResource(Res.string.p5b_dimensions_invalid), color = MaterialTheme.colorScheme.error)
             }
         }
-        if (state.mountingInput?.pointUuid == uuid) WallAnchorEditor(model, inline = true)
+        if (state.mountingInput?.pointUuid == uuid) {
+            if (line != null && state.mountingLineStart != null) {
+                Text(stringResource(if (state.mountingLineStart == true)
+                    Res.string.p5b_start_distances else Res.string.p5b_end_distances),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(start = 5.dp, top = 2.dp))
+            }
+            WallAnchorEditor(model, inline = true)
+        }
     }
 
     if (deletion) AlertDialog(onDismissRequest = { deletion = false },
