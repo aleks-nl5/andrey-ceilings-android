@@ -122,6 +122,36 @@ class MeasurementEditSceneTest {
         }
     }
 
+    @Test fun dirtyInvalidDraftExplainsSaveBlockerInsteadOfDisabledDiskette() {
+        val model = MeasurementEditModel(null, MeasurementEditDocument(3, 1, draft()))
+        val scene = ImageComposeScene(600, 840) {
+            CeilingsTheme(false) { MeasurementEditScreen(model, onBack = {}) }
+        }
+        try {
+            scene.render().close()
+            scene.frame()
+            val name = scene.nodes().single {
+                it.config.getOrNull(SemanticsActions.SetText) != null &&
+                    it.textTree().contains("Назва заміру")
+            }
+            assertTrue(name.config.getOrNull(SemanticsActions.SetText)?.action
+                ?.invoke(AnnotatedString("")) == true)
+            scene.frame()
+            assertTrue(model.state.value.dirty)
+            val reason = assertNotNull(validateMeasurementCreate(model.state.value.draft).nameError)
+            val save = scene.nodes().single {
+                it.config.getOrNull(SemanticsProperties.TestTag) == "measurement-edit-save"
+            }
+            assertNotNull(save.config.getOrNull(SemanticsActions.OnClick),
+                "Save with dirty invalid input must show the blocker on tap")
+            scene.click("Зберегти замір")
+            scene.frame()
+            assertTrue(scene.text().contains(reason),
+                "The precise validation problem should be visible in the Save popover")
+            assertTrue(model.state.value.dirty, "Explaining a blocker must not discard edits")
+        } finally { scene.close() }
+    }
+
     @Test fun shortCanvasKeepsThreeFullSizedZoomTargets() {
         val geometry = assertNotNull(validateMeasurementCreate(draft()).geometry)
         val scene = ImageComposeScene(640, 120) {

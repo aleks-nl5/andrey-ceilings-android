@@ -435,7 +435,9 @@ fun MeasurementEditScreen(
                     MeasurementEditorFab(
                         label = "Зберегти замір",
                         icon = if (saveConfirmed) Icons.Default.Check else Icons.Default.Save,
-                        enabled = canSave && enabled && state.dirty,
+                        // If the draft is dirty, Save stays tappable so it can explain a
+                        // validation blocker. A blocked tap MUST NOT write anything.
+                        enabled = enabled && state.dirty,
                         confirmed = saveConfirmed,
                         modifier = Modifier.testTag("measurement-edit-save").semantics {
                             stateDescription = when {
@@ -447,7 +449,7 @@ fun MeasurementEditScreen(
                             }
                             liveRegion = LiveRegionMode.Polite
                         },
-                        onClick = { save() }
+                        onClick = { if (canSave) save() else saveBlockOpen = true }
                     )
                 }
                 MeasurementGeometrySummary(validation.geometry)
