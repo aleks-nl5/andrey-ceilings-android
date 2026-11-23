@@ -72,7 +72,7 @@ class WorkspaceAddPointTouchTest {
                 compose.onNodeWithTag("measurement-live-area").assertIsDisplayed().assertContentDescriptionEquals(
                     "Площа: ${formatMeasurementAreaCompact(geometry.areaSquareMeters)} м²")
                 compose.onNodeWithTag("measurement-live-perimeter").assertIsDisplayed().assertContentDescriptionEquals(
-                    "Периметр: ${formatMeasurementLength(geometry.perimeterMeters, draft.precision)} м")
+                    "Периметр: ${formatMeasurementLengthCompact(geometry.perimeterMeters)} м")
             }
             assertLiveMetrics()
             click("Вартість")

@@ -9,6 +9,9 @@ class MeasurementFormattingTest {
         kotlin.test.assertEquals("13,76", formatMeasurementAreaCompact(13.7608))
         // The canonical high-precision display and stored geometry are unchanged.
         kotlin.test.assertEquals("13,7608", formatMeasurementArea(13.7608))
+        kotlin.test.assertEquals("18,20", formatMeasurementLengthCompact(18.200000000000003))
+        kotlin.test.assertEquals("18,21", formatMeasurementLengthCompact(18.207))
+        kotlin.test.assertEquals("—", formatMeasurementLengthCompact(Double.NaN))
     }
 
     @Test fun totalsUseCapturedPrecisionAndCommaWithoutBinaryTails() {

@@ -56,7 +56,7 @@ class MeasurementEditSceneTest {
                     val draft = model.state.value.draft
                     val geometry = assertNotNull(validateMeasurementCreate(draft).geometry)
                     assertMetrics("Площа: ${formatMeasurementAreaCompact(geometry.areaSquareMeters)} м²",
-                        "Периметр: ${formatMeasurementLength(geometry.perimeterMeters, draft.precision)} м")
+                        "Периметр: ${formatMeasurementLengthCompact(geometry.perimeterMeters)} м")
                 }
                 assertCurrentGeometry()
                 scene.click("Елементи")

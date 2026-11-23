@@ -368,7 +368,7 @@ fun MeasurementEditScreen(
                         onClick = { save() }
                     )
                 }
-                MeasurementGeometrySummary(validation.geometry, draft.precision)
+                MeasurementGeometrySummary(validation.geometry)
             }
         },
         overlay = { headerHeight ->
@@ -950,9 +950,9 @@ private fun MeasurementDimensionRows(count: Int, columns: Int, field: @Composabl
 }
 
 @Composable
-private fun MeasurementGeometrySummary(geometry: FrozenPolygonGeometry?, precision: MeasurementPrecision) {
+private fun MeasurementGeometrySummary(geometry: FrozenPolygonGeometry?) {
     val area = geometry?.let { formatMeasurementAreaCompact(it.areaSquareMeters) }.orEmpty()
-    val perimeter = geometry?.let { formatMeasurementLength(it.perimeterMeters, precision) }.orEmpty()
+    val perimeter = geometry?.let { formatMeasurementLengthCompact(it.perimeterMeters) }.orEmpty()
     val areaValue = if (geometry == null) stringResource(Res.string.p5b_live_area_unavailable)
         else stringResource(Res.string.p5b_live_area_value, area)
     val perimeterValue = if (geometry == null) stringResource(Res.string.p5b_live_perimeter_unavailable)

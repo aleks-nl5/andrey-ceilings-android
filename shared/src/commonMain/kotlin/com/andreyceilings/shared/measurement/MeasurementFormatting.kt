@@ -11,6 +11,10 @@ fun formatMeasurementArea(value: Double, precision: MeasurementPrecision? = null
 fun formatMeasurementAreaCompact(value: Double): String =
     formatMeasurementNumber(value, 2, trimZeros = false)
 
+/** Compact live perimeter, independent of capture precision and never used in calculations. */
+fun formatMeasurementLengthCompact(value: Double): String =
+    formatMeasurementNumber(value, 2, trimZeros = false)
+
 fun formatMeasurementLength(value: Double, precision: MeasurementPrecision? = null): String =
     formatMeasurementNumber(value, precision?.lengthDigits ?: 3, trimZeros = precision == null)
 
