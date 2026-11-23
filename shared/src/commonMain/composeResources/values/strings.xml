@@ -161,7 +161,7 @@
     <string name="p5b_work_status">%1$s · %2$s</string>
     <string name="p5b_details_drag_hint">Перетягніть вибраний об’єкт. Після руху положення буде приблизним.</string>
     <string name="p5b_capacity_full">Досягнуто заявленої кількості.</string>
-    <string name="p5b_line_length">Ця лінія, м</string>
+    <string name="p5b_line_length">Довжина, м</string>
     <string name="p5b_rectangle_width">Ширина, м</string>
     <string name="p5b_rectangle_height">Висота, м</string>
     <string name="p5b_line_declared_value">Для кошторису: %1$s</string>
