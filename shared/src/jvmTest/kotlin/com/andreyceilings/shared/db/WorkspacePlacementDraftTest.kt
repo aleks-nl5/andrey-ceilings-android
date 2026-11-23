@@ -44,13 +44,18 @@ class WorkspacePlacementDraftTest {
             val fixture = PointPlacementProof.fixture(db)
             val store = MeasurementEditStore(db) { 101 }
             val editor = MeasurementEditModel(store, store.load(fixture.project, fixture.id))
+            // The shared fixture already contains one point work. Creating LINE
+            // and AREA must preserve that work and add exactly two new UUIDs.
+            val initialWorkIds = editor.workspaceWorks().map { it.uuid }.toSet()
+            assertEquals(setOf(fixture.element.uuid), initialWorkIds)
 
             val lineItem = addItem(db, "Line settings", PlacementKind.LINE, "м.п.")
             editor.addCatalogWork(lineItem, ElementQuantity.Exact(3000), place = true)
             assertTrue(editor.finishWorkspaceLine(PointPositionMm(500, 600), PointPositionMm(1500, 600)))
             val line = editor.displayLines().single()
+            val lineWorkId = assertNotNull(line.elementUuid)
             editor.clearDrawingSelection()
-            assertTrue(editor.selectFirstWorkspacePlacement(line.elementUuid))
+            assertTrue(editor.selectFirstWorkspacePlacement(lineWorkId))
             assertEquals(line.uuid, editor.state.value.selectedLineUuid)
             assertEquals(line.uuid, editor.state.value.lineProperties?.uuid)
             editor.discardLineProperties()
@@ -66,9 +71,14 @@ class WorkspacePlacementDraftTest {
             assertTrue(editor.selectFirstWorkspacePlacement(areaWorkId))
             assertEquals(area.uuid, editor.state.value.area.selected)
             assertEquals(area.uuid, editor.state.value.area.properties?.uuid)
-            assertEquals(2, editor.workspaceWorks().size)
+            assertEquals(initialWorkIds + setOf(lineWorkId, areaWorkId),
+                editor.workspaceWorks().map { it.uuid }.toSet(),
+                "Settings must not add or remove catalog works")
+            assertEquals(initialWorkIds.size + 2, editor.workspaceWorks().size)
+            assertEquals(ElementQuantity.Exact(6000),
+                editor.workspaceWorks().single { it.uuid == fixture.element.uuid }.quantity)
             assertEquals(ElementQuantity.Exact(3000),
-                editor.workspaceWorks().single { it.uuid == line.elementUuid }.quantity)
+                editor.workspaceWorks().single { it.uuid == lineWorkId }.quantity)
             assertEquals(ElementQuantity.Exact(2000),
                 editor.workspaceWorks().single { it.uuid == areaWorkId }.quantity)
         }
