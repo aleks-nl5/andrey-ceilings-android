@@ -1,0 +1,66 @@
+package com.andreyceilings.shared.input
+
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+
+/**
+ * Compact outlined input with genuinely smaller interior padding.
+ * Height-only overrides on M3 OutlinedTextField clip text/labels.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun CompactOutlinedField(
+    value: TextFieldValue,
+    onValueChange: (TextFieldValue) -> Unit,
+    label: String,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    isError: Boolean = false,
+    interactionSource: MutableInteractionSource = remember { MutableInteractionSource() },
+    keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
+    keyboardActions: KeyboardActions = KeyboardActions.Default,
+    leadingIcon: (@Composable () -> Unit)? = null,
+    textStyle: TextStyle = MaterialTheme.typography.bodyMedium
+) {
+    val transformation = VisualTransformation.None
+    val colors = OutlinedTextFieldDefaults.colors()
+    BasicTextField(
+        value = value, onValueChange = onValueChange,
+        modifier = modifier.fillMaxWidth().height(52.dp),
+        enabled = enabled, singleLine = true,
+        keyboardOptions = keyboardOptions, keyboardActions = keyboardActions,
+        textStyle = textStyle.copy(color = if (enabled) MaterialTheme.colorScheme.onSurface
+            else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)),
+        cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+        interactionSource = interactionSource,
+        decorationBox = { inner ->
+            OutlinedTextFieldDefaults.DecorationBox(
+                value = value.text, innerTextField = inner,
+                enabled = enabled, singleLine = true, visualTransformation = transformation,
+                interactionSource = interactionSource, isError = isError,
+                label = { Text(label, style = MaterialTheme.typography.labelSmall,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                leadingIcon = leadingIcon, colors = colors,
+                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+            )
+        }
+    )
+}

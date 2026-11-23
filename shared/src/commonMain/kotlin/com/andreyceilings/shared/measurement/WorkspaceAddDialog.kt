@@ -202,7 +202,7 @@ internal fun WorkspaceCatalogSearch(
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(2.dp)) {
         OutlinedTextField(query, { query = it },
-            Modifier.weight(1f).height(60.dp).testTag("p5b-catalog-search"),
+            Modifier.weight(1f).height(56.dp).testTag("p5b-catalog-search"),
             singleLine = true, textStyle = MaterialTheme.typography.bodySmall,
             label = { Text(stringResource(Res.string.p5b_search_short)) })
         if (role == null) {

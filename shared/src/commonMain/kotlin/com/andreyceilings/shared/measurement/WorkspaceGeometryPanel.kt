@@ -244,7 +244,7 @@ internal fun WorkspaceGeometryPanel(
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     OutlinedTextField(input.note, { model.changeLineProperties(note = it) },
-                        modifier = Modifier.weight(1f).height(60.dp), singleLine = true,
+                        modifier = Modifier.weight(1f).height(56.dp), singleLine = true,
                         textStyle = MaterialTheme.typography.bodySmall,
                         label = { Text(stringResource(Res.string.p5b_line_note)) })
                     IconButton(onClick = model::applyLineProperties, enabled = valid) {
@@ -288,7 +288,7 @@ internal fun WorkspaceGeometryPanel(
                 val valid = model.areaPropertiesCandidate(area, input) != null
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     OutlinedTextField(input.note, { value -> model.changeAreaProperties { it.copy(note = value) } },
-                        modifier = Modifier.weight(1f).height(60.dp), singleLine = true,
+                        modifier = Modifier.weight(1f).height(56.dp), singleLine = true,
                         textStyle = MaterialTheme.typography.bodySmall,
                         label = { Text(stringResource(Res.string.p5b_placement_note)) })
                     IconButton(onClick = model::applyAreaProperties, enabled = valid) {

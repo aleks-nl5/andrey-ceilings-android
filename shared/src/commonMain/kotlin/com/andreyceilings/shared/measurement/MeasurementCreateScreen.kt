@@ -1,6 +1,7 @@
 package com.andreyceilings.shared.measurement
 
 import com.andreyceilings.shared.input.filterNumericEdit
+import com.andreyceilings.shared.input.CompactOutlinedField
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -278,23 +279,27 @@ internal fun MeasurementLengthField(value: String, label: String, error: String?
             }
         }
     }
-    OutlinedTextField(value = field, onValueChange = ::update, label = { Text(label, style = if (compact) MaterialTheme.typography.labelSmall else MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis) }, enabled = enabled, singleLine = true,
-        textStyle = if (compact) MaterialTheme.typography.bodyMedium else MaterialTheme.typography.bodyLarge,
-        modifier = modifier.then(measurementFieldFocusModifier()).fillMaxWidth()
-            .then(if (compact) Modifier.height(60.dp) else Modifier)
-            .onFocusChanged {
-                hasRealFocus = it.isFocused
-                onFocus(it.isFocused)
-            },
-        interactionSource = interactionSource,
-        colors = OutlinedTextFieldDefaults.colors(),
-        keyboardOptions = KeyboardOptions(
-            keyboardType = KeyboardType.Decimal,
-            imeAction = if (onNext == null) ImeAction.Default else ImeAction.Next
-        ),
-        keyboardActions = KeyboardActions(onNext = onNext?.let { next -> { next() } }),
-        isError = value.isNotEmpty() && error != null,
-        supportingText = if (error == null) null else ({ Text(error) }))
+    val fieldModifier = modifier.then(measurementFieldFocusModifier()).fillMaxWidth()
+        .onFocusChanged {
+            hasRealFocus = it.isFocused
+            onFocus(it.isFocused)
+        }
+    val keys = KeyboardOptions(keyboardType = KeyboardType.Decimal,
+        imeAction = if (onNext == null) ImeAction.Default else ImeAction.Next)
+    val actions = KeyboardActions(onNext = onNext?.let { next -> { next() } })
+    if (compact) {
+        CompactOutlinedField(field, ::update, label, modifier = fieldModifier,
+            enabled = enabled, isError = value.isNotEmpty() && error != null,
+            interactionSource = interactionSource, keyboardOptions = keys,
+            keyboardActions = actions)
+    } else {
+        OutlinedTextField(value = field, onValueChange = ::update,
+            label = { Text(label) }, enabled = enabled, singleLine = true,
+            modifier = fieldModifier, interactionSource = interactionSource,
+            keyboardOptions = keys, keyboardActions = actions,
+            isError = value.isNotEmpty() && error != null,
+            supportingText = if (error == null) null else ({ Text(error) }))
+    }
 }
 
 @Composable

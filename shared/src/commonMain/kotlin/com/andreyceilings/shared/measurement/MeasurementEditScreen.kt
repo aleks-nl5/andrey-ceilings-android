@@ -470,38 +470,38 @@ fun MeasurementEditScreen(
                                 }
                             )
                             val scrollBounds = if (!elementsContext && !fullscreen) Modifier.fillMaxSize() else Modifier.fillMaxWidth()
-                            Column(scrollBounds.then(if (elementsContext) Modifier else panelTag).verticalScroll(scroll),
+                            Column(scrollBounds.then(if (elementsContext) Modifier else panelTag)
+                                .verticalScroll(scroll)
+                                .padding(top = if (context == MeasurementEditContext.CONTOUR) 14.dp else 6.dp,
+                                    bottom = 12.dp),
                                 verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             when (context) {
                                 MeasurementEditContext.CONTOUR -> {
-                                    var contourDetails by rememberSaveable { mutableStateOf(false) }
                                     val nameFocus = remember { FocusRequester() }
                                     val notesFocus = remember { FocusRequester() }
-                                    val detailsVisible = contourDetails
+                                    val detailsVisible = true
                                     MeasurementSelectedFields(model, selected, validation, enabled, ::selectSideFromField,
                                         followingField = nameFocus.takeIf { detailsVisible })
-                                    MeasurementDisclosure("Деталі заміру", detailsVisible) {
-                                        if (detailsVisible) focus.clearFocus()
-                                        contourDetails = !contourDetails
-                                    }
+                                    Text(stringResource(Res.string.p5b_measurement_details),
+                                        style = MaterialTheme.typography.titleSmall,
+                                        modifier = Modifier.padding(top = 6.dp, start = 8.dp))
                                     if (detailsVisible) {
                                         OutlinedTextField(draft.name, { model.accept(MeasurementCreateIntent.Name(it), grouped = true) },
                                             enabled = enabled, label = { Text("Назва заміру *") }, singleLine = true,
-                                            modifier = measurementFieldFocusModifier().fillMaxWidth().height(60.dp).focusRequester(nameFocus)
+                                            modifier = measurementFieldFocusModifier().fillMaxWidth().height(56.dp).focusRequester(nameFocus)
                                                 .onFocusChanged { if (it.isFocused) model.beginInput() else model.commitInput() },
                                             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
                                             keyboardActions = KeyboardActions(onNext = { notesFocus.requestFocus() }),
                                             isError = validation.nameError != null)
                                         OutlinedTextField(draft.notes, { model.accept(MeasurementCreateIntent.Notes(it), grouped = true) },
                                             enabled = enabled, label = { Text("Примітки") }, maxLines = 3,
-                                            modifier = measurementFieldFocusModifier().fillMaxWidth().height(88.dp).focusRequester(notesFocus)
+                                            modifier = measurementFieldFocusModifier().fillMaxWidth().height(72.dp).focusRequester(notesFocus)
                                                 .onFocusChanged { if (it.isFocused) model.beginInput() else model.commitInput() })
                                         MeasurementShapePicker(draft.shape, enabled) {
                                             focus.clearFocus()
                                             model.accept(MeasurementCreateIntent.Shape(it))
                                             selected = null
                                         }
-                                        Text("Точність · ${draft.precision.label}", style = MaterialTheme.typography.bodySmall)
                                     }
                                 }
                                 MeasurementEditContext.ELEMENTS -> {
