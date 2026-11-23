@@ -41,6 +41,12 @@
 - **Normal/fullscreen:** обидва переходи автоматично запускають вписування в **видиму** область, з урахуванням normal overlay, без зміни world-mm. Зміна вкладки сама по собі не викликає reset масштабу.
 - **Локалізація:** нові підписи контекстних вкладок, кнопки «Вписати креслення» та доступне оголошення креслення винесено в Compose resources; не перекладати користувацькі назви прайсу. Решта наявних hardcoded написів потребують планового i18n-аудиту.
 
+### Owner APK 19:02–19:04 — length field vs drawing-to-estimate transfer
+
+- **Confirmed intent:** «Ця лінія, м» is the actual length of **one selected line**. «Усі лінії» is the sum across the same catalog work; «Для кошторису» is **declared/billable quantity**. Transferring from drawing updates ONLY the billable quantity, never a particular line's geometry.
+- **Additional concrete UI defect:** the transfer dialog could be opened while `lineProperties` had an un-applied typed length. `displayLines()` rightly still used applied geometry, but the dialog looked like it was transferring the newly typed value; this mismatch confused the workflow.
+- **Fix in current Draft:** three concise labels adjacent in geometry editor, moved transfer icon to the billable quantity row (away from geometry-edit toolbar), explicit before/after in dialog; transfer disabled with a specific explanation until pending geometry fields are confirmed (✓). Model refuses programmatic stale transfer too, regression JVM test added. New strings use CMP resources. **Requires latest CI + owner's APK test.**
+
 ## 2. Переогляд суміжної архітектури
 
 **Перевірені напрями diff:** швидке створення заміру і редагування «Контур»; `WorkspaceAddDialog`, прайс/ролі полотна й профілю; `WorkspaceWorkList`; LINE/AREA/POINT geometry/model/UI/writer; `MeasurementEditStore` → `WorkspacePlacementWriter` → `CeilingEditRepository`; undo/redo/atomics/CAS; sheet/viewport/Canvas hit-testing; Android/desktop тести, ресурси й документація.

@@ -918,7 +918,9 @@ class MeasurementEditModel(
     }
     fun requestDeclaredLength(element:String?) {if(editable())mutableState.value=state.value.copy(lengthConfirm=element)}
     fun takeDeclaredLength() {
-        if (!editable()) return
+        if (!editable() || state.value.lineProperties?.dirty == true ||
+            state.value.mountingInput?.dirty == true ||
+            state.value.area.properties?.dirty == true) return
         val id = state.value.lengthConfirm ?: return
         val length = displayLines().filter { it.elementUuid == id && !it.unresolved }.sumOf { it.lengthMm }
         // Explicit transfer changes *declared quantity*, not the drawn geometry.
@@ -1148,7 +1150,9 @@ class MeasurementEditModel(
     }
     fun requestAreaQuantity(id:String?) {if(editable())updateArea {it.copy(quantityConfirm=id)}}
     fun takeAreaQuantity() {
-        if (!editable()) return
+        if (!editable() || state.value.lineProperties?.dirty == true ||
+            state.value.mountingInput?.dirty == true ||
+            state.value.area.properties?.dirty == true) return
         val id = state.value.area.quantityConfirm ?: return
         val work = areaElements().find { it.uuid == id } ?: return
         val qty = areaQuantityMilli(displayAreas().filter { it.elementUuid == id }, checkNotNull(work.unit))

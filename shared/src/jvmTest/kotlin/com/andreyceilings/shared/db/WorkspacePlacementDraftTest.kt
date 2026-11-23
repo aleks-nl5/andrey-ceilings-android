@@ -120,6 +120,40 @@ class WorkspacePlacementDraftTest {
     }
 
     @Test
+    fun pendingLineInputCannotTransferStaleDrawingLength() = runBlocking {
+        JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).use { driver ->
+            PriceCatalogSchema.create(driver)
+            val db = PrototypeDatabase(driver)
+            val fixture = PointPlacementProof.fixture(db)
+            val store = MeasurementEditStore(db) { 101 }
+            val editor = MeasurementEditModel(store, store.load(fixture.project, fixture.id))
+            val item = addItem(db, "Do not transfer stale value", PlacementKind.LINE, "м.п.")
+            editor.addCatalogWork(item, ElementQuantity.Exact(3000), place = true)
+            assertTrue(editor.finishWorkspaceLine(PointPositionMm(500, 600), PointPositionMm(1500, 600)))
+            val line = editor.displayLines().single()
+            val workId = line.elementUuid
+            editor.selectLine(line.uuid)
+            editor.openLineProperties()
+            editor.changeLineProperties(length = "1.5")
+            assertTrue(editor.state.value.lineProperties?.dirty == true)
+            editor.requestDeclaredLength(workId)
+            editor.takeDeclaredLength()
+            assertEquals(ElementQuantity.Exact(3000),
+                editor.workspaceWorks().single { it.uuid == workId }.quantity,
+                "A pending typed length must not silently transfer the old drawing sum")
+            assertEquals(1000L, editor.displayLines().single().lengthMm)
+            editor.applyLineProperties()
+            assertEquals(1500L, editor.displayLines().single().lengthMm)
+            editor.takeDeclaredLength()
+            assertEquals(ElementQuantity.Exact(1500),
+                editor.workspaceWorks().single { it.uuid == workId }.quantity,
+                "Transfer changes billed quantity, not the already applied line length")
+            assertEquals(1500L, editor.displayLines().single().lengthMm)
+            assertTrue(editor.canSaveMountingDraft())
+        }
+    }
+
+    @Test
     fun areaTransferAndManualIncreasePersistWithTheDrawing() = runBlocking {
         JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).use { driver ->
             PriceCatalogSchema.create(driver)

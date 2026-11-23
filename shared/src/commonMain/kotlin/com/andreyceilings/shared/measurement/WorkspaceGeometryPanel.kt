@@ -279,6 +279,8 @@ internal fun WorkspaceGeometryPanel(
             // geometry length below. It is intentionally NOT tied to drawing length.
             val claimedEditable = (work?.source as? ElementSource.CatalogSelection)
                 ?.quantityMode?.workspaceQuantity() == ElementQuantity.Unknown
+            val canTakeLength = work != null && !line.unresolved &&
+                model.displayLines().any { it.elementUuid == work.uuid && !it.unresolved }
             var editingClaim by remember(line.uuid) { mutableStateOf(false) }
             var claimText by rememberSaveable(line.uuid, work?.quantity) {
                 mutableStateOf((work?.quantity as? ElementQuantity.Exact)?.let {
@@ -288,10 +290,19 @@ internal fun WorkspaceGeometryPanel(
             var claimInvalid by remember(line.uuid) { mutableStateOf(false) }
             if (work != null) {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Text(stringResource(Res.string.p5b_line_declared_value,
-                        formatElementQuantity(work.quantity, work.unit)),
-                        modifier = Modifier.weight(1f), style = MaterialTheme.typography.labelSmall,
-                        maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Column(Modifier.weight(1f)) {
+                        Text(stringResource(Res.string.p5b_line_declared_value,
+                            formatElementQuantity(work.quantity, work.unit)),
+                            style = MaterialTheme.typography.labelSmall,
+                            maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        if (canTakeLength) Text(stringResource(Res.string.p5b_line_drawing_total,
+                            formatElementQuantity(ElementQuantity.Exact(model.displayLines()
+                                .filter { it.elementUuid == work.uuid && !it.unresolved }
+                                .sumOf { it.lengthMm }), work.unit)),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
                     if (claimedEditable) IconButton(onClick = {
                         claimText = (work.quantity as? ElementQuantity.Exact)?.let {
                             formatElementMilli(it.milli)
@@ -300,6 +311,11 @@ internal fun WorkspaceGeometryPanel(
                         claimInvalid = false
                     }, modifier = Modifier.size(40.dp)) {
                         Icon(Icons.Default.Edit, stringResource(Res.string.p5b_edit_work))
+                    }
+                    IconButton(onClick = { model.requestDeclaredLength(work.uuid) },
+                        enabled = enabled && canTakeLength,
+                        modifier = Modifier.size(40.dp).testTag("p5b-line-take-length")) {
+                        WorkspaceDrawingLengthIcon()
                     }
                 }
                 if (editingClaim && claimedEditable) {
@@ -334,8 +350,6 @@ internal fun WorkspaceGeometryPanel(
             val startActive = endpointOpen && state.mountingLineStart == true
             val endActive = endpointOpen && state.mountingLineStart == false
             val dimensionsActive = state.lineProperties?.uuid == line.uuid
-            val canTakeLength = work != null && !line.unresolved &&
-                model.displayLines().any { it.elementUuid == work.uuid && !it.unresolved }
             fun chooseEndpoint(first: Boolean) {
                 if (state.lineProperties?.dirty == true) {
                     model.dismissLineProperties()
@@ -383,11 +397,6 @@ internal fun WorkspaceGeometryPanel(
                     }
                 }
                 WorkspaceSnapControl(snap, enabled, onSnapChanged)
-                IconButton(onClick = { work?.let { model.requestDeclaredLength(it.uuid) } },
-                    enabled = enabled && canTakeLength, modifier = Modifier.size(40.dp)
-                        .testTag("p5b-line-take-length")) {
-                    WorkspaceDrawingLengthIcon()
-                }
             }
             state.lineProperties?.let { input ->
                 val valid = model.linePropertiesCandidate(line, input) != null
@@ -536,7 +545,12 @@ internal fun WorkspaceGeometryPanel(
         ) else 0L
         val currentQuantity = work?.quantity
         val proposedQuantity = ElementQuantity.Exact(proposed)
-        val canTransfer = work != null && proposed > 0 &&
+        // A typed but unconfirmed geometry length is NOT present in displayLines().
+        // Never present its old sum as the new value: require the checkmark first.
+        val pendingGeometry = state.lineProperties?.dirty == true ||
+            state.mountingInput?.dirty == true ||
+            state.area.properties?.dirty == true
+        val canTransfer = !pendingGeometry && work != null && proposed > 0 &&
             currentQuantity != proposedQuantity &&
             model.canEditWorkspaceQuantity(work.uuid, proposedQuantity)
         val cancel = { model.requestDeclaredLength(null); model.requestAreaQuantity(null) }
@@ -551,7 +565,11 @@ internal fun WorkspaceGeometryPanel(
                     Text(stringResource(Res.string.p5b_quantity_after,
                         work?.let { formatElementQuantity(proposedQuantity, it.unit) } ?: "—"),
                         color = MaterialTheme.colorScheme.primary)
-                    if (proposed <= 0) Text(stringResource(Res.string.p5b_drawing_quantity_empty),
+                    if (pendingGeometry) Text(
+                        stringResource(Res.string.p5b_quantity_apply_line_first),
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall)
+                    else if (proposed <= 0) Text(stringResource(Res.string.p5b_drawing_quantity_empty),
                         color = MaterialTheme.colorScheme.error)
                     else if (currentQuantity == proposedQuantity) Text(
                         stringResource(Res.string.p5b_drawing_quantity_equal),
