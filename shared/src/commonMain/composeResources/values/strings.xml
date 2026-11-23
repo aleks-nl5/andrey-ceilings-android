@@ -49,6 +49,7 @@
     <string name="p5b_place_more">Розмістити ще</string>
     <string name="p5b_go_to_work">Перейти до роботи</string>
     <string name="p5b_apply_quantity">Застосувати кількість до чернетки</string>
+    <string name="p5b_apply_draft">Оновити на кресленні (у чернетці)</string>
     <string name="p5b_in_measurement">У замірі</string>
     <string name="p5b_material_selection_failed">Не вдалося обрати матеріал. Перевірте наявні розміщення й стан прайсу.</string>
     <string name="p5b_line_kind_required">Щоб креслити цю роботу, встановіть тип «Лінія» у прайсі.</string>

@@ -6,7 +6,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -75,7 +76,6 @@ internal fun WorkspaceGeometryPanel(
     val area = model.displayAreas().find { it.uuid == state.area.selected }
     val uuid = point?.uuid ?: line?.uuid ?: area?.uuid ?: return
     var edit by rememberSaveable(uuid) { mutableStateOf(false) }
-    var menu by remember(uuid) { mutableStateOf(false) }
     var deletion by remember(uuid) { mutableStateOf(false) }
     val workId = point?.elementUuid ?: line?.elementUuid ?: area?.elementUuid
     val work = model.workspaceWorks().find { it.uuid == workId }
@@ -119,32 +119,32 @@ internal fun WorkspaceGeometryPanel(
         }, enabled = enabled) {
             Icon(Icons.Default.Edit, stringResource(Res.string.p5b_edit_dimensions))
         }
-        Box {
-            IconButton(onClick = { menu = true }, enabled = enabled) {
-                Icon(Icons.Default.MoreVert, stringResource(Res.string.p5b_more_actions))
-            }
-            DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                if (review && !unresolved) DropdownMenuItem(text = { Text(stringResource(Res.string.p5b_review_confirm)) },
-                    onClick = {
-                        menu = false
-                        when {
-                            point != null -> model.stagePoint(point.uuid, PointMountingEdit(confirm = true))
-                            line != null -> model.confirmLine()
-                            area != null -> model.confirmArea()
-                        }
-                    })
-                if (line != null && work != null && !line.unresolved) DropdownMenuItem(
-                    text = { Text(stringResource(Res.string.p5b_take_length)) },
-                    onClick = { menu = false; model.requestDeclaredLength(work.uuid) })
-                if (area != null && work != null && !area.unresolved) DropdownMenuItem(
-                    text = { Text(stringResource(Res.string.p5b_take_quantity)) },
-                    onClick = { menu = false; model.requestAreaQuantity(work.uuid) })
-                DropdownMenuItem(text = { Text(stringResource(Res.string.p5b_delete_placement)) },
-                    onClick = { menu = false; deletion = true })
-            }
+        IconButton(onClick = { deletion = true }, enabled = enabled) {
+            Icon(Icons.Default.Delete, stringResource(Res.string.p5b_delete_placement))
         }
         IconButton(onClick = model::clearDrawingSelection) {
             Icon(Icons.Default.Close, stringResource(Res.string.p5b_clear_selection))
+        }
+    }
+
+    if ((review && !unresolved) || (line != null && work != null && !line.unresolved) ||
+        (area != null && work != null && !area.unresolved)) {
+        FlowRow {
+            if (review && !unresolved) TextButton(onClick = {
+                when {
+                    point != null -> model.stagePoint(point.uuid, PointMountingEdit(confirm = true))
+                    line != null -> model.confirmLine()
+                    area != null -> model.confirmArea()
+                }
+            }) { Text(stringResource(Res.string.p5b_review_confirm)) }
+            if (line != null && work != null && !line.unresolved)
+                TextButton(onClick = { model.requestDeclaredLength(work.uuid) }) {
+                    Text(stringResource(Res.string.p5b_take_length))
+                }
+            if (area != null && work != null && !area.unresolved)
+                TextButton(onClick = { model.requestAreaQuantity(work.uuid) }) {
+                    Text(stringResource(Res.string.p5b_take_quantity))
+                }
         }
     }
 
@@ -163,17 +163,30 @@ internal fun WorkspaceGeometryPanel(
             }
             state.lineProperties?.let { input ->
                 val valid = model.linePropertiesCandidate(line, input) != null
-                DecimalInputField(input.length ?: formatPointMetres(line.lengthMm), { model.changeLineProperties(length = it) },
-                    stringResource(Res.string.p5b_line_length), modifier = measurementFieldFocusModifier())
-                DecimalInputField(input.width, { model.changeLineProperties(width = it) }, stringResource(Res.string.p5b_line_size),
-                    modifier = measurementFieldFocusModifier(), allowDecimalSeparator = false, isError = !input.valid)
-                OutlinedTextField(input.note, { model.changeLineProperties(note = it) },
-                    label = { Text(stringResource(Res.string.p5b_line_note)) })
-                if (!valid) Text(stringResource(Res.string.p5b_dimensions_invalid), color = MaterialTheme.colorScheme.error)
-                TextButton(onClick = model::applyLineProperties, enabled = valid) {
-                    Text(stringResource(Res.string.p5b_apply_dimensions))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    DecimalInputField(input.length ?: formatPointMetres(line.lengthMm),
+                        { model.changeLineProperties(length = it) },
+                        stringResource(Res.string.p5b_line_length),
+                        modifier = measurementFieldFocusModifier().weight(1f))
+                    Spacer(Modifier.width(6.dp))
+                    DecimalInputField(input.width, { model.changeLineProperties(width = it) },
+                        stringResource(Res.string.p5b_line_size),
+                        modifier = measurementFieldFocusModifier().weight(1f),
+                        allowDecimalSeparator = false, isError = !input.valid)
                 }
-                TextButton(onClick = model::discardLineProperties) { Text(stringResource(Res.string.p5b_cancel_placement)) }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    OutlinedTextField(input.note, { model.changeLineProperties(note = it) },
+                        modifier = Modifier.weight(1f),
+                        label = { Text(stringResource(Res.string.p5b_line_note)) })
+                    IconButton(onClick = model::applyLineProperties, enabled = valid) {
+                        Icon(Icons.Default.Check, stringResource(Res.string.p5b_apply_draft))
+                    }
+                    IconButton(onClick = model::discardLineProperties) {
+                        Icon(Icons.Default.Close, stringResource(Res.string.p5b_cancel_placement))
+                    }
+                }
+                if (!valid) Text(stringResource(Res.string.p5b_dimensions_invalid),
+                    color = MaterialTheme.colorScheme.error)
             }
         }
         if (area != null) {
@@ -190,20 +203,33 @@ internal fun WorkspaceGeometryPanel(
             }
             state.area.properties?.let { input ->
                 if (input.width != null && input.height != null) {
-                    DecimalInputField(input.width, { value -> model.changeAreaProperties { it.copy(width = value) } },
-                        stringResource(Res.string.p5b_rectangle_width), modifier = measurementFieldFocusModifier())
-                    DecimalInputField(input.height, { value -> model.changeAreaProperties { it.copy(height = value) } },
-                        stringResource(Res.string.p5b_rectangle_height), modifier = measurementFieldFocusModifier())
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        DecimalInputField(input.width, { value -> model.changeAreaProperties { it.copy(width = value) } },
+                            stringResource(Res.string.p5b_rectangle_width),
+                            modifier = measurementFieldFocusModifier().weight(1f))
+                        Spacer(Modifier.width(6.dp))
+                        DecimalInputField(input.height, { value -> model.changeAreaProperties { it.copy(height = value) } },
+                            stringResource(Res.string.p5b_rectangle_height),
+                            modifier = measurementFieldFocusModifier().weight(1f))
+                    }
                 }
                 if (area.shape is AreaShape.Circle) DecimalInputField(input.diameter,
                     { value -> model.changeAreaProperties { it.copy(diameter = value, diameterMeasured = true) } },
                     stringResource(Res.string.p5b_numeric_diameter), modifier = measurementFieldFocusModifier())
-                OutlinedTextField(input.note, { value -> model.changeAreaProperties { it.copy(note = value) } },
-                    label = { Text(stringResource(Res.string.p5b_placement_note)) })
-                if (model.areaPropertiesCandidate(area, input) == null)
+                val valid = model.areaPropertiesCandidate(area, input) != null
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    OutlinedTextField(input.note, { value -> model.changeAreaProperties { it.copy(note = value) } },
+                        modifier = Modifier.weight(1f),
+                        label = { Text(stringResource(Res.string.p5b_placement_note)) })
+                    IconButton(onClick = model::applyAreaProperties, enabled = valid) {
+                        Icon(Icons.Default.Check, stringResource(Res.string.p5b_apply_draft))
+                    }
+                    IconButton(onClick = model::discardAreaProperties) {
+                        Icon(Icons.Default.Close, stringResource(Res.string.p5b_cancel_placement))
+                    }
+                }
+                if (!valid)
                     Text(stringResource(Res.string.p5b_dimensions_invalid), color = MaterialTheme.colorScheme.error)
-                TextButton(onClick = model::applyAreaProperties) { Text(stringResource(Res.string.p5b_apply_dimensions)) }
-                TextButton(onClick = model::discardAreaProperties) { Text(stringResource(Res.string.p5b_cancel_placement)) }
             }
         }
         if (state.mountingInput?.pointUuid == uuid) WallAnchorEditor(model, inline = true)
@@ -245,14 +271,19 @@ internal fun WorkspaceWorkList(
     val works = model.workspaceWorks()
     for (work in works) key(work.uuid) {
         var edit by rememberSaveable { mutableStateOf(false) }
-        var menu by remember { mutableStateOf(false) }
         var deletion by remember { mutableStateOf(false) }
         val isSelected = selected == work.uuid
+        val namesakes = works.filter { it.label == work.label }
+        val shownTitle = if (namesakes.size > 1)
+            "${work.label} #${namesakes.indexOfFirst { it.uuid == work.uuid } + 1}"
+        else work.label
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f).heightIn(min = 48.dp).semantics { this.selected = isSelected }.clickable(enabled = enabled) {
                 onSelect(if (isSelected) null else work.uuid)
             }, verticalArrangement = Arrangement.Center) {
-                Text(work.label, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(shownTitle,
+                    style = if (isSelected) MaterialTheme.typography.titleSmall else MaterialTheme.typography.bodyMedium,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis)
                 val details = workQuantityText(model, work)
                 val review = model.displayPoints().any { it.elementUuid == work.uuid && it.mounting.needsReview } ||
                     model.displayLines().any { it.elementUuid == work.uuid && it.needsReview } ||
@@ -274,14 +305,8 @@ internal fun WorkspaceWorkList(
                 enabled = enabled && source?.quantityMode?.workspaceQuantity() == ElementQuantity.Unknown) {
                 Icon(Icons.Default.Edit, stringResource(Res.string.p5b_edit_work))
             }
-            Box {
-                IconButton(onClick = { menu = true }, enabled = enabled) {
-                    Icon(Icons.Default.MoreVert, stringResource(Res.string.p5b_more_actions))
-                }
-                DropdownMenu(menu, onDismissRequest = { menu = false }) {
-                    DropdownMenuItem(text = { Text(stringResource(Res.string.p5b_delete_work)) },
-                        onClick = { menu = false; deletion = true })
-                }
+            IconButton(onClick = { deletion = true }, enabled = enabled) {
+                Icon(Icons.Default.Delete, stringResource(Res.string.p5b_delete_work))
             }
         }
         if (isSelected && edit) {
@@ -289,19 +314,24 @@ internal fun WorkspaceWorkList(
                 mutableStateOf((work.quantity as? ElementQuantity.Exact)?.let { formatElementMilli(it.milli) }.orEmpty())
             }
             var invalid by remember { mutableStateOf(false) }
-            DecimalInputField(quantity, { quantity = it; invalid = false },
-                stringResource(Res.string.p5b_declared_quantity, work.unit.orEmpty()),
-                modifier = measurementFieldFocusModifier(), isError = invalid)
-            FlowRow {
-                TextButton(onClick = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                DecimalInputField(quantity, { quantity = it; invalid = false },
+                    stringResource(Res.string.p5b_declared_quantity, work.unit.orEmpty()),
+                    modifier = measurementFieldFocusModifier().weight(1f), isError = invalid,
+                    allowDecimalSeparator = work.unit != "шт.")
+                IconButton(onClick = {
                     val value = if (quantity.isBlank()) ElementQuantity.Unknown
                         else parseElementMilli(quantity, work.unit)?.let { ElementQuantity.Exact(it) }
                     if (value != null && model.editWorkspaceQuantity(work.uuid, value)) edit = false else invalid = true
-                }) { Text(stringResource(Res.string.p5b_apply_dimensions)) }
-                TextButton(onClick = { edit = false }) { Text(stringResource(Res.string.p5b_cancel_placement)) }
+                }) { Icon(Icons.Default.Check, stringResource(Res.string.p5b_apply_quantity)) }
+                IconButton(onClick = { edit = false }) {
+                    Icon(Icons.Default.Close, stringResource(Res.string.p5b_cancel_placement))
+                }
             }
             if (invalid) Text(stringResource(Res.string.p5b_quantity_invalid), color = MaterialTheme.colorScheme.error)
         }
+        HorizontalDivider(Modifier.padding(top = 5.dp, bottom = 6.dp),
+            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
         if (deletion) AlertDialog(onDismissRequest = { deletion = false },
             title = { Text(stringResource(Res.string.p5b_delete_work)) },
             text = { Text(stringResource(Res.string.p5b_delete_work_explain, work.label)) },
