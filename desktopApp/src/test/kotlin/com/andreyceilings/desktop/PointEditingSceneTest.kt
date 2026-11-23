@@ -134,7 +134,7 @@ class PointEditingSceneTest {
                 scene.click("Задати розміри від стін")
                 scene.awaitDrawingPoints(pointIds)
                 scene.tapWorld(saved.xMm,saved.yMm)
-                scene.click("Задати розміри від стін")
+                scene.click("Редагувати розміри")
                 scene.setField("Від першої стіни, м","0,")
                 assertEquals(saved,points.find(p.uuid))
                 scene.setField("Від першої стіни, м","0,6");scene.setField("Від другої стіни, м","1.5")
@@ -144,7 +144,7 @@ class PointEditingSceneTest {
                 scene.click("На весь екран")
                 scene.awaitDrawingPoints(pointIds)
                 scene.click("Елементи")
-                scene.awaitText("Точкові позначки")
+                scene.awaitText(element.label)
                 scene.click("Закрити панель")
                 val fsStart=scene.world(1500,600);val fsEnd=scene.world(1700,900)
                 scene.sendPointerEvent(PointerEventType.Press,fsStart,type=inputType)
@@ -152,7 +152,9 @@ class PointEditingSceneTest {
                 scene.sendPointerEvent(PointerEventType.Release,fsEnd,type=inputType)
                 scene.frame();assertEquals(saved,points.find(p.uuid))
                 scene.click("Елементи")
-                scene.awaitText("Виміряних прив'язок немає")
+                val dragged = scene.canvas().config[MeasurementDrawingSemantics.Points].single { it.uuid == p.uuid }
+                assertEquals(PointPrecision.APPROXIMATE, dragged.precision)
+                assertNull(dragged.mounting.anchor)
                 scene.click("Скасувати дію");scene.click("Згорнути")
                 scene.click("Контур")
                 scene.setField("AB, м", "")
@@ -162,7 +164,6 @@ class PointEditingSceneTest {
                 assertTrue(scene.canvas().config.getOrNull(SemanticsProperties.ContentDescription).orEmpty().any { it.contains("позначок: 2") })
                 scene.setField("AB, м", "1");scene.setField("BC, м", "1")
                 scene.click("Елементи")
-                scene.awaitText("Попередній перерахунок")
                 scene.awaitDrawingPoints(pointIds)
                 scene.click("Контур")
                 scene.setField("BC, м", "4");scene.setField("AB, м", "6")
@@ -188,10 +189,35 @@ class PointEditingSceneTest {
                 scene.click("Перевірити (2)")
                 scene.awaitDrawingPoints(pointIds)
                 scene.click("Елементи")
-                scene.click("Точкові позначки · 2")
-                scene.click("Перевірити (2)");scene.click("Розміщення перевірено")
-                scene.awaitText("Перевірити (1)");scene.click("Розміщення перевірено")
-                repeat(150) {scene.frame();if(points.forMeasurement(original.uuid).any{it.mounting.needsReview})delay(25)}
+                scene.click("Вписати креслення")
+                val markers = scene.canvas().config[MeasurementDrawingSemantics.Points]
+                assertEquals(pointIds, markers.filter { it.mounting.needsReview }.map { it.uuid }.toSet())
+                for ((index, marker) in markers.withIndex()) {
+                    scene.tapWorld(marker.xMm, marker.yMm)
+                    assertEquals(marker.uuid, scene.canvas().config.getOrNull(MeasurementDrawingSemantics.SelectedPoint),
+                        "Review marker ${index + 1} at ${marker.xMm}, ${marker.yMm}")
+                    scene.awaitText("На перевірці")
+                    scene.click("Додаткові дії")
+                    scene.click("Підтвердити розміщення")
+                    withTimeout(5000) {
+                        while (scene.text().contains("Підтвердити розміщення") ||
+                            scene.canvas().config[MeasurementDrawingSemantics.Points].any {
+                                it.uuid == marker.uuid && it.mounting.needsReview
+                            }) {
+                            scene.frame()
+                            delay(20)
+                        }
+                    }
+                    scene.click("Зняти виділення")
+                }
+                assertTrue(points.forMeasurement(original.uuid).all { it.mounting.needsReview })
+                scene.click("Зберегти замір")
+                withTimeout(15000) {
+                    while (points.forMeasurement(original.uuid).any { it.mounting.needsReview }) {
+                        scene.frame()
+                        delay(25)
+                    }
+                }
                 assertTrue(points.forMeasurement(original.uuid).none {it.mounting.needsReview})
                 val beforeName=points.forMeasurement(original.uuid)
                 val geometryBeforeName=MeasurementRepository(db).find(id)!!.drawingJson

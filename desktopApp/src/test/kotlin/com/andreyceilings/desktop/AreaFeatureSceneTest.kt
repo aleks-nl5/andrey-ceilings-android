@@ -47,42 +47,46 @@ class AreaFeatureSceneTest {
                     }
                 }
                 scene.click("Елементи")
-                scene.click("Площинні об’єкти · 0")
-                scene.click("Позначити перешкоду")
+                scene.click("Додати елемент стелі")
+                scene.click("Перешкода")
                 scene.tapWorld(500,500)
                 assertEquals(1,model.state.value.area.vertices.size,"First area corner must be delivered in $dark theme")
                 scene.tapWorld(1000,1000)
                 assertEquals(2,model.state.value.area.vertices.size,"Second area corner must be delivered in $dark theme")
                 scene.click("Завершити фігуру в чернетці")
                 assertEquals(1,model.displayAreas().size)
-                scene.click("Позначити отвір")
+                scene.click("Додати елемент стелі")
+                scene.click("Отвір")
                 scene.setField("Діаметр, м (парні мм)", "0,2")
                 scene.tapWorld(2500, 1500)
                 assertEquals(1, model.state.value.area.vertices.size, "Circle center must be delivered in $dark theme")
                 scene.click("Завершити фігуру в чернетці")
-                scene.click("Розмістити область: ${element.label}")
+                scene.click("Додати елемент стелі")
+                scene.click(element.label, tag = "p5b-linked-${element.uuid}")
+                scene.click("Розмістити ще")
                 scene.tapWorld(1500, 500)
                 scene.tapWorld(2000, 1000)
                 assertEquals(2, model.state.value.area.vertices.size, "Catalog area corners must be delivered in $dark theme")
                 scene.click("Завершити фігуру в чернетці")
                 assertEquals(3,model.displayAreas().size)
+                assertEquals(element.uuid, model.displayAreas().single { it.role == AreaRole.GENERAL_AREA }.elementUuid)
                 assertTrue(AreaFeatureRepository(db).all().isEmpty())
                 scene.click("Скасувати дію");assertEquals(2,model.displayAreas().size);scene.click("Повторити")
                 scene.click("На весь екран");scene.click("Вписати креслення")
                 scene.click("Згорнути")
                 scene.tapWorld(2500,1500)
                 assertEquals(AreaRole.VOID_MARKER,model.displayAreas().first {it.uuid==model.state.value.area.selected}.role)
-                scene.click("Властивості фігури")
-                scene.setField("Виміряний діаметр", "")
-                scene.setField("Виміряний діаметр", ".")
+                scene.click("Редагувати розміри")
+                scene.setField("Діаметр, м (парні мм)", "")
+                scene.setField("Діаметр, м (парні мм)", ".")
                 assertEquals("0.", model.state.value.area.properties?.diameter)
-                scene.setField("Виміряний діаметр", ".007")
-                model.applyAreaProperties()
+                scene.setField("Діаметр, м (парні мм)", ".007")
+                scene.click("Застосувати розміри")
                 assertNotNull(model.state.value.area.properties, "Odd millimetres cannot commit")
-                scene.setField("Виміряний діаметр", ".008")
-                scene.setField("Примітка фігури","Вентиляція");scene.click("Застосувати властивості")
+                scene.setField("Діаметр, м (парні мм)", ".008")
+                scene.setField("Примітка фігури","Вентиляція");scene.click("Застосувати розміри")
                 assertEquals(4L, (model.displayAreas().first { it.role == AreaRole.VOID_MARKER }.shape as AreaShape.Circle).radiusMm)
-                scene.click("Видалити фігуру");scene.click("Видалити");assertEquals(2,model.displayAreas().size)
+                scene.click("Додаткові дії");scene.click("Видалити розміщення");scene.click("Видалити");assertEquals(2,model.displayAreas().size)
                 scene.click("Скасувати дію");assertEquals(3,model.displayAreas().size)
                 val ids=model.displayAreas().map {it.uuid}.toSet()
                 scene.click("Зберегти замір")
@@ -139,8 +143,12 @@ class AreaFeatureSceneTest {
     }
     private fun SemanticsNode.textTree(): String = config.getOrNull(SemanticsProperties.Text).orEmpty().joinToString { it.text } + children.joinToString { it.textTree() }
     private fun ImageComposeScene.text() = semanticsOwners.joinToString { it.rootSemanticsNode.textTree() }
-    private fun ImageComposeScene.click(label: String) {
-        repeat(240) { frame(); nodes().firstOrNull { it.config.getOrNull(SemanticsActions.OnClick) != null && (it.textTree() == label || label in it.config.getOrNull(SemanticsProperties.ContentDescription).orEmpty()) }?.let {
+    private fun ImageComposeScene.click(label: String, tag: String? = null) {
+        repeat(240) { frame(); nodes().firstOrNull {
+            it.config.getOrNull(SemanticsActions.OnClick) != null &&
+                (if (tag != null) it.config.getOrNull(SemanticsProperties.TestTag) == tag
+                else it.textTree() == label || label in it.config.getOrNull(SemanticsProperties.ContentDescription).orEmpty())
+        }?.let {
             assertNull(it.config.getOrNull(SemanticsProperties.Disabled), label)
             assertTrue(it.config.getOrNull(SemanticsActions.OnClick)?.action?.invoke() == true); frame(); return }; Thread.sleep(25) }
         fail("Missing action '$label': ${text().take(2000)}")
