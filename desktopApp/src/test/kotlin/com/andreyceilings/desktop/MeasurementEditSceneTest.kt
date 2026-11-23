@@ -55,7 +55,7 @@ class MeasurementEditSceneTest {
                 fun assertCurrentGeometry() {
                     val draft = model.state.value.draft
                     val geometry = assertNotNull(validateMeasurementCreate(draft).geometry)
-                    assertMetrics("Площа: ${formatMeasurementArea(geometry.areaSquareMeters, draft.precision)} м²",
+                    assertMetrics("Площа: ${formatMeasurementAreaCompact(geometry.areaSquareMeters)} м²",
                         "Периметр: ${formatMeasurementLength(geometry.perimeterMeters, draft.precision)} м")
                 }
                 assertCurrentGeometry()

@@ -70,7 +70,7 @@ class WorkspaceAddPointTouchTest {
                 val draft = shown.value.state.value.draft
                 val geometry = assertNotNull(validateMeasurementCreate(draft).geometry)
                 compose.onNodeWithTag("measurement-live-area").assertIsDisplayed().assertContentDescriptionEquals(
-                    "Площа: ${formatMeasurementArea(geometry.areaSquareMeters, draft.precision)} м²")
+                    "Площа: ${formatMeasurementAreaCompact(geometry.areaSquareMeters)} м²")
                 compose.onNodeWithTag("measurement-live-perimeter").assertIsDisplayed().assertContentDescriptionEquals(
                     "Периметр: ${formatMeasurementLength(geometry.perimeterMeters, draft.precision)} м")
             }
@@ -86,6 +86,12 @@ class WorkspaceAddPointTouchTest {
             val canvasTag = "p5b-catalog-${canvasItem.uuid}"
             compose.waitUntil(15_000) { compose.onAllNodes(hasTestTag(canvasTag)).fetchSemanticsNodes().isNotEmpty() }
             compose.onNodeWithTag(canvasTag).performScrollTo().performClick()
+            compose.runOnIdle {
+                assertTrue(shown.value.state.value.additions.elements.values.any {
+                    it.businessRole == com.andreyceilings.shared.livepricing.BusinessRole.CANVAS &&
+                        it.approval == ElementApproval.APPROVED
+                }, "Material selection must visibly stage a CANVAS before Save")
+            }
             compose.onNodeWithTag("p5b-material-CANVAS").assertIsDisplayed()
             compose.onNodeWithTag("p5b-material-PRIMARY_PROFILE").assertIsDisplayed()
             compose.onNodeWithTag("measurement-workspace-add").performClick()

@@ -314,7 +314,8 @@ class MeasurementEditModel(
         if (state.value.saving || state.value.checking || state.value.uncertain || validateMeasurementCreate(state.value.draft).geometry==null) return
         val point=displayPoints().find { it.uuid==state.value.selectedPointUuid } ?: return
         updateArea {it.copy(mountingIndex=null)}
-        mutableState.value=state.value.copy(mountingInput=WallAnchorInput.from(point,draftWalls()),mountingLineStart=null)
+        mutableState.value=state.value.copy(pointElementUuid=null,
+            mountingInput=WallAnchorInput.from(point,draftWalls()),mountingLineStart=null)
     }
     fun updateMounting(change: (WallAnchorInput)->WallAnchorInput) {
         mutableState.value=state.value.copy(mountingInput=state.value.mountingInput?.let(change),error=null)

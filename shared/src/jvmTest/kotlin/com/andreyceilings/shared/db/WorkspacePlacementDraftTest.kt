@@ -15,6 +15,36 @@ import kotlin.test.*
 
 class WorkspacePlacementDraftTest {
     @Test
+    fun multiplePointPlacementsKeepModeUntilDeclaredCapacity() = runBlocking {
+        JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).use { driver ->
+            PriceCatalogSchema.create(driver)
+            val db = PrototypeDatabase(driver)
+            val fixture = PointPlacementProof.fixture(db)
+            val store = MeasurementEditStore(db) { 100 }
+            val editor = MeasurementEditModel(store, store.load(fixture.project, fixture.id))
+            val item = store.placementCatalog().single { it.code.startsWith("fixture.") }
+            editor.addCatalogWork(item, ElementQuantity.Exact(3000), place = true)
+            val workId = assertNotNull(editor.state.value.pointElementUuid)
+            assertTrue(editor.placeWorkspacePoint(700, 800))
+            assertEquals(workId, editor.state.value.pointElementUuid)
+            assertEquals(1, editor.displayPoints().size)
+            assertTrue(editor.placeWorkspacePoint(1100, 800))
+            assertEquals(workId, editor.state.value.pointElementUuid)
+            assertEquals(2, editor.displayPoints().size)
+            assertTrue(editor.placeWorkspacePoint(1400, 800))
+            assertNull(editor.state.value.pointElementUuid)
+            assertEquals(3, editor.displayPoints().size)
+            assertFalse(editor.placeWorkspacePoint(1600, 800))
+            editor.undo()
+            assertEquals(2, editor.displayPoints().size)
+            editor.redo()
+            assertEquals(3, editor.displayPoints().size)
+            // No persisted geometry is touched before the one explicit overall Save.
+            assertTrue(store.load(fixture.project, fixture.id).placements.points.isEmpty())
+        }
+    }
+
+    @Test
     fun oneSavePersistsAllKindsAndRecoversAfterLostCommitResponse() = runBlocking {
         JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).use { raw ->
             PriceCatalogSchema.create(raw)

@@ -4,6 +4,13 @@ import com.andreyceilings.shared.calculation.MeasurementPrecision
 import kotlin.test.*
 
 class MeasurementFormattingTest {
+    @kotlin.test.Test fun workspaceAreaShortensOnlyVisiblePrecision() {
+        kotlin.test.assertEquals("6,00", formatMeasurementAreaCompact(6.0))
+        kotlin.test.assertEquals("13,76", formatMeasurementAreaCompact(13.7608))
+        // The canonical high-precision display and stored geometry are unchanged.
+        kotlin.test.assertEquals("13,7608", formatMeasurementArea(13.7608))
+    }
+
     @Test fun totalsUseCapturedPrecisionAndCommaWithoutBinaryTails() {
         val expected = listOf("20,40" to "18,2", "20,4000" to "18,20",
             "20,400000" to "18,200", "20,400000" to "18,200")
