@@ -660,20 +660,23 @@ internal fun WorkspaceWorkList(
                 Icon(Icons.Default.Settings, stringResource(Res.string.p5b_open_geometry_parameters))
             }
             val source = work.source as? ElementSource.CatalogSelection
-            IconButton(onClick = {
-                val closingSameEditor = isSelected && quantityEditingWork == work.uuid
-                onSelect(work.uuid)
-                quantityEditingWork = if (closingSameEditor) null else work.uuid
-            },
-                enabled = enabled && source?.quantityMode?.workspaceQuantity() == ElementQuantity.Unknown &&
-                    (!work.supportsLinePlacement() || !hasPlacement)) {
-                Icon(Icons.Default.Edit, stringResource(Res.string.p5b_edit_work))
+            // Drawn LINE quantities are edited only in the single "Довжина" field
+            // inside that segment's geometry panel, not a duplicate work-list pencil.
+            if (!work.supportsLinePlacement() || !hasPlacement) {
+                IconButton(onClick = {
+                    val closingSameEditor = isSelected && quantityEditingWork == work.uuid
+                    onSelect(work.uuid)
+                    quantityEditingWork = if (closingSameEditor) null else work.uuid
+                }, enabled = enabled && source?.quantityMode?.workspaceQuantity() == ElementQuantity.Unknown) {
+                    Icon(Icons.Default.Edit, stringResource(Res.string.p5b_edit_work))
+                }
             }
             IconButton(onClick = { deletion = true }, enabled = enabled) {
                 Icon(Icons.Default.Delete, stringResource(Res.string.p5b_delete_work))
             }
         }
-        if (isSelected && quantityEditingWork == work.uuid) {
+        if (isSelected && quantityEditingWork == work.uuid &&
+            (!work.supportsLinePlacement() || !hasPlacement)) {
             var quantity by rememberSaveable(work.quantity) {
                 mutableStateOf((work.quantity as? ElementQuantity.Exact)?.let { formatElementMilli(it.milli) }.orEmpty())
             }
