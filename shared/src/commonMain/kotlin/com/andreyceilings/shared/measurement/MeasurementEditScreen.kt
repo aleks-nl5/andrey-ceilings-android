@@ -765,12 +765,13 @@ fun MeasurementEditScreen(
                     Modifier.fillMaxSize(), interactive = true, fillAvailableHeight = true, showSideLegend = false,
                     retainCameraOnResize = true, autoFitOnFullscreenChange = true,
                     verticalViewControls = !keyboardVisible, showWorkspaceGrid = true,
-                    // The normal panel covers the bottom of the Canvas: reserve it in the
-                    // *viewport*, otherwise "fit" draws most of the room under the card.
-                    viewportPadding = PaddingValues(
-                        top = headerBleed,
-                        bottom = if (fullscreen) 0.dp else normalPanelHeight
-                    ),
+                    // IMPORTANT: In normal mode the Column below ALREADY reserves
+                    // normalPanelHeight - tabBleed via its bottom Spacer. Canvas's
+                    // measured height ends at the tab row; subtracting the panel
+                    // height again here collapses viewportHeight to zero, hiding
+                    // BOTH contour and grid (while fullscreen keeps rendering).
+                    // Reserve only the overlaid header INSIDE this Canvas.
+                    viewportPadding = PaddingValues(top = headerBleed, bottom = 0.dp),
                     onOpenSelection = if (fullscreen) { wall ->
                         if (enabled) {
                             if (wall) {

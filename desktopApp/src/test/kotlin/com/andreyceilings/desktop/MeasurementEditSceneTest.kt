@@ -729,7 +729,12 @@ class MeasurementEditSceneTest {
             val canvasHeight = scene.projectedDrawing().size.height
             val normalPanel = tagged("measurement-edit-normal-panel")
             val viewportHeight = scene.projectedDrawing().config[MeasurementDrawingSemantics.ViewportBounds].height
-            assertEquals(viewportHeight, normalPanel.size.height.toFloat(), 1f)
+            val viewportTop = scene.projectedDrawing().config[MeasurementDrawingSemantics.ViewportBounds].top
+            assertEquals(canvasHeight - viewportTop, viewportHeight, 1f,
+                "Normal mode must not subtract the already-reserved panel from drawing height")
+            assertTrue(viewportHeight > 64f,
+                "The normal drawing viewport must be non-empty so the contour and grid render")
+            assertTrue(normalPanel.size.height > 0)
             assertEquals(tagged("measurement-edit-tab-row").boundsInRoot.bottom, scene.projectedDrawing().boundsInRoot.bottom)
             val fade = tagged("ceilings-workspace-normal-gradient").boundsInRoot
             val drawingTop = scene.projectedDrawing().boundsInRoot.top
@@ -750,12 +755,15 @@ class MeasurementEditSceneTest {
             scene.click("Контур")
             scene.frame()
             scene.click("На весь екран")
-            repeat(4) { scene.frame() }
+            repeat(6) { scene.frame() }
             assertTrue(scene.projectedDrawing().size.height > canvasHeight + 35)
-            assertEquals(contourHeight, fittedHeight(), 0.1)
-            scene.click("До заміру")
-            repeat(4) { scene.frame() }
-            assertEquals(contourHeight, fittedHeight(), 0.1)
+            assertTrue(fittedHeight() >= contourHeight,
+                "Fullscreen refit must keep the contour visible and can use extra screen space")
+            scene.click("Згорнути")
+            repeat(6) { scene.frame() }
+            assertEquals(canvasHeight, scene.projectedDrawing().size.height)
+            assertEquals(contourHeight, fittedHeight(), 0.1,
+                "Normal-mode refit must restore a fully visible 2x3m drawing")
         } finally { scene.close() }
     }
 

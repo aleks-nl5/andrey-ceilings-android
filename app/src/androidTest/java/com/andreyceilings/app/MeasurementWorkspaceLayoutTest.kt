@@ -274,14 +274,17 @@ class MeasurementWorkspaceLayoutTest {
                 val normalPanel = panel.fetchSemanticsNode().boundsInRoot
                 val panelHeight = compose.onNodeWithTag("measurement-edit-normal-panel").fetchSemanticsNode().size.height
                 val normalViewport = canvas().config[MeasurementDrawingSemantics.ViewportBounds]
-                assertEquals(canvas().size.height - normalViewport.top - panelHeight,
+                assertEquals(canvas().size.height - normalViewport.top,
                     normalViewport.height, 2f,
-                    "Drawing viewport must stop above the overlay panel, not underneath it")
+                    "Normal Canvas is already shortened by the lower-panel Spacer; do not subtract panel height twice")
+                assertTrue(normalViewport.height > 64f * compose.density.density,
+                    "A 2x3m contour and its grid need a positive normal-mode viewport")
                 val tabs = compose.onNodeWithTag("measurement-edit-tab-row").fetchSemanticsNode().boundsInRoot
                 assertEquals(normal.bottom, tabs.bottom, 1f)
-                drawingInput.performTouchInput {
-                    val y = normalViewport.bottom + (height - normalViewport.bottom) / 2f
-                    swipe(Offset(1f, y), Offset(1f, y - 45f * density))
+                // Gestures in the separate bottom panel may scroll the panel,
+                // but must never change the drawing camera.
+                panel.performTouchInput {
+                    swipe(Offset(centerX, centerY), Offset(centerX, centerY - 45f * density))
                 }
                 assertEquals(initialProjection, canvas().config[MeasurementDrawingSemantics.Projection])
                 compose.onNodeWithTag("ceilings-workspace-normal-gradient").assertExists()

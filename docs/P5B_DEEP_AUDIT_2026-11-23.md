@@ -27,6 +27,13 @@
 | A11 | **P2 — уточнити/протестувати** | Після швидкого перемикання олівців кількості між різними роботами поточна активна незастосована кількість може втратитися, адже чернетка поля живе всередині одного рядка. Однотактне відкриття наступного виправлене, але **підтвердження втрати локального вводу** потребує сценарію. | Валідувати на APK: ввести значення без галочки → олівець іншої роботи → повернутися; погодити, чи зберігати локальний draft, чи запитувати про відкидання, не створюючи громіздких діалогів. |
 | A12 | **P2 — технічний борг** | У старій P5B UX-spec/developer handoff є суперечливі попередні формулювання про автоматичне відкривання деталей, текстові кнопки, стадії live cost і поведінку Unknown. | [Master-first UX](architecture/MASTER_FIRST_UX_AND_DELIVERY.md), `AGENTS.md`, [P5B UX SPEC](P5B_UX_SPEC.md) містять пріоритет **останніх явних рішень**; старі приклади історичні. У майбутньому нові UX-slices спочатку погоджувати як цілий екран. |
 
+### Critical normal-mode rendering regression (owner APK, 18:51)
+
+- **Observed:** in normal mode both contour and grid disappear, while fullscreen renders both normally; live geometry summary still shows 6.00 m² / 10.00 m.
+- **Confirmed root cause:** `MeasurementEditScreen` lays out a normal-mode `Column` with Canvas `Box(weight=1f)` **and** bottom `Spacer(normalPanelHeight - tabBleed)`. A later camera change additionally passed `bottom=normalPanelHeight` to `MeasurementDrawing.viewportPadding`. Its `viewportHeight = canvasHeight - header - bottom` became zero; `Canvas` returned before **grid and contour**.
+- **Fix:** only reserve the overlaid header in Canvas (`bottom=0.dp`). Panel is already reserved in layout; no changes to world-mm, geometry, database, or placement gestures.
+- **Regression coverage:** Android layout test asserts **positive viewport and fitted 2×3 m contour** in normal mode, and switches normal/fullscreen; Desktop 360×580 scene asserts the same and fit on both transitions. **CI/APK on corrected SHA not yet verified.**
+
 ### Додаткові вимоги 23.11.2026 (наступний Android smoke)
 
 - **Fullscreen:** один тап на контур/POINT/LINE/AREA лише виділяє об'єкт та рядок списку (і не відкриває sheet); подвійний тап відкриває відповідну картку параметрів; під час перетягування sheet лишається закритим. Контекстні FAB дозволяють свідоме ручне відкриття.
