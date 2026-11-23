@@ -513,8 +513,13 @@ class MeasurementEditSceneTest {
             val shaded = sample(2, sampleY)
             closeColor(shaded, expected)
             closeColor(sample(2, fade.bottom.toInt() + 2), clear)
-            assertNotEquals(shaded, clear)
-            assertNotEquals(shaded, colors.surface)
+            // Material 3 can assign exactly the same token to surface and background.
+            // Then an alpha blend is visually identical; validate the computed pixel
+            // and fade bounds above without requiring two equal colors to differ.
+            if (colors.surface != colors.background) {
+                assertNotEquals(shaded, clear)
+                assertNotEquals(shaded, colors.surface)
+            }
             return shaded
         }
         try {

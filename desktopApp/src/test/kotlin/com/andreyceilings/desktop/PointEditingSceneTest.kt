@@ -134,7 +134,8 @@ class PointEditingSceneTest {
                 scene.click("Задати розміри від стін")
                 scene.awaitDrawingPoints(pointIds)
                 scene.tapWorld(saved.xMm,saved.yMm)
-                scene.click("Редагувати розміри")
+                // A single tap selects the work row; its explicit gear opens mounting fields.
+                scene.click("Параметри розміщення", tag = "p5b-open-geometry-${element.uuid}")
                 scene.setField("Від першої стіни, м","0,")
                 assertEquals(saved,points.find(p.uuid))
                 scene.setField("Від першої стіни, м","0,6");scene.setField("Від другої стіни, м","1.5")
@@ -286,8 +287,13 @@ class PointEditingSceneTest {
     private fun SemanticsNode.textTree(): String = config.getOrNull(SemanticsProperties.Text).orEmpty().joinToString { it.text } + children.joinToString { it.textTree() }
     private fun ImageComposeScene.text() = semanticsOwners.joinToString { it.rootSemanticsNode.textTree() }
     private fun ImageComposeScene.awaitText(label: String) { repeat(240) { frame(); if (text().contains(label)) return; Thread.sleep(25) }; fail("Missing '$label': ${text().take(2000)}") }
-    private fun ImageComposeScene.click(label: String) {
-        repeat(240) { frame(); nodes().firstOrNull { it.config.getOrNull(SemanticsActions.OnClick) != null && it.config.getOrNull(SemanticsProperties.Disabled)==null && (it.textTree() == label || label in it.config.getOrNull(SemanticsProperties.ContentDescription).orEmpty()) }?.let {
+    private fun ImageComposeScene.click(label: String, tag: String? = null) {
+        repeat(240) { frame(); nodes().firstOrNull {
+            it.config.getOrNull(SemanticsActions.OnClick) != null &&
+                it.config.getOrNull(SemanticsProperties.Disabled) == null &&
+                (if (tag != null) it.config.getOrNull(SemanticsProperties.TestTag) == tag
+                else it.textTree() == label || label in it.config.getOrNull(SemanticsProperties.ContentDescription).orEmpty())
+        }?.let {
             assertNull(it.config.getOrNull(SemanticsProperties.Disabled), label)
             assertTrue(it.config.getOrNull(SemanticsActions.OnClick)?.action?.invoke() == true); frame(); return }; Thread.sleep(25) }
         fail("Missing action '$label': ${text().take(2000)}")

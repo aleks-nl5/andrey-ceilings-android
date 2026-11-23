@@ -269,6 +269,7 @@ internal fun WorkspaceCatalogSearch(
                 DropdownMenu(expanded = annotationMenu,
                     onDismissRequest = { annotationMenu = false }) {
                     DropdownMenuItem(
+                        modifier = Modifier.testTag("p5b-annotation-obstacle"),
                         leadingIcon = { Icon(Icons.Default.CropSquare, null) },
                         text = {
                             Column {
@@ -284,6 +285,7 @@ internal fun WorkspaceCatalogSearch(
                             onPlacedTool()
                         })
                     DropdownMenuItem(
+                        modifier = Modifier.testTag("p5b-annotation-hole"),
                         leadingIcon = { Icon(Icons.Default.RadioButtonUnchecked, null) },
                         text = {
                             Column {

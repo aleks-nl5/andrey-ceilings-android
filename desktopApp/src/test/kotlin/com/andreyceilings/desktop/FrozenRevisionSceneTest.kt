@@ -80,7 +80,14 @@ class FrozenRevisionSceneTest {
                     card.click("Назад", layerTitle = "Попередній перегляд PDF")
                     card.await { !card.text().contains("Попередній перегляд PDF") && card.text().contains("Створити PDF") }
                     card.click("Назад")
-                    card.await { !cardMounted && !card.text().contains("Створити PDF") }
+                    // The PDF preview and saved-card dialogs are separate Compose layers.
+                    // Let those layers detach before closing the host scene, rather than
+                    // racing ImageComposeScene.close() with popup disposal on Windows.
+                    card.await {
+                        !cardMounted && !card.text().contains("Створити PDF") &&
+                            card.semanticsOwners.size <= 1
+                    }
+                    repeat(4) { card.frame() }
                     assertEquals(drawing, MeasurementRepository(db).find(measurement.id)!!.drawingJson)
                 } finally {
                     card.close()

@@ -61,15 +61,16 @@ class WorkspacePlacementDraftTest {
             editor.areaTap(1700, 1300)
             editor.acceptAreaCreation()
             val area = editor.displayAreas().single()
+            val areaWorkId = assertNotNull(area.elementUuid)
             editor.clearDrawingSelection()
-            assertTrue(editor.selectFirstWorkspacePlacement(area.elementUuid))
+            assertTrue(editor.selectFirstWorkspacePlacement(areaWorkId))
             assertEquals(area.uuid, editor.state.value.area.selected)
             assertEquals(area.uuid, editor.state.value.area.properties?.uuid)
             assertEquals(2, editor.workspaceWorks().size)
             assertEquals(ElementQuantity.Exact(3000),
                 editor.workspaceWorks().single { it.uuid == line.elementUuid }.quantity)
             assertEquals(ElementQuantity.Exact(2000),
-                editor.workspaceWorks().single { it.uuid == area.elementUuid }.quantity)
+                editor.workspaceWorks().single { it.uuid == areaWorkId }.quantity)
         }
     }
 
