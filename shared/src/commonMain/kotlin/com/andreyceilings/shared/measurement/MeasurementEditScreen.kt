@@ -178,6 +178,13 @@ fun MeasurementEditScreen(
     var showAdd by rememberSaveable(measurementUuid) { mutableStateOf(false) }
     var materialPicker by rememberSaveable(measurementUuid) { mutableStateOf<com.andreyceilings.shared.livepricing.BusinessRole?>(null) }
     var selectedWork by rememberSaveable(measurementUuid) { mutableStateOf<String?>(null) }
+    var highlightedWorkId by remember(measurementUuid) { mutableStateOf<String?>(null) }
+    LaunchedEffect(highlightedWorkId) {
+        if (highlightedWorkId != null) {
+            delay(1800)
+            highlightedWorkId = null
+        }
+    }
     fun dismissCatalog() {
         showAdd = false
         materialPicker = null
@@ -445,6 +452,7 @@ fun MeasurementEditScreen(
                             if (context == MeasurementEditContext.ELEMENTS) WorkspaceElementsHeader(
                                 canvas = model.materials(com.andreyceilings.shared.livepricing.BusinessRole.CANVAS),
                                 profile = model.materials(com.andreyceilings.shared.livepricing.BusinessRole.PRIMARY_PROFILE),
+                                activeRole = if (showAdd) materialPicker else null,
                                 enabled = enabled && validation.geometry != null && overlay is PointOverlayState.Loaded,
                                 onMaterial = { role ->
                                     focus.clearFocus()
@@ -502,8 +510,8 @@ fun MeasurementEditScreen(
                                         onExistingWork = { workId ->
                                             model.clearDrawingSelection()
                                             selectedWork = workId
+                                            highlightedWorkId = workId
                                             dismissCatalog()
-                                            scope.launch { scroll.scrollTo(0) }
                                         }
                                     ) {
                                         selected = null
@@ -512,10 +520,14 @@ fun MeasurementEditScreen(
                                     } else {
                                         WorkspacePlacementTools(model, state, canEdit, lineSnapEnabled) { lineSnapEnabled = it }
                                         WorkspaceGeometryPanel(model, state, canEdit, lineSnapEnabled) { lineSnapEnabled = it }
-                                        if (activeElementControls == null) WorkspaceWorkList(model, canEdit, selectedWork) { work ->
-                                            model.clearDrawingSelection()
-                                            selectedWork = work
-                                        }
+                                        if (activeElementControls == null) WorkspaceWorkList(
+                                            model, canEdit, selectedWork, highlightedWorkId,
+                                            onSelect = { work ->
+                                                model.clearDrawingSelection()
+                                                selectedWork = work
+                                            },
+                                            onOpenGeometry = { scope.launch { scroll.animateScrollTo(0) } }
+                                        )
                                     }
                                 }
                                 MeasurementEditContext.COST -> {

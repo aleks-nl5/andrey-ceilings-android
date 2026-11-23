@@ -48,7 +48,7 @@
     <string name="p5b_existing_item">У замірі · %1$s</string>
     <string name="p5b_catalog_metadata">%1$s · %2$s</string>
     <string name="p5b_place_more">Розмістити ще</string>
-    <string name="p5b_go_to_work">Перейти до роботи</string>
+    <string name="p5b_go_to_work">До елементу</string>
     <string name="p5b_apply_quantity">Застосувати кількість до чернетки</string>
     <string name="p5b_apply_draft">Оновити на кресленні (у чернетці)</string>
     <string name="p5b_in_measurement">У замірі</string>

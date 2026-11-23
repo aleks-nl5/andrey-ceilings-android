@@ -1,6 +1,9 @@
 package com.andreyceilings.shared.measurement
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -9,12 +12,17 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.CropSquare
 import androidx.compose.material.icons.filled.CenterFocusStrong
+import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.ArrowForward
+import androidx.compose.material.icons.filled.OpenWith
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.andreyceilings.shared.input.DecimalInputField
@@ -29,6 +37,7 @@ import org.jetbrains.compose.resources.stringResource
 internal fun WorkspaceElementsHeader(
     canvas: List<MeasurementElement>,
     profile: List<MeasurementElement>,
+    activeRole: BusinessRole?,
     enabled: Boolean,
     onMaterial: (BusinessRole) -> Unit,
     onAdd: () -> Unit
@@ -45,9 +54,14 @@ internal fun WorkspaceElementsHeader(
                         stringResource(Res.string.p5b_material_archived, item.label)
                     else -> item.label
                 }
+                val active = role == activeRole
+                val shape = RoundedCornerShape(12.dp)
                 Column(Modifier.weight(1f).heightIn(min = 48.dp)
+                    .then(if (active) Modifier.background(MaterialTheme.colorScheme.secondaryContainer, shape)
+                        .border(1.dp, MaterialTheme.colorScheme.primary, shape) else Modifier)
                     .clickable(enabled = enabled && current.size <= 1) { onMaterial(role) }
-                    .testTag("p5b-material-${role.name}").padding(horizontal = 5.dp, vertical = 3.dp),
+                    .testTag("p5b-material-${role.name}").semantics { selected = active }
+                    .padding(horizontal = 6.dp, vertical = 4.dp),
                     verticalArrangement = Arrangement.Center) {
                     Text(stringResource(materialLabel(role)), style = MaterialTheme.typography.labelMedium, maxLines = 2,
                         overflow = TextOverflow.Ellipsis)
@@ -100,8 +114,9 @@ internal fun WorkspaceCatalogSearch(
     val work = works.find { it.uuid == selectedWork }
     val item = catalog?.find { it.uuid == selectedCatalog }
     if (work != null || item != null) {
-        TextButton(onClick = { selectedCatalog = null; selectedWork = null }) {
-            Text(stringResource(Res.string.p5b_back_to_catalog))
+        IconButton(onClick = { selectedCatalog = null; selectedWork = null },
+            modifier = Modifier.testTag("p5b-back-to-catalog")) {
+            Icon(Icons.Default.ArrowBack, stringResource(Res.string.p5b_back_to_catalog))
         }
         if (work != null) {
             Text(work.label, style = MaterialTheme.typography.titleSmall)
@@ -109,19 +124,27 @@ internal fun WorkspaceCatalogSearch(
             val canPlace = workspaceCanPlace(model, work)
             val editableQuantity = (work.source as? ElementSource.CatalogSelection)?.quantityMode
                 ?.workspaceQuantity() == ElementQuantity.Unknown
-            FlowRow {
-                TextButton(onClick = { onExistingWork(work.uuid) }) {
-                    Text(stringResource(Res.string.p5b_go_to_work))
+            Row(verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                OutlinedButton(onClick = { onExistingWork(work.uuid) },
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                    modifier = Modifier.testTag("p5b-go-to-element")) {
+                    Icon(Icons.Default.ArrowForward, null, Modifier.size(16.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text(stringResource(Res.string.p5b_go_to_work), style = MaterialTheme.typography.labelSmall)
                 }
-                TextButton(onClick = { model.startWorkspacePlacement(work); onPlacedTool() }, enabled = canPlace) {
-                    Text(stringResource(Res.string.p5b_place_more))
+                IconButton(onClick = { model.startWorkspacePlacement(work); onPlacedTool() }, enabled = canPlace,
+                    modifier = Modifier.testTag("p5b-place-existing")) {
+                    Icon(Icons.Default.OpenWith, stringResource(Res.string.p5b_place_more))
                 }
-                if (editableQuantity) TextButton(onClick = {
+                if (editableQuantity) IconButton(onClick = {
                     existingQuantity = (work.quantity as? ElementQuantity.Exact)
                         ?.let { formatElementMilli(it.milli) }.orEmpty()
                     editExisting = true
                     existingQuantityInvalid = false
-                }) { Text(stringResource(Res.string.p5b_edit_work)) }
+                }, modifier = Modifier.testTag("p5b-edit-existing-quantity")) {
+                    Icon(Icons.Default.Edit, stringResource(Res.string.p5b_edit_work))
+                }
             }
             if (editExisting && editableQuantity) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -179,7 +202,7 @@ internal fun WorkspaceCatalogSearch(
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(2.dp)) {
         OutlinedTextField(query, { query = it },
-            Modifier.weight(1f).height(52.dp).testTag("p5b-catalog-search"),
+            Modifier.weight(1f).height(60.dp).testTag("p5b-catalog-search"),
             singleLine = true, textStyle = MaterialTheme.typography.bodySmall,
             label = { Text(stringResource(Res.string.p5b_search_short)) })
         if (role == null) {
