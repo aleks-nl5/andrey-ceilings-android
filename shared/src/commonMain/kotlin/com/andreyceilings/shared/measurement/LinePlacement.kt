@@ -29,8 +29,11 @@ data class LinePlacement(
 }
 
 @Serializable
-data class LinePropertiesInput(val uuid:String,val width:String,val note:String,val initialWidth:String=width,val initialNote:String=note) {
-    val dirty get()=width!=initialWidth || note!=initialNote
+data class LinePropertiesInput(
+    val uuid: String, val width: String, val note: String, val initialWidth: String = width,
+    val initialNote: String = note, val length: String? = null, val initialLength: String? = length
+) {
+    val dirty get() = width != initialWidth || note != initialNote || length != initialLength
     val valid get()=width.isBlank() || width.toLongOrNull()?.let {it in 1..1_000_000}==true
 }
 
@@ -108,4 +111,27 @@ fun previewLine(line: LinePlacement, geometry: FrozenPolygonGeometry, walls: Lis
     if (unresolved) return line.copy(widthMm=value.widthMm,note=value.note,unresolved=true,needsReview=true)
     return value.copy(start=start,end=end,startMounting=a.mounting,endMounting=b.mounting,unresolved=false,
         needsReview=if (geometryChanged) true else if (edit?.confirm==true) false else value.needsReview)
+}
+
+/** A narrow middle strip stays available for translation even when the touch halos overlap. */
+internal fun lineDragHandle(
+    start: DrawingPoint, end: DrawingPoint, down: DrawingPoint, radius: Double
+): Int {
+    val dx = end.x - start.x
+    val dy = end.y - start.y
+    val length = kotlin.math.hypot(dx, dy)
+    if (length > 0.0) {
+        val x = down.x - start.x
+        val y = down.y - start.y
+        val along = (x * dx + y * dy) / (length * length)
+        val across = kotlin.math.abs(x * dy - y * dx) / length
+        if (along in 0.4..0.6 && across <= minOf(radius / 2, length / 4)) return 0
+    }
+    val first = kotlin.math.hypot(down.x - start.x, down.y - start.y)
+    val second = kotlin.math.hypot(down.x - end.x, down.y - end.y)
+    return when {
+        minOf(first, second) > radius -> 0
+        first <= second -> 1
+        else -> 2
+    }
 }

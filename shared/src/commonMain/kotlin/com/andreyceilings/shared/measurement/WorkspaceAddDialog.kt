@@ -99,7 +99,9 @@ internal fun WorkspaceCatalogSearch(
             TextButton(onClick = { model.startWorkspacePlacement(work); onPlacedTool() }, enabled = canPlace) {
                 Text(stringResource(Res.string.p5b_place_more))
             }
-            if (!canPlace) Text(stringResource(Res.string.p5b_placement_unavailable), style = MaterialTheme.typography.bodySmall)
+            if (!canPlace) Text(stringResource(
+                if (work.supportsLinePlacement() || work.supportsAreaPlacement()) Res.string.p5b_capacity_full
+                else Res.string.p5b_placement_unavailable), style = MaterialTheme.typography.bodySmall)
         } else if (item != null) {
             Text(item.title, style = MaterialTheme.typography.titleSmall)
             Text(stringResource(placementLabel(item.placementKind)), style = MaterialTheme.typography.bodySmall)
@@ -181,7 +183,8 @@ private fun WorkspaceCatalogRow(title: String, detail: String, modifier: Modifie
 }
 
 internal fun workspaceCanPlace(model: MeasurementEditModel, work: MeasurementElement): Boolean = when {
-    work.supportsLinePlacement() || work.supportsAreaPlacement() -> true
+    work.supportsLinePlacement() -> model.lineHasCapacity(work.uuid)
+    work.supportsAreaPlacement() -> model.areaHasCapacity(work.uuid)
     else -> model.pointCanBePlaced(work.uuid)
 }
 

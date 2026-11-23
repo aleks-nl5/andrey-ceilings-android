@@ -7,8 +7,11 @@ enum class AreaTool { RECTANGLE, POLYGON, CIRCLE }
 
 @Serializable
 data class AreaPropertiesInput(val uuid: String, val note: String, val role: AreaRole, val diameter: String,
-    val diameterMeasured: Boolean=false, val initialNote: String=note, val initialRole: AreaRole=role, val initialDiameter: String=diameter) {
-    val dirty get()=note!=initialNote || role!=initialRole || diameter!=initialDiameter || diameterMeasured
+    val diameterMeasured: Boolean=false, val initialNote: String=note, val initialRole: AreaRole=role, val initialDiameter: String=diameter,
+    val width: String? = null, val height: String? = null, val initialWidth: String? = width, val initialHeight: String? = height
+) {
+    val dirty get()=note!=initialNote || role!=initialRole || diameter!=initialDiameter || diameterMeasured ||
+        width != initialWidth || height != initialHeight
 }
 
 @Serializable

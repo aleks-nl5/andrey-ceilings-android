@@ -82,4 +82,17 @@
     <string name="p5b_line_note">Примітка лінії</string>
     <string name="p5b_work_status">%1$s · %2$s</string>
     <string name="p5b_details_drag_hint">Перетягніть вибраний об’єкт. Після руху положення буде приблизним.</string>
+    <string name="p5b_capacity_full">Досягнуто заявленої кількості.</string>
+    <string name="p5b_line_length">Довжина, м</string>
+    <string name="p5b_rectangle_width">Ширина прямокутника, м</string>
+    <string name="p5b_rectangle_height">Висота прямокутника, м</string>
+    <string name="p5b_dimensions_invalid">Перевірте розміри, контур і заявлену кількість.</string>
+    <string name="p5b_live_area_value">%1$s м²</string>
+    <string name="p5b_live_perimeter_value">%1$s м</string>
+    <string name="p5b_live_area_unavailable">— м²</string>
+    <string name="p5b_live_perimeter_unavailable">— м</string>
+    <string name="p5b_live_area_label">Площа: %1$s</string>
+    <string name="p5b_live_perimeter_label">Периметр: %1$s</string>
+    <string name="p5b_live_area_invalid_label">Площа недоступна: %1$s</string>
+    <string name="p5b_live_perimeter_invalid_label">Периметр недоступний: %1$s</string>
 </resources>

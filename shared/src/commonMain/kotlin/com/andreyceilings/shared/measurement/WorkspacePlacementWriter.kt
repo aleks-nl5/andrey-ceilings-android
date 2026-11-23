@@ -4,6 +4,8 @@ import com.andreyceilings.shared.db.CeilingEditRepository
 import com.andreyceilings.shared.db.MeasurementElementRepository
 import com.andreyceilings.shared.db.PointPlacementRepository
 import com.andreyceilings.shared.db.PrototypeDatabase
+import com.andreyceilings.shared.db.PriceRepository
+import com.andreyceilings.shared.db.PriceGroupRepository
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.encodeToJsonElement
 import kotlinx.serialization.json.buildJsonObject
@@ -85,12 +87,22 @@ internal class WorkspacePlacementWriter(
         }
         for ((uuid, work) in additions.editedWorks) {
             require(uuid == work.uuid && work.measurementUuid == measurement)
-            val baseline = (original.pointElements + original.lineElements + original.areaElements + original.otherElements)
+            val baseline = (original.pointElements + original.lineElements + original.areaElements + original.otherElements + original.materialElements)
                 .find { it.uuid == uuid } ?: throw MeasurementEditConflict()
             val live = elements.find(uuid) ?: throw MeasurementEditConflict()
             if (baseline.version != work.version ||
                 (live.version != work.version && additions.removedPoints.values.none { it.elementUuid == uuid }))
                 throw MeasurementEditConflict()
+            if (work.businessRole?.isWorkspaceMaterial() == true) {
+                if (live != baseline || work != baseline.copy(approval = ElementApproval.APPROVED))
+                    throw MeasurementEditConflict()
+                val source = baseline.source as? ElementSource.CatalogSelection ?: throw MeasurementEditConflict()
+                val price = PriceRepository(db).all().find { it.uuid == source.priceItemUuid }
+                    ?: throw MeasurementEditConflict()
+                if (PriceGroupRepository(db).find(price.groupUuid) == null || price.unit != baseline.unit ||
+                    price.code != source.code || price.quantityMode != source.quantityMode.value ||
+                    price.placementKind != source.placementKind.value) throw MeasurementEditConflict()
+            }
             elements.edit(live.version, work.note, work.approval, work.quantity, now)
         }
         for ((uuid, element) in additions.elements) {
@@ -182,7 +194,7 @@ internal class WorkspacePlacementWriter(
                 val declared = request["lengths"]?.jsonObject?.get(uuid)?.jsonPrimitive?.longOrNull
                     ?: request["quantities"]?.jsonObject?.get(uuid)?.jsonPrimitive?.longOrNull
                 val expectedQuantity = declared?.let { ElementQuantity.Exact(it) } ?: work.quantity
-                row == null || row.deletedAt != null || row.quantity != expectedQuantity ||
+                row == null || row.deletedAt != null || row.quantity != expectedQuantity || row.approval != work.approval ||
                     row.updatedAt != (versions[uuid]?.jsonPrimitive?.longOrNull ?: (maxOf(work.updatedAt + 1, first.createdAt) +
                         additions.removedPoints.values.count { it.elementUuid == uuid }))
             }) return false

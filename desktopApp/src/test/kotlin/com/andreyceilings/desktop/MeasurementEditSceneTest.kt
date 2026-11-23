@@ -36,6 +36,63 @@ class MeasurementEditSceneTest {
     private fun draft() = MeasurementCreateDraft(7, MeasurementPrecision.ONE_MILLIMETER, "Кухня", "",
         MeasurementOutlineDraft.Template("rectangle", mapOf("length" to "5", "width" to "4")))
 
+    @Test fun liveAreaAndPerimeterFollowTheUnsavedDraftInBothThemes() {
+        for (dark in listOf(false, true)) {
+            val model = MeasurementEditModel(null, MeasurementEditDocument(3, 1, draft()))
+            val scene = ImageComposeScene(360, 780) {
+                CeilingsTheme(dark) { MeasurementEditScreen(model, PaddingValues(), onBack = {}) }
+            }
+            fun assertMetrics(area: String, perimeter: String) {
+                scene.frame()
+                fun description(tag: String) = scene.nodes().single {
+                    it.config.getOrNull(SemanticsProperties.TestTag) == tag
+                }.config[SemanticsProperties.ContentDescription].single()
+                assertEquals(area, description("measurement-live-area"))
+                assertEquals(perimeter, description("measurement-live-perimeter"))
+            }
+            try {
+                val original = model.state.value.original
+                fun assertCurrentGeometry() {
+                    val draft = model.state.value.draft
+                    val geometry = assertNotNull(validateMeasurementCreate(draft).geometry)
+                    assertMetrics("Площа: ${formatMeasurementArea(geometry.areaSquareMeters, draft.precision)} м²",
+                        "Периметр: ${formatMeasurementLength(geometry.perimeterMeters, draft.precision)} м")
+                }
+                assertCurrentGeometry()
+                scene.click("Елементи")
+                assertCurrentGeometry()
+                scene.click("Вартість")
+                assertCurrentGeometry()
+                scene.click("На весь екран")
+                assertCurrentGeometry()
+                scene.click("Згорнути")
+                scene.frame()
+                scene.click("Контур")
+                scene.frame()
+                val width = scene.nodes().single {
+                    it.config.getOrNull(SemanticsActions.SetText) != null && it.textTree().contains("AB, м")
+                }
+                fun setLength(value: String) {
+                    assertTrue(width.config[SemanticsActions.SetText].action!!.invoke(AnnotatedString(value)))
+                    scene.frame()
+                }
+                setLength("6")
+                assertNotEquals(original.draft, model.state.value.draft)
+                assertCurrentGeometry()
+                scene.click("Скасувати дію")
+                assertEquals(original.draft, model.state.value.draft)
+                assertCurrentGeometry()
+                scene.click("Повторити")
+                assertCurrentGeometry()
+                setLength("")
+                assertMetrics("Площа недоступна: — м²", "Периметр недоступний: — м")
+                setLength("7")
+                assertCurrentGeometry()
+                assertEquals(original, model.state.value.original)
+            } finally { scene.close() }
+        }
+    }
+
     @Test fun readonlyFullscreenHasSelectionAndViewToolsWithoutEditableFields() {
         for (dark in listOf(false, true)) {
             val draft = draft(); val geometry = assertNotNull(validateMeasurementCreate(draft).geometry)

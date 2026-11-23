@@ -162,11 +162,15 @@ internal fun WorkspaceGeometryPanel(
                 Text(stringResource(Res.string.p5b_line_size))
             }
             state.lineProperties?.let { input ->
+                val valid = model.linePropertiesCandidate(line, input) != null
+                DecimalInputField(input.length ?: formatPointMetres(line.lengthMm), { model.changeLineProperties(length = it) },
+                    stringResource(Res.string.p5b_line_length), modifier = measurementFieldFocusModifier())
                 DecimalInputField(input.width, { model.changeLineProperties(width = it) }, stringResource(Res.string.p5b_line_size),
                     modifier = measurementFieldFocusModifier(), allowDecimalSeparator = false, isError = !input.valid)
                 OutlinedTextField(input.note, { model.changeLineProperties(note = it) },
                     label = { Text(stringResource(Res.string.p5b_line_note)) })
-                TextButton(onClick = model::applyLineProperties, enabled = input.valid) {
+                if (!valid) Text(stringResource(Res.string.p5b_dimensions_invalid), color = MaterialTheme.colorScheme.error)
+                TextButton(onClick = model::applyLineProperties, enabled = valid) {
                     Text(stringResource(Res.string.p5b_apply_dimensions))
                 }
                 TextButton(onClick = model::discardLineProperties) { Text(stringResource(Res.string.p5b_cancel_placement)) }
@@ -185,11 +189,19 @@ internal fun WorkspaceGeometryPanel(
                 Text(stringResource(Res.string.p5b_area_properties))
             }
             state.area.properties?.let { input ->
+                if (input.width != null && input.height != null) {
+                    DecimalInputField(input.width, { value -> model.changeAreaProperties { it.copy(width = value) } },
+                        stringResource(Res.string.p5b_rectangle_width), modifier = measurementFieldFocusModifier())
+                    DecimalInputField(input.height, { value -> model.changeAreaProperties { it.copy(height = value) } },
+                        stringResource(Res.string.p5b_rectangle_height), modifier = measurementFieldFocusModifier())
+                }
                 if (area.shape is AreaShape.Circle) DecimalInputField(input.diameter,
                     { value -> model.changeAreaProperties { it.copy(diameter = value, diameterMeasured = true) } },
                     stringResource(Res.string.p5b_numeric_diameter), modifier = measurementFieldFocusModifier())
                 OutlinedTextField(input.note, { value -> model.changeAreaProperties { it.copy(note = value) } },
                     label = { Text(stringResource(Res.string.p5b_placement_note)) })
+                if (model.areaPropertiesCandidate(area, input) == null)
+                    Text(stringResource(Res.string.p5b_dimensions_invalid), color = MaterialTheme.colorScheme.error)
                 TextButton(onClick = model::applyAreaProperties) { Text(stringResource(Res.string.p5b_apply_dimensions)) }
                 TextButton(onClick = model::discardAreaProperties) { Text(stringResource(Res.string.p5b_cancel_placement)) }
             }

@@ -55,6 +55,12 @@ class AreaFeatureSceneTest {
                 assertEquals(2,model.state.value.area.vertices.size,"Second area corner must be delivered in $dark theme")
                 scene.click("Завершити фігуру в чернетці")
                 assertEquals(1,model.displayAreas().size)
+                scene.click("Редагувати розміри")
+                scene.setField("Ширина прямокутника, м", "0,7")
+                scene.setField("Висота прямокутника, м", "0,6")
+                scene.click("Застосувати розміри")
+                assertEquals(AreaShape.rectangle(PointPositionMm(500, 500), PointPositionMm(1200, 1100)),
+                    model.displayAreas().single().shape)
                 scene.click("Додати елемент стелі")
                 scene.click("Отвір")
                 scene.setField("Діаметр, м (парні мм)", "0,2")

@@ -22,6 +22,93 @@ import kotlin.test.*
 /** Real Android Compose pointer injection, separately from JVM ImageComposeScene tests. */
 class LinePlacementTouchTest {
     @get:Rule val compose=createComposeRule()
+    @Test fun fullLineWorkDisablesPlacementAndShortEndpointRemainsTouchableAtMinimumZoom() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val name = "line-capacity-grips.db"
+        context.deleteDatabase(name)
+        val key = ByteArray(32) { 48 }
+        val driver = createEncryptedPrototypeDriver(context, key, name, enableWalForTesting = true, initializePriceCatalog = true)
+        val db = PrototypeDatabase(driver)
+        val fixture = PointPlacementProof.fixture(db)
+        val store = MeasurementEditStore(db) { 100 }
+        val prices = PriceRepository(db)
+        val elements = MeasurementElementRepository(db)
+        fun work(code: String, cap: Long): MeasurementElement {
+            val priceId = prices.createInGroup(code, code, PriceGroupRepository(db).all().first().uuid,
+                1.0, 6, "м.п.", QuantityMode.ENTERED_LENGTH, PlacementKind.LINE)
+            return elements.createCatalogSelection(fixture.element.measurementUuid,
+                checkNotNull(prices.find(priceId)).uuid, ElementQuantity.Exact(cap), 7,
+                businessRole = com.andreyceilings.shared.livepricing.BusinessRole.ADDITIONAL_WORK)
+        }
+        val full = work("line.full", 1000)
+        val short = work("line.short", 2500)
+        val model = MeasurementEditModel(store, store.load(fixture.project, fixture.id))
+        fun seed(work: MeasurementElement, x: Long, y: Long, length: Long) {
+            model.beginLine(work.uuid)
+            model.lineTap(x, y)
+            model.lineTap(x + length, y)
+            model.acceptLineCreation()
+        }
+        seed(full, 2700, 2750, 1000)
+        seed(short, 2100, 1500, 250)
+        val original = model.displayLines().single { it.elementUuid == short.uuid }
+        model.clearDrawingSelection()
+        try {
+            compose.setContent { CeilingsTheme(false) { MeasurementEditScreen(model, PaddingValues(0.dp), onBack = {}) } }
+            val matcher = SemanticsMatcher("ceiling canvas") {
+                it.config.getOrNull(MeasurementDrawingSemantics.Projection) != null
+            }
+            compose.waitUntil(15_000) {
+                compose.onAllNodes(matcher).fetchSemanticsNodes().any {
+                    it.config.getOrNull(MeasurementDrawingSemantics.EditingEnabled) == true
+                }
+            }
+            fun click(label: String) {
+                val action = (hasText(label) or hasContentDescription(label)) and hasClickAction()
+                if (compose.onAllNodes(action and hasAnyAncestor(hasScrollAction())).fetchSemanticsNodes().isNotEmpty())
+                    compose.onNode(action).performScrollTo()
+                compose.onNode(action).assertIsEnabled().performClick()
+            }
+            click("Елементи")
+            compose.onNodeWithTag("measurement-workspace-add").performClick()
+            compose.onNodeWithTag("p5b-linked-${full.uuid}").performScrollTo().performClick()
+            compose.onNodeWithText("Розмістити ще").assertIsNotEnabled()
+            compose.onNodeWithText("Досягнуто заявленої кількості.").assertExists()
+            assertNull(model.state.value.lineElementUuid)
+            val canvas = compose.onNode(matcher)
+            fun project(x: Long, y: Long): Offset {
+                val projection = canvas.fetchSemanticsNode().config[MeasurementDrawingSemantics.Projection]
+                val point = projection.project(DrawingPoint(x.toDouble(), y.toDouble()))
+                return Offset(point.x.toFloat(), point.y.toFloat())
+            }
+            click("Вписати креслення")
+            repeat(8) { click("Зменшити масштаб") }
+            assertEquals(0.25f, canvas.fetchSemanticsNode().config[MeasurementDrawingSemantics.Viewport].zoom)
+            val endpoint = project(original.start.xMm, original.start.yMm)
+            canvas.performTouchInput { click(endpoint) }
+            assertEquals(original.uuid, model.state.value.selectedLineUuid)
+            val offset = Offset(0f, -10f * context.resources.displayMetrics.density)
+            val destination = project(1100, original.start.yMm) + offset
+            canvas.performTouchInput { swipe(endpoint + offset, destination, 500) }
+            val moved = model.displayLines().single { it.uuid == original.uuid }
+            assertEquals(original.end, moved.end)
+            assertTrue(moved.start.xMm < original.start.xMm - 700)
+            click("Скасувати дію")
+            click("Редагувати розміри")
+            compose.onNodeWithText("Довжина, м").performScrollTo().performTextReplacement("0,325")
+            click("Застосувати розміри")
+            val resized = model.displayLines().single { it.uuid == original.uuid }
+            assertEquals(original.start, resized.start)
+            assertEquals(325L, resized.lengthMm)
+            assertEquals(ElementQuantity.Exact(2500), elements.find(short.uuid)?.quantity)
+        } finally {
+            store.closePointReads()
+            driver.close()
+            context.deleteDatabase(name)
+            key.fill(0)
+        }
+    }
+
     @Test fun twoTapSelectionPanPinchCancelAndFullscreenKeepOneAtomicDraft() {
         val context=ApplicationProvider.getApplicationContext<Context>()
         System.loadLibrary("sqlcipher")

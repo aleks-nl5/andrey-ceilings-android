@@ -3,6 +3,8 @@ package com.andreyceilings.shared.db
 import app.cash.sqldelight.db.SqlDriver
 import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
 import com.andreyceilings.shared.measurement.*
+import com.andreyceilings.shared.estimate.ImmutableEstimateRepository
+import java.util.concurrent.atomic.AtomicBoolean
 import com.andreyceilings.shared.livepricing.BusinessRole
 import com.andreyceilings.shared.livepricing.LivePricingReader
 import com.andreyceilings.shared.livepricing.PricingReadResult
@@ -162,7 +164,15 @@ class WorkspacePlacementDraftTest {
             val fixture = PointPlacementProof.fixture(db)
             val pointRepository = PointPlacementRepository(db)
             val marker = pointRepository.addPoint(fixture.element.version, fixture.contourVersion, 900, 800, 10)
-            val store = MeasurementEditStore(db) { 100 }
+            val loseResponse = AtomicBoolean()
+            val driver = object : SqlDriver by raw {
+                override fun notifyListeners(vararg queryKeys: String) {
+                    raw.notifyListeners(*queryKeys)
+                    if ("ceiling_operations" in queryKeys && loseResponse.compareAndSet(true, false)) error("lost material receipt")
+                }
+            }
+            var clock = 100L
+            val store = MeasurementEditStore(PrototypeDatabase(driver)) { ++clock }
             val measurement = fixture.element.measurementUuid
             val prices = PriceRepository(db)
             val group = PriceGroupRepository(db).all().first().uuid
@@ -179,8 +189,30 @@ class WorkspacePlacementDraftTest {
             val catalog = store.placementCatalog().associateBy { it.uuid }
             model.chooseMaterial(BusinessRole.PRIMARY_PROFILE, catalog.getValue(newCanvas))
             assertTrue(model.materials(BusinessRole.PRIMARY_PROFILE).isEmpty())
+            assertEquals(ElementApproval.DISCUSSING, model.materials(BusinessRole.CANVAS).single().approval)
+            model.chooseMaterial(BusinessRole.CANVAS, catalog.getValue(oldCanvas))
+            assertEquals(old.copy(approval = ElementApproval.APPROVED), model.materials(BusinessRole.CANVAS).single())
+            assertEquals(old, elements.find(old.uuid))
+            model.undo()
+            assertEquals(old, model.materials(BusinessRole.CANVAS).single())
+            model.redo()
+            val stale = MeasurementEditModel(store, original)
+            stale.chooseMaterial(BusinessRole.CANVAS, catalog.getValue(oldCanvas))
+            loseResponse.set(true)
+            model.saveInWorkspace()
+            assertTrue(model.state.value.uncertain, model.state.value.error)
+            model.saveInWorkspace()
+            assertFalse(model.state.value.uncertain, model.state.value.error)
+            assertEquals(old.uuid, store.load(fixture.project, fixture.id).materialElements.single().uuid)
+            assertEquals(ElementApproval.APPROVED, elements.find(old.uuid)?.approval)
+            stale.saveInWorkspace()
+            assertTrue(stale.state.value.conflict, stale.state.value.error)
+
             model.chooseMaterial(BusinessRole.CANVAS, catalog.getValue(newCanvas))
             model.chooseMaterial(BusinessRole.PRIMARY_PROFILE, catalog.getValue(profile))
+            assertTrue(listOf(BusinessRole.CANVAS, BusinessRole.PRIMARY_PROFILE).all {
+                model.materials(it).single().approval == ElementApproval.APPROVED
+            })
             model.deleteWorkspacePoint(marker.uuid)
             assertTrue(model.displayPoints().isEmpty())
             assertEquals(marker, pointRepository.find(marker.uuid))
@@ -197,9 +229,123 @@ class WorkspacePlacementDraftTest {
             assertEquals(profile, (savedProfile.source as ElementSource.CatalogSelection).priceItemUuid)
             assertEquals(ElementQuantity.CeilingArea, canvas.quantity)
             assertEquals(ElementQuantity.CeilingPerimeter, savedProfile.quantity)
+            assertEquals(ElementApproval.APPROVED, canvas.approval)
+            assertEquals(ElementApproval.APPROVED, savedProfile.approval)
+            assertEquals(fixture.element.approval, elements.find(fixture.element.uuid)?.approval)
             assertNotNull(elements.find(old.uuid)?.deletedAt)
             assertNotNull(pointRepository.find(marker.uuid)?.deletedAt)
             assertEquals(fixture.element.quantity, elements.find(fixture.element.uuid)?.quantity)
+        }
+    }
+
+    @Test
+    fun workDeletionCascadesAllKindsAtomicallyAndCanReplayAfterLostResponse() = runBlocking {
+        JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).use { raw ->
+            PriceCatalogSchema.create(raw)
+            val db = PrototypeDatabase(raw)
+            val fixture = MeasurementPricingFixture.seed(db)
+            val id = assertNotNull(MeasurementRepository(db).findByUuid(fixture.measurementUuid)).id
+            val loseResponse = AtomicBoolean()
+            val driver = object : SqlDriver by raw {
+                override fun notifyListeners(vararg queryKeys: String) {
+                    raw.notifyListeners(*queryKeys)
+                    if ("ceiling_operations" in queryKeys && loseResponse.compareAndSet(true, false)) error("lost receipt")
+                }
+            }
+            var clock = 1_000L
+            val store = MeasurementEditStore(PrototypeDatabase(driver)) { ++clock }
+            val model = MeasurementEditModel(store, store.load(fixture.projectId, id))
+            model.addCatalogWork(addItem(db, "Point work", PlacementKind.POINT, "шт."), ElementQuantity.Exact(2000), true)
+            assertTrue(model.placeWorkspacePoint(500, 500))
+            model.addCatalogWork(addItem(db, "Line work", PlacementKind.LINE, "м.п."), ElementQuantity.Exact(1000), true)
+            assertTrue(model.finishWorkspaceLine(PointPositionMm(500, 900), PointPositionMm(1500, 900)))
+            model.addCatalogWork(addItem(db, "Area work", PlacementKind.AREA, "шт."), ElementQuantity.Exact(1000), true)
+            model.areaTap(650, 1200)
+            model.areaTap(1000, 1400)
+            model.acceptAreaCreation()
+            model.saveInWorkspace()
+            assertFalse(model.state.value.dirty, model.state.value.error)
+
+            val original = store.load(fixture.projectId, id)
+            val point = original.placements.points.single()
+            val line = original.placements.lines.single()
+            val area = original.placements.areas.single()
+            val workIds = listOf(point.elementUuid, line.elementUuid, assertNotNull(area.elementUuid))
+            val history = ImmutableEstimateRepository(db)
+            val saved = history.saveIndividual(FrozenIndividualEstimateProof.command(db, fixture), 2026, ++clock)
+            val frozen = assertNotNull(history.frozenIndividual(saved.seriesUuid)).payload
+
+            workIds.forEach(model::deleteWorkspaceWork)
+            assertTrue(model.displayPoints().isEmpty() && model.displayLines().isEmpty() && model.displayAreas().isEmpty())
+            repeat(workIds.size) { model.undo() }
+            assertEquals(listOf(point), model.displayPoints())
+            assertEquals(listOf(line), model.displayLines())
+            assertEquals(listOf(area), model.displayAreas())
+            repeat(workIds.size) { model.redo() }
+            assertEquals(original, store.load(fixture.projectId, id))
+
+            loseResponse.set(true)
+            model.saveInWorkspace()
+            assertTrue(model.state.value.uncertain, model.state.value.error)
+            val committed = store.load(fixture.projectId, id)
+            val elements = MeasurementElementRepository(db)
+            val tombstones = workIds.map { assertNotNull(elements.find(it)?.deletedAt) }
+            assertNotNull(PointPlacementRepository(db).tombstones().single { it.uuid == point.uuid }.deletedAt)
+            assertNotNull(LinePlacementRepository(db).all().single { it.uuid == line.uuid }.deletedAt)
+            assertNotNull(AreaFeatureRepository(db).all().single { it.uuid == area.uuid }.deletedAt)
+            assertTrue(committed.placements.points.isEmpty() && committed.placements.lines.isEmpty() && committed.placements.areas.isEmpty())
+
+            model.saveInWorkspace()
+            assertFalse(model.state.value.uncertain, model.state.value.error)
+            assertFalse(model.state.value.dirty)
+            assertEquals(committed, store.load(fixture.projectId, id))
+            assertEquals(tombstones, workIds.map { elements.find(it)?.deletedAt })
+            assertEquals(frozen, history.frozenIndividual(saved.seriesUuid)?.payload)
+        }
+    }
+
+    @Test
+    fun lineAndAreaCapacityAreCheckedBeforeStartAndBeforeAccept() = runBlocking {
+        JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).use { raw ->
+            PriceCatalogSchema.create(raw)
+            val db = PrototypeDatabase(raw)
+            val fixture = PointPlacementProof.fixture(db)
+            val store = MeasurementEditStore(db) { 100 }
+            val model = MeasurementEditModel(store, store.load(fixture.project, fixture.id))
+            val start = PointPositionMm(500, 500)
+            val lineItem = addItem(db, "Capacity line", PlacementKind.LINE, "м.п.")
+            model.addCatalogWork(lineItem, ElementQuantity.Range(500, 1000), true)
+            assertTrue(model.finishWorkspaceLine(start, PointPositionMm(1200, 500)))
+            val line = model.displayLines().single()
+            assertTrue(model.lineHasCapacity(line.elementUuid))
+            model.beginLine(line.elementUuid)
+            assertFalse(model.finishWorkspaceLine(start, PointPositionMm(850, 600)))
+            assertTrue(model.finishWorkspaceLine(start, PointPositionMm(800, 500)))
+            assertFalse(model.lineHasCapacity(line.elementUuid))
+            model.beginLine(line.elementUuid)
+            assertNull(model.state.value.lineElementUuid)
+
+            val areaItem = addItem(db, "Capacity area", PlacementKind.AREA, "шт.")
+            model.addCatalogWork(areaItem, ElementQuantity.Exact(1000), true)
+            model.areaTap(700, 1000)
+            model.areaTap(1200, 1500)
+            model.acceptAreaCreation()
+            val areaId = assertNotNull(model.displayAreas().single().elementUuid)
+            assertFalse(model.areaHasCapacity(areaId))
+            model.beginArea(AreaRole.GENERAL_AREA, areaId)
+            assertNull(model.state.value.area.tool)
+
+            assertTrue(model.editWorkspaceQuantity(areaId, ElementQuantity.Unknown))
+            assertTrue(model.areaHasCapacity(areaId))
+            model.beginArea(AreaRole.GENERAL_AREA, areaId)
+            model.areaTap(1300, 1600)
+            model.areaTap(1700, 1800)
+            model.acceptAreaCreation()
+            assertEquals(2, model.displayAreas().size)
+            assertNull(model.areaCapacityError())
+            assertTrue(model.editWorkspaceQuantity(line.elementUuid, ElementQuantity.Unknown))
+            assertTrue(model.lineHasCapacity(line.elementUuid))
+            assertNull(model.lineCapacityError())
         }
     }
 

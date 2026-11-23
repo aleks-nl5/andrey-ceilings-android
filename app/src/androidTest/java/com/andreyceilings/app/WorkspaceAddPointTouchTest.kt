@@ -37,6 +37,7 @@ class WorkspaceAddPointTouchTest {
         val catalogId = prices.createInGroup("p5b.ui.point", "Тестова позначка", PriceGroupRepository(database).all().first().uuid,
             1.0, 6, "шт.", com.andreyceilings.shared.prices.QuantityMode.MANUAL, com.andreyceilings.shared.prices.PlacementKind.POINT)
         val itemUuid = checkNotNull(prices.find(catalogId)).uuid
+        val canvasItem = prices.all().single { it.code == "canvas.pvc_matte" }
         val matchCanvas = SemanticsMatcher("measurement drawing") { node ->
             node.config.getOrNull(SemanticsProperties.ContentDescription).orEmpty().any { it.startsWith("Контур стелі") }
         }
@@ -65,7 +66,26 @@ class WorkspaceAddPointTouchTest {
                     it.config.getOrNull(MeasurementDrawingSemantics.EditingEnabled) == true
                 }
             }
+            fun assertLiveMetrics() {
+                val draft = shown.value.state.value.draft
+                val geometry = assertNotNull(validateMeasurementCreate(draft).geometry)
+                compose.onNodeWithTag("measurement-live-area").assertIsDisplayed().assertContentDescriptionEquals(
+                    "Площа: ${formatMeasurementArea(geometry.areaSquareMeters, draft.precision)} м²")
+                compose.onNodeWithTag("measurement-live-perimeter").assertIsDisplayed().assertContentDescriptionEquals(
+                    "Периметр: ${formatMeasurementLength(geometry.perimeterMeters, draft.precision)} м")
+            }
+            assertLiveMetrics()
+            click("Вартість")
+            assertLiveMetrics()
+            click("На весь екран")
+            assertLiveMetrics()
+            click("Згорнути")
             click("Елементи")
+            assertLiveMetrics()
+            compose.onNodeWithTag("p5b-material-CANVAS").assertIsDisplayed().performClick()
+            val canvasTag = "p5b-catalog-${canvasItem.uuid}"
+            compose.waitUntil(15_000) { compose.onAllNodes(hasTestTag(canvasTag)).fetchSemanticsNodes().isNotEmpty() }
+            compose.onNodeWithTag(canvasTag).performScrollTo().performClick()
             compose.onNodeWithTag("p5b-material-CANVAS").assertIsDisplayed()
             compose.onNodeWithTag("p5b-material-PRIMARY_PROFILE").assertIsDisplayed()
             compose.onNodeWithTag("measurement-workspace-add").performClick()
@@ -100,6 +120,9 @@ class WorkspaceAddPointTouchTest {
             compose.waitUntil(15_000) { !shown.value.state.value.dirty || shown.value.state.value.error != null }
             assertFalse(shown.value.state.value.dirty, shown.value.state.value.error)
             val reopened = store.load(fixture.project, fixture.id)
+            val material = reopened.materialElements.single()
+            assertEquals(ElementApproval.APPROVED, material.approval)
+            assertEquals(canvasItem.uuid, (material.source as ElementSource.CatalogSelection).priceItemUuid)
             val point = reopened.placements.points.single()
             assertEquals(added.uuid, point.uuid)
             assertEquals(1250L, point.xMm)

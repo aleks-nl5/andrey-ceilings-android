@@ -113,6 +113,10 @@ class MeasurementWorkspaceLayoutTest {
                         assertNull(drawing.fetchSemanticsNode().config.getOrNull(MeasurementDrawingSemantics.SelectedWall))
                         fields.first().performSemanticsAction(SemanticsActions.SetText) { set -> assertTrue(set(AnnotatedString(""))) }
                         status.assertExists()
+                        compose.onNodeWithTag("measurement-live-area").assertIsDisplayed()
+                            .assertContentDescriptionEquals("Площа недоступна: — м²")
+                        compose.onNodeWithTag("measurement-live-perimeter").assertIsDisplayed()
+                            .assertContentDescriptionEquals("Периметр недоступний: — м")
                         assertEquals(header, compose.onNodeWithTag("measurement-edit-header").fetchSemanticsNode().boundsInRoot)
                         assertEquals(canvas, drawing.fetchSemanticsNode().boundsInRoot)
                         assertRenderedChrome(drawing.fetchSemanticsNode(), mode)

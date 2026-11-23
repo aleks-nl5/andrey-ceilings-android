@@ -31,6 +31,7 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.CropSquare
 import androidx.compose.material.icons.filled.Category
+import androidx.compose.material.icons.filled.Straighten
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material3.*
@@ -54,6 +55,7 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.semantics.LiveRegionMode
@@ -66,6 +68,8 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.andreyceilings.shared.calculation.*
 import com.andreyceilings.shared.estimate.FrozenPolygonGeometry
+import com.andreyceilings.shared.resources.*
+import org.jetbrains.compose.resources.stringResource
 import com.andreyceilings.shared.ui.CeilingsWorkspaceScaffold
 import com.andreyceilings.shared.ui.CeilingsFab
 import com.andreyceilings.shared.ui.CeilingsFabProfile
@@ -310,9 +314,9 @@ fun MeasurementEditScreen(
         fullscreen = fullscreen,
         header = { _ ->
             val inlineKeyboardPanel = inlineKeyboardPanel()
-            Column(Modifier.fillMaxWidth()) {
+            Column(Modifier.fillMaxWidth().testTag("measurement-edit-header")) {
                 Row(
-                    Modifier.fillMaxWidth().testTag("measurement-edit-header"),
+                    Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     MeasurementEditorFab(
@@ -364,6 +368,7 @@ fun MeasurementEditScreen(
                         onClick = { save() }
                     )
                 }
+                MeasurementGeometrySummary(validation.geometry, draft.precision)
             }
         },
         overlay = { headerHeight ->
@@ -458,10 +463,6 @@ fun MeasurementEditScreen(
                                             selected = null
                                         }
                                         Text("Точність · ${draft.precision.label}", style = MaterialTheme.typography.bodySmall)
-                                        validation.geometry?.let {
-                                            Text("Площа ${formatMeasurementArea(it.areaSquareMeters, draft.precision)} м² · Периметр ${formatMeasurementLength(it.perimeterMeters, draft.precision)} м",
-                                                style = MaterialTheme.typography.bodySmall)
-                                        }
                                     }
                                 }
                                 MeasurementEditContext.ELEMENTS -> {
@@ -938,5 +939,45 @@ private fun MeasurementDimensionRows(count: Int, columns: Int, field: @Composabl
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun MeasurementGeometrySummary(geometry: FrozenPolygonGeometry?, precision: MeasurementPrecision) {
+    val area = geometry?.let { formatMeasurementArea(it.areaSquareMeters, precision) }.orEmpty()
+    val perimeter = geometry?.let { formatMeasurementLength(it.perimeterMeters, precision) }.orEmpty()
+    val areaValue = if (geometry == null) stringResource(Res.string.p5b_live_area_unavailable)
+        else stringResource(Res.string.p5b_live_area_value, area)
+    val perimeterValue = if (geometry == null) stringResource(Res.string.p5b_live_perimeter_unavailable)
+        else stringResource(Res.string.p5b_live_perimeter_value, perimeter)
+    val color = if (geometry == null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
+    Row(
+        Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 3.dp).testTag("measurement-live-geometry"),
+        horizontalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterHorizontally),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        MeasurementGeometryMetric(Icons.Default.CropSquare, areaValue, stringResource(
+            if (geometry == null) Res.string.p5b_live_area_invalid_label else Res.string.p5b_live_area_label, areaValue),
+            color, "measurement-live-area")
+        MeasurementGeometryMetric(Icons.Default.Straighten, perimeterValue, stringResource(
+            if (geometry == null) Res.string.p5b_live_perimeter_invalid_label else Res.string.p5b_live_perimeter_label, perimeterValue),
+            color, "measurement-live-perimeter")
+    }
+}
+
+@Composable
+private fun RowScope.MeasurementGeometryMetric(
+    icon: ImageVector, value: String, label: String, color: Color, tag: String
+) {
+    Row(
+        Modifier.weight(1f, fill = false).testTag(tag).clearAndSetSemantics {
+            contentDescription = label
+            liveRegion = LiveRegionMode.Polite
+        },
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(icon, contentDescription = null, modifier = Modifier.size(16.dp), tint = color)
+        Text(value, style = MaterialTheme.typography.labelMedium, color = color, maxLines = 1)
     }
 }

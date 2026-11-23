@@ -8,10 +8,13 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.decodeFromString
 import kotlin.math.roundToLong
+import kotlin.math.hypot
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.serialization.json.*
+
+private const val AreaCapacityMessage = "Площа/кількість разом із нерозв'язаними об'єктами перевищує заявлену."
 
 data class MeasurementEditState(
     val original: MeasurementEditDocument, val draft: MeasurementCreateDraft = original.draft,
@@ -358,7 +361,8 @@ class MeasurementEditModel(
 
     internal fun materials(role: BusinessRole): List<MeasurementElement> {
         val state = state.value
-        return state.original.materialElements.filter { it.businessRole == role && it.uuid !in state.additions.replacedMaterials } +
+        return state.original.materialElements.filter { it.businessRole == role && it.uuid !in state.additions.replacedMaterials }
+            .map { state.additions.editedWorks[it.uuid] ?: it } +
             state.additions.elements.values.filter { it.businessRole == role }
     }
 
@@ -368,21 +372,27 @@ class MeasurementEditModel(
         val original = state.original.materialElements.filter { it.businessRole == role }
         if (original.size > 1) return
         val previous = original.singleOrNull()
-        if (previous != null && (state.original.placements.points.any { it.elementUuid == previous.uuid } ||
+        val current = materials(role).singleOrNull()
+        val sameCurrent = (current?.source as? ElementSource.CatalogSelection)?.priceItemUuid == item.uuid
+        if (sameCurrent && current.approval == ElementApproval.APPROVED) return
+        val isOriginal = (previous?.source as? ElementSource.CatalogSelection)?.priceItemUuid == item.uuid
+        if (!isOriginal && previous != null && (state.original.placements.points.any { it.elementUuid == previous.uuid } ||
                 state.original.placements.lines.any { it.elementUuid == previous.uuid } ||
                 state.original.placements.areas.any { it.elementUuid == previous.uuid })) return
-        if ((materials(role).singleOrNull()?.source as? ElementSource.CatalogSelection)?.priceItemUuid == item.uuid) return
         commitInput()
         undo.add(form())
         redo.clear()
         val pending = state.additions.elements.filterValues { it.businessRole != role }
         val replaced = state.additions.replacedMaterials - listOfNotNull(previous?.uuid).toSet()
-        val isOriginal = (previous?.source as? ElementSource.CatalogSelection)?.priceItemUuid == item.uuid
-        val candidate = item.toWorkspaceElement(newRecordUuid(), state.draft.recordUuid, item.mode.workspaceQuantity())
-            .copy(businessRole = role, approval = previous?.approval ?: ElementApproval.DISCUSSING)
+        val candidate = if (isOriginal) checkNotNull(previous).copy(approval = ElementApproval.APPROVED)
+            else item.toWorkspaceElement(current?.uuid?.takeIf { sameCurrent } ?: newRecordUuid(),
+                state.draft.recordUuid, item.mode.workspaceQuantity())
+                .copy(businessRole = role, approval = ElementApproval.APPROVED)
+        val edited = state.additions.editedWorks - listOfNotNull(previous?.uuid).toSet()
         mutableState.value = state.copy(additions = state.additions.copy(
             elements = if (isOriginal) pending else pending + (candidate.uuid to candidate),
-            replacedMaterials = if (!isOriginal && previous != null) replaced + (previous.uuid to previous.version) else replaced
+            replacedMaterials = if (!isOriginal && previous != null) replaced + (previous.uuid to previous.version) else replaced,
+            editedWorks = if (isOriginal && candidate != previous) edited + (candidate.uuid to candidate) else edited
         ))
         publish()
     }
@@ -640,8 +650,14 @@ class MeasurementEditModel(
             capacity!=null && lines.filter {it.elementUuid==element.uuid}.sumOf {it.lengthMm}>capacity
         }?.let {LinePlacementFailure.CapacityReached().message}
     }
+    internal fun lineHasCapacity(uuid: String, candidate: LinePlacement? = null): Boolean {
+        val work = lineElements().find { it.uuid == uuid } ?: return false
+        val used = displayLines().filter { it.elementUuid == uuid && it.uuid != candidate?.uuid }.sumOf { it.lengthMm }
+        val cap = state.value.declaredLengths[uuid] ?: work.lineCapacityMm() ?: return true
+        return if (candidate == null) used < cap else candidate.lengthMm <= cap - used
+    }
     fun beginLine(element: String) {
-        if(!editable() || lineElements().none {it.uuid==element})return
+        if (!editable() || !lineHasCapacity(element)) return
         cancelAreaCreation();updateArea {it.copy(selected=null)}
         mutableState.value=state.value.copy(pointElementUuid=null,lineElementUuid=element,lineStart=null,linePreview=null,selectedLineUuid=null,selectedPointUuid=null)
     }
@@ -666,7 +682,12 @@ class MeasurementEditModel(
             return false
         }
         val id = newRecordUuid()
-        stageLine(LinePlacement(id, element, start, end, state.value.original.updatedAt, 0, 0))
+        val line = LinePlacement(id, element, start, end, state.value.original.updatedAt, 0, 0)
+        if (!lineHasCapacity(element, line)) {
+            mutableState.value = state.value.copy(error = LinePlacementFailure.CapacityReached().message)
+            return false
+        }
+        stageLine(line)
         mutableState.value = state.value.copy(
             lineStart = null, linePreview = null, lineElementUuid = null, selectedLineUuid = id, lineMoveTarget = 0
         )
@@ -676,6 +697,10 @@ class MeasurementEditModel(
     fun acceptLineCreation() {
         if(!editable())return
         val line=state.value.linePreview ?: return
+        if (!lineHasCapacity(line.elementUuid, line)) {
+            mutableState.value = state.value.copy(linePreview = null, error = LinePlacementFailure.CapacityReached().message)
+            return
+        }
         stageLine(line)
         mutableState.value=state.value.copy(lineStart=null,linePreview=null,lineElementUuid=null,selectedLineUuid=line.uuid)
     }
@@ -747,11 +772,12 @@ class MeasurementEditModel(
     fun openLineProperties() {
         if(!editable())return
         val line=displayLines().find {it.uuid==state.value.selectedLineUuid} ?: return
-        mutableState.value=state.value.copy(lineProperties=LinePropertiesInput(line.uuid,line.widthMm?.toString().orEmpty(),line.note))
+        mutableState.value=state.value.copy(lineProperties=LinePropertiesInput(line.uuid, line.widthMm?.toString().orEmpty(), line.note,
+            length = formatPointMetres(line.lengthMm)))
     }
-    fun changeLineProperties(width:String?=null,note:String?=null) {
+    fun changeLineProperties(width: String? = null, note: String? = null, length: String? = null) {
         if(!editable())return
-        mutableState.value=state.value.copy(lineProperties=state.value.lineProperties?.let {it.copy(width=width ?: it.width,note=note ?: it.note)})
+        mutableState.value=state.value.copy(lineProperties=state.value.lineProperties?.let {it.copy(width = width ?: it.width, note = note ?: it.note, length = length ?: it.length)})
     }
     fun dismissLineProperties() {
         if(state.value.lineProperties?.dirty==true)mutableState.value=state.value.copy(linePropertiesDismiss=true) else discardLineProperties()
@@ -761,8 +787,32 @@ class MeasurementEditModel(
     fun applyLineProperties() {
         if(!editable())return
         val input=state.value.lineProperties?.takeIf {it.valid} ?: return
-        val line=state.value.lineEdits[input.uuid]?.value ?: displayLines().find {it.uuid==input.uuid} ?: return
-        stageLine(line.copy(widthMm=input.width.toLongOrNull(),note=input.note));discardLineProperties()
+        val line = displayLines().find { it.uuid == input.uuid } ?: return
+        val candidate = linePropertiesCandidate(line, input) ?: return
+        stageLine(candidate, remeasuredEnd = if (candidate.end != line.end) false else null)
+        discardLineProperties()
+    }
+
+    internal fun linePropertiesCandidate(line: LinePlacement, input: LinePropertiesInput): LinePlacement? {
+        if (!input.valid) return null
+        val length = input.length?.let { parsePointMetres(it, 3_000_000)?.takeIf { mm -> mm > 0 } ?: return null }
+        val details = line.copy(widthMm = input.width.toLongOrNull(), note = input.note)
+        if (length == null || length == line.lengthMm) return details
+        if (line.unresolved) return null
+        val geometry = validateMeasurementCreate(state.value.draft).geometry ?: return null
+        val dx = (line.end.xMm - line.start.xMm).toDouble()
+        val dy = (line.end.yMm - line.start.yMm).toDouble()
+        val scale = length / hypot(dx, dy)
+        val x = line.start.xMm + dx * scale
+        val y = line.start.yMm + dy * scale
+        val end = (-1L..1L).flatMap { ox ->
+            (-1L..1L).map { oy -> PointPositionMm(x.roundToLong() + ox, y.roundToLong() + oy) }
+        }.sortedBy { hypot(it.xMm - x, it.yMm - y) }.firstOrNull {
+            lineStrictlyInside(geometry, line.start, it) && lineLengthMm(line.start, it) == length
+        } ?: return null
+        return details.copy(end = end, endMounting = line.endMounting.freeMoved(),
+            needsReview = line.needsReview || line.endMounting.anchor != null)
+            .takeIf { lineHasCapacity(line.elementUuid, it) }
     }
     fun requestLineDelete() {if(editable())mutableState.value=state.value.copy(lineDeleteConfirm=true)}
     fun cancelLineDelete() {mutableState.value=state.value.copy(lineDeleteConfirm=false)}
@@ -809,10 +859,21 @@ class MeasurementEditModel(
         return areaElements().firstOrNull {e ->
             val cap=state.value.area.quantities[e.uuid] ?: e.lineCapacityMm()
             cap!=null && areaQuantityMilli(areas.filter {it.elementUuid==e.uuid},e.unit!!,true)>cap
-        }?.let {"Площа/кількість разом із нерозв'язаними об'єктами перевищує заявлену."}
+        }?.let { AreaCapacityMessage }
+    }
+    internal fun areaHasCapacity(uuid: String, candidate: AreaFeature? = null): Boolean {
+        val work = areaElements().find { it.uuid == uuid } ?: return false
+        val areas = displayAreas().filter { it.uuid != candidate?.uuid }
+        if (areas.size >= 1000) return false
+        val existing = areas.filter { it.elementUuid == uuid }
+        val cap = state.value.area.quantities[uuid] ?: work.lineCapacityMm() ?: return true
+        val unit = checkNotNull(work.unit)
+        if (candidate != null) return areaQuantityMilli(existing + candidate, unit, includeUnresolved = true) <= cap
+        val used = areaQuantityMilli(existing, unit, includeUnresolved = true)
+        return if (unit == "шт.") cap - used >= 1000 else cap > used
     }
     fun beginArea(role:AreaRole,element:String?=null,tool:AreaTool=AreaTool.RECTANGLE) {
-        if(!editable() || element!=null && areaElements().none {it.uuid==element})return
+        if (!editable() || element != null && !areaHasCapacity(element)) return
         cancelLineCreation();cancelPointDrag();cancelLineDrag()
         mutableState.value=state.value.copy(selectedPointUuid=null,selectedLineUuid=null,pointElementUuid=null)
         updateArea {it.copy(selected=null,tool=tool,role=role,element=element,vertices=emptyList(),diameter="",drag=null)}
@@ -845,6 +906,10 @@ class MeasurementEditModel(
         val a=state.value.area
         val feature=AreaFeature(newRecordUuid(),state.value.draft.recordUuid,shape,state.value.original.updatedAt,0,0,
             elementUuid=a.element,role=a.role,radiusMeasured=shape is AreaShape.Circle)
+        if (a.element != null && !areaHasCapacity(a.element, feature)) {
+            mutableState.value = state.value.copy(error = AreaCapacityMessage)
+            return
+        }
         stageArea(feature)
         updateArea {it.copy(tool=null,vertices=emptyList(),element=null,selected=feature.uuid)}
     }
@@ -927,7 +992,12 @@ class MeasurementEditModel(
     fun openAreaProperties() {
         if(!editable())return
         val area=state.value.area.edits[state.value.area.selected]?.value ?: displayAreas().find {it.uuid==state.value.area.selected} ?: return
-        updateArea {it.copy(properties=AreaPropertiesInput(area.uuid,area.note,area.role,(area.shape as? AreaShape.Circle)?.let {formatPointMetres(it.radiusMm*2)}.orEmpty()))}
+        val rectangle = area.shape.positions.takeIf { it.isAxisAlignedRectangle() }
+        updateArea { it.copy(properties = AreaPropertiesInput(
+            area.uuid, area.note, area.role, (area.shape as? AreaShape.Circle)?.let { formatPointMetres(it.radiusMm * 2) }.orEmpty(),
+            width = rectangle?.let { formatPointMetres(it.maxOf { p -> p.xMm } - it.minOf { p -> p.xMm }) },
+            height = rectangle?.let { formatPointMetres(it.maxOf { p -> p.yMm } - it.minOf { p -> p.yMm }) }
+        )) }
     }
     fun changeAreaProperties(change:(AreaPropertiesInput)->AreaPropertiesInput) {if(editable())updateArea {it.copy(properties=it.properties?.let(change))}}
     fun dismissAreaProperties() {if(state.value.area.properties?.dirty==true)updateArea {it.copy(dismissProperties=true)} else discardAreaProperties()}
@@ -936,13 +1006,42 @@ class MeasurementEditModel(
     fun applyAreaProperties() {
         if(!editable())return
         val input=state.value.area.properties ?: return
-        val old=state.value.area.edits[input.uuid]?.value ?: displayAreas().find {it.uuid==input.uuid} ?: return
-        val circle=old.shape as? AreaShape.Circle
-        val shape=if(circle!=null)runCatching {AreaShape.circleFromDiameter(circle.center,checkNotNull(parsePointMetres(input.diameter,2_000_000)))}.getOrNull() ?: return else old.shape
-        val g=validateMeasurementCreate(state.value.draft).geometry ?: return
-        if(!areaStrictlyInside(g,shape) && !old.unresolved){mutableState.value=state.value.copy(error="Уся фігура має залишитися всередині стелі.");return}
-        stageArea(old.copy(shape=shape,note=input.note,role=input.role,radiusMeasured=circle!=null && (input.diameterMeasured || shape==old.shape && old.radiusMeasured)),remeasuredRadius=circle!=null && input.diameterMeasured)
+        val old = displayAreas().find { it.uuid == input.uuid } ?: return
+        val candidate = areaPropertiesCandidate(old, input) ?: return
+        val measured = state.value.area.edits[old.uuid]?.remeasured.orEmpty()
+            .filter { old.shape.positions[it] == candidate.shape.positions[it] }.toSet()
+        stageArea(candidate, remeasured = measured,
+            remeasuredRadius = if (input.diameterMeasured) true else null)
         discardAreaProperties()
+    }
+
+    internal fun areaPropertiesCandidate(old: AreaFeature, input: AreaPropertiesInput): AreaFeature? {
+        val circle = old.shape as? AreaShape.Circle
+        val positions = old.shape.positions
+        val shape = when {
+            circle != null -> runCatching {
+                AreaShape.circleFromDiameter(circle.center, checkNotNull(parsePointMetres(input.diameter, 2_000_000)))
+            }.getOrNull() ?: return null
+            input.width != null && input.height != null && positions.isAxisAlignedRectangle() -> {
+                val width = parsePointMetres(input.width, 2_000_000)?.takeIf { it > 0 } ?: return null
+                val height = parsePointMetres(input.height, 2_000_000)?.takeIf { it > 0 } ?: return null
+                val first = positions.first()
+                old.shape.withPositions(positions.map { vertex ->
+                    PointPositionMm(first.xMm + (vertex.xMm - first.xMm).compareTo(0L) * width,
+                        first.yMm + (vertex.yMm - first.yMm).compareTo(0L) * height)
+                })
+            }
+            else -> old.shape
+        }
+        val moved = positions.indices.filter { positions[it] != shape.positions[it] }.toSet()
+        val candidate = old.copy(shape = shape, note = input.note, role = input.role,
+            radiusMeasured = circle != null && (input.diameterMeasured || shape == old.shape && old.radiusMeasured),
+            mountings = old.mountings.mapIndexed { index, mounting -> if (index in moved) mounting.freeMoved() else mounting },
+            needsReview = old.needsReview || moved.any { old.mountings[it].anchor != null })
+        if (shape == old.shape) return candidate
+        val geometry = validateMeasurementCreate(state.value.draft).geometry ?: return null
+        if (old.unresolved || !areaStrictlyInside(geometry, shape)) return null
+        return candidate.takeIf { old.elementUuid == null || areaHasCapacity(old.elementUuid, candidate) }
     }
     fun requestAreaDelete() {if(editable())updateArea {it.copy(deleteConfirm=true)}}
     fun cancelAreaDelete() {updateArea {it.copy(deleteConfirm=false)}}

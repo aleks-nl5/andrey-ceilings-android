@@ -399,8 +399,8 @@ fun MeasurementDrawing(
                     val lineHandle = selectedLine?.takeIf { ownsLine && lineHandleDrag != null }?.let { line ->
                         val a = screen(line.start)
                         val b = screen(line.end)
-                        val radius = minOf(20.dp.toPx().toDouble(), (hypot(a.x - b.x, a.y - b.y) * 0.32).coerceAtLeast(4.0))
-                        grip(listOf(line.start, line.end), radius)?.plus(1) ?: 0
+                        lineDragHandle(a, b, DrawingPoint(down.position.x.toDouble(), down.position.y.toDouble()),
+                            24.dp.toPx().toDouble())
                     }
                     if (ownsArea) {
                         markerGesture = true
