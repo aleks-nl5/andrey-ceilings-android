@@ -39,6 +39,49 @@ class PrReleaseArtifactPolicyTest(unittest.TestCase):
         self.assertNotIn("pull_request_target:", signer)
         self.assertNotIn("permissions:\n  contents: write", signer)
 
+    def test_manual_signing_resolves_pr_branch_without_run_ids(self):
+        signer = SIGN.read_text(encoding="utf-8")
+        self.assertIn("  issue_comment:", signer)
+        self.assertIn("types: [created]", signer)
+        self.assertIn("github.event.comment.body == '/sign-apk'", signer)
+        self.assertIn("github.actor == github.repository_owner", signer)
+        self.assertIn("github.event.issue.pull_request != null", signer)
+        self.assertIn("  workflow_dispatch:", signer)
+        self.assertIn("      pr_number:", signer)
+        self.assertNotIn("source_run_id:", signer)
+        self.assertIn('PR_NUMBER: ${{ inputs.pr_number || github.event.issue.number }}', signer)
+        self.assertIn('expected_sha="$(jq -r', signer)
+        self.assertIn('source_branch="$(jq -r', signer)
+        self.assertIn('actions/workflows/$quick_workflow_id/runs', signer)
+        self.assertIn('sort_by([.run_number, .run_attempt])', signer)
+        self.assertIn('.head_sha == $sha', signer)
+        self.assertIn('.head.sha == $sha', signer)
+        self.assertIn('.head.repo.full_name == $repo', signer)
+        self.assertIn('pr_number', signer)
+        self.assertIn("github.ref == 'refs/heads/main'", signer)
+
+    def test_manual_signing_rejects_ci_failures_and_keeps_signing_trusted(self):
+        signer = SIGN.read_text(encoding="utf-8")
+        for required in (
+            'name == "Classify PR risk (quick checks only)"',
+            'name == "PR Android release candidate and JVM unit tests"',
+            'name == "PR Windows compile and mapped scene tests"',
+            '.status == "completed" and .conclusion == "success"',
+            '.run_attempt == $attempt',
+            '.conclusion == "cancelled"',
+            '(.runner_id // 0) == 0',
+            '((.steps // []) | length) == 0',
+            'pr-internal-unsigned-release-apk',
+            '.expired == false',
+            'Unexpected release package name',
+            'apksigner',
+        ):
+            self.assertIn(required, signer)
+        self.assertIn('gh api "repos/$GITHUB_REPOSITORY/pulls/$pr_number"', signer)
+        self.assertIn("secrets.ANDROID_KEYSTORE_BASE64", signer)
+        self.assertNotIn("actions/checkout", signer)
+        self.assertNotIn("gradle --", signer)
+
     def test_same_version_code_family_for_both_ci_workflows(self):
         gradle = GRADLE.read_text(encoding="utf-8")
         self.assertIn('System.getenv("GITHUB_RUN_ID")', gradle)
