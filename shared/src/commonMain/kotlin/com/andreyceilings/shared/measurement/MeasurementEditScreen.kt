@@ -304,7 +304,7 @@ fun MeasurementEditScreen(
         return when {
             inlineKeyboardPanel() -> maxHeight
             keyboardVisible -> maxOf(bodyHeight * 0.50f, minOf(192.dp, bodyHeight * 0.75f), minOf(88.dp, bodyHeight))
-            else -> (bodyHeight * 0.50f).coerceAtMost((bodyHeight - 64.dp).coerceAtLeast(0.dp))
+            else -> (bodyHeight * 0.60f).coerceAtMost((bodyHeight - 64.dp).coerceAtLeast(0.dp))
         }
     }
 
@@ -944,7 +944,7 @@ private fun MeasurementDimensionRows(count: Int, columns: Int, field: @Composabl
 
 @Composable
 private fun MeasurementGeometrySummary(geometry: FrozenPolygonGeometry?, precision: MeasurementPrecision) {
-    val area = geometry?.let { formatMeasurementArea(it.areaSquareMeters, precision) }.orEmpty()
+    val area = geometry?.let { formatMeasurementAreaCompact(it.areaSquareMeters) }.orEmpty()
     val perimeter = geometry?.let { formatMeasurementLength(it.perimeterMeters, precision) }.orEmpty()
     val areaValue = if (geometry == null) stringResource(Res.string.p5b_live_area_unavailable)
         else stringResource(Res.string.p5b_live_area_value, area)
@@ -952,7 +952,8 @@ private fun MeasurementGeometrySummary(geometry: FrozenPolygonGeometry?, precisi
         else stringResource(Res.string.p5b_live_perimeter_value, perimeter)
     val color = if (geometry == null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
     Row(
-        Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 3.dp).testTag("measurement-live-geometry"),
+        Modifier.fillMaxWidth().offset(y = (-7).dp).padding(horizontal = 12.dp, vertical = 1.dp)
+            .testTag("measurement-live-geometry"),
         horizontalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterHorizontally),
         verticalAlignment = Alignment.CenterVertically
     ) {

@@ -366,19 +366,19 @@ class MeasurementEditModel(
             state.additions.elements.values.filter { it.businessRole == role }
     }
 
-    internal fun chooseMaterial(role: BusinessRole, item: ElementCatalogItem) {
-        if (!editable() || item.materialRole() != role) return
+    internal fun chooseMaterial(role: BusinessRole, item: ElementCatalogItem): Boolean {
+        if (!editable() || item.materialRole() != role) return false
         val state = state.value
         val original = state.original.materialElements.filter { it.businessRole == role }
-        if (original.size > 1) return
+        if (original.size > 1) return false
         val previous = original.singleOrNull()
         val current = materials(role).singleOrNull()
         val sameCurrent = (current?.source as? ElementSource.CatalogSelection)?.priceItemUuid == item.uuid
-        if (sameCurrent && current.approval == ElementApproval.APPROVED) return
+        if (sameCurrent && current.approval == ElementApproval.APPROVED) return true
         val isOriginal = (previous?.source as? ElementSource.CatalogSelection)?.priceItemUuid == item.uuid
         if (!isOriginal && previous != null && (state.original.placements.points.any { it.elementUuid == previous.uuid } ||
                 state.original.placements.lines.any { it.elementUuid == previous.uuid } ||
-                state.original.placements.areas.any { it.elementUuid == previous.uuid })) return
+                state.original.placements.areas.any { it.elementUuid == previous.uuid })) return false
         commitInput()
         undo.add(form())
         redo.clear()
@@ -395,6 +395,7 @@ class MeasurementEditModel(
             editedWorks = if (isOriginal && candidate != previous) edited + (candidate.uuid to candidate) else edited
         ))
         publish()
+        return true
     }
 
     internal fun workspaceWorks(): List<MeasurementElement> {
@@ -622,10 +623,13 @@ class MeasurementEditModel(
         undo.add(form())
         redo.clear()
         val additions = state.value.additions
+        val placedCount = displayPoints().count { it.elementUuid == uuid }
+        val remaining = (pointElements().find { it.uuid == uuid }?.pointCapacity() ?: 0) > placedCount + 1
         mutableState.value = state.value.copy(
             additions = additions.copy(points = additions.points + (id to point)),
-            pointElementUuid = null,
-            selectedPointUuid = id
+            // One point per tap; preserve placement until the declared count is reached.
+            pointElementUuid = uuid.takeIf { remaining },
+            selectedPointUuid = id.takeUnless { remaining }
         )
         publish()
         return true
