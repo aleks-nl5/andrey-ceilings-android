@@ -176,6 +176,8 @@ fun MeasurementEditScreen(
     var reloadConfirm by remember { mutableStateOf(false) }
     var lineSnapEnabled by rememberSaveable(measurementUuid) { mutableStateOf(true) }
     var showAdd by rememberSaveable(measurementUuid) { mutableStateOf(false) }
+    var catalogSubpageBack by remember(measurementUuid) { mutableStateOf<(() -> Unit)?>(null) }
+    val currentCatalogSubpageBack by rememberUpdatedState(catalogSubpageBack)
     var materialPicker by rememberSaveable(measurementUuid) { mutableStateOf<com.andreyceilings.shared.livepricing.BusinessRole?>(null) }
     var selectedWork by rememberSaveable(measurementUuid) { mutableStateOf<String?>(null) }
     var highlightedWorkId by remember(measurementUuid) { mutableStateOf<String?>(null) }
@@ -187,6 +189,7 @@ fun MeasurementEditScreen(
     }
     fun dismissCatalog() {
         showAdd = false
+        catalogSubpageBack = null
         materialPicker = null
         focus.clearFocus()
     }
@@ -207,6 +210,10 @@ fun MeasurementEditScreen(
     val surfaceBack = remember(model, measurementUuid, navigationGuard) {
         {
             when {
+                showAdd && currentCatalogSubpageBack != null -> {
+                    currentCatalogSubpageBack?.invoke()
+                    true
+                }
                 showAdd -> { dismissCatalog(); true }
                 pointToolActive || lineToolActive || areaToolActive -> { model.cancelPlacement(); true }
                 !fullscreen -> false
@@ -249,7 +256,9 @@ fun MeasurementEditScreen(
             (state.area.tool != null && (state.area.vertices.isNotEmpty() || state.area.diameter.isNotBlank())) ->
                 stringResource(Res.string.p5b_save_finish_placement)
         overlay !is PointOverlayState.Loaded -> stringResource(Res.string.p5b_save_wait_points)
-        !model.canSaveMountingDraft() -> stringResource(Res.string.p5b_save_check_elements)
+        !model.canSaveMountingDraft() -> model.lineCapacityError()
+            ?: model.areaCapacityError()
+            ?: stringResource(Res.string.p5b_save_check_elements)
         else -> null
     }
     fun save(exit: Boolean = false) {
@@ -512,6 +521,7 @@ fun MeasurementEditScreen(
                                 MeasurementEditContext.ELEMENTS -> {
                                     val canEdit = enabled && validation.geometry != null && overlay is PointOverlayState.Loaded
                                     if (showAdd) WorkspaceCatalogSearch(model, materialPicker, ::dismissCatalog,
+                                        onNestedBackChange = { catalogSubpageBack = it },
                                         onExistingWork = { workId ->
                                             model.clearDrawingSelection()
                                             selectedWork = workId

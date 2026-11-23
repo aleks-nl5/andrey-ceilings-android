@@ -103,6 +103,7 @@ internal fun WorkspaceCatalogSearch(
     model: MeasurementEditModel,
     role: BusinessRole?,
     onDismiss: () -> Unit,
+    onNestedBackChange: ((() -> Unit)?) -> Unit,
     onExistingWork: (String) -> Unit,
     onPlacedTool: () -> Unit
 ) {
@@ -129,6 +130,12 @@ internal fun WorkspaceCatalogSearch(
     val works = model.workspaceWorks()
     val work = works.find { it.uuid == selectedWork }
     val item = catalog?.find { it.uuid == selectedCatalog }
+    val backFromDetail = remember(selectedCatalog, selectedWork) {
+        { selectedCatalog = null; selectedWork = null }
+    }
+    SideEffect {
+        onNestedBackChange(if (work != null || item != null) backFromDetail else null)
+    }
     if (work != null || item != null) {
         if (work != null) {
             val canPlace = workspaceCanPlace(model, work)
@@ -167,12 +174,15 @@ internal fun WorkspaceCatalogSearch(
             }
             if (editExisting && editableQuantity) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    DecimalInputField(existingQuantity, {
-                        existingQuantity = it
-                        existingQuantityInvalid = false
-                    }, stringResource(Res.string.p5b_declared_quantity, work.unit.orEmpty()),
-                        modifier = Modifier.weight(1f), compact = true, isError = existingQuantityInvalid,
-                        allowDecimalSeparator = work.unit != "шт.")
+                    Box(Modifier.weight(1f)) {
+                        DecimalInputField(existingQuantity, {
+                            existingQuantity = it
+                            existingQuantityInvalid = false
+                        }, stringResource(Res.string.p5b_declared_quantity, work.unit.orEmpty()),
+                            modifier = Modifier.fillMaxWidth(), compact = true,
+                            isError = existingQuantityInvalid, allowDecimalSeparator = work.unit != "шт.")
+                        WorkspaceQuantityHelp(Modifier.align(Alignment.CenterEnd).padding(end = 2.dp))
+                    }
                     IconButton(onClick = {
                         val parsed = if (existingQuantity.isBlank()) ElementQuantity.Unknown
                             else parseElementMilli(existingQuantity, work.unit)?.let { ElementQuantity.Exact(it) }
@@ -205,15 +215,18 @@ internal fun WorkspaceCatalogSearch(
                 (item.placementKind != PlacementKind.POINT || entered is ElementQuantity.Exact)
             Row(verticalAlignment = Alignment.CenterVertically) {
                 if (default == ElementQuantity.Unknown) {
-                    DecimalInputField(quantity, { quantity = it },
-                        stringResource(Res.string.p5b_declared_quantity, item.unit),
-                        modifier = Modifier.weight(1f), compact = true, isError = entered == null,
-                        allowDecimalSeparator = item.unit != "шт.")
+                    Box(Modifier.weight(1f)) {
+                        DecimalInputField(quantity, { quantity = it },
+                            stringResource(Res.string.p5b_declared_quantity, item.unit),
+                            modifier = Modifier.fillMaxWidth(), compact = true, isError = entered == null,
+                            allowDecimalSeparator = item.unit != "шт.")
+                        WorkspaceQuantityHelp(Modifier.align(Alignment.CenterEnd).padding(end = 2.dp))
+                    }
                 } else Text(formatElementQuantity(default, item.unit), modifier = Modifier.weight(1f))
                 if (item.placementKind != PlacementKind.NONE) IconButton(enabled = canPlace, onClick = {
                     model.addCatalogWork(item, checkNotNull(entered), place = true)
                     onPlacedTool()
-                }) { Icon(Icons.Default.Add, stringResource(Res.string.p5b_add_and_place)) }
+                }) { Icon(Icons.Default.OpenWith, stringResource(Res.string.p5b_add_and_place)) }
                 IconButton(enabled = entered != null, onClick = {
                     model.addCatalogWork(item, checkNotNull(entered), place = false)
                     onPlacedTool()
@@ -356,5 +369,22 @@ private fun WorkspaceBinocularsIcon() {
         drawLine(ink, Offset(17.3f * unit, 6f * unit),
             Offset(17.3f * unit, 9f * unit), strokeWidth = 4f * unit,
             cap = StrokeCap.Round)
+    }
+}
+
+@Composable
+internal fun WorkspaceQuantityHelp(modifier: Modifier = Modifier) {
+    var expanded by remember { mutableStateOf(false) }
+    Box(modifier) {
+        IconButton(onClick = { expanded = !expanded }, modifier = Modifier.size(40.dp)) {
+            Icon(Icons.Default.HelpOutline, stringResource(Res.string.p5b_quantity_help_short),
+                modifier = Modifier.size(21.dp))
+        }
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            DropdownMenuItem(text = {
+                Text(stringResource(Res.string.p5b_quantity_help_description),
+                    style = MaterialTheme.typography.bodySmall)
+            }, onClick = { expanded = false })
+        }
     }
 }

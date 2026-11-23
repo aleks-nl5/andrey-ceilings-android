@@ -11,6 +11,7 @@ import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.OpenWith
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Delete
@@ -420,16 +421,15 @@ internal fun WorkspaceGeometryPanel(
         text = { Text(stringResource(Res.string.p5b_discard_parameters_message)) },
         confirmButton = {
             TextButton(onClick = {
-                if (lineDismiss) model.discardLineProperties() else model.discardAreaProperties()
-            }, colors = ButtonDefaults.textButtonColors(
-                contentColor = MaterialTheme.colorScheme.error)) {
-                Text(stringResource(Res.string.p5b_discard_parameters_confirm))
-            }
+                if (lineDismiss) model.continueLineProperties() else model.continueAreaProperties()
+            }) { Text(stringResource(Res.string.p5b_discard_parameters_continue)) }
         },
         dismissButton = {
             TextButton(onClick = {
-                if (lineDismiss) model.continueLineProperties() else model.continueAreaProperties()
-            }) { Text(stringResource(Res.string.p5b_discard_parameters_continue)) }
+                if (lineDismiss) model.discardLineProperties() else model.discardAreaProperties()
+            }, colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)) {
+                Text(stringResource(Res.string.p5b_discard_parameters_confirm))
+            }
         }
     )
 
@@ -437,6 +437,9 @@ internal fun WorkspaceGeometryPanel(
         title = { Text(stringResource(Res.string.p5b_delete_placement)) },
         text = { Text(stringResource(Res.string.p5b_delete_placement_explain)) },
         confirmButton = {
+            TextButton(onClick = { deletion = false }) { Text(stringResource(Res.string.p5b_cancel_placement)) }
+        },
+        dismissButton = {
             TextButton(onClick = {
                 deletion = false
                 when {
@@ -447,8 +450,7 @@ internal fun WorkspaceGeometryPanel(
             }, colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)) {
                 Text(stringResource(Res.string.p5b_delete))
             }
-        },
-        dismissButton = { TextButton(onClick = { deletion = false }) { Text(stringResource(Res.string.p5b_cancel_placement)) } })
+        })
     val lengthId = state.lengthConfirm
     val areaId = state.area.quantityConfirm
     if (lengthId != null || areaId != null) {
@@ -550,7 +552,7 @@ internal fun WorkspaceWorkList(
             }
             IconButton(onClick = { onSelect(null); model.startWorkspacePlacement(work) },
                 enabled = enabled && workspaceCanPlace(model, work)) {
-                Icon(Icons.Default.Add, stringResource(Res.string.p5b_place_more))
+                Icon(Icons.Default.OpenWith, stringResource(Res.string.p5b_place_more))
             }
             val hasPlacement = model.displayPoints().any { it.elementUuid == work.uuid } ||
                 model.displayLines().any { it.elementUuid == work.uuid } ||
@@ -582,10 +584,13 @@ internal fun WorkspaceWorkList(
             }
             var invalid by remember { mutableStateOf(false) }
             Row(verticalAlignment = Alignment.CenterVertically) {
-                DecimalInputField(quantity, { quantity = it; invalid = false },
-                    stringResource(Res.string.p5b_declared_quantity, work.unit.orEmpty()),
-                    modifier = measurementFieldFocusModifier().weight(1f), compact = true, isError = invalid,
-                    allowDecimalSeparator = work.unit != "шт.")
+                Box(Modifier.weight(1f)) {
+                    DecimalInputField(quantity, { quantity = it; invalid = false },
+                        stringResource(Res.string.p5b_declared_quantity, work.unit.orEmpty()),
+                        modifier = measurementFieldFocusModifier().fillMaxWidth(),
+                        compact = true, isError = invalid, allowDecimalSeparator = work.unit != "шт.")
+                    WorkspaceQuantityHelp(Modifier.align(Alignment.CenterEnd).padding(end = 2.dp))
+                }
                 IconButton(onClick = {
                     val value = if (quantity.isBlank()) ElementQuantity.Unknown
                         else parseElementMilli(quantity, work.unit)?.let { ElementQuantity.Exact(it) }
