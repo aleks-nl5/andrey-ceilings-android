@@ -16,6 +16,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.semantics.semantics
@@ -85,6 +86,7 @@ fun WallAnchorEditor(model: MeasurementEditModel, inline: Boolean = false) {
                 WallAnchorCompactWallRow(firstTitle, walls, input.firstWall,
                     onWall = { uuid -> model.updateMounting { it.copy(firstWall = uuid) } },
                     distance = input.firstText, fieldLabel = firstLabel,
+                    fieldTag = "p5b-first-wall-distance",
                     onDistance = { value -> model.updateMounting { it.copy(firstText = value) } },
                     onNext = if (editorFocus) ({ secondField.requestFocus() }) else null)
                 if (input.kind == WallAnchor.Kind.TWO_WALLS) {
@@ -93,6 +95,7 @@ fun WallAnchorEditor(model: MeasurementEditModel, inline: Boolean = false) {
                         onWall = { uuid -> model.updateMounting { it.copy(secondWall = uuid) } },
                         distance = input.secondText,
                         fieldLabel = stringResource(Res.string.p5b_anchor_distance_short),
+                        fieldTag = "p5b-second-wall-distance",
                         onDistance = { value -> model.updateMounting { it.copy(secondText = value) } },
                         focus = secondField)
                 } else {
@@ -103,7 +106,8 @@ fun WallAnchorEditor(model: MeasurementEditModel, inline: Boolean = false) {
                         DecimalInputField(input.secondText,
                             { value -> model.updateMounting { it.copy(secondText = value) } },
                             stringResource(Res.string.p5b_anchor_inward_distance_short),
-                            modifier = measurementFieldFocusModifier().focusRequester(secondField).weight(1f),
+                            modifier = measurementFieldFocusModifier().testTag("p5b-second-wall-distance")
+                                .focusRequester(secondField).weight(1f),
                             compact = true)
                     }
                 }
@@ -168,7 +172,8 @@ fun WallAnchorEditor(model: MeasurementEditModel, inline: Boolean = false) {
 private fun WallAnchorCompactWallRow(
     title: String, walls: List<CeilingWall>, selected: String,
     onWall: (String) -> Unit, distance: String, fieldLabel: String,
-    onDistance: (String) -> Unit, focus: FocusRequester? = null, onNext: (() -> Unit)? = null
+    fieldTag: String, onDistance: (String) -> Unit,
+    focus: FocusRequester? = null, onNext: (() -> Unit)? = null
 ) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -193,7 +198,7 @@ private fun WallAnchorCompactWallRow(
             }
         }
         DecimalInputField(distance, onDistance, fieldLabel,
-            modifier = measurementFieldFocusModifier().then(
+            modifier = measurementFieldFocusModifier().testTag(fieldTag).then(
                 if (focus != null) Modifier.focusRequester(focus) else Modifier).weight(1f),
             compact = true, onNext = onNext)
     }

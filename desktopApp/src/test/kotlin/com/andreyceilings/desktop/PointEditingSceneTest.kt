@@ -136,9 +136,10 @@ class PointEditingSceneTest {
                 scene.tapWorld(saved.xMm,saved.yMm)
                 // A single tap selects the work row; its explicit gear opens mounting fields.
                 scene.click("Параметри розміщення", tag = "p5b-open-geometry-${element.uuid}")
-                scene.setField("Від першої стіни, м","0,")
+                scene.setField("Відстань, м", "0,", tag = "p5b-first-wall-distance")
                 assertEquals(saved,points.find(p.uuid))
-                scene.setField("Від першої стіни, м","0,6");scene.setField("Від другої стіни, м","1.5")
+                scene.setField("Відстань, м", "0,6", tag = "p5b-first-wall-distance")
+                scene.setField("Відстань, м", "1.5", tag = "p5b-second-wall-distance")
                 scene.click("Застосувати розміри")
                 assertEquals(saved,points.find(p.uuid),"Mounting fields stage only, no separate point Save")
                 scene.click("Скасувати дію");scene.click("Повторити")
@@ -298,8 +299,12 @@ class PointEditingSceneTest {
             assertTrue(it.config.getOrNull(SemanticsActions.OnClick)?.action?.invoke() == true); frame(); return }; Thread.sleep(25) }
         fail("Missing action '$label': ${text().take(2000)}")
     }
-    private fun ImageComposeScene.setField(label: String, value: String) {
-        repeat(240) { frame(); nodes().firstOrNull { it.config.getOrNull(SemanticsActions.SetText) != null && it.textTree().contains(label) }?.let {
+    private fun ImageComposeScene.setField(label: String, value: String, tag: String? = null) {
+        repeat(240) { frame(); nodes().firstOrNull {
+            it.config.getOrNull(SemanticsActions.SetText) != null &&
+                (if (tag != null) it.config.getOrNull(SemanticsProperties.TestTag) == tag
+                    else it.textTree().contains(label))
+        }?.let {
             assertTrue(it.config.getOrNull(SemanticsActions.SetText)?.action?.invoke(AnnotatedString(value)) == true); frame(); return }; Thread.sleep(25) }
         fail("Missing field '$label': ${text().take(2000)}")
     }

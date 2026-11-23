@@ -74,7 +74,7 @@ class AreaFeatureSceneTest {
                     tag = "p5b-open-standalone-area-$firstNoteId")
                 scene.setField("Ширина, м", "0,7")
                 scene.setField("Висота, м", "0,6")
-                scene.click("Оновити на кресленні (у чернетці)")
+                scene.click("Застосувати зміни")
                 assertEquals(AreaShape.rectangle(PointPositionMm(500, 500), PointPositionMm(1200, 1100)),
                     model.displayAreas().single().shape)
                 scene.click("Додати елемент стелі")
@@ -167,10 +167,15 @@ class AreaFeatureSceneTest {
                 scene.setField("Діаметр, м (парні мм)", ".")
                 assertEquals("0.", model.state.value.area.properties?.diameter)
                 scene.setField("Діаметр, м (парні мм)", ".007")
-                scene.click("Оновити на кресленні (у чернетці)")
+                scene.frame()
+                assertTrue(scene.nodes().any { node ->
+                    node.config.getOrNull(SemanticsProperties.Disabled) != null &&
+                        "Застосувати зміни" in
+                        node.config.getOrNull(SemanticsProperties.ContentDescription).orEmpty()
+                }, "An odd-millimetre circle diameter must disable the apply action")
                 assertNotNull(model.state.value.area.properties, "Odd millimetres cannot commit")
                 scene.setField("Діаметр, м (парні мм)", ".008")
-                scene.setField("Примітка фігури","Вентиляція");scene.click("Оновити на кресленні (у чернетці)")
+                scene.setField("Примітка фігури","Вентиляція");scene.click("Застосувати зміни")
                 assertEquals(4L, (model.displayAreas().first { it.role == AreaRole.VOID_MARKER }.shape as AreaShape.Circle).radiusMm)
                 // The standalone note now has the same right-aligned trash slot
                 // as paid work. Deletion stages locally and remains undoable.

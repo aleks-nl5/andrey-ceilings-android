@@ -513,13 +513,18 @@ class MeasurementEditSceneTest {
             val shaded = sample(2, sampleY)
             closeColor(shaded, expected)
             closeColor(sample(2, fade.bottom.toInt() + 2), clear)
-            // Material 3 can assign exactly the same token to surface and background.
-            // Then an alpha blend is visually identical; validate the computed pixel
-            // and fade bounds above without requiring two equal colors to differ.
-            if (colors.surface != colors.background) {
-                assertNotEquals(shaded, clear)
+            // A slight material-token difference can disappear after alpha
+            // compositing and 8-bit pixel quantisation. Require a changed pixel
+            // only when the computed fade is visibly separated from both ends.
+            // Bounds and composited expected RGB are still checked above.
+            fun channelDelta(a: Color, b: Color) = maxOf(
+                kotlin.math.abs(a.red - b.red),
+                kotlin.math.abs(a.green - b.green),
+                kotlin.math.abs(a.blue - b.blue)
+            )
+            if (channelDelta(expected, clear) > 0.02f) assertNotEquals(shaded, clear)
+            if (channelDelta(expected, colors.surface) > 0.02f)
                 assertNotEquals(shaded, colors.surface)
-            }
             return shaded
         }
         try {

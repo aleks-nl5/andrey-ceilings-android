@@ -99,9 +99,29 @@ class DetailsSaveExitSceneTest {
             // P5B keeps measurement name/notes directly on the Contour tab.
             scene.click("Контур")
             scene.setField("Назва заміру", "Перший запис")
+            assertEquals("Перший запис", model.state.value.draft.name)
+            assertTrue(model.state.value.dirty, "Typing the name must stage a dirty draft")
+            // The Save FAB is deliberately clickable even when the POINT overlay
+            // is still loading, but a blocked click only opens the reason menu.
+            // Await actual readiness before arming the lost-response fault.
+            withTimeout(15000) {
+                while (scene.nodes().any {
+                    it.config.getOrNull(SemanticsProperties.TestTag) == "measurement-edit-save-block-reason"
+                }) { scene.frame(); delay(20) }
+            }
             fault.failNext(DetailsExitFaultDriver.Fault.LOST_RESPONSE)
             scene.click("Зберегти замір")
-            withTimeout(15000) { while (!model.state.value.uncertain) { scene.frame(); delay(20) } }
+            val reachedUncertain = withTimeoutOrNull(15000) {
+                while (!model.state.value.uncertain &&
+                    !model.state.value.workspaceSaveConfirmed &&
+                    !model.state.value.conflict && model.state.value.error == null
+                ) { scene.frame(); delay(20) }
+                model.state.value.uncertain
+            }
+            assertTrue(reachedUncertain == true,
+                "Lost-response Save must remain uncertain, not silently succeed or block; " +
+                    "saving=${model.state.value.saving}, confirmed=${model.state.value.workspaceSaveConfirmed}, " +
+                    "conflict=${model.state.value.conflict}, error=${model.state.value.error}")
             scene.click("Показати повне повідомлення")
             scene.awaitText("Повторити ту саму спробу")
             assertEquals(0, exits)
