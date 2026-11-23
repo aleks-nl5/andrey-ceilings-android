@@ -127,6 +127,8 @@
     <string name="p5b_save_apply_fields">Застосуйте або скасуйте відкриті параметри.</string>
     <string name="p5b_save_finish_placement">Завершіть або скасуйте незакінчене креслення.</string>
     <string name="p5b_save_wait_points">Зачекайте, доки завантажаться позначки.</string>
+    <string name="p5b_save_line_invalid">Виправте довжину лінії або заявлену кількість та застосуйте параметри.</string>
+    <string name="p5b_save_area_invalid">Виправте розміри площини та застосуйте параметри.</string>
     <string name="p5b_save_check_elements">Перевірте розміщення та заявлені кількості.</string>
     <string name="p5b_anchor_first_wall">Перша стіна</string>
     <string name="p5b_anchor_direction_wall">Стіна й напрямок</string>

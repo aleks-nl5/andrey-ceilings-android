@@ -101,6 +101,11 @@ class WorkspaceAddPointTouchTest {
             val itemTag = "p5b-catalog-$itemUuid"
             compose.waitUntil(15_000) { compose.onAllNodes(hasTestTag(itemTag)).fetchSemanticsNodes().isNotEmpty() }
             compose.onNodeWithTag(itemTag).performScrollTo().performClick()
+            // Back from catalog item details should return to search, not leave the
+            // editor or discard the measurement draft.
+            compose.onNodeWithTag("measurement-edit-back").performClick()
+            compose.onNodeWithTag("p5b-catalog-search").assertIsDisplayed()
+            compose.onNodeWithTag(itemTag).performScrollTo().performClick()
             compose.onNodeWithText("Заявлена кількість, шт.").performTextInput("3")
             click("Додати на креслення")
             click("Вписати креслення")

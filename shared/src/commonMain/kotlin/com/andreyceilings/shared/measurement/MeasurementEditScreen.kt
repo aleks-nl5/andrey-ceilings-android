@@ -179,8 +179,10 @@ fun MeasurementEditScreen(
     var showAdd by rememberSaveable(measurementUuid) { mutableStateOf(false) }
     var catalogSubpageBack by remember(measurementUuid) { mutableStateOf<(() -> Unit)?>(null) }
     val currentCatalogSubpageBack by rememberUpdatedState(catalogSubpageBack)
+    val currentEditorState by rememberUpdatedState(state)
     var materialPicker by rememberSaveable(measurementUuid) { mutableStateOf<com.andreyceilings.shared.livepricing.BusinessRole?>(null) }
     var selectedWork by rememberSaveable(measurementUuid) { mutableStateOf<String?>(null) }
+    val currentSelectedWork by rememberUpdatedState(selectedWork)
     var highlightedWorkId by remember(measurementUuid) { mutableStateOf<String?>(null) }
     LaunchedEffect(highlightedWorkId) {
         if (highlightedWorkId != null) {
@@ -217,6 +219,20 @@ fun MeasurementEditScreen(
                 }
                 showAdd -> { dismissCatalog(); true }
                 pointToolActive || lineToolActive || areaToolActive -> { model.cancelPlacement(); true }
+                currentEditorState.lineProperties != null -> { model.dismissLineProperties(); true }
+                currentEditorState.area.properties != null -> { model.dismissAreaProperties(); true }
+                currentEditorState.mountingInput != null -> { model.dismissMounting(); true }
+                currentSelectedWork != null -> {
+                    selectedWork = null
+                    model.clearDrawingSelection()
+                    true
+                }
+                currentEditorState.selectedPointUuid != null ||
+                    currentEditorState.selectedLineUuid != null ||
+                    currentEditorState.area.selected != null -> {
+                    model.clearDrawingSelection()
+                    true
+                }
                 !fullscreen -> false
                 sheet != MeasurementSheet.CLOSED -> { closeSheet(); true }
                 else -> { exitFullscreen(); true }
@@ -249,10 +265,24 @@ fun MeasurementEditScreen(
         !state.conflict && overlay is PointOverlayState.Loaded
     val saveBlockedReason = if (!state.dirty || canSave) null else when {
         state.conflict -> stringResource(Res.string.p5b_save_conflict)
+        validation.nameError != null -> validation.nameError
         !validation.canSave -> stringResource(Res.string.p5b_save_invalid_contour)
-        state.mountingInput?.dirty == true || state.coordinates?.dirty == true ||
-            state.lineProperties?.dirty == true || state.area.properties?.dirty == true ->
-                stringResource(Res.string.p5b_save_apply_fields)
+        state.lineProperties?.dirty == true -> {
+            val input = state.lineProperties
+            val line = model.displayLines().find { it.uuid == input.uuid }
+            if (line != null && model.linePropertiesCandidate(line, input) == null)
+                stringResource(Res.string.p5b_save_line_invalid)
+            else stringResource(Res.string.p5b_save_apply_fields)
+        }
+        state.area.properties?.dirty == true -> {
+            val input = state.area.properties
+            val area = model.displayAreas().find { it.uuid == input.uuid }
+            if (area != null && model.areaPropertiesCandidate(area, input) == null)
+                stringResource(Res.string.p5b_save_area_invalid)
+            else stringResource(Res.string.p5b_save_apply_fields)
+        }
+        state.mountingInput?.dirty == true || state.coordinates?.dirty == true ->
+            stringResource(Res.string.p5b_save_apply_fields)
         state.lineStart != null || state.linePreview != null ||
             (state.area.tool != null && (state.area.vertices.isNotEmpty() || state.area.diameter.isNotBlank())) ->
                 stringResource(Res.string.p5b_save_finish_placement)
