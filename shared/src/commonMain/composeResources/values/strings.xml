@@ -100,6 +100,13 @@
     <string name="p5b_area_properties">Властивості фігури</string>
     <string name="p5b_placement_note">Примітка фігури</string>
     <string name="p5b_confirm_quantity_change">Змінити заявлену кількість за розмірами креслення?</string>
+    <string name="p5b_confirm_quantity_title">Змінити заявлену кількість?</string>
+    <string name="p5b_drawing_quantity_scope">Беремо суму всіх розміщень цієї роботи з креслення. Самі фігури та лінії не змінюються.</string>
+    <string name="p5b_quantity_before">Зараз: %1$s</string>
+    <string name="p5b_quantity_after">Буде: %1$s</string>
+    <string name="p5b_drawing_quantity_empty">Немає підтвердженої кількості на кресленні. Спочатку завершіть або уточніть розміщення.</string>
+    <string name="p5b_drawing_quantity_equal">Кількість уже збігається з кресленням.</string>
+    <string name="p5b_quantity_transfer">Застосувати кількість</string>
     <string name="p5b_quantity_invalid">Перевірте кількість і наявні розміщення.</string>
     <string name="p5b_save_show_reason">Причина блокування збереження</string>
     <string name="p5b_exit_title">Незбережені зміни</string>

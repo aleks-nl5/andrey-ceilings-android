@@ -429,7 +429,11 @@ class MeasurementEditModel(
         return (state.original.pointElements + state.original.lineElements + state.original.areaElements +
             state.original.otherElements + state.additions.elements.values)
             .filter { it.businessRole?.isWorkspaceMaterial() != true && it.uuid !in state.additions.removedWorks }
-            .distinctBy { it.uuid }.map { state.additions.editedWorks[it.uuid] ?: it }
+            .distinctBy { it.uuid }.map { item ->
+                val work = state.additions.editedWorks[item.uuid] ?: item
+                val measured = state.declaredLengths[work.uuid] ?: state.area.quantities[work.uuid]
+                if (measured != null) work.copy(quantity = ElementQuantity.Exact(measured)) else work
+            }
     }
 
     internal fun pointElements() = workspaceWorks().filter {
@@ -450,15 +454,20 @@ class MeasurementEditModel(
         if (capacity != null && (displayLines().filter { it.elementUuid == uuid }.sumOf { it.lengthMm } > capacity ||
                 changed.supportsAreaPlacement() && areaQuantityMilli(displayAreas().filter { it.elementUuid == uuid },
                     checkNotNull(work.unit), includeUnresolved = true) > capacity)) return false
-        if (changed == work) return true
+        val state = state.value
+        val pendingFromDrawing = uuid in state.declaredLengths || uuid in state.area.quantities
+        if (changed == work && !pendingFromDrawing) return true
         commitInput()
         undo.add(form())
         redo.clear()
-        val state = state.value
         val additions = state.additions
-        mutableState.value = state.copy(additions = if (uuid in additions.elements)
-            additions.copy(elements = additions.elements + (uuid to changed))
-        else additions.copy(editedWorks = additions.editedWorks + (uuid to changed)))
+        // An explicit manual edit supersedes a previous "from drawing" proposal.
+        mutableState.value = state.copy(
+            declaredLengths = state.declaredLengths - uuid,
+            area = state.area.copy(quantities = state.area.quantities - uuid),
+            additions = if (uuid in additions.elements)
+                additions.copy(elements = additions.elements + (uuid to changed))
+            else additions.copy(editedWorks = additions.editedWorks + (uuid to changed)))
         publish()
         return true
     }

@@ -355,15 +355,47 @@ internal fun WorkspaceGeometryPanel(
     val lengthId = state.lengthConfirm
     val areaId = state.area.quantityConfirm
     if (lengthId != null || areaId != null) {
+        val workId = lengthId ?: areaId
+        val work = model.workspaceWorks().find { it.uuid == workId }
+        val proposed = if (lengthId != null)
+            model.displayLines().filter { it.elementUuid == lengthId && !it.unresolved }.sumOf { it.lengthMm }
+        else if (work?.unit != null) areaQuantityMilli(
+            model.displayAreas().filter { it.elementUuid == areaId },
+            work.unit
+        ) else 0L
+        val currentQuantity = work?.quantity
+        val proposedQuantity = ElementQuantity.Exact(proposed)
+        val canTransfer = work != null && proposed > 0 && currentQuantity != proposedQuantity
         val cancel = { model.requestDeclaredLength(null); model.requestAreaQuantity(null) }
         AlertDialog(onDismissRequest = cancel,
-            title = { Text(stringResource(if (lengthId != null) Res.string.p5b_take_length else Res.string.p5b_take_quantity)) },
-            text = { Text(stringResource(Res.string.p5b_confirm_quantity_change)) },
-            confirmButton = { TextButton(onClick = {
-                if (lengthId != null) model.takeDeclaredLength() else model.takeAreaQuantity()
-                cancel()
-            }) { Text(stringResource(Res.string.p5b_apply_dimensions)) } },
-            dismissButton = { TextButton(onClick = cancel) { Text(stringResource(Res.string.p5b_cancel_placement)) } })
+            title = { Text(stringResource(Res.string.p5b_confirm_quantity_title)) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(stringResource(Res.string.p5b_drawing_quantity_scope),
+                        style = MaterialTheme.typography.bodySmall)
+                    Text(stringResource(Res.string.p5b_quantity_before,
+                        work?.let { formatElementQuantity(it.quantity, it.unit) } ?: "—"))
+                    Text(stringResource(Res.string.p5b_quantity_after,
+                        work?.let { formatElementQuantity(proposedQuantity, it.unit) } ?: "—"),
+                        color = MaterialTheme.colorScheme.primary)
+                    if (proposed <= 0) Text(stringResource(Res.string.p5b_drawing_quantity_empty),
+                        color = MaterialTheme.colorScheme.error)
+                    else if (currentQuantity == proposedQuantity) Text(
+                        stringResource(Res.string.p5b_drawing_quantity_equal),
+                        style = MaterialTheme.typography.bodySmall)
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    if (lengthId != null) model.takeDeclaredLength() else model.takeAreaQuantity()
+                    cancel()
+                }, enabled = canTransfer) {
+                    Text(stringResource(Res.string.p5b_quantity_transfer))
+                }
+            },
+            dismissButton = { TextButton(onClick = cancel) {
+                Text(stringResource(Res.string.p5b_cancel_placement))
+            } })
     }
 }
 

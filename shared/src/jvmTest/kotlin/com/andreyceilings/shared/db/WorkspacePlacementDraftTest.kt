@@ -74,6 +74,32 @@ class WorkspacePlacementDraftTest {
     }
 
     @Test
+    fun drawingLengthShowsPendingDeclaredQuantityAndManualEditOverridesIt() = runBlocking {
+        JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).use { driver ->
+            PriceCatalogSchema.create(driver)
+            val db = PrototypeDatabase(driver)
+            val fixture = PointPlacementProof.fixture(db)
+            val store = MeasurementEditStore(db) { 101 }
+            val editor = MeasurementEditModel(store, store.load(fixture.project, fixture.id))
+            val item = addItem(db, "Transferred length", PlacementKind.LINE, "м.п.")
+            editor.addCatalogWork(item, ElementQuantity.Exact(3000), place = true)
+            assertTrue(editor.finishWorkspaceLine(PointPositionMm(500, 600), PointPositionMm(1500, 600)))
+            val workId = editor.displayLines().single().elementUuid
+            assertEquals(ElementQuantity.Exact(3000), editor.workspaceWorks().single { it.uuid == workId }.quantity)
+            editor.requestDeclaredLength(workId)
+            editor.takeDeclaredLength()
+            assertEquals(ElementQuantity.Exact(1000),
+                editor.workspaceWorks().single { it.uuid == workId }.quantity,
+                "Pending drawing length must be visible before global Save")
+            assertEquals(1000L, editor.state.value.declaredLengths[workId])
+            assertTrue(editor.editWorkspaceQuantity(workId, ElementQuantity.Exact(2000)))
+            assertEquals(ElementQuantity.Exact(2000), editor.workspaceWorks().single { it.uuid == workId }.quantity)
+            assertFalse(workId in editor.state.value.declaredLengths,
+                "Manual quantity must supersede the drawing-length transfer")
+        }
+    }
+
+    @Test
     fun globalSaveRemainsAvailableWhileMorePointsCanStillBePlaced() = runBlocking {
         JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).use { driver ->
             PriceCatalogSchema.create(driver)
