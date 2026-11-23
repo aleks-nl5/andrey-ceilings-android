@@ -92,7 +92,7 @@ internal fun WorkspaceGeometryPanel(
         line != null -> formatMillimetres(line.lengthMm)
         area?.shape is AreaShape.Circle -> stringResource(Res.string.p5b_diameter_value,
             formatMillimetres((area.shape as AreaShape.Circle).radiusMm * 2))
-        area != null -> formatMeasurementArea(area.twiceAreaMm2 / 2_000_000.0, state.draft.precision) + " м²"
+        area != null -> formatMeasurementAreaCompact(area.twiceAreaMm2 / 2_000_000.0) + " м²"
         else -> null
     }
     Row(verticalAlignment = Alignment.CenterVertically) {
