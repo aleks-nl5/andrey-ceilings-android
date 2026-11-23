@@ -12,6 +12,7 @@ import androidx.compose.ui.unit.toSize
 import com.andreyceilings.shared.prices.*
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.Density
 import com.andreyceilings.shared.calculation.MeasurementPrecision
 import com.andreyceilings.shared.db.*
 import com.andreyceilings.shared.measurement.*
@@ -38,7 +39,13 @@ class AreaFeatureSceneTest {
             val element=MeasurementElementRepository(db).createCatalogSelection(row.uuid,item.uuid,ElementQuantity.Unknown,7, businessRole = com.andreyceilings.shared.livepricing.BusinessRole.ADDITIONAL_WORK)
             val store=MeasurementEditStore(db){100};val model=MeasurementEditModel(store,store.load(project,id))
             var exited=false
-            val scene=ImageComposeScene(900,1400,coroutineContext=sceneDispatcher) {CeilingsTheme(dark) {MeasurementEditScreen(model,PaddingValues(0.dp),0.dp,{exited=true},null)}}
+            // Simulate the transparent Android navigation inset, with density=1
+            // so the 60dp protected band is exactly the bottom 60 pixels.
+            val scene=ImageComposeScene(900,1400,Density(1f),coroutineContext=sceneDispatcher) {
+                CeilingsTheme(dark) {
+                    MeasurementEditScreen(model,PaddingValues(bottom=60.dp),0.dp,{exited=true},null)
+                }
+            }
             var testFailure:Throwable?=null
             try {
                 withTimeout(15000) {
@@ -96,6 +103,21 @@ class AreaFeatureSceneTest {
                 assertTrue(scene.nodes().any {
                     it.config.getOrNull(SemanticsProperties.TestTag) == "p5b-standalone-area-$noteId"
                 }, "A single tap must reveal/highlight the annotation row")
+                // A selected drawing note must scroll ABOVE the transparent
+                // Android navigation bar, not merely into its occluded viewport.
+                withTimeout(5_000) {
+                    while (scene.nodes().first {
+                        it.config.getOrNull(SemanticsProperties.TestTag) == "p5b-standalone-area-$noteId"
+                    }.boundsInRoot.bottom > 1340f) {
+                        scene.frame()
+                        delay(20)
+                    }
+                }
+                val selectedNote = scene.nodes().first {
+                    it.config.getOrNull(SemanticsProperties.TestTag) == "p5b-standalone-area-$noteId"
+                }
+                assertTrue(selectedNote.boundsInRoot.bottom <= 1340f,
+                    "Selected note is underneath the 60px OS navigation band: ${selectedNote.boundsInRoot}")
                 scene.click("Відкрити параметри розміщення", tag = "p5b-open-standalone-area-$noteId")
                 scene.setField("Діаметр, м (парні мм)", "")
                 scene.setField("Діаметр, м (парні мм)", ".")
@@ -106,8 +128,10 @@ class AreaFeatureSceneTest {
                 scene.setField("Діаметр, м (парні мм)", ".008")
                 scene.setField("Примітка фігури","Вентиляція");scene.click("Оновити на кресленні (у чернетці)")
                 assertEquals(4L, (model.displayAreas().first { it.role == AreaRole.VOID_MARKER }.shape as AreaShape.Circle).radiusMm)
-                scene.click("Відкрити параметри розміщення", tag = "p5b-open-standalone-area-$noteId")
-                scene.click("Видалити розміщення");scene.click("Видалити");assertEquals(2,model.displayAreas().size)
+                // The standalone note now has the same right-aligned trash slot
+                // as paid work. Deletion stages locally and remains undoable.
+                scene.click("Видалити розміщення", tag = "p5b-delete-standalone-area-$noteId")
+                scene.click("Видалити");assertEquals(2,model.displayAreas().size)
                 scene.click("Скасувати дію");assertEquals(3,model.displayAreas().size)
                 val ids=model.displayAreas().map {it.uuid}.toSet()
                 scene.click("Зберегти замір")

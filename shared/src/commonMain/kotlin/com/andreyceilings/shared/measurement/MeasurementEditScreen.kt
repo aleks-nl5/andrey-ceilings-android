@@ -187,6 +187,8 @@ fun MeasurementEditScreen(
     var selectedWork by rememberSaveable(measurementUuid) { mutableStateOf<String?>(null) }
     val currentSelectedWork by rememberUpdatedState(selectedWork)
     var highlightedWorkId by remember(measurementUuid) { mutableStateOf<String?>(null) }
+    // Repeated taps on the same drawing feature still request a fresh relocation.
+    var drawingSelectionRequest by remember(measurementUuid) { mutableIntStateOf(0) }
     LaunchedEffect(highlightedWorkId) {
         if (highlightedWorkId != null) {
             delay(1800)
@@ -335,6 +337,7 @@ fun MeasurementEditScreen(
             ?.takeIf { id -> model.workspaceWorks().any { it.uuid == id } }
         selectedWork = placedWork
         highlightedWorkId = placedWork
+        drawingSelectionRequest++
         selected = null
         // In fullscreen, the double-tap callback (onOpenSelection) owns the sheet.
         // A single selection or a drag must never expand it.
@@ -498,7 +501,9 @@ fun MeasurementEditScreen(
                     var lastFeature by rememberSaveable { mutableStateOf(activeElementControls) }
                     LaunchedEffect(context, activeElementControls) {
                         if (context == MeasurementEditContext.ELEMENTS && lastFeature != activeElementControls) {
-                            scroll.scrollTo(0)
+                            // Selection from the drawing must scroll to its row, not
+                            // race that relocation with an unconditional scroll-to-top.
+                            if (selectedFeature == null) scroll.scrollTo(0)
                             lastFeature = activeElementControls
                         }
                     }
@@ -602,6 +607,7 @@ fun MeasurementEditScreen(
                                             (standaloneArea != null && !standaloneEditorOpen)) {
                                             WorkspaceWorkList(
                                                 model, canEdit, selectedWork, highlightedWorkId,
+                                                drawingSelectionRequest, normalNavigationUnderlay,
                                                 onSelect = { work ->
                                                     if (!model.promptForDirtyElementBeforeNavigation()) {
                                                         model.clearDrawingSelection()
@@ -615,6 +621,7 @@ fun MeasurementEditScreen(
                                             )
                                             WorkspaceStandaloneAreaList(
                                                 model, canEdit, state.area.selected,
+                                                drawingSelectionRequest, normalNavigationUnderlay,
                                                 onSelect = { id ->
                                                     if (!model.promptForDirtyElementBeforeNavigation()) {
                                                         if (id == null) model.clearDrawingSelection()
@@ -629,6 +636,14 @@ fun MeasurementEditScreen(
                                                         model.openAreaProperties()
                                                         selectedWork = null
                                                         scope.launch { scroll.animateScrollTo(0) }
+                                                    }
+                                                },
+                                                onDelete = { id ->
+                                                    if (!model.promptForDirtyElementBeforeNavigation()) {
+                                                        model.selectArea(id)
+                                                        model.deleteArea() // Draft + Undo; SQL only on global Save.
+                                                        selectedWork = null
+                                                        highlightedWorkId = null
                                                     }
                                                 }
                                             )

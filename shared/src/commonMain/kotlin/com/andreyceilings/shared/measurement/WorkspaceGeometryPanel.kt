@@ -39,6 +39,11 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntSize
 import com.andreyceilings.shared.input.CompactOutlinedStringField
 import com.andreyceilings.shared.input.DecimalInputField
 import com.andreyceilings.shared.resources.*
@@ -533,13 +538,40 @@ private fun WorkspaceShortAction(label: String, icon: ImageVector, onClick: () -
 }
 
 /**
+ * Bring the selected row into the ACTUALLY visible portion of the panel.
+ * On Android, the scroll viewport extends behind the transparent system
+ * navigation bar: a plain bringIntoView() treats the obscured bottom strip
+ * as visible. Request the row plus that clearance, while keeping the actual
+ * row dimensions and touch targets unchanged.
+ */
+@Composable
+private fun workspaceRowRelocation(
+    selected: Boolean, selectionRequest: Int, navigationInset: Dp
+): Modifier {
+    val requester = remember { BringIntoViewRequester() }
+    var measured by remember { mutableStateOf(IntSize.Zero) }
+    val clearance = with(LocalDensity.current) { navigationInset.toPx() + 8.dp.toPx() }
+    LaunchedEffect(selected, selectionRequest, measured, clearance) {
+        if (selected && measured.width > 0 && measured.height > 0) {
+            withFrameNanos { }
+            requester.bringIntoView(Rect(
+                0f, 0f, measured.width.toFloat(), measured.height.toFloat() + clearance
+            ))
+        }
+    }
+    return Modifier.bringIntoViewRequester(requester).onSizeChanged { measured = it }
+}
+
+/**
  * Non-priced areas are geometric notes, not catalog work. Show them as
  * selectable rows so tapping them never jumps straight into parameters.
  */
 @Composable
 internal fun WorkspaceStandaloneAreaList(
     model: MeasurementEditModel, enabled: Boolean, selected: String?,
-    onSelect: (String?) -> Unit, onOpenGeometry: (String) -> Unit
+    selectionRequest: Int, navigationInset: Dp,
+    onSelect: (String?) -> Unit, onOpenGeometry: (String) -> Unit,
+    onDelete: (String) -> Unit
 ) {
     val annotations = model.displayAreas().filter { it.elementUuid == null }
     if (annotations.isEmpty()) return
@@ -549,8 +581,8 @@ internal fun WorkspaceStandaloneAreaList(
     annotations.forEachIndexed { index, feature ->
         key(feature.uuid) {
             val isSelected = feature.uuid == selected
-            val requester = remember(feature.uuid) { BringIntoViewRequester() }
-            LaunchedEffect(isSelected) { if (isSelected) requester.bringIntoView() }
+            var deletion by remember { mutableStateOf(false) }
+            val relocation = workspaceRowRelocation(isSelected, selectionRequest, navigationInset)
             val role = stringResource(when (feature.role) {
                 AreaRole.OBSTACLE -> Res.string.p5b_obstacle
                 AreaRole.VOID_MARKER -> Res.string.p5b_void
@@ -568,7 +600,7 @@ internal fun WorkspaceStandaloneAreaList(
             else stringResource(Res.string.p5b_annotation_area_value,
                 formatMeasurementAreaCompact(feature.twiceAreaMm2 / 2_000_000.0))
             Row(Modifier.fillMaxWidth()
-                .bringIntoViewRequester(requester)
+                .then(relocation)
                 .clip(RoundedCornerShape(10.dp))
                 .background(if (isSelected) MaterialTheme.colorScheme.secondaryContainer
                     else Color.Transparent, RoundedCornerShape(10.dp))
@@ -579,7 +611,7 @@ internal fun WorkspaceStandaloneAreaList(
                     .semantics { this.selected = isSelected }
                     .clickable(enabled = enabled) {
                         onSelect(if (isSelected) null else feature.uuid)
-                    }, verticalArrangement = Arrangement.Center) {
+                    }.padding(start = 8.dp), verticalArrangement = Arrangement.Center) {
                     Text(stringResource(Res.string.p5b_annotation_row_title,
                         role, index + 1), style = MaterialTheme.typography.bodyMedium,
                         maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -587,14 +619,41 @@ internal fun WorkspaceStandaloneAreaList(
                         style = MaterialTheme.typography.labelSmall,
                         maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
+                // Match the four compact action columns of the paid-work rows.
+                // Annotations are already placed and have no payable quantity,
+                // so the place/pencil slots remain empty rather than fake actions.
+                Spacer(Modifier.size(44.dp))
                 IconButton(onClick = { onOpenGeometry(feature.uuid) }, enabled = enabled,
-                    modifier = Modifier.testTag("p5b-open-standalone-area-${feature.uuid}")) {
+                    modifier = Modifier.size(44.dp).testTag("p5b-open-standalone-area-${feature.uuid}")) {
                     Icon(Icons.Default.Settings,
                         stringResource(Res.string.p5b_open_geometry_parameters))
                 }
+                Spacer(Modifier.size(44.dp))
+                IconButton(onClick = { deletion = true }, enabled = enabled,
+                    modifier = Modifier.size(44.dp).testTag("p5b-delete-standalone-area-${feature.uuid}")) {
+                    Icon(Icons.Default.Delete, stringResource(Res.string.p5b_delete_placement))
+                }
             }
             HorizontalDivider(Modifier.padding(top = 5.dp, bottom = 6.dp),
-                color = MaterialTheme.colorScheme.outlineVariant)
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+            if (deletion) AlertDialog(
+                onDismissRequest = { deletion = false },
+                title = { Text(stringResource(Res.string.p5b_delete_placement)) },
+                text = { Text(stringResource(Res.string.p5b_delete_placement_explain)) },
+                confirmButton = {
+                    TextButton(onClick = { deletion = false }) {
+                        Text(stringResource(Res.string.p5b_cancel_placement))
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = {
+                        deletion = false
+                        onDelete(feature.uuid)
+                    }, colors = ButtonDefaults.textButtonColors(
+                        contentColor = MaterialTheme.colorScheme.error
+                    )) { Text(stringResource(Res.string.p5b_delete)) }
+                }
+            )
         }
     }
 }
@@ -602,7 +661,8 @@ internal fun WorkspaceStandaloneAreaList(
 @Composable
 internal fun WorkspaceWorkList(
     model: MeasurementEditModel, enabled: Boolean, selected: String?,
-    highlightedWorkId: String?, onSelect: (String?) -> Unit, onOpenGeometry: () -> Unit
+    highlightedWorkId: String?, selectionRequest: Int, navigationInset: Dp,
+    onSelect: (String?) -> Unit, onOpenGeometry: () -> Unit
 ) {
     val works = model.workspaceWorks()
     // One editor for the whole list: switching pencils must open the next one in one click.
@@ -611,7 +671,7 @@ internal fun WorkspaceWorkList(
         var deletion by remember { mutableStateOf(false) }
         val isSelected = selected == work.uuid
         val isHighlighted = highlightedWorkId == work.uuid
-        val bringIntoView = remember(work.uuid) { BringIntoViewRequester() }
+        val relocation = workspaceRowRelocation(isSelected || isHighlighted, selectionRequest, navigationInset)
         // Keep each work's un-applied input while switching pencils. Previously
         // these were remembered only INSIDE the currently open editor and thus
         // silently discarded when another work's pencil was tapped.
@@ -626,12 +686,11 @@ internal fun WorkspaceWorkList(
         val hasPlacement = model.displayPoints().any { it.elementUuid == work.uuid } ||
             model.displayLines().any { it.elementUuid == work.uuid } ||
             model.displayAreas().any { it.elementUuid == work.uuid }
-        LaunchedEffect(isHighlighted) { if (isHighlighted) bringIntoView.bringIntoView() }
         val namesakes = works.filter { it.label == work.label }
         val shownTitle = if (namesakes.size > 1)
             "${work.label} #${namesakes.indexOfFirst { it.uuid == work.uuid } + 1}"
         else work.label
-        Row(Modifier.fillMaxWidth().bringIntoViewRequester(bringIntoView)
+        Row(Modifier.fillMaxWidth().then(relocation)
             .testTag("p5b-work-row-${work.uuid}")
             .clip(RoundedCornerShape(10.dp))
             .background(if (isHighlighted || isSelected) MaterialTheme.colorScheme.secondaryContainer.copy(
