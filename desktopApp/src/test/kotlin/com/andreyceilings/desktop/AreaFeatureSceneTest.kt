@@ -132,6 +132,28 @@ class AreaFeatureSceneTest {
                 }
                 assertTrue(selectedNote.boundsInRoot.bottom <= 1340f,
                     "Selected note is underneath the 60px OS navigation band: ${selectedNote.boundsInRoot}")
+                // Owner regression: after manually scrolling the Elements list to
+                // its bottom, tapping a visible note row must NOT jump upward.
+                model.clearDrawingSelection()
+                scene.frame()
+                val scrollNode = scene.nodes().first {
+                    it.config.getOrNull(SemanticsProperties.TestTag) == "p5b-elements-scroll"
+                }
+                assertTrue(scrollNode.config.getOrNull(SemanticsActions.ScrollBy)?.action
+                    ?.invoke(0f, 100000f) == true)
+                repeat(8) { scene.frame(); delay(15) }
+                val beforeListTap = scene.nodes().first {
+                    it.config.getOrNull(SemanticsProperties.TestTag) == "p5b-standalone-area-$noteId"
+                }.boundsInRoot
+                scene.click("Позначка отвору", tag = "p5b-standalone-label-click-$noteId")
+                repeat(8) { scene.frame(); delay(15) }
+                assertEquals(noteId, model.state.value.area.selected)
+                val afterListTap = scene.nodes().first {
+                    it.config.getOrNull(SemanticsProperties.TestTag) == "p5b-standalone-area-$noteId"
+                }.boundsInRoot
+                assertEquals(beforeListTap.top, afterListTap.top, 2f,
+                    "Tapping a note in the list must preserve scroll position")
+                assertEquals(beforeListTap.bottom, afterListTap.bottom, 2f)
                 scene.click("Відкрити параметри розміщення", tag = "p5b-open-standalone-area-$noteId")
                 scene.setField("Діаметр, м (парні мм)", "")
                 scene.setField("Діаметр, м (парні мм)", ".")

@@ -539,10 +539,10 @@ private fun WorkspaceShortAction(label: String, icon: ImageVector, onClick: () -
 
 /**
  * Bring the selected row into the ACTUALLY visible portion of the panel.
- * On Android, the scroll viewport extends behind the transparent system
- * navigation bar: a plain bringIntoView() treats the obscured bottom strip
- * as visible. Request the row plus that clearance, while keeping the actual
- * row dimensions and touch targets unchanged.
+ * Only drawing-origin selections may call this; list-origin row clicks must
+ * preserve their scroll position. On Android the viewport extends behind
+ * the transparent navigation bar, so include the obscured bottom clearance
+ * in the requested rectangle without changing touch targets or row size.
  */
 @Composable
 private fun workspaceRowRelocation(
@@ -569,7 +569,7 @@ private fun workspaceRowRelocation(
 @Composable
 internal fun WorkspaceStandaloneAreaList(
     model: MeasurementEditModel, enabled: Boolean, selected: String?,
-    selectionRequest: Int, navigationInset: Dp,
+    drawingRelocationTarget: String?, selectionRequest: Int, navigationInset: Dp,
     onSelect: (String?) -> Unit, onOpenGeometry: (String) -> Unit,
     onDelete: (String) -> Unit
 ) {
@@ -582,7 +582,10 @@ internal fun WorkspaceStandaloneAreaList(
         key(feature.uuid) {
             val isSelected = feature.uuid == selected
             var deletion by remember { mutableStateOf(false) }
-            val relocation = workspaceRowRelocation(isSelected, selectionRequest, navigationInset)
+            val relocation = workspaceRowRelocation(
+                isSelected && drawingRelocationTarget == feature.uuid,
+                selectionRequest, navigationInset
+            )
             val role = stringResource(when (feature.role) {
                 AreaRole.OBSTACLE -> Res.string.p5b_obstacle
                 AreaRole.VOID_MARKER -> Res.string.p5b_void
@@ -608,6 +611,7 @@ internal fun WorkspaceStandaloneAreaList(
                 verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f).heightIn(min = 48.dp)
                     .clip(RoundedCornerShape(10.dp))
+                    .testTag("p5b-standalone-label-click-${feature.uuid}")
                     .semantics { this.selected = isSelected }
                     .clickable(enabled = enabled) {
                         onSelect(if (isSelected) null else feature.uuid)
@@ -661,7 +665,8 @@ internal fun WorkspaceStandaloneAreaList(
 @Composable
 internal fun WorkspaceWorkList(
     model: MeasurementEditModel, enabled: Boolean, selected: String?,
-    highlightedWorkId: String?, selectionRequest: Int, navigationInset: Dp,
+    highlightedWorkId: String?, drawingRelocationTarget: String?,
+    selectionRequest: Int, navigationInset: Dp,
     onSelect: (String?) -> Unit, onOpenGeometry: () -> Unit
 ) {
     val works = model.workspaceWorks()
@@ -671,7 +676,10 @@ internal fun WorkspaceWorkList(
         var deletion by remember { mutableStateOf(false) }
         val isSelected = selected == work.uuid
         val isHighlighted = highlightedWorkId == work.uuid
-        val relocation = workspaceRowRelocation(isSelected || isHighlighted, selectionRequest, navigationInset)
+        val relocation = workspaceRowRelocation(
+            (isSelected || isHighlighted) && drawingRelocationTarget == work.uuid,
+            selectionRequest, navigationInset
+        )
         // Keep each work's un-applied input while switching pencils. Previously
         // these were remembered only INSIDE the currently open editor and thus
         // silently discarded when another work's pencil was tapped.

@@ -187,7 +187,9 @@ fun MeasurementEditScreen(
     var selectedWork by rememberSaveable(measurementUuid) { mutableStateOf<String?>(null) }
     val currentSelectedWork by rememberUpdatedState(selectedWork)
     var highlightedWorkId by remember(measurementUuid) { mutableStateOf<String?>(null) }
-    // Repeated taps on the same drawing feature still request a fresh relocation.
+    // Only a drawing-origin selection may request relocation; tapping a row
+    // within the Elements list must never move that list.
+    var drawingRelocationTarget by remember(measurementUuid) { mutableStateOf<String?>(null) }
     var drawingSelectionRequest by remember(measurementUuid) { mutableIntStateOf(0) }
     LaunchedEffect(highlightedWorkId) {
         if (highlightedWorkId != null) {
@@ -337,6 +339,7 @@ fun MeasurementEditScreen(
             ?.takeIf { id -> model.workspaceWorks().any { it.uuid == id } }
         selectedWork = placedWork
         highlightedWorkId = placedWork
+        drawingRelocationTarget = placedWork ?: uuid
         drawingSelectionRequest++
         selected = null
         // In fullscreen, the double-tap callback (onOpenSelection) owns the sheet.
@@ -498,14 +501,18 @@ fun MeasurementEditScreen(
                     "$measurementUuid:$fullscreen:${context.name}"
                 ) {
                     val scroll = if (context == MeasurementEditContext.CONTOUR) contourScroll else rememberScrollState()
-                    var lastFeature by rememberSaveable { mutableStateOf(activeElementControls) }
-                    LaunchedEffect(context, activeElementControls) {
-                        if (context == MeasurementEditContext.ELEMENTS && lastFeature != activeElementControls) {
-                            // Selection from the drawing must scroll to its row, not
-                            // race that relocation with an unconditional scroll-to-top.
-                            if (selectedFeature == null) scroll.scrollTo(0)
-                            lastFeature = activeElementControls
-                        }
+                    val activePlacementTool = state.pointElementUuid
+                        ?: state.lineElementUuid ?: state.area.tool?.name
+                    var lastPlacementTool by rememberSaveable {
+                        mutableStateOf(activePlacementTool)
+                    }
+                    LaunchedEffect(context, activePlacementTool) {
+                        // An actual new placement tool belongs at the top. Selection
+                        // changes (from either the drawing or the list) do not.
+                        if (context == MeasurementEditContext.ELEMENTS &&
+                            activePlacementTool != null && activePlacementTool != lastPlacementTool
+                        ) scroll.scrollTo(0)
+                        lastPlacementTool = activePlacementTool
                     }
                     CompositionLocalProvider(LocalMeasurementInputFocus provides inputFocus) {
                         val elementsContext = context == MeasurementEditContext.ELEMENTS
@@ -538,6 +545,7 @@ fun MeasurementEditScreen(
                             val scrollBounds = if (!elementsContext && !fullscreen) Modifier.fillMaxSize() else Modifier.fillMaxWidth()
                             Column(scrollBounds.then(if (elementsContext) Modifier else panelTag)
                                 .verticalScroll(scroll)
+                                .then(if (elementsContext) Modifier.testTag("p5b-elements-scroll") else Modifier)
                                 .padding(top = if (context == MeasurementEditContext.CONTOUR) 14.dp else 6.dp,
                                     bottom = 12.dp + normalNavigationUnderlay),
                                 verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -607,9 +615,12 @@ fun MeasurementEditScreen(
                                             (standaloneArea != null && !standaloneEditorOpen)) {
                                             WorkspaceWorkList(
                                                 model, canEdit, selectedWork, highlightedWorkId,
-                                                drawingSelectionRequest, normalNavigationUnderlay,
+                                                drawingRelocationTarget, drawingSelectionRequest, normalNavigationUnderlay,
                                                 onSelect = { work ->
                                                     if (!model.promptForDirtyElementBeforeNavigation()) {
+                                                        // List-origin tap: preserve the exact scroll position.
+                                                        drawingRelocationTarget = null
+                                                        highlightedWorkId = null
                                                         model.clearDrawingSelection()
                                                         selectedWork = work
                                                     }
@@ -621,9 +632,12 @@ fun MeasurementEditScreen(
                                             )
                                             WorkspaceStandaloneAreaList(
                                                 model, canEdit, state.area.selected,
-                                                drawingSelectionRequest, normalNavigationUnderlay,
+                                                drawingRelocationTarget, drawingSelectionRequest, normalNavigationUnderlay,
                                                 onSelect = { id ->
                                                     if (!model.promptForDirtyElementBeforeNavigation()) {
+                                                        // A note tapped within the list should only highlight;
+                                                        // never auto-scroll or return to the beginning.
+                                                        drawingRelocationTarget = null
                                                         if (id == null) model.clearDrawingSelection()
                                                         else model.selectArea(id)
                                                         selectedWork = null
@@ -632,6 +646,7 @@ fun MeasurementEditScreen(
                                                 },
                                                 onOpenGeometry = { id ->
                                                     if (!model.promptForDirtyElementBeforeNavigation()) {
+                                                        drawingRelocationTarget = null
                                                         model.selectArea(id)
                                                         model.openAreaProperties()
                                                         selectedWork = null
@@ -640,6 +655,7 @@ fun MeasurementEditScreen(
                                                 },
                                                 onDelete = { id ->
                                                     if (!model.promptForDirtyElementBeforeNavigation()) {
+                                                        drawingRelocationTarget = null
                                                         model.selectArea(id)
                                                         model.deleteArea() // Draft + Undo; SQL only on global Save.
                                                         selectedWork = null
