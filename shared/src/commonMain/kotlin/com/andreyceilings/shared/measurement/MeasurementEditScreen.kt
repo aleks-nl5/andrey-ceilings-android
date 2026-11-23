@@ -745,7 +745,19 @@ fun MeasurementEditScreen(
                             if (wall) {
                                 openContext(MeasurementEditContext.CONTOUR)
                                 scope.launch { contourScroll.scrollTo(0) }
-                            } else showElements()
+                            } else {
+                                // A double-tap enters the actual geometry editor.
+                                // Single tap only selects/highlights and never expands.
+                                if (!model.promptForDirtyElementBeforeNavigation()) {
+                                    when {
+                                        state.selectedPointUuid != null -> model.openMounting()
+                                        state.selectedLineUuid != null -> model.openLineProperties()
+                                        state.area.selected != null -> model.openAreaProperties()
+                                    }
+                                    selectedWork = null
+                                    showElements()
+                                }
+                            }
                         }
                     } else null,
                     fitTop = if (fullscreen) headerHeight else 0.dp,
