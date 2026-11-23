@@ -108,6 +108,10 @@
     <string name="p5b_drawing_quantity_equal">Кількість уже збігається з кресленням.</string>
     <string name="p5b_quantity_transfer">Застосувати кількість</string>
     <string name="p5b_quantity_invalid">Перевірте кількість і наявні розміщення.</string>
+    <string name="p5b_discard_parameters_title">Скасувати зміни параметрів?</string>
+    <string name="p5b_discard_parameters_message">Незастосовані значення буде втрачено. Інші зміни заміру залишаться.</string>
+    <string name="p5b_discard_parameters_confirm">Відхилити</string>
+    <string name="p5b_discard_parameters_continue">Продовжити</string>
     <string name="p5b_save_show_reason">Причина блокування збереження</string>
     <string name="p5b_exit_title">Незбережені зміни</string>
     <string name="p5b_exit_question">Зберегти перед виходом?</string>

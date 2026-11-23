@@ -173,13 +173,11 @@ internal fun WorkspaceGeometryPanel(
     val uuid = point?.uuid ?: line?.uuid ?: area?.uuid ?: return
     val coincidentPoints = if (point != null) model.overlappingPointsForSelected() else emptyList()
     val coincidentIndex = coincidentPoints.indexOfFirst { it.uuid == uuid }
-    // A work-list settings action may open the editor before this panel is composed.
-    val parametersOpened = state.mountingInput?.pointUuid == uuid ||
+    // The panel's open state derives from the actual editor. Closing/cancelling an
+    // editor MUST close its entire controls, not leave an orphaned toolbar behind.
+    // Work-row settings opens the editor in the model before this panel composes.
+    val edit = state.mountingInput?.pointUuid == uuid ||
         state.lineProperties?.uuid == uuid || state.area.properties?.uuid == uuid
-    var edit by rememberSaveable(uuid) { mutableStateOf(parametersOpened) }
-    LaunchedEffect(uuid, parametersOpened) {
-        if (parametersOpened) edit = true
-    }
     var deletion by remember(uuid) { mutableStateOf(false) }
     val workId = point?.elementUuid ?: line?.elementUuid ?: area?.elementUuid
     val work = model.workspaceWorks().find { it.uuid == workId }
@@ -221,17 +219,17 @@ internal fun WorkspaceGeometryPanel(
         }
         IconButton(onClick = {
             if (!edit) {
-                edit = true
                 when {
-                    point != null && state.mountingInput == null -> model.openMounting()
-                    line != null && state.lineProperties == null -> model.openLineProperties()
-                    area != null && state.area.properties == null -> model.openAreaProperties()
+                    point != null -> model.openMounting()
+                    line != null -> model.openLineProperties()
+                    area != null -> model.openAreaProperties()
                 }
-            } else if (state.mountingInput?.dirty != true && state.lineProperties?.dirty != true && state.area.properties?.dirty != true) {
-                model.discardMounting()
-                model.discardLineProperties()
-                model.discardAreaProperties()
-                edit = false
+            } else {
+                when {
+                    state.mountingInput?.pointUuid == uuid -> model.dismissMounting()
+                    state.lineProperties?.uuid == uuid -> model.dismissLineProperties()
+                    state.area.properties?.uuid == uuid -> model.dismissAreaProperties()
+                }
             }
         }, enabled = enabled) {
             Icon(Icons.Default.Edit, stringResource(Res.string.p5b_edit_dimensions))
@@ -352,7 +350,7 @@ internal fun WorkspaceGeometryPanel(
                     IconButton(onClick = model::applyLineProperties, enabled = valid) {
                         Icon(Icons.Default.Check, stringResource(Res.string.p5b_apply_draft))
                     }
-                    IconButton(onClick = model::discardLineProperties) {
+                    IconButton(onClick = model::dismissLineProperties) {
                         Icon(Icons.Default.Close, stringResource(Res.string.p5b_cancel_placement))
                     }
                 }
@@ -361,14 +359,8 @@ internal fun WorkspaceGeometryPanel(
             }
         }
         if (area != null) {
-            if (state.mountingInput == null) FlowRow {
-                area.shape.positions.indices.forEach { index ->
-                    WorkspaceShortAction(
-                        if (area.shape is AreaShape.Circle) stringResource(Res.string.p5b_wall_short)
-                        else stringResource(Res.string.p5b_vertex_short, index + 1),
-                        Icons.Default.Edit) { model.openAreaMounting(index) }
-                }
-            }
+            // Vertex positions are edited directly on the drawing. Do not render
+            // inert or ambiguous per-vertex actions in this compact properties card.
             if (state.area.properties == null)
                 WorkspaceShortAction(stringResource(Res.string.p5b_size_short), Icons.Default.Edit,
                     model::openAreaProperties)
@@ -396,7 +388,7 @@ internal fun WorkspaceGeometryPanel(
                     IconButton(onClick = model::applyAreaProperties, enabled = valid) {
                         Icon(Icons.Default.Check, stringResource(Res.string.p5b_apply_draft))
                     }
-                    IconButton(onClick = model::discardAreaProperties) {
+                    IconButton(onClick = model::dismissAreaProperties) {
                         Icon(Icons.Default.Close, stringResource(Res.string.p5b_cancel_placement))
                     }
                 }
@@ -415,6 +407,31 @@ internal fun WorkspaceGeometryPanel(
             WallAnchorEditor(model, inline = true)
         }
     }
+
+    // The cancel icon must never silently discard an edited line/area. Once the
+    // user confirms or continues, the model and the visible panel stay in sync.
+    val lineDismiss = state.linePropertiesDismiss && state.lineProperties?.uuid == uuid
+    val areaDismiss = state.area.dismissProperties && state.area.properties?.uuid == uuid
+    if (lineDismiss || areaDismiss) AlertDialog(
+        onDismissRequest = {
+            if (lineDismiss) model.continueLineProperties() else model.continueAreaProperties()
+        },
+        title = { Text(stringResource(Res.string.p5b_discard_parameters_title)) },
+        text = { Text(stringResource(Res.string.p5b_discard_parameters_message)) },
+        confirmButton = {
+            TextButton(onClick = {
+                if (lineDismiss) model.discardLineProperties() else model.discardAreaProperties()
+            }, colors = ButtonDefaults.textButtonColors(
+                contentColor = MaterialTheme.colorScheme.error)) {
+                Text(stringResource(Res.string.p5b_discard_parameters_confirm))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = {
+                if (lineDismiss) model.continueLineProperties() else model.continueAreaProperties()
+            }) { Text(stringResource(Res.string.p5b_discard_parameters_continue)) }
+        }
+    )
 
     if (deletion) AlertDialog(onDismissRequest = { deletion = false },
         title = { Text(stringResource(Res.string.p5b_delete_placement)) },
