@@ -2,19 +2,19 @@ package com.andreyceilings.app
 
 import android.content.Context
 import android.os.SystemClock
+import android.util.Log
 import androidx.activity.ComponentActivity
-import androidx.core.view.ViewCompat
-import androidx.core.view.WindowInsetsCompat
-import androidx.core.view.WindowInsetsControllerCompat
 import androidx.test.core.app.ApplicationProvider
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.runtime.*
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.SemanticsNode
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
 import com.andreyceilings.shared.db.*
 import com.andreyceilings.shared.measurement.*
@@ -82,18 +82,12 @@ class AreaFeatureTouchTest {
             return compose.onNode(matcher).fetchSemanticsNode()
         }
 
-        fun hideKeyboard() {
-            compose.runOnIdle {
-                val window = compose.activity.window
-                WindowInsetsControllerCompat(window, window.decorView).hide(WindowInsetsCompat.Type.ime())
+        fun setField(node: SemanticsNodeInteraction, value: String) {
+            // AREA verifies input, draft geometry and actual Canvas touches.
+            // MeasurementWorkspaceLayoutTest separately exercises focus and the IME.
+            node.performScrollTo().performSemanticsAction(SemanticsActions.SetText) {
+                assertTrue(it(AnnotatedString(value)))
             }
-            compose.waitUntil(15000) {
-                compose.runOnIdle {
-                    ViewCompat.getRootWindowInsets(compose.activity.window.decorView)
-                        ?.isVisible(WindowInsetsCompat.Type.ime()) != true
-                }
-            }
-            settledCanvas()
         }
 
         fun tap(x: Long, y: Long, expectedVertices: Int? = null) {
@@ -116,6 +110,7 @@ class AreaFeatureTouchTest {
         }
 
         fun begin(label: String?, tool: AreaTool) {
+            Log.i("P5BAreaTest", "Begin ${label ?: "catalog area"}; dark=$dark")
             compose.onNodeWithTag("measurement-workspace-add").assertIsDisplayed().assertIsEnabled().performClick()
             if (label != null) {
                 click("Позначка на кресленні")
@@ -124,7 +119,7 @@ class AreaFeatureTouchTest {
             else {
                 compose.onNodeWithTag("p5b-linked-${element.uuid}").performScrollTo().assertIsEnabled().performClick()
                 assertNull(model.state.value.area.tool)
-                click("Розмістити ще")
+                compose.onNodeWithTag("p5b-place-existing").performScrollTo().assertIsEnabled().performClick()
             }
             compose.runOnIdle {
                 assertEquals(tool, model.state.value.area.tool, "Area tool must be active; ${stateSummary()}")
@@ -136,6 +131,7 @@ class AreaFeatureTouchTest {
             compose.runOnIdle {
                 assertNotNull(model.areaCreationShape(), "A valid draft shape must exist; ${stateSummary()}")
             }
+            Log.i("P5BAreaTest", "Finish $role; dark=$dark")
             click("Завершити фігуру в чернетці")
             var standaloneId: String? = null
             compose.runOnIdle {
@@ -164,13 +160,10 @@ class AreaFeatureTouchTest {
             finish(1, AreaRole.OBSTACLE)
 
             begin("Позначка отвору", AreaTool.CIRCLE)
-            compose.onNodeWithText("Діаметр, м (парні мм)").performScrollTo().performTextInput("0,2")
+            setField(compose.onNodeWithText("Діаметр, м (парні мм)"), "0,2")
             compose.runOnIdle {
                 assertEquals("0,2", model.state.value.area.diameter, "Circle diameter input; ${stateSummary()}")
             }
-            // Keep genuine text input, but finish the keyboard interaction
-            // before starting a drawing gesture. IME coverage lives in its own tests.
-            hideKeyboard()
             tap(2000,1500,1)
             finish(2, AreaRole.VOID_MARKER)
             compose.runOnIdle {
@@ -189,6 +182,7 @@ class AreaFeatureTouchTest {
             compose.runOnIdle {assertEquals(2,model.displayAreas().size)}
             click("Повторити")
             compose.runOnIdle { assertEquals(3, model.displayAreas().size, "Redo; ${stateSummary()}") }
+            Log.i("P5BAreaTest", "Open fullscreen; dark=$dark")
             click("На весь екран")
             click("Вписати креслення")
             val canvas=compose.onNode(matcher)
@@ -235,16 +229,25 @@ class AreaFeatureTouchTest {
             }
             compose.onNodeWithTag("p5b-open-standalone-area-${circle.uuid}").performClick()
             compose.onNode(isDialog()).assertDoesNotExist()
-            compose.onNodeWithText("Примітка фігури").performScrollTo().performTextInput("Тестова позначка")
-            click("Оновити на кресленні (у чернетці)")
-            compose.onNodeWithTag("p5b-open-standalone-area-${circle.uuid}").performClick()
-            click("Видалити розміщення");compose.onNodeWithText("Видалити",useUnmergedTree=true).performClick()
+            setField(compose.onNodeWithTag("p5b-area-note"), "Тестова позначка")
+            click("Застосувати зміни")
+            compose.runOnIdle {
+                assertEquals("Тестова позначка", model.displayAreas().single { it.uuid == circle.uuid }.note)
+            }
+            compose.onNodeWithTag("p5b-delete-standalone-area-${circle.uuid}").performScrollTo().performClick()
+            compose.onNodeWithText("Видалити", useUnmergedTree = true).performClick()
             compose.runOnIdle {assertEquals(2,model.displayAreas().size)}
             click("Скасувати дію")
             val ids=model.displayAreas().map {it.uuid}.toSet()
+            Log.i("P5BAreaTest", "Save and reopen; dark=$dark")
             compose.onNodeWithTag("measurement-edit-save").performClick()
             compose.waitUntil(15000) {!model.state.value.dirty && !model.state.value.saving || model.state.value.error!=null}
-            compose.runOnIdle {assertTrue(!model.state.value.dirty && !model.state.value.saving,model.state.value.error);assertEquals(ids,store.load(f.project,f.id).placements.areas.map {it.uuid}.toSet())}
+            compose.runOnIdle {
+                assertTrue(!model.state.value.dirty && !model.state.value.saving, model.state.value.error)
+                val saved = store.load(f.project, f.id).placements.areas
+                assertEquals(ids, saved.map { it.uuid }.toSet())
+                assertEquals("Тестова позначка", saved.single { it.uuid == circle.uuid }.note)
+            }
         } catch (failure: Throwable) {
             runCatching { captureMeasurementWorkspaceScreenshot("area-touch-${if (dark) "dark" else "light"}-failure") }
                 .exceptionOrNull()?.let(failure::addSuppressed)

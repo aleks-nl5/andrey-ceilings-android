@@ -15,6 +15,11 @@ collect_failed_workspace_capture() {
       > "$artifact_dir/android-failure.png"; then
       rm -f "$artifact_dir/android-failure.png"
     fi
+    timeout 10s adb -s emulator-5554 logcat -d -v threadtime \
+      'P5BAreaTest:I' 'ActivityManager:W' 'AndroidRuntime:E' '*:S' \
+      > "$artifact_dir/android-failure-logcat.txt" || true
+    timeout 10s adb -s emulator-5554 shell dumpsys activity lastanr \
+      > "$artifact_dir/android-last-anr.txt" || true
   else
     touch "$artifact_dir/emulator-disconnected.marker"
     echo "::warning::Android emulator is unreachable after instrumentation failure."
