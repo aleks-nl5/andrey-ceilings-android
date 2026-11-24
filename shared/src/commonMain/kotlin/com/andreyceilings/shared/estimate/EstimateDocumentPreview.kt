@@ -19,7 +19,6 @@ import com.andreyceilings.shared.measurement.MeasurementElementsStore
 import com.andreyceilings.shared.resources.*
 import org.jetbrains.compose.resources.stringResource
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.launch
 
 enum class EstimateDocumentAction(val label: String) {
@@ -54,7 +53,9 @@ internal fun EstimateDocumentPreview(
         },
         layout = { document, options, measurer -> layoutEstimateDocument(document, options, measurer) },
         onClose = onClose,
-        shareDispatched = { quote?.let { store.markQuoteShareDispatched(it) } ?: false }
+        shareDispatched = quote?.let { captured ->
+            { complete -> store.markQuoteShareDispatched(captured, complete) }
+        }
     )
 }
 
@@ -68,7 +69,7 @@ internal fun <T : Any> EstimateDocumentPreviewDialog(
     onClose: () -> Unit,
     beforeExport: (suspend () -> Unit)? = null,
     editRoomSections: Boolean = true,
-    shareDispatched: (suspend () -> Boolean)? = null
+    shareDispatched: (((Boolean) -> Unit) -> Unit)? = null
 ) {
     val exporter = LocalEstimateDocumentExporter.current
     val measurer = rememberTextMeasurer()
@@ -140,14 +141,8 @@ internal fun <T : Any> EstimateDocumentPreviewDialog(
                                                 if (result != null || message == null) message = result
                                                 exporting = false
                                             }, onShareDispatched = {
-                                                if (action == EstimateDocumentAction.SHARE && shareDispatched != null) scope.launch(start = CoroutineStart.UNDISPATCHED) {
-                                                    try {
-                                                        if (!shareDispatched()) message = shareConflict
-                                                    } catch (cancelled: CancellationException) {
-                                                        throw cancelled
-                                                    } catch (_: Exception) {
-                                                        message = shareConflict
-                                                    }
+                                                if (action == EstimateDocumentAction.SHARE) shareDispatched?.invoke { changed ->
+                                                    if (!changed) message = shareConflict
                                                 }
                                             })
                                         } catch (cancelled: CancellationException) {

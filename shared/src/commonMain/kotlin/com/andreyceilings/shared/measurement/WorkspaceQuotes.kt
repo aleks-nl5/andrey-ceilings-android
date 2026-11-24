@@ -26,7 +26,6 @@ import com.andreyceilings.shared.input.DecimalInputField
 import com.andreyceilings.shared.livepricing.*
 import com.andreyceilings.shared.resources.*
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.stringResource
 
@@ -73,7 +72,8 @@ internal fun WorkspaceQuotes(
     var removing by remember { mutableStateOf<List<SavedIndividualQuote>?>(null) }
     var removingSeries by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
-    LaunchedEffect(store, route, session.refresh) {
+    val shareResult = store?.quoteShareResult?.collectAsState()?.value
+    LaunchedEffect(store, route, session.refresh, shareResult) {
         if (route == null || store == null) {
             rows = emptyList()
             return@LaunchedEffect
@@ -140,6 +140,7 @@ internal fun WorkspaceQuotes(
                 rows.orEmpty().groupBy { it.seriesUuid }.forEach { (series, versions) ->
                     item(key = series) {
                         val head = versions.first()
+                        HorizontalDivider(Modifier.padding(horizontal = 8.dp), color = MaterialTheme.colorScheme.outlineVariant)
                         Row(Modifier.fillMaxWidth().padding(start = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                             Column(Modifier.weight(1f)) {
                                 Text(head.frozen.title, style = MaterialTheme.typography.titleSmall)
@@ -156,15 +157,16 @@ internal fun WorkspaceQuotes(
                     items(versions, key = { it.revisionUuid }) { quote ->
                         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                             WorkspaceQuoteStatusIcon(quote, approved, !busy, ::changeStatus)
-                            if (quote.status == EstimateWorkflowStatus.APPROVED) {
-                                val savedBasis = (pricingBasis as? DraftPricingBasis.Saved)?.read
-                                val show = savedBasis?.let { quote.frozen.hasPricingDrift(it) }
-                                if (show == true) WorkspaceCostHelp(stringResource(Res.string.p5d_drift))
-                                else if (pricingBasis is DraftPricingBasis.Unavailable)
-                                    WorkspaceCostHelp(stringResource(Res.string.p5d_drift_unavailable))
-                            }
-                            Row(Modifier.weight(1f).clickable { session.opened = quote }.defaultMinSize(minHeight = 48.dp)
-                                .padding(end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Row(Modifier.weight(1f).defaultMinSize(minHeight = 56.dp)
+                                .clickable { session.opened = quote }.padding(start = 4.dp, end = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically) {
+                                if (quote.status == EstimateWorkflowStatus.APPROVED) {
+                                    val savedBasis = (pricingBasis as? DraftPricingBasis.Saved)?.read
+                                    val show = savedBasis?.let { quote.frozen.hasPricingDrift(it) }
+                                    if (show == true) WorkspaceCostHelp(stringResource(Res.string.p5d_drift))
+                                    else if (pricingBasis is DraftPricingBasis.Unavailable)
+                                        WorkspaceCostHelp(stringResource(Res.string.p5d_drift_unavailable))
+                                }
                                 Column(Modifier.weight(1f)) {
                                     Text(stringResource(Res.string.p5d_version, quote.versionNumber), style = MaterialTheme.typography.bodyMedium)
                                     if (quote.frozen.title != versions.first().frozen.title)
@@ -256,17 +258,23 @@ internal fun ColumnScope.WorkspaceQuoteComposer(
             Icon(Icons.Default.Close, stringResource(Res.string.p5d_discard), tint = MaterialTheme.colorScheme.error)
         }
         CompactOutlinedStringField(title, presenter::editTitle, stringResource(Res.string.p5d_title),
-            enabled = !save.saving, modifier = Modifier.weight(1f))
-        WorkspaceExpand(session)
+            enabled = !save.saving, modifier = Modifier.weight(1f).padding(top = 8.dp),
+            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Done))
         IconButton(enabled = canSubmit, onClick = {
             if (state.canAcknowledge) partialFingerprint = state.fingerprint
             else store.submitQuote(presenter, route.projectId)
         }) { Icon(Icons.Default.Save, stringResource(Res.string.p5d_save_quote)) }
     }
     save.error?.let { Text(stringResource(Res.string.p5d_quote_failed), color = MaterialTheme.colorScheme.error) }
+    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
     if (save.saving) LinearProgressIndicator(Modifier.fillMaxWidth())
     if (!current) {
-        TextButton(enabled = !save.saving, onClick = onRefresh) { Text(stringResource(Res.string.p5d_update_quote)) }
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            TextButton(enabled = !save.saving, onClick = onRefresh, modifier = Modifier.weight(1f)) {
+                Text(stringResource(Res.string.p5d_update_quote))
+            }
+            WorkspaceExpand(session)
+        }
     } else {
         WorkspaceFinancialSummary {
             Column(Modifier.fillMaxWidth().padding(horizontal = 8.dp)) {
@@ -276,6 +284,7 @@ internal fun ColumnScope.WorkspaceQuoteComposer(
                         Text(state.amounts?.let { measurementMoney(it.finalCents) } ?: stringResource(Res.string.p5d_unknown),
                             style = MaterialTheme.typography.titleMedium)
                     }
+                    WorkspaceExpand(session)
                     TextButton(enabled = enabled, onClick = {
                         val mode = if (state.discountMode == QuoteDiscountMode.PERCENT) QuoteDiscountMode.FIXED else QuoteDiscountMode.PERCENT
                         presenter.editDiscount("0", mode, confirmed = true)
@@ -453,7 +462,8 @@ internal fun ColumnScope.WorkspaceFrozenQuote(
     val frozen = quote.frozen
     var showPdf by remember(quote.revisionUuid) { mutableStateOf(false) }
     var failed by remember(quote.revisionUuid) { mutableStateOf(false) }
-    var statusConflict by remember(quote.revisionUuid) { mutableStateOf(false) }
+    val shareResult by store.quoteShareResult.collectAsState()
+    val statusConflict = shareResult?.let { it.revisionUuid == quote.revisionUuid && !it.changed } == true
     var exporting by remember(quote.revisionUuid) { mutableStateOf(false) }
     var drift by remember(quote.revisionUuid, quote.status) { mutableStateOf<Boolean?>(false) }
     val exporter = LocalEstimateDocumentExporter.current
@@ -484,12 +494,7 @@ internal fun ColumnScope.WorkspaceFrozenQuote(
                     failed = it != null
                     exporting = false
                 }, onShareDispatched = {
-                    scope.launch(start = CoroutineStart.UNDISPATCHED) {
-                        try { statusConflict = !store.markQuoteShareDispatched(quote) }
-                        catch (e: CancellationException) { throw e }
-                        catch (_: Exception) { statusConflict = true }
-                        session.refresh++
-                    }
+                    if (action == EstimateDocumentAction.SHARE) store.markQuoteShareDispatched(quote)
                 })
             } catch (e: CancellationException) {
                 throw e
@@ -524,6 +529,7 @@ internal fun ColumnScope.WorkspaceFrozenQuote(
             Text(measurementMoney(frozen.amounts.finalCents), style = MaterialTheme.typography.titleMedium)
         }
     }
+    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
     if (failed || statusConflict) Text(stringResource(if (statusConflict) Res.string.p5d_share_status_conflict else Res.string.p5d_quote_failed),
         color = MaterialTheme.colorScheme.error)
     LazyColumn(Modifier.fillMaxWidth().weight(1f)) {
@@ -543,6 +549,7 @@ internal fun ColumnScope.WorkspaceFrozenQuote(
                 Modifier.padding(start = 8.dp), style = MaterialTheme.typography.bodySmall)
         }
     }
+    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
     WorkspaceFinancialSummary {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             WorkspaceTrash(quote.canDeleteQuote && !busy && !exporting, Res.string.p5d_delete_revision, onDelete)
@@ -579,19 +586,16 @@ internal fun WorkspaceQuoteStatusIcon(
     var confirmation by remember(quote.revisionUuid) { mutableStateOf<List<SavedIndividualQuote>?>(null) }
     Box {
         IconButton(enabled = enabled, onClick = { menu = true }) {
-            val (icon, tint) = when (quote.status) {
-                EstimateWorkflowStatus.DRAFT -> Icons.Default.EditNote to MaterialTheme.colorScheme.onSurfaceVariant
-                EstimateWorkflowStatus.SENT -> Icons.AutoMirrored.Filled.Send to MaterialTheme.colorScheme.primary
-                EstimateWorkflowStatus.APPROVED -> Icons.Default.CheckCircle to Color(0xFF32965D)
-                EstimateWorkflowStatus.REJECTED -> Icons.Default.Close to MaterialTheme.colorScheme.error
-                null -> Icons.Default.HelpOutline to MaterialTheme.colorScheme.onSurfaceVariant
-            }
+            val (icon, tint) = workspaceStatusAppearance(quote.status)
             Icon(icon, stringResource(Res.string.p5d_status_change, workspaceStatusLabel(quote.status)), tint = tint)
         }
         DropdownMenu(menu, onDismissRequest = { menu = false }) {
             EstimateWorkflowStatus.entries.forEach { status ->
                 val otherApprovals = approved.filter { it.revisionUuid != quote.revisionUuid }
-                DropdownMenuItem(text = { Text(workspaceStatusLabel(status)) },
+                DropdownMenuItem(text = { Text(workspaceStatusLabel(status)) }, leadingIcon = {
+                    val (icon, tint) = workspaceStatusAppearance(status)
+                    Icon(icon, contentDescription = null, tint = tint)
+                },
                     enabled = status != quote.status || (status == EstimateWorkflowStatus.APPROVED && otherApprovals.isNotEmpty()),
                     onClick = {
                         menu = false
@@ -648,6 +652,15 @@ internal fun WorkspaceTrash(enabled: Boolean, label: org.jetbrains.compose.resou
         Icon(Icons.Default.Delete, stringResource(label), tint = if (enabled) MaterialTheme.colorScheme.error
             else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f))
     }
+}
+
+@Composable
+private fun workspaceStatusAppearance(status: EstimateWorkflowStatus?) = when (status) {
+    EstimateWorkflowStatus.DRAFT -> Icons.Default.EditNote to MaterialTheme.colorScheme.onSurfaceVariant
+    EstimateWorkflowStatus.SENT -> Icons.AutoMirrored.Filled.Send to MaterialTheme.colorScheme.primary
+    EstimateWorkflowStatus.APPROVED -> Icons.Default.CheckCircle to Color(0xFF32965D)
+    EstimateWorkflowStatus.REJECTED -> Icons.Default.Close to MaterialTheme.colorScheme.error
+    null -> Icons.Default.HelpOutline to MaterialTheme.colorScheme.onSurfaceVariant
 }
 
 @Composable

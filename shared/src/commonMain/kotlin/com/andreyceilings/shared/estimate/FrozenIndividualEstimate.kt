@@ -177,12 +177,42 @@ data class SavedIndividualQuote(val seriesUuid: String, val createdAt: Long, val
     val selectedRevisionUuid: String? = null, val choiceVersion: Long = 1,
     val historicalHead: HistoricalRevisionHead? = null)
 
-/** A catalog change outside the frozen lines does not by itself make this proposal drift. */
+/** Compare drawing and pricing inputs for the workspace warning, independently of provenance. */
 internal fun FrozenIndividualEstimate.hasPricingDrift(current: PricingReadResult.Loaded): Boolean {
-    if (current.source.signature != sourceSignature) return true
-    if (current.catalog.signature == catalogSignature) return false
-    val items = current.catalog.items.associateBy { it.uuid }
+    val live = current.source
+    if (live.projectUuid != source.projectUuid || live.measurementUuid != source.measurementUuid ||
+        live.geometry != MeasurementGeometryCodec.read(source.drawingJson)
+    ) return true
+
     val elements = source.elements.associateBy { it.uuid }
+    if (live.elements.size != elements.size || live.elements.any { element ->
+            val saved = elements[element.uuid]
+            saved == null || saved.source != element.source || saved.unit != element.unit ||
+                saved.approval != element.approval || saved.quantity != element.quantity ||
+                saved.businessRole != element.businessRole ||
+                (element.source == ElementSource.Wish && saved.label != element.label)
+        }
+    ) return true
+
+    val points = source.points.associateBy { it.uuid }
+    val lines = source.lines.associateBy { it.uuid }
+    val areas = source.areas.associateBy { it.uuid }
+    if (live.points.size != points.size || live.points.any { point ->
+            val saved = points[point.uuid]
+            saved == null || saved.elementUuid != point.elementUuid || saved.xMm != point.xMm ||
+                saved.yMm != point.yMm || saved.mounting.unresolved != point.mounting.unresolved
+        } || live.lines.size != lines.size || live.lines.any { line ->
+            val saved = lines[line.uuid]
+            saved == null || saved.elementUuid != line.elementUuid || saved.start != line.start ||
+                saved.end != line.end || saved.widthMm != line.widthMm || saved.unresolved != line.unresolved
+        } || live.areas.size != areas.size || live.areas.any { area ->
+            val saved = areas[area.uuid]
+            saved == null || saved.elementUuid != area.elementUuid || saved.shape != area.shape ||
+                saved.role != area.role || saved.unresolved != area.unresolved
+        }
+    ) return true
+
+    val items = current.catalog.items.associateBy { it.uuid }
     return rows.any { (_, line) ->
         val item = items[line.catalogItemUuid] ?: return@any true
         val selection = elements[line.elementUuid]?.source as? ElementSource.CatalogSelection ?: return@any true

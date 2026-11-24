@@ -137,6 +137,13 @@ object FrozenRevisionProof {
         // Protected versions survive both repository delete routes. Deleting siblings preserves their receipts.
         history.softDeleteSeries(alternative.seriesUuid, 623)
         assertFalse(history.deleteIndividualRevision(alternative.seriesUuid, alternativeId, 2, 623))
+        val frozenQueries = db.frozenRevisionQueries
+        assertNull(frozenQueries.insertRevisionTombstone(deletedAt = 623, revisionUuid = alternativeId,
+            seriesUuid = alternative.seriesUuid, expectedStatusVersion = 2).executeAsOneOrNull())
+        assertNull(frozenQueries.insertRevisionTombstone(deletedAt = 623, revisionUuid = v3.initialRevisionUuid,
+            seriesUuid = alternative.seriesUuid, expectedStatusVersion = 1).executeAsOneOrNull())
+        assertNull(frozenQueries.insertRevisionTombstone(deletedAt = 623, revisionUuid = v3.initialRevisionUuid,
+            seriesUuid = first.seriesUuid, expectedStatusVersion = 2).executeAsOneOrNull())
         assertFalse(history.deleteIndividualSeries(alternative.seriesUuid, mapOf(alternativeId to 2L), 623))
         assertEquals(EstimateWorkflowStatus.APPROVED, history.exactIndividual(alternative.seriesUuid, alternativeId)!!.status)
         val staleAppend = request(db, fixture, first.seriesUuid)

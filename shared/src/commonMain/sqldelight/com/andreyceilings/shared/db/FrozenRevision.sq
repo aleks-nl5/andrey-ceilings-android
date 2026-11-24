@@ -69,7 +69,17 @@ selectRevisionReceiptByRevision:
 SELECT * FROM estimate_revision_receipts WHERE revisionUuid = ?;
 
 insertRevisionTombstone:
-INSERT INTO estimate_revision_tombstones VALUES (?, ?);
+INSERT INTO estimate_revision_tombstones(revisionUuid, deletedAt)
+SELECT r.revisionUuid, :deletedAt
+FROM estimate_revisions r
+JOIN estimate_series s USING(seriesUuid)
+JOIN estimate_revision_workflow w USING(revisionUuid)
+WHERE r.revisionUuid = :revisionUuid AND r.seriesUuid = :seriesUuid
+AND s.deletedAt IS NULL AND w.version = :expectedStatusVersion
+AND w.status IN ('DRAFT', 'SENT', 'REJECTED')
+AND r.revisionUuid IN (SELECT revisionUuid FROM estimate_v1_frozen UNION ALL SELECT revisionUuid FROM estimate_revision_frozen)
+AND NOT EXISTS (SELECT 1 FROM estimate_revision_tombstones d WHERE d.revisionUuid = r.revisionUuid)
+RETURNING revisionUuid;
 
 countFrozenSeries:
 SELECT count(*) FROM estimate_v1_frozen f JOIN estimate_revisions r USING(revisionUuid) WHERE r.seriesUuid = ?;

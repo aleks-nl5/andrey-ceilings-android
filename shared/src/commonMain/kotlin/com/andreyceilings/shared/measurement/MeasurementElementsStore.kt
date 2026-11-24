@@ -261,9 +261,37 @@ class MeasurementElementsStore(private val database: PrototypeDatabase, private 
     ): Boolean = estimateAccess {
         estimates.setWorkflowStatus(revisionUuid, expectedVersion, status, nowMillis(), expectedApprovals)
     }
-    suspend fun markQuoteShareDispatched(quote: SavedIndividualQuote): Boolean {
-        if (quote.status != EstimateWorkflowStatus.DRAFT) return true
-        return setQuoteStatus(quote.revisionUuid, quote.statusVersion, EstimateWorkflowStatus.SENT)
+    internal class QuoteShareResult(val revisionUuid: String, val changed: Boolean)
+    private val shareResult = MutableStateFlow<QuoteShareResult?>(null)
+    internal val quoteShareResult = shareResult.asStateFlow()
+
+    /** Accept the platform callback synchronously. The store drains this write on session shutdown. */
+    internal fun markQuoteShareDispatched(quote: SavedIndividualQuote, onComplete: (Boolean) -> Unit = {}) {
+        if (quote.status != EstimateWorkflowStatus.DRAFT) {
+            onComplete(true)
+            return
+        }
+        fun finish(changed: Boolean) {
+            shareResult.value = QuoteShareResult(quote.revisionUuid, changed)
+            onComplete(changed)
+        }
+        val completion = beginWrite()
+        if (completion == null) {
+            finish(false)
+            return
+        }
+        CoroutineScope(SupervisorJob() + modelDispatcher).launch(start = CoroutineStart.UNDISPATCHED) {
+            val changed = withContext(NonCancellable + Dispatchers.Default) {
+                try {
+                    estimates.setWorkflowStatus(quote.revisionUuid, quote.statusVersion, EstimateWorkflowStatus.SENT, nowMillis())
+                } catch (_: Exception) {
+                    false
+                } finally {
+                    endWrite(completion)
+                }
+            }
+            finish(changed)
+        }
     }
 
     suspend fun deleteQuoteRevision(seriesUuid: String, revisionUuid: String, expectedStatusVersion: Long): Boolean =

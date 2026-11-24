@@ -11,6 +11,8 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.ui.semantics.Role
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -92,6 +94,13 @@ private const val SheetMotionMillis = 240
 private val WorkspacePanelShape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp)
 
 private enum class MeasurementEditContext { CONTOUR, ELEMENTS, COST, QUOTES }
+
+private fun MeasurementEditContext.tabIcon(): ImageVector = when (this) {
+    MeasurementEditContext.CONTOUR -> Icons.Default.CropSquare
+    MeasurementEditContext.ELEMENTS -> Icons.Default.Category
+    MeasurementEditContext.COST -> Icons.Default.Payments
+    MeasurementEditContext.QUOTES -> Icons.Default.History
+}
 
 @Composable
 private fun MeasurementEditContext.displayLabel(): String = stringResource(when (this) {
@@ -186,6 +195,7 @@ fun MeasurementEditScreen(
     var sheet by rememberSaveable(measurementUuid) { mutableStateOf(MeasurementSheet.CLOSED) }
     var lastOpenSheet by rememberSaveable(measurementUuid) { mutableStateOf(MeasurementSheet.COMPACT) }
     SideEffect { if (sheet != MeasurementSheet.CLOSED) lastOpenSheet = sheet }
+    var lastDrawingContext by rememberSaveable(measurementUuid) { mutableStateOf(MeasurementEditContext.CONTOUR) }
     val context = if (fullscreen) fullscreenContext else normalContext
     val quotes = remember(model, quoteStore) { WorkspaceQuoteSession() }
     val sourceStale = (draftPricing as? DraftPricingResult.Unavailable)?.reason == PricingProblemCode.STALE_SOURCE
@@ -201,15 +211,21 @@ fun MeasurementEditScreen(
         visibleQuote?.let { MeasurementGeometryCodec.read(it.frozen.source.drawingJson) }
     }
     val expandedQuote = context == MeasurementEditContext.QUOTES && quotes.expanded
+    var pendingQuoteExit by remember(quotes) { mutableStateOf<(() -> Unit)?>(null) }
+    val quoteRouteExit = remember(quotes) {
+        { proceed: () -> Unit ->
+            if (quotes.presenter?.hasUserChanges == true) {
+                if (pendingQuoteExit == null) pendingQuoteExit = proceed
+                true
+            } else false
+        }
+    }
     val handleQuoteBack by rememberUpdatedState<() -> Boolean>({
         when {
+            context != MeasurementEditContext.QUOTES -> false
             quotes.presenter?.saveState?.value?.saving == true -> true
             quotes.presenter != null -> {
                 if (quotes.presenter?.hasUserChanges == true) {
-                    if (fullscreen) {
-                        fullscreenContext = MeasurementEditContext.QUOTES
-                        if (sheet == MeasurementSheet.CLOSED) sheet = MeasurementSheet.COMPACT
-                    } else normalContext = MeasurementEditContext.QUOTES
                     quotes.discardPending = true
                 } else quotes.closeDraft(quoteStore)
                 true
@@ -271,8 +287,6 @@ fun MeasurementEditScreen(
         sheet = MeasurementSheet.CLOSED
     }
     fun exitFullscreen() {
-        if (fullscreenContext == MeasurementEditContext.COST || fullscreenContext == MeasurementEditContext.QUOTES)
-            normalContext = fullscreenContext
         closeSheet()
         model.cancelPointDrag(); model.cancelLineDrag(); model.cancelAreaDrag()
         fullscreen = false
@@ -308,11 +322,13 @@ fun MeasurementEditScreen(
             }
         }
     }
-    DisposableEffect(model, navigationGuard) {
+    DisposableEffect(model, navigationGuard, quoteRouteExit) {
         navigationGuard?.bindEdit(model); navigationGuard?.bindSurface(surfaceBack)
+        navigationGuard?.bindQuoteExit(quoteRouteExit)
         onDispose {
             model.cancelPointDrag(); model.cancelLineDrag(); model.cancelAreaDrag()
             navigationGuard?.unbindEdit(model); navigationGuard?.unbindSurface(surfaceBack)
+            navigationGuard?.unbindQuoteExit(quoteRouteExit)
         }
     }
     SideEffect { navigationGuard?.fullscreen?.value = fullscreen }
@@ -378,6 +394,7 @@ fun MeasurementEditScreen(
         }
     }
     fun openContext(mode: MeasurementEditContext, extent: MeasurementSheet = MeasurementSheet.COMPACT) {
+        if (mode == MeasurementEditContext.CONTOUR || mode == MeasurementEditContext.ELEMENTS) lastDrawingContext = mode
         if (fullscreen) {
             if (fullscreenContext != mode) focus.clearFocus()
             fullscreenContext = mode
@@ -533,7 +550,12 @@ fun MeasurementEditScreen(
                         icon = Icons.AutoMirrored.Filled.ArrowBack,
                         enabled = canLeaveSurface,
                         modifier = Modifier.testTag("measurement-edit-back")
-                    ) { if (!surfaceBack()) model.requestExit(onBack) }
+                    ) {
+                        if (!surfaceBack()) {
+                            if (navigationGuard != null) onBack()
+                            else if (!quoteRouteExit { model.requestExit(onBack) }) model.requestExit(onBack)
+                        }
+                    }
                     if (inlineKeyboardPanel) Spacer(Modifier.weight(1f)) else Column(Modifier.weight(1f)) {
                         Text(draft.name.ifBlank { stringResource(Res.string.p5c_ceiling) }, maxLines = 1,
                             overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleMedium)
@@ -554,9 +576,11 @@ fun MeasurementEditScreen(
                         ) {
                             if (fullscreen) exitFullscreen() else {
                                 focus.clearFocus()
-                                fullscreenContext = normalContext
-                                sheet = if (normalContext == MeasurementEditContext.COST || normalContext == MeasurementEditContext.QUOTES)
-                                    MeasurementSheet.COMPACT else MeasurementSheet.CLOSED
+                                fullscreenContext = when (normalContext) {
+                                    MeasurementEditContext.CONTOUR, MeasurementEditContext.ELEMENTS -> normalContext
+                                    else -> lastDrawingContext
+                                }
+                                sheet = MeasurementSheet.CLOSED
                                 fullscreen = true
                             }
                         }
@@ -866,42 +890,47 @@ fun MeasurementEditScreen(
                     .testTag("measurement-edit-normal-panel")
             ).then(if (inlineKeyboardPanel) Modifier.padding(start = 60.dp,
                 end = if (statusIsProblem) 112.dp else 60.dp) else Modifier)) {
-                if (showNormalTabs || (fullscreen && sheet != MeasurementSheet.CLOSED && !inlineKeyboardPanel)) Row(
+                if (showNormalTabs) Row(
                     Modifier.fillMaxWidth().onSizeChanged { tabRowPx = it.height }.testTag("measurement-edit-tab-row"),
                     horizontalArrangement = Arrangement.spacedBy(4.dp),
-                    verticalAlignment = Alignment.CenterVertically) {
-                    val tabLines = if (LocalDensity.current.fontScale >= 1.35f) 2 else 1
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
                     MeasurementEditContext.entries.forEach { mode ->
-                        FilterChip(
-                            selected = context == mode,
-                            enabled = canLeaveSurface,
-                            onClick = { if (context != mode && !model.promptForDirtyElementBeforeNavigation()) { focus.clearFocus(); openContext(mode) } },
-                            label = { Text(mode.displayLabel(), Modifier.fillMaxWidth(), textAlign = TextAlign.Center,
-                                maxLines = tabLines, softWrap = tabLines > 1, overflow = TextOverflow.Ellipsis) },
-                            modifier = Modifier.weight(1f).testTag("measurement-edit-context-${mode.name.lowercase()}"),
-                            colors = FilterChipDefaults.filterChipColors(
-                                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                                labelColor = MaterialTheme.colorScheme.onSurface,
-                                selectedContainerColor = MaterialTheme.colorScheme.secondaryContainer,
-                                selectedLabelColor = MaterialTheme.colorScheme.onSecondaryContainer
-                            )
-                        )
+                        val active = context == mode
+                        val label = mode.displayLabel()
+                        Surface(
+                            modifier = (if (active) Modifier.weight(1f) else Modifier.width(48.dp))
+                                .height(48.dp).padding(vertical = 4.dp)
+                                .testTag("measurement-edit-context-${mode.name.lowercase()}"),
+                            color = if (active) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh,
+                            contentColor = if (active) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurface,
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Row(
+                                Modifier.fillMaxSize().selectable(active, enabled = canLeaveSurface, role = Role.Tab) {
+                                    if (!active && !model.promptForDirtyElementBeforeNavigation()) {
+                                        focus.clearFocus()
+                                        openContext(mode)
+                                    }
+                                },
+                                horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(mode.tabIcon(), contentDescription = if (active) null else label, modifier = Modifier.size(18.dp))
+                                if (active) Text(label, style = MaterialTheme.typography.labelLarge)
+                            }
+                        }
                     }
                 }
-                AnimatedVisibility(visible = fullscreen && sheet == MeasurementSheet.CLOSED && !keyboardVisible,
+                AnimatedVisibility(visible = fullscreen && !keyboardVisible,
                     enter = fadeIn() + slideInVertically { it / 2 },
                     exit = fadeOut() + slideOutVertically { it / 2 }) {
                     if (fullscreen) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally)) {
-                        for (mode in MeasurementEditContext.entries) {
+                        for (mode in listOf(MeasurementEditContext.CONTOUR, MeasurementEditContext.ELEMENTS)) {
                             val expanded = sheet != MeasurementSheet.CLOSED && context == mode
                             MeasurementEditorFab(
                                 label = mode.displayLabel(),
-                                icon = when (mode) {
-                                    MeasurementEditContext.CONTOUR -> Icons.Default.CropSquare
-                                    MeasurementEditContext.ELEMENTS -> Icons.Default.Category
-                                    MeasurementEditContext.COST -> Icons.Default.Payments
-                                    MeasurementEditContext.QUOTES -> Icons.Default.History
-                                },
+                                icon = mode.tabIcon(),
                                 enabled = canLeaveSurface,
                                 modifier = Modifier.testTag("measurement-edit-context-${mode.name.lowercase()}")
                                     .measurementSheetDrag(onUp = { openContext(mode, MeasurementSheet.EXPANDED) }, onDown = ::closeSheet)
@@ -1125,6 +1154,23 @@ fun MeasurementEditScreen(
                         Text("Перезавантажити запис")
                     }
                 }
+            }
+        )
+    }
+
+    pendingQuoteExit?.let { proceed ->
+        AlertDialog(
+            onDismissRequest = { pendingQuoteExit = null },
+            title = { Text(stringResource(Res.string.p5d_discard_title)) },
+            dismissButton = {
+                TextButton(onClick = {
+                    pendingQuoteExit = null
+                    proceed()
+                    // Keep the quote until this route actually leaves, including when measurement exit is cancelled.
+                }) { Text(stringResource(Res.string.p5d_discard), color = MaterialTheme.colorScheme.error) }
+            },
+            confirmButton = {
+                TextButton(onClick = { pendingQuoteExit = null }) { Text(stringResource(Res.string.p5d_cancel)) }
             }
         )
     }
@@ -1403,7 +1449,7 @@ private fun MeasurementGeometrySummary(geometry: FrozenPolygonGeometry?, cents: 
     Row(
         Modifier.fillMaxWidth().offset(y = (-7).dp).padding(horizontal = 12.dp, vertical = 1.dp)
             .testTag("measurement-live-geometry"),
-        horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally),
+        horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterHorizontally),
         verticalAlignment = Alignment.CenterVertically
     ) {
         MeasurementGeometryMetric(Icons.Default.CropSquare, areaValue, stringResource(

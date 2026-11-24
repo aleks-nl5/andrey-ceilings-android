@@ -26,6 +26,7 @@ class MeasurementCreateNavigationGuard {
     }
 
     private var edit: MeasurementEditModel? = null
+    private var quoteExit: ((() -> Unit) -> Boolean)? = null
     private var surfaceBack: (() -> Boolean)? = null
     fun bindEdit(model: MeasurementEditModel) { edit = model }
     fun unbindEdit(model: MeasurementEditModel) {
@@ -33,14 +34,24 @@ class MeasurementCreateNavigationGuard {
     }
     fun bindSurface(back: () -> Boolean) { surfaceBack = back }
     fun unbindSurface(back: () -> Boolean) { if (surfaceBack === back) surfaceBack = null }
+    internal fun bindQuoteExit(handler: (() -> Unit) -> Boolean) { quoteExit = handler }
+    internal fun unbindQuoteExit(handler: (() -> Unit) -> Boolean) {
+        if (quoteExit === handler) quoteExit = null
+    }
+
+    private fun requestEditExit(close: () -> Unit) {
+        val model = edit
+        val finish = { if (model == null) close() else model.requestExit(close) }
+        if (quoteExit?.invoke(finish) != true) finish()
+    }
+
     fun requestClose(close: () -> Unit) {
         if (quoteSaving) return
         val elementModel = elements
         if (elementModel?.points?.value?.positionEditor != null) { elementModel.requestPositionExit(close); return }
         if (elementModel != null && !elementModel.finishPlacement()) return
         if (elementModel?.editor?.value != null) { elementModel.requestExit(close); return }
-        val model = edit
-        if (model != null) model.requestExit(close)
+        if (edit != null) requestEditExit(close)
         else if (editor?.state?.value?.let { it.saving || it.savedId != null } != true) close()
     }
 
@@ -115,9 +126,15 @@ class MeasurementCreateNavigationGuard {
         if(proposed==current.back() && editState?.let {!it.dirty && (it.drag!=null || it.lineDrag!=null || it.area.drag!=null)}==true)return current
         if (!blocksExit(current)) {
             if (proposed == current.back() && surfaceBack?.invoke() == true) return current
-            if (editState != null && (editState.dirty || editState.uncertain)) {
-                editModel.requestExit { applyApproved(approved(proposed)) }
-                return current
+            if (editState != null && (quoteExit != null || editState.dirty || editState.uncertain)) {
+                var next = current
+                var synchronous = true
+                requestEditExit {
+                    val destination = approved(proposed)
+                    if (synchronous) next = destination else applyApproved(destination)
+                }
+                synchronous = false
+                return next
             }
             return approved(proposed)
         }

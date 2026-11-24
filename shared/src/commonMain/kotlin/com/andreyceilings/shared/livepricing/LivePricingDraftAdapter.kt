@@ -26,10 +26,6 @@ internal fun projectDraftPricing(
     if (basis is DraftPricingBasis.Unavailable) return unavailable(basis.reason)
     val geometry = validateMeasurementCreate(before.draft).geometry
         ?: return unavailable(PricingProblemCode.INVALID_GEOMETRY)
-    if (!model.canSaveMountingDraft() || before.drag != null || before.lineDrag != null || before.area.drag != null) {
-        return unavailable(PricingProblemCode.INVALID_SOURCE)
-    }
-
     val original = before.original
     val projectUuid: String
     val catalog: ActiveCatalogSnapshot

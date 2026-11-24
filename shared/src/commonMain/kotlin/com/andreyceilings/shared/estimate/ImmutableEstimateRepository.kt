@@ -264,12 +264,10 @@ class ImmutableEstimateRepository(private val database: PrototypeDatabase) {
         return database.transactionWithResult {
             database.priceGroupsQueries.claimCatalogWrite()
             val workflow = database.revisionWorkflowQueries
-            val target = workflow.selectActiveQuoteWorkflow(revisionUuid).executeAsOneOrNull()
-                ?: return@transactionWithResult false
-            if (target.seriesUuid != seriesUuid || target.version != expectedStatusVersion ||
-                target.status == null || target.status == EstimateWorkflowStatus.APPROVED.name
-            ) return@transactionWithResult false
-            database.frozenRevisionQueries.insertRevisionTombstone(revisionUuid, now)
+            database.frozenRevisionQueries.insertRevisionTombstone(
+                deletedAt = now, revisionUuid = revisionUuid, seriesUuid = seriesUuid,
+                expectedStatusVersion = expectedStatusVersion
+            ).executeAsOneOrNull() ?: return@transactionWithResult false
             if (workflow.selectActiveSeriesWorkflow(seriesUuid).executeAsList().isEmpty()) {
                 checkNotNull(queries.softDeleteEstimateSeries(now, seriesUuid).executeAsOneOrNull())
             }

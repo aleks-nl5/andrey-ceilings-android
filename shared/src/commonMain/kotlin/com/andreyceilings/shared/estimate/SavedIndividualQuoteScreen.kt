@@ -38,7 +38,8 @@ fun SavedIndividualQuoteList(store: MeasurementElementsStore?, projectId: Long? 
             finally { busy = false; generation++ }
         }
     }
-    LaunchedEffect(store, projectId, measurementUuid, generation) {
+    val shareResult = store?.quoteShareResult?.collectAsState()?.value
+    LaunchedEffect(store, projectId, measurementUuid, generation, shareResult) {
         if (store == null) {
             rows = emptyList()
             return@LaunchedEffect
@@ -113,7 +114,8 @@ fun SavedIndividualQuoteDialog(store: MeasurementElementsStore?, seriesUuid: Str
     var delete by remember(session) { mutableStateOf<SavedIndividualQuote?>(null) }
     val scope = rememberCoroutineScope()
 
-    LaunchedEffect(store, selected, session.refresh) {
+    val shareResult = store?.quoteShareResult?.collectAsState()?.value
+    LaunchedEffect(store, selected, session.refresh, shareResult) {
         try {
             val exact = checkNotNull(store).savedQuote(seriesUuid, selected)
             if (exact == null) { error = true; quote = null }

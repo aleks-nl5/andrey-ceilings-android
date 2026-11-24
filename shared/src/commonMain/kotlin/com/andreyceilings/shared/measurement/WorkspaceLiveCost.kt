@@ -13,6 +13,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.andreyceilings.shared.livepricing.*
@@ -46,35 +47,47 @@ internal fun WorkspaceLiveCost(
                 groups.forEach { bucket ->
                     val subtotal = preview?.bucketAmount(bucket)
                     val title = bucketLabel(bucket)
-                    Column(Modifier.weight(1f).padding(horizontal = 8.dp, vertical = 4.dp)) {
+                    Column(
+                        Modifier.weight(1f).padding(horizontal = 8.dp, vertical = 4.dp),
+                        horizontalAlignment = if (bucket == PricingBucket.POTENTIAL) Alignment.End else Alignment.Start
+                    ) {
                         Text(title, style = MaterialTheme.typography.labelSmall)
                         Text(if (subtotal == null) stringResource(Res.string.p5d_unknown)
                             else if (bucket == PricingBucket.POTENTIAL) stringResource(Res.string.p5d_plus_amount, measurementMoney(subtotal))
                             else measurementMoney(subtotal), style = MaterialTheme.typography.titleMedium)
                     }
                 }
-                val issues = when (result) {
-                    null -> stringResource(Res.string.p5d_amount_pending)
-                    is DraftPricingResult.Unavailable -> workspacePricingProblem(result.reason)
-                    is DraftPricingResult.Loaded -> (result.preview.fatalProblems + result.preview.mandatoryProblems)
-                        .map { workspacePricingProblem(it.code) }.distinct().joinToString("\n")
-                        .ifBlank { if (result.preview.unresolvedItems.isNotEmpty()) stringResource(Res.string.p5d_amount_incomplete) else "" }
-                }
-                if (issues.isNotBlank()) WorkspaceCostHelp(issues)
             }
+        }
+        val issues = when (result) {
+            null -> stringResource(Res.string.p5d_amount_pending)
+            is DraftPricingResult.Unavailable -> workspacePricingProblem(result.reason)
+            is DraftPricingResult.Loaded -> (result.preview.fatalProblems + result.preview.mandatoryProblems)
+                .map { workspacePricingProblem(it.code) }.distinct().joinToString("\n")
+                .ifBlank { if (result.preview.unresolvedItems.isNotEmpty()) stringResource(Res.string.p5d_amount_incomplete) else "" }
         }
         Column(Modifier.fillMaxWidth().weight(1f, fill = false).verticalScroll(rememberScrollState())
             .padding(bottom = bottomInset + 8.dp)) {
+            if (issues.isNotBlank() && preview?.priceableLines.isNullOrEmpty() && preview?.unresolvedItems.isNullOrEmpty()) {
+                WorkspaceCostHelp(issues)
+            }
             for (bucket in groups) {
                 val priced = preview?.priceableLines.orEmpty().filter { it.bucket == bucket }
                     .sortedBy { it.businessRole?.ordinal ?: Int.MAX_VALUE }
                 val unresolved = preview?.unresolvedItems.orEmpty().filter { it.bucket == bucket }
                 if (priced.isNotEmpty() || unresolved.isNotEmpty()) {
-                    Text(bucketLabel(bucket), Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                        style = MaterialTheme.typography.labelMedium)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(bucketLabel(bucket), Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                            style = MaterialTheme.typography.labelMedium)
+                        if (bucket == groups.first() && issues.isNotBlank()) WorkspaceCostHelp(issues)
+                    }
                 }
-                for (line in priced) {
-                    WorkspaceFinancialRow(line, onOpen = line.elementUuid?.let { id -> { unavailableLink = !onElement(id) } })
+                for ((index, line) in priced.withIndex()) {
+                    WorkspaceFinancialRow(line, showRate = true,
+                        onOpen = line.elementUuid?.let { id -> { unavailableLink = !onElement(id) } })
+                    if (line.businessRole == BusinessRole.CANVAS && (index < priced.lastIndex || unresolved.isNotEmpty())) {
+                        HorizontalDivider(Modifier.padding(horizontal = 8.dp), color = MaterialTheme.colorScheme.outlineVariant)
+                    }
                 }
                 for (item in unresolved) {
                     Row(Modifier.fillMaxWidth().defaultMinSize(minHeight = 48.dp)
@@ -105,25 +118,34 @@ internal fun bucketLabel(bucket: PricingBucket) = stringResource(
 )
 
 @Composable
-internal fun WorkspaceFinancialRow(line: LiveEstimateLine, onOpen: (() -> Unit)? = null) {
+internal fun WorkspaceFinancialRow(line: LiveEstimateLine, showRate: Boolean = false, onOpen: (() -> Unit)? = null) {
     Row(Modifier.fillMaxWidth().defaultMinSize(minHeight = 48.dp)
         .then(if (onOpen != null) Modifier.clickable(onClick = onOpen) else Modifier)
         .padding(horizontal = 8.dp, vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f).padding(end = 4.dp)) {
             Text(line.title, style = MaterialTheme.typography.bodyMedium)
-            Text(stringResource(Res.string.p5d_line_rate, formatElementMilli(line.effectiveBillableQuantityMilli),
-                line.unit, measurementMoney(line.unitPriceCents)), style = MaterialTheme.typography.labelSmall)
+            if (showRate) Text(stringResource(Res.string.p5d_line_rate, formatElementMilli(line.effectiveBillableQuantityMilli),
+                line.unit, measurementMoney(line.unitPriceCents)), style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+            else if (line.quantityOrigin == QuantityOrigin.EXPLICIT_BILLABLE_OVERRIDE) {
+                Text(stringResource(Res.string.p5d_override_quantity, formatElementMilli(line.effectiveBillableQuantityMilli), line.unit),
+                    style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
         }
-        Text(measurementMoney(line.totalCents), style = MaterialTheme.typography.bodyMedium)
+        if (line.reviewFlags.isNotEmpty()) {
+            WorkspaceCostHelp(line.reviewFlags.map { workspacePricingProblem(it) }.joinToString("\n"),
+                description = stringResource(Res.string.p5d_placement_details))
+        }
+        Text(measurementMoney(line.totalCents), style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
     }
 }
 
 @Composable
-internal fun WorkspaceCostHelp(text: String) {
+internal fun WorkspaceCostHelp(text: String, description: String? = null) {
     var open by remember { mutableStateOf(false) }
     Box {
         IconButton(onClick = { open = true }) {
-            Icon(Icons.Default.Info, stringResource(Res.string.p5d_cost_details), Modifier.size(18.dp))
+            Icon(Icons.Default.Info, description ?: stringResource(Res.string.p5d_cost_details), Modifier.size(18.dp))
         }
         DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
             Text(text, Modifier.widthIn(max = 280.dp).padding(12.dp), style = MaterialTheme.typography.bodySmall)
