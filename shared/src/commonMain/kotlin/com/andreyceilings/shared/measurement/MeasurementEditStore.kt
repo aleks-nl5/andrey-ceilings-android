@@ -242,6 +242,21 @@ class MeasurementEditStore(private val database: PrototypeDatabase, private val 
         loadDocument(draft.projectId, row.id, allowClosing)
     }
 
+    /** Receipt verification is mandatory for automatic recovery. Only an explicitly
+     * confirmed reload (operation == null) may select the current record by UUID. */
+    internal suspend fun readCreatedDocument(draft: MeasurementCreateDraft, operation: String? = null): MeasurementEditDocument? =
+        withContext(Dispatchers.Default) {
+            pointRead.withLock {
+                if (sessionClosed.value) throw MeasurementEditConflict()
+                database.transactionWithResult {
+                    if (projects.find(draft.projectId) == null) throw MeasurementEditConflict()
+                    if (operation != null) return@transactionWithResult createdDocument(draft, operation)
+                    val row = measurements.findByUuid(draft.recordUuid) ?: return@transactionWithResult null
+                    loadDocument(draft.projectId, row.id)
+                }
+            }
+        }
+
     fun now(): Long = nowMillis()
     fun operationCommitted(uuid:String,measurement:String,version:Long):Boolean {
         if(sessionClosed.value)return false

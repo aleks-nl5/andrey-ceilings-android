@@ -102,6 +102,44 @@ class WorkspacePlacementDraftTest {
     }
 
     @Test
+    fun creationConflictReloadOpensExistingUuidWithoutReplayingOrOverwriting() = runBlocking {
+        JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).use { driver ->
+            PriceCatalogSchema.create(driver)
+            val db = PrototypeDatabase(driver)
+            val project = ProjectRepository(db).createReturningId(null, "Creation reload", createdAt = 1)
+            val store = MeasurementEditStore(db) { 101 }
+            val draft = MeasurementCreateFixtures.draft(project, "rectangle",
+                com.andreyceilings.shared.calculation.MeasurementPrecision.ONE_MILLIMETER)
+            val first = MeasurementEditModel(store, MeasurementEditDocument(0, 0, draft))
+            first.saveInWorkspace()
+            val id = assertNotNull(first.state.value.createdId, first.state.value.error)
+            val committed = store.load(project, id)
+
+            // A different operation for an already committed UUID must be rejected.
+            val second = MeasurementEditModel(store, MeasurementEditDocument(0, 0, draft))
+            second.saveInWorkspace()
+            assertTrue(second.state.value.conflict, second.state.value.error)
+            assertNull(second.state.value.createdId)
+            val restored = assertNotNull(MeasurementEditModel.restore(
+                MeasurementEditStore(db) { 102 }, second.snapshot(), project, 0))
+            restored.reconcile()
+            assertTrue(restored.state.value.conflict)
+            restored.reload()
+            assertEquals(id, restored.state.value.createdId, restored.state.value.error)
+            assertFalse(restored.state.value.conflict)
+            assertEquals(committed, store.load(project, id))
+            assertEquals(id, MeasurementRepository(db).forProject(project).single().id)
+
+            // A recreation before the navigation callback must reopen the same UUID.
+            val reopened = assertNotNull(MeasurementEditModel.restore(
+                MeasurementEditStore(db) { 103 }, restored.snapshot(), project, 0))
+            reopened.reconcile()
+            assertEquals(id, reopened.state.value.createdId, reopened.state.value.error)
+            assertEquals(committed, store.load(project, id))
+        }
+    }
+
+    @Test
     fun catalogApprovalDefaultsToDiscussingAndCanBeApprovedWithUndoRedoAndSave() = runBlocking {
         JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).use { driver ->
             PriceCatalogSchema.create(driver)

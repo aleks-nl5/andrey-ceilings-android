@@ -70,6 +70,7 @@ class MeasurementEditModel(
     private var inputStart: CeilingFormHistory? = null
     private var attempt: CeilingWriteAttempt? = null
     private var reconcileAttempt: CeilingWriteAttempt? = null
+    private var approvedReloadId: Long? = null
     private fun form(draft: MeasurementCreateDraft = state.value.draft) = CeilingFormHistory(
         draft.snapshot(), state.value.pointEdits, state.value.wallGeneration, state.value.lineEdits,
         state.value.declaredLengths, state.value.area.history(), state.value.additions, state.value.contourAnchorReference
@@ -164,13 +165,38 @@ class MeasurementEditModel(
             reloadDocument(keepSelection = false)
             return
         }
-        val receipt = attempt ?: return
         if (current.saving || current.checking || current.saved || current.exitReady) return
-        reconcileAttempt = receipt
-        reconcileAfterRestore = true
-        needsReadAfterRestore = true
+        // Explicit reload follows discard confirmation. Read by UUID even when a
+        // rejected write cleared its receipt; never replay a write from this action.
+        val source = store ?: return
         mutableState.value = current.copy(checking = true)
-        reconcile(keepEditing = true)
+        try {
+            val loaded = source.readCreatedDocument(current.draft)
+            attempt = null
+            reconcileAttempt = null
+            approvedReloadId = null
+            reconcileAfterRestore = false
+            needsReadAfterRestore = false
+            exitAction = null
+            source.release(token)
+            if (loaded == null) {
+                // No row exists: retain the draft and allow an explicit new Save.
+                mutableState.value = current.copy(checking = false, conflict = false,
+                    uncertain = false, saveFailed = false, error = null, exitRequested = false)
+            } else {
+                // The user chose the actual database record, not receipt confirmation.
+                undo.clear(); redo.clear(); inputStart = null
+                mutableState.value = current.copy(checking = false, conflict = false,
+                    uncertain = false, saveFailed = false, error = null, exitRequested = false,
+                    saved = true, createdId = loaded.measurementId)
+            }
+        } catch (cancelled: CancellationException) {
+            mutableState.value = current
+            throw cancelled
+        } catch (_: Exception) {
+            mutableState.value = current.copy(checking = false, conflict = true,
+                error = MeasurementEditConflict().message)
+        }
     }
     internal suspend fun reloadDrawing() {reloadDocument(keepSelection=true)}
     private suspend fun reloadDocument(keepSelection:Boolean) {
@@ -1323,7 +1349,12 @@ class MeasurementEditModel(
             write.now?.let { put("writeTime", it) }
         }
         put("reviewPrompt",state.value.reviewPrompt);put("reviewing",state.value.reviewing)
-        put("writeStarted", state.value.saving || state.value.saved || state.value.uncertain || state.value.createdId != null || reconcileAfterRestore)
+        put("writeStarted", state.value.saving || state.value.saved || state.value.uncertain || state.value.createdId != null || reconcileAfterRestore ||
+            (state.value.creating && reconcileAttempt != null))
+        put("creationConflict", state.value.creating && state.value.conflict)
+        (approvedReloadId ?: state.value.createdId?.takeIf {
+            state.value.creating && state.value.saved && attempt == null && reconcileAttempt == null
+        })?.let { put("approvedReloadId", it) }
         // Leave room for the draft and the rest of Android's saved instance state.
         fun bounded(history: List<CeilingFormHistory>): List<String> {
             var remaining = 64_000
@@ -1387,6 +1418,7 @@ class MeasurementEditModel(
                             require(reference.walls.map { it.ordinal } == geometry.vertices.indices.toList())
                         }
                     })
+                it.approvedReloadId = json["approvedReloadId"]?.jsonPrimitive?.longOrNull
                 it.reconcileAttempt = json["receipt"]?.jsonPrimitive?.content?.let { receipt ->
                     CeilingWriteAttempt(receipt, json["writeTime"]?.jsonPrimitive?.longOrNull)
                 }
@@ -1402,7 +1434,9 @@ class MeasurementEditModel(
                 // Reconciliation is performed by the screen as a READ, never a Save replay.
                 it.reconcileAfterRestore = json.getValue("writeStarted").jsonPrimitive.boolean
                 it.needsReadAfterRestore = measurementId != 0L || it.reconcileAfterRestore
-                it.mutableState.value = it.state.value.copy(checking = store != null && it.needsReadAfterRestore)
+                val creationConflict = measurementId == 0L && json["creationConflict"]?.jsonPrimitive?.booleanOrNull == true
+                it.mutableState.value = it.state.value.copy(checking = store != null && it.needsReadAfterRestore,
+                    conflict = creationConflict, error = if (creationConflict) MeasurementEditConflict().message else null)
             }
         }.getOrNull()
     }
@@ -1417,15 +1451,24 @@ class MeasurementEditModel(
         try {
             val before = state.value
             if (before.creating) {
+                val approvedId = approvedReloadId
+                if (approvedId != null) {
+                    val loaded = store.readCreatedDocument(before.draft)
+                    if (loaded?.measurementId != approvedId) throw MeasurementEditConflict()
+                    approvedReloadId = null
+                    mutableState.value = before.copy(checking = false, conflict = false, uncertain = false,
+                        error = null, saved = true, createdId = loaded.measurementId)
+                    return
+                }
                 val pending = checkNotNull(reconcileAttempt)
-                val created = withContext(Dispatchers.Default) { store.createdDocument(before.draft, pending.operation) }
+                val created = store.readCreatedDocument(before.draft, pending.operation)
                 reconcileAttempt = null
                 if (created == null) {
                     attempt = pending
-                    mutableState.value = before.copy(checking = false, uncertain = false, error = null)
+                    mutableState.value = before.copy(checking = false, conflict = false, uncertain = false, error = null)
                 } else {
                     attempt = pending
-                    mutableState.value = before.copy(checking = false, uncertain = false, error = null,
+                    mutableState.value = before.copy(checking = false, conflict = false, uncertain = false, error = null,
                         saved = true, createdId = created.measurementId)
                 }
                 return
