@@ -774,7 +774,7 @@ internal fun WorkspaceWorkList(
                 Icon(Icons.Default.OpenWith, stringResource(Res.string.p5b_place_more))
             }
             IconButton(onClick = {
-                if (model.selectFirstWorkspacePlacement(work.uuid)) {
+                if (model.openWorkspacePlacement(work.uuid)) {
                     quantityEditingWork = null
                     onOpenGeometry()
                 }

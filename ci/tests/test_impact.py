@@ -130,6 +130,15 @@ class ImpactTest(unittest.TestCase):
         self.assertEqual(result.windows_smoke_tests, ())
         self.assertTrue(result.android_smoke_tests)
 
+    def test_p5b_windows_scenes_remain_selected_with_deep_and_ci_paths(self):
+        result = outcome(".github/workflows/draft-impact-feedback.yml",
+                         f"{SHARED_MEASUREMENT}/MeasurementEditModel.kt")
+        self.assertEqual(result.depths, ("deep", "deep", "deep"))
+        self.assertEqual(result.windows_smoke_tests, tuple(
+            f"com.andreyceilings.desktop.{name}" for name in
+            ("AreaFeatureSceneTest", "LinePlacementSceneTest", "PointEditingSceneTest")
+        ))
+
     def test_android_smoke_unions_mapped_classes_and_deep_overrides_them(self):
         result = outcome(ANDROID_FONT, SHARED_DRAWING, SHARED_GRADIENT)
         self.assertEqual(result.android_smoke_tests, (AREA_TOUCH_TEST, WORKSPACE_LAYOUT_TEST, OVERLAY_DRAG_TEST))

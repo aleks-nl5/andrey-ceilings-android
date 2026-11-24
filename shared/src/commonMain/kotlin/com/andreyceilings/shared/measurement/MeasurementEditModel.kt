@@ -556,23 +556,27 @@ class MeasurementEditModel(
      * A work-row settings action must open actual geometry inputs, not merely select
      * a marker that is already visible on the drawing. Never create a second work.
      */
-    internal fun selectFirstWorkspacePlacement(workUuid: String): Boolean {
+    internal fun openWorkspacePlacement(workUuid: String): Boolean {
         if (!editable() || promptForDirtyElementBeforeNavigation()) return false
-        val point = displayPoints().firstOrNull { it.elementUuid == workUuid }
+        val selected = state.value
+        val point = displayPoints().filter { it.elementUuid == workUuid }
+            .minByOrNull { it.uuid != selected.selectedPointUuid }
         if (point != null) {
             selectPoint(point.uuid)
             if (state.value.selectedPointUuid != point.uuid) return false
             openMounting()
             return state.value.mountingInput?.pointUuid == point.uuid
         }
-        val line = displayLines().firstOrNull { it.elementUuid == workUuid }
+        val line = displayLines().filter { it.elementUuid == workUuid }
+            .minByOrNull { it.uuid != selected.selectedLineUuid }
         if (line != null) {
             selectLine(line.uuid)
             if (state.value.selectedLineUuid != line.uuid) return false
             openLineProperties()
             return state.value.lineProperties?.uuid == line.uuid
         }
-        val area = displayAreas().firstOrNull { it.elementUuid == workUuid }
+        val area = displayAreas().filter { it.elementUuid == workUuid }
+            .minByOrNull { it.uuid != selected.area.selected }
         if (area != null) {
             selectArea(area.uuid)
             if (state.value.area.selected != area.uuid) return false

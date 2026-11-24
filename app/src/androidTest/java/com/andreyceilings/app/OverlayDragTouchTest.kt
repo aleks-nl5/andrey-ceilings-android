@@ -128,9 +128,10 @@ class OverlayDragTouchTest {
                 }
                 click("Скасувати дію")
                 if (mode == "fullscreen") panel.assertDoesNotExist()
-                openFromCanvas(point.xMm, point.yMm)
                 captureSelected("selected-point")
-                click("Редагувати розміри")
+                if (mode == "fullscreen") openFromCanvas(point.xMm, point.yMm)
+                else compose.onNodeWithTag("p5b-open-geometry-${point.elementUuid}").performScrollTo().performClick()
+                compose.onNodeWithTag("p5b-first-wall-distance").assertExists()
                 captureSelected("point-inline")
                 compose.onNode(isDialog()).assertDoesNotExist()
                 click("Скасувати")
@@ -163,8 +164,8 @@ class OverlayDragTouchTest {
                 assertEquals(viewport, restored.config[MeasurementDrawingSemantics.Viewport])
                 assertEquals(baselineDistance, pixelDistance(restored.config[MeasurementDrawingSemantics.Projection]), 0.01)
                 click("Вписати креслення")
-                click("Зняти виділення")
                 if (mode == "fullscreen") click("Закрити панель")
+                clearSelectionByTappingCanvas()
                 assertEquals(before, OverlayDragFixture.snapshot(driver))
             }
             tap(1000,1500);drag(1000,1050,1300,1250) // selected AREA takes priority over LINE halo
@@ -178,8 +179,11 @@ class OverlayDragTouchTest {
                 }
                 openFromCanvas(1300, 1250)
                 captureSelected("selected-area")
-                if (InstrumentationRegistry.getArguments().getString("p5aSelectedScreenshots") == "true") {
-                    click("Редагувати розміри")
+                val captureArea = InstrumentationRegistry.getArguments().getString("p5aSelectedScreenshots") == "true"
+                if (captureArea && mode == "editor")
+                    compose.onNodeWithTag("p5b-open-geometry-${f.element}").performScrollTo().performClick()
+                if (captureArea || mode == "fullscreen") {
+                    compose.onNodeWithTag("p5b-area-note").assertExists()
                     captureSelected("area-inline")
                     compose.onNode(isDialog()).assertDoesNotExist()
                     click("Скасувати")
@@ -188,6 +192,7 @@ class OverlayDragTouchTest {
                 clearSelectionByTappingCanvas()
                 tap(1000, 1500)
                 openFromCanvas(1000, 1500)
+                if (mode == "fullscreen") click("Скасувати")
             }
             click("Скасувати дію");click("Повторити");click("Скасувати дію")
             if (mode == "fullscreen") click("Закрити панель")
@@ -201,9 +206,8 @@ class OverlayDragTouchTest {
                 assertNull(polygon.mountings[1].anchor)
                 assertNull(polygon.mountings[3].anchor)
             }
-            if (mode == "fullscreen") click("Елементи")
-            click("Зняти виділення")
-            if (mode == "fullscreen") click("Закрити панель")
+            if (mode == "details") click("Зняти виділення")
+            else clearSelectionByTappingCanvas()
             tap(1000,950)
             if(mode!="details")compose.runOnIdle {assertEquals(f.line,m.state.value.selectedLineUuid,"Canvas tap must select LINE UUID before pointer drag; area=${m.state.value.area.selected}; error=${m.state.value.error}")}
             if (mode != "details") {
@@ -213,8 +217,13 @@ class OverlayDragTouchTest {
                 }
                 openFromCanvas(1000, 950)
                 captureSelected("selected-line")
-                if (InstrumentationRegistry.getArguments().getString("p5aSelectedScreenshots") == "true") {
-                    click("Редагувати розміри")
+                val captureLine = InstrumentationRegistry.getArguments().getString("p5aSelectedScreenshots") == "true"
+                if (captureLine && mode == "editor") {
+                    val work = doc.placements.lines.single().elementUuid
+                    compose.onNodeWithTag("p5b-open-geometry-$work").performScrollTo().performClick()
+                }
+                if (captureLine || mode == "fullscreen") {
+                    compose.runOnIdle { assertEquals(f.line, m.state.value.lineProperties?.uuid) }
                     captureSelected("line-inline")
                     compose.onNode(isDialog()).assertDoesNotExist()
                     click("Скасувати")
@@ -229,7 +238,10 @@ class OverlayDragTouchTest {
                 assertEquals(PointPositionMm(800,750),m.displayLines().single().start,"The injected gesture must move the selected LINE")
             }
             openFromCanvas(1300, 750)
-            if (mode == "fullscreen") click("Закрити панель")
+            if (mode == "fullscreen") {
+                click("Скасувати")
+                click("Закрити панель")
+            }
             drag(1800,750,2400,840)
             tap(2800,1500)
             if (mode == "fullscreen") panel.assertDoesNotExist()

@@ -23,6 +23,9 @@ AREA_TOUCH_TEST = f"{ANDROID_TEST_PACKAGE}.AreaFeatureTouchTest"
 WINDOWS_TEST_PACKAGE = "com.andreyceilings.desktop"
 FOUNDATION_SCENE_TEST = f"{WINDOWS_TEST_PACKAGE}.CeilingsFoundationSceneTest"
 MEASUREMENT_SCENE_TEST = f"{WINDOWS_TEST_PACKAGE}.MeasurementEditSceneTest"
+POINT_SCENE_TEST = f"{WINDOWS_TEST_PACKAGE}.PointEditingSceneTest"
+AREA_SCENE_TEST = f"{WINDOWS_TEST_PACKAGE}.AreaFeatureSceneTest"
+LINE_SCENE_TEST = f"{WINDOWS_TEST_PACKAGE}.LinePlacementSceneTest"
 SHARED_SOURCE = "shared/src/commonMain/kotlin/com/andreyceilings/shared"
 
 # Exact paths keep unrelated features, including PDF and persistence code in
@@ -43,6 +46,24 @@ SHARED_SMOKE_TESTS_BY_PATH = {
     f"{SHARED_SOURCE}/theme/CeilingsTheme.kt": ((WORKSPACE_LAYOUT_TEST,), FOUNDATION_SCENE_TEST),
     f"{SHARED_SOURCE}/theme/CeilingsTypography.kt": ((WORKSPACE_LAYOUT_TEST,), MEASUREMENT_SCENE_TEST),
 }
+
+# Restricted QUICK UI proof is independent of the FULL impact classification.
+# These production editor changes merit the same scenes even in a larger PR.
+WINDOWS_P5B_SCENES_BY_PATH = {
+    f"{SHARED_SOURCE}/measurement/MeasurementEditScreen.kt": (MEASUREMENT_SCENE_TEST, POINT_SCENE_TEST),
+    f"{SHARED_SOURCE}/measurement/MeasurementEditModel.kt": (POINT_SCENE_TEST, LINE_SCENE_TEST, AREA_SCENE_TEST),
+    f"{SHARED_SOURCE}/measurement/WorkspaceAddDialog.kt": (AREA_SCENE_TEST,),
+    f"{SHARED_SOURCE}/measurement/WorkspaceGeometryPanel.kt": (POINT_SCENE_TEST, AREA_SCENE_TEST),
+    f"{SHARED_SOURCE}/measurement/WallAnchorEditor.kt": (POINT_SCENE_TEST,),
+}
+for scene in (MEASUREMENT_SCENE_TEST, POINT_SCENE_TEST, AREA_SCENE_TEST, LINE_SCENE_TEST):
+    WINDOWS_P5B_SCENES_BY_PATH[
+        f"desktopApp/src/test/kotlin/{scene.replace('.', '/')}.kt"
+    ] = (scene,)
+
+
+def p5b_windows_scenes(paths: tuple[str, ...]) -> tuple[str, ...]:
+    return tuple(sorted({scene for path in paths for scene in WINDOWS_P5B_SCENES_BY_PATH.get(path, ())}))
 
 
 @dataclass(frozen=True)
@@ -90,7 +111,8 @@ def parse_changes(data: bytes) -> list[Change]:
 
 def _full(reason: str, paths: tuple[str, ...]) -> Impact:
     """Global fail-closed fallback (CI/config/unknown/common business contracts)."""
-    return Impact("FULL", TARGETS, reason, paths, ("deep", "deep", "deep"))
+    return Impact("FULL", TARGETS, reason, paths, ("deep", "deep", "deep"),
+                  windows_smoke_tests=p5b_windows_scenes(paths))
 
 
 def _group(path: str) -> tuple[tuple[str, ...], str] | None:
@@ -167,10 +189,9 @@ def classify(changes: list[Change]) -> Impact:
     if not selected:
         return Impact("FAST", (), "documentation-only; classifier tests", paths, levels)
     if shared_deep:
-        return Impact("FULL", TARGETS, "shared business/database or test contract; all dependent suites", paths,
-                      ("deep", "deep", "deep"))
+        return _full("shared business/database or test contract; all dependent suites", paths)
     android_smoke_tests = ()
-    windows_smoke_tests = ()
+    windows_tests = set(p5b_windows_scenes(paths))
     shared_suites = [SHARED_SMOKE_TESTS_BY_PATH[path]
                      for path in paths if path in SHARED_SMOKE_TESTS_BY_PATH]
     if depths["android"] == "smoke":
@@ -180,11 +201,10 @@ def classify(changes: list[Change]) -> Impact:
         android_tests.update(test for tests, _ in shared_suites for test in tests)
         android_smoke_tests = tuple(sorted(android_tests))
     if depths["desktop"] == "smoke":
-        windows_tests = {FOUNDATION_SCENE_TEST}
+        windows_tests.add(FOUNDATION_SCENE_TEST)
         windows_tests.update(scene for _, scene in shared_suites)
-        windows_smoke_tests = tuple(sorted(windows_tests))
     return Impact("TARGETED", selected, "per-platform source-set dependency union; scoped depth",
-                  paths, levels, android_smoke_tests, windows_smoke_tests)
+                  paths, levels, android_smoke_tests, tuple(sorted(windows_tests)))
 
 
 def impact_from_git(base: str, head: str) -> Impact:

@@ -75,12 +75,22 @@ class WorkspacePlacementDraftTest {
             val workId = assertNotNull(editor.state.value.pointElementUuid)
             assertTrue(editor.placeWorkspacePoint(900, 950))
             val pointId = editor.displayPoints().single().uuid
-            assertTrue(editor.selectFirstWorkspacePlacement(workId))
+            assertTrue(editor.openWorkspacePlacement(workId))
             assertEquals(pointId, editor.state.value.selectedPointUuid)
             assertEquals(pointId, editor.state.value.mountingInput?.pointUuid,
                 "Settings must open the point wall-distance editor, not just select a marker")
             assertEquals(1, editor.workspaceWorks().count { it.uuid == workId })
-            assertFalse(editor.selectFirstWorkspacePlacement("missing"))
+            assertFalse(editor.openWorkspacePlacement("missing"))
+
+            editor.discardMounting()
+            editor.startWorkspacePlacement(editor.workspaceWorks().single { it.uuid == workId })
+            assertTrue(editor.placeWorkspacePoint(1250, 1300))
+            val otherPoint = editor.displayPoints().last()
+            assertNotEquals(pointId, otherPoint.uuid)
+            editor.selectPoint(otherPoint.uuid)
+            assertTrue(editor.openWorkspacePlacement(workId))
+            assertEquals(otherPoint.uuid, editor.state.value.selectedPointUuid)
+            assertEquals(otherPoint.uuid, editor.state.value.mountingInput?.pointUuid)
         }
     }
 
@@ -103,7 +113,7 @@ class WorkspacePlacementDraftTest {
             val line = editor.displayLines().single()
             val lineWorkId = assertNotNull(line.elementUuid)
             editor.clearDrawingSelection()
-            assertTrue(editor.selectFirstWorkspacePlacement(lineWorkId))
+            assertTrue(editor.openWorkspacePlacement(lineWorkId))
             assertEquals(line.uuid, editor.state.value.selectedLineUuid)
             assertEquals(line.uuid, editor.state.value.lineProperties?.uuid)
             editor.discardLineProperties()
@@ -116,7 +126,7 @@ class WorkspacePlacementDraftTest {
             val area = editor.displayAreas().single()
             val areaWorkId = assertNotNull(area.elementUuid)
             editor.clearDrawingSelection()
-            assertTrue(editor.selectFirstWorkspacePlacement(areaWorkId))
+            assertTrue(editor.openWorkspacePlacement(areaWorkId))
             assertEquals(area.uuid, editor.state.value.area.selected)
             assertEquals(area.uuid, editor.state.value.area.properties?.uuid)
             assertEquals(initialWorkIds + setOf(lineWorkId, areaWorkId),
@@ -329,7 +339,7 @@ class WorkspacePlacementDraftTest {
             editor.openLineProperties()
             editor.changeLineProperties(note = "Not yet applied")
             assertTrue(editor.state.value.lineProperties?.dirty == true)
-            assertFalse(editor.selectFirstWorkspacePlacement(original.elementUuid))
+            assertFalse(editor.openWorkspacePlacement(original.elementUuid))
             assertTrue(editor.state.value.linePropertiesDismiss)
             assertEquals("Not yet applied", editor.state.value.lineProperties?.note)
             assertEquals(original.uuid, editor.state.value.lineProperties?.uuid)

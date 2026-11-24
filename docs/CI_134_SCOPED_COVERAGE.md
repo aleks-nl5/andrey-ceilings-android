@@ -8,7 +8,7 @@
 
 | GitHub event | Android | Windows / macOS | iOS | Verification meaning |
 | --- | --- | --- | --- | --- |
-| Draft PR / synchronize | selected quick compile, JVM unit tests and debug APK | affected Windows compile; mapped presentation scene tests | affected iOS framework link | **QUICK**, not FULL |
+| Draft PR / synchronize | unsigned release candidate, JVM unit tests and compile-only instrumentation | affected Windows test compilation and mapped presentation scene tests | affected iOS framework link and Simulator test compilation | **QUICK**, not FULL |
 | Ready for review / synchronize | exactly the same selected QUICK policy | exactly the same QUICK policy | exactly the same QUICK policy | No second deep run |
 | PR docs-only | classifier and Python regression tests only | skip | skip | FAST; platforms not verified |
 | Merge completed → `push` on `main` | FULL Android instrumentation, SQLCipher recovery, ENOSPC, signed APK | FULL Windows encrypted JVM/SQLCipher and Desktop scenes; macOS JVM | FULL native Simulator | Full post-merge validation of exact main SHA |
@@ -16,7 +16,7 @@
 
 Both heavy workflows (`android-debug-apk.yml`, `cmp-kmp-platforms.yml`) are triggered **only** by `push` to `main` and `workflow_dispatch`, and unconditionally request FULL for those events. No diff classifier can downgrade a main push to FAST/TARGETED. The heavy workflows do not use `pull_request` or `merge_group` triggers. Distinct post-merge runs are not cancelled by later main pushes.
 
-`.github/workflows/draft-impact-feedback.yml` now serves **all PR phases**, despite its historical filename. It checks the exact PR head SHA, executes classifier/gate regressions, and runs quick jobs on every affected platform. A severe / unknown / CI / common DB change may still be classified `FULL` **as an impact risk label**, but its PR jobs remain quick: affected platform builds and units only, without deep native or all Android instrumentation. The summary expressly reports that deeper suites are **NOT VERIFIED** before merge. Unknown/unclassified changes select all three quick jobs, never silently skip them. Quick job failures fail the PR quick receipt.
+`.github/workflows/draft-impact-feedback.yml` now serves **all PR phases**, despite its historical filename. It checks the exact PR head SHA, executes classifier/gate regressions, and runs quick jobs on every affected platform. A severe / unknown / CI / common DB change may still be classified `FULL` **as an impact risk label**, but its PR jobs remain quick: affected platform builds, test compilation and a bounded set of regressions, with no Android emulator or full native suites. The summary expressly reports that deeper suites are **NOT VERIFIED** before merge. Unknown/unclassified changes select all three quick jobs, never silently skip them. Quick job failures fail the PR quick receipt. Mapped P5B Windows scenes still run when unrelated changes raise the overall impact to deep. Android QUICK runs filtered shared geometry/formatting JVM tests and compiles instrumentation sources. The signed-release production recovery result is reported separately by Android FULL.
 
 ## Platform and feature selection
 

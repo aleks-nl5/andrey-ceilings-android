@@ -216,6 +216,13 @@ class PointEditingSceneTest {
                     assertEquals(marker.uuid, scene.canvas().config.getOrNull(MeasurementDrawingSemantics.SelectedPoint),
                         "Review marker ${index + 1} at ${marker.xMm}, ${marker.yMm}")
                     scene.awaitText("На перевірці")
+                    assertFalse(scene.nodes().any {
+                        it.config.getOrNull(SemanticsActions.OnClick) != null &&
+                            it.textTree() == "Підтвердити розміщення"
+                    }, "Canvas tap selects the marker without opening its geometry editor")
+                    scene.click("Параметри розміщення", tag = "p5b-open-geometry-${marker.elementUuid}")
+                    assertEquals(marker.uuid, scene.canvas().config.getOrNull(MeasurementDrawingSemantics.SelectedPoint),
+                        "Opening geometry must preserve the point selected on the drawing")
                     scene.click("Підтвердити розміщення")
                     withTimeout(5000) {
                         while (scene.text().contains("Підтвердити розміщення") ||

@@ -95,6 +95,13 @@ jobs:
       # after all selected quick jobs pass, on the default-branch workflow only.
       - name: Build unsigned Android release and run unchanged JVM unit tests
         run: gradle --no-daemon -PquickUnsignedRelease=true :app:assembleRelease :app:testDebugUnitTest :shared:compileKotlinJvm --stacktrace --warning-mode all
+      - name: Compile Android instrumentation and shared JVM test sources
+        run: gradle --no-daemon :app:compileDebugAndroidTestKotlin :shared:compileTestKotlinJvm --stacktrace --warning-mode all
+      - name: Run shared geometry and formatting regressions
+        run: >-
+          gradle --no-daemon :shared:jvmTest
+          --tests '*LineCreationSnapTest' --tests '*MeasurementFormattingTest'
+          --stacktrace --warning-mode all
       - name: Verify unsigned release candidate for trusted signing
         shell: bash
         run: |
@@ -143,10 +150,10 @@ jobs:
         with:
           gradle-version: '9.7.0'
           cache-read-only: ${{ github.event.pull_request.head.repo.full_name != github.repository }}
-      - name: Compile Desktop and shared JVM for affected PR changes
-        run: gradle --no-daemon :desktopApp:compileKotlin :shared:compileKotlinJvm --stacktrace --warning-mode all
+      - name: Compile Desktop and shared JVM test sources
+        run: gradle --no-daemon :desktopApp:compileTestKotlin :shared:compileTestKotlinJvm --stacktrace --warning-mode all
       - name: Run mapped Windows presentation scenes (smoke only)
-        if: needs.impact.outputs.desktop_depth == 'smoke'
+        if: needs.impact.outputs.windows_smoke_tests != ''
         env:
           WINDOWS_SMOKE_TESTS: ${{ needs.impact.outputs.windows_smoke_tests }}
         run: |
@@ -185,7 +192,7 @@ jobs:
           gradle-version: '9.7.0'
           cache-read-only: ${{ github.event.pull_request.head.repo.full_name != github.repository }}
       - name: Compile iOS framework on Simulator (UI smoke, no native DB mutation)
-        run: gradle --no-daemon :shared:linkDebugFrameworkIosSimulatorArm64 --stacktrace --warning-mode all
+        run: gradle --no-daemon :shared:linkDebugFrameworkIosSimulatorArm64 :shared:compileTestKotlinIosSimulatorArm64 --stacktrace --warning-mode all
 
   feedback:
     name: PR quick-only receipt (NOT full native verification)

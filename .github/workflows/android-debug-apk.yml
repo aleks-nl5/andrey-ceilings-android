@@ -59,6 +59,9 @@ jobs:
           esac
   build:
     needs: [impact]
+    timeout-minutes: 150
+    outputs:
+      release_recovery: ${{ steps.release_recovery.outcome }}
     # Real Android SQLCipher/instrumentation/full APK validation runs after merge, or manually.
     if: ${{ always() && (needs.impact.result != 'success' || needs.impact.outputs.android_depth == 'deep') }}
     runs-on: ubuntu-24.04
@@ -284,6 +287,8 @@ jobs:
           retention-days: 14
 
       - name: Verify production open and recovery in signed release APK
+        id: release_recovery
+        timeout-minutes: 20
         if: env.SIGNING_CONFIGURED == 'true'
         uses: reactivecircus/android-emulator-runner@v2
         with:
@@ -314,11 +319,17 @@ jobs:
           IMPACT_MODE: ${{ needs.impact.outputs.mode }}
           ANDROID_DEPTH: ${{ needs.impact.outputs.android_depth }}
           FULL_RESULT: ${{ needs.build.result }}
+          RELEASE_RECOVERY: ${{ needs.build.outputs.release_recovery }}
           EXPECTED_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
           actual="$(git rev-parse HEAD)"
           job_result="$FULL_RESULT"
+          if [[ "$RELEASE_RECOVERY" == success ]]; then
+            echo "- Signed APK production recovery: passed." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "- Signed APK production recovery: NOT VERIFIED (${RELEASE_RECOVERY:-no result})." >> "$GITHUB_STEP_SUMMARY"
+          fi
           python3 ci/verify_full_gate.py \
             --event "$EVENT_NAME" --draft "$IS_DRAFT" \
             --impact-result "$IMPACT_RESULT" --mode "$IMPACT_MODE" \

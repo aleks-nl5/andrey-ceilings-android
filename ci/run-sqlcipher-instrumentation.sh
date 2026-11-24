@@ -18,10 +18,10 @@ collect_failed_workspace_capture() {
   else
     touch "$artifact_dir/emulator-disconnected.marker"
     echo "::warning::Android emulator is unreachable after instrumentation failure."
-    adb devices -l || true
+    timeout 10s adb devices -l || true
   fi
-  if adb shell run-as com.andreyceilings.app test -d cache/p5a-workspace >/dev/null 2>&1; then
-    adb exec-out run-as com.andreyceilings.app tar -C cache/p5a-workspace -cf - . \
+  if timeout 10s adb shell run-as com.andreyceilings.app test -d cache/p5a-workspace >/dev/null 2>&1; then
+    timeout 15s adb exec-out run-as com.andreyceilings.app tar -C cache/p5a-workspace -cf - . \
       | tar -xf - -C "$artifact_dir" || true
   fi
   exit "$status"
@@ -37,19 +37,19 @@ trap collect_failed_workspace_capture ERR
 # Mandatory focused pointer smoke check: fail near the recurring issue before
 # spending ~20 minutes on the rest. On success, keep the entire original suite,
 # including both of these tests; no exclusions or assertion retries.
-gradle --no-daemon :app:connectedDebugAndroidTest \
+timeout --kill-after=30s 12m gradle --no-daemon :app:connectedDebugAndroidTest \
   -Pandroid.testInstrumentationRunnerArguments.class=com.andreyceilings.app.AreaFeatureTouchTest \
   -Pandroid.testInstrumentationRunnerArguments.notAnnotation=com.andreyceilings.app.IsolatedProcessDeathProof \
   --stacktrace --warning-mode all
 
-gradle --no-daemon :app:connectedDebugAndroidTest \
+timeout --kill-after=30s 45m gradle --no-daemon :app:connectedDebugAndroidTest \
   -Pandroid.testInstrumentationRunnerArguments.notAnnotation=com.andreyceilings.app.IsolatedProcessDeathProof \
   --stacktrace --warning-mode all
 
 # AGP's connected test task may remove the APKs from the emulator. Reinstall
 # without wiping app data before isolated, destructive instrumentation.
-adb install -r app/build/outputs/apk/debug/app-debug.apk
-adb install -r app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+timeout 90s adb install -r app/build/outputs/apk/debug/app-debug.apk
+timeout 90s adb install -r app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
 
 # Screenshot-only UI replay lives in the separate, manually dispatched
 # "Android workspace screenshots (manual)" workflow, not this security gate.
