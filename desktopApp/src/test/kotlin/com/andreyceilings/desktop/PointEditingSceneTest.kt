@@ -196,6 +196,8 @@ class PointEditingSceneTest {
                 assertTrue(editing)
                 scene.setField("Примітки", "Другий запис")
                 scene.click("До заміру")
+                // Back clears a retained drawing selection before requesting exit.
+                if (!scene.text().contains("Зберегти й вийти")) scene.click("До заміру")
                 scene.click("Зберегти й вийти")
                 withTimeout(15000) { while (editing) { scene.frame(); delay(20) } }
                 assertEquals("Нова назва",MeasurementRepository(db).find(id)!!.name)
