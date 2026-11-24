@@ -56,6 +56,7 @@ internal fun WorkspaceElementsHeader(
     onAdd: () -> Unit
 ) {
     Column {
+        WorkspaceFinancialSummary {
         Row(verticalAlignment = Alignment.CenterVertically) {
             for (role in listOf(BusinessRole.CANVAS, BusinessRole.PRIMARY_PROFILE)) {
                 val current = if (role == BusinessRole.CANVAS) canvas else profile
@@ -86,7 +87,8 @@ internal fun WorkspaceElementsHeader(
                 Icon(Icons.Default.Add, stringResource(Res.string.p5b_add_title))
             }
         }
-        HorizontalDivider()
+        }
+        WorkspacePanelDivider()
     }
 }
 

@@ -8,7 +8,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 
-data class QuoteSaveState(val title: String? = null, val saving: Boolean = false, val resultSeriesUuid: String? = null, val error: String? = null, val resultRevisionUuid: String? = null)
+data class QuoteSaveState(val title: String? = null, val saving: Boolean = false, val resultSeriesUuid: String? = null, val error: String? = null, val resultRevisionUuid: String? = null, val failureReason: IndividualEstimateSaveFailure.Reason? = null)
 
 data class QuoteQuantityEdit(val text: String, val confirmed: Boolean = false)
 data class UnavailableSelectedWork(val sourceKey: String, val label: String,
@@ -61,12 +61,12 @@ class TransientQuotePresenter(val measurementUuid: String, val sessionId: String
         val previous = pendingSave
         val command = if (previous != null && current.copy(operationUuid = previous.operationUuid) == previous) previous else current
         pendingSave = command
-        saveMutable.value = saveMutable.value.copy(saving = true, error = null)
+        saveMutable.value = saveMutable.value.copy(saving = true, error = null, failureReason = null)
         return command
     }
     fun saved(seriesUuid: String, revisionUuid: String? = null) { saveMutable.value = saveMutable.value.copy(saving = false, resultSeriesUuid = seriesUuid, resultRevisionUuid = revisionUuid, error = null) }
-    fun saveFailed(error: String) {
-        saveMutable.value = saveMutable.value.copy(saving = false, error = error)
+    fun saveFailed(error: String, reason: IndividualEstimateSaveFailure.Reason? = null) {
+        saveMutable.value = saveMutable.value.copy(saving = false, error = error, failureReason = reason)
         releaseDeferredRead()
     }
     fun consumeSaved() {

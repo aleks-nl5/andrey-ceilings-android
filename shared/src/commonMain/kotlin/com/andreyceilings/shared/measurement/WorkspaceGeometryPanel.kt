@@ -698,7 +698,9 @@ internal fun WorkspaceWorkList(
             .clip(RoundedCornerShape(10.dp))
             .background(if (isHighlighted || isSelected) MaterialTheme.colorScheme.secondaryContainer.copy(
                 alpha = if (isHighlighted) 0.9f else 0.48f) else Color.Transparent,
-                RoundedCornerShape(10.dp)),
+                RoundedCornerShape(10.dp))
+            .semantics { this.selected = isSelected || isHighlighted }
+            .clickable(enabled = enabled) { onSelect(work.uuid) },
             verticalAlignment = Alignment.CenterVertically) {
             // The compact status button is separate from the row selection.
             val approvedTint = if (MaterialTheme.colorScheme.surface.luminance() > 0.5f)
@@ -740,9 +742,7 @@ internal fun WorkspaceWorkList(
             Column(Modifier.weight(1f).heightIn(min = 48.dp)
                 .clip(RoundedCornerShape(10.dp))
                 .testTag("p5b-work-label-click-${work.uuid}")
-                .semantics { this.selected = isSelected || isHighlighted }.clickable(enabled = enabled) {
-                onSelect(work.uuid)
-            }.padding(start = 8.dp), verticalArrangement = Arrangement.Center) {
+                .padding(start = 8.dp), verticalArrangement = Arrangement.Center) {
                 Text(shownTitle, modifier = Modifier.testTag("p5b-work-label-text-${work.uuid}"),
                     style = if (isSelected) MaterialTheme.typography.titleSmall else MaterialTheme.typography.bodyMedium,
                     maxLines = 1, overflow = TextOverflow.Ellipsis)

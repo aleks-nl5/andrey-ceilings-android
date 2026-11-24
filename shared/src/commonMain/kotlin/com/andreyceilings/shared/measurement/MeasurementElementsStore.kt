@@ -239,6 +239,9 @@ class MeasurementElementsStore(private val database: PrototypeDatabase, private 
 
     suspend fun quoteHistory(seriesUuid: String): List<SavedIndividualQuote> = estimateAccess { estimates.individualHistory(seriesUuid) }
 
+    internal suspend fun individualSeriesForCeiling(projectId: Long, measurementUuid: String): List<String> =
+        estimateAccess { database.frozenRevisionQueries.selectIndividualSeriesForCeiling(projectId, measurementUuid).executeAsList() }
+
     /** Read-only admission; opening/cancelling a revision reserves no number and changes no workflow. */
     suspend fun prepareRevision(seriesUuid: String, openedRevisionUuid: String? = null): Pair<SavedIndividualQuote, ElementRoute>? = estimateAccess {
         if (openedRevisionUuid != null && estimates.exactIndividual(seriesUuid, openedRevisionUuid) == null)
@@ -336,7 +339,7 @@ class MeasurementElementsStore(private val database: PrototypeDatabase, private 
                     IndividualEstimateSaveFailure.Reason.NUMBER_POLICY -> "Перевірте формат номера та суфікс у налаштуваннях."
                     IndividualEstimateSaveFailure.Reason.SEQUENCE_EXHAUSTED -> "Лічильник номерів вичерпано або пошкоджено. Перевірте налаштування нумерації."
                     else -> "Кошторис не збережено. Перевірте склад і доступність бази."
-                })
+                }, failure.reason)
             } catch (_: Exception) { presenter.saveFailed("Не вдалося підтвердити збереження. Повторіть ту саму дію або перевірте список кошторисів.") }
         }
     }

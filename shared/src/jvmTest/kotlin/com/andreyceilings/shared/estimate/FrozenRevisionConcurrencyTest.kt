@@ -62,8 +62,8 @@ class FrozenRevisionConcurrencyTest {
                     return pending.map { it.get(20, TimeUnit.SECONDS) }
                 }
                 val original = quote()
-                val first = quote()
-                val second = quote()
+                val first = FrozenRevisionProof.withLegacyAlternative(driver, listOf(original.seriesUuid), fixture.measurementUuid) { quote() }
+                val second = FrozenRevisionProof.withLegacyAlternative(driver, listOf(original.seriesUuid, first.seriesUuid), fixture.measurementUuid) { quote() }
                 val approved = EstimateWorkflowStatus.APPROVED
                 assertTrue(repo.setWorkflowStatus(original.initialRevisionUuid, 1, approved, 701))
                 val proof = mapOf(original.initialRevisionUuid to 2L)

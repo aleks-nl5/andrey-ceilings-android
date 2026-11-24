@@ -11,6 +11,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
@@ -42,6 +43,13 @@ internal fun WorkspaceLiveCost(
             it.priceableLines.any { it.bucket == PricingBucket.POTENTIAL } || it.potentialIncomplete
         } == true) PricingBucket.entries else listOf(PricingBucket.CONFIRMED)
     Column(modifier) {
+        val issues = when (result) {
+            null -> stringResource(Res.string.p5d_amount_pending)
+            is DraftPricingResult.Unavailable -> workspacePricingProblem(result.reason)
+            is DraftPricingResult.Loaded -> (result.preview.fatalProblems + result.preview.mandatoryProblems)
+                .map { workspacePricingProblem(it.code) }.distinct().joinToString("\n")
+                .ifBlank { if (result.preview.unresolvedItems.isNotEmpty()) stringResource(Res.string.p5d_amount_incomplete) else "" }
+        }
         WorkspaceFinancialSummary {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 groups.forEach { bucket ->
@@ -51,7 +59,10 @@ internal fun WorkspaceLiveCost(
                         Modifier.weight(1f).padding(horizontal = 8.dp, vertical = 4.dp),
                         horizontalAlignment = if (bucket == PricingBucket.POTENTIAL) Alignment.End else Alignment.Start
                     ) {
-                        Text(title, style = MaterialTheme.typography.labelSmall)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(title, style = MaterialTheme.typography.labelMedium)
+                            if (bucket == PricingBucket.CONFIRMED && issues.isNotBlank()) WorkspaceCostHelp(issues, compact = true)
+                        }
                         Text(if (subtotal == null) stringResource(Res.string.p5d_unknown)
                             else if (bucket == PricingBucket.POTENTIAL) stringResource(Res.string.p5d_plus_amount, measurementMoney(subtotal))
                             else measurementMoney(subtotal), style = MaterialTheme.typography.titleMedium)
@@ -59,18 +70,9 @@ internal fun WorkspaceLiveCost(
                 }
             }
         }
-        val issues = when (result) {
-            null -> stringResource(Res.string.p5d_amount_pending)
-            is DraftPricingResult.Unavailable -> workspacePricingProblem(result.reason)
-            is DraftPricingResult.Loaded -> (result.preview.fatalProblems + result.preview.mandatoryProblems)
-                .map { workspacePricingProblem(it.code) }.distinct().joinToString("\n")
-                .ifBlank { if (result.preview.unresolvedItems.isNotEmpty()) stringResource(Res.string.p5d_amount_incomplete) else "" }
-        }
+        WorkspacePanelDivider()
         Column(Modifier.fillMaxWidth().weight(1f, fill = false).verticalScroll(rememberScrollState())
             .padding(bottom = bottomInset + 8.dp)) {
-            if (issues.isNotBlank() && preview?.priceableLines.isNullOrEmpty() && preview?.unresolvedItems.isNullOrEmpty()) {
-                WorkspaceCostHelp(issues)
-            }
             for (bucket in groups) {
                 val priced = preview?.priceableLines.orEmpty().filter { it.bucket == bucket }
                     .sortedBy { it.businessRole?.ordinal ?: Int.MAX_VALUE }
@@ -79,15 +81,12 @@ internal fun WorkspaceLiveCost(
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(bucketLabel(bucket), Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
                             style = MaterialTheme.typography.labelMedium)
-                        if (bucket == groups.first() && issues.isNotBlank()) WorkspaceCostHelp(issues)
                     }
                 }
                 for ((index, line) in priced.withIndex()) {
                     WorkspaceFinancialRow(line, showRate = true,
                         onOpen = line.elementUuid?.let { id -> { unavailableLink = !onElement(id) } })
-                    if (line.businessRole == BusinessRole.CANVAS && (index < priced.lastIndex || unresolved.isNotEmpty())) {
-                        HorizontalDivider(Modifier.padding(horizontal = 8.dp), color = MaterialTheme.colorScheme.outlineVariant)
-                    }
+                    if (index < priced.lastIndex || unresolved.isNotEmpty()) WorkspacePanelDivider()
                 }
                 for (item in unresolved) {
                     Row(Modifier.fillMaxWidth().defaultMinSize(minHeight = 48.dp)
@@ -108,8 +107,13 @@ internal fun WorkspaceLiveCost(
 @Composable
 internal fun WorkspaceFinancialSummary(content: @Composable () -> Unit) {
     val color = MaterialTheme.colorScheme.surfaceContainerHigh
-    Surface(Modifier.fillMaxWidth().background(Brush.verticalGradient(listOf(color.copy(alpha = 0.90f), color.copy(alpha = 0.66f)))),
+    Surface(Modifier.fillMaxWidth().clip(androidx.compose.foundation.shape.RoundedCornerShape(10.dp)).background(Brush.verticalGradient(listOf(color.copy(alpha = 0.90f), color.copy(alpha = 0.66f)))),
         color = Color.Transparent, content = content)
+}
+
+@Composable
+internal fun WorkspacePanelDivider() {
+    HorizontalDivider(Modifier.padding(horizontal = 8.dp), color = MaterialTheme.colorScheme.outlineVariant)
 }
 
 @Composable
@@ -123,7 +127,13 @@ internal fun WorkspaceFinancialRow(line: LiveEstimateLine, showRate: Boolean = f
         .then(if (onOpen != null) Modifier.clickable(onClick = onOpen) else Modifier)
         .padding(horizontal = 8.dp, vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f).padding(end = 4.dp)) {
-            Text(line.title, style = MaterialTheme.typography.bodyMedium)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(line.title, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f, fill = false))
+                if (line.reviewFlags.isNotEmpty()) {
+                    WorkspaceCostHelp(line.reviewFlags.map { workspacePricingProblem(it) }.joinToString("\n"),
+                        description = stringResource(Res.string.p5d_placement_details), compact = true)
+                }
+            }
             if (showRate) Text(stringResource(Res.string.p5d_line_rate, formatElementMilli(line.effectiveBillableQuantityMilli),
                 line.unit, measurementMoney(line.unitPriceCents)), style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -132,19 +142,15 @@ internal fun WorkspaceFinancialRow(line: LiveEstimateLine, showRate: Boolean = f
                     style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
-        if (line.reviewFlags.isNotEmpty()) {
-            WorkspaceCostHelp(line.reviewFlags.map { workspacePricingProblem(it) }.joinToString("\n"),
-                description = stringResource(Res.string.p5d_placement_details))
-        }
         Text(measurementMoney(line.totalCents), style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
     }
 }
 
 @Composable
-internal fun WorkspaceCostHelp(text: String, description: String? = null) {
+internal fun WorkspaceCostHelp(text: String, description: String? = null, compact: Boolean = false) {
     var open by remember { mutableStateOf(false) }
     Box {
-        IconButton(onClick = { open = true }) {
+        IconButton(onClick = { open = true }, modifier = if (compact) Modifier.size(40.dp) else Modifier) {
             Icon(Icons.Default.Info, description ?: stringResource(Res.string.p5d_cost_details), Modifier.size(18.dp))
         }
         DropdownMenu(expanded = open, onDismissRequest = { open = false }) {

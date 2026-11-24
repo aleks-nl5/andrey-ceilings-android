@@ -7,7 +7,7 @@ import kotlinx.serialization.encodeToString
 
 /** Typed expected failures stay in the preview; unexpected SQL errors roll back the outer transaction. */
 class IndividualEstimateSaveFailure(val reason: Reason) : IllegalStateException(reason.name) {
-    enum class Reason { INVALID_COMMAND, STALE_SOURCE, STALE_CATALOG, NOT_READY, ACK_REQUIRED, OPERATION_CONFLICT, NUMBER_POLICY, NUMBER_COLLISION, SEQUENCE_EXHAUSTED, STALE_REVISION, STALE_STATUS, VERSION_EXHAUSTED, UNAVAILABLE }
+    enum class Reason { INVALID_COMMAND, STALE_SOURCE, STALE_CATALOG, NOT_READY, ACK_REQUIRED, OPERATION_CONFLICT, NUMBER_POLICY, NUMBER_COLLISION, SEQUENCE_EXHAUSTED, STALE_REVISION, STALE_STATUS, VERSION_EXHAUSTED, SERIES_EXISTS, DUPLICATE_CONTENT, UNAVAILABLE }
 }
 
 /** Extension of the existing canonical series repository, using its counter and immutable history. */
@@ -91,10 +91,19 @@ internal fun ImmutableEstimateRepository.saveIndividual(
     val included = preview.included.filter { it.selectedForDocument }.map { it.line }
     if (request.overrides.any { override -> included.none { it.elementUuid == override.measurementElementUuid } })
         fail(IndividualEstimateSaveFailure.Reason.INVALID_COMMAND)
-    val policy = previous?.frozen?.numberPolicy ?: numberPolicy()
-    if (EstimateNumbering.validatePublic(policy).isNotEmpty()) fail(IndividualEstimateSaveFailure.Reason.NUMBER_POLICY)
     val m = checkNotNull(MeasurementRepository(database).findByUuid(selection.measurementUuid))
     val project = checkNotNull(ProjectRepository(database).find(request.projectId))
+    val original = previous?.frozen
+    if (original != null && original.title == request.title && original.amounts == amounts &&
+        QuoteDiscount.parse(original.discountText, original.amounts.discountMode) == discount &&
+        original.source.projectTitle == project.title && original.source.measurementName == m.name &&
+        original.source.metadata["notes"].orEmpty() == m.notes &&
+        original.omissions.toSet() == omissions.toSet() &&
+        original.rows.map { it.line }.toSet() == included.toSet() &&
+        !original.hasMeasurementDrift(read.source)
+    ) fail(IndividualEstimateSaveFailure.Reason.DUPLICATE_CONTENT)
+    val policy = previous?.frozen?.numberPolicy ?: numberPolicy()
+    if (EstimateNumbering.validatePublic(policy).isNotEmpty()) fail(IndividualEstimateSaveFailure.Reason.NUMBER_POLICY)
     val source = FrozenIndividualSource(project.uuid, project.title, m.uuid, m.name, m.drawingJson,
         mapOf("shape" to m.shape, "lengthMeters" to m.lengthMeters.toString(), "widthMeters" to m.widthMeters.toString(),
             "areaSquareMeters" to m.areaSquareMeters.toString(), "perimeterMeters" to m.perimeterMeters.toString(),
@@ -108,6 +117,9 @@ internal fun ImmutableEstimateRepository.saveIndividual(
                 "createdAt" to r.createdAt.toString(), "measurementVersion" to r.measurementVersion.toString(),
                 "pointVersions" to r.pointVersions.orEmpty(), "elementVersions" to r.elementVersions.orEmpty(),
                 "lineVersions" to r.lineVersions.orEmpty(), "areaVersions" to r.areaVersions.orEmpty()) })
+    if (target == null && revisions.selectIndividualSeriesForCeiling(
+            request.projectId, request.selection.measurementUuid).executeAsList().isNotEmpty()
+    ) fail(IndividualEstimateSaveFailure.Reason.SERIES_EXISTS)
     val history = database.estimateHistoryQueries
     val created = if (target != null) {
         val root = checkNotNull(series(target.seriesUuid))

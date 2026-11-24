@@ -180,6 +180,19 @@ data class SavedIndividualQuote(val seriesUuid: String, val createdAt: Long, val
 /** Compare drawing and pricing inputs for the workspace warning, independently of provenance. */
 internal fun FrozenIndividualEstimate.hasPricingDrift(current: PricingReadResult.Loaded): Boolean {
     val live = current.source
+    if (hasMeasurementDrift(live)) return true
+    val elements = source.elements.associateBy { it.uuid }
+    val items = current.catalog.items.associateBy { it.uuid }
+    return rows.any { (_, line) ->
+        val item = items[line.catalogItemUuid] ?: return@any true
+        val selection = elements[line.elementUuid]?.source as? ElementSource.CatalogSelection ?: return@any true
+        item.title != line.title || item.unit != line.unit || item.code != line.stableCode ||
+            item.quantityMode != selection.quantityMode || item.placementKind != selection.placementKind ||
+            PricingMath.salePriceCents(item.salePrice) != line.unitPriceCents
+    }
+}
+
+internal fun FrozenIndividualEstimate.hasMeasurementDrift(live: LiveEstimateSource): Boolean {
     if (live.projectUuid != source.projectUuid || live.measurementUuid != source.measurementUuid ||
         live.geometry != MeasurementGeometryCodec.read(source.drawingJson)
     ) return true
@@ -212,14 +225,7 @@ internal fun FrozenIndividualEstimate.hasPricingDrift(current: PricingReadResult
         }
     ) return true
 
-    val items = current.catalog.items.associateBy { it.uuid }
-    return rows.any { (_, line) ->
-        val item = items[line.catalogItemUuid] ?: return@any true
-        val selection = elements[line.elementUuid]?.source as? ElementSource.CatalogSelection ?: return@any true
-        item.title != line.title || item.unit != line.unit || item.code != line.stableCode ||
-            item.quantityMode != selection.quantityMode || item.placementKind != selection.placementKind ||
-            PricingMath.salePriceCents(item.salePrice) != line.unitPriceCents
-    }
+    return false
 }
 
 /** Shared normalized-column audit. It never consults a mutable measurement, project or catalog. */

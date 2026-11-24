@@ -325,4 +325,6 @@
     <string name="p5d_pdf_fixed_discount_label">Знижка</string>
     <string name="p5d_override_quantity">Скоригована кількість: %1$s %2$s</string>
     <string name="p5d_placement_details">Деталі розміщення</string>
+    <string name="p5d_series_blocked">Перевірте історію кошторисів стелі перед створенням версії.</string>
+    <string name="p5d_duplicate_quote">Вміст збігається з останньою версією. Внесіть зміни, щоб зберегти нову.</string>
 </resources>

@@ -37,3 +37,7 @@
 - Вихід з редактора через інший маршрут або закриття Desktop спочатку перевіряє чернетку кошторису. Якщо замір теж має зміни, застосунок запитує рішення щодо заміру. Скасування будь-якого підтвердження залишає обидві чернетки.
 
 Для наступної перевірки на APK варто відкрити фінансову вкладку, перейти у fullscreen до креслення, розгорнути меню жестом вгору, а потім повернутися до кошторису. Окремо перевірити підпис поля назви з IME, правий підсумок у «Вартості» та перехід в інший розділ із двома чернетками. [Зауваження власника](https://github.com/aleks-nl5/andrey-ceilings-android/pull/166#issuecomment-7144615169)
+
+### Draft PR #166 review follow-up
+
+New individual series creation checks the existing frozen v1 ownership inside the writer transaction, including tombstoned series. Duplicate revisions are rejected before version allocation. Successful retries keep their original receipt. No database migration is required. Focused writer proofs cover historical ownership, retry receipts and identical proposals. The workspace layout and gesture changes are for manual physical APK verification.

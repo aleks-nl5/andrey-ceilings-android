@@ -83,3 +83,9 @@ RETURNING revisionUuid;
 
 countFrozenSeries:
 SELECT count(*) FROM estimate_v1_frozen f JOIN estimate_revisions r USING(revisionUuid) WHERE r.seriesUuid = ?;
+
+selectIndividualSeriesForCeiling:
+SELECT s.seriesUuid FROM estimate_series s
+JOIN estimate_revisions r USING(seriesUuid)
+JOIN estimate_v1_frozen f USING(revisionUuid)
+WHERE s.projectId = ? AND s.measurementUuid = ?;

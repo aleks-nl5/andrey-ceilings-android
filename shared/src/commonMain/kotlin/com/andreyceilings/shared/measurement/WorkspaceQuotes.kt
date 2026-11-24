@@ -51,6 +51,12 @@ internal class WorkspaceQuoteSession {
     }
 }
 
+internal fun quoteSaveFailureResource(reason: IndividualEstimateSaveFailure.Reason?) = when (reason) {
+    IndividualEstimateSaveFailure.Reason.DUPLICATE_CONTENT -> Res.string.p5d_duplicate_quote
+    IndividualEstimateSaveFailure.Reason.SERIES_EXISTS -> Res.string.p5d_series_blocked
+    else -> null
+}
+
 @Composable
 internal fun WorkspaceQuotes(
     store: MeasurementElementsStore?,
@@ -126,6 +132,7 @@ internal fun WorkspaceQuotes(
                     removing = listOf(opened)
                 })
         } else {
+            WorkspaceFinancialSummary {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Text(stringResource(Res.string.p5d_quotes), Modifier.weight(1f).padding(start = 8.dp),
                     style = MaterialTheme.typography.titleSmall)
@@ -134,6 +141,8 @@ internal fun WorkspaceQuotes(
                     Icon(Icons.Default.Add, stringResource(Res.string.p5d_new_quote))
                 }
             }
+            }
+            WorkspacePanelDivider()
             if (rows == null && !error) LinearProgressIndicator(Modifier.fillMaxWidth())
             LazyColumn(Modifier.fillMaxWidth().weight(1f, fill = false)) {
                 if (rows?.isEmpty() == true) item { Text(stringResource(Res.string.p5d_no_quotes), Modifier.padding(8.dp)) }
@@ -265,7 +274,10 @@ internal fun ColumnScope.WorkspaceQuoteComposer(
             else store.submitQuote(presenter, route.projectId)
         }) { Icon(Icons.Default.Save, stringResource(Res.string.p5d_save_quote)) }
     }
-    save.error?.let { Text(stringResource(Res.string.p5d_quote_failed), color = MaterialTheme.colorScheme.error) }
+    save.error?.let {
+        Text(stringResource(quoteSaveFailureResource(save.failureReason) ?: Res.string.p5d_quote_failed),
+            color = MaterialTheme.colorScheme.error)
+    }
     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
     if (save.saving) LinearProgressIndicator(Modifier.fillMaxWidth())
     if (!current) {
@@ -282,7 +294,7 @@ internal fun ColumnScope.WorkspaceQuoteComposer(
                     Column(Modifier.weight(1f)) {
                         Text(stringResource(Res.string.p5d_to_pay), style = MaterialTheme.typography.labelSmall)
                         Text(state.amounts?.let { measurementMoney(it.finalCents) } ?: stringResource(Res.string.p5d_unknown),
-                            style = MaterialTheme.typography.titleMedium)
+                            style = MaterialTheme.typography.titleLarge)
                     }
                     WorkspaceExpand(session)
                     TextButton(enabled = enabled, onClick = {
@@ -526,7 +538,7 @@ internal fun ColumnScope.WorkspaceFrozenQuote(
                     stringResource(Res.string.p5d_discount_percent_value, discount, frozen.discountText)
                 else stringResource(Res.string.p5d_discount_value, discount), Modifier.padding(end = 8.dp))
             }
-            Text(measurementMoney(frozen.amounts.finalCents), style = MaterialTheme.typography.titleMedium)
+            Text(measurementMoney(frozen.amounts.finalCents), style = MaterialTheme.typography.titleLarge)
         }
     }
     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
@@ -649,7 +661,7 @@ internal val SavedIndividualQuote.canDeleteQuote: Boolean
 @Composable
 internal fun WorkspaceTrash(enabled: Boolean, label: org.jetbrains.compose.resources.StringResource, onClick: () -> Unit) {
     IconButton(onClick = onClick, enabled = enabled) {
-        Icon(Icons.Default.Delete, stringResource(label), tint = if (enabled) MaterialTheme.colorScheme.error
+        Icon(Icons.Default.Delete, stringResource(label), tint = if (enabled) MaterialTheme.colorScheme.onSurfaceVariant
             else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f))
     }
 }

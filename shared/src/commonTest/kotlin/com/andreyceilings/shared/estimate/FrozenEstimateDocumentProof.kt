@@ -60,7 +60,9 @@ internal suspend fun proveExactEstimateDocuments(driver: SqlDriver) {
             project.status, project.notes, 606)
         val secondRoom = MeasurementPricingFixture.seed(db, fixture.projectId)
         val secondRoomQuote = history.saveIndividual(FrozenIndividualEstimateProof.command(db, secondRoom), 2026, createdAt + 7)
-        val secondSeries = history.saveIndividual(FrozenIndividualEstimateProof.command(db, secondRoom), 2026, createdAt + 8)
+        val secondSeries = FrozenRevisionProof.withLegacyAlternative(driver, listOf(secondRoomQuote.seriesUuid), secondRoom.measurementUuid) {
+            history.saveIndividual(FrozenIndividualEstimateProof.command(db, secondRoom), 2026, createdAt + 8)
+        }
         val foreignRoom = MeasurementPricingFixture.seed(db)
         val foreignQuote = history.saveIndividual(FrozenIndividualEstimateProof.command(db, foreignRoom), 2026, createdAt + 9)
         val foreign = store.consolidatedRooms(foreignRoom.projectId).rooms.single().revisions.single().ref

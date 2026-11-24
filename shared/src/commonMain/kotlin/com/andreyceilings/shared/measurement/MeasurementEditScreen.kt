@@ -38,6 +38,7 @@ import androidx.compose.material.icons.filled.Category
 import androidx.compose.material.icons.filled.Straighten
 import androidx.compose.material.icons.filled.Payments
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.ReceiptLong
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material3.*
@@ -99,7 +100,7 @@ private fun MeasurementEditContext.tabIcon(): ImageVector = when (this) {
     MeasurementEditContext.CONTOUR -> Icons.Default.CropSquare
     MeasurementEditContext.ELEMENTS -> Icons.Default.Category
     MeasurementEditContext.COST -> Icons.Default.Payments
-    MeasurementEditContext.QUOTES -> Icons.Default.History
+    MeasurementEditContext.QUOTES -> Icons.Default.ReceiptLong
 }
 
 @Composable
@@ -404,6 +405,7 @@ fun MeasurementEditScreen(
         }
     }
     var quoteStartPending by remember { mutableStateOf<(() -> Unit)?>(null) }
+    var quoteSeriesBlocked by remember { mutableStateOf(false) }
     var quoteActionError by remember { mutableStateOf(false) }
     var quoteStarting by remember { mutableStateOf(false) }
     fun prepareQuote(opened: SavedIndividualQuote?, refresh: Boolean = false) {
@@ -413,6 +415,7 @@ fun MeasurementEditScreen(
         val proceed: () -> Unit = {
             quoteStarting = true
             quoteActionError = false
+            quoteSeriesBlocked = false
             focus.clearFocus()
             scope.launch(start = CoroutineStart.UNDISPATCHED) {
                 try {
@@ -424,9 +427,16 @@ fun MeasurementEditScreen(
                         return@launch
                     }
                     if (!refresh) {
-                        val base = opened?.let {
-                            quoteStore.prepareRevision(it.seriesUuid, it.revisionUuid)?.first ?: run {
-                                quoteActionError = true
+                        val seriesIds = if (opened == null) quoteStore.individualSeriesForCeiling(
+                            committed.draft.projectId, committed.draft.recordUuid) else listOf(opened.seriesUuid)
+                        if (seriesIds.size > 1) {
+                            quoteSeriesBlocked = true
+                            return@launch
+                        }
+                        val base = seriesIds.singleOrNull()?.let { id ->
+                            quoteStore.prepareRevision(id, opened?.revisionUuid)?.first ?: run {
+                                quoteSeriesBlocked = opened == null
+                                quoteActionError = opened != null
                                 return@launch
                             }
                         }
@@ -672,12 +682,20 @@ fun MeasurementEditScreen(
             val sheetMaxHeight = if (expandedQuote || visibleSheet == MeasurementSheet.EXPANDED || keyboardVisible)
                 sheetContentHeight else minOf(sheetContentHeight, maxHeight * 0.32f)
             val contextPanel: @Composable (Modifier) -> Unit = { panelModifier ->
+                val type = MaterialTheme.typography
+                MaterialTheme(typography = type.copy(
+                    bodyMedium = type.bodyMedium.copy(fontSize = type.bodyMedium.fontSize * 1.07f),
+                    bodySmall = type.bodySmall.copy(fontSize = type.bodySmall.fontSize * 1.07f),
+                    labelSmall = type.labelSmall.copy(fontSize = type.labelSmall.fontSize * 1.07f)
+                )) {
                 panelState.SaveableStateProvider(
                     "$measurementUuid:$fullscreen:${context.name}"
                 ) {
                     if (context == MeasurementEditContext.QUOTES) {
                         Column(panelModifier) {
                             if (quoteActionError) Text(stringResource(Res.string.p5d_measurement_required),
+                                color = MaterialTheme.colorScheme.error)
+                            if (quoteSeriesBlocked) Text(stringResource(Res.string.p5d_series_blocked),
                                 color = MaterialTheme.colorScheme.error)
                             if (quoteStarting) LinearProgressIndicator(Modifier.fillMaxWidth())
                             WorkspaceQuotes(quoteStore, quotes, state, Modifier.weight(1f, fill = false),
@@ -759,10 +777,12 @@ fun MeasurementEditScreen(
                                 verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             when (context) {
                                 MeasurementEditContext.CONTOUR -> {
-                                    MeasurementShapePicker(draft.shape, enabled) { shape ->
-                                        if (shape != draft.shape && !model.promptForDirtyElementBeforeNavigation()) {
-                                            if (draft.outline.hasEnteredDimensions()) pendingShape = shape
-                                            else applyShape(shape)
+                                    WorkspaceFinancialSummary {
+                                        MeasurementShapePicker(draft.shape, enabled) { shape ->
+                                            if (shape != draft.shape && !model.promptForDirtyElementBeforeNavigation()) {
+                                                if (draft.outline.hasEnteredDimensions()) pendingShape = shape
+                                                else applyShape(shape)
+                                            }
                                         }
                                     }
                                     val nameFocus = remember { FocusRequester() }
@@ -881,6 +901,7 @@ fun MeasurementEditScreen(
                         }
                     }
                 }
+                }
             }
             val showNormalTabs = normalTabsVisible()
             Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().then(
@@ -904,7 +925,8 @@ fun MeasurementEditScreen(
                                 .testTag("measurement-edit-context-${mode.name.lowercase()}"),
                             color = if (active) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh,
                             contentColor = if (active) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurface,
-                            shape = RoundedCornerShape(8.dp)
+                            shape = RoundedCornerShape(8.dp),
+                            border = BorderStroke(1.dp, if (active) MaterialTheme.colorScheme.outline else MaterialTheme.colorScheme.outlineVariant)
                         ) {
                             Row(
                                 Modifier.fillMaxSize().selectable(active, enabled = canLeaveSurface, role = Role.Tab) {

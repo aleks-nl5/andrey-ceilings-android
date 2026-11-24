@@ -15,22 +15,24 @@ class FrozenEstimateConcurrencyTest {
             val command = FrozenIndividualEstimateProof.command(db, fixture)
             val history = ImmutableEstimateRepository(db)
             val first = history.saveIndividual(command, 2026, 700) { "ABCDEF1234" }
+            val other = MeasurementPricingFixture.seed(db, fixture.projectId)
+            val otherCommand = FrozenIndividualEstimateProof.command(db, other)
             driver.execute(null, "UPDATE estimate_number_settings SET nextSequence=1.5", 0)
             assertEquals(IndividualEstimateSaveFailure.Reason.SEQUENCE_EXHAUSTED,
                 assertFailsWith<IndividualEstimateSaveFailure> {
-                    history.saveIndividual(command.copy(operationUuid = newRecordUuid()), 2026, 701)
+                    history.saveIndividual(otherCommand.copy(operationUuid = newRecordUuid()), 2026, 701)
                 }.reason)
             assertEquals("real", driver.executeQuery(null, "SELECT typeof(nextSequence) FROM estimate_number_settings", { c -> c.next(); app.cash.sqldelight.db.QueryResult.Value(c.getString(0)) }, 0).value)
             driver.execute(null, "UPDATE estimate_number_settings SET nextSequence=1", 0)
             val before = history.frozenIndividuals().size
             assertEquals(IndividualEstimateSaveFailure.Reason.NUMBER_COLLISION,
                 assertFailsWith<IndividualEstimateSaveFailure> {
-                    history.saveIndividual(command.copy(operationUuid = newRecordUuid()), 2026, 701) { "ABCDEF1234" }
+                    history.saveIndividual(otherCommand.copy(operationUuid = newRecordUuid()), 2026, 701) { "ABCDEF1234" }
                 }.reason)
             assertEquals(1, db.estimateHistoryQueries.selectEstimateNumberSettings().executeAsOne().nextSequence)
             assertEquals(before, history.frozenIndividuals().size)
             var calls = 0
-            val second = history.saveIndividual(command.copy(operationUuid = newRecordUuid()), 2026, 702) {
+            val second = history.saveIndividual(otherCommand.copy(operationUuid = newRecordUuid()), 2026, 702) {
                 if (calls++ == 0) "ABCDEF1234" else "ABCDE12345"
             }
             assertEquals(2, calls)

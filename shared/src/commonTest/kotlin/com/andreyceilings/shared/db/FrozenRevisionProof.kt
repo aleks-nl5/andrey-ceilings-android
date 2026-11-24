@@ -18,8 +18,20 @@ object FrozenRevisionProof {
         val latest = checkNotNull(history.frozenIndividual(seriesUuid))
         val base = checkNotNull(history.exactIndividual(seriesUuid, latest.revisionUuid))
         val presenter = presenter(db, fixture, base)
-        return AppendIndividualRevisionRequest(checkNotNull(presenter.revisionTarget), checkNotNull(presenter.saveRequest(fixture.projectId, "Current measurement")))
+        return AppendIndividualRevisionRequest(checkNotNull(presenter.revisionTarget), checkNotNull(presenter.saveRequest(fixture.projectId, "Current measurement v${latest.versionNumber + 1}")))
     }
+    /** Seed a historical alternative for compatibility proofs without a production bypass. */
+    fun <T> withLegacyAlternative(driver: SqlDriver, seriesIds: List<String>, measurementUuid: String, create: () -> T): T {
+        fun link(id: String, uuid: String?) {
+            driver.execute(null, "UPDATE estimate_series SET measurementUuid = ? WHERE seriesUuid = ?", 2) {
+                bindString(0, uuid)
+                bindString(1, id)
+            }
+        }
+        seriesIds.forEach { link(it, null) }
+        return try { create() } finally { seriesIds.forEach { link(it, measurementUuid) } }
+    }
+
     fun run(driver: SqlDriver) {
         val db = PrototypeDatabase(driver)
         val previousCount = ImmutableEstimateRepository(db).frozenIndividuals().size
@@ -119,7 +131,17 @@ object FrozenRevisionProof {
         assertTrue(history.selectRevision(first.seriesUuid, first.initialRevisionUuid, 3, 619))
         assertEquals(EstimateWorkflowStatus.APPROVED, history.exactIndividual(first.seriesUuid, first.initialRevisionUuid)!!.status)
         assertEquals(EstimateWorkflowStatus.DRAFT, history.exactIndividual(first.seriesUuid, v3.initialRevisionUuid)!!.status)
-        val alternative = history.saveIndividual(FrozenIndividualEstimateProof.command(db, fixture), 2026, 620)
+        val duplicate = request(db, fixture, first.seriesUuid)
+        val unchangedTitle = history.exactIndividual(first.seriesUuid, v3.initialRevisionUuid)!!.frozen.title
+        assertEquals(IndividualEstimateSaveFailure.Reason.DUPLICATE_CONTENT,
+            assertFailsWith<IndividualEstimateSaveFailure> {
+                history.appendIndividual(duplicate.copy(calculation = duplicate.calculation.copy(title = unchangedTitle)), 619)
+            }.reason)
+        assertEquals(3, history.revisions(first.seriesUuid).size)
+        assertNull(db.frozenRevisionQueries.selectRevisionReceipt(duplicate.calculation.operationUuid).executeAsOneOrNull())
+        val alternative = withLegacyAlternative(driver, listOf(first.seriesUuid), fixture.measurementUuid) {
+            history.saveIndividual(FrozenIndividualEstimateProof.command(db, fixture), 2026, 620)
+        }
         val previousApproval = mapOf(first.initialRevisionUuid to 4L)
         val alternativeId = alternative.initialRevisionUuid
         assertFalse(history.setWorkflowStatus(alternativeId, 1, EstimateWorkflowStatus.APPROVED, 621))

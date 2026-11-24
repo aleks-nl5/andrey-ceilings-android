@@ -52,7 +52,9 @@ object RoundedAreaPolicyProof {
         assertEquals(drawing, MeasurementRepository(db).findByUuid(f.measurementUuid)!!.drawingJson)
         verifyFrozenEstimateContents(driver)
         // New v1 uses the same explicit format/policy without inventing a parent identity.
-        val standalone = repo.saveIndividual(FrozenRevisionProof.presenter(db, f).saveRequest(f.projectId, "Rounded area")!!, 2026, 607)
+        val standalone = FrozenRevisionProof.withLegacyAlternative(driver, listOf(first.seriesUuid), f.measurementUuid) {
+            repo.saveIndividual(FrozenRevisionProof.presenter(db, f).saveRequest(f.projectId, "Rounded area")!!, 2026, 607)
+        }
         val saved = repo.exactIndividual(standalone.seriesUuid, standalone.initialRevisionUuid)!!
         assertEquals(3, saved.frozen.formatVersion)
         assertNull(saved.frozen.revisionIdentity)

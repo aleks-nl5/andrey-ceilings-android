@@ -31,7 +31,9 @@ object BusinessRolePortableProof {
         val fixed = FrozenRevisionProof.presenter(db, fixture).also {
             it.editDiscount("0.01", QuoteDiscountMode.FIXED, confirmed = true)
         }
-        val fixedSeries = history.saveIndividual(checkNotNull(fixed.saveRequest(fixture.projectId, "Exact one cent")), 2026, 604)
+        val fixedSeries = FrozenRevisionProof.withLegacyAlternative(driver, listOf(saved.seriesUuid), fixture.measurementUuid) {
+            history.saveIndividual(checkNotNull(fixed.saveRequest(fixture.projectId, "Exact one cent")), 2026, 604)
+        }
         val fixedQuote = assertNotNull(history.exactIndividual(fixedSeries.seriesUuid, fixedSeries.initialRevisionUuid))
         assertEquals(4, fixedQuote.frozen.formatVersion)
         assertEquals(1L, fixedQuote.frozen.amounts.discountCents)

@@ -77,12 +77,14 @@ class FrozenEstimateDocumentTest {
             val prices = PriceRepository(db)
             val price = assertNotNull(prices.find(prices.createInGroup("large.one", "Large item", group, 999_999_999.0, 111)))
             val elements = MeasurementElementRepository(db)
-            for ((index, room) in listOf(first, second).withIndex()) {
+            val quotes = listOf(first, second).mapIndexed { index, room ->
                 elements.createCatalogSelection(room.measurementUuid, price.uuid, ElementQuantity.Exact(60_000_000_000L),
                     120, approval = ElementApproval.APPROVED, businessRole = BusinessRole.ADDITIONAL_WORK)
                 history.saveIndividual(FrozenIndividualEstimateProof.command(db, room, discount = "0"), 2026, 150L + index)
             }
-            val free = history.saveIndividual(FrozenIndividualEstimateProof.command(db, first, discount = "100"), 2026, 200)
+            val free = FrozenRevisionProof.withLegacyAlternative(driver, listOf(quotes.first().seriesUuid), first.measurementUuid) {
+                history.saveIndividual(FrozenIndividualEstimateProof.command(db, first, discount = "100"), 2026, 200)
+            }
             val store = MeasurementElementsStore(db, { 300 })
             try {
                 val catalog = store.consolidatedRooms(first.projectId)
