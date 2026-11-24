@@ -98,11 +98,7 @@ class LivePricingReader(private val database: PrototypeDatabase) {
                             "walls" to contentToken(walls.map { w -> contentToken(listOf(w.uuid, w.ordinal.toString(), w.ax.toString(), w.ay.toString(),
                                 w.bx.toString(), w.by_.toString(), w.geometryVersion.toString(), w.active.toString())) }),
                             "receipts" to contentToken(receiptToken)))
-                    val catalog = ActiveCatalogSnapshot(database.livePricingQueries.selectActiveCatalog().executeAsList().map { i ->
-                        ActiveCatalogItem(i.uuid, i.groupUuid, i.code, i.title, i.unit,
-                            QuantityMode.entries.single { it.value == i.quantityMode }, PlacementKind.entries.single { it.value == i.placementKind },
-                            i.price, i.updatedAt, i.groupUpdatedAt)
-                    })
+                    val catalog = readActiveCatalog()
                     when {
                         closed -> PricingReadResult.Unavailable(PricingProblemCode.DATABASE_UNAVAILABLE)
                         expectedSourceSignature != null && source.signature != expectedSourceSignature -> PricingReadResult.Unavailable(PricingProblemCode.STALE_SOURCE)
@@ -110,6 +106,13 @@ class LivePricingReader(private val database: PrototypeDatabase) {
                         else -> PricingReadResult.Loaded(source, catalog)
                     }
     }
+
+    internal fun readActiveCatalog(): ActiveCatalogSnapshot =
+        ActiveCatalogSnapshot(database.livePricingQueries.selectActiveCatalog().executeAsList().map { i ->
+            ActiveCatalogItem(i.uuid, i.groupUuid, i.code, i.title, i.unit,
+                QuantityMode.entries.single { it.value == i.quantityMode }, PlacementKind.entries.single { it.value == i.placementKind },
+                i.price, i.updatedAt, i.groupUpdatedAt)
+        })
 
     /** Exact UUID lookup and ownership check, never latest revision and never repricing.
      * Current immutable history cannot establish leaf/element coverage: explicitly unavailable.

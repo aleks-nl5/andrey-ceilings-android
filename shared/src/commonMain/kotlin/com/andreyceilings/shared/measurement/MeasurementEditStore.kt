@@ -2,6 +2,7 @@ package com.andreyceilings.shared.measurement
 
 import com.andreyceilings.shared.calculation.MeasurementPrecision
 import com.andreyceilings.shared.db.*
+import com.andreyceilings.shared.livepricing.*
 import com.andreyceilings.shared.prices.PlacementKind
 import com.andreyceilings.shared.prices.QuantityMode
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -87,6 +88,33 @@ class MeasurementEditStore(private val database: PrototypeDatabase, private val 
             }
         }
     }
+
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    internal fun observeDraftPricingBasis(projectId: Long, measurementUuid: String, creating: Boolean): Flow<DraftPricingBasis?> =
+        sessionClosed.flatMapLatest { closed ->
+            val unavailable: DraftPricingBasis = DraftPricingBasis.Unavailable(PricingProblemCode.DATABASE_UNAVAILABLE)
+            if (closed) flowOf<DraftPricingBasis?>(unavailable)
+            else database.livePricingQueries.selectPricingInvalidations().asFlow().transformLatest {
+                emit(null)
+                val basis = withContext(Dispatchers.Default) {
+                    pointRead.withLock {
+                        if (sessionClosed.value) return@withLock unavailable
+                        database.transactionWithResult {
+                            val reader = LivePricingReader(database)
+                            if (creating) {
+                                val project = projects.find(projectId)
+                                if (project == null) DraftPricingBasis.Unavailable(PricingProblemCode.PARENT_UNAVAILABLE)
+                                else DraftPricingBasis.Created(project.uuid, reader.readActiveCatalog())
+                            } else when (val read = reader.readInTransaction(projectId, measurementUuid)) {
+                                is PricingReadResult.Loaded -> DraftPricingBasis.Saved(read)
+                                is PricingReadResult.Unavailable -> DraftPricingBasis.Unavailable(read.problem)
+                            }
+                        }
+                    }
+                }
+                emit(if (sessionClosed.value) unavailable else basis)
+            }.catch { if (it is CancellationException) throw it else emit(unavailable) }
+        }
 
     private val measurements = MeasurementRepository(database)
     private val projects = ProjectRepository(database)

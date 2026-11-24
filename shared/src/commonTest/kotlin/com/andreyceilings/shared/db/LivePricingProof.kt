@@ -190,19 +190,59 @@ object LivePricingProof {
         newVisit.acceptRead(newVisit.beginRead(), loaded); assertNull(newVisit.state.value.amounts)
         freshSessions.clear()
         assertEquals(beforeChanges, changes())
-        val draft = assertIs<PricingReadResult.Loaded>(loaded.withValidatedDraft(model, loaded.source.signature))
-        assertEquals(loaded.source.elements, draft.source.elements)
-        assertEquals(loaded.source.geometry, draft.source.geometry)
+        val basis = DraftPricingBasis.Saved(loaded)
+        val draft = assertIs<DraftPricingResult.Loaded>(projectDraftPricing(model, model.state.value, basis))
+        assertEquals(loaded.source.elements.toSet(), draft.projection.elements.toSet())
+        assertEquals(loaded.source.geometry, draft.projection.geometry)
+        assertEquals(preview.confirmedTotalCents, draft.preview.confirmedTotalCents)
         assertEquals(beforeChanges, changes())
-        assertEquals(PricingReadResult.Unavailable(PricingProblemCode.STALE_SOURCE), loaded.withValidatedDraft(model, "old"))
+        val oldState = model.state.value
         model.accept(MeasurementCreateIntent.Dimension("length", "5"))
-        val changedDraft = assertIs<PricingReadResult.Loaded>(loaded.withValidatedDraft(model, loaded.source.signature))
-        assertEquals(15.0, changedDraft.source.geometry.areaSquareMeters)
-        assertNotEquals(loaded.source.signature, changedDraft.source.signature)
-        assertEquals(12000, preview.confirmedTotalCents) // original snapshot remains immutable
+        assertEquals(DraftPricingResult.Unavailable(PricingProblemCode.STALE_SOURCE), projectDraftPricing(model, oldState, basis))
+        val changedDraft = assertIs<DraftPricingResult.Loaded>(projectDraftPricing(model, model.state.value, basis))
+        assertEquals(15.0, changedDraft.projection.geometry.areaSquareMeters)
+        assertEquals(15000L, changedDraft.preview.confirmedTotalCents)
+        assertNotEquals(loaded.source.signature, changedDraft.projection.signature)
+        assertEquals(12000, preview.confirmedTotalCents)
         model.accept(MeasurementCreateIntent.Dimension("length", ""))
-        assertEquals(PricingReadResult.Unavailable(PricingProblemCode.INVALID_GEOMETRY), loaded.withValidatedDraft(model, loaded.source.signature))
+        assertEquals(DraftPricingResult.Unavailable(PricingProblemCode.INVALID_GEOMETRY),
+            projectDraftPricing(model, model.state.value, basis))
         assertEquals(beforeChanges, changes())
+        val createStore = MeasurementEditStore(database) { 205 }
+        val creation = MeasurementEditModel(createStore, MeasurementEditDocument(0L, 0L,
+            MeasurementCreateDraft(fixture.projectId, MeasurementPrecision.ONE_MILLIMETER, "Pre-save",
+                outline = MeasurementOutlineDraft.Template("rectangle", mapOf("length" to "4", "width" to "3")))))
+        val picker = createStore.placementCatalog()
+        val canvas = picker.single { it.uuid == (loaded.source.elements.single { e -> e.businessRole == BusinessRole.CANVAS }
+            .source as ElementSource.CatalogSelection).priceItemUuid }
+        val profile = picker.single { it.uuid == (loaded.source.elements.single { e -> e.businessRole == BusinessRole.PRIMARY_PROFILE }
+            .source as ElementSource.CatalogSelection).priceItemUuid }
+        assertTrue(creation.chooseMaterial(BusinessRole.CANVAS, canvas))
+        assertTrue(creation.chooseMaterial(BusinessRole.PRIMARY_PROFILE, profile))
+        val additional = picker.firstOrNull { it.placementKind == PlacementKind.POINT && it.mode == QuantityMode.MANUAL && it.unit == "шт." }
+        additional?.let { creation.addCatalogWork(it, ElementQuantity.Exact(6000), place = false) }
+        val createBasis = DraftPricingBasis.Created(loaded.source.projectUuid, loaded.catalog)
+        val beforeSave = assertIs<DraftPricingResult.Loaded>(projectDraftPricing(creation, creation.state.value, createBasis))
+        assertEquals(12000L, beforeSave.preview.confirmedTotalCents)
+        additional?.let { work ->
+            val pointRow = beforeSave.preview.priceableLines.single { it.catalogItemUuid == work.uuid }
+            assertEquals(6000L, pointRow.effectiveBillableQuantityMilli)
+            assertTrue(PricingProblemCode.PLACEMENT_UNPLACED in pointRow.reviewFlags)
+            creation.undo()
+            val undone = assertIs<DraftPricingResult.Loaded>(projectDraftPricing(creation, creation.state.value, createBasis))
+            assertTrue(undone.preview.priceableLines.none { it.catalogItemUuid == work.uuid })
+            creation.redo()
+            val redone = assertIs<DraftPricingResult.Loaded>(projectDraftPricing(creation, creation.state.value, createBasis))
+            assertEquals(beforeSave.preview.priceableLines, redone.preview.priceableLines)
+        }
+        assertEquals(beforeChanges, changes())
+        assertTrue(creation.saveInWorkspace(forQuote = true))
+        val committed = creation.state.value
+        assertFalse(committed.creating)
+        assertFalse(committed.dirty)
+        val newCanonical = assertIs<PricingReadResult.Loaded>(reader.read(fixture.projectId, committed.draft.recordUuid))
+        assertEquals(beforeSave.preview.priceableLines, newCanonical.buildPreview().priceableLines)
+        assertEquals(beforeSave.preview.confirmedTotalCents, newCanonical.buildPreview().confirmedTotalCents)
         val elements = MeasurementElementRepository(database)
         val e = elements.find(fixture.elementUuid)!!
         elements.edit(e.version, "child-only change", e.approval, e.quantity, 106)
