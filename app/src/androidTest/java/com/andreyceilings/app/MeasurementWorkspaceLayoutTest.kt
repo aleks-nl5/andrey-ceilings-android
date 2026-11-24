@@ -240,10 +240,10 @@ class MeasurementWorkspaceLayoutTest {
                 for (mode in listOf(ThemeMode.SYSTEM, if (theme == ThemeMode.LIGHT) ThemeMode.DARK else ThemeMode.LIGHT, theme)) {
                     compose.runOnIdle { appliedTheme = mode }
                     assertEquals(initialCanvas.id, canvas().id)
-                        assertEquals(initialCanvas.config[MeasurementDrawingSemantics.Projection],
+                    assertEquals(initialCanvas.config[MeasurementDrawingSemantics.Projection],
                         canvas().config[MeasurementDrawingSemantics.Projection])
                     if (mode != ThemeMode.SYSTEM && mode != theme) {
-                                                if (capture && !landscape) captureMeasurementWorkspaceScreenshot(
+                        if (capture && !landscape) captureMeasurementWorkspaceScreenshot(
                             "$display-${route.name.lowercase()}-${mode.name.lowercase()}-portrait-normal-contour"
                         )
                     }
@@ -261,7 +261,6 @@ class MeasurementWorkspaceLayoutTest {
                 contextTab("elements").performClick()
                 capture("normal-elements")
                 contextTab("cost").performClick()
-                val unzoomed = scale()
                 action("На весь екран").performClick()
                 compose.onNodeWithTag("global-bottom-navigation").assertDoesNotExist()
                 assertTrue(canvas().size.height > normal.height)
@@ -290,10 +289,9 @@ class MeasurementWorkspaceLayoutTest {
                 panel.assertDoesNotExist()
                 action("Згорнути").assertExists()
                 val beforePan = canvas().config[MeasurementDrawingSemantics.Viewport]
+                val panStart = canvas().config[MeasurementDrawingSemantics.ViewportBounds].center
                 compose.onNode(drawing).performTouchInput {
-                    val x = right - 8f * density
-                    val y = bottom - 18f * density
-                    swipe(Offset(x, y), Offset(x - 70f * density, y), durationMillis = 200)
+                    swipe(panStart, panStart - Offset(70f * density, 0f), durationMillis = 200)
                 }
                 assertNotEquals(beforePan, canvas().config[MeasurementDrawingSemantics.Viewport])
                 panel.assertDoesNotExist()
