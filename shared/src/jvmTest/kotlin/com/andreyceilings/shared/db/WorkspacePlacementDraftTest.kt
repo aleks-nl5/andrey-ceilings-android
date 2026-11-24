@@ -24,6 +24,12 @@ class WorkspacePlacementDraftTest {
             val draft = MeasurementCreateFixtures.draft(project, "rectangle",
                 com.andreyceilings.shared.calculation.MeasurementPrecision.ONE_MILLIMETER)
             val editor = MeasurementEditModel(store, MeasurementEditDocument(0, 0, draft))
+            val materials = PriceGroupRepository(db).create("Creation materials", 2)
+            val canvasId = PriceRepository(db).createInGroup("p5c.create.canvas", "Creation canvas", materials,
+                12.0, 2, "м²", QuantityMode.CEILING_AREA, PlacementKind.NONE)
+            val canvasUuid = assertNotNull(PriceRepository(db).find(canvasId)).uuid
+            assertTrue(editor.chooseMaterial(BusinessRole.CANVAS,
+                store.placementCatalog().single { it.uuid == canvasUuid }))
             val pointItem = addItem(db, "Create POINT", PlacementKind.POINT, "шт.")
             editor.addCatalogWork(pointItem, ElementQuantity.Exact(2000), place = true)
             assertTrue(editor.placeWorkspacePoint(900, 850))
@@ -63,13 +69,35 @@ class WorkspacePlacementDraftTest {
             assertEquals(PointPositionMm(900, 850), result.placements.points.single().let { PointPositionMm(it.xMm, it.yMm) })
             assertEquals(line.uuid, result.placements.lines.single().uuid)
             assertEquals(area.uuid, result.placements.areas.single().uuid)
-            assertEquals(setOf(ElementQuantity.Exact(2000), ElementQuantity.Exact(3500)),
+            assertEquals(setOf(ElementQuantity.Exact(2000), ElementQuantity.Exact(3500), ElementQuantity.CeilingArea),
                 MeasurementElementRepository(db).forMeasurement(draft.recordUuid).map { it.quantity }.toSet())
+            val material = result.materialElements.single()
+            assertEquals(ElementApproval.APPROVED, material.approval)
 
             val restored = assertNotNull(MeasurementEditModel.restore(MeasurementEditStore(db) { 300 }, editor.snapshot(), project, 0))
             restored.reconcile()
             assertEquals(id, restored.state.value.createdId, restored.state.value.error)
             assertEquals(result, store.load(project, id))
+
+            val editing = MeasurementEditModel(store, result)
+            editing.accept(MeasurementCreateIntent.Shape("l_shaped"))
+            for ((field, value) in mapOf("A" to "5.1", "B" to "4", "C" to "2", "D" to "2"))
+                editing.accept(MeasurementCreateIntent.Dimension(field, value))
+            val retained = editing.displayPoints().single()
+            assertEquals(point.uuid, retained.uuid)
+            assertFalse(retained.mounting.unresolved, "Identical AB verifies the original mounting distances")
+            assertNotEquals(result.placements.walls.first().uuid, retained.mounting.anchor?.firstWall)
+            repeat(5) { editing.undo() }
+            assertEquals(result.draft, editing.state.value.draft)
+            assertEquals(result.placements.points.single(), editing.displayPoints().single())
+            repeat(5) { editing.redo() }
+            editing.saveInWorkspace()
+            assertFalse(editing.state.value.dirty, editing.state.value.error)
+            val changed = store.load(project, id)
+            assertEquals("l_shaped", changed.draft.shape)
+            assertEquals(retained.mounting.anchor, changed.placements.points.single().mounting.anchor)
+            assertEquals(material, changed.materialElements.single())
+
         }
     }
 

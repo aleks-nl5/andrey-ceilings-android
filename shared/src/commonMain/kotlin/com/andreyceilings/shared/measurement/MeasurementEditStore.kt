@@ -185,12 +185,15 @@ class MeasurementEditStore(private val database: PrototypeDatabase, private val 
                 )) }
                 if (original.measurementId == 0L) {
                     database.measurementElementsQueries.claimElementWrite("")
-                    val existing = measurements.findByUuid(draft.recordUuid)
-                    if (existing != null) {
-                        return@transactionWithResult requireNotNull(createdDocument(draft, operationUuid, allowClosing = true))
+                    val existing = createdDocument(draft, operationUuid, allowClosing = true)
+                    val initial = if (existing == null) {
+                        loadDocument(draft.projectId, creation.createAt(draft, now), allowClosing = true)
+                    } else {
+                        // The existing journal still validates the complete normalized request on replay.
+                        val receipt = checkNotNull(database.ceilingEditsQueries.selectOperation(operationUuid).executeAsOneOrNull())
+                        existing.copy(updatedAt = receipt.expectedUpdatedAt)
                     }
-                    val id = creation.createAt(draft, now)
-                    val initial = loadDocument(draft.projectId, id, allowClosing = true)
+                    val id = initial.measurementId
                     val wallIds = walls.zip(initial.placements.walls).associate { (temporary, stored) -> temporary.uuid to stored.uuid }
                     fun remap(anchor: WallAnchor): WallAnchor = anchor.copy(
                         firstWall = requireNotNull(wallIds[anchor.firstWall]),

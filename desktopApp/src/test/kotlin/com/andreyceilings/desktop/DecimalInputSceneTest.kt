@@ -17,7 +17,7 @@ import com.andreyceilings.shared.theme.CeilingsTheme
 import kotlin.test.*
 
 class DecimalInputSceneTest {
-    @Test fun measurementLengthEditorNormalizesFirstSeparatorAndKeepsPartialSaveDisabled() {
+    @Test fun measurementLengthEditorNormalizesFirstSeparatorAndBlocksPartialSave() {
         for (dark in listOf(false, true)) {
             val model = MeasurementEditModel(null, MeasurementEditDocument(0, 0, MeasurementCreateDraft(7,
                 MeasurementPrecision.ONE_MILLIMETER, "Kitchen", outline =
@@ -81,7 +81,7 @@ class DecimalInputSceneTest {
             fun text(node: SemanticsNode): String = node.config.getOrNull(SemanticsProperties.Text).orEmpty()
                 .joinToString { it.text } + node.children.joinToString { text(it) }
             fun save() = scene.nodes().first {
-                it.config.getOrNull(SemanticsProperties.TestTag) == "measurement-edit-save"
+                it.config.getOrNull(SemanticsActions.OnClick) != null && text(it) == "Зберегти"
             }
             fun field() = scene.nodes().first {
                 it.config.getOrNull(SemanticsActions.SetText) != null && text(it).contains("Ціна продажу")
@@ -108,7 +108,7 @@ class DecimalInputSceneTest {
                 assertTrue(field().config[SemanticsActions.SetSelection].action!!.invoke(1, 1, false))
                 render(); render()
                 assertEquals(TextRange(1), field().config[SemanticsProperties.TextSelectionRange])
-                assertEquals("Незбережено", save().config[SemanticsProperties.StateDescription])
+                assertFalse(SemanticsProperties.Disabled in save().config)
                 assertTrue(save().config[SemanticsActions.OnClick].action!!.invoke())
                 render(); render()
                 assertEquals("0,5", saved)

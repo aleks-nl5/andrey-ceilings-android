@@ -5,9 +5,13 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.runtime.*
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.*
-import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.activity.ComponentActivity
 import androidx.compose.ui.unit.dp
 import androidx.test.core.app.ApplicationProvider
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import com.andreyceilings.shared.calculation.MeasurementPrecision
 import com.andreyceilings.shared.db.*
 import com.andreyceilings.shared.livepricing.*
@@ -21,7 +25,7 @@ import org.junit.Test
 import kotlin.test.*
 
 class MeasurementCreationPricingTouchTest {
-    @get:Rule val compose = createComposeRule()
+    @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
     @Test fun globalCreateThenQuoteAndEncryptedReopen() = createThenQuote(true)
     @Test fun objectCreateThenQuoteAndEncryptedReopen() = createThenQuote(false)
 
@@ -70,6 +74,16 @@ class MeasurementCreationPricingTouchTest {
             fill("AB, м", if (global) "4,12" else "4.12")
             fill("BC, м", if (global) "3,34" else "3.34")
             fill("Назва заміру *", "Room")
+            compose.runOnIdle {
+                val window = compose.activity.window
+                WindowInsetsControllerCompat(window, window.decorView).hide(WindowInsetsCompat.Type.ime())
+            }
+            compose.waitUntil(10000) {
+                compose.runOnIdle {
+                    ViewCompat.getRootWindowInsets(compose.activity.window.decorView)
+                        ?.isVisible(WindowInsetsCompat.Type.ime()) != true
+                }
+            }
             compose.onNodeWithTag("measurement-edit-context-elements").performClick()
             for ((title, role) in listOf("Route profile" to "PRIMARY_PROFILE", "Route canvas" to "CANVAS")) {
                 compose.onNodeWithTag("p5b-material-$role").performClick()
