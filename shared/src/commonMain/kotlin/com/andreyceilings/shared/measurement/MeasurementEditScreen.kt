@@ -741,6 +741,7 @@ fun MeasurementEditScreen(
                     }
                 }
             }
+            val showNormalTabs = normalTabsVisible()
             Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().then(
                 if (fullscreen) Modifier else Modifier
                     .height(normalPanelHeight + normalNavigationUnderlay)
@@ -748,7 +749,7 @@ fun MeasurementEditScreen(
                     .testTag("measurement-edit-normal-panel")
             ).then(if (inlineKeyboardPanel) Modifier.padding(start = 60.dp,
                 end = if (statusIsProblem) 112.dp else 60.dp) else Modifier)) {
-                if (normalTabsVisible()) Row(
+                if (showNormalTabs) Row(
                     Modifier.fillMaxWidth().onSizeChanged { tabRowPx = it.height }.testTag("measurement-edit-tab-row"),
                     horizontalArrangement = Arrangement.spacedBy(4.dp),
                     verticalAlignment = Alignment.CenterVertically) {
