@@ -28,7 +28,7 @@ import com.andreyceilings.shared.measurement.MeasurementDrawingProjection
 import com.andreyceilings.shared.measurement.PointPositionMm
 import com.andreyceilings.shared.measurement.formatElementMilli
 import com.andreyceilings.shared.measurement.layoutMeasurementDrawingForProjectedPoints
-import com.andreyceilings.shared.measurement.measurementDrawingProjection
+import com.andreyceilings.shared.measurement.optimalMeasurementDrawingProjection
 import com.andreyceilings.shared.measurement.measurementMoney
 import kotlin.math.roundToInt
 
@@ -366,11 +366,15 @@ private class DocumentPagination(
     fun drawing(drawing: FrozenEstimateDocument.Drawing) {
         keep(205)
         val contour = drawing.contour
-        val projection = checkNotNull(measurementDrawingProjection(contour, DrawingWidth, DrawingHeight))
         val textLayouts = contour.vertexNames.map { measure(it, 10, bold = true) }
+        val sizes = textLayouts.map { DrawingLabelSize(it.size.width.toFloat(), it.size.height.toFloat()) }
+        val projection = checkNotNull(optimalMeasurementDrawingProjection(
+            contour, DrawingWidth, DrawingHeight,
+            DrawingLabelSize(sizes.maxOf { it.width }, sizes.maxOf { it.height })
+        ))
         val layout = layoutMeasurementDrawingForProjectedPoints(
             contour.points.map(projection::project), DrawingWidth, DrawingHeight, sizes = emptyList(),
-            vertexSizes = textLayouts.map { DrawingLabelSize(it.size.width.toFloat(), it.size.height.toFloat()) },
+            vertexSizes = sizes,
             placeCrowdedVertices = true
         )
         val labels = layout.vertexLabels.map { DocumentMark.VertexLabel(it, textLayouts[it.sideIndex]) }

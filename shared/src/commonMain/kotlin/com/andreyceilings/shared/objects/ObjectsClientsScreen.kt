@@ -607,8 +607,8 @@ fun ObjectsClientsScreen(
             onBack = onCloseMeasurement,
             navigationGuard = measurementCreateNavigationGuard
         )
-        if (create != null) com.andreyceilings.shared.measurement.MeasurementCreateScreen(
-            projectId = create.projectId, precision = measurementPrecision, store = detailsStore?.measurementCreate,
+        if (create != null) com.andreyceilings.shared.measurement.MeasurementCreateWorkspace(
+            projectId = create.projectId, precision = measurementPrecision, store = detailsStore?.measurementEdit,
             contentPadding = contentPadding, systemTopInset = systemTopInset,
             onBack = onCloseMeasurement, onSaved = { onMeasurementCreated(create.projectId, it) },
             navigationGuard = measurementCreateNavigationGuard

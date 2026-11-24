@@ -55,6 +55,11 @@ import com.andreyceilings.shared.ui.ceilingsFloatingOutlineAlpha
 import com.andreyceilings.shared.theme.CeilingsEdge
 import com.andreyceilings.shared.theme.CeilingsEdgeGradient
 import com.andreyceilings.shared.calculation.CeilingShapeTemplates
+import com.andreyceilings.shared.measurement.formatMeasurementAreaCompact
+import com.andreyceilings.shared.measurement.formatMeasurementLengthCompact
+import com.andreyceilings.shared.resources.Res
+import com.andreyceilings.shared.resources.p5c_measurement_card_metrics
+import org.jetbrains.compose.resources.stringResource
 import com.andreyceilings.shared.domain.ClientListEntry
 import com.andreyceilings.shared.domain.ProjectListEntry
 import com.andreyceilings.shared.estimate.ConsolidatedEstimateScreen
@@ -523,7 +528,9 @@ internal fun ProjectDetailsScreen(
                                     Text("Форма: ${CeilingShapeTemplates.template(measurement.shape)?.title ?: if (measurement.shape == "polygon") "Багатокутник" else measurement.shape}",
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                    Text("Площа: ${measurement.area} м² · Периметр: ${measurement.perimeter} м",
+                                    Text(stringResource(Res.string.p5c_measurement_card_metrics,
+                                        formatMeasurementAreaCompact(measurement.area),
+                                        formatMeasurementLengthCompact(measurement.perimeter)),
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }

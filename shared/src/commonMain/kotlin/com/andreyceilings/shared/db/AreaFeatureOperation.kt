@@ -6,7 +6,7 @@ import kotlinx.serialization.json.*
 
 internal fun prepareAreaTargets(original: MeasurementEditDocument, geometry: FrozenPolygonGeometry,
     walls: List<CeilingWall>, changed: Boolean, edits: Map<String,AreaFeatureEdit>, now: Long,
-    drawing: String, oldDrawing: String): List<AreaFeature> {
+    drawing: String, oldDrawing: String, correspondence: Map<String, String>): List<AreaFeature> {
     require(edits.all { (id,e) -> id==e.value.uuid && id.isNotBlank() && e.value.measurementUuid==original.draft.recordUuid &&
         (e.value.elementUuid==null || original.areaElements.any {it.uuid==e.value.elementUuid}) })
     val targets=(original.placements.areas.map {it.uuid}+edits.keys).distinct().map {id ->
@@ -15,7 +15,7 @@ internal fun prepareAreaTargets(original: MeasurementEditDocument, geometry: Fro
         val base=old ?: checkNotNull(edit).value
         require(base.updatedAt<Long.MAX_VALUE)
         if(old!=null)require(edit==null || edit.value.elementUuid==old.elementUuid)
-        val preview=previewArea(base,geometry,walls,changed,edit)
+        val preview=previewArea(base,geometry,walls,changed,edit,correspondence)
         require(changed || edit==null || edit.value.deletedAt!=null || old==null || old.unresolved || !preview.unresolved) {
             "Недопустима ручна зміна площинного об’єкта. Попередні дані не змінено."
         }

@@ -34,6 +34,25 @@ class DetailsSaveExitTest {
             m.saveAndExit();assertEquals(1,calls);assertEquals(2,PriceNameUniquenessProof.scalar(raw,"SELECT count(*) FROM ceiling_operations"))
         }
     }
+    @Test fun workspaceNameOnlySaveWaitsForLostResponseReceipt() = runBlocking {
+        JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).use { raw ->
+            PriceCatalogSchema.create(raw)
+            val fixture = OverlayDragFixture.create(PrototypeDatabase(raw))
+            val fault = DetailsExitFaultDriver(raw)
+            val store = MeasurementEditStore(PrototypeDatabase(fault)) { 200 }
+            val model = MeasurementEditModel(store, store.load(fixture.project, fixture.id))
+            model.accept(MeasurementCreateIntent.Name("Перший запис"))
+            assertTrue(model.state.value.dirty)
+            fault.failNext(DetailsExitFaultDriver.Fault.LOST_RESPONSE)
+            model.saveInWorkspace()
+            assertTrue(model.state.value.uncertain, model.state.value.error)
+            val committed = OverlayDragFixture.snapshot(raw)
+            model.saveInWorkspace()
+            assertTrue(model.state.value.workspaceSaveConfirmed)
+            assertEquals(committed, OverlayDragFixture.snapshot(raw))
+            assertEquals("Перший запис", store.load(fixture.project, fixture.id).draft.name)
+        }
+    }
     @Test fun lostResponseNeverNavigatesUntilSameReceiptIsConfirmed()=runBlocking {
         JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).use {raw ->
             PriceCatalogSchema.create(raw);val f=OverlayDragFixture.create(PrototypeDatabase(raw));val fault=DetailsExitFaultDriver(raw)

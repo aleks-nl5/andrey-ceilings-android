@@ -36,7 +36,7 @@ class CeilingEditRepository(private val database: PrototypeDatabase) {
         }
     }
     fun save(original: MeasurementEditDocument, draft: MeasurementCreateDraft, edits: Map<String,PointMountingEdit>,
-        operationUuid: String, wallToken: String, now: Long, lineEdits: Map<String,LinePlacementEdit> = emptyMap(), declaredLengths: Map<String,Long> = emptyMap(), areaEdits: Map<String,AreaFeatureEdit> = emptyMap(), declaredAreas: Map<String,Long> = emptyMap()) {
+        operationUuid: String, wallToken: String, now: Long, lineEdits: Map<String,LinePlacementEdit> = emptyMap(), declaredLengths: Map<String,Long> = emptyMap(), areaEdits: Map<String,AreaFeatureEdit> = emptyMap(), declaredAreas: Map<String,Long> = emptyMap(), workspaceReceipt: JsonObject? = null) {
         require(now in 0 until Long.MAX_VALUE && operationUuid.isNotBlank())
         require(draft.projectId==original.draft.projectId && draft.recordUuid==original.draft.recordUuid && draft.precision==original.draft.precision)
         val validated = validateMeasurementCreate(draft); require(validated.canSave)
@@ -44,20 +44,22 @@ class CeilingEditRepository(private val database: PrototypeDatabase) {
         val baselineGeometry = checkNotNull(validateMeasurementCreate(original.draft).geometry)
         val changed = geometry!=baselineGeometry
         val walls = ceilingDraftWalls(original,draft,wallToken)
+        val correspondence = matchingContourWalls(baselineGeometry, original.placements.walls, geometry, walls)
         require(edits.keys.all { id -> original.placements.points.any { it.uuid==id } })
         val oldDrawing = original.sourceDrawingJson ?: MeasurementGeometryCodec.write(baselineGeometry)
         val drawing = if (changed) MeasurementGeometryCodec.write(geometry) else oldDrawing
         val targets = original.placements.points.map { point ->
             val edit = edits[point.uuid]
             if (edit?.confirm==true) require(!point.mounting.unresolved || edit.anchor!=null)
-            val preview = previewMounting(point,geometry,walls,changed,edit)
+            val preview = previewMounting(point,geometry,walls,changed,edit,correspondence)
             if (edit?.anchor!=null || edit?.freeX!=null) require(!preview.mounting.unresolved) { "Оберіть інші стіни або коректні відступи." }
             if (preview==point && !changed && edit?.defer!=true && edit?.confirm!=true) point else {
                 val version = maxOf(point.updatedAt+1,now)
                 preview.copy(updatedAt=version,mounting=preview.mounting.copy(modifiedVersion=version,
                     confirmedAt=if (preview.mounting.needsReview) null else if (edit?.confirm==true || edit?.anchor!=null) now else point.mounting.confirmedAt,
                     deferredAt=if (edit?.defer==true && preview.mounting.needsReview) now else if (changed || !preview.mounting.needsReview) null else point.mounting.deferredAt,
-                    anchorGeometryJson=if (edit?.anchor!=null) drawing else point.mounting.anchorGeometryJson,
+                    anchorGeometryJson=if (!preview.mounting.unresolved && (edit?.anchor != null ||
+                        preview.mounting.anchor != point.mounting.anchor)) drawing else point.mounting.anchorGeometryJson,
                     lastValidGeometryJson=if (!preview.mounting.unresolved) drawing else point.mounting.lastValidGeometryJson ?: oldDrawing))
             }
         }
@@ -68,7 +70,7 @@ class CeilingEditRepository(private val database: PrototypeDatabase) {
             val edit=lineEdits[id]
             val base=old ?: checkNotNull(edit).value
             require(base.updatedAt < Long.MAX_VALUE)
-            val preview=previewLine(base,geometry,walls,changed,edit)
+            val preview=previewLine(base,geometry,walls,changed,edit,correspondence)
             if (old==null && !lineStrictlyInside(geometry,preview.start,preview.end)) throw LinePlacementFailure.InvalidSegment()
             if(edit!=null && edit.value.deletedAt==null && (preview.unresolved && !base.unresolved ||
                 old?.unresolved==true && !preview.unresolved && !edit.confirm)) throw LinePlacementFailure.RequiresMeasuredAnchors()
@@ -95,7 +97,7 @@ class CeilingEditRepository(private val database: PrototypeDatabase) {
         }
         require(declaredLengths.all { (id,length) -> length in 1..ElementQuantityRules.MAX_MILLI &&
             original.lineElements.any {it.uuid==id} && lineTargets.filter {it.elementUuid==id && it.deletedAt==null && !it.unresolved}.sumOf {it.lengthMm}==length })
-        val areaTargets = prepareAreaTargets(original,geometry,walls,changed,areaEdits,now,drawing,oldDrawing)
+        val areaTargets = prepareAreaTargets(original,geometry,walls,changed,areaEdits,now,drawing,oldDrawing,correspondence)
         original.areaElements.forEach {element ->
             val capacity=declaredAreas[element.uuid] ?: element.lineCapacityMm()
             require(capacity==null || areaQuantityMilli(areaTargets.filter {it.elementUuid==element.uuid},element.unit!!,true)<=capacity) {"Площа/кількість перевищує заявлену, включно з нерозв'язаними об'єктами."}
@@ -103,8 +105,9 @@ class CeilingEditRepository(private val database: PrototypeDatabase) {
         require(declaredAreas.all { (id,quantity) -> quantity in 1..ElementQuantityRules.MAX_MILLI && original.areaElements.any {
             it.uuid==id && areaQuantityMilli(areaTargets.filter {a -> a.elementUuid==id},it.unit!!)==quantity
         } })
-        val noChange = areaTargets==original.placements.areas && declaredAreas.isEmpty() && lineTargets==original.placements.lines && declaredLengths.isEmpty() && !changed && targets==original.placements.points && draft.name.trim()==original.draft.name.trim() && draft.notes.trim()==original.draft.notes.trim()
+        val noChange = workspaceReceipt == null && areaTargets==original.placements.areas && declaredAreas.isEmpty() && lineTargets==original.placements.lines && declaredLengths.isEmpty() && !changed && targets==original.placements.points && draft.name.trim()==original.draft.name.trim() && draft.notes.trim()==original.draft.notes.trim()
         val payload = buildJsonObject {
+            workspaceReceipt?.let { put("workspace", it) }
             put("name",draft.name.trim());put("notes",draft.notes.trim());put("shape",geometry.shapeType)
             put("drawingJson",drawing);put("oldDrawingJson",oldDrawing)
             put("length",(geometry.vertices.maxOf{it.xMm}-geometry.vertices.minOf{it.xMm})/1000.0)

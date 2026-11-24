@@ -130,11 +130,17 @@ fun areaQuantityMilli(features: List<AreaFeature>, unit: String, includeUnresolv
 }
 
 fun previewArea(old: AreaFeature, geometry: FrozenPolygonGeometry, walls: List<CeilingWall>,
-    geometryChanged: Boolean, edit: AreaFeatureEdit? = null): AreaFeature {
+    geometryChanged: Boolean, edit: AreaFeatureEdit? = null,
+    correspondence: Map<String, String> = emptyMap()): AreaFeature {
     val value=edit?.value ?: old
     if(value.deletedAt!=null)return value
     require(value.mountings.size==value.shape.positions.size)
-    val mapped=value.shape.positions.indices.map { previewMounting(value.point(it),geometry,walls,geometryChanged) }
+    val mapped = value.shape.positions.indices.map {
+        val point = value.point(it)
+        val rebound = point.mounting.anchor?.rebind(correspondence, geometry, walls)
+        val mounting = if (rebound == null) point.mounting else point.mounting.copy(anchor = rebound)
+        previewMounting(point.copy(mounting = mounting), geometry, walls, geometryChanged)
+    }
     val shape=value.shape.withPositions(mapped.map {PointPositionMm(it.xMm,it.yMm)})
     val measured=value.mountings.indices.all { i -> value.mountings[i].anchor?.let {
         solveWallAnchor(geometry,walls,it)?.position==shape.positions[i]
@@ -146,3 +152,11 @@ fun previewArea(old: AreaFeature, geometry: FrozenPolygonGeometry, walls: List<C
     return value.copy(shape=shape,mountings=mapped.map {it.mounting},unresolved=false,
         needsReview=if(geometryChanged)true else if(edit?.confirm==true)false else value.needsReview)
 }
+
+internal fun List<PointPositionMm>.isAxisAlignedRectangle(): Boolean =
+    size == 4 && distinct().size == 4 && map { it.xMm }.distinct().size == 2 &&
+        map { it.yMm }.distinct().size == 2 && indices.all { i ->
+            val a = this[i]
+            val b = this[(i + 1) % size]
+            (a.xMm == b.xMm) != (a.yMm == b.yMm)
+        }

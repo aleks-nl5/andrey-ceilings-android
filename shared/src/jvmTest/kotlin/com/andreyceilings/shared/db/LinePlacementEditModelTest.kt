@@ -38,12 +38,19 @@ class LinePlacementEditModelTest {
                 model.applyMounting()
             }
             assertEquals(PointPrecision.EXACT,model.displayLines().single().precision)
+            // P5B: an explicit drawing transfer edits the work's declared
+            // billable quantity, not a legacy geometry-locked length overlay.
+            assertEquals(ElementQuantity.Exact(4500), model.workspaceWorks().single { it.uuid == element.uuid }.quantity)
             model.requestDeclaredLength(element.uuid);model.takeDeclaredLength()
-            assertEquals(2500,model.state.value.declaredLengths[element.uuid])
+            assertEquals(2500L, model.displayLines().single().lengthMm)
+            assertEquals(ElementQuantity.Exact(2500), model.workspaceWorks().single { it.uuid == element.uuid }.quantity)
+            assertFalse(element.uuid in model.state.value.declaredLengths,
+                "Drawing transfer must remain independently editable after placement")
             val restored=assertNotNull(MeasurementEditModel.restore(store,model.snapshot(),f.project,f.id))
             restored.reconcile()
             assertEquals(model.displayLines(),restored.displayLines())
-            assertEquals(2500,restored.state.value.declaredLengths[element.uuid])
+            assertEquals(ElementQuantity.Exact(2500), restored.workspaceWorks().single { it.uuid == element.uuid }.quantity)
+            assertFalse(element.uuid in restored.state.value.declaredLengths)
             assertEquals(before, pricing())
             restored.save()
             assertNull(restored.state.value.error)

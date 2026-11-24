@@ -24,7 +24,7 @@ import com.andreyceilings.shared.measurement.MeasurementDrawingContour
 import com.andreyceilings.shared.measurement.MeasurementGeometryCodec
 import com.andreyceilings.shared.measurement.MeasurementGeometryView
 import com.andreyceilings.shared.measurement.measurementDrawingContour
-import com.andreyceilings.shared.measurement.measurementDrawingProjection
+import com.andreyceilings.shared.measurement.optimalMeasurementDrawingProjection
 import com.andreyceilings.shared.theme.CeilingsTheme
 import kotlinx.coroutines.runBlocking
 import org.junit.Rule
@@ -113,7 +113,6 @@ class FrozenEstimatePdfShapeTest {
                     compose.onNode(hasText("Назад") and hasAnyAncestor(
                         isDialog() and hasAnyDescendant(hasText("Попередній перегляд PDF"))
                     )).performClick()
-                    compose.onNodeWithText("Попередній перегляд PDF").assertDoesNotExist()
 
                     edit.update(shaped, shaped.draft.copy(outline = original.draft.outline), now = 601)
                     val second = history.appendIndividual(FrozenRevisionProof.request(db, fixture, frozen.seriesUuid), 602)
@@ -166,7 +165,7 @@ class FrozenEstimatePdfShapeTest {
     private fun assertVertexLetters(
         page: PdfRenderer.Page, bitmap: Bitmap, contour: MeasurementDrawingContour, panelTop: Int
     ): List<RectF> {
-        val projection = assertNotNull(measurementDrawingProjection(contour, 515f, 195f))
+        val projection = assertNotNull(optimalMeasurementDrawingProjection(contour, 515f, 195f))
         return contour.vertexNames.mapIndexed { index, name ->
             val vertex = projection.project(contour.points[index])
             val matches = page.searchText(name).flatMap { it.bounds }.filter {

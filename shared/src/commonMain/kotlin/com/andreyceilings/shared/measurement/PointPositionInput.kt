@@ -92,3 +92,14 @@ data class PointDragPreview(val point: PointPlacement, val element: ElementVersi
     val contourUpdatedAt: Long, val xMm: Double = point.xMm.toDouble(), val yMm: Double = point.yMm.toDouble())
 data class PointMoveHistory(val before: PointPlacement, val after: PointPlacement,
     val element: ElementVersion, val contourUpdatedAt: Long)
+
+internal fun PointPositionDraft.wallRelativeInput(): PointPositionDraft {
+    val position = PointPositionMm(point.xMm, point.yMm)
+    val side = geometry.vertices.indices.firstOrNull { index ->
+        val distances = pointWallDistances(geometry, index, position)
+        pointFromWall(geometry, index, distances.alongMm.roundToLong(), distances.inwardMm.roundToLong()) == position
+    } ?: return copy(kind = PointPositionInputKind.WALL)
+    val distance = pointWallDistances(geometry, side, position)
+    return copy(kind = PointPositionInputKind.WALL, side = side,
+        along = formatPointMetres(distance.alongMm.roundToLong()), inward = formatPointMetres(distance.inwardMm.roundToLong()))
+}

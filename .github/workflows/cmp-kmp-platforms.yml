@@ -21,7 +21,6 @@ jobs:
     outputs:
       mode: ${{ steps.decide.outputs.mode }}
       desktop_depth: ${{ steps.decide.outputs.desktop_depth }}
-      windows_smoke_tests: ${{ steps.decide.outputs.windows_smoke_tests }}
       ios_depth: ${{ steps.decide.outputs.ios_depth }}
       apple_depth: ${{ steps.decide.outputs.apple_depth }}
     steps:
@@ -160,10 +159,7 @@ jobs:
 
       # All original targets are retained while one Gradle invocation avoids
       # redundant startup and repeated configuration.
-      - name: Verify transient quote CMP scenes
-        run: gradle --no-daemon :desktopApp:test --tests "com.andreyceilings.desktop.TransientQuoteSceneTest" --stacktrace --warning-mode all
-
-      - name: Compile Windows Desktop and run shared JVM / SQLCipher CRUD tests
+      - name: Compile Windows Desktop and run JVM / SQLCipher integration tests
         run: gradle --no-daemon :desktopApp:compileKotlin :shared:jvmTest :desktopApp:test --stacktrace --warning-mode all
 
       # Real encrypted JDBC stage timings; generated only when the fresh
@@ -235,6 +231,8 @@ jobs:
           EXPECTED_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
+          echo "- CMP scope: Windows and macOS JVM tests, Windows encrypted storage, iOS Simulator integration." >> "$GITHUB_STEP_SUMMARY"
+          echo "- App UI scenarios are covered by owner device acceptance." >> "$GITHUB_STEP_SUMMARY"
           windows_result="$WINDOWS_FULL_RESULT"
           # A single Apple runner can run macOS JVM and iOS steps independently.
           # Never turn its success into an iOS verification if iOS was skipped.

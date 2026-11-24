@@ -28,17 +28,6 @@ fun PointPositionEditor(scene: PointPlacementState, model: MeasurementElementsMo
     val position = draft.position()
     AlertDialog(onDismissRequest = model::requestPositionDismiss, title = { Text("Положення світильника") },
         text = { Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("Координати центру у збереженому контурі, метри. Числове підтвердження робить лише цю позначку точною.")
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                FilterChip(draft.kind == PointPositionInputKind.WORLD, enabled = enabled,
-                    onClick = { model.updatePosition { it.copy(kind = PointPositionInputKind.WORLD) } }, label = { Text("X / Y") })
-                FilterChip(draft.kind == PointPositionInputKind.WALL, enabled = enabled,
-                    onClick = { model.updatePosition { it.copy(kind = PointPositionInputKind.WALL) } }, label = { Text("Від стіни") })
-            }
-            if (draft.kind == PointPositionInputKind.WORLD) {
-                PositionField(draft.x, "X, м", enabled, signed = true) { value -> model.updatePosition { it.copy(x = value) } }
-                PositionField(draft.y, "Y, м", enabled, signed = true) { value -> model.updatePosition { it.copy(y = value) } }
-            } else {
                 Text("Сторона й напрям від її початку:")
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     measurementSideLabels(draft.geometry.vertices.size).forEachIndexed { i, label ->
@@ -52,8 +41,6 @@ fun PointPositionEditor(scene: PointPlacementState, model: MeasurementElementsMo
                     fun metres(mm: Double) = ((mm * 1000).roundToLong() / 1_000_000.0).toString().replace('.', ',')
                     Text("Фактичні відстані після округлення до мм: уздовж ${metres(actual.alongMm)} м, усередину ${metres(actual.inwardMm)} м.")
                 }
-            }
-            position?.let { Text("X: ${formatPointMetres(it.xMm)} м · Y: ${formatPointMetres(it.yMm)} м") }
             if (position == null) Text("До 3 знаків після коми/крапки; точка строго всередині контуру. Для відступів: уздовж у межах сторони, усередину > 0.", color = MaterialTheme.colorScheme.error)
             if (scene.saving) { LinearProgressIndicator(); Text("Збереження положення…") }
             state.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }

@@ -128,21 +128,17 @@ class FullGateTest(unittest.TestCase):
                                 (("windows", "deep", "success"), ("ios", "smoke", "failure"),
                                  ("macos", "deep", "success")), groups).passed)
 
-    def test_screenshots_are_manual_and_do_not_gate_sqlcipher(self):
+    def test_sqlcipher_full_retains_recovery_without_workspace_ui(self):
         root = Path(__file__).resolve().parents[2]
         security_script = (root / "ci/run-sqlcipher-instrumentation.sh").read_text()
         android_workflow = (root / ".github/workflows/android-debug-apk.yml").read_text()
-        manual = (root / ".github/workflows/android-workspace-screenshots.yml").read_text()
-        self.assertNotIn("bash ci/capture-measurement-workspace.sh", security_script)
+        self.assertFalse((root / ".github/workflows/android-workspace-screenshots.yml").exists())
+        self.assertNotIn("screencap", security_script)
         self.assertIn("bash ci/verify-sqlcipher-process-death.sh", security_script)
         self.assertIn("bash ci/verify-production-v9-upgrade.sh", security_script)
         self.assertIn("bash ci/verify-sqlcipher-enospc.sh", security_script)
         self.assertNotIn("p5a-android-workspace", android_workflow)
         self.assertIn("android-failure-diagnostics", android_workflow)
-        self.assertIn("  workflow_dispatch:", manual)
-        self.assertNotIn("  pull_request:", manual)
-        self.assertNotIn("  push:", manual)
-        self.assertIn("bash ci/capture-measurement-workspace.sh", manual)
 
     def test_unknown_inputs_and_missing_group_are_red(self):
         base = (("windows", "deep", "success"), ("apple", "deep", "success"))

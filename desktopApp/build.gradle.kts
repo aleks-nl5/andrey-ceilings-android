@@ -6,7 +6,6 @@ plugins {
 
 kotlin {
     jvmToolchain(21)
-    sourceSets.getByName("test").kotlin.srcDir("../shared/src/testFixtures/kotlin")
 }
 
 dependencies {
@@ -19,8 +18,6 @@ dependencies {
     implementation("app.cash.sqldelight:runtime:2.4.1")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.2")
     testImplementation(kotlin("test"))
-    // Exercise the real shared write and navigation during a paused SQLDelight transaction.
-    testImplementation("app.cash.sqldelight:sqlite-driver:2.4.1")
 }
 
 compose.desktop {
@@ -29,11 +26,10 @@ compose.desktop {
     }
 }
 
-// A failing Compose scene test must identify the exact failed assertion on Windows.
-// Keep test execution and CI gates unchanged; only improve failure diagnostics.
+// Include the exact assertion and stack trace for encrypted desktop storage tests.
 tasks.withType<org.gradle.api.tasks.testing.Test>().configureEach {
     testLogging {
-        // Show test starts on Windows: some physical SQLCipher/Compose scenarios
+        // Show test starts on Windows: some physical SQLCipher scenarios
         // take minutes before JUnit emits the final XML result.
         if (System.getProperty("os.name").startsWith("Windows", ignoreCase = true)) {
             events("started", "failed")

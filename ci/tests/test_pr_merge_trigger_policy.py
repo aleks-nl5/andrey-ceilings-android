@@ -46,14 +46,32 @@ class PrMergeTriggerPolicyTest(unittest.TestCase):
         self.assertIn("pr-internal-unsigned-release-apk", contents)
         self.assertNotIn(":app:assembleDebug", contents)
         self.assertNotIn("secrets.ANDROID_KEYSTORE", contents)
-        self.assertIn(":desktopApp:compileKotlin", contents)
+        self.assertIn(":desktopApp:compileTestKotlin", contents)
+        self.assertIn(":app:compileDebugAndroidTestKotlin", contents)
+        self.assertIn(":shared:compileTestKotlinJvm", contents)
+        self.assertIn(":shared:compileTestKotlinIosSimulatorArm64", contents)
+        self.assertNotIn(":desktopApp:test", contents)
+        self.assertNotIn("windows_smoke_tests", contents)
+        for command in contents.split(":shared:jvmTest")[1:]:
+            self.assertTrue(command.lstrip().startswith("--tests '*LineCreationSnapTest' --tests '*MeasurementFormattingTest'"))
+        self.assertEqual(contents.count(":shared:jvmTest"), 1)
         self.assertIn(":shared:linkDebugFrameworkIosSimulatorArm64", contents)
         for banned in (
-            ":shared:jvmTest", ":shared:iosSimulatorArm64Test",
+            ":shared:iosSimulatorArm64Test",
             "connectedDebugAndroidTest", ":shared:verifySqlDelightMigration",
             "ci/run-sqlcipher-instrumentation.sh",
         ):
             self.assertNotIn(banned, contents)
+
+    def test_android_full_reports_signed_recovery_and_preserves_failure_diagnostics(self):
+        contents = (ROOT / ".github/workflows/android-debug-apk.yml").read_text(encoding="utf-8")
+        script = (ROOT / "ci/run-sqlcipher-instrumentation.sh").read_text(encoding="utf-8")
+        self.assertIn("steps.release_recovery.outcome", contents)
+        self.assertIn("Signed APK production recovery: NOT VERIFIED", contents)
+        self.assertIn("emulator-disconnected.marker", script)
+        self.assertEqual(script.count(":app:connectedDebugAndroidTest"), 1)
+        self.assertNotIn("testInstrumentationRunnerArguments.class=", script)
+        self.assertIn("timeout --kill-after=30s 45m gradle --no-daemon :app:connectedDebugAndroidTest", script)
 
 
 if __name__ == "__main__":

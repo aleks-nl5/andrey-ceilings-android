@@ -15,9 +15,7 @@ fun areaHitDistance(shape: AreaShape, point: DrawingPoint, screen: (PointPositio
     var distance=Double.POSITIVE_INFINITY
     vertices.indices.forEach {i ->
         val a=vertices[i];val b=vertices[(i+1)%vertices.size]
-        val dx=b.x-a.x;val dy=b.y-a.y;val square=dx*dx+dy*dy
-        val t=if(square<=1e-12)0.0 else (((point.x-a.x)*dx+(point.y-a.y)*dy)/square).coerceIn(0.0,1.0)
-        distance=minOf(distance,hypot(point.x-a.x-t*dx,point.y-a.y-t*dy))
+        distance = minOf(distance, projectedSegmentDistance(point, a, b))
         if((a.y>point.y)!=(b.y>point.y) && point.x<(b.x-a.x)*(point.y-a.y)/(b.y-a.y)+a.x)inside=!inside
     }
     return if(inside)0.0 else distance

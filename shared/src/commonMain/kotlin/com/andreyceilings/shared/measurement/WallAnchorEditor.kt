@@ -1,16 +1,26 @@
 package com.andreyceilings.shared.measurement
 
 import com.andreyceilings.shared.input.DecimalInputField
+import com.andreyceilings.shared.resources.*
+import org.jetbrains.compose.resources.stringResource
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.unit.dp
@@ -39,7 +49,7 @@ data class WallAnchorInput(val pointUuid: String, val kind: WallAnchor.Kind, val
 }
 
 @Composable
-fun WallAnchorEditor(model: MeasurementEditModel) {
+fun WallAnchorEditor(model: MeasurementEditModel, inline: Boolean = false) {
     val state by model.state.collectAsState()
     val input=state.mountingInput ?: return
     if (state.mountingDismiss) {
@@ -54,36 +64,142 @@ fun WallAnchorEditor(model: MeasurementEditModel) {
     val geometry=validateMeasurementCreate(state.draft).geometry
     val walls=model.draftWalls()
     val solution=geometry?.let { g -> input.anchor()?.let { solveWallAnchor(g,walls,it) } }
-    AlertDialog(onDismissRequest=model::dismissMounting,title={Text("Розміри від стін")},
-        text={Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(8.dp)) {
-            Text("Виміряйте відстані від обраних стін до вибраної точки або кінця лінії. Значення у метрах, до 3 знаків після коми або крапки.")
+    val fields: @Composable () -> Unit = { Column(
+        Modifier.fillMaxWidth().then(if (inline) Modifier else Modifier.verticalScroll(rememberScrollState())),
+        verticalArrangement=Arrangement.spacedBy(8.dp)) {
+            if (!inline) Text("Виміряйте відстані від обраних стін до вибраної точки або кінця лінії. Значення у метрах, до 3 знаків після коми або крапки.")
             FlowRow(horizontalArrangement=Arrangement.spacedBy(6.dp)) {
-                FilterChip(input.kind==WallAnchor.Kind.TWO_WALLS,onClick={model.updateMounting { it.copy(kind=WallAnchor.Kind.TWO_WALLS) }},label={Text("Від двох стін")})
-                FilterChip(input.kind==WallAnchor.Kind.ALONG_INWARD,onClick={model.updateMounting { it.copy(kind=WallAnchor.Kind.ALONG_INWARD) }},label={Text("Уздовж + усередину")})
+                FilterChip(input.kind==WallAnchor.Kind.TWO_WALLS,
+                    onClick={model.updateMounting { it.copy(kind=WallAnchor.Kind.TWO_WALLS) }},
+                    label={Text(stringResource(if (inline) Res.string.p5b_anchor_two_short else Res.string.p5b_anchor_two_full),
+                        style = MaterialTheme.typography.labelSmall)})
+                FilterChip(input.kind==WallAnchor.Kind.ALONG_INWARD,
+                    onClick={model.updateMounting { it.copy(kind=WallAnchor.Kind.ALONG_INWARD) }},
+                    label={Text(stringResource(if (inline) Res.string.p5b_anchor_along_short else Res.string.p5b_anchor_along_full),
+                        style = MaterialTheme.typography.labelSmall)})
             }
-            Text(if(input.kind==WallAnchor.Kind.TWO_WALLS) "Перша опорна стіна" else "Обрана стіна й початок її напрямку")
-            FlowRow(horizontalArrangement=Arrangement.spacedBy(6.dp)) { walls.forEach { wall ->
-                FilterChip(input.firstWall==wall.uuid,onClick={model.updateMounting { it.copy(firstWall=wall.uuid) }},
-                    label={Text("1: ${measurementSideLabels(walls.size)[wall.ordinal]}")})
-            } }
-            if(input.kind==WallAnchor.Kind.TWO_WALLS) {
-                Text("Друга опорна стіна")
+            if (inline) {
+                val firstTitle = stringResource(if (input.kind == WallAnchor.Kind.TWO_WALLS)
+                    Res.string.p5b_anchor_first_wall else Res.string.p5b_anchor_direction_wall)
+                val firstLabel = stringResource(if (input.kind == WallAnchor.Kind.TWO_WALLS)
+                    Res.string.p5b_anchor_distance_short else Res.string.p5b_anchor_along_distance_short)
+                WallAnchorCompactWallRow(firstTitle, walls, input.firstWall,
+                    onWall = { uuid -> model.updateMounting { it.copy(firstWall = uuid) } },
+                    distance = input.firstText, fieldLabel = firstLabel,
+                    fieldTag = "p5b-first-wall-distance",
+                    onDistance = { value -> model.updateMounting { it.copy(firstText = value) } },
+                    onNext = if (editorFocus) ({ secondField.requestFocus() }) else null)
+                if (input.kind == WallAnchor.Kind.TWO_WALLS) {
+                    WallAnchorCompactWallRow(stringResource(Res.string.p5b_anchor_second_wall), walls,
+                        input.secondWall,
+                        onWall = { uuid -> model.updateMounting { it.copy(secondWall = uuid) } },
+                        distance = input.secondText,
+                        fieldLabel = stringResource(Res.string.p5b_anchor_distance_short),
+                        fieldTag = "p5b-second-wall-distance",
+                        onDistance = { value -> model.updateMounting { it.copy(secondText = value) } },
+                        focus = secondField)
+                } else {
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(stringResource(Res.string.p5b_anchor_inward_title),
+                            style = MaterialTheme.typography.labelSmall, modifier = Modifier.weight(1.25f))
+                        DecimalInputField(input.secondText,
+                            { value -> model.updateMounting { it.copy(secondText = value) } },
+                            stringResource(Res.string.p5b_anchor_inward_distance_short),
+                            modifier = measurementFieldFocusModifier().testTag("p5b-second-wall-distance")
+                                .focusRequester(secondField).weight(1f),
+                            compact = true)
+                    }
+                }
+            } else {
+                Text(stringResource(if (input.kind == WallAnchor.Kind.TWO_WALLS)
+                    Res.string.p5b_anchor_first_wall else Res.string.p5b_anchor_direction_wall),
+                    style = MaterialTheme.typography.labelMedium)
                 FlowRow(horizontalArrangement=Arrangement.spacedBy(6.dp)) { walls.forEach { wall ->
-                    FilterChip(input.secondWall==wall.uuid,onClick={model.updateMounting { it.copy(secondWall=wall.uuid) }},
-                        label={Text("2: ${measurementSideLabels(walls.size)[wall.ordinal]}")})
+                    FilterChip(input.firstWall==wall.uuid,
+                        onClick={model.updateMounting { it.copy(firstWall=wall.uuid) }},
+                        label={Text(measurementSideLabels(walls.size)[wall.ordinal])})
                 } }
+                if(input.kind==WallAnchor.Kind.TWO_WALLS) {
+                    Text(stringResource(Res.string.p5b_anchor_second_wall), style = MaterialTheme.typography.labelMedium)
+                    FlowRow(horizontalArrangement=Arrangement.spacedBy(6.dp)) { walls.forEach { wall ->
+                        FilterChip(input.secondWall==wall.uuid,
+                            onClick={model.updateMounting { it.copy(secondWall=wall.uuid) }},
+                            label={Text(measurementSideLabels(walls.size)[wall.ordinal])})
+                    } }
+                }
+                DecimalInputField(input.firstText, { value -> model.updateMounting { it.copy(firstText = value) } },
+                    if (input.kind == WallAnchor.Kind.TWO_WALLS) "Від першої стіни, м" else "Від початку вздовж стіни, м",
+                    modifier = measurementFieldFocusModifier(), compact = true,
+                    onNext = if (editorFocus) ({ secondField.requestFocus() }) else null)
+                DecimalInputField(input.secondText, { value -> model.updateMounting { it.copy(secondText = value) } },
+                    if (input.kind == WallAnchor.Kind.TWO_WALLS) "Від другої стіни, м" else "Відступ усередину, м",
+                    modifier = measurementFieldFocusModifier().focusRequester(secondField), compact = true)
             }
-            DecimalInputField(input.firstText, { value -> model.updateMounting { it.copy(firstText = value) } },
-                if (input.kind == WallAnchor.Kind.TWO_WALLS) "Від першої стіни, м" else "Від початку вздовж стіни, м",
-                modifier = measurementFieldFocusModifier(),
-                onNext = if (editorFocus) ({ secondField.requestFocus() }) else null)
-            DecimalInputField(input.secondText, { value -> model.updateMounting { it.copy(secondText = value) } },
-                if (input.kind == WallAnchor.Kind.TWO_WALLS) "Від другої стіни, м" else "Відступ усередину, м",
-                modifier = measurementFieldFocusModifier().focusRequester(secondField))
-            if(solution==null) Text("Немає однозначної внутрішньої точки з проєкціями на обрані відрізки. Перевірте розміри, оберіть інші стіни або спосіб «Уздовж + усередину».",color=MaterialTheme.colorScheme.error)
-            else Text("Фактично після округлення до мм: ${formatPointMetres(solution.firstActualMm.roundToLong())} м / ${formatPointMetres(solution.secondActualMm.roundToLong())} м. Похибка представлення не перевищує 1 мм.")
+            // Do not show a large red geometry error before the user has typed both dimensions.
+            if (input.firstText.isNotBlank() && input.secondText.isNotBlank() && solution == null)
+                Text(stringResource(Res.string.p5b_wall_anchor_invalid),
+                    color = MaterialTheme.colorScheme.error)
+            else if (solution != null && !inline)
+                Text(stringResource(Res.string.p5b_wall_anchor_verified,
+                    formatPointMetres(solution.firstActualMm.roundToLong()),
+                    formatPointMetres(solution.secondActualMm.roundToLong())))
             state.error?.let {Text(it,color=MaterialTheme.colorScheme.error)}
-            Text("Застосування змінює тільки чернетку. Для запису всієї стелі натисніть «Зберегти».")
-        }},confirmButton={TextButton(enabled=solution!=null,onClick=model::applyMounting){Text("Застосувати розміри")}},
-        dismissButton={TextButton(onClick=model::dismissMounting){Text("Скасувати")}})
+            if (!inline) Text("Застосування змінює тільки чернетку. Для запису всієї стелі натисніть «Зберегти».")
+        } }
+    val apply: @Composable () -> Unit = {
+        TextButton(enabled=solution!=null,onClick=model::applyMounting){Text("Застосувати розміри")}
+    }
+    val cancel: @Composable () -> Unit = {
+        TextButton(onClick=model::dismissMounting){Text("Скасувати")}
+    }
+    if (inline) {
+        fields()
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+            IconButton(onClick = model::dismissMounting) {
+                Icon(Icons.Default.Close, stringResource(Res.string.p5b_cancel_placement))
+            }
+            IconButton(enabled = solution != null, onClick = model::applyMounting) {
+                Icon(Icons.Default.Check, stringResource(Res.string.p5b_apply_dimensions))
+            }
+        }
+    } else AlertDialog(onDismissRequest=model::dismissMounting,title={Text("Розміри від стін")},
+        text=fields,confirmButton=apply,dismissButton=cancel)
+}
+
+/** Two compact rows of wall choices alongside their own distances. */
+@Composable
+private fun WallAnchorCompactWallRow(
+    title: String, walls: List<CeilingWall>, selected: String,
+    onWall: (String) -> Unit, distance: String, fieldLabel: String,
+    fieldTag: String, onDistance: (String) -> Unit,
+    focus: FocusRequester? = null, onNext: (() -> Unit)? = null
+) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Column(Modifier.weight(1.25f), verticalArrangement = Arrangement.spacedBy(0.dp)) {
+            Text(title, style = MaterialTheme.typography.labelSmall)
+            walls.chunked(2).forEach { pair ->
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    pair.forEach { wall ->
+                        val side = measurementSideLabels(walls.size)[wall.ordinal]
+                        FilterChip(selected == wall.uuid, onClick = { onWall(wall.uuid) },
+                            modifier = Modifier.weight(1f).heightIn(min = 36.dp)
+                                .semantics { contentDescription = "$title: $side" },
+                            label = {
+                                Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                                    Text(side, maxLines = 1, textAlign = TextAlign.Center,
+                                        style = MaterialTheme.typography.labelSmall)
+                                }
+                            })
+                    }
+                    if (pair.size == 1) Spacer(Modifier.weight(1f))
+                }
+            }
+        }
+        DecimalInputField(distance, onDistance, fieldLabel,
+            modifier = measurementFieldFocusModifier().testTag(fieldTag).then(
+                if (focus != null) Modifier.focusRequester(focus) else Modifier).weight(1f),
+            compact = true, onNext = onNext)
+    }
 }

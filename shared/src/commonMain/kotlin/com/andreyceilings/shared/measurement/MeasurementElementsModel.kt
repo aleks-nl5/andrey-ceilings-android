@@ -239,7 +239,7 @@ class MeasurementElementsModel internal constructor(private val store: Measureme
         val point = scene.points.find { it.uuid == scene.selectedPointUuid } ?: return
         val element = pointElement(point.elementUuid) ?: return
         updatePoints { it.copy(drag = null, positionEditor = PointPositionEditorState(
-            PointPositionDraft(point, element.version, contourVersion, geometry)), error = null) }
+            PointPositionDraft(point, element.version, contourVersion, geometry).wallRelativeInput()), error = null) }
     }
     fun updatePosition(change: (PointPositionDraft) -> PointPositionDraft) {
         if (points.value.saving || points.value.retry != null || points.value.positionEditor?.conflict == true) return

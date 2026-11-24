@@ -1,6 +1,8 @@
 package com.andreyceilings.shared.input
 
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
@@ -14,6 +16,7 @@ import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.unit.dp
 
 /** Initial separators gain a display zero; domain validation never rewrites the editor state. */
 @Composable
@@ -21,7 +24,8 @@ fun DecimalInputField(
     value: String, onValueChange: (String) -> Unit, label: String,
     modifier: Modifier = Modifier, enabled: Boolean = true, isError: Boolean = false,
     signed: Boolean = false, allowDecimalSeparator: Boolean = true,
-    onNext: (() -> Unit)? = null
+    onNext: (() -> Unit)? = null,
+    compact: Boolean = false
 ) {
     val requester = remember { FocusRequester() }
     var field by remember { mutableStateOf(TextFieldValue(value, TextRange(value.length))) }
@@ -35,28 +39,36 @@ fun DecimalInputField(
         field = edited
         if (changed) onValueChange(edited.text)
     }
-    OutlinedTextField(field, { update(it) }, label = { Text(label) },
-        modifier = modifier.fillMaxWidth().focusRequester(requester), enabled = enabled,
-        singleLine = true, isError = isError,
-        keyboardOptions = KeyboardOptions(
-            keyboardType = if (allowDecimalSeparator) KeyboardType.Decimal else KeyboardType.Number,
-            imeAction = if (onNext == null) ImeAction.Default else ImeAction.Next
-        ),
-        keyboardActions = KeyboardActions(onNext = onNext?.let { next -> { next() } }),
-        leadingIcon = if (signed) ({
-            IconButton(enabled = enabled, onClick = {
-                val removing = field.text.startsWith('-')
-                val text = if (removing) field.text.drop(1) else "-${field.text}"
-                val delta = if (removing) -1 else 1
-                update(TextFieldValue(text, TextRange(
-                    (field.selection.start + delta).coerceIn(0, text.length),
-                    (field.selection.end + delta).coerceIn(0, text.length)),
-                    field.composition?.let { range -> TextRange(
-                        (range.start + delta).coerceIn(0, text.length),
-                        (range.end + delta).coerceIn(0, text.length)) }))
-                requester.requestFocus()
-            }, modifier = Modifier.semantics { contentDescription = "Змінити знак" }) { Text("±") }
-        }) else null)
+    val signIcon: (@Composable () -> Unit)? = if (signed) ({
+        IconButton(enabled = enabled, onClick = {
+            val removing = field.text.startsWith('-')
+            val text = if (removing) field.text.drop(1) else "-${field.text}"
+            val delta = if (removing) -1 else 1
+            update(TextFieldValue(text, TextRange(
+                (field.selection.start + delta).coerceIn(0, text.length),
+                (field.selection.end + delta).coerceIn(0, text.length)),
+                field.composition?.let { range -> TextRange(
+                    (range.start + delta).coerceIn(0, text.length),
+                    (range.end + delta).coerceIn(0, text.length)) }))
+            requester.requestFocus()
+        }, modifier = Modifier.semantics { contentDescription = "Змінити знак" }) { Text("±") }
+    }) else null
+    val inputModifier = modifier.fillMaxWidth().focusRequester(requester)
+    val options = KeyboardOptions(
+        keyboardType = if (allowDecimalSeparator) KeyboardType.Decimal else KeyboardType.Number,
+        imeAction = if (onNext == null) ImeAction.Default else ImeAction.Next
+    )
+    val actions = KeyboardActions(onNext = onNext?.let { next -> { next() } })
+    if (compact) {
+        CompactOutlinedField(field, ::update, label, modifier = inputModifier,
+            enabled = enabled, isError = isError, keyboardOptions = options,
+            keyboardActions = actions, leadingIcon = signIcon)
+    } else {
+        OutlinedTextField(field, ::update, label = { Text(label) },
+            modifier = inputModifier, enabled = enabled, singleLine = true,
+            isError = isError, keyboardOptions = options, keyboardActions = actions,
+            leadingIcon = signIcon)
+    }
 }
 
 /** Replace the current selection, never append behind the caret or insert a second separator. */

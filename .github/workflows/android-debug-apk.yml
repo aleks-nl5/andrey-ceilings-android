@@ -21,7 +21,6 @@ jobs:
     outputs:
       mode: ${{ steps.decide.outputs.mode }}
       android_depth: ${{ steps.decide.outputs.android_depth }}
-      android_smoke_tests: ${{ steps.decide.outputs.android_smoke_tests }}
     steps:
       - name: Checkout exact event commit and PR merge-base history
         uses: actions/checkout@v7
@@ -33,7 +32,6 @@ jobs:
         run: |
           python3 -m unittest discover -s ci/tests -p 'test_impact.py' -v
           python3 -m unittest discover -s ci/tests -p 'test_full_gate.py' -v
-          python3 -m unittest discover -s ci/tests -p 'test_android_smoke_reports.py' -v
       - name: Enforce FULL for main push or explicit manual dispatch
         id: decide
         shell: bash
@@ -59,6 +57,9 @@ jobs:
           esac
   build:
     needs: [impact]
+    timeout-minutes: 150
+    outputs:
+      release_recovery: ${{ steps.release_recovery.outcome }}
     # Real Android SQLCipher/instrumentation/full APK validation runs after merge, or manually.
     if: ${{ always() && (needs.impact.result != 'success' || needs.impact.outputs.android_depth == 'deep') }}
     runs-on: ubuntu-24.04
@@ -165,7 +166,7 @@ jobs:
         if: steps.android_instrumentation.outcome == 'failure'
         shell: bash
         run: |
-          if [[ -f "$RUNNER_TEMP/p5a-workspace/emulator-disconnected.marker" ]]; then
+          if [[ -f "$RUNNER_TEMP/android-instrumentation-diagnostics/emulator-disconnected.marker" ]]; then
             echo "lost=true" >> "$GITHUB_OUTPUT"
             echo "::warning::Emulator disconnected during instrumentation; retrying full suite once on a fresh AVD."
           else
@@ -214,14 +215,13 @@ jobs:
           free -m
           sudo dmesg --ctime | grep -Ei 'out of memory|oom.kill|killed process|qemu.*(segfault|trap)|kvm.*(error|fail)' | tail -40 || true
 
-      # The automatic pipeline never runs the expensive P5A screenshot matrix.
-      # On a genuine instrumentation failure keep only lightweight evidence.
+      # Keep bounded platform diagnostics for integration failures.
       - name: Upload Android failure diagnostics (optional artifact)
         if: ${{ always() && (steps.android_instrumentation.outcome == 'failure' || steps.android_instrumentation_retry.outcome == 'failure') }}
         uses: actions/upload-artifact@v7
         with:
           name: android-failure-diagnostics
-          path: ${{ runner.temp }}/p5a-workspace/
+          path: ${{ runner.temp }}/android-instrumentation-diagnostics/
           if-no-files-found: warn
           retention-days: 7
 
@@ -284,6 +284,8 @@ jobs:
           retention-days: 14
 
       - name: Verify production open and recovery in signed release APK
+        id: release_recovery
+        timeout-minutes: 20
         if: env.SIGNING_CONFIGURED == 'true'
         uses: reactivecircus/android-emulator-runner@v2
         with:
@@ -314,11 +316,19 @@ jobs:
           IMPACT_MODE: ${{ needs.impact.outputs.mode }}
           ANDROID_DEPTH: ${{ needs.impact.outputs.android_depth }}
           FULL_RESULT: ${{ needs.build.result }}
+          RELEASE_RECOVERY: ${{ needs.build.outputs.release_recovery }}
           EXPECTED_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
           actual="$(git rev-parse HEAD)"
           job_result="$FULL_RESULT"
+          echo "- Android scope: SQLCipher and repository integration, recovery, and functional PDF checks." >> "$GITHUB_STEP_SUMMARY"
+          echo "- App UI scenarios are covered by owner device acceptance." >> "$GITHUB_STEP_SUMMARY"
+          if [[ "$RELEASE_RECOVERY" == success ]]; then
+            echo "- Signed APK production recovery: passed." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "- Signed APK production recovery: NOT VERIFIED (${RELEASE_RECOVERY:-no result})." >> "$GITHUB_STEP_SUMMARY"
+          fi
           python3 ci/verify_full_gate.py \
             --event "$EVENT_NAME" --draft "$IS_DRAFT" \
             --impact-result "$IMPACT_RESULT" --mode "$IMPACT_MODE" \

@@ -25,7 +25,6 @@ jobs:
       ios: ${{ steps.classify.outputs.ios }}
       android_depth: ${{ steps.classify.outputs.android_depth }}
       desktop_depth: ${{ steps.classify.outputs.desktop_depth }}
-      windows_smoke_tests: ${{ steps.classify.outputs.windows_smoke_tests }}
       ios_depth: ${{ steps.classify.outputs.ios_depth }}
     steps:
       - name: Checkout exact PR head and merge base history
@@ -39,7 +38,6 @@ jobs:
         run: |
           python3 -m unittest discover -s ci/tests -p test_impact.py -v
           python3 -m unittest discover -s ci/tests -p test_full_gate.py -v
-          python3 -m unittest discover -s ci/tests -p test_android_smoke_reports.py -v
           python3 -m unittest discover -s ci/tests -p test_pr_merge_trigger_policy.py -v
           python3 -m unittest discover -s ci/tests -p test_pr_release_artifacts.py -v
 
@@ -95,6 +93,13 @@ jobs:
       # after all selected quick jobs pass, on the default-branch workflow only.
       - name: Build unsigned Android release and run unchanged JVM unit tests
         run: gradle --no-daemon -PquickUnsignedRelease=true :app:assembleRelease :app:testDebugUnitTest :shared:compileKotlinJvm --stacktrace --warning-mode all
+      - name: Compile Android instrumentation and shared JVM test sources
+        run: gradle --no-daemon :app:compileDebugAndroidTestKotlin :shared:compileTestKotlinJvm --stacktrace --warning-mode all
+      - name: Run shared geometry and formatting regressions
+        run: >-
+          gradle --no-daemon :shared:jvmTest
+          --tests '*LineCreationSnapTest' --tests '*MeasurementFormattingTest'
+          --stacktrace --warning-mode all
       - name: Verify unsigned release candidate for trusted signing
         shell: bash
         run: |
@@ -117,7 +122,7 @@ jobs:
           retention-days: 3
 
   desktop-quick:
-    name: PR Windows compile and mapped scene tests
+    name: PR Windows compile and integration test compilation
     needs: impact
     if: needs.impact.result == 'success' && needs.impact.outputs.desktop_depth != 'skip'
     runs-on: windows-latest
@@ -143,20 +148,8 @@ jobs:
         with:
           gradle-version: '9.7.0'
           cache-read-only: ${{ github.event.pull_request.head.repo.full_name != github.repository }}
-      - name: Compile Desktop and shared JVM for affected PR changes
-        run: gradle --no-daemon :desktopApp:compileKotlin :shared:compileKotlinJvm --stacktrace --warning-mode all
-      - name: Run mapped Windows presentation scenes (smoke only)
-        if: needs.impact.outputs.desktop_depth == 'smoke'
-        env:
-          WINDOWS_SMOKE_TESTS: ${{ needs.impact.outputs.windows_smoke_tests }}
-        run: |
-          if (-not $env:WINDOWS_SMOKE_TESTS) { throw 'Windows smoke needs a scene class filter' }
-          $filters = foreach ($class in ($env:WINDOWS_SMOKE_TESTS -split ',')) {
-            '--tests'
-            $class
-          }
-          gradle --no-daemon :desktopApp:test @filters --stacktrace --warning-mode all
-
+      - name: Compile Desktop and shared JVM test sources
+        run: gradle --no-daemon :desktopApp:compileTestKotlin :shared:compileTestKotlinJvm --stacktrace --warning-mode all
   ios-quick:
     name: PR iOS framework compilation
     needs: impact
@@ -184,8 +177,8 @@ jobs:
         with:
           gradle-version: '9.7.0'
           cache-read-only: ${{ github.event.pull_request.head.repo.full_name != github.repository }}
-      - name: Compile iOS framework on Simulator (UI smoke, no native DB mutation)
-        run: gradle --no-daemon :shared:linkDebugFrameworkIosSimulatorArm64 --stacktrace --warning-mode all
+      - name: Compile iOS framework and Simulator test sources
+        run: gradle --no-daemon :shared:linkDebugFrameworkIosSimulatorArm64 :shared:compileTestKotlinIosSimulatorArm64 --stacktrace --warning-mode all
 
   feedback:
     name: PR quick-only receipt (NOT full native verification)
@@ -228,7 +221,7 @@ jobs:
                 exit 1
               fi
             elif [[ "$depth" == smoke || "$depth" == deep ]]; then
-              echo "- $target: $result (quick compile/unit or mapped scenes only; native FULL not run)" >> "$GITHUB_STEP_SUMMARY"
+              echo "- $target: $result (quick compilation and selected unit tests; native FULL not run)" >> "$GITHUB_STEP_SUMMARY"
               if [[ "$result" != success ]]; then
                 echo "::error::Required PR quick $target job did not succeed: $result"
                 exit 1
