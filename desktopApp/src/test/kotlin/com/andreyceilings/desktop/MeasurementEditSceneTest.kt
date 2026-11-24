@@ -342,7 +342,9 @@ class MeasurementEditSceneTest {
             val second = DrawingPoint(4000.0, 1500.0)
             fun pixelDistance(node: SemanticsNode): Double {
                 val projection = node.config[MeasurementDrawingSemantics.Projection]
-                return projection.project(second).x - projection.project(first).x
+                val a = projection.project(first)
+                val b = projection.project(second)
+                return kotlin.math.hypot(b.x - a.x, b.y - a.y)
             }
             fun worldCenter(node: SemanticsNode): DrawingPoint {
                 val projection = node.config[MeasurementDrawingSemantics.Projection]
@@ -370,11 +372,16 @@ class MeasurementEditSceneTest {
                 val normalViewportHeight = drawing().config[MeasurementDrawingSemantics.ViewportBounds].height
                 val originalCenter = worldCenter(drawing())
                 assertContourClearOfNormalTabs()
-                val center = drawing().boundsInRoot.center
+                val canvas = drawing()
+                val viewportCenter = canvas.config[MeasurementDrawingSemantics.ViewportBounds].center
+                val center = canvas.boundsInRoot.topLeft + viewportCenter
                 scene.sendPointerEvent(PointerEventType.Press, center, type = PointerType.Mouse)
                 scene.sendPointerEvent(PointerEventType.Move, center + Offset(32f, 0f), type = PointerType.Mouse)
                 scene.sendPointerEvent(PointerEventType.Release, center + Offset(32f, 0f), type = PointerType.Mouse)
                 scene.frame()
+                val pannedCenter = worldCenter(drawing())
+                assertTrue(kotlin.math.hypot(pannedCenter.x - originalCenter.x, pannedCenter.y - originalCenter.y) > 1.0,
+                    "The pointer gesture must pan the drawing before zoom, regardless of world orientation")
                 scene.click("Збільшити масштаб")
                 scene.frame()
                 val initial = drawing()
@@ -382,7 +389,6 @@ class MeasurementEditSceneTest {
                 val expectedCenter = worldCenter(initial)
                 var activeDistance = expectedDistance
                 var activeCenter = expectedCenter
-                assertTrue(kotlin.math.abs(originalCenter.x - expectedCenter.x) > 1.0, "The pointer gesture must pan the drawing")
                 fun assertCamera() {
                     val current = drawing()
                     assertEquals(initial.id, current.id)
@@ -788,8 +794,11 @@ class MeasurementEditSceneTest {
             val discs = scene.nodes(unmerged = true).filter { it.config.getOrNull(SemanticsProperties.TestTag) == "measurement-edit-zoom-disc" }
             assertEquals(4, discs.size)
             assertTrue(discs.all { it.size.width == 36 && it.size.height == 36 })
-            val targets = scene.nodes().filter { it.config.getOrNull(SemanticsProperties.TestTag) == "measurement-edit-zoom-target" }
+            val targets = scene.nodes().filter {
+                it.config.getOrNull(SemanticsProperties.TestTag) in setOf("measurement-edit-zoom-target", "measurement-edit-rotate")
+            }
             assertEquals(4, targets.size)
+            assertEquals(1, targets.count { it.config.getOrNull(SemanticsProperties.TestTag) == "measurement-edit-rotate" })
             assertTrue(targets.all { it.size.width == 48 && it.size.height == 48 && it.config.getOrNull(SemanticsActions.OnClick) != null })
             assertTrue(contourHeight > viewportHeight * 0.54, "The fitted contour should occupy most of the available height")
             scene.click("Вартість")
