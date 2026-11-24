@@ -64,20 +64,24 @@ internal fun projectDraftPricing(
         val elements = (model.workspaceWorks() + model.materials(BusinessRole.CANVAS) +
             model.materials(BusinessRole.PRIMARY_PROFILE)).map { element ->
             val placed: Long
+            val hasPlacement: Boolean
             val exact: Boolean
             when ((element.source as? ElementSource.CatalogSelection)?.placementKind) {
                 PlacementKind.POINT -> {
                     val active = points.filter { it.elementUuid == element.uuid && !it.mounting.unresolved }
+                    hasPlacement = active.isNotEmpty()
                     placed = active.size * 1000L
                     exact = active.all { it.precision == PointPrecision.EXACT }
                 }
                 PlacementKind.LINE -> {
                     val active = lines.filter { it.elementUuid == element.uuid && !it.unresolved }
+                    hasPlacement = active.isNotEmpty()
                     placed = active.fold(0L) { sum, line -> PricingMath.add(sum, line.lengthMm) }
                     exact = active.all { it.startMounting.anchor != null && it.endMounting.anchor != null }
                 }
                 PlacementKind.AREA -> {
                     val active = areas.filter { it.elementUuid == element.uuid && !it.unresolved }
+                    hasPlacement = active.isNotEmpty()
                     placed = areaQuantityMilli(active, checkNotNull(element.unit))
                     exact = active.all { area ->
                         area.mountings.all { it.anchor != null } && (area.shape !is AreaShape.Circle || area.radiusMeasured)
@@ -86,7 +90,7 @@ internal fun projectDraftPricing(
                 else -> return@map element
             }
             element.copy(placedQuantityMilli = placed, placement = when {
-                placed == 0L -> ElementPlacement.UNPLACED
+                !hasPlacement -> ElementPlacement.UNPLACED
                 exact -> ElementPlacement.EXACT
                 else -> ElementPlacement.APPROXIMATE
             })

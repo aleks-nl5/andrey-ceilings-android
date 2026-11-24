@@ -3,10 +3,12 @@ package com.andreyceilings.app.ui.screens
 import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.ClipData
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.graphics.pdf.PdfDocument
+import android.os.Build
 import android.os.CancellationSignal
 import android.os.ParcelFileDescriptor
 import android.print.PageRange
@@ -15,6 +17,7 @@ import android.print.PrintDocumentAdapter
 import android.print.PrintDocumentInfo
 import android.print.PrintManager
 import android.provider.DocumentsContract
+import android.service.chooser.ChooserResult
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -151,8 +154,13 @@ internal fun AndroidEstimateDocumentExport(content: @Composable () -> Unit) {
                                     PendingIntent.FLAG_ONE_SHOT or PendingIntent.FLAG_MUTABLE)
                                 val receiver = object : BroadcastReceiver() {
                                     override fun onReceive(context: Context?, selection: Intent?) {
-                                        if (selection?.action != selectionAction ||
-                                            !selection.hasExtra(Intent.EXTRA_CHOSEN_COMPONENT)) return
+                                        if (selection?.action != selectionAction) return
+                                        val selectedComponent = if (Build.VERSION.SDK_INT >= 35)
+                                            selection.getParcelableExtra(Intent.EXTRA_CHOOSER_RESULT, ChooserResult::class.java)?.selectedComponent
+                                        else null
+                                        @Suppress("DEPRECATION")
+                                        val legacyComponent = selection.getParcelableExtra<ComponentName>(Intent.EXTRA_CHOSEN_COMPONENT)
+                                        if (selectedComponent == null && legacyComponent == null) return
                                         dispatched()
                                         finishShare()
                                     }
