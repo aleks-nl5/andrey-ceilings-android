@@ -50,7 +50,8 @@ class PrMergeTriggerPolicyTest(unittest.TestCase):
         self.assertIn(":app:compileDebugAndroidTestKotlin", contents)
         self.assertIn(":shared:compileTestKotlinJvm", contents)
         self.assertIn(":shared:compileTestKotlinIosSimulatorArm64", contents)
-        self.assertIn("if: needs.impact.outputs.windows_smoke_tests != ''", contents)
+        self.assertNotIn(":desktopApp:test", contents)
+        self.assertNotIn("windows_smoke_tests", contents)
         for command in contents.split(":shared:jvmTest")[1:]:
             self.assertTrue(command.lstrip().startswith("--tests '*LineCreationSnapTest' --tests '*MeasurementFormattingTest'"))
         self.assertEqual(contents.count(":shared:jvmTest"), 1)
@@ -68,7 +69,8 @@ class PrMergeTriggerPolicyTest(unittest.TestCase):
         self.assertIn("steps.release_recovery.outcome", contents)
         self.assertIn("Signed APK production recovery: NOT VERIFIED", contents)
         self.assertIn("emulator-disconnected.marker", script)
-        self.assertIn("timeout --kill-after=30s 12m gradle --no-daemon :app:connectedDebugAndroidTest", script)
+        self.assertEqual(script.count(":app:connectedDebugAndroidTest"), 1)
+        self.assertNotIn("testInstrumentationRunnerArguments.class=", script)
         self.assertIn("timeout --kill-after=30s 45m gradle --no-daemon :app:connectedDebugAndroidTest", script)
 
 

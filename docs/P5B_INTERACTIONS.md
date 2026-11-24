@@ -26,7 +26,7 @@ POINT, LINE and AREA selection must stay exclusive. Creating a placement never d
 
 - Exercise tap/tap, drag, snap, bypass, zoom and short LINE inputs through the production drawing. Verify both placement endpoints, selected UUID and Undo/Redo on the production model.
 - Exercise the common Add, POINT reselect after LINE/AREA movement, exact properties, list/canvas synchronization and exit/reopen against real persisted data. `WorkspaceAddPointTouchTest`, `LinePlacementTouchTest` and `OverlayDragTouchTest` use the production editor and Android pointer injection. `WorkspacePlacementDraftTest` checks rollback, CAS, lost-response retry and current pricing.
-- Exercise the rectangle obstacle, 0.2 m circle, catalog AREA, Undo/Redo, circle properties after fullscreen and Save/exit/reopen in both themes and modes. Android's `AreaFeatureTouchTest` already provides physical SQLCipher-backed production UI coverage on the emulator.
+- Exercise the rectangle obstacle, 0.2 m circle, catalog AREA, Undo/Redo, circle properties after fullscreen and Save/exit/reopen in both themes and modes. These interactions are checked in owner APK acceptance. Area draft, Save and persistence remain covered by automated model and SQLCipher tests.
 - Use the platform matrix and owner APK checks in the P5B handoff for final acceptance.
 
 ## Owner UX correction: direct grip editing & wall-parallel snapping (22.11.2026)

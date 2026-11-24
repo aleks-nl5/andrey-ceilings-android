@@ -21,7 +21,6 @@ jobs:
     outputs:
       mode: ${{ steps.decide.outputs.mode }}
       android_depth: ${{ steps.decide.outputs.android_depth }}
-      android_smoke_tests: ${{ steps.decide.outputs.android_smoke_tests }}
     steps:
       - name: Checkout exact event commit and PR merge-base history
         uses: actions/checkout@v7
@@ -33,7 +32,6 @@ jobs:
         run: |
           python3 -m unittest discover -s ci/tests -p 'test_impact.py' -v
           python3 -m unittest discover -s ci/tests -p 'test_full_gate.py' -v
-          python3 -m unittest discover -s ci/tests -p 'test_android_smoke_reports.py' -v
       - name: Enforce FULL for main push or explicit manual dispatch
         id: decide
         shell: bash
@@ -168,7 +166,7 @@ jobs:
         if: steps.android_instrumentation.outcome == 'failure'
         shell: bash
         run: |
-          if [[ -f "$RUNNER_TEMP/p5a-workspace/emulator-disconnected.marker" ]]; then
+          if [[ -f "$RUNNER_TEMP/android-instrumentation-diagnostics/emulator-disconnected.marker" ]]; then
             echo "lost=true" >> "$GITHUB_OUTPUT"
             echo "::warning::Emulator disconnected during instrumentation; retrying full suite once on a fresh AVD."
           else
@@ -217,14 +215,13 @@ jobs:
           free -m
           sudo dmesg --ctime | grep -Ei 'out of memory|oom.kill|killed process|qemu.*(segfault|trap)|kvm.*(error|fail)' | tail -40 || true
 
-      # The automatic pipeline never runs the expensive P5A screenshot matrix.
-      # On a genuine instrumentation failure keep only lightweight evidence.
+      # Keep bounded platform diagnostics for integration failures.
       - name: Upload Android failure diagnostics (optional artifact)
         if: ${{ always() && (steps.android_instrumentation.outcome == 'failure' || steps.android_instrumentation_retry.outcome == 'failure') }}
         uses: actions/upload-artifact@v7
         with:
           name: android-failure-diagnostics
-          path: ${{ runner.temp }}/p5a-workspace/
+          path: ${{ runner.temp }}/android-instrumentation-diagnostics/
           if-no-files-found: warn
           retention-days: 7
 
@@ -325,6 +322,8 @@ jobs:
           set -euo pipefail
           actual="$(git rev-parse HEAD)"
           job_result="$FULL_RESULT"
+          echo "- Android scope: SQLCipher and repository integration, recovery, and functional PDF checks." >> "$GITHUB_STEP_SUMMARY"
+          echo "- App UI scenarios are covered by owner device acceptance." >> "$GITHUB_STEP_SUMMARY"
           if [[ "$RELEASE_RECOVERY" == success ]]; then
             echo "- Signed APK production recovery: passed." >> "$GITHUB_STEP_SUMMARY"
           else

@@ -2,14 +2,11 @@ package com.andreyceilings.app
 
 import android.content.Context
 import androidx.activity.ComponentActivity
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.junit4.StateRestorationTester
-import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.ViewModelStoreOwner
 import androidx.lifecycle.viewmodel.compose.LocalViewModelStoreOwner
@@ -20,13 +17,14 @@ import com.andreyceilings.shared.livepricing.*
 import com.andreyceilings.shared.measurement.*
 import com.andreyceilings.shared.navigation.*
 import com.andreyceilings.shared.prices.QuantityMode
-import com.andreyceilings.shared.theme.CeilingsTheme
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 import org.junit.Rule
 import org.junit.Test
 import kotlin.test.*
 
-/** Exercises the production Android Saver + ViewModel owner + real quote screen/SQLCipher reader.
+/** Exercises the production Android Saver, ViewModel owner and SQLCipher pricing reader.
  * Registry recreation retains the live ViewModel; a new process has a fresh ViewModelStore.
  */
 @OptIn(ExperimentalTestApi::class)
@@ -103,15 +101,17 @@ class QuoteHostRestorationTest {
                         session.navigationGuard.quoteSession.navigate(navigation)
                         currentNavigation = navigation
                     }
-                    CeilingsTheme(false) {
-                        if (navigation.measurementQuote) {
-                            val presenter = remember(session) { session.navigationGuard.quoteSession.acquire(
-                                fixture.projectId, measurement.id, fixture.measurementUuid, store) }
-                            SideEffect { current = presenter }
-                            MeasurementQuoteScreen(presenter, store,
-                                ElementRoute(fixture.projectId, measurement.id, fixture.measurementUuid),
-                                PaddingValues(16.dp), 0.dp, { navigation = navigation.back() })
-                        } else Text("Деталі заміру")
+                    if (navigation.measurementQuote) {
+                        val presenter = remember(session) { session.navigationGuard.quoteSession.acquire(
+                            fixture.projectId, measurement.id, fixture.measurementUuid, store) }
+                        LaunchedEffect(presenter) {
+                            val generation = presenter.beginRead()
+                            val pricing = withContext(Dispatchers.Default) {
+                                LivePricingReader(db).read(fixture.projectId, fixture.measurementUuid)
+                            }
+                            presenter.acceptRead(generation, pricing)
+                        }
+                        SideEffect { current = presenter }
                     }
                 }
             }
@@ -127,7 +127,6 @@ class QuoteHostRestorationTest {
             // Same Android ViewModelStore models configuration recreation, not process death.
             restoration.emulateSavedInstanceStateRestore()
             awaitQuoteReady("configuration restore", requireQuoteRoute = true)
-            compose.onNodeWithText("Попередній кошторис").assertExists()
             compose.runOnIdle {
                 assertSame(living, current)
                 assertEquals("10", current!!.state.value.discountText)
@@ -141,7 +140,6 @@ class QuoteHostRestorationTest {
             compose.runOnIdle { owner.viewModelStore.clear(); owner = Owner() }
             restoration.emulateSavedInstanceStateRestore()
             awaitQuoteReady("new ViewModelStore", previous = living, requireQuoteRoute = true)
-            compose.onNodeWithText("Попередній кошторис").assertExists()
             compose.runOnIdle {
                 assertTrue(currentNavigation!!.measurementQuote)
                 assertNotEquals(living.sessionId, current!!.sessionId)

@@ -16,56 +16,6 @@ import sys
 
 SHA = re.compile(r"^[0-9a-fA-F]{40}(?:[0-9a-fA-F]{24})?$")
 TARGETS = ("android", "desktop", "ios")
-ANDROID_TEST_PACKAGE = "com.andreyceilings.app"
-WORKSPACE_LAYOUT_TEST = f"{ANDROID_TEST_PACKAGE}.MeasurementWorkspaceLayoutTest"
-OVERLAY_DRAG_TEST = f"{ANDROID_TEST_PACKAGE}.OverlayDragTouchTest"
-AREA_TOUCH_TEST = f"{ANDROID_TEST_PACKAGE}.AreaFeatureTouchTest"
-WINDOWS_TEST_PACKAGE = "com.andreyceilings.desktop"
-FOUNDATION_SCENE_TEST = f"{WINDOWS_TEST_PACKAGE}.CeilingsFoundationSceneTest"
-MEASUREMENT_SCENE_TEST = f"{WINDOWS_TEST_PACKAGE}.MeasurementEditSceneTest"
-POINT_SCENE_TEST = f"{WINDOWS_TEST_PACKAGE}.PointEditingSceneTest"
-AREA_SCENE_TEST = f"{WINDOWS_TEST_PACKAGE}.AreaFeatureSceneTest"
-LINE_SCENE_TEST = f"{WINDOWS_TEST_PACKAGE}.LinePlacementSceneTest"
-SHARED_SOURCE = "shared/src/commonMain/kotlin/com/andreyceilings/shared"
-
-# Exact paths keep unrelated features, including PDF and persistence code in
-# UI directories, on deep verification. Each entry needs relevant UI evidence.
-ANDROID_SMOKE_TESTS_BY_PATH = {
-    "app/src/main/res/font/inter_variable.ttf": (WORKSPACE_LAYOUT_TEST,),
-}
-# Each shared presentation path has Android instrumentation and a Windows scene.
-SHARED_SMOKE_TESTS_BY_PATH = {
-    f"{SHARED_SOURCE}/measurement/MeasurementDrawing.kt": (
-        (WORKSPACE_LAYOUT_TEST, OVERLAY_DRAG_TEST, AREA_TOUCH_TEST), MEASUREMENT_SCENE_TEST,
-    ),
-    f"{SHARED_SOURCE}/ui/CeilingsWorkspaceScaffold.kt": (
-        (WORKSPACE_LAYOUT_TEST,), MEASUREMENT_SCENE_TEST,
-    ),
-    f"{SHARED_SOURCE}/ui/CeilingsFab.kt": ((WORKSPACE_LAYOUT_TEST,), FOUNDATION_SCENE_TEST),
-    f"{SHARED_SOURCE}/theme/CeilingsEdgeGradient.kt": ((WORKSPACE_LAYOUT_TEST,), FOUNDATION_SCENE_TEST),
-    f"{SHARED_SOURCE}/theme/CeilingsTheme.kt": ((WORKSPACE_LAYOUT_TEST,), FOUNDATION_SCENE_TEST),
-    f"{SHARED_SOURCE}/theme/CeilingsTypography.kt": ((WORKSPACE_LAYOUT_TEST,), MEASUREMENT_SCENE_TEST),
-}
-
-# Restricted QUICK UI proof is independent of the FULL impact classification.
-# These production editor changes merit the same scenes even in a larger PR.
-WINDOWS_P5B_SCENES_BY_PATH = {
-    f"{SHARED_SOURCE}/measurement/MeasurementEditScreen.kt": (MEASUREMENT_SCENE_TEST, POINT_SCENE_TEST),
-    f"{SHARED_SOURCE}/measurement/MeasurementEditModel.kt": (POINT_SCENE_TEST, LINE_SCENE_TEST, AREA_SCENE_TEST),
-    f"{SHARED_SOURCE}/measurement/WorkspaceAddDialog.kt": (AREA_SCENE_TEST,),
-    f"{SHARED_SOURCE}/measurement/WorkspaceGeometryPanel.kt": (POINT_SCENE_TEST, AREA_SCENE_TEST),
-    f"{SHARED_SOURCE}/measurement/WallAnchorEditor.kt": (POINT_SCENE_TEST,),
-}
-for scene in (MEASUREMENT_SCENE_TEST, POINT_SCENE_TEST, AREA_SCENE_TEST, LINE_SCENE_TEST):
-    WINDOWS_P5B_SCENES_BY_PATH[
-        f"desktopApp/src/test/kotlin/{scene.replace('.', '/')}.kt"
-    ] = (scene,)
-
-
-def p5b_windows_scenes(paths: tuple[str, ...]) -> tuple[str, ...]:
-    return tuple(sorted({scene for path in paths for scene in WINDOWS_P5B_SCENES_BY_PATH.get(path, ())}))
-
-
 @dataclass(frozen=True)
 class Change:
     status: str
@@ -79,8 +29,6 @@ class Impact:
     reason: str
     paths: tuple[str, ...]
     depths: tuple[str, str, str] = ("skip", "skip", "skip")
-    android_smoke_tests: tuple[str, ...] = ()
-    windows_smoke_tests: tuple[str, ...] = ()
 
 
 def parse_changes(data: bytes) -> list[Change]:
@@ -111,14 +59,13 @@ def parse_changes(data: bytes) -> list[Change]:
 
 def _full(reason: str, paths: tuple[str, ...]) -> Impact:
     """Global fail-closed fallback (CI/config/unknown/common business contracts)."""
-    return Impact("FULL", TARGETS, reason, paths, ("deep", "deep", "deep"),
-                  windows_smoke_tests=p5b_windows_scenes(paths))
+    return Impact("FULL", TARGETS, reason, paths, ("deep", "deep", "deep"))
 
 
 def _group(path: str) -> tuple[tuple[str, ...], str] | None:
     """Explicit source-set to consumer map. Unknown paths are NOT cheap.
 
-    Depth is per affected platform: skip, smoke, deep. A Windows-only
+    Depth is per affected platform: skip or deep. A Windows-only
     SQLCipher/JDBC change must not force Android/iOS instrumentation.
     """
     lower = path.lower()
@@ -150,9 +97,7 @@ def _group(path: str) -> tuple[tuple[str, ...], str] | None:
     if path.startswith(("app/src/", "shared/src/androidMain/",
                         "shared/src/androidTest/", "shared/src/androidInstrumentedTest/",
                         "shared/src/androidUnitTest/")):
-        return (("android",), "smoke" if path in ANDROID_SMOKE_TESTS_BY_PATH else "deep")
-    # Platform directories do not establish presentation-only behavior.
-    # Desktop and iOS smoke are selected only by audited shared paths below.
+        return (("android",), "deep")
     if path.startswith(("desktopApp/src/", "shared/src/jvmMain/",
                         "shared/src/jvmTest/")):
         return (("desktop",), "deep")
@@ -161,7 +106,7 @@ def _group(path: str) -> tuple[tuple[str, ...], str] | None:
     if path.startswith(("shared/src/commonMain/", "shared/src/commonTest/")):
         # Common business/geometry/finance code is coupled to native DB and
         # platform persistence. No optimistic category derived from its name.
-        return (TARGETS, "smoke" if path in SHARED_SMOKE_TESTS_BY_PATH else "deep")
+        return (TARGETS, "deep")
     return None
 
 
@@ -170,7 +115,7 @@ def classify(changes: list[Change]) -> Impact:
     if not changes:
         return _full("empty or unverifiable change set", paths)
     depths = {target: "skip" for target in TARGETS}
-    rank = {"skip": 0, "smoke": 1, "deep": 2}
+    rank = {"skip": 0, "deep": 1}
     shared_deep = False
     for c in changes:
         if c.status not in ("A", "M"):
@@ -190,21 +135,8 @@ def classify(changes: list[Change]) -> Impact:
         return Impact("FAST", (), "documentation-only; classifier tests", paths, levels)
     if shared_deep:
         return _full("shared business/database or test contract; all dependent suites", paths)
-    android_smoke_tests = ()
-    windows_tests = set(p5b_windows_scenes(paths))
-    shared_suites = [SHARED_SMOKE_TESTS_BY_PATH[path]
-                     for path in paths if path in SHARED_SMOKE_TESTS_BY_PATH]
-    if depths["android"] == "smoke":
-        android_tests = {
-            test for path in paths for test in ANDROID_SMOKE_TESTS_BY_PATH.get(path, ())
-        }
-        android_tests.update(test for tests, _ in shared_suites for test in tests)
-        android_smoke_tests = tuple(sorted(android_tests))
-    if depths["desktop"] == "smoke":
-        windows_tests.add(FOUNDATION_SCENE_TEST)
-        windows_tests.update(scene for _, scene in shared_suites)
-    return Impact("TARGETED", selected, "per-platform source-set dependency union; scoped depth",
-                  paths, levels, android_smoke_tests, tuple(sorted(windows_tests)))
+    return Impact("TARGETED", selected, "per-platform source-set dependency union",
+                  paths, levels)
 
 
 def impact_from_git(base: str, head: str) -> Impact:
@@ -234,8 +166,6 @@ def main(argv: list[str] | None = None) -> int:
         "desktop": str("desktop" in result.targets).lower(),
         "ios": str("ios" in result.targets).lower(),
         **{f"{target}_depth": depth for target, depth in zip(TARGETS, result.depths)},
-        "android_smoke_tests": ",".join(result.android_smoke_tests),
-        "windows_smoke_tests": ",".join(result.windows_smoke_tests),
         "apple_depth": (result.depths[2] if result.depths[2] != "skip"
                         else "smoke" if result.depths[1] != "skip" else "skip"),
     }
@@ -249,8 +179,6 @@ def main(argv: list[str] | None = None) -> int:
                  f"Commit: {args.head or 'unknown'}", f"Decision: **{result.mode}**",
                  f"Target groups: {', '.join(result.targets) or 'none'}",
                  f"Coverage: {', '.join(f'{t}={d}' for t, d in zip(TARGETS, result.depths))}",
-                 f"Android smoke classes: {', '.join(result.android_smoke_tests) or 'none selected'}",
-                 f"Windows smoke classes: {', '.join(result.windows_smoke_tests) or 'none selected'}",
                  f"Reason: {result.reason.replace(chr(96), '')}",
                  "", "This is a classification, not proof of execution. Skipped platforms are NOT verified; scoped acceptance depends on real matching-SHA job results.",
                  "", f"Changed paths: {len(result.paths)}", ""]
