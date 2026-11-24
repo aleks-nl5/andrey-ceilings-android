@@ -170,7 +170,8 @@ fun layoutMeasurementDrawingForProjectedPoints(
     points: List<DrawingPoint>, width: Float, height: Float,
     sizes: List<DrawingLabelSize>, density: Float = 1f,
     vertexSizes: List<DrawingLabelSize> = emptyList(),
-    placeCrowdedVertices: Boolean = false
+    placeCrowdedVertices: Boolean = false,
+    occupiedLabels: List<DrawingLabelBounds> = emptyList()
 ): MeasurementDrawingLayout {
     require(width > 0f && height > 0f && width.isFinite() && height.isFinite() &&
         density > 0f && density.isFinite() &&
@@ -200,7 +201,8 @@ fun layoutMeasurementDrawingForProjectedPoints(
     }
 
     fun fitsVertexLabel(candidate: DrawingLabelBounds): Boolean =
-        vertexLabels.none { overlaps(candidate, it) } && fitsExterior(candidate)
+        vertexLabels.none { overlaps(candidate, it) } &&
+            occupiedLabels.none { overlaps(candidate, it) } && fitsExterior(candidate)
 
     val measuredVertices = vertexSizes.take(points.size)
     measuredVertices.forEachIndexed { i, size ->
@@ -266,10 +268,10 @@ fun layoutMeasurementDrawingForProjectedPoints(
             val y = ((midY - (b.x - a.x) / length * areaSign * distance * density)
                 .toFloat() - size.height / 2).coerceIn(0f, height - size.height)
             val candidate = DrawingLabelBounds(i, x, y, size.width, size.height)
-            val overlapsLabel = (labels + vertexLabels).any { overlaps(candidate, it) }
+            val overlapsLabel = (labels + vertexLabels + occupiedLabels).any { overlaps(candidate, it) }
             val overlapsVertex = points.any { it.x >= x - gap && it.x <= candidate.right + gap &&
                 it.y >= y - gap && it.y <= candidate.bottom + gap }
-            if (!overlapsLabel && !overlapsVertex) { labels.add(candidate); break }
+            if (!overlapsLabel && !overlapsVertex && fitsExterior(candidate)) { labels.add(candidate); break }
         }
     }
     return MeasurementDrawingLayout(points, labels, vertexLabels)

@@ -211,4 +211,7 @@
     <string name="p5c_shape_polygon">Багатокутник (прямі кути)</string>
     <string name="p5c_parent_loading">Перевіряємо доступність об’єкта.</string>
     <string name="p5c_parent_unavailable">Об’єкт недоступний. Замір не збережено.</string>
+    <string name="p5c_save_conflict">Конфлікт версій</string>
+    <string name="p5c_save_uncertain">Запис не підтверджено</string>
+    <string name="p5c_save_failed">Замір не збережено</string>
 </resources>

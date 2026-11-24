@@ -759,14 +759,31 @@ fun MeasurementDrawing(
                 }
                 areaCreationPoints.forEach {drawCircle(ink,5.dp.toPx(),screenPosition(it))}
                 areaCreationPoints.zipWithNext().forEach {(a,b)->drawLine(ink.copy(alpha=0.6f),screenPosition(a),screenPosition(b),strokeWidth=2.dp.toPx())}
+                val viewHeight = viewportHeight(size.height)
+                val labelBounds = if (workspaceOrientation) fitBounds(size.width, viewHeight)
+                    else Rect(0f, 0f, size.width, size.height)
+
+                val labelOrigin = Offset(labelBounds.left, labelBounds.top + if (workspaceOrientation) viewportTop else 0f)
+                val occupiedLabels = mutableListOf<DrawingLabelBounds>()
                 mountingDimensions.forEachIndexed { index, dimension ->
                     val a=screen(dimension.start);val b=screen(dimension.end)
                     drawLine(ink,a,b,strokeWidth=1.dp.toPx())
                     drawCircle(ink,2.dp.toPx(),b)
                     val label=dimensionLayouts[index]
-                    val mid=(a+b)/2f
-                    drawRect(surface.copy(alpha=0.96f),mid,Size(label.size.width.toFloat(),label.size.height.toFloat()))
-                    drawText(label,topLeft=mid)
+                    val mid = (a + b) / 2f
+                    val width = label.size.width.toFloat()
+                    val height = label.size.height.toFloat()
+                    if (!workspaceOrientation || width <= labelBounds.width && height <= labelBounds.height) {
+                        val local = mid - labelOrigin
+                        val topLeft = if (workspaceOrientation) Offset(
+                            local.x.coerceIn(0f, labelBounds.width - width),
+                            local.y.coerceIn(0f, labelBounds.height - height)
+                        ) + labelOrigin else mid
+                        occupiedLabels += DrawingLabelBounds(index, topLeft.x - labelOrigin.x,
+                            topLeft.y - labelOrigin.y, width, height)
+                        drawRect(surface.copy(alpha = 0.96f), topLeft, Size(width, height))
+                        drawText(label, topLeft = topLeft)
+                    }
                 }
                 linePreview?.let { preview ->
                     val start = screenPosition(preview.start)
@@ -816,17 +833,13 @@ fun MeasurementDrawing(
                     if(marker.mounting.needsReview) drawCircle(markerInk,10.dp.toPx(),center,style=Stroke(1.dp.toPx()))
                     if (marker.uuid == selectedPointUuid || relatedElementUuid != null && marker.elementUuid == relatedElementUuid) drawCircle(ink, 12.dp.toPx(), center, style = Stroke(3.dp.toPx()))
                 }
-                val viewHeight = viewportHeight(size.height)
-                val labelBounds = if (workspaceOrientation) fitBounds(size.width, viewHeight)
-                    else Rect(0f, 0f, size.width, size.height)
                 if (labelBounds.width <= 0f || labelBounds.height <= 0f) return@Canvas
-                val labelOrigin = Offset(labelBounds.left, labelBounds.top + if (workspaceOrientation) viewportTop else 0f)
                 val visibleLabels = layoutMeasurementDrawingForProjectedPoints(
                     projectedPoints.map { DrawingPoint(it.x - labelOrigin.x, it.y - labelOrigin.y) },
                     labelBounds.width, labelBounds.height,
                     textLayouts.map { DrawingLabelSize(it.size.width.toFloat(), it.size.height.toFloat()) }, density,
                     vertexLayouts.map { DrawingLabelSize(it.size.width.toFloat(), it.size.height.toFloat()) },
-                    placeCrowdedVertices = workspaceOrientation
+                    placeCrowdedVertices = workspaceOrientation, occupiedLabels = occupiedLabels
                 )
                 visibleLabels.vertexLabels.forEach { label ->
                     val topLeft = labelOrigin + Offset(label.left, label.top)

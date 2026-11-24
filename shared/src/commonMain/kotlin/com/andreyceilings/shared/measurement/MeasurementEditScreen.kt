@@ -148,7 +148,8 @@ fun MeasurementEditScreen(
     val state by model.state.collectAsState()
     val validation = remember(state.draft) { validateMeasurementCreate(state.draft) }
     val pointFlow = remember(model, state.original.draft.recordUuid) { model.observePoints() }
-    val overlay = key(model, state.original.draft.recordUuid) { pointFlow.collectAsState(PointOverlayState.Loading).value }
+    val overlay = key(model, state.original.draft.recordUuid) { pointFlow.collectAsState(if (state.creating) PointOverlayState.Loaded(emptyList(), null)
+        else PointOverlayState.Loading).value }
     LaunchedEffect(overlay,state.original) {
         val incoming=(overlay as? PointOverlayState.Loaded)?.points
         if(incoming!=null && !state.saving && !state.saved && !state.checking && !state.uncertain && (incoming.map {it.uuid}.toSet()!=state.original.placements.points.map {it.uuid}.toSet() ||
@@ -492,13 +493,26 @@ fun MeasurementEditScreen(
                 val position = if (inlineKeyboardPanel) Modifier.align(Alignment.TopEnd).padding(end = 56.dp)
                 else Modifier.align(Alignment.TopStart).padding(top = headerHeight)
                 Box(position) {
-                    MeasurementIconAction("Показати повне повідомлення", Icons.Default.Info,
-                        modifier = Modifier.testTag("measurement-edit-status").semantics {
-                            stateDescription = status
-                            liveRegion = LiveRegionMode.Polite
-                        },
-                        tint = if (statusIsProblem) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
-                    ) { statusDetails = true }
+                    val critical = state.conflict || state.uncertain || state.saveFailed
+                    Row(
+                        modifier = if (critical) Modifier.background(
+                            MaterialTheme.colorScheme.errorContainer, CircleShape).padding(end = 8.dp) else Modifier,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        MeasurementIconAction("Показати повне повідомлення", Icons.Default.Info,
+                            modifier = Modifier.testTag("measurement-edit-status").semantics {
+                                stateDescription = status
+                                liveRegion = LiveRegionMode.Polite
+                            },
+                            tint = if (statusIsProblem) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
+                        ) { statusDetails = true }
+                        if (critical) Text(stringResource(when {
+                            state.conflict -> Res.string.p5c_save_conflict
+                            state.uncertain -> Res.string.p5c_save_uncertain
+                            else -> Res.string.p5c_save_failed
+                        }), color = MaterialTheme.colorScheme.onErrorContainer,
+                            style = MaterialTheme.typography.labelMedium, maxLines = 2)
+                    }
                 }
             }
             val normalPanelHeight = normalPanelHeight(headerHeight)

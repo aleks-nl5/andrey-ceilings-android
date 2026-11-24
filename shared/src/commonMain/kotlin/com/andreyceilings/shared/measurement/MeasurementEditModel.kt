@@ -38,6 +38,7 @@ data class MeasurementEditState(
     val pointElementUuid: String? = null,
     val coordinates: WorkspaceCoordinatesInput? = null,
     val createdId: Long? = null,
+    val saveFailed: Boolean = false,
     val contourAnchorReference: ContourAnchorReference? = null
 ) {
     val creating: Boolean get() = original.measurementId == 0L
@@ -80,7 +81,7 @@ class MeasurementEditModel(
 
     private fun publish(draft: MeasurementCreateDraft = state.value.draft) {
         mutableState.value = state.value.copy(draft = draft, canUndo = inputStart?.let { it != form(draft) } == true || undo.isNotEmpty(),
-            canRedo = redo.isNotEmpty(), error = null)
+            canRedo = redo.isNotEmpty(), error = null, saveFailed = false)
     }
     fun beginInput() { if (!state.value.saving && !state.value.checking && !state.value.saved && !state.value.exitReady && inputStart == null) inputStart = form() }
     fun commitInput() {
@@ -222,7 +223,7 @@ class MeasurementEditModel(
             val completion=store?.beginWrite() ?: return false
             val command=attempt ?: CeilingWriteAttempt(newRecordUuid(),null).also { attempt=it }
             if(!preserveExitAction)exitAction=null
-            mutableState.value=before.copy(saving=true,exitRequested=false,error=null,drag=null,workspaceSaveConfirmed=false)
+            mutableState.value=before.copy(saving=true,exitRequested=false,error=null,drag=null,workspaceSaveConfirmed=false,saveFailed=false)
             store?.retain(token,this)
             return withContext(NonCancellable+Dispatchers.Default) {
                 try {
@@ -255,11 +256,11 @@ class MeasurementEditModel(
                 } catch (failure: PointPlacementFailure.RetryConflict) {
                     attempt=null;mutableState.value=before.copy(error=pointFailureMessage(failure),conflict=true);store?.release(token);false
                 } catch (failure: MeasurementEditRejected) {
-                    attempt=null;mutableState.value=before.copy(uncertain=false,error=failure.message);store?.release(token);false
+                    attempt=null;mutableState.value=before.copy(uncertain=false, saveFailed=true, error=failure.message);store?.release(token);false
                 } catch (failure: LinePlacementFailure) {
-                    attempt=null;mutableState.value=before.copy(uncertain=false,error=failure.message);store?.release(token);false
+                    attempt=null;mutableState.value=before.copy(uncertain=false, saveFailed=true, error=failure.message);store?.release(token);false
                 } catch (_: IllegalArgumentException) {
-                    attempt=null;mutableState.value=before.copy(uncertain=false,error="Перевірте контур, стінні опори й відступи. Чернетку збережено; недопустимі дані не записано.");store?.release(token);false
+                    attempt=null;mutableState.value=before.copy(uncertain=false, saveFailed=true, error="Перевірте контур, стінні опори й відступи. Чернетку збережено; недопустимі дані не записано.");store?.release(token);false
                 } catch (_: Exception) {
                     mutableState.value=before.copy(uncertain=true,error="Результат збереження не підтверджено. Повторіть ту саму спробу або перезавантажте запис; чернетку збережено.")
                     false
