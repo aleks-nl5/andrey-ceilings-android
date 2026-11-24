@@ -1,3 +1,8 @@
+CREATE TABLE estimate_revision_tombstones (
+    revisionUuid TEXT NOT NULL PRIMARY KEY REFERENCES estimate_revisions(revisionUuid) ON DELETE RESTRICT,
+    deletedAt INTEGER NOT NULL CHECK (typeof(deletedAt) = 'integer' AND deletedAt > 0)
+);
+
 CREATE TABLE estimate_revision_frozen (
     revisionUuid TEXT NOT NULL PRIMARY KEY REFERENCES estimate_revisions(revisionUuid) ON DELETE RESTRICT,
     payload TEXT NOT NULL,
@@ -22,13 +27,16 @@ SELECT * FROM estimate_revision_receipts WHERE operationUuid = ?;
 selectWorkflow:
 SELECT * FROM estimate_workflow WHERE seriesUuid = ?;
 
-selectExactRevision:
+selectHistoricalExactRevision:
 SELECT f.*, r.seriesUuid, r.createdAt, r.versionNumber, r.parentRevisionUuid, s.publicNumber, s.projectId, s.measurementUuid,
+ CASE WHEN s.deletedAt IS NULL AND NOT EXISTS (
+    SELECT 1 FROM estimate_revision_tombstones d WHERE d.revisionUuid = r.revisionUuid
+ ) THEN 1 ELSE 0 END AS isActive,
  w.status, w.version AS statusVersion, w.updatedAt AS statusUpdatedAt, c.selectedRevisionUuid, c.version AS choiceVersion
 FROM (SELECT * FROM estimate_v1_frozen UNION ALL SELECT * FROM estimate_revision_frozen) f
 JOIN estimate_revisions r ON r.revisionUuid = f.revisionUuid
 JOIN estimate_series s ON s.seriesUuid = r.seriesUuid JOIN estimate_revision_workflow w ON w.revisionUuid = r.revisionUuid JOIN estimate_revision_choice c ON c.seriesUuid = s.seriesUuid
-WHERE s.seriesUuid = ? AND r.revisionUuid = ? AND s.deletedAt IS NULL;
+WHERE s.seriesUuid = ? AND r.revisionUuid = ?;
 selectExactLatest:
 SELECT f.*, r.seriesUuid, r.createdAt, r.versionNumber, r.parentRevisionUuid, s.publicNumber, s.projectId, s.measurementUuid,
  w.status, w.version AS statusVersion, w.updatedAt AS statusUpdatedAt, c.selectedRevisionUuid, c.version AS choiceVersion
@@ -36,7 +44,9 @@ FROM (SELECT * FROM estimate_v1_frozen UNION ALL SELECT * FROM estimate_revision
 JOIN estimate_revisions r ON r.revisionUuid = f.revisionUuid
 JOIN estimate_series s ON s.seriesUuid = r.seriesUuid JOIN estimate_revision_workflow w ON w.revisionUuid = r.revisionUuid JOIN estimate_revision_choice c ON c.seriesUuid = s.seriesUuid
 WHERE s.seriesUuid = ? AND s.deletedAt IS NULL
-AND r.versionNumber = (SELECT max(latest.versionNumber) FROM estimate_revisions latest WHERE latest.seriesUuid = s.seriesUuid);
+AND NOT EXISTS (SELECT 1 FROM estimate_revision_tombstones d WHERE d.revisionUuid = r.revisionUuid)
+AND r.versionNumber = (SELECT max(latest.versionNumber) FROM estimate_revisions latest WHERE latest.seriesUuid = s.seriesUuid
+AND NOT EXISTS (SELECT 1 FROM estimate_revision_tombstones d WHERE d.revisionUuid = latest.revisionUuid));
 selectExactList:
 SELECT f.*, r.seriesUuid, r.createdAt, r.versionNumber, r.parentRevisionUuid, s.publicNumber, s.projectId, s.measurementUuid,
  w.status, w.version AS statusVersion, w.updatedAt AS statusUpdatedAt, c.selectedRevisionUuid, c.version AS choiceVersion
@@ -44,6 +54,7 @@ FROM (SELECT * FROM estimate_v1_frozen UNION ALL SELECT * FROM estimate_revision
 JOIN estimate_revisions r ON r.revisionUuid = f.revisionUuid
 JOIN estimate_series s ON s.seriesUuid = r.seriesUuid JOIN estimate_revision_workflow w ON w.revisionUuid = r.revisionUuid JOIN estimate_revision_choice c ON c.seriesUuid = s.seriesUuid
 WHERE s.deletedAt IS NULL
+AND NOT EXISTS (SELECT 1 FROM estimate_revision_tombstones d WHERE d.revisionUuid = r.revisionUuid)
 ORDER BY s.createdAt DESC, s.seriesUuid, r.versionNumber DESC;
 selectExactHistory:
 SELECT f.*, r.seriesUuid, r.createdAt, r.versionNumber, r.parentRevisionUuid, s.publicNumber, s.projectId, s.measurementUuid,
@@ -51,7 +62,14 @@ SELECT f.*, r.seriesUuid, r.createdAt, r.versionNumber, r.parentRevisionUuid, s.
 FROM (SELECT * FROM estimate_v1_frozen UNION ALL SELECT * FROM estimate_revision_frozen) f
 JOIN estimate_revisions r ON r.revisionUuid = f.revisionUuid
 JOIN estimate_series s ON s.seriesUuid = r.seriesUuid JOIN estimate_revision_workflow w ON w.revisionUuid = r.revisionUuid JOIN estimate_revision_choice c ON c.seriesUuid = s.seriesUuid
-WHERE s.seriesUuid = ? AND s.deletedAt IS NULL ORDER BY r.versionNumber DESC;
+WHERE s.seriesUuid = ? AND s.deletedAt IS NULL
+AND NOT EXISTS (SELECT 1 FROM estimate_revision_tombstones d WHERE d.revisionUuid = r.revisionUuid) ORDER BY r.versionNumber DESC;
 
 selectRevisionReceiptByRevision:
 SELECT * FROM estimate_revision_receipts WHERE revisionUuid = ?;
+
+insertRevisionTombstone:
+INSERT INTO estimate_revision_tombstones VALUES (?, ?);
+
+countFrozenSeries:
+SELECT count(*) FROM estimate_v1_frozen f JOIN estimate_revisions r USING(revisionUuid) WHERE r.seriesUuid = ?;

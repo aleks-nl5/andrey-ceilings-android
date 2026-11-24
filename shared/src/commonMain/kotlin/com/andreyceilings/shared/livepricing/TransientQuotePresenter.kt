@@ -19,7 +19,7 @@ data class TransientQuoteState(
     val unresolved: List<UnresolvedWork> = emptyList(), val selected: Set<String> = emptySet(),
     val unavailableSelectedDiscussing: List<UnavailableSelectedWork> = emptyList(),
     val edits: Map<String, QuoteQuantityEdit> = emptyMap(), val discountText: String = "0",
-    val discountConfirmed: Boolean = true, val preview: IndividualEstimatePreview? = null,
+    val discountMode: QuoteDiscountMode = QuoteDiscountMode.PERCENT, val discountConfirmed: Boolean = true, val preview: IndividualEstimatePreview? = null,
     val amounts: QuoteAmounts? = null, val fingerprint: String? = null,
     val acknowledgedFingerprint: String? = null
 ) {
@@ -29,8 +29,13 @@ data class TransientQuoteState(
 
 /** Main-thread confined, memory only. Every read is fenced by visit + request generation. */
 class TransientQuotePresenter(val measurementUuid: String, val sessionId: String = newRecordUuid(),
-    val revisionBase: SavedIndividualQuote? = null) {
-    val revisionTarget = revisionBase?.let { IndividualRevisionTarget(it.seriesUuid, it.revisionUuid, it.versionNumber, it.statusVersion) }
+    val revisionBase: SavedIndividualQuote? = null,
+    val revisionCarrySource: SavedIndividualQuote? = revisionBase
+) {
+    val revisionTarget = revisionBase?.let { base ->
+        IndividualRevisionTarget(base.seriesUuid, base.revisionUuid, base.versionNumber, base.statusVersion, base.historicalHead,
+            revisionCarrySource?.revisionUuid?.takeIf { it != base.revisionUuid })
+    }
     val compositionUuid: String = newRecordUuid()
     private var request = 0L
     private val closedState = MutableStateFlow(false)
@@ -70,6 +75,8 @@ class TransientQuotePresenter(val measurementUuid: String, val sessionId: String
     // Explicit intent survives missing prices/quantities and even removal of the source row.
     // Retain the last known label so the user can identify and explicitly remove a missing work.
     private var includedDiscussing = emptyMap<String, String>()
+    private var selectedConfirmed = emptyMap<String, LiveEstimateLine>()
+    private var removedConfirmed = emptyMap<String, String>()
     private val mutable = MutableStateFlow(TransientQuoteState())
     val state: StateFlow<TransientQuoteState> = mutable.asStateFlow()
 
@@ -131,6 +138,11 @@ class TransientQuotePresenter(val measurementUuid: String, val sessionId: String
     fun select(sourceKey: String, included: Boolean) {
         val s = mutable.value
         if (s.loading || !editable) return
+        if (!included && sourceKey in removedConfirmed) {
+            removedConfirmed = removedConfirmed - sourceKey
+            selectedConfirmed = selectedConfirmed - sourceKey
+            changed(); rebuild(); return
+        }
         if (!included && sourceKey in includedDiscussing) {
             includedDiscussing = includedDiscussing - sourceKey
             // A previously discussing work may have become confirmed in the refreshed source.
@@ -169,13 +181,14 @@ class TransientQuotePresenter(val measurementUuid: String, val sessionId: String
         mutable.value = mutable.value.copy(edits = mutable.value.edits - elementUuid)
         changed(); rebuild()
     }
-    fun editDiscount(text: String) {
+    fun editDiscount(text: String, mode: QuoteDiscountMode = mutable.value.discountMode, confirmed: Boolean = false) {
         if (!editable) return
-        mutable.value = mutable.value.copy(discountText = text, discountConfirmed = false)
+        mutable.value = mutable.value.copy(discountText = text, discountMode = mode, discountConfirmed = confirmed)
         changed(); rebuild()
     }
     fun confirmDiscount() {
-        if (QuoteDiscount.parseBasisPoints(mutable.value.discountText) == null || !editable) return
+        val current = mutable.value
+        if (!editable || QuoteDiscount.parse(current.discountText, current.discountMode) == null) return
         mutable.value = mutable.value.copy(discountConfirmed = true)
         changed(); rebuild()
     }
@@ -201,13 +214,14 @@ class TransientQuotePresenter(val measurementUuid: String, val sessionId: String
 
     /** Explicit, all-or-nothing import of the selected supported decision. Prices never enter this path. */
     fun carryDiscount(): Boolean {
-        val old = revisionBase?.frozen ?: return false
-        if (!editable || loaded == null || QuoteDiscount.parseBasisPoints(old.discountText) == null) return false
-        editDiscount(old.discountText) // Requires the ordinary fresh confirmation.
+        val old = revisionCarrySource?.frozen ?: return false
+        val mode = old.amounts.discountMode
+        if (!editable || loaded == null || QuoteDiscount.parse(old.discountText, mode) == null) return false
+        editDiscount(old.discountText, mode) // Requires the ordinary fresh confirmation.
         return true
     }
     private fun carryMatch(id: String): LiveEstimateLine? {
-        val old = revisionBase?.frozen ?: return null
+        val old = revisionCarrySource?.frozen ?: return null
         val current = mutable.value
         val before = old.source.elements.singleOrNull { it.uuid == id } ?: return null
         val after = current.source?.elements?.singleOrNull { it.uuid == id } ?: return null
@@ -221,7 +235,7 @@ class TransientQuotePresenter(val measurementUuid: String, val sessionId: String
     }
     fun carryQuantity(elementUuid: String): Boolean {
         if (!editable) return false
-        val old = revisionBase?.frozen?.rows?.singleOrNull { it.line.elementUuid == elementUuid }?.line ?: return false
+        val old = revisionCarrySource?.frozen?.rows?.singleOrNull { it.line.elementUuid == elementUuid }?.line ?: return false
         val current = carryMatch(elementUuid) ?: return false
         val source = loaded?.source ?: return false
         val e = source.elements.singleOrNull { it.uuid == elementUuid } ?: return false
@@ -232,7 +246,7 @@ class TransientQuotePresenter(val measurementUuid: String, val sessionId: String
     }
     fun carrySelection(): Boolean {
         if (!editable || loaded == null) return false
-        val old = revisionBase?.frozen ?: return false
+        val old = revisionCarrySource?.frozen ?: return false
         val included = old.rows.filter { it.line.bucket == PricingBucket.POTENTIAL }.map { it.line.sourceKey }
         val excluded = old.omissions.filter { it.reason == ExclusionReason.USER_EXCLUDED }.map { it.sourceKey }
         val decisions = (included.map { it to true } + excluded.map { it to false })
@@ -252,15 +266,26 @@ class TransientQuotePresenter(val measurementUuid: String, val sessionId: String
         val source = data.source
         val roles = BusinessRoleBindings(source.signature, source.elements.mapNotNull { e -> e.businessRole?.let { e.uuid to it } }.toMap())
         val base = LivePricingEngine.buildPreview(source, data.catalog, roles, compositionUuid)
+        // Approved additions are default selections. A disappearing previously selected source
+        // is surfaced explicitly so refresh cannot silently drop a priced decision.
+        val currentByKey = base.priceableLines.associateBy { it.sourceKey }
+        val sourceKeys = source.elements.map { elementKey(it.uuid) }.toSet()
+        val removed = selectedConfirmed.filterKeys { it !in sourceKeys }.mapValues { it.value.title }
+        removedConfirmed = (removedConfirmed + removed).filterKeys { it !in sourceKeys }
         val unavailableSelected = includedDiscussing.mapNotNull { (key, label) ->
             if (base.priceableLines.any { it.sourceKey == key }) null
             else UnavailableSelectedWork(key, source.elements.find { elementKey(it.uuid) == key }?.label ?: label,
                 base.unresolvedItems.find { it.sourceKey == key }?.reasons.orEmpty())
+        } + removedConfirmed.map { (key, label) ->
+            UnavailableSelectedWork(key, label, listOf(PricingProblemCode.SELECTION_MISSING))
         }
         val keys = base.priceableLines.filter { row ->
             if (row.bucket == PricingBucket.CONFIRMED) row.businessRole != BusinessRole.ADDITIONAL_WORK || row.sourceKey !in excludedConfirmed
             else row.businessRole == BusinessRole.ADDITIONAL_WORK && row.sourceKey in includedDiscussing
         }.map { it.sourceKey }.toSet() + includedDiscussing.keys
+        selectedConfirmed = keys.mapNotNull { key ->
+            currentByKey[key]?.takeIf { it.bucket == PricingBucket.CONFIRMED }?.let { key to it }
+        }.toMap()
         // A temporarily unpriced row keeps the user's exclusion intent while its stable source still exists.
         excludedConfirmed = excludedConfirmed.intersect(source.elements.filter {
             it.approval == ElementApproval.APPROVED && it.businessRole == BusinessRole.ADDITIONAL_WORK
@@ -271,6 +296,7 @@ class TransientQuotePresenter(val measurementUuid: String, val sessionId: String
         var inputValid = s.discountConfirmed && unavailableSelected.isEmpty()
         val overrides = s.edits.mapNotNull { (id, edit) ->
             val element = source.elements.find { it.uuid == id }
+            if (element != null && elementKey(id) !in keys && currentByKey.containsKey(elementKey(id))) return@mapNotNull null
             val value = quantity(edit.text, element?.unit)
             if (element == null || !edit.confirmed || value == null || !BillableOverrideRules.eligible(source, element) ||
                 base.priceableLines.none { it.elementUuid == id }) { inputValid = false; null }
@@ -283,11 +309,10 @@ class TransientQuotePresenter(val measurementUuid: String, val sessionId: String
         saveSelection = selection
         saveOverrides = overrides.toList()
         val preview = IndividualEstimatePricing.previewSelection(selection, live)
-        val bp = QuoteDiscount.parseBasisPoints(s.discountText)
-        val amounts = if (inputValid && bp != null && (preview.canFinalizeFull || preview.canRequestPartialAcknowledgement))
-            QuoteDiscount.calculate(preview.selectedIncludedTotalCents, bp) else null
-        val fingerprint = amounts?.let { contentToken(listOf(sessionId, preview.signature, s.discountText, bp.toString(),
-            it.subtotalCents.toString(), it.discountCents.toString(), it.finalCents.toString())) }
+        val discount = QuoteDiscount.parse(s.discountText, s.discountMode)
+        val amounts = if (inputValid && discount != null && (preview.canFinalizeFull || preview.canRequestPartialAcknowledgement))
+            QuoteDiscount.calculate(preview.selectedIncludedTotalCents, discount) else null
+        val fingerprint = amounts?.let { quoteSaveFingerprint(sessionId, preview.signature, s.discountText, it) }
         mutable.update { if (closed) it else s.copy(source = source, lines = live.priceableLines, unresolved = live.unresolvedItems, selected = keys,
             unavailableSelectedDiscussing = unavailableSelected, preview = preview, amounts = amounts, fingerprint = fingerprint) }
     }

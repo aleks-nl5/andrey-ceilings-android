@@ -28,6 +28,16 @@ object BusinessRolePortableProof {
             .reduce(com.andreyceilings.shared.measurement.MeasurementCreateIntent.Dimension("width", "3.34")))
         history.appendIndividual(FrozenRevisionProof.request(db, fixture, saved.seriesUuid), 602)
         assertTrue(history.selectRevision(saved.seriesUuid, saved.initialRevisionUuid, 1, 603))
+        val fixed = FrozenRevisionProof.presenter(db, fixture).also {
+            it.editDiscount("0.01", QuoteDiscountMode.FIXED, confirmed = true)
+        }
+        val fixedSeries = history.saveIndividual(checkNotNull(fixed.saveRequest(fixture.projectId, "Exact one cent")), 2026, 604)
+        val fixedQuote = assertNotNull(history.exactIndividual(fixedSeries.seriesUuid, fixedSeries.initialRevisionUuid))
+        assertEquals(4, fixedQuote.frozen.formatVersion)
+        assertEquals(1L, fixedQuote.frozen.amounts.discountCents)
+        assertEquals(QuoteDiscountMode.FIXED, fixedQuote.frozen.amounts.discountMode)
+        assertTrue(history.deleteIndividualRevision(fixedSeries.seriesUuid, fixedQuote.revisionUuid, 1, 605))
+        assertEquals(fixedQuote.frozen, history.historicalIndividual(fixedSeries.seriesUuid, fixedQuote.revisionUuid)?.frozen)
         verifyFrozenEstimateContents(driver)
         val current = assertIs<PricingReadResult.Loaded>(reader.read(fixture.projectId, fixture.measurementUuid))
         assertTrue(history.individualHistory(saved.seriesUuid).any { it.frozen.formatVersion == 3 })
@@ -48,7 +58,7 @@ object BusinessRolePortableProof {
         reader.closeReads()
         assertEquals(expected.frozenRows, frozenRows(restored))
     }
-    private fun frozenRows(driver: SqlDriver) = listOf("estimate_revision_workflow", "estimate_revision_choice", "estimate_revision_frozen", "estimate_revision_receipts", "estimate_revisions", "estimate_v1_frozen", "estimate_workflow", "estimate_save_receipts").flatMap { table ->
+    private fun frozenRows(driver: SqlDriver) = listOf("estimate_revision_tombstones", "estimate_series", "estimate_revision_workflow", "estimate_revision_choice", "estimate_revision_frozen", "estimate_revision_receipts", "estimate_revisions", "estimate_v1_frozen", "estimate_workflow", "estimate_save_receipts").flatMap { table ->
         val columns = MeasurementElementMigrationProof.rows(driver, "PRAGMA table_info($table)", 6).map { it[1]!! }
         MeasurementElementMigrationProof.rows(driver, "SELECT " + columns.joinToString { "quote($it)" } + " FROM $table ORDER BY 1", columns.size).map { listOf(table) + it }
     }

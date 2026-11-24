@@ -100,7 +100,7 @@ fun openDesktopPriceCatalog(driver: SqlDriver, previouslyExisting: Boolean) {
         if (oldVersion < PriceCatalogSchema.version)
             PriceCatalogSchema.migrate(driver, oldVersion, PriceCatalogSchema.version)
         PriceCatalogSchema.verifyStructure(driver)
-        verifyFrozenEstimateContents(driver)
+        verifyFrozenEstimateContents(driver, PriceCatalogSchema.version)
         StarterPriceCatalog.initialize(database)
         driver.execute(null, "PRAGMA user_version = ${PriceCatalogSchema.version}", 0)
     }

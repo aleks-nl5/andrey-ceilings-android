@@ -76,7 +76,7 @@ object WallVersionMigrationProof {
         presenter.close()
         val staleFixture = MeasurementPricingFixture.seed(db)
         val stale = assertNotNull(measurements.findByUuid(staleFixture.measurementUuid))
-        return Seed(row.projectId, document, stale, quote.seriesUuid, assertNotNull(repo.frozenIndividual(quote.seriesUuid)).payload,
+        return Seed(row.projectId, document, stale, quote.seriesUuid, db.frozenEstimateQueries.selectFrozenV1(quote.seriesUuid).executeAsOne().payload,
             preview)
     }
 

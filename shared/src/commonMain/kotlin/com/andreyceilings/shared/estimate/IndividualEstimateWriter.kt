@@ -31,7 +31,7 @@ internal fun ImmutableEstimateRepository.saveIndividual(
     if (target != null) revisions.selectRevisionReceipt(request.operationUuid).executeAsOneOrNull()?.let { receipt ->
         if (receipt.command != command) fail(IndividualEstimateSaveFailure.Reason.OPERATION_CONFLICT)
         val existing = checkNotNull(series(receipt.seriesUuid))
-        val exact = checkNotNull(exactIndividual(receipt.seriesUuid, receipt.revisionUuid))
+        val exact = checkNotNull(historicalIndividual(receipt.seriesUuid, receipt.revisionUuid))
         verifyFrozenRevisionReceipt(request.operationUuid, command, exact.frozen)
         return@transactionWithResult CreatedEstimateSeries(existing.seriesUuid, existing.documentNumber, receipt.revisionUuid, existing.localSequence)
     }
@@ -42,18 +42,24 @@ internal fun ImmutableEstimateRepository.saveIndividual(
             receipt.revisionUuid, existing.localSequence)
     }
     val previous = target?.let { t ->
-        if (!isEstimateUuid(t.seriesUuid) || !isEstimateUuid(t.expectedLatestRevisionUuid) || t.expectedVersion <= 0 || t.expectedStatusVersion <= 0)
+        if (!isEstimateUuid(t.seriesUuid) || !isEstimateUuid(t.expectedLatestRevisionUuid) ||
+            !isEstimateUuid(t.parentUuid) || t.expectedVersion <= 0 || t.expectedStatusVersion <= 0 ||
+            (t.historicalHead != null && t.parentVersion <= t.expectedVersion))
             fail(IndividualEstimateSaveFailure.Reason.INVALID_COMMAND)
         val root = series(t.seriesUuid) ?: fail(IndividualEstimateSaveFailure.Reason.UNAVAILABLE)
         if (root.deletedAt != null || root.projectId != request.projectId || root.measurementUuid != request.selection.measurementUuid)
             fail(IndividualEstimateSaveFailure.Reason.INVALID_COMMAND)
-        val latest = database.estimateHistoryQueries.selectLatestEstimateRevision(t.seriesUuid).executeAsOneOrNull()
-        if (latest == null || latest.revisionUuid != t.expectedLatestRevisionUuid || latest.versionNumber != t.expectedVersion)
+        if (t.openedRevisionUuid != null && exactIndividual(t.seriesUuid, t.openedRevisionUuid) == null)
+            fail(IndividualEstimateSaveFailure.Reason.UNAVAILABLE)
+        val latest = frozenIndividual(t.seriesUuid)
+        val historicalHead = database.estimateHistoryQueries.selectLatestEstimateRevision(t.seriesUuid).executeAsOneOrNull()
+        if (latest == null || latest.revisionUuid != t.expectedLatestRevisionUuid || latest.versionNumber != t.expectedVersion ||
+            historicalHead == null || historicalHead.revisionUuid != t.parentUuid || historicalHead.versionNumber != t.parentVersion)
             fail(IndividualEstimateSaveFailure.Reason.STALE_REVISION)
         val frozen = exactIndividual(t.seriesUuid, t.expectedLatestRevisionUuid)
             ?: fail(IndividualEstimateSaveFailure.Reason.UNAVAILABLE)
         if (frozen.statusVersion != t.expectedStatusVersion) fail(IndividualEstimateSaveFailure.Reason.STALE_STATUS)
-        if (t.expectedVersion == Long.MAX_VALUE)
+        if (t.parentVersion == Long.MAX_VALUE)
             fail(IndividualEstimateSaveFailure.Reason.VERSION_EXHAUSTED)
         frozen
     }
@@ -71,8 +77,10 @@ internal fun ImmutableEstimateRepository.saveIndividual(
         request.overrides, selection.scopeSignature)
     val preview = IndividualEstimatePricing.previewSelection(selection, live)
     if (!preview.canFinalizeFull && !preview.canRequestPartialAcknowledgement) fail(IndividualEstimateSaveFailure.Reason.NOT_READY)
-    val bp = QuoteDiscount.parseBasisPoints(request.discountText) ?: fail(IndividualEstimateSaveFailure.Reason.INVALID_COMMAND)
-    val amounts = QuoteDiscount.calculate(preview.selectedIncludedTotalCents, bp)
+    val discount = QuoteDiscount.parse(request.discountText, request.expectedAmounts.discountMode)
+        ?: fail(IndividualEstimateSaveFailure.Reason.INVALID_COMMAND)
+    val amounts = QuoteDiscount.calculate(preview.selectedIncludedTotalCents, discount)
+        ?: fail(IndividualEstimateSaveFailure.Reason.INVALID_COMMAND)
     val fingerprint = quoteSaveFingerprint(request.sessionId, preview.signature, request.discountText, amounts)
     if (amounts != request.expectedAmounts || fingerprint != request.expectedFingerprint)
         fail(IndividualEstimateSaveFailure.Reason.STALE_SOURCE)
@@ -126,10 +134,20 @@ internal fun ImmutableEstimateRepository.saveIndividual(
         }
         identity ?: fail(IndividualEstimateSaveFailure.Reason.NUMBER_COLLISION)
     }
-    val version = if (target == null) 1L else target.expectedVersion + 1
-    val format = if (included.any { it.quantityRoundingPolicy != null }) 3 else if (target == null) 1 else 2
+    val version = if (target == null) 1L else target.parentVersion + 1
+    val format = when {
+        amounts.discountMode == QuoteDiscountMode.FIXED -> 4
+        included.any { it.quantityRoundingPolicy != null } -> 3
+        target == null -> 1
+        else -> 2
+    }
+    val rule = when (format) {
+        4 -> "individual-quote-v4-fixed-discount"
+        3 -> "individual-quote-v3-area-milli-half-up"
+        else -> "individual-quote-v$format"
+    }
     val frozen = FrozenIndividualEstimate(formatVersion = format,
-        revisionIdentity = target?.let { FrozenRevisionIdentity(it.seriesUuid, created.initialRevisionUuid, version, it.expectedLatestRevisionUuid) }, title = request.title, source = source, sourceSignature = read.source.signature,
+        revisionIdentity = target?.let { FrozenRevisionIdentity(it.seriesUuid, created.initialRevisionUuid, version, it.parentUuid) }, title = request.title, source = source, sourceSignature = read.source.signature,
         catalogSignature = read.catalog.signature, scopeSignature = selection.scopeSignature, compositionUuid = selection.compositionUuid,
         sessionId = request.sessionId, discountText = request.discountText, previewSignature = preview.signature,
         fingerprint = fingerprint, acknowledgedFingerprint = request.acknowledgedFingerprint, partial = preview.isPartial,
@@ -137,16 +155,16 @@ internal fun ImmutableEstimateRepository.saveIndividual(
         numberPolicy = policy, publicNumber = EstimateNumbering.printable(created.documentNumber))
     val payload = frozen.encode()
     // These REAL values support legacy history tools only. All P4C1 reads use the exact frozen table.
-    history.insertImmutableEstimateRevision(created.initialRevisionUuid, created.seriesUuid, target?.expectedLatestRevisionUuid, version, now,
-        m.drawingJson, payload, read.source.geometry.precisionStepMeters, if (format == 3) "individual-quote-v3-area-milli-half-up" else if (target == null) "individual-quote-v1" else "individual-quote-v2", "UAH",
+    history.insertImmutableEstimateRevision(created.initialRevisionUuid, created.seriesUuid, target?.parentUuid, version, now,
+        m.drawingJson, payload, read.source.geometry.precisionStepMeters, rule, "UAH",
         frozen.rounding, amounts.finalCents.toDouble() / 100)
     if (target == null) {
-        q.insertFrozenV1(created.initialRevisionUuid, payload, amounts.subtotalCents, bp.toLong(), amounts.discountCents, amounts.finalCents)
+        q.insertFrozenV1(created.initialRevisionUuid, payload, amounts.subtotalCents, amounts.discountBasisPoints.toLong(), amounts.discountCents, amounts.finalCents)
         q.insertEstimateWorkflow(created.seriesUuid, now) // Legacy archive; never used for active revision status.
         database.revisionWorkflowQueries.insertRevisionChoice(created.seriesUuid)
         q.insertEstimateSaveReceipt(request.operationUuid, command, created.seriesUuid, created.initialRevisionUuid)
     } else {
-        revisions.insertFrozenRevision(created.initialRevisionUuid, payload, amounts.subtotalCents, bp.toLong(), amounts.discountCents, amounts.finalCents)
+        revisions.insertFrozenRevision(created.initialRevisionUuid, payload, amounts.subtotalCents, amounts.discountBasisPoints.toLong(), amounts.discountCents, amounts.finalCents)
         revisions.insertRevisionReceipt(request.operationUuid, command, created.seriesUuid, created.initialRevisionUuid)
     }
     database.revisionWorkflowQueries.insertRevisionWorkflow(created.initialRevisionUuid, now)

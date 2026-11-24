@@ -38,6 +38,58 @@ class FrozenRevisionConcurrencyTest {
         } finally { pool.shutdownNow(); directory.deleteRecursively() }
     }
 
+    @Test fun approvalReplacementAndDeletionUseTheSamePhysicalWriter() {
+        val directory = Files.createTempDirectory("quote-workflow-race").toFile()
+        val url = "jdbc:sqlite:${directory.resolve("quotes.db").absolutePath}"
+        val pool = Executors.newFixedThreadPool(2)
+        try {
+            JdbcSqliteDriver(url).use { driver ->
+                PriceCatalogSchema.create(driver)
+                val db = PrototypeDatabase(driver)
+                val fixture = MeasurementPricingFixture.seed(db)
+                val repo = ImmutableEstimateRepository(db)
+                fun quote() = repo.saveIndividual(FrozenIndividualEstimateProof.command(db, fixture), 2026, 700)
+                fun race(vararg actions: (ImmutableEstimateRepository) -> Boolean): List<Boolean> {
+                    val start = CountDownLatch(1)
+                    val pending = actions.map { action -> pool.submit<Boolean> {
+                        JdbcSqliteDriver(url).use { connection ->
+                            connection.execute(null, "PRAGMA busy_timeout = 10000", 0)
+                            start.await()
+                            action(ImmutableEstimateRepository(PrototypeDatabase(connection)))
+                        }
+                    } }
+                    start.countDown()
+                    return pending.map { it.get(20, TimeUnit.SECONDS) }
+                }
+                val original = quote()
+                val first = quote()
+                val second = quote()
+                val approved = EstimateWorkflowStatus.APPROVED
+                assertTrue(repo.setWorkflowStatus(original.initialRevisionUuid, 1, approved, 701))
+                val proof = mapOf(original.initialRevisionUuid to 2L)
+                val competing = listOf(first, second).map { target ->
+                    { writer: ImmutableEstimateRepository -> writer.setWorkflowStatus(target.initialRevisionUuid, 1, approved, 702, proof) }
+                }
+                assertEquals(1, race(*competing.toTypedArray()).count { it })
+                val winner = repo.frozenIndividuals().single { it.status == "APPROVED" }
+                assertEquals("SENT", repo.frozenIndividual(original.seriesUuid)?.status)
+                val loser = if (winner.seriesUuid == first.seriesUuid) second else first
+                val results = race(
+                    { writer -> writer.setWorkflowStatus(loser.initialRevisionUuid, 1, approved, 703,
+                        mapOf(winner.revisionUuid to winner.statusVersion)) },
+                    { writer -> writer.deleteIndividualSeries(loser.seriesUuid, mapOf(loser.initialRevisionUuid to 1L), 703) }
+                )
+                assertEquals(1, results.count { it })
+                val finalApproval = repo.frozenIndividuals().single { it.status == "APPROVED" }
+                assertEquals(if (results.first()) loser.initialRevisionUuid else winner.revisionUuid, finalApproval.revisionUuid)
+                verifyFrozenEstimateContents(driver)
+            }
+        } finally {
+            pool.shutdownNow()
+            directory.deleteRecursively()
+        }
+    }
+
     @Test fun competingAppendsAndStatusAreSerializedAcrossPhysicalConnections() {
         for (scenario in listOf("same-operation", "different-operation", "status-race")) {
             val directory = Files.createTempDirectory("revision-race").toFile()

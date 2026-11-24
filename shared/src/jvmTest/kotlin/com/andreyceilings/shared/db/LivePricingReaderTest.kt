@@ -66,7 +66,8 @@ class LivePricingReaderTest {
     @Test fun version19MigrationRepairsOnlyWallsBackedByACompletedEdit() {
         JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).use { driver ->
             PriceCatalogSchema.create(driver)
-            // The v20 trigger is the only structural difference from v19.
+            // Reconstruct the physical v19 schema from the current fixture.
+            driver.execute(null, "DROP TABLE estimate_revision_tombstones", 0)
             driver.execute(null, "DROP TRIGGER ceiling_refresh_unchanged_wall_versions", 0)
             PriceCatalogSchema.verifyStructure(driver, 19)
             val db = PrototypeDatabase(driver)

@@ -78,7 +78,7 @@ fun createEncryptedPrototypeDriver(
         ).value
         openStep(EncryptedDatabaseOpenStage.SCHEMA) {
             PriceCatalogSchema.verifyStructure(driver)
-            verifyFrozenEstimateContents(driver)
+            verifyFrozenEstimateContents(driver, PriceCatalogSchema.version)
         }
         if (enableWalForTesting) {
             // A manual PRAGMA journal_mode=WAL does not enable SQLCipher's

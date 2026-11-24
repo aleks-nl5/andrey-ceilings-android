@@ -60,6 +60,16 @@ class TransientQuoteTest {
         assertEquals(50, QuoteDiscount.parseBasisPoints(".5"))
         for (bad in listOf("", "0.", "100.01", "-1", "101", "1.001", "1..2", "9999999999999999999999"))
             assertNull(QuoteDiscount.parseBasisPoints(bad), bad)
+        val fixed = QuoteDiscountMode.FIXED
+        assertEquals(QuoteDiscountValue.Fixed(1), QuoteDiscount.parse(",01", fixed))
+        assertEquals(QuoteDiscountValue.Fixed(Long.MAX_VALUE), QuoteDiscount.parse("92233720368547758.07", fixed))
+        for (invalid in listOf("-0.01", "92233720368547758.08", "0.001", "1.")) {
+            assertNull(QuoteDiscount.parse(invalid, fixed), invalid)
+        }
+        assertEquals(QuoteAmounts(7, 0, 0, 7, fixed), QuoteDiscount.calculate(7, QuoteDiscountValue.Fixed(0)))
+        assertEquals(QuoteAmounts(7, 0, 7, 0, fixed), QuoteDiscount.calculate(7, QuoteDiscountValue.Fixed(7)))
+        assertNull(QuoteDiscount.calculate(7, QuoteDiscountValue.Fixed(8)))
+        assertEquals(0L, QuoteDiscount.calculate(Long.MAX_VALUE, QuoteDiscountValue.Fixed(Long.MAX_VALUE))?.finalCents)
         assertFailsWith<IllegalArgumentException> { QuoteDiscount.calculate(-1, 0) }
         assertFailsWith<IllegalArgumentException> { QuoteDiscount.calculate(1, 10001) }
     }

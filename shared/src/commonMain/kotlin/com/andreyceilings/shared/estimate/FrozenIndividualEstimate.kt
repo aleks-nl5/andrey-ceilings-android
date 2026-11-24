@@ -2,6 +2,8 @@ package com.andreyceilings.shared.estimate
 
 import com.andreyceilings.shared.livepricing.*
 import com.andreyceilings.shared.measurement.*
+import kotlinx.serialization.EncodeDefault
+import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -22,8 +24,18 @@ data class IndividualEstimateSaveRequest(
 )
 
 @Serializable
+data class HistoricalRevisionHead(val revisionUuid: String, val versionNumber: Long)
+
+@OptIn(ExperimentalSerializationApi::class)
+@Serializable
 data class IndividualRevisionTarget(val seriesUuid: String, val expectedLatestRevisionUuid: String,
-    val expectedVersion: Long, val expectedStatusVersion: Long)
+    val expectedVersion: Long, val expectedStatusVersion: Long,
+    @EncodeDefault(EncodeDefault.Mode.NEVER) val historicalHead: HistoricalRevisionHead? = null,
+    @EncodeDefault(EncodeDefault.Mode.NEVER) val openedRevisionUuid: String? = null
+) {
+    internal val parentUuid get() = historicalHead?.revisionUuid ?: expectedLatestRevisionUuid
+    internal val parentVersion get() = historicalHead?.versionNumber ?: expectedVersion
+}
 
 @Serializable
 data class AppendIndividualRevisionRequest(val target: IndividualRevisionTarget, val calculation: IndividualEstimateSaveRequest)
@@ -64,15 +76,16 @@ data class FrozenIndividualEstimate(
     val revisionIdentity: FrozenRevisionIdentity? = null
 ) {
     fun validate() {
-        if (formatVersion !in 1..3) throw UnsupportedFrozenEstimateFormat()
+        if (formatVersion !in 1..4) throw UnsupportedFrozenEstimateFormat()
         require(validEstimateTitle(title) == title)
-        if (formatVersion == 1 || formatVersion == 3 && revisionIdentity == null) require(revisionIdentity == null)
+        if (formatVersion == 1 || formatVersion >= 3 && revisionIdentity == null) require(revisionIdentity == null)
         else {
             val identity = checkNotNull(revisionIdentity)
             require(isEstimateUuid(identity.seriesUuid) && isEstimateUuid(identity.revisionUuid) && isEstimateUuid(identity.parentRevisionUuid))
             require(identity.versionNumber > 1 && identity.revisionUuid != identity.parentRevisionUuid)
         }
-        require((formatVersion == 3) == rows.any { it.line.quantityRoundingPolicy != null })
+        require((formatVersion == 4) == (amounts.discountMode == QuoteDiscountMode.FIXED))
+        if (formatVersion < 4) require((formatVersion == 3) == rows.any { it.line.quantityRoundingPolicy != null })
         if (currency != "UAH") throw UnsupportedFrozenEstimateCurrency()
         require(rounding == "HALF_UP_PER_ROW_THEN_DISCOUNT")
         require(source.projectUuid.isNotBlank() && source.measurementUuid.isNotBlank())
@@ -103,7 +116,7 @@ data class FrozenIndividualEstimate(
                 if (exactMilli != null) {
                     require(line.sourceQuantityMilli == exactMilli && line.quantityRoundingPolicy == null)
                 } else {
-                    require(formatVersion == 3 && line.unit == "м²")
+                    require(formatVersion >= 3 && line.unit == "м²")
                     require(line.quantityRoundingPolicy == QuantityRoundingPolicy.CAPTURED_AREA_TO_MILLI_HALF_UP_V1)
                     require(line.sourceQuantityMilli == PricingMath.capturedAreaMilli(geometry.areaSquareMeters))
                     require(line.quantityOrigin in listOf(QuantityOrigin.CAPTURED_AREA, QuantityOrigin.EXPLICIT_BILLABLE_OVERRIDE))
@@ -116,8 +129,8 @@ data class FrozenIndividualEstimate(
         require(rows.count { it.line.businessRole == BusinessRole.CANVAS && it.line.bucket == PricingBucket.CONFIRMED } == 1)
         require(rows.count { it.line.businessRole == BusinessRole.PRIMARY_PROFILE && it.line.bucket == PricingBucket.CONFIRMED } == 1)
         val subtotal = rows.fold(0L) { sum, row -> PricingMath.add(sum, row.line.totalCents) }
-        require(amounts == QuoteDiscount.calculate(subtotal, amounts.discountBasisPoints))
-        require(QuoteDiscount.parseBasisPoints(discountText) == amounts.discountBasisPoints)
+        val discount = requireNotNull(QuoteDiscount.parse(discountText, amounts.discountMode))
+        require(amounts == QuoteDiscount.calculate(subtotal, discount))
         require(omissions.all { it.bucket == PricingBucket.CONFIRMED })
         require(omissions.map { it.sourceKey }.toSet().size == omissions.size)
         require(omissions.none { omitted -> rows.any { it.line.sourceKey == omitted.sourceKey } })
@@ -152,14 +165,17 @@ fun validEstimateTitle(value: String): String? = value.trim().takeIf {
 }
 internal fun isEstimateUuid(value: String): Boolean = Regex("^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$").matches(value)
 internal fun quoteSaveFingerprint(session: String, preview: String, discount: String, amounts: QuoteAmounts) =
-    contentToken(listOf(session, preview, discount, amounts.discountBasisPoints.toString(),
-        amounts.subtotalCents.toString(), amounts.discountCents.toString(), amounts.finalCents.toString()))
+    contentToken(listOf(session, preview, discount, when (amounts.discountMode) {
+        QuoteDiscountMode.PERCENT -> amounts.discountBasisPoints.toString()
+        QuoteDiscountMode.FIXED -> "fixed-cents:${amounts.discountCents}"
+    }, amounts.subtotalCents.toString(), amounts.discountCents.toString(), amounts.finalCents.toString()))
 
 /** UI projection loaded exclusively from immutable storage, including after source deletion. */
 data class SavedIndividualQuote(val seriesUuid: String, val createdAt: Long, val frozen: FrozenIndividualEstimate,
     val status: EstimateWorkflowStatus?, val statusVersion: Long,
     val revisionUuid: String = "", val versionNumber: Long = 1, val parentRevisionUuid: String? = null, val projectId: Long = 0,
-    val selectedRevisionUuid: String? = null, val choiceVersion: Long = 1)
+    val selectedRevisionUuid: String? = null, val choiceVersion: Long = 1,
+    val historicalHead: HistoricalRevisionHead? = null)
 
 /** Shared normalized-column audit. It never consults a mutable measurement, project or catalog. */
 fun verifyFrozenStoredIdentity(frozen: FrozenIndividualEstimate, projectId: Long, measurementUuid: String?, publicNumber: String?,
@@ -198,16 +214,20 @@ fun verifyFrozenSaveReceipt(operationUuid: String, command: String, frozen: Froz
 /** Bind an exact payload to the row and its parent, independent from live source/catalog. */
 fun verifyFrozenRevisionIdentity(frozen: FrozenIndividualEstimate, seriesUuid: String, revisionUuid: String,
     versionNumber: Long, parentRevisionUuid: String?) {
-    if (versionNumber == 1L) require(frozen.formatVersion in listOf(1, 3) && frozen.revisionIdentity == null && parentRevisionUuid == null)
-    else require(frozen.formatVersion in listOf(2, 3) && frozen.revisionIdentity ==
+    if (versionNumber == 1L) require(frozen.formatVersion in listOf(1, 3, 4) && frozen.revisionIdentity == null && parentRevisionUuid == null)
+    else require(frozen.formatVersion in 2..4 && frozen.revisionIdentity ==
         FrozenRevisionIdentity(seriesUuid, revisionUuid, versionNumber, checkNotNull(parentRevisionUuid)))
 }
 
 fun verifyFrozenRevisionReceipt(operationUuid: String, command: String, frozen: FrozenIndividualEstimate) {
     val append = frozenEstimateJson.decodeFromString<AppendIndividualRevisionRequest>(command)
     val identity = checkNotNull(frozen.revisionIdentity)
-    require(append.target.seriesUuid == identity.seriesUuid && append.target.expectedLatestRevisionUuid == identity.parentRevisionUuid)
-    require(append.target.expectedVersion > 0 && append.target.expectedVersion < Long.MAX_VALUE &&
-        append.target.expectedVersion + 1 == identity.versionNumber && append.target.expectedStatusVersion > 0)
+    require(append.target.seriesUuid == identity.seriesUuid && append.target.parentUuid == identity.parentRevisionUuid)
+    require(append.target.expectedVersion > 0 && append.target.parentVersion < Long.MAX_VALUE &&
+        append.target.parentVersion + 1 == identity.versionNumber && append.target.expectedStatusVersion > 0)
+    append.target.historicalHead?.let {
+        require(isEstimateUuid(append.target.expectedLatestRevisionUuid) && it.versionNumber > append.target.expectedVersion)
+    }
+    append.target.openedRevisionUuid?.let { require(isEstimateUuid(it) && it != identity.revisionUuid) }
     verifyFrozenSaveReceipt(operationUuid, frozenEstimateJson.encodeToString(append.calculation), frozen)
 }

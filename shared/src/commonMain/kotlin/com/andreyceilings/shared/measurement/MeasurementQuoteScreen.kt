@@ -44,7 +44,7 @@ fun MeasurementQuoteScreen(presenter: TransientQuotePresenter, store: Measuremen
     val state by presenter.state.collectAsState()
     MeasurementQuoteContent(state, { if (!presenter.saveState.value.saving) onBack() },
         { if (!presenter.saveState.value.saving) retry++ }, presenter::select, presenter::editQuantity,
-        presenter::confirmQuantity, presenter::resetQuantity, presenter::editDiscount,
+        presenter::confirmQuantity, presenter::resetQuantity, { presenter.editDiscount(it) },
         presenter::confirmDiscount, presenter::acknowledge, contentPadding, systemTopInset,
         editingEnabled = !saveState.saving && saveState.resultSeriesUuid == null,
         backLabel = if (presenter.revisionBase == null) "До заміру" else "До кошторису",
