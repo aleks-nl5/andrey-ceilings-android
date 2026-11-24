@@ -1,3 +1,5 @@
+> **24.11.2026 superseding owner decisions:** [P5D UX SPEC](P5D_UX_SPEC.md) and [technical audit](P5D_TECHNICAL_AUDIT.md), #164. P5D product design approved, implementation separately authorized. In conflicts use new contract (especially no independent choice UI, single approval per ceiling, typed discounts, PDF-only share, protected logical deletion of versions and entire series). Historical discovery below retained.
+
 # P5 / #95 — спільне UX-дослідження «Одна стеля» (після завершення P4)
 
 > **Стан: DISCOVERY / PLAN ONLY, 19.11.2026.** Ніякого implementation approval чи готового UI-макета. Потрібно окреме погодження власником перед створенням вузьких реалізаційних issues/PR.
