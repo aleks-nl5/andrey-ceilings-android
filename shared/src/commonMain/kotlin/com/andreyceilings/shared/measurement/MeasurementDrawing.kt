@@ -816,7 +816,6 @@ fun MeasurementDrawing(
                     if(line.uuid==selectedLineUuid || relatedElementUuid != null && line.elementUuid == relatedElementUuid)drawLine(color.copy(alpha=0.25f),a,b,strokeWidth=14.dp.toPx())
                     drawLine(color,a,b,strokeWidth=if(visible.precision==PointPrecision.EXACT)3.dp.toPx() else 2.dp.toPx())
                     if (line.uuid == selectedLineUuid) listOf(a,b).forEach {drawCircle(surface,7.dp.toPx(),it);drawCircle(color,7.dp.toPx(),it,style=Stroke(2.dp.toPx()))}
-                    if(visible.needsReview)drawCircle(color,8.dp.toPx(),a,style=Stroke(1.dp.toPx()))
                 }
                 if (placementMode && workspacePointPlacement) pointPlacementPreview?.let { point ->
                     val position = screenPosition(point)
@@ -830,7 +829,6 @@ fun MeasurementDrawing(
                     val markerInk = if (marker.mounting.unresolved) warningInk else ink
                     drawCircle(markerInk, 7.dp.toPx(), center, style = Stroke(if (marker.precision == PointPrecision.EXACT) 3.dp.toPx() else 2.dp.toPx()))
                     drawCircle(markerInk, 2.dp.toPx(), center)
-                    if(marker.mounting.needsReview) drawCircle(markerInk,10.dp.toPx(),center,style=Stroke(1.dp.toPx()))
                     if (marker.uuid == selectedPointUuid || relatedElementUuid != null && marker.elementUuid == relatedElementUuid) drawCircle(ink, 12.dp.toPx(), center, style = Stroke(3.dp.toPx()))
                 }
                 if (labelBounds.width <= 0f || labelBounds.height <= 0f) return@Canvas

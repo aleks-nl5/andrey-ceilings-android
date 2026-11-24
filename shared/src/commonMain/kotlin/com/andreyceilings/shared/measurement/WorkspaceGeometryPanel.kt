@@ -199,6 +199,11 @@ internal fun WorkspaceGeometryPanel(
     val workId = point?.elementUuid ?: line?.elementUuid ?: area?.elementUuid
     val work = model.workspaceWorks().find { it.uuid == workId }
     val review = point?.mounting?.needsReview == true || line?.needsReview == true || area?.needsReview == true
+    // New placements are validated by the draft/save pipeline, not by a separate
+    // user confirmation. Keep the explicit recovery action for saved placements.
+    val persisted = state.original.placements.points.any { it.uuid == uuid } ||
+        state.original.placements.lines.any { it.uuid == uuid } ||
+        state.original.placements.areas.any { it.uuid == uuid }
     val unresolved = point?.mounting?.unresolved == true || line?.unresolved == true || area?.unresolved == true
     val title = work?.label ?: stringResource(when {
         point != null -> Res.string.p5b_point_type
@@ -218,7 +223,7 @@ internal fun WorkspaceGeometryPanel(
         Column(Modifier.weight(1f)) {
             Text(title, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
             if (detail != null) Text(detail, style = MaterialTheme.typography.bodySmall)
-            if (unresolved || review) Text(stringResource(if (unresolved) Res.string.p5b_unresolved else Res.string.p5b_review),
+            if (unresolved) Text(stringResource(Res.string.p5b_unresolved),
                 style = MaterialTheme.typography.bodySmall)
         }
         if (coincidentPoints.size > 1) {
@@ -251,6 +256,17 @@ internal fun WorkspaceGeometryPanel(
         }, enabled = enabled) {
             Icon(Icons.Default.Edit, stringResource(Res.string.p5b_edit_dimensions))
         }
+        if (edit && persisted && review && !unresolved) {
+            IconButton(enabled = enabled, onClick = {
+                when {
+                    point != null -> model.stagePoint(point.uuid, PointMountingEdit(confirm = true))
+                    line != null -> model.confirmLine()
+                    area != null -> model.confirmArea()
+                }
+            }) {
+                Icon(Icons.Default.Check, stringResource(Res.string.p5b_review_confirm))
+            }
+        }
         IconButton(onClick = { deletion = true }, enabled = enabled) {
             Icon(Icons.Default.Delete, stringResource(Res.string.p5b_delete_placement))
         }
@@ -259,23 +275,14 @@ internal fun WorkspaceGeometryPanel(
         }
     }
 
-    if ((review && !unresolved) ||
-        (edit && area != null && work != null && !area.unresolved)) {
+    if (edit && area != null && work != null && !area.unresolved) {
         FlowRow {
-            if (review && !unresolved) TextButton(onClick = {
-                when {
-                    point != null -> model.stagePoint(point.uuid, PointMountingEdit(confirm = true))
-                    line != null -> model.confirmLine()
-                    area != null -> model.confirmArea()
-                }
-            }) { Text(stringResource(Res.string.p5b_review_confirm)) }
-            if (edit && area != null && work != null && !area.unresolved)
-                OutlinedButton(onClick = { model.requestAreaQuantity(work.uuid) },
-                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
-                    modifier = Modifier.heightIn(min = 36.dp)) {
-                    Text(stringResource(Res.string.p5b_take_quantity),
-                        style = MaterialTheme.typography.labelSmall)
-                }
+            OutlinedButton(onClick = { model.requestAreaQuantity(work.uuid) },
+                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
+                modifier = Modifier.heightIn(min = 36.dp)) {
+                Text(stringResource(Res.string.p5b_take_quantity),
+                    style = MaterialTheme.typography.labelSmall)
+            }
         }
     }
 
@@ -757,14 +764,8 @@ internal fun WorkspaceWorkList(
                     style = if (isSelected) MaterialTheme.typography.titleSmall else MaterialTheme.typography.bodyMedium,
                     maxLines = 1, overflow = TextOverflow.Ellipsis)
                 val details = workQuantityText(model, work)
-                val review = model.displayPoints().any { it.elementUuid == work.uuid && it.mounting.needsReview } ||
-                    model.displayLines().any { it.elementUuid == work.uuid && it.needsReview } ||
-                    model.displayAreas().any { it.elementUuid == work.uuid && it.needsReview }
-                val status = when {
-                    review -> stringResource(Res.string.p5b_review)
-                    work.quantity == ElementQuantity.Unknown -> stringResource(Res.string.p5b_quantity_unknown)
-                    else -> null
-                }
+                val status = if (work.quantity == ElementQuantity.Unknown)
+                    stringResource(Res.string.p5b_quantity_unknown) else null
                 Text(if (status == null) details else stringResource(Res.string.p5b_work_status, details, status),
                     style = MaterialTheme.typography.labelSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
             }
