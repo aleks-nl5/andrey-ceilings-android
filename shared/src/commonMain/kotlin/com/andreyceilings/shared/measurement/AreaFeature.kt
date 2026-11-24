@@ -146,3 +146,11 @@ fun previewArea(old: AreaFeature, geometry: FrozenPolygonGeometry, walls: List<C
     return value.copy(shape=shape,mountings=mapped.map {it.mounting},unresolved=false,
         needsReview=if(geometryChanged)true else if(edit?.confirm==true)false else value.needsReview)
 }
+
+internal fun List<PointPositionMm>.isAxisAlignedRectangle(): Boolean =
+    size == 4 && distinct().size == 4 && map { it.xMm }.distinct().size == 2 &&
+        map { it.yMm }.distinct().size == 2 && indices.all { i ->
+            val a = this[i]
+            val b = this[(i + 1) % size]
+            (a.xMm == b.xMm) != (a.yMm == b.yMm)
+        }

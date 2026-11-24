@@ -2,6 +2,8 @@
 
 > **Стан: DISCOVERY / PLAN ONLY, 19.11.2026.** Ніякого implementation approval чи готового UI-макета. Потрібно окреме погодження власником перед створенням вузьких реалізаційних issues/PR.
 
+> **Пізніше погодження власника (23.11.2026):** цей документ — історія discovery, а не чинний макет. За конфлікту із [«Майстер насамперед»](architecture/MASTER_FIRST_UX_AND_DELIVERY.md) та актуальним [P5B UX spec](P5B_UX_SPEC.md) використовувати **пізніше явне owner-рішення**. Зокрема §6.1 «тап → відкрити параметри» замінено на «тап → підсвітити роботу у списку; відкрити параметри явною дією». Кроки планування тепер включають обов'язковий цілісний погоджений макет, фіксацію станів, незалежне UX-рев'ю та фізичне APK-приймання.
+
 ## 0. Вихідна точка та межі
 
 - P4 завершено: [#44](https://github.com/aleks-nl5/andrey-ceilings-android/issues/44) closed/completed після owner-merged [PR #129](https://github.com/aleks-nl5/andrey-ceilings-android/pull/129), [аудит](https://github.com/aleks-nl5/andrey-ceilings-android/issues/44#issuecomment-7019985840). P4A–P4C4: live measurement pricing → transient quote → immutable vN → individual/consolidated frozen PDF.
@@ -74,6 +76,10 @@
 - In «Елементи», **immediately beneath the drawing and at top of the element context panel**, always-visible compact fast selectors: **«Полотно»** and **«Основний профіль»**. Dropdown or searchable picker from existing *single* user-editable price catalog; show current choice and status, not duplicate hardcoded catalog items.
 - Filter available candidates by typed roles and compatible units (CANVAS m²; PRIMARY_PROFILE м.п.) and show clear missing/retired/conflicting item state; do not quietly change an existing selection or invent zero price.
 - Other POINT/LINE/AREA works via common «+ Додати». Keep primary choices in saved measurement/source binding and recompute dependent live estimate via the same KMP rules. For valid estimate readiness exactly one accepted canvas and one accepted primary profile are needed; historical frozen revisions remain untouched.
+
+### 6.5a Owner staging update — 23.11.2026
+
+In current P5B, ship **always-visible dynamic area and perimeter only**, as tiny icons + values in the existing transparent-gradient top header (not inside scrollable context sheet). Compute from current valid geometry before Save; no stale fallback on invalid drafts. In P5D, **add** live indicative cost as the third value in the same place, using a complete coherent in-memory draft-pricing read model; keep frozen estimates immutable. No cost placeholder in P5B. The original §6.5 goal is preserved but its implementation is **staged** per owner.
 
 ### 6.5 Real-time **in-memory draft pricing** is part of target UX
 

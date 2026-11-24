@@ -7,6 +7,14 @@ import kotlin.math.round
 fun formatMeasurementArea(value: Double, precision: MeasurementPrecision? = null): String =
     formatMeasurementNumber(value, precision?.areaDigits ?: 6, trimZeros = precision == null)
 
+/** Display-only rounding to 0.01 m²; not used for geometry or financial quantities. */
+fun formatMeasurementAreaCompact(value: Double): String =
+    formatMeasurementNumber(value, 2, trimZeros = false)
+
+/** Compact live perimeter, independent of capture precision and never used in calculations. */
+fun formatMeasurementLengthCompact(value: Double): String =
+    formatMeasurementNumber(value, 2, trimZeros = false)
+
 fun formatMeasurementLength(value: Double, precision: MeasurementPrecision? = null): String =
     formatMeasurementNumber(value, precision?.lengthDigits ?: 3, trimZeros = precision == null)
 

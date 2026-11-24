@@ -322,13 +322,21 @@ fun MeasurementDetailsScreen(
                         drawingEditor?.let {DetailsDrawingControls(it,drawingEnabled)}
                         MeasurementDrawing(row.geometry, Modifier.fillMaxWidth(), interactive = true,
                             selectedSide = selectedSide, onSelectSide = { selectedSide = it },
+                            onEmptyTap = {
+                                if (canDrag) {
+                                    selectedSide = null
+                                    drawingEditor?.clearDrawingSelection()
+                                }
+                            },
                             areaFeatures=drawingEditor?.displayAreas() ?: areaFeatures,selectedAreaUuid=selectedAreaUuid,onSelectArea=onSelectArea,
                             areaEditingEnabled=canDrag,areaDrag=drawingState?.area?.drag,
-                            onBeginAreaDrag={drawingEditor?.beginAreaDrag(it)},onPreviewAreaDrag={x,y->drawingEditor?.previewAreaDrag(x,y)},
+                            onBeginAreaDrag={drawingEditor?.beginAreaDrag(it)},
+                            onBeginAreaHandleDrag={id,vertex->drawingEditor?.beginAreaHandleDrag(id,vertex)},onPreviewAreaDrag={x,y->drawingEditor?.previewAreaDrag(x,y)},
                             onFinishAreaDrag={drawingEditor?.finishAreaDrag()},onCancelAreaDrag={drawingEditor?.cancelAreaDrag()},
                             linePlacements=drawingEditor?.displayLines() ?: linePlacements,selectedLineUuid=selectedLineUuid,onSelectLine=onSelectLine,
                             lineEditingEnabled=canDrag,lineDrag=drawingState?.lineDrag,
-                            onBeginLineDrag={drawingEditor?.beginLineDrag(it)},onPreviewLineDrag={x,y->drawingEditor?.previewLineDrag(x,y)},
+                            onBeginLineDrag={drawingEditor?.beginLineDrag(it)},
+                            onBeginLineHandleDrag={id,handle->drawingEditor?.beginLineHandleDrag(id,handle)},onPreviewLineDrag={x,y->drawingEditor?.previewLineDrag(x,y)},
                             onFinishLineDrag={drawingEditor?.finishLineDrag()},onCancelLineDrag={drawingEditor?.cancelLineDrag()},
                             pointPlacements = displayedPoints, fitPointPlacements = true, selectedPointUuid = selectedPoint,
                             placementMode = pointState.modeElementUuid != null, onPlacePoint = onPlacePoint, onSelectPoint = onSelectPoint,

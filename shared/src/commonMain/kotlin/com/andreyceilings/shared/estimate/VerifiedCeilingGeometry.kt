@@ -30,16 +30,16 @@ object VerifiedCeilingGeometry {
         }
         val stepMm = (precision.stepMeters * 1000.0).toLong()
         fun coordinateMm(value: Double): Long {
-            require(value.isFinite()) { "Координати вершин мають бути числовими" }
+            require(value.isFinite()) { "Перевірте числові виміри вершин" }
             val scaled = value * 1000.0
             require(scaled.isFinite() &&
                 kotlin.math.abs(scaled) <=
                     com.andreyceilings.shared.calculation.CeilingPolygonCalculator.MAX_COORDINATE_MM) {
-                "Координати вершини виходять за дозволені межі"
+                "Вершина виходить за дозволені межі"
             }
             val rounded = kotlin.math.round(scaled / stepMm) * stepMm
             require(kotlin.math.abs(rounded - scaled) < 0.000001) {
-                "Координати мають відповідати точності вимірювання"
+                "Положення вершин має відповідати точності вимірювання"
             }
             return rounded.toLong()
         }

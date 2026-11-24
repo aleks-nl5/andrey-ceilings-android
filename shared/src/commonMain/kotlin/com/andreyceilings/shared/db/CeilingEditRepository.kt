@@ -36,7 +36,7 @@ class CeilingEditRepository(private val database: PrototypeDatabase) {
         }
     }
     fun save(original: MeasurementEditDocument, draft: MeasurementCreateDraft, edits: Map<String,PointMountingEdit>,
-        operationUuid: String, wallToken: String, now: Long, lineEdits: Map<String,LinePlacementEdit> = emptyMap(), declaredLengths: Map<String,Long> = emptyMap(), areaEdits: Map<String,AreaFeatureEdit> = emptyMap(), declaredAreas: Map<String,Long> = emptyMap()) {
+        operationUuid: String, wallToken: String, now: Long, lineEdits: Map<String,LinePlacementEdit> = emptyMap(), declaredLengths: Map<String,Long> = emptyMap(), areaEdits: Map<String,AreaFeatureEdit> = emptyMap(), declaredAreas: Map<String,Long> = emptyMap(), workspaceReceipt: JsonObject? = null) {
         require(now in 0 until Long.MAX_VALUE && operationUuid.isNotBlank())
         require(draft.projectId==original.draft.projectId && draft.recordUuid==original.draft.recordUuid && draft.precision==original.draft.precision)
         val validated = validateMeasurementCreate(draft); require(validated.canSave)
@@ -103,8 +103,9 @@ class CeilingEditRepository(private val database: PrototypeDatabase) {
         require(declaredAreas.all { (id,quantity) -> quantity in 1..ElementQuantityRules.MAX_MILLI && original.areaElements.any {
             it.uuid==id && areaQuantityMilli(areaTargets.filter {a -> a.elementUuid==id},it.unit!!)==quantity
         } })
-        val noChange = areaTargets==original.placements.areas && declaredAreas.isEmpty() && lineTargets==original.placements.lines && declaredLengths.isEmpty() && !changed && targets==original.placements.points && draft.name.trim()==original.draft.name.trim() && draft.notes.trim()==original.draft.notes.trim()
+        val noChange = workspaceReceipt == null && areaTargets==original.placements.areas && declaredAreas.isEmpty() && lineTargets==original.placements.lines && declaredLengths.isEmpty() && !changed && targets==original.placements.points && draft.name.trim()==original.draft.name.trim() && draft.notes.trim()==original.draft.notes.trim()
         val payload = buildJsonObject {
+            workspaceReceipt?.let { put("workspace", it) }
             put("name",draft.name.trim());put("notes",draft.notes.trim());put("shape",geometry.shapeType)
             put("drawingJson",drawing);put("oldDrawingJson",oldDrawing)
             put("length",(geometry.vertices.maxOf{it.xMm}-geometry.vertices.minOf{it.xMm})/1000.0)

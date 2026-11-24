@@ -29,7 +29,7 @@ object StarterPriceCatalog {
         StarterPriceItem(code = "light.chandelier", title = "Монтаж люстри", category = "Освітлення", unit = "шт.", price = 350.0, quantityMode = QuantityMode.MANUAL, placementKind = PlacementKind.POINT),
         StarterPriceItem(code = "light.spot", title = "Точковий світильник", category = "Освітлення", unit = "шт.", price = 220.0, quantityMode = QuantityMode.MANUAL, placementKind = PlacementKind.POINT),
         StarterPriceItem(code = "work.pipe_pass", title = "Обхід труби", category = "Додаткові роботи", unit = "шт.", price = 180.0, quantityMode = QuantityMode.MANUAL),
-        StarterPriceItem(code = "work.curtain_niche", title = "Ніша для штор", category = "Додаткові роботи", unit = "м.п.", price = 450.0, quantityMode = QuantityMode.ENTERED_LENGTH),
+        StarterPriceItem(code = "work.curtain_niche", title = "Ніша для штор", category = "Додаткові роботи", unit = "м.п.", price = 450.0, quantityMode = QuantityMode.ENTERED_LENGTH, placementKind = PlacementKind.LINE),
         StarterPriceItem(code = "work.shadow_profile", title = "Додатковий тіньовий профіль", category = "Додаткові роботи", unit = "м.п.", price = 380.0, quantityMode = QuantityMode.ENTERED_LENGTH),
         StarterPriceItem(code = "work.floating_ceiling", title = "Додатковий парящий профіль", category = "Додаткові роботи", unit = "м.п.", price = 420.0, quantityMode = QuantityMode.ENTERED_LENGTH),
         StarterPriceItem(code = "work.extra_corner", title = "Додатковий кут", category = "Додаткові роботи", unit = "шт.", price = 90.0, quantityMode = QuantityMode.MANUAL),

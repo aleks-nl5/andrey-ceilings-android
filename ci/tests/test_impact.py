@@ -17,11 +17,6 @@ SHARED_SOURCE = "shared/src/commonMain/kotlin/com/andreyceilings/shared"
 SHARED_MEASUREMENT = f"{SHARED_SOURCE}/measurement"
 SHARED_DRAWING = f"{SHARED_MEASUREMENT}/MeasurementDrawing.kt"
 SHARED_GRADIENT = f"{SHARED_SOURCE}/theme/CeilingsEdgeGradient.kt"
-WORKSPACE_LAYOUT_TEST = "com.andreyceilings.app.MeasurementWorkspaceLayoutTest"
-OVERLAY_DRAG_TEST = "com.andreyceilings.app.OverlayDragTouchTest"
-AREA_TOUCH_TEST = "com.andreyceilings.app.AreaFeatureTouchTest"
-FOUNDATION_SCENE_TEST = "com.andreyceilings.desktop.CeilingsFoundationSceneTest"
-MEASUREMENT_SCENE_TEST = "com.andreyceilings.desktop.MeasurementEditSceneTest"
 
 
 class ImpactTest(unittest.TestCase):
@@ -38,9 +33,8 @@ class ImpactTest(unittest.TestCase):
         result = outcome("README.md", "docs/architecture/strategy.md")
         self.assertEqual((result.mode, result.depths), ("FAST", ("skip", "skip", "skip")))
 
-    def test_android_presentation_asset_selects_matching_android_smoke_only(self):
-        self.assert_scope(ANDROID_FONT, "TARGETED", ("smoke", "skip", "skip"))
-        self.assertEqual(outcome(ANDROID_FONT).android_smoke_tests, (WORKSPACE_LAYOUT_TEST,))
+    def test_android_presentation_asset_selects_android_only(self):
+        self.assert_scope(ANDROID_FONT, "TARGETED", ("deep", "skip", "skip"))
 
     def test_android_pdf_and_unmapped_ui_require_android_deep(self):
         for path in (
@@ -50,7 +44,6 @@ class ImpactTest(unittest.TestCase):
             "shared/src/androidMain/kotlin/com/andreyceilings/shared/ui/Ui.kt",
         ):
             self.assert_scope(path, "TARGETED", ("deep", "skip", "skip"))
-            self.assertEqual(outcome(path).android_smoke_tests, ())
 
     def test_platform_lifecycle_and_non_ui_adapter_change_requires_native_deep(self):
         # MainActivity initializes SQLCipher despite living outside /data/db.
@@ -75,14 +68,14 @@ class ImpactTest(unittest.TestCase):
         for path in (
             "shared/src/jvmMain/kotlin/com/andreyceilings/shared/db/SqlCipherWindowsDriverFactory.kt",
             "shared/src/jvmTest/kotlin/com/andreyceilings/shared/db/PriceCatalogWindowsCipherTest.kt",
-            "desktopApp/src/test/kotlin/com/andreyceilings/desktop/MixedDetailsSceneTest.kt",
+            "desktopApp/src/test/kotlin/com/andreyceilings/desktop/DesktopPriceDatabaseTest.kt",
         ):
             self.assert_scope(path, "TARGETED", ("skip", "deep", "skip"))
 
     def test_individual_platforms_and_android_security(self):
         self.assert_scope("shared/src/iosMain/kotlin/com/a/db/IosCipher.kt", "TARGETED",
                           ("skip", "skip", "deep"))
-        self.assert_scope("app/src/androidTest/java/com/a/OverlayDragTouchTest.kt", "TARGETED",
+        self.assert_scope("app/src/androidTest/java/com/a/SqlCipherRecoveryTest.kt", "TARGETED",
                           ("deep", "skip", "skip"))
         self.assert_scope("app/src/main/AndroidManifest.xml", "TARGETED",
                           ("deep", "skip", "skip"))
@@ -103,39 +96,9 @@ class ImpactTest(unittest.TestCase):
             for status in ("A", "M"):
                 self.assert_scope(path, "TARGETED", depth, status=status)
 
-    def test_shared_ui_consumers_are_all_targeted_without_expensive_native_db(self):
-        for path, android_tests, windows_tests in (
-            (SHARED_DRAWING, (AREA_TOUCH_TEST, WORKSPACE_LAYOUT_TEST, OVERLAY_DRAG_TEST),
-             (FOUNDATION_SCENE_TEST, MEASUREMENT_SCENE_TEST)),
-            (SHARED_GRADIENT, (WORKSPACE_LAYOUT_TEST,), (FOUNDATION_SCENE_TEST,)),
-            (f"{SHARED_SOURCE}/ui/CeilingsWorkspaceScaffold.kt", (WORKSPACE_LAYOUT_TEST,),
-             (FOUNDATION_SCENE_TEST, MEASUREMENT_SCENE_TEST)),
-            (f"{SHARED_SOURCE}/ui/CeilingsFab.kt", (WORKSPACE_LAYOUT_TEST,), (FOUNDATION_SCENE_TEST,)),
-            (f"{SHARED_SOURCE}/theme/CeilingsTheme.kt", (WORKSPACE_LAYOUT_TEST,), (FOUNDATION_SCENE_TEST,)),
-            (f"{SHARED_SOURCE}/theme/CeilingsTypography.kt", (WORKSPACE_LAYOUT_TEST,),
-             (FOUNDATION_SCENE_TEST, MEASUREMENT_SCENE_TEST)),
-        ):
-            with self.subTest(path=path):
-                self.assert_scope(path, "TARGETED", ("smoke", "smoke", "smoke"))
-                result = outcome(path)
-                self.assertEqual(result.android_smoke_tests, android_tests)
-                self.assertEqual(result.windows_smoke_tests, windows_tests)
-
-    def test_windows_smoke_unions_scenes_and_deep_overrides_them(self):
-        result = outcome(SHARED_GRADIENT, SHARED_DRAWING)
-        self.assertEqual(result.windows_smoke_tests, (FOUNDATION_SCENE_TEST, MEASUREMENT_SCENE_TEST))
-        result = outcome(SHARED_DRAWING,
-                         "shared/src/jvmTest/kotlin/com/andreyceilings/shared/db/PriceCatalogWindowsCipherTest.kt")
-        self.assertEqual(result.depths, ("smoke", "deep", "smoke"))
-        self.assertEqual(result.windows_smoke_tests, ())
-        self.assertTrue(result.android_smoke_tests)
-
-    def test_android_smoke_unions_mapped_classes_and_deep_overrides_them(self):
-        result = outcome(ANDROID_FONT, SHARED_DRAWING, SHARED_GRADIENT)
-        self.assertEqual(result.android_smoke_tests, (AREA_TOUCH_TEST, WORKSPACE_LAYOUT_TEST, OVERLAY_DRAG_TEST))
-        result = outcome(ANDROID_FONT, SHARED_DRAWING, f"{ANDROID_SCREENS}/EstimateDocumentExport.kt")
-        self.assertEqual(result.depths, ("deep", "smoke", "smoke"))
-        self.assertEqual(result.android_smoke_tests, ())
+    def test_shared_presentation_changes_compile_for_all_consumers(self):
+        for path in (SHARED_DRAWING, SHARED_GRADIENT, f"{SHARED_SOURCE}/ui/CeilingsWorkspaceScaffold.kt"):
+            self.assert_scope(path, "FULL", ("deep", "deep", "deep"))
 
     def test_shared_business_data_database_and_config_fail_closed_full(self):
         for path in (
@@ -166,10 +129,8 @@ class ImpactTest(unittest.TestCase):
             "shared/src/iosMain/kotlin/com/andreyceilings/shared/ui/EstimateExporter.kt",
             "docs/info.md",
         )
-        self.assertEqual(result.mode, "TARGETED")
-        self.assertEqual(result.depths, ("smoke", "deep", "deep"))
-        self.assertEqual(result.android_smoke_tests, (AREA_TOUCH_TEST, WORKSPACE_LAYOUT_TEST, OVERLAY_DRAG_TEST))
-        self.assertEqual(result.windows_smoke_tests, ())
+        self.assertEqual(result.mode, "FULL")
+        self.assertEqual(result.depths, ("deep", "deep", "deep"))
 
         result = outcome("app/src/main/java/com/a/Screen.kt",
                          "app/src/androidTest/java/com/a/ScreenTest.kt")

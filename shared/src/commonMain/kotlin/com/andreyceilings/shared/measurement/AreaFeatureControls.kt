@@ -46,9 +46,7 @@ fun AreaFeatureControls(model: MeasurementEditModel, enabled: Boolean, inWorkspa
                 color = if (inWorkspace) MaterialTheme.colorScheme.error else LocalContentColor.current)
             else if (!inWorkspace) Text("Перетягування змінює лише приблизне положення; опори задаються виміряними відстанями.")
             FlowRow {
-                FilterChip(a.moveVertex==null,onClick={model.setAreaMoveVertex(null)},label={Text("Переміщати всю фігуру")})
                 selected.shape.positions.indices.forEach {index ->
-                    FilterChip(a.moveVertex==index,onClick={model.setAreaMoveVertex(index)},label={Text(if(selected.shape is AreaShape.Circle)"Центр" else "Вершина ${index+1}")})
                     TextButton(enabled=enabled,onClick={model.openAreaMounting(index)}) {Text("Опори ${index+1}")}
                 }
             }
@@ -66,7 +64,7 @@ fun AreaFeatureControls(model: MeasurementEditModel, enabled: Boolean, inWorkspa
             TextButton(enabled=enabled,onClick={model.beginArea(AreaRole.OBSTACLE)}) {Text("Позначити перешкоду")}
             TextButton(enabled=enabled,onClick={model.beginArea(AreaRole.VOID_MARKER,tool=AreaTool.CIRCLE)}) {Text("Позначити отвір")}
         }
-        state.original.areaElements.forEach {e ->
+        model.areaElements().forEach {e ->
             val linked=areas.filter {it.elementUuid==e.uuid}
             Text("${e.label} · Заявлено: ${formatElementQuantity(e.quantity,e.unit)} · На кресленні: ${formatElementMilli(areaQuantityMilli(linked,e.unit!!))} ${e.unit} · Нерозв'язаних: ${linked.count {it.unresolved}}")
             FlowRow {
@@ -89,7 +87,7 @@ fun AreaFeatureControls(model: MeasurementEditModel, enabled: Boolean, inWorkspa
         text={Text("Фігуру буде вилучено після загального Save. Заявлена кількість залишиться.")},
         confirmButton={TextButton(onClick=model::deleteArea){Text("Видалити")}},dismissButton={TextButton(onClick=model::cancelAreaDelete){Text("Скасувати")}})
     a.quantityConfirm?.let {id ->
-        val e=state.original.areaElements.find {it.uuid==id}
+        val e=model.areaElements().find {it.uuid==id}
         val qty=if(e!=null)areaQuantityMilli(areas.filter {it.elementUuid==id},e.unit!!) else 0
         AlertDialog(onDismissRequest={model.requestAreaQuantity(null)},title={Text("Взяти кількість з креслення?")},
             text={Text("${formatElementQuantity(e?.quantity ?: ElementQuantity.Unknown,e?.unit)} → ${formatElementMilli(qty)} ${e?.unit.orEmpty()}. Тільки валідні фігури; запис разом із заміром, із перевіркою версій.")},

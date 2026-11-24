@@ -1,5 +1,6 @@
 package com.andreyceilings.shared.theme
 
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
@@ -123,6 +124,12 @@ private val DarkColors = darkColorScheme(
     errorContainer = Color(0xFF93000A),
     onErrorContainer = Color(0xFFFFDAD6)
 )
+
+/** Opt-in input metrics, never a global override of Material3 fields. */
+object CeilingsFieldDefaults {
+    val CompactHeight = 52.dp
+    val CompactContentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+}
 
 val CeilingsShapes = Shapes(
     extraSmall = RoundedCornerShape(8.dp),

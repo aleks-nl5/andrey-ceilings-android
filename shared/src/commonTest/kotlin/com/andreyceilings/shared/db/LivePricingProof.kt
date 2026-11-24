@@ -5,6 +5,8 @@ import com.andreyceilings.shared.calculation.MeasurementPrecision
 import com.andreyceilings.shared.estimate.*
 import com.andreyceilings.shared.livepricing.*
 import com.andreyceilings.shared.measurement.*
+import com.andreyceilings.shared.navigation.AppNavigationState
+import com.andreyceilings.shared.navigation.AppRoute
 import com.andreyceilings.shared.prices.*
 import kotlin.test.*
 
@@ -135,8 +137,8 @@ object LivePricingProof {
         val model = MeasurementEditModel(null, MeasurementEditStore(database) { 200 }.load(fixture.projectId, measurement.id))
         val quoteStore = MeasurementElementsStore(database, { 200 }, kotlinx.coroutines.Dispatchers.Unconfined)
         val sessions = MeasurementQuoteSession()
-        val details = com.andreyceilings.shared.navigation.AppNavigationState()
-            .selectTab(com.andreyceilings.shared.navigation.AppRoute.MEASUREMENTS)
+        val details = AppNavigationState()
+            .selectTab(AppRoute.MEASUREMENTS)
             .openMeasurement(fixture.projectId, measurement.id)
         sessions.navigate(details)
         val firstVisit = sessions.acquire(fixture.projectId, measurement.id, fixture.measurementUuid, quoteStore)
@@ -148,13 +150,45 @@ object LivePricingProof {
         assertNull(firstVisit.state.value.amounts)
         sessions.navigate(details.editMeasurement(fixture.projectId, measurement.id)); sessions.navigate(details)
         assertSame(firstVisit, sessions.acquire(fixture.projectId, measurement.id, fixture.measurementUuid, quoteStore))
-        sessions.navigate(details.back()); sessions.navigate(details)
-        val newVisit = sessions.acquire(fixture.projectId, measurement.id, fixture.measurementUuid, quoteStore)
-        assertNotEquals(firstVisit.sessionId, newVisit.sessionId)
+        sessions.navigate(details.back())
+
+        val quoteRoute = details.openMeasurementQuote()
+        sessions.navigate(quoteRoute)
+        val livingQuote = sessions.acquire(fixture.projectId, measurement.id, fixture.measurementUuid, quoteStore)
+        assertNotEquals(firstVisit.sessionId, livingQuote.sessionId)
+        assertEquals("0", livingQuote.state.value.discountText)
+        livingQuote.acceptRead(livingQuote.beginRead(), loaded)
+        livingQuote.editDiscount("10")
+        livingQuote.confirmDiscount()
+        livingQuote.editQuantity(fixture.elementUuid, "13")
+        livingQuote.confirmQuantity(fixture.elementUuid)
+        assertEquals(11700L, livingQuote.state.value.amounts?.finalCents)
+
+        val restoredQuote = AppNavigationState.restore(quoteRoute.snapshot())
+        assertTrue(restoredQuote.measurementQuote)
+        sessions.navigate(restoredQuote)
+        val restoredVisit = sessions.acquire(fixture.projectId, measurement.id, fixture.measurementUuid, quoteStore)
+        assertSame(livingQuote, restoredVisit)
+        assertEquals("10", restoredVisit.state.value.discountText)
+        assertEquals("13", restoredVisit.state.value.edits[fixture.elementUuid]?.text)
+        assertNull(restoredVisit.state.value.amounts, "Restoration must invalidate the displayed total until repricing")
+        restoredVisit.acceptRead(restoredVisit.beginRead(), reader.read(fixture.projectId, fixture.measurementUuid))
+        assertEquals(11700L, restoredVisit.state.value.amounts?.finalCents)
+
+        sessions.clear()
+        assertNull(livingQuote.state.value.amounts)
+        val freshSessions = MeasurementQuoteSession()
+        freshSessions.navigate(restoredQuote)
+        val newVisit = freshSessions.acquire(fixture.projectId, measurement.id, fixture.measurementUuid, quoteStore)
+        assertNotEquals(livingQuote.sessionId, newVisit.sessionId)
+        assertNotEquals(livingQuote.compositionUuid, newVisit.compositionUuid)
         assertEquals("0", newVisit.state.value.discountText)
+        assertTrue(newVisit.state.value.edits.isEmpty())
+        newVisit.acceptRead(newVisit.beginRead(), reader.read(fixture.projectId, fixture.measurementUuid))
+        assertEquals(12000L, newVisit.state.value.amounts?.finalCents)
         quoteStore.close()
         newVisit.acceptRead(newVisit.beginRead(), loaded); assertNull(newVisit.state.value.amounts)
-        sessions.clear()
+        freshSessions.clear()
         assertEquals(beforeChanges, changes())
         val draft = assertIs<PricingReadResult.Loaded>(loaded.withValidatedDraft(model, loaded.source.signature))
         assertEquals(loaded.source.elements, draft.source.elements)

@@ -29,8 +29,12 @@ import androidx.compose.material.icons.filled.FullscreenExit
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.CropSquare
 import androidx.compose.material.icons.filled.Category
+import androidx.compose.material.icons.filled.Straighten
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material3.*
@@ -54,6 +58,7 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.semantics.LiveRegionMode
@@ -65,7 +70,10 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.andreyceilings.shared.calculation.*
+import com.andreyceilings.shared.input.CompactOutlinedStringField
 import com.andreyceilings.shared.estimate.FrozenPolygonGeometry
+import com.andreyceilings.shared.resources.*
+import org.jetbrains.compose.resources.stringResource
 import com.andreyceilings.shared.ui.CeilingsWorkspaceScaffold
 import com.andreyceilings.shared.ui.CeilingsFab
 import com.andreyceilings.shared.ui.CeilingsFabProfile
@@ -74,18 +82,19 @@ import kotlinx.coroutines.*
 
 private enum class MeasurementSheet { CLOSED, COMPACT, EXPANDED }
 
-private enum class MeasurementElementSection(val title: String) {
-    POINTS("Точкові позначки"), LINES("Лінії"), AREAS("Площинні об’єкти")
-}
+
 
 private const val SheetMotionMillis = 240
 private val WorkspacePanelShape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp)
 
-private enum class MeasurementEditContext(val label: String) {
-    CONTOUR("Контур"),
-    ELEMENTS("Елементи"),
-    COST("Вартість")
-}
+private enum class MeasurementEditContext { CONTOUR, ELEMENTS, COST }
+
+@Composable
+private fun MeasurementEditContext.displayLabel(): String = stringResource(when (this) {
+    MeasurementEditContext.CONTOUR -> Res.string.p5b_context_contour
+    MeasurementEditContext.ELEMENTS -> Res.string.p5b_context_elements
+    MeasurementEditContext.COST -> Res.string.p5b_context_cost
+})
 
 @Composable
 fun MeasurementEditScreen(
@@ -163,11 +172,40 @@ fun MeasurementEditScreen(
     SideEffect { if (sheet != MeasurementSheet.CLOSED) lastOpenSheet = sheet }
     val context = if (fullscreen) fullscreenContext else normalContext
     var statusDetails by rememberSaveable(measurementUuid) { mutableStateOf(false) }
+    var saveBlockOpen by remember { mutableStateOf(false) }
     val panelState = rememberSaveableStateHolder()
     val normalContourScroll = rememberScrollState()
     val fullscreenContourScroll = rememberScrollState()
     val contourScroll = if (fullscreen) fullscreenContourScroll else normalContourScroll
     var reloadConfirm by remember { mutableStateOf(false) }
+    var lineSnapEnabled by rememberSaveable(measurementUuid) { mutableStateOf(true) }
+    var showAdd by rememberSaveable(measurementUuid) { mutableStateOf(false) }
+    var catalogSubpageBack by remember(measurementUuid) { mutableStateOf<(() -> Unit)?>(null) }
+    val currentCatalogSubpageBack by rememberUpdatedState(catalogSubpageBack)
+    val currentEditorState by rememberUpdatedState(state)
+    var materialPicker by rememberSaveable(measurementUuid) { mutableStateOf<com.andreyceilings.shared.livepricing.BusinessRole?>(null) }
+    var selectedWork by rememberSaveable(measurementUuid) { mutableStateOf<String?>(null) }
+    val currentSelectedWork by rememberUpdatedState(selectedWork)
+    var highlightedWorkId by remember(measurementUuid) { mutableStateOf<String?>(null) }
+    // Only a drawing-origin selection may request relocation; tapping a row
+    // within the Elements list must never move that list.
+    var drawingRelocationTarget by remember(measurementUuid) { mutableStateOf<String?>(null) }
+    var drawingSelectionRequest by remember(measurementUuid) { mutableIntStateOf(0) }
+    LaunchedEffect(highlightedWorkId) {
+        if (highlightedWorkId != null) {
+            delay(1800)
+            highlightedWorkId = null
+        }
+    }
+    fun dismissCatalog() {
+        showAdd = false
+        catalogSubpageBack = null
+        materialPicker = null
+        focus.clearFocus()
+    }
+    val pointToolActive by rememberUpdatedState(state.pointElementUuid != null)
+    val lineToolActive by rememberUpdatedState(state.lineElementUuid != null)
+    val areaToolActive by rememberUpdatedState(state.area.tool != null)
     val currentFocus by rememberUpdatedState(focus)
     fun closeSheet() {
         currentFocus.clearFocus()
@@ -182,6 +220,26 @@ fun MeasurementEditScreen(
     val surfaceBack = remember(model, measurementUuid, navigationGuard) {
         {
             when {
+                showAdd && currentCatalogSubpageBack != null -> {
+                    currentCatalogSubpageBack?.invoke()
+                    true
+                }
+                showAdd -> { dismissCatalog(); true }
+                pointToolActive || lineToolActive || areaToolActive -> { model.cancelPlacement(); true }
+                currentEditorState.lineProperties != null -> { model.dismissLineProperties(); true }
+                currentEditorState.area.properties != null -> { model.dismissAreaProperties(); true }
+                currentEditorState.mountingInput != null -> { model.dismissMounting(); true }
+                currentSelectedWork != null -> {
+                    selectedWork = null
+                    model.clearDrawingSelection()
+                    true
+                }
+                currentEditorState.selectedPointUuid != null ||
+                    currentEditorState.selectedLineUuid != null ||
+                    currentEditorState.area.selected != null -> {
+                    model.clearDrawingSelection()
+                    true
+                }
                 !fullscreen -> false
                 sheet != MeasurementSheet.CLOSED -> { closeSheet(); true }
                 else -> { exitFullscreen(); true }
@@ -212,6 +270,35 @@ fun MeasurementEditScreen(
     val saveConfirmed = savedFeedback && !state.dirty && !state.saving
     val canSave = canLeaveSurface && validation.canSave && model.canSaveMountingDraft() &&
         !state.conflict && overlay is PointOverlayState.Loaded
+    val saveBlockedReason = if (!state.dirty || canSave) null else when {
+        state.conflict -> stringResource(Res.string.p5b_save_conflict)
+        validation.nameError != null -> validation.nameError
+        !validation.canSave -> stringResource(Res.string.p5b_save_invalid_contour)
+        state.lineProperties?.dirty == true -> {
+            val input = state.lineProperties
+            val line = model.displayLines().find { it.uuid == input?.uuid }
+            if (input != null && line != null && model.linePropertiesCandidate(line, input) == null)
+                stringResource(Res.string.p5b_save_line_invalid)
+            else stringResource(Res.string.p5b_save_apply_fields)
+        }
+        state.area.properties?.dirty == true -> {
+            val input = state.area.properties
+            val area = model.displayAreas().find { it.uuid == input?.uuid }
+            if (input != null && area != null && model.areaPropertiesCandidate(area, input) == null)
+                stringResource(Res.string.p5b_save_area_invalid)
+            else stringResource(Res.string.p5b_save_apply_fields)
+        }
+        state.mountingInput?.dirty == true || state.coordinates?.dirty == true ->
+            stringResource(Res.string.p5b_save_apply_fields)
+        state.lineStart != null || state.linePreview != null ||
+            (state.area.tool != null && (state.area.vertices.isNotEmpty() || state.area.diameter.isNotBlank())) ->
+                stringResource(Res.string.p5b_save_finish_placement)
+        overlay !is PointOverlayState.Loaded -> stringResource(Res.string.p5b_save_wait_points)
+        !model.canSaveMountingDraft() -> model.lineCapacityError()
+            ?: model.areaCapacityError()
+            ?: stringResource(Res.string.p5b_save_check_elements)
+        else -> null
+    }
     fun save(exit: Boolean = false) {
         focus.clearFocus(); model.commitInput()
         scope.launch(start = CoroutineStart.UNDISPATCHED) {
@@ -229,7 +316,7 @@ fun MeasurementEditScreen(
         }
     }
     fun selectSideFromField(side: Int) {
-        if (!enabled) return
+        if (!enabled || model.promptForDirtyElementBeforeNavigation()) return
         selected = side
         model.clearDrawingSelection()
     }
@@ -243,14 +330,25 @@ fun MeasurementEditScreen(
     }
     fun showElements() = openContext(MeasurementEditContext.ELEMENTS)
     fun selectElement(uuid: String, select: (String) -> Unit) {
-        if (!enabled) return
+        if (!enabled || model.promptForDirtyElementBeforeNavigation()) return
         select(uuid)
+        if (showAdd) dismissCatalog()
+        val placedWork = (model.displayPoints().firstOrNull { it.uuid == uuid }?.elementUuid
+            ?: model.displayLines().firstOrNull { it.uuid == uuid }?.elementUuid
+            ?: model.displayAreas().firstOrNull { it.uuid == uuid }?.elementUuid)
+            ?.takeIf { id -> model.workspaceWorks().any { it.uuid == id } }
+        selectedWork = placedWork
+        highlightedWorkId = placedWork
+        drawingRelocationTarget = placedWork ?: uuid
+        drawingSelectionRequest++
         selected = null
+        // In fullscreen, the double-tap callback (onOpenSelection) owns the sheet.
+        // A single selection or a drag must never expand it.
         if (!fullscreen) showElements()
     }
 
     val selectedFeature = state.selectedPointUuid ?: state.selectedLineUuid ?: state.area.selected
-    val activeElementControls = selectedFeature ?: state.lineElementUuid ?: state.area.tool?.name
+    val activeElementControls = selectedFeature ?: state.pointElementUuid ?: state.lineElementUuid ?: state.area.tool?.name
     val savedGeometry = (overlay as? PointOverlayState.Loaded)?.savedGeometry
         ?: validateMeasurementCreate(state.original.draft).geometry
     val geometry = validation.geometry ?: savedGeometry
@@ -286,7 +384,7 @@ fun MeasurementEditScreen(
         return when {
             inlineKeyboardPanel() -> maxHeight
             keyboardVisible -> maxOf(bodyHeight * 0.50f, minOf(192.dp, bodyHeight * 0.75f), minOf(88.dp, bodyHeight))
-            else -> (bodyHeight * 0.50f).coerceAtMost((bodyHeight - 64.dp).coerceAtLeast(0.dp))
+            else -> (bodyHeight * 0.60f).coerceAtMost((bodyHeight - 64.dp).coerceAtLeast(0.dp))
         }
     }
 
@@ -296,9 +394,9 @@ fun MeasurementEditScreen(
         fullscreen = fullscreen,
         header = { _ ->
             val inlineKeyboardPanel = inlineKeyboardPanel()
-            Column(Modifier.fillMaxWidth()) {
+            Column(Modifier.fillMaxWidth().testTag("measurement-edit-header")) {
                 Row(
-                    Modifier.fillMaxWidth().testTag("measurement-edit-header"),
+                    Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     MeasurementEditorFab(
@@ -333,23 +431,39 @@ fun MeasurementEditScreen(
                             }
                         }
                     }
+                    if (saveBlockedReason != null && state.dirty && enabled) Box {
+                        IconButton(onClick = { saveBlockOpen = true },
+                            modifier = Modifier.testTag("measurement-edit-save-block-reason")) {
+                            Icon(Icons.Default.Warning, stringResource(Res.string.p5b_save_show_reason),
+                                tint = MaterialTheme.colorScheme.error)
+                        }
+                        DropdownMenu(expanded = saveBlockOpen, onDismissRequest = { saveBlockOpen = false }) {
+                            DropdownMenuItem(text = {
+                                Text(saveBlockedReason, style = MaterialTheme.typography.bodySmall)
+                            }, onClick = { saveBlockOpen = false })
+                        }
+                    }
                     MeasurementEditorFab(
                         label = "Зберегти замір",
                         icon = if (saveConfirmed) Icons.Default.Check else Icons.Default.Save,
-                        enabled = canSave && enabled && state.dirty,
+                        // If the draft is dirty, Save stays tappable so it can explain a
+                        // validation blocker. A blocked tap MUST NOT write anything.
+                        enabled = enabled && state.dirty,
                         confirmed = saveConfirmed,
                         modifier = Modifier.testTag("measurement-edit-save").semantics {
                             stateDescription = when {
                                 state.saving -> "Збереження…"
                                 saveConfirmed -> "Збережено"
+                                saveBlockedReason != null -> saveBlockedReason
                                 state.dirty -> "Незбережено"
                                 else -> "Змін немає"
                             }
                             liveRegion = LiveRegionMode.Polite
                         },
-                        onClick = { save() }
+                        onClick = { if (canSave) save() else saveBlockOpen = true }
                     )
                 }
+                MeasurementGeometrySummary(validation.geometry)
             }
         },
         overlay = { headerHeight ->
@@ -368,6 +482,11 @@ fun MeasurementEditScreen(
                 }
             }
             val normalPanelHeight = normalPanelHeight(headerHeight)
+            // Keep tabs and their camera-fit boundary EXACTLY where they were.
+            // Only the scrolling panel grows beneath the transparent OS navigation
+            // bar when the keyboard is hidden; the last item gets safe scroll padding.
+            val normalNavigationUnderlay =
+                if (!fullscreen && !keyboardVisible) editorPadding.calculateBottomPadding() else 0.dp
             val bodyHeight = bodyHeight(headerHeight)
             val sheetContentHeight = when {
                 inlineKeyboardPanel -> maxHeight
@@ -382,105 +501,169 @@ fun MeasurementEditScreen(
                     "$measurementUuid:$fullscreen:${context.name}"
                 ) {
                     val scroll = if (context == MeasurementEditContext.CONTOUR) contourScroll else rememberScrollState()
-                    var lastFeature by rememberSaveable { mutableStateOf(activeElementControls) }
-                    LaunchedEffect(context, activeElementControls) {
-                        if (context == MeasurementEditContext.ELEMENTS && lastFeature != activeElementControls) {
-                            scroll.scrollTo(0)
-                            lastFeature = activeElementControls
-                        }
+                    val activePlacementTool = state.pointElementUuid
+                        ?: state.lineElementUuid ?: state.area.tool?.name
+                    var lastPlacementTool by rememberSaveable {
+                        mutableStateOf(activePlacementTool)
+                    }
+                    LaunchedEffect(context, activePlacementTool) {
+                        // An actual new placement tool belongs at the top. Selection
+                        // changes (from either the drawing or the list) do not.
+                        if (context == MeasurementEditContext.ELEMENTS &&
+                            activePlacementTool != null && activePlacementTool != lastPlacementTool
+                        ) scroll.scrollTo(0)
+                        lastPlacementTool = activePlacementTool
                     }
                     CompositionLocalProvider(LocalMeasurementInputFocus provides inputFocus) {
-                        Column(
-                            panelModifier.fillMaxWidth().testTag("measurement-edit-context-panel").verticalScroll(scroll),
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
+                        val elementsContext = context == MeasurementEditContext.ELEMENTS
+                        val panelTag = Modifier.testTag("measurement-edit-context-panel")
+                        Column(panelModifier.fillMaxWidth().then(if (elementsContext) panelTag else Modifier)) {
+                            if (context == MeasurementEditContext.ELEMENTS) WorkspaceElementsHeader(
+                                canvas = model.materials(com.andreyceilings.shared.livepricing.BusinessRole.CANVAS),
+                                profile = model.materials(com.andreyceilings.shared.livepricing.BusinessRole.PRIMARY_PROFILE),
+                                activeRole = if (showAdd) materialPicker else null,
+                                enabled = enabled && validation.geometry != null && overlay is PointOverlayState.Loaded,
+                                onMaterial = { role ->
+                                    if (!model.promptForDirtyElementBeforeNavigation()) {
+                                        focus.clearFocus()
+                                        materialPicker = role
+                                        showAdd = true
+                                        if (fullscreen) sheet = MeasurementSheet.EXPANDED
+                                        scope.launch { scroll.scrollTo(0) }
+                                    }
+                                },
+                                onAdd = {
+                                    if (!model.promptForDirtyElementBeforeNavigation()) {
+                                        focus.clearFocus()
+                                        materialPicker = null
+                                        showAdd = true
+                                        if (fullscreen) sheet = MeasurementSheet.EXPANDED
+                                        scope.launch { scroll.scrollTo(0) }
+                                    }
+                                }
+                            )
+                            val scrollBounds = if (!elementsContext && !fullscreen) Modifier.fillMaxSize() else Modifier.fillMaxWidth()
+                            Column(scrollBounds.then(if (elementsContext) Modifier else panelTag)
+                                .verticalScroll(scroll)
+                                .then(if (elementsContext) Modifier.testTag("p5b-elements-scroll") else Modifier)
+                                .padding(top = if (context == MeasurementEditContext.CONTOUR) 14.dp else 6.dp,
+                                    bottom = 12.dp + normalNavigationUnderlay),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             when (context) {
                                 MeasurementEditContext.CONTOUR -> {
-                                    var contourDetails by rememberSaveable { mutableStateOf(false) }
                                     val nameFocus = remember { FocusRequester() }
                                     val notesFocus = remember { FocusRequester() }
-                                    val detailsVisible = contourDetails
                                     MeasurementSelectedFields(model, selected, validation, enabled, ::selectSideFromField,
-                                        followingField = nameFocus.takeIf { detailsVisible })
-                                    MeasurementDisclosure("Деталі заміру", detailsVisible) {
-                                        if (detailsVisible) focus.clearFocus()
-                                        contourDetails = !contourDetails
-                                    }
-                                    if (detailsVisible) {
-                                        OutlinedTextField(draft.name, { model.accept(MeasurementCreateIntent.Name(it), grouped = true) },
-                                            enabled = enabled, label = { Text("Назва заміру *") }, singleLine = true,
-                                            modifier = measurementFieldFocusModifier().fillMaxWidth().focusRequester(nameFocus)
-                                                .onFocusChanged { if (it.isFocused) model.beginInput() else model.commitInput() },
-                                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
-                                            keyboardActions = KeyboardActions(onNext = { notesFocus.requestFocus() }),
-                                            isError = validation.nameError != null)
-                                        OutlinedTextField(draft.notes, { model.accept(MeasurementCreateIntent.Notes(it), grouped = true) },
-                                            enabled = enabled, label = { Text("Примітки") }, maxLines = 3,
-                                            modifier = measurementFieldFocusModifier().fillMaxWidth().focusRequester(notesFocus)
-                                                .onFocusChanged { if (it.isFocused) model.beginInput() else model.commitInput() })
-                                        MeasurementShapePicker(draft.shape, enabled) {
-                                            focus.clearFocus()
-                                            model.accept(MeasurementCreateIntent.Shape(it))
-                                            selected = null
-                                        }
-                                        Text("Точність · ${draft.precision.label}", style = MaterialTheme.typography.bodySmall)
-                                        validation.geometry?.let {
-                                            Text("Площа ${formatMeasurementArea(it.areaSquareMeters, draft.precision)} м² · Периметр ${formatMeasurementLength(it.perimeterMeters, draft.precision)} м",
-                                                style = MaterialTheme.typography.bodySmall)
-                                        }
+                                        followingField = nameFocus)
+                                    CompactOutlinedStringField(draft.name,
+                                        { model.accept(MeasurementCreateIntent.Name(it), grouped = true) },
+                                        label = stringResource(Res.string.p5b_measurement_name),
+                                        enabled = enabled,
+                                        modifier = measurementFieldFocusModifier().fillMaxWidth()
+                                            .testTag("measurement-edit-contour-name").focusRequester(nameFocus)
+                                            .onFocusChanged { if (it.isFocused) model.beginInput() else model.commitInput() },
+                                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
+                                        keyboardActions = KeyboardActions(onNext = { notesFocus.requestFocus() }),
+                                        isError = validation.nameError != null)
+                                    CompactOutlinedStringField(draft.notes,
+                                        { model.accept(MeasurementCreateIntent.Notes(it), grouped = true) },
+                                        label = stringResource(Res.string.p5b_measurement_notes),
+                                        enabled = enabled, maxLines = 3,
+                                        modifier = measurementFieldFocusModifier().fillMaxWidth()
+                                            .testTag("measurement-edit-contour-notes").focusRequester(notesFocus)
+                                            .onFocusChanged { if (it.isFocused) model.beginInput() else model.commitInput() })
+                                    MeasurementShapePicker(draft.shape, enabled) {
+                                        focus.clearFocus()
+                                        model.accept(MeasurementCreateIntent.Shape(it))
+                                        selected = null
                                     }
                                 }
                                 MeasurementEditContext.ELEMENTS -> {
-                                    val activeSection = when {
-                                        state.selectedPointUuid != null -> MeasurementElementSection.POINTS
-                                        state.selectedLineUuid != null || state.lineElementUuid != null -> MeasurementElementSection.LINES
-                                        state.area.selected != null || state.area.tool != null -> MeasurementElementSection.AREAS
-                                        else -> null
-                                    }
-                                    var openedSection by rememberSaveable { mutableStateOf<MeasurementElementSection?>(null) }
-                                    val sections = listOfNotNull(activeSection) + MeasurementElementSection.entries.filter { it != activeSection }
-                                    val canEditGeometry = enabled && validation.geometry != null
-                                    val points = model.displayPoints()
-                                    val lines = model.displayLines()
-                                    val areas = model.displayAreas()
-                                    for (section in sections) key(section) {
-                                        val expanded = section == activeSection || section == openedSection
-                                        if (section != activeSection) {
-                                            val (count, unresolved, reviewCount) = when (section) {
-                                                MeasurementElementSection.POINTS -> Triple(points.size, points.count { it.mounting.unresolved }, points.count { it.mounting.needsReview })
-                                                MeasurementElementSection.LINES -> Triple(lines.size, lines.count { it.unresolved }, lines.count { it.needsReview })
-                                                MeasurementElementSection.AREAS -> Triple(areas.size, areas.count { it.unresolved }, areas.count { it.needsReview })
-                                            }
-                                            MeasurementDisclosure("${section.title} · $count", expanded,
-                                                modifier = Modifier.fillMaxWidth().testTag("measurement-edit-section-${section.name.lowercase()}")) {
-                                                openedSection = if (expanded) null else section
-                                            }
-                                            if (!expanded && (unresolved > 0 || reviewCount > 0)) Text(
-                                                if (unresolved > 0) "Невирішені опори · $unresolved" else "Перевірити · $reviewCount",
-                                                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
-                                            if (!expanded && section == MeasurementElementSection.LINES) model.lineCapacityError()?.let {
-                                                Text(it, color = MaterialTheme.colorScheme.error)
-                                            }
-                                            if (!expanded && section == MeasurementElementSection.AREAS) model.areaCapacityError()?.let {
-                                                Text(it, color = MaterialTheme.colorScheme.error)
+                                    val canEdit = enabled && validation.geometry != null && overlay is PointOverlayState.Loaded
+                                    if (showAdd) WorkspaceCatalogSearch(model, materialPicker, ::dismissCatalog,
+                                        onNestedBackChange = { catalogSubpageBack = it },
+                                        onExistingWork = { workId ->
+                                            if (!model.promptForDirtyElementBeforeNavigation()) {
+                                                model.clearDrawingSelection()
+                                                selectedWork = workId
+                                                highlightedWorkId = workId
+                                                dismissCatalog()
                                             }
                                         }
-                                        if (expanded) {
-                                            when (section) {
-                                                MeasurementElementSection.POINTS ->
-                                                    MeasurementPointControls(model, state, overlay, validation, savedGeometry, enabled)
-                                                MeasurementElementSection.LINES -> LinePlacementControls(model, canEditGeometry, inWorkspace = true)
-                                                MeasurementElementSection.AREAS -> AreaFeatureControls(model, canEditGeometry, inWorkspace = true)
-                                            }
-                                            if (section == activeSection && selectedFeature != null) {
-                                                TextButton(enabled = enabled, onClick = model::clearDrawingSelection) { Text("Зняти виділення") }
-                                            }
+                                    ) {
+                                        selected = null
+                                        selectedWork = null
+                                        model.clearDrawingSelection()
+                                        dismissCatalog()
+                                    } else {
+                                        WorkspacePlacementTools(model, state, canEdit, lineSnapEnabled) { lineSnapEnabled = it }
+                                        // Free obstacles/holes are NOT paid catalog work. They
+                                        // must still be selectable in the same Elements list.
+                                        val standaloneArea = model.displayAreas().firstOrNull {
+                                            it.uuid == state.area.selected && it.elementUuid == null
                                         }
-                                    }
-                                    if (points.isNotEmpty() && validation.geometry != savedGeometry && activeSection != MeasurementElementSection.POINTS &&
-                                        openedSection != MeasurementElementSection.POINTS) {
-                                        Text("Попередній перерахунок. Після збереження перевірте розміщення.",
-                                            style = MaterialTheme.typography.bodySmall)
+                                        val standaloneEditorOpen = standaloneArea != null && (
+                                            state.area.properties?.uuid == standaloneArea.uuid ||
+                                            (state.area.mountingIndex != null && state.mountingInput != null)
+                                        )
+                                        // A single tap shows/highlights the row; only an explicit
+                                        // settings action or fullscreen double-tap opens the editor.
+                                        if (selectedWork == null && (standaloneArea == null || standaloneEditorOpen))
+                                            WorkspaceGeometryPanel(model, state, canEdit, lineSnapEnabled) { lineSnapEnabled = it }
+                                        if (activeElementControls == null ||
+                                            (selectedFeature != null && selectedWork != null) ||
+                                            (standaloneArea != null && !standaloneEditorOpen)) {
+                                            WorkspaceWorkList(
+                                                model, canEdit, selectedWork, highlightedWorkId,
+                                                drawingRelocationTarget, drawingSelectionRequest, normalNavigationUnderlay,
+                                                onSelect = { work ->
+                                                    if (!model.promptForDirtyElementBeforeNavigation()) {
+                                                        // List-origin tap: preserve the exact scroll position.
+                                                        drawingRelocationTarget = null
+                                                        highlightedWorkId = null
+                                                        model.clearDrawingSelection()
+                                                        selectedWork = work
+                                                    }
+                                                },
+                                                onOpenGeometry = {
+                                                    selectedWork = null
+                                                    scope.launch { scroll.animateScrollTo(0) }
+                                                }
+                                            )
+                                            WorkspaceStandaloneAreaList(
+                                                model, canEdit, state.area.selected,
+                                                drawingRelocationTarget, drawingSelectionRequest, normalNavigationUnderlay,
+                                                onSelect = { id ->
+                                                    if (!model.promptForDirtyElementBeforeNavigation()) {
+                                                        // A note tapped within the list should only highlight;
+                                                        // never auto-scroll or return to the beginning.
+                                                        drawingRelocationTarget = null
+                                                        if (id == null) model.clearDrawingSelection()
+                                                        else model.selectArea(id)
+                                                        selectedWork = null
+                                                        highlightedWorkId = null
+                                                    }
+                                                },
+                                                onOpenGeometry = { id ->
+                                                    if (!model.promptForDirtyElementBeforeNavigation()) {
+                                                        drawingRelocationTarget = null
+                                                        model.selectArea(id)
+                                                        model.openAreaProperties()
+                                                        selectedWork = null
+                                                        scope.launch { scroll.animateScrollTo(0) }
+                                                    }
+                                                },
+                                                onDelete = { id ->
+                                                    if (!model.promptForDirtyElementBeforeNavigation()) {
+                                                        drawingRelocationTarget = null
+                                                        model.selectArea(id)
+                                                        model.deleteArea() // Draft + Undo; SQL only on global Save.
+                                                        selectedWork = null
+                                                        highlightedWorkId = null
+                                                    }
+                                                }
+                                            )
+                                        }
                                     }
                                 }
                                 MeasurementEditContext.COST -> {
@@ -501,12 +684,16 @@ fun MeasurementEditScreen(
                                     }
                                 }
                             }
+                            }
                         }
                     }
                 }
             }
             Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().then(
-                if (fullscreen) Modifier else Modifier.height(normalPanelHeight).testTag("measurement-edit-normal-panel")
+                if (fullscreen) Modifier else Modifier
+                    .height(normalPanelHeight + normalNavigationUnderlay)
+                    .offset(y = normalNavigationUnderlay)
+                    .testTag("measurement-edit-normal-panel")
             ).then(if (inlineKeyboardPanel) Modifier.padding(start = 60.dp,
                 end = if (statusIsProblem) 112.dp else 60.dp) else Modifier)) {
                 if (!fullscreen && !keyboardVisible) Row(
@@ -518,10 +705,12 @@ fun MeasurementEditScreen(
                         FilterChip(
                             selected = context == mode,
                             onClick = { if (context != mode) { focus.clearFocus(); openContext(mode) } },
-                            label = { Text(mode.label, Modifier.fillMaxWidth(), textAlign = TextAlign.Center,
+                            label = { Text(mode.displayLabel(), Modifier.fillMaxWidth(), textAlign = TextAlign.Center,
                                 maxLines = tabLines, softWrap = tabLines > 1, overflow = TextOverflow.Ellipsis) },
                             modifier = Modifier.weight(1f).testTag("measurement-edit-context-${mode.name.lowercase()}"),
                             colors = FilterChipDefaults.filterChipColors(
+                                // The three tabs remain unchanged: only the content
+                                // below them scrolls beneath the OS navigation bar.
                                 containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                                 labelColor = MaterialTheme.colorScheme.onSurface,
                                 selectedContainerColor = MaterialTheme.colorScheme.secondaryContainer,
@@ -537,7 +726,7 @@ fun MeasurementEditScreen(
                         for (mode in listOf(MeasurementEditContext.CONTOUR, MeasurementEditContext.ELEMENTS)) {
                             val expanded = sheet != MeasurementSheet.CLOSED && context == mode
                             MeasurementEditorFab(
-                                label = mode.label,
+                                label = mode.displayLabel(),
                                 icon = if (mode == MeasurementEditContext.CONTOUR) Icons.Default.CropSquare else Icons.Default.Category,
                                 enabled = canLeaveSurface,
                                 modifier = Modifier.testTag("measurement-edit-context-${mode.name.lowercase()}")
@@ -613,14 +802,36 @@ fun MeasurementEditScreen(
                 )
                 else MeasurementDrawing(MeasurementGeometryView.Captured(geometry),
                     Modifier.fillMaxSize(), interactive = true, fillAvailableHeight = true, showSideLegend = false,
-                    retainCameraOnResize = true, verticalViewControls = !keyboardVisible, showWorkspaceGrid = true,
-                    viewportPadding = PaddingValues(top = headerBleed, bottom = tabBleed),
+                    retainCameraOnResize = true, autoFitOnFullscreenChange = true,
+                    verticalViewControls = !keyboardVisible, showWorkspaceGrid = true,
+                    // The Spacer below already reserves the panel EXCEPT its
+                    // overlaid tab row. Canvas therefore ends at the tab row's
+                    // BOTTOM, not its visible TOP. Keep Canvas full sized for the
+                    // grid/gestures, but exclude the measured tab-row height from
+                    // camera fit, hit testing and viewport controls. Do NOT
+                    // subtract normalPanelHeight a second time.
+                    viewportPadding = PaddingValues(
+                        top = headerBleed,
+                        bottom = if (fullscreen) editorPadding.calculateBottomPadding() else tabBleed
+                    ),
                     onOpenSelection = if (fullscreen) { wall ->
                         if (enabled) {
                             if (wall) {
                                 openContext(MeasurementEditContext.CONTOUR)
                                 scope.launch { contourScroll.scrollTo(0) }
-                            } else showElements()
+                            } else {
+                                // A double-tap enters the actual geometry editor.
+                                // Single tap only selects/highlights and never expands.
+                                if (!model.promptForDirtyElementBeforeNavigation()) {
+                                    when {
+                                        state.selectedPointUuid != null -> model.openMounting()
+                                        state.selectedLineUuid != null -> model.openLineProperties()
+                                        state.area.selected != null -> model.openAreaProperties()
+                                    }
+                                    selectedWork = null
+                                    showElements()
+                                }
+                            }
                         }
                     } else null,
                     fitTop = if (fullscreen) headerHeight else 0.dp,
@@ -628,14 +839,26 @@ fun MeasurementEditScreen(
                     cameraFitReady = overlay !is PointOverlayState.Loading && !state.checking,
                     selectedSide = selected, onSelectSide = ::select, fullscreen = fullscreen,
                     onEmptyTap = {
-                        if (enabled) {
+                        if (enabled && !model.promptForDirtyElementBeforeNavigation()) {
                             selected = null
+                            selectedWork = null
                             model.clearDrawingSelection()
                             if (fullscreen && sheet != MeasurementSheet.CLOSED) closeSheet()
                         }
                     },
                     pointPlacements = if(overlay is PointOverlayState.Loaded) model.displayPoints() else emptyList(), fitPointPlacements = true,
                     selectedPointUuid=state.selectedPointUuid,onSelectPoint = { selectElement(it, model::selectPoint) },
+                    placementMode = enabled && state.pointElementUuid != null,
+                    workspacePointPlacement = true,
+                    relatedElementUuid = selectedWork,
+                    onBeginLineHandleDrag = model::beginLineHandleDrag,
+                    onBeginAreaHandleDrag = model::beginAreaHandleDrag,
+                    onPlacePoint = { x, y ->
+                        if (model.placeWorkspacePoint(x, y)) {
+                            selected = null
+                            showElements()
+                        }
+                    },
                     pointEditingEnabled=enabled && overlay is PointOverlayState.Loaded && validation.geometry!=null,editPointsInFullscreen=true,
                     pointDrag=state.drag,onBeginPointDrag=model::beginPointDrag,onPreviewPointDrag=model::previewPointDrag,
                     onFinishPointDrag=model::finishPointDrag,onCancelPointDrag=model::cancelPointDrag,
@@ -651,6 +874,16 @@ fun MeasurementEditScreen(
                     onBeginAreaDrag=model::beginAreaDrag,onPreviewAreaDrag=model::previewAreaDrag,onFinishAreaDrag=model::finishAreaDrag,onCancelAreaDrag=model::cancelAreaDrag,
                     linePlacements=model.displayLines()+listOfNotNull(state.linePreview),selectedLineUuid=state.selectedLineUuid,
                     linePlacementMode=enabled && state.lineElementUuid!=null,onLineTap=model::lineTap,onSelectLine = { selectElement(it, model::selectLine) },
+                    lineCreationKey = state.lineElementUuid,
+                    lineSnapEnabled = lineSnapEnabled,
+                    onFinishLineCreation = { start, end ->
+                        model.finishWorkspaceLine(start, end).also { completed ->
+                            if (completed) {
+                                selected = null
+                                showElements()
+                            }
+                        }
+                    },
                     lineStartPoint=state.lineStart,lineEditingEnabled=enabled && validation.geometry!=null,lineDrag=state.lineDrag,onBeginLineDrag=model::beginLineDrag,
                     onPreviewLineDrag=model::previewLineDrag,onFinishLineDrag=model::finishLineDrag,onCancelLineDrag=model::cancelLineDrag,
                     mountingWallOrdinals=if(validation.geometry==null) emptyList() else model.displayPoints().find { it.uuid==state.selectedPointUuid }?.mounting?.anchor?.let { a ->
@@ -677,22 +910,41 @@ fun MeasurementEditScreen(
             }
         )
     }
-    CompositionLocalProvider(LocalMeasurementInputFocus provides inputFocus) { WallAnchorEditor(model) }
+
     if(state.reviewPrompt) AlertDialog(onDismissRequest={},title={Text("Потрібно перевірити розміщення")},
         text={Text("Контур стелі змінено. Збережені монтажні відстані використано для перерахунку. Перевірте розташування точок і ліній.")},
         confirmButton={TextButton(enabled=!state.saving && !state.checking,onClick={ model.reviewNow(); showElements() }){Text("Перевірити")}},
         dismissButton={TextButton(enabled=!state.saving && !state.checking,onClick={scope.launch {model.reviewLater(inWorkspace = true)}}){Text("Пізніше")}})
     if (state.exitRequested) AlertDialog(onDismissRequest = model::continueEditing,
-        title = { Text("Незбережені зміни") }, text = {
-            Text(state.error ?: "Зберегти зміни перед поверненням до картки заміру?")
+        title = { Text(stringResource(Res.string.p5b_exit_title), style = MaterialTheme.typography.titleMedium) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(state.error ?: stringResource(if (canSave) Res.string.p5b_exit_question
+                    else Res.string.p5b_exit_blocked), style = MaterialTheme.typography.bodyMedium)
+                if (!canSave && saveBlockedReason != null)
+                    Text(saveBlockedReason, style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error)
+            }
         },
-        confirmButton = { TextButton(onClick = { save(exit = true) }, enabled = canSave) {
-            Text(if (state.uncertain) "Повторити ту саму спробу" else "Зберегти й вийти")
-        } },
-        dismissButton = { Row {
-            TextButton(onClick = model::discardAndExit) { Text("Відхилити зміни") }
-            TextButton(onClick = model::continueEditing) { Text("Продовжити редагування") }
-        } })
+        confirmButton = {
+            TextButton(onClick = { save(exit = true) }, enabled = canSave,
+                modifier = Modifier.testTag("measurement-exit-save")) {
+                Text(stringResource(Res.string.p5b_exit_save))
+            }
+        },
+        dismissButton = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                TextButton(onClick = model::discardAndExit,
+                    modifier = Modifier.testTag("measurement-exit-discard"),
+                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)) {
+                    Text(stringResource(Res.string.p5b_exit_discard))
+                }
+                TextButton(onClick = model::continueEditing,
+                    modifier = Modifier.testTag("measurement-exit-continue")) {
+                    Text(stringResource(Res.string.p5b_exit_continue))
+                }
+            }
+        })
     if (reloadConfirm) AlertDialog(onDismissRequest = { reloadConfirm = false }, title = { Text("Перезавантажити замір?") },
         text = { Text("Незбережені зміни буде відхилено. Відкриються поточні дані з бази.") },
         confirmButton = { TextButton(onClick = { reloadConfirm = false; scope.launch { model.reload() } }) { Text("Перезавантажити") } },
@@ -796,84 +1048,6 @@ private fun MeasurementDisclosure(
 }
 
 @Composable
-private fun MeasurementPointControls(
-    model: MeasurementEditModel,
-    state: MeasurementEditState,
-    overlay: PointOverlayState,
-    validation: MeasurementCreateValidation,
-    savedGeometry: FrozenPolygonGeometry?,
-    enabled: Boolean
-) {
-    val scope = rememberCoroutineScope()
-    when (val pointState = overlay) {
-        PointOverlayState.Loading -> Text("Завантаження збережених позначок…")
-        PointOverlayState.Missing -> Text("Замір або об'єкт недоступний; позначки не завантажено.")
-        PointOverlayState.Unavailable -> Text("Позначки недоступні: захищена база заблокована або помилка читання.")
-        is PointOverlayState.Loaded -> {
-            val points = model.displayPoints()
-            val marker = points.find { it.uuid == state.selectedPointUuid }
-            val elements = state.original.pointElements.associateBy { it.uuid }
-            val reviewCount = points.count { it.mounting.needsReview }
-            if (marker != null) {
-                Text(elements[marker.elementUuid]?.label ?: "Вибрана позначка", style = MaterialTheme.typography.titleMedium)
-                when {
-                    marker.mounting.unresolved -> Text("Потребує уточнення: опори втрачено або позиція недопустима.",
-                        color = MaterialTheme.colorScheme.error)
-                    marker.mounting.needsReview -> Text("Потрібно перевірити розміщення.", color = MaterialTheme.colorScheme.error)
-                }
-                Text(if (marker.precision == PointPrecision.EXACT) "Точна позначка" else "Приблизна позначка",
-                    style = MaterialTheme.typography.bodySmall)
-                val anchor = marker.mounting.anchor
-                if (anchor == null) {
-                    Text("Виміряних прив'язок немає", style = MaterialTheme.typography.bodySmall)
-                } else {
-                    val walls = model.draftWalls()
-                    val labels = measurementSideLabels(walls.size)
-                    fun name(uuid: String?) = walls.find { it.uuid == uuid }?.let { labels[it.ordinal] } ?: "втрачена стіна"
-                    val first = formatPointMetres(anchor.firstMm)
-                    val second = formatPointMetres(anchor.secondMm)
-                    Text(if (anchor.kind == WallAnchor.Kind.TWO_WALLS)
-                        "${name(anchor.firstWall)}: $first м · ${name(anchor.secondWall)}: $second м"
-                    else "${name(anchor.firstWall)}: уздовж $first м · усередину $second м")
-                }
-                TextButton(enabled = enabled && validation.geometry != null, onClick = model::openMounting) {
-                    Text("Задати розміри від стін")
-                }
-                if (state.reviewing && marker.mounting.needsReview) {
-                    TextButton(enabled = enabled && !marker.mounting.unresolved && !state.dirty,
-                        onClick = { scope.launch { model.confirmSelected() } }) { Text("Розміщення перевірено") }
-                }
-            }
-            if (marker != null) Text("Точкові позначки", style = MaterialTheme.typography.titleSmall)
-            val pointsByElement = points.groupBy { it.elementUuid }
-            if (elements.isEmpty() && pointsByElement.isEmpty()) Text("Точкових елементів немає.")
-            for (uuid in elements.keys + pointsByElement.keys) {
-                val element = elements[uuid]
-                val placed = pointsByElement[uuid].orEmpty()
-                val unresolved = placed.count { it.mounting.unresolved }
-                val declared = element?.let { formatElementQuantity(it.quantity, it.unit) }
-                    ?: state.original.placements.quantities[uuid]?.let { "$it шт." }
-                element?.let { Text(it.label, style = MaterialTheme.typography.titleSmall) }
-                Text("Розміщено: ${placed.size - unresolved} · Заявлено: ${declared ?: "невідомо"} · Потребує уточнення: $unresolved")
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    placed.forEachIndexed { index, point ->
-                        FilterChip(selected = state.selectedPointUuid == point.uuid, enabled = enabled,
-                            onClick = { model.selectPoint(point.uuid) }, label = { Text("Позначка ${index + 1}") })
-                    }
-                }
-            }
-            if (reviewCount > 0) {
-                TextButton(enabled = enabled, onClick = model::reviewNow) { Text("Перевірити ($reviewCount)") }
-                if (state.reviewing) Text("Виберіть позначку, огляньте опори й відстані. Нерозв'язану прив'язку спершу виправте та збережіть.")
-            }
-            if (points.isNotEmpty() && validation.geometry != savedGeometry) {
-                Text("Попередній перерахунок. Після збереження зміненого контуру перевірте розміщення.")
-            }
-        }
-    }
-}
-
-@Composable
 private fun MeasurementSelectedFields(
     model: MeasurementEditModel,
     selected: Int?,
@@ -928,6 +1102,7 @@ private fun MeasurementSelectedFields(
                         else -> key
                     }
                     MeasurementLengthField(outline.fields.getValue(key), "$wall, м", validation.fieldErrors[key], enabled,
+                        compact = true,
                         modifier = cell.focusRequester(requesters[index]),
                         onNext = (requesters.getOrNull(index + 1) ?: followingField)?.let { next -> { next.requestFocus() } },
                         selected = selected != null && key in measurementWallParameters(draft.shape, selected),
@@ -946,6 +1121,7 @@ private fun MeasurementSelectedFields(
                     val side = outline.sides[i]
                     key(side.inputId) {
                         MeasurementLengthField(side.length, "${labels[i]}, м", validation.fieldErrors[side.inputId], enabled,
+                            compact = true,
                             modifier = cell.focusRequester(requesters[i]),
                             onNext = (requesters.getOrNull(i + 1) ?: followingField)?.let { next -> { next.requestFocus() } },
                             selected = selected == i, onFocus = { focused ->
@@ -997,5 +1173,46 @@ private fun MeasurementDimensionRows(count: Int, columns: Int, field: @Composabl
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun MeasurementGeometrySummary(geometry: FrozenPolygonGeometry?) {
+    val area = geometry?.let { formatMeasurementAreaCompact(it.areaSquareMeters) }.orEmpty()
+    val perimeter = geometry?.let { formatMeasurementLengthCompact(it.perimeterMeters) }.orEmpty()
+    val areaValue = if (geometry == null) stringResource(Res.string.p5b_live_area_unavailable)
+        else stringResource(Res.string.p5b_live_area_value, area)
+    val perimeterValue = if (geometry == null) stringResource(Res.string.p5b_live_perimeter_unavailable)
+        else stringResource(Res.string.p5b_live_perimeter_value, perimeter)
+    val color = if (geometry == null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
+    Row(
+        Modifier.fillMaxWidth().offset(y = (-7).dp).padding(horizontal = 12.dp, vertical = 1.dp)
+            .testTag("measurement-live-geometry"),
+        horizontalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterHorizontally),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        MeasurementGeometryMetric(Icons.Default.CropSquare, areaValue, stringResource(
+            if (geometry == null) Res.string.p5b_live_area_invalid_label else Res.string.p5b_live_area_label, areaValue),
+            color, "measurement-live-area")
+        MeasurementGeometryMetric(Icons.Default.Straighten, perimeterValue, stringResource(
+            if (geometry == null) Res.string.p5b_live_perimeter_invalid_label else Res.string.p5b_live_perimeter_label, perimeterValue),
+            color, "measurement-live-perimeter")
+    }
+}
+
+@Composable
+private fun RowScope.MeasurementGeometryMetric(
+    icon: ImageVector, value: String, label: String, color: Color, tag: String
+) {
+    Row(
+        Modifier.weight(1f, fill = false).testTag(tag).clearAndSetSemantics {
+            contentDescription = label
+            liveRegion = LiveRegionMode.Polite
+        },
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(icon, contentDescription = null, modifier = Modifier.size(16.dp), tint = color)
+        Text(value, style = MaterialTheme.typography.labelMedium, color = color, maxLines = 1)
     }
 }

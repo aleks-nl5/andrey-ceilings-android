@@ -7,6 +7,9 @@ import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.collect
+import com.andreyceilings.shared.resources.Res
+import com.andreyceilings.shared.resources.p5b_details_drag_hint
+import org.jetbrains.compose.resources.stringResource
 
 /** Details stages transforms in the same saveable full-set editor as the contour screen. */
 @Composable
@@ -51,21 +54,8 @@ internal fun DetailsDrawingControls(model:MeasurementEditModel,enabled:Boolean) 
     val scope=rememberCoroutineScope()
     val available=enabled && !state.saving && !state.checking && !state.saved && !state.exitReady && !state.uncertain && !state.conflict
     fun save() {scope.launch(start=CoroutineStart.UNDISPATCHED) {model.saveDetailsDrawing()}}
-    if(state.selectedLineUuid!=null)FlowRow {
-        listOf("Перемістити сегмент","Початок","Кінець").forEachIndexed {i,label ->
-            FilterChip(state.lineMoveTarget==i,onClick={model.setLineMoveTarget(i)},enabled=available,label={Text(label)})
-        }
-    }
-    model.displayAreas().find {it.uuid==state.area.selected}?.let {a ->
-        FlowRow {
-            FilterChip(state.area.moveVertex==null,onClick={model.setAreaMoveVertex(null)},enabled=available,label={Text("Перемістити фігуру")})
-            if(a.shape is AreaShape.Polygon)a.shape.positions.indices.forEach {i ->
-                FilterChip(state.area.moveVertex==i,onClick={model.setAreaMoveVertex(i)},enabled=available,label={Text("Вершина ${i+1}")})
-            }
-        }
-    }
     if(state.selectedPointUuid!=null || state.selectedLineUuid!=null || state.area.selected!=null || state.dirty) {
-        Text("Перетягніть вибраний об’єкт. Змінені координати стануть приблизними; збережіть зміни креслення.")
+        Text(stringResource(Res.string.p5b_details_drag_hint))
         FlowRow {
             TextButton(enabled=available,onClick=model::clearDrawingSelection){Text("Зняти виділення")}
             TextButton(enabled=available && state.canUndo,onClick=model::undo){Text("Скасувати дію")}
