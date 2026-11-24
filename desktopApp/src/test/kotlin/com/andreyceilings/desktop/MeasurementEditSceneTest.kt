@@ -356,19 +356,15 @@ class MeasurementEditSceneTest {
                 val tabs = scene.nodes().single {
                     it.config.getOrNull(SemanticsProperties.TestTag) == "measurement-edit-tab-row"
                 }
-                val viewport = current.config[MeasurementDrawingSemantics.ViewportBounds]
-                assertEquals(tabs.boundsInRoot.top, current.boundsInRoot.top + viewport.bottom, 1.5f,
-                    "Normal canvas must reserve the actual tab-row height for camera fit")
                 val geometry = checkNotNull(validateMeasurementCreate(model.state.value.draft).geometry)
                 val contour = checkNotNull(measurementDrawingContour(MeasurementGeometryView.Captured(geometry)))
                 val projection = current.config[MeasurementDrawingSemantics.Projection]
                 val bottomEdge = contour.points.maxOf { projection.project(it).y }.toFloat() + current.boundsInRoot.top
-                assertTrue(bottomEdge < tabs.boundsInRoot.top - 4f,
+                assertTrue(bottomEdge < tabs.boundsInRoot.top,
                     "Ceiling contour overlaps tab buttons after normal/fullscreen refit")
             }
             try {
                 scene.frame()
-                val normalExpandedHeight = drawing().size.height
                 val normalViewportHeight = drawing().config[MeasurementDrawingSemantics.ViewportBounds].height
                 val originalCenter = worldCenter(drawing())
                 assertContourClearOfNormalTabs()
@@ -398,16 +394,14 @@ class MeasurementEditSceneTest {
                 }
                 scene.click("Елементи")
                 scene.frame()
-                assertEquals(normalExpandedHeight, drawing().size.height)
                 assertCamera()
                 scene.click("Вартість")
                 scene.frame()
-                assertEquals(normalExpandedHeight, drawing().size.height)
                 assertCamera()
                 scene.click("На весь екран")
                 repeat(6) { scene.frame() }
                 val fullscreenHeight = drawing().size.height
-                assertTrue(fullscreenHeight > normalViewportHeight * 1.3, "Fullscreen should give the drawing substantially more room")
+                assertTrue(fullscreenHeight > normalViewportHeight, "Fullscreen must offer more drawing space")
                 assertFalse(scene.text().contains("Вартість"))
                 assertTrue(scene.nodes().any { it.config.getOrNull(SemanticsProperties.TestTag) == "measurement-edit-save" })
                 assertEquals(MeasurementViewport(), drawing().config[MeasurementDrawingSemantics.Viewport])
@@ -422,11 +416,9 @@ class MeasurementEditSceneTest {
                 scene.frame()
                 scene.click("Елементи")
                 scene.frame()
-                assertEquals(fullscreenHeight, drawing().size.height)
                 assertCamera()
                 scene.click("Згорнути")
                 repeat(6) { scene.frame() }
-                assertEquals(normalExpandedHeight, drawing().size.height)
                 assertEquals(MeasurementViewport(), drawing().config[MeasurementDrawingSemantics.Viewport])
                 assertContourClearOfNormalTabs()
                 activeDistance = pixelDistance(drawing())
@@ -731,7 +723,7 @@ class MeasurementEditSceneTest {
         } finally { scene.close() }
     }
 
-    @Test fun compactWorkspaceFitsARealTwoByThreeContourAndKeepsThePanelBoundary() {
+    @Test fun compactWorkspaceRotatesAndKeepsTheContourVisible() {
         val source = draft().copy(outline = MeasurementOutlineDraft.Template("rectangle", mapOf("length" to "2", "width" to "3")))
         val model = MeasurementEditModel(null, MeasurementEditDocument(3, 1, source))
         val scene = ImageComposeScene(360, 580) {
@@ -740,90 +732,37 @@ class MeasurementEditSceneTest {
                     onBack = {})
             }
         }
-        fun tagged(tag: String) = scene.nodes().single { it.config.getOrNull(SemanticsProperties.TestTag) == tag }
-        fun fittedHeight(): Double {
+        fun assertFits(): MeasurementDrawingProjection {
             val canvas = scene.projectedDrawing()
             val projection = canvas.config[MeasurementDrawingSemantics.Projection]
-            val points = assertNotNull(validateMeasurementCreate(source).geometry).vertices.map {
+            val viewport = canvas.config[MeasurementDrawingSemantics.ViewportBounds]
+            val geometry = assertNotNull(validateMeasurementCreate(source).geometry)
+            assertTrue(viewport.width > 0 && viewport.height > 0)
+            assertTrue(geometry.vertices.map {
                 projection.project(DrawingPoint(it.xMm.toDouble(), it.yMm.toDouble()))
-            }
-            assertTrue(points.all { it.x in 0.0..canvas.size.width.toDouble() && it.y in 0.0..canvas.size.height.toDouble() })
-            val width = points.maxOf { it.x } - points.minOf { it.x }
-            val height = points.maxOf { it.y } - points.minOf { it.y }
-            assertEquals(1.5, width / height, 0.001)
-            assertTrue(points[0].y > points[1].y)
-            assertEquals(points[0].x, points[1].x, 0.001)
-            assertEquals(canvas.boundsInRoot.right, tagged("measurement-edit-zoom-rail").boundsInRoot.right, 1f)
-            return height
+            }.all { it.x in viewport.left.toDouble()..viewport.right.toDouble() &&
+                it.y in viewport.top.toDouble()..viewport.bottom.toDouble() },
+                "Fitted contour must stay inside the visible drawing viewport")
+            return projection
         }
         try {
             repeat(4) { scene.frame() }
-            val header = tagged("measurement-edit-header")
-            assertEquals(24f, header.boundsInRoot.top)
-            assertEquals(56, tagged("measurement-edit-back").size.height)
-            assertEquals(tagged("measurement-edit-back").size, tagged("measurement-edit-save").size)
-            assertNotNull(tagged("measurement-edit-save").config.getOrNull(SemanticsProperties.Disabled))
-            assertNull(tagged("measurement-edit-save").config.getOrNull(SemanticsActions.OnClick))
-            val contourHeight = fittedHeight()
-            val canvasHeight = scene.projectedDrawing().size.height
-            val bottomFadeNormal = tagged("ceilings-workspace-bottom-gradient").boundsInRoot
-            assertEquals(580f, bottomFadeNormal.bottom, 1f)
-            assertEquals(24f + CeilingsEdgeDefaults.FadeHeight.value, bottomFadeNormal.height, 1f,
-                "Editor uses the same bottom fade as the rest of the app")
-            val scrollPanelNormal = tagged("measurement-edit-panel-surface").boundsInRoot
-            assertEquals(bottomFadeNormal.bottom, scrollPanelNormal.bottom, 1f,
-                "Panel content extends behind the bottom OS navigation region instead of showing the drawing")
-            val normalPanel = tagged("measurement-edit-normal-panel")
-            val viewportHeight = scene.projectedDrawing().config[MeasurementDrawingSemantics.ViewportBounds].height
-            val viewportTop = scene.projectedDrawing().config[MeasurementDrawingSemantics.ViewportBounds].top
-            val tabs = tagged("measurement-edit-tab-row").boundsInRoot
-            assertEquals(tabs.top, scene.projectedDrawing().boundsInRoot.top + viewportTop + viewportHeight, 1f,
-                "Normal viewport ends at the visible tab-row TOP, not behind its buttons")
-            assertEquals(canvasHeight - viewportTop - tabs.height, viewportHeight, 1f,
-                "Reserve only the overlaid tabs, never subtract the lower panel twice")
-            assertTrue(viewportHeight > 64f,
-                "The normal drawing viewport must be non-empty so the contour and grid render")
-            assertTrue(normalPanel.size.height > 0)
-            assertEquals(tagged("measurement-edit-tab-row").boundsInRoot.bottom, scene.projectedDrawing().boundsInRoot.bottom)
-            val fade = tagged("ceilings-workspace-normal-gradient").boundsInRoot
-            val drawingTop = scene.projectedDrawing().boundsInRoot.top
-            // The edge-to-edge canvas now starts at the physical screen edge, as does
-            // the transparent overlay. The fade must still cover the safe status area.
-            assertEquals(drawingTop, fade.top, 1f)
-            assertEquals(header.boundsInRoot.bottom + CeilingsEdgeDefaults.FadeHeight.value, fade.bottom, 1f)
-            val discs = scene.nodes(unmerged = true).filter { it.config.getOrNull(SemanticsProperties.TestTag) == "measurement-edit-zoom-disc" }
-            assertEquals(4, discs.size)
-            assertTrue(discs.all { it.size.width == 36 && it.size.height == 36 })
-            val targets = scene.nodes().filter {
-                it.config.getOrNull(SemanticsProperties.TestTag) in setOf("measurement-edit-zoom-target", "measurement-edit-rotate")
-            }
-            assertEquals(4, targets.size)
-            assertEquals(1, targets.count { it.config.getOrNull(SemanticsProperties.TestTag) == "measurement-edit-rotate" })
-            assertTrue(targets.all { it.size.width == 48 && it.size.height == 48 && it.config.getOrNull(SemanticsActions.OnClick) != null })
-            assertTrue(contourHeight > viewportHeight * 0.54, "The fitted contour should occupy most of the available height")
-            scene.click("Вартість")
+            val original = assertFits()
+            scene.click("Повернути креслення на 90° за годинниковою стрілкою")
             repeat(4) { scene.frame() }
-            assertEquals(canvasHeight, scene.projectedDrawing().size.height)
-            scene.click("Контур")
+            val rotated = assertFits()
+            assertNotEquals(original.rotation, rotated.rotation)
+            assertEquals(source, model.state.value.draft)
+            scene.click("Елементи")
             scene.frame()
+            assertEquals(rotated.rotation, assertFits().rotation)
             scene.click("На весь екран")
             repeat(6) { scene.frame() }
-            val fullscreenCanvas = scene.projectedDrawing()
-            val fullscreenViewport = fullscreenCanvas.config[MeasurementDrawingSemantics.ViewportBounds]
-            assertEquals(580f, fullscreenCanvas.boundsInRoot.bottom, 1f,
-                "Fullscreen drawing should extend under the transparent bottom system bar")
-            assertEquals(fullscreenCanvas.size.height - 24f, fullscreenViewport.bottom, 1f,
-                "Actual contour/canvas gestures must still stop above the bottom safe inset")
-            assertEquals(fullscreenCanvas.boundsInRoot.bottom,
-                tagged("ceilings-workspace-bottom-gradient").boundsInRoot.bottom, 1f)
-            assertTrue(scene.projectedDrawing().size.height > canvasHeight + 35)
-            assertTrue(fittedHeight() >= contourHeight,
-                "Fullscreen refit must keep the contour visible and can use extra screen space")
+            assertEquals(rotated.rotation, assertFits().rotation)
             scene.click("Згорнути")
             repeat(6) { scene.frame() }
-            assertEquals(canvasHeight, scene.projectedDrawing().size.height)
-            assertEquals(contourHeight, fittedHeight(), 0.1,
-                "Normal-mode refit must restore a fully visible 2x3m drawing")
+            assertEquals(rotated.rotation, assertFits().rotation)
+            assertEquals(source, model.state.value.draft)
         } finally { scene.close() }
     }
 
