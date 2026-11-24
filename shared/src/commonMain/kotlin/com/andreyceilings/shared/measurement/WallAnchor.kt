@@ -22,6 +22,34 @@ data class WallAnchor(val kind: Kind, val firstWall: String, val secondWall: Str
     @Serializable enum class Kind { TWO_WALLS, ALONG_INWARD }
 }
 
+/** Shape changes allocate fresh wall IDs. Only identical, directed world segments establish correspondence. */
+internal fun matchingContourWalls(
+    old: FrozenPolygonGeometry?, oldWalls: List<CeilingWall>,
+    current: FrozenPolygonGeometry, currentWalls: List<CeilingWall>
+): Map<String, String> {
+    if (old == null || oldWalls.isEmpty() || oldWalls == currentWalls) return emptyMap()
+    fun edges(geometry: FrozenPolygonGeometry, walls: List<CeilingWall>) = walls.associateBy { wall ->
+        geometry.vertices[wall.ordinal] to geometry.vertices[(wall.ordinal + 1) % geometry.vertices.size]
+    }
+    val target = edges(current, currentWalls)
+    return edges(old, oldWalls).mapNotNull { (edge, previous) ->
+        target[edge]?.let { previous.uuid to it.uuid }
+    }.toMap()
+}
+
+internal fun ContourAnchorReference?.correspondence(
+    geometry: FrozenPolygonGeometry, walls: List<CeilingWall>
+): Map<String, String> = if (this == null) emptyMap()
+else matchingContourWalls(MeasurementGeometryCodec.read(geometryJson), this.walls, geometry, walls)
+
+internal fun WallAnchor.rebind(
+    correspondence: Map<String, String>, geometry: FrozenPolygonGeometry, walls: List<CeilingWall>
+): WallAnchor? {
+    val first = correspondence[firstWall] ?: return null
+    val second = secondWall?.let { correspondence[it] ?: return null }
+    return copy(firstWall = first, secondWall = second).takeIf { solveWallAnchor(geometry, walls, it) != null }
+}
+
 data class AnchorSolution(val position: PointPositionMm, val firstActualMm: Double, val secondActualMm: Double)
 
 /** A 1 mm representation cannot claim better physical accuracy; reject unstable near-parallel bases. */
@@ -94,9 +122,11 @@ data class PointMountingEdit(val anchor: WallAnchor? = null, val freeX: Long? = 
     val confirm: Boolean = false, val defer: Boolean = false)
 
 fun previewMounting(point: PointPlacement, geometry: FrozenPolygonGeometry, walls: List<CeilingWall>,
-    geometryChanged: Boolean, edit: PointMountingEdit? = null): PointPlacement {
+    geometryChanged: Boolean, edit: PointMountingEdit? = null,
+    correspondence: Map<String, String> = emptyMap()): PointPlacement {
     if (!geometryChanged && edit == null) return point
-    val anchor = if (edit != null && (edit.anchor != null || edit.freeX != null)) edit.anchor else point.mounting.anchor
+    val requested = if (edit != null && (edit.anchor != null || edit.freeX != null)) edit.anchor else point.mounting.anchor
+    val anchor = requested?.rebind(correspondence, geometry, walls) ?: requested
     val solution = anchor?.let { solveWallAnchor(geometry,walls,it) }
     val free = edit?.freeX?.let { PointPositionMm(it,checkNotNull(edit.freeY)) }
     val position = if(point.mounting.unresolved && edit?.anchor==null && free==null) PointPositionMm(point.xMm,point.yMm)
@@ -113,7 +143,8 @@ fun previewMounting(point: PointPlacement, geometry: FrozenPolygonGeometry, wall
     }
     return point.copy(xMm=position.xMm,yMm=position.yMm,
         precision=if (measured) PointPrecision.EXACT else if (dragged) PointPrecision.APPROXIMATE else point.precision,
-        mounting=point.mounting.copy(anchor=anchor,needsReview=review,unresolved=unresolved,
+        mounting=point.mounting.copy(anchor=if (unresolved && edit?.anchor == null) point.mounting.anchor else anchor,
+            needsReview=review,unresolved=unresolved,
             confirmedAt=if (review) null else point.mounting.confirmedAt,
             deferredAt=if (review && edit?.defer != true) point.mounting.deferredAt else null))
 }

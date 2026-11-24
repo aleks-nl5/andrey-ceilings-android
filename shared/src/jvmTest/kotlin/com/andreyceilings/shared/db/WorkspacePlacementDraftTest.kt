@@ -15,6 +15,65 @@ import kotlin.test.*
 
 class WorkspacePlacementDraftTest {
     @Test
+    fun newWorkspaceCreatesContourMaterialsAndAllPlacementsInOneRetryableWrite() = runBlocking {
+        JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).use { driver ->
+            PriceCatalogSchema.create(driver)
+            val db = PrototypeDatabase(driver)
+            val project = ProjectRepository(db).createReturningId(null, "Create workspace", createdAt = 1)
+            val store = MeasurementEditStore(db) { 101 }
+            val draft = MeasurementCreateFixtures.draft(project, "rectangle",
+                com.andreyceilings.shared.calculation.MeasurementPrecision.ONE_MILLIMETER)
+            val editor = MeasurementEditModel(store, MeasurementEditDocument(0, 0, draft))
+            val pointItem = addItem(db, "Create POINT", PlacementKind.POINT, "шт.")
+            editor.addCatalogWork(pointItem, ElementQuantity.Exact(2000), place = true)
+            assertTrue(editor.placeWorkspacePoint(900, 850))
+            val point = editor.displayPoints().single()
+            editor.stagePoint(point.uuid, PointMountingEdit(anchor = WallAnchor(
+                WallAnchor.Kind.ALONG_INWARD, editor.draftWalls().first().uuid, firstMm = 900, secondMm = 850)))
+            val lineItem = addItem(db, "Create LINE", PlacementKind.LINE, "м.п.")
+            editor.addCatalogWork(lineItem, ElementQuantity.Exact(3500), place = true)
+            assertTrue(editor.finishWorkspaceLine(PointPositionMm(500, 600), PointPositionMm(1500, 600)))
+            val line = editor.displayLines().single()
+            val areaItem = addItem(db, "Create AREA", PlacementKind.AREA, "шт.")
+            editor.addCatalogWork(areaItem, ElementQuantity.Exact(2000), place = true)
+            editor.areaTap(1100, 900)
+            editor.areaTap(1700, 1300)
+            editor.acceptAreaCreation()
+            val area = editor.displayAreas().single()
+            assertTrue(MeasurementRepository(db).forProject(project).isEmpty())
+            assertTrue(MeasurementElementRepository(db).forMeasurement(draft.recordUuid).isEmpty())
+
+            driver.execute(null, """
+                CREATE TRIGGER reject_creation BEFORE INSERT ON ceiling_operations
+                BEGIN SELECT RAISE(ABORT, 'test rollback'); END
+            """.trimIndent(), 0)
+            editor.saveInWorkspace()
+            assertNull(editor.state.value.createdId)
+            assertNotNull(editor.state.value.error)
+            assertTrue(MeasurementRepository(db).forProject(project).isEmpty())
+            assertTrue(MeasurementElementRepository(db).forMeasurement(draft.recordUuid).isEmpty())
+            driver.execute(null, "DROP TRIGGER reject_creation", 0)
+            editor.saveInWorkspace()
+            val id = assertNotNull(editor.state.value.createdId, editor.state.value.error)
+            editor.saveInWorkspace()
+            val result = store.load(project, id)
+            assertEquals(id, MeasurementRepository(db).forProject(project).single().id)
+            assertEquals(point.uuid, result.placements.points.single().uuid)
+            assertEquals(result.placements.walls.first().uuid, result.placements.points.single().mounting.anchor?.firstWall)
+            assertEquals(PointPositionMm(900, 850), result.placements.points.single().let { PointPositionMm(it.xMm, it.yMm) })
+            assertEquals(line.uuid, result.placements.lines.single().uuid)
+            assertEquals(area.uuid, result.placements.areas.single().uuid)
+            assertEquals(setOf(ElementQuantity.Exact(2000), ElementQuantity.Exact(3500)),
+                MeasurementElementRepository(db).forMeasurement(draft.recordUuid).map { it.quantity }.toSet())
+
+            val restored = assertNotNull(MeasurementEditModel.restore(MeasurementEditStore(db) { 300 }, editor.snapshot(), project, 0))
+            restored.reconcile()
+            assertEquals(id, restored.state.value.createdId, restored.state.value.error)
+            assertEquals(result, store.load(project, id))
+        }
+    }
+
+    @Test
     fun catalogApprovalDefaultsToDiscussingAndCanBeApprovedWithUndoRedoAndSave() = runBlocking {
         JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).use { driver ->
             PriceCatalogSchema.create(driver)

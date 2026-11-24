@@ -123,6 +123,7 @@ class WorkspaceAddPointTouchTest {
             compose.onNodeWithText("Заявлена кількість, шт.").performTextInput("3")
             click("Додати на креслення")
             click("Вписати креслення")
+            compose.onNodeWithTag("measurement-edit-rotate").performClick()
             val approximate = position(1200, 800)
             canvas.performTouchInput { click(approximate) }
             val added = compose.runOnIdle { shown.value.displayPoints().single() }
@@ -173,8 +174,17 @@ class WorkspaceAddPointTouchTest {
             canvas.performTouchInput { click(marker) }
             compose.onNodeWithTag("measurement-edit-context-panel").assertDoesNotExist()
             assertEquals(point.uuid, shown.value.state.value.selectedPointUuid)
+            repeat(4) {
+                compose.onNodeWithTag("measurement-edit-rotate").performClick()
+                click("Вписати креслення")
+                val rotated = position(point.xMm, point.yMm)
+                canvas.performTouchInput { click(rotated) }
+                assertEquals(point.uuid, shown.value.state.value.selectedPointUuid)
+                assertFalse(shown.value.state.value.dirty, "Rotating the view must not modify a saved point")
+            }
+            val markerAfterRotation = position(point.xMm, point.yMm)
             // Double tap opens the *point editor* rather than just the element list.
-            canvas.performTouchInput { doubleClick(marker) }
+            canvas.performTouchInput { doubleClick(markerAfterRotation) }
             compose.waitUntil(5000) {
                 compose.onAllNodes(hasTestTag("measurement-edit-context-panel")).fetchSemanticsNodes().isNotEmpty()
             }

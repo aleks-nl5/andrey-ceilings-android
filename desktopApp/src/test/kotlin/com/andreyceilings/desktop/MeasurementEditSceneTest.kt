@@ -738,12 +738,17 @@ class MeasurementEditSceneTest {
         fun fittedHeight(): Double {
             val canvas = scene.projectedDrawing()
             val projection = canvas.config[MeasurementDrawingSemantics.Projection]
-            val a = projection.project(DrawingPoint(0.0, 0.0))
-            val b = projection.project(DrawingPoint(2000.0, 3000.0))
-            assertTrue(a.x >= 0 && a.y >= 0 && b.x <= canvas.size.width && b.y <= canvas.size.height)
-            assertEquals(1.5, (b.y - a.y) / (b.x - a.x), 0.001)
+            val points = assertNotNull(validateMeasurementCreate(source).geometry).vertices.map {
+                projection.project(DrawingPoint(it.xMm.toDouble(), it.yMm.toDouble()))
+            }
+            assertTrue(points.all { it.x in 0.0..canvas.size.width.toDouble() && it.y in 0.0..canvas.size.height.toDouble() })
+            val width = points.maxOf { it.x } - points.minOf { it.x }
+            val height = points.maxOf { it.y } - points.minOf { it.y }
+            assertEquals(1.5, width / height, 0.001)
+            assertTrue(points[0].y > points[1].y)
+            assertEquals(points[0].x, points[1].x, 0.001)
             assertEquals(canvas.boundsInRoot.right, tagged("measurement-edit-zoom-rail").boundsInRoot.right, 1f)
-            return b.y - a.y
+            return height
         }
         try {
             repeat(4) { scene.frame() }
@@ -781,10 +786,10 @@ class MeasurementEditSceneTest {
             assertEquals(drawingTop, fade.top, 1f)
             assertEquals(header.boundsInRoot.bottom + CeilingsEdgeDefaults.FadeHeight.value, fade.bottom, 1f)
             val discs = scene.nodes(unmerged = true).filter { it.config.getOrNull(SemanticsProperties.TestTag) == "measurement-edit-zoom-disc" }
-            assertEquals(3, discs.size)
+            assertEquals(4, discs.size)
             assertTrue(discs.all { it.size.width == 36 && it.size.height == 36 })
             val targets = scene.nodes().filter { it.config.getOrNull(SemanticsProperties.TestTag) == "measurement-edit-zoom-target" }
-            assertEquals(3, targets.size)
+            assertEquals(4, targets.size)
             assertTrue(targets.all { it.size.width == 48 && it.size.height == 48 && it.config.getOrNull(SemanticsActions.OnClick) != null })
             assertTrue(contourHeight > viewportHeight * 0.54, "The fitted contour should occupy most of the available height")
             scene.click("Вартість")
@@ -904,18 +909,14 @@ class MeasurementEditSceneTest {
             assertTrue(field.config[SemanticsActions.SetText].action?.invoke(AnnotatedString("")) == true)
             scene.frame()
             val boundsWithWarning = canvas().boundsInRoot
+            assertEquals("Розміри неповні. Показано умовний контур.", canvas().config[SemanticsProperties.StateDescription])
             val details = scene.nodes().single {
-                "Показати повне повідомлення" in it.config.getOrNull(SemanticsProperties.ContentDescription).orEmpty()
+                it.config.getOrNull(SemanticsProperties.TestTag) == "measurement-edit-save-block-reason"
             }
             assertTrue(details.config[SemanticsActions.OnClick].action?.invoke() == true)
             scene.frame()
-            val fullMessage = scene.nodes().single {
-                it.config.getOrNull(SemanticsProperties.TestTag) == "measurement-edit-status-details"
-            }
-            val error = assertNotNull(validateMeasurementCreate(model.state.value.draft).geometryError)
-            assertEquals("Невалідна чернетка: показано збережений контур і позначки. $error", fullMessage.textTree())
-            assertTrue(fullMessage.boundsInRoot.height > 48)
-            scene.click("Закрити")
+            assertTrue(scene.text().contains("Введіть відсутні розміри."))
+            scene.click("Введіть відсутні розміри.")
             scene.frame()
             assertEquals(boundsWithWarning, canvas().boundsInRoot)
         } finally { scene.close() }
@@ -960,6 +961,16 @@ class MeasurementEditSceneTest {
                 assertNotNull(tagged("measurement-shape-option-$id"))
             assertTrue(tagged("measurement-shape-option-l_shaped")
                 .config[SemanticsActions.OnClick].action?.invoke() == true)
+            scene.frame()
+            scene.click("Скасувати")
+            scene.frame()
+            assertEquals("rectangle", model.state.value.draft.shape)
+            assertEquals(draft().outline, model.state.value.draft.outline)
+            assertTrue(tagged("measurement-shape-picker").config[SemanticsActions.OnClick].action?.invoke() == true)
+            scene.frame()
+            assertTrue(tagged("measurement-shape-option-l_shaped").config[SemanticsActions.OnClick].action?.invoke() == true)
+            scene.frame()
+            scene.click("Змінити форму")
             scene.frame()
             assertEquals("l_shaped", model.state.value.draft.shape)
             assertFalse(scene.nodes().any {

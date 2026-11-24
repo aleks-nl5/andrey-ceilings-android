@@ -20,7 +20,7 @@ import kotlinx.coroutines.launch
 /** Shared global list and actions. Hosts supply only session stores, insets and navigation. */
 @Composable
 fun MeasurementsScreen(
-    store: MeasurementsStore?, createStore: MeasurementCreateStore?,
+    store: MeasurementsStore?,
     detailsStore: MeasurementDetailsStore?, editStore: MeasurementEditStore?,
     navigation: AppNavigationState, precision: MeasurementPrecision,
     contentPadding: PaddingValues, systemTopInset: Dp,
@@ -31,9 +31,9 @@ fun MeasurementsScreen(
 ) {
     val back = { onNavigate(navigation.back()) }
     navigation.measurementCreate?.let { route ->
-        MeasurementCreateScreen(route.projectId, precision, createStore, contentPadding, systemTopInset,
+        MeasurementCreateWorkspace(route.projectId, precision, editStore, contentPadding, systemTopInset,
             onBack = back, onSaved = { onNavigate(navigation.measurementCreated(route.projectId, it)) },
-            navigationGuard = navigationGuard, backLabel = "До замірів")
+            navigationGuard = navigationGuard)
         return
     }
     navigation.measurementEdit?.let { route ->

@@ -57,10 +57,24 @@ object OrthogonalSideContour {
             it.lengthMm % gridMm == 0L }) {
             "Виміри сторін не відповідають вибраній точності"
         }
+        val trace = trace(sides)
+        val walls = sides.indices.toSet()
+        if (trace.end != CeilingPointMm(0, 0)) throw ContourGeometryException(
+            ContourProblem.OPEN, walls, "Контур не замкнено: перевірте довжини всіх сторін")
+        if (trace.direction != 0) throw ContourGeometryException(
+            ContourProblem.OPEN, walls, "Напрям після останнього повороту не збігається з початковим")
+        val polygon = CeilingPolygon("polygon", trace.vertices)
+        CeilingPolygonCalculator.calculate(polygon, precisionStepMeters)
+        return polygon
+    }
+
+    internal data class Trace(val vertices: List<CeilingPointMm>, val end: CeilingPointMm, val direction: Int)
+
+    internal fun trace(sides: List<MeasuredOrthogonalSide>): Trace {
         val vertices = ArrayList<CeilingPointMm>(sides.size)
         var x = 0L
         var y = 0L
-        var direction = 0 // E, S, W, N (Android canvas Y increases downward)
+        var direction = 0
         for (side in sides) {
             vertices += CeilingPointMm(x, y)
             when (direction) {
@@ -71,15 +85,7 @@ object OrthogonalSideContour {
             }
             direction = (direction + if (side.turnAfter == OrthogonalTurn.RIGHT) 1 else 3) % 4
         }
-        require(x == 0L && y == 0L) {
-            "Контур не замкнено: перевірте довжини всіх сторін"
-        }
-        require(direction == 0) {
-            "Напрям після останнього повороту не збігається з початковим"
-        }
-        val polygon = CeilingPolygon("polygon", vertices)
-        CeilingPolygonCalculator.calculate(polygon, precisionStepMeters)
-        return polygon
+        return Trace(vertices, CeilingPointMm(x, y), direction)
     }
 
     /** Old X/Y records can be shown, but never silently converted to measured sides. */

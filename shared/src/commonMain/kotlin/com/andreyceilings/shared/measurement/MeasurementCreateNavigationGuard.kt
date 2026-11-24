@@ -56,6 +56,8 @@ class MeasurementCreateNavigationGuard {
         val editState = edit?.state?.value
         if (editState != null && (current.measurementEdit?.measurementId == editState.original.measurementId && current.measurementEdit.projectId == editState.draft.projectId ||
             current.measurementDetails?.measurementId == editState.original.measurementId && current.measurementDetails.projectId == editState.draft.projectId)) return editState.saving || editState.checking || editState.saved || editState.exitReady
+        if (editState?.creating == true && current.measurementCreate?.projectId == editState.draft.projectId)
+            return editState.saving || editState.checking || editState.saved || editState.exitReady
         val state = editor?.state?.value ?: return false
         return current.measurementCreate?.projectId == state.draft.projectId &&
             (state.saving || state.savedId != null)
@@ -118,6 +120,10 @@ class MeasurementCreateNavigationGuard {
                 return current
             }
             return approved(proposed)
+        }
+        if (editState?.creating == true) {
+            val completed = editState.createdId?.let { current.measurementCreated(editState.draft.projectId, it) }
+            return if (completed != null && proposed == completed) approved(proposed) else current
         }
         val state = requireNotNull(editor).state.value
         // Keep the editor visible between commit and its onSaved effect too.

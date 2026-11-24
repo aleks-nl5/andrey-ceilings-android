@@ -97,11 +97,17 @@ fun lineStrictlyInside(g: FrozenPolygonGeometry, start: PointPositionMm, end: Po
 
 /** Lost references preserve the entire last known segment, including mounting context. */
 fun previewLine(line: LinePlacement, geometry: FrozenPolygonGeometry, walls: List<CeilingWall>,
-    geometryChanged: Boolean, edit: LinePlacementEdit? = null): LinePlacement {
+    geometryChanged: Boolean, edit: LinePlacementEdit? = null,
+    correspondence: Map<String, String> = emptyMap()): LinePlacement {
     val value=edit?.value ?: line
     if (value.deletedAt != null) return value
-    val a=previewMounting(value.endpoint(true),geometry,walls,geometryChanged)
-    val b=previewMounting(value.endpoint(false),geometry,walls,geometryChanged)
+    fun endpoint(start: Boolean): PointPlacement {
+        val point = value.endpoint(start)
+        val rebound = point.mounting.anchor?.rebind(correspondence, geometry, walls)
+        return if (rebound == null) point else point.copy(mounting = point.mounting.copy(anchor = rebound))
+    }
+    val a=previewMounting(endpoint(true),geometry,walls,geometryChanged)
+    val b=previewMounting(endpoint(false),geometry,walls,geometryChanged)
     val start=PointPositionMm(a.xMm,a.yMm); val end=PointPositionMm(b.xMm,b.yMm)
     val measured=value.startMounting.anchor!=null && value.endMounting.anchor!=null &&
         solveWallAnchor(geometry,walls,value.startMounting.anchor)?.position==start &&

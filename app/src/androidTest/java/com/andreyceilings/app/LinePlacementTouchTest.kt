@@ -241,6 +241,8 @@ class LinePlacementTouchTest {
                 compose.runOnIdle {assertNull(model.state.value.lineStart)}
                 click("Вписати креслення")
                 // The active LINE tool owns this press even though it hits an existing POINT.
+                compose.onNodeWithTag("measurement-edit-rotate").performClick()
+                compose.onNodeWithTag("measurement-edit-rotate").performClick()
                 val start = world(existingPoint.xMm, existingPoint.yMm)
                 val end = world(3000, 1300)
                 if (theme) {

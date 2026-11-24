@@ -190,6 +190,7 @@ class AreaFeatureTouchTest {
             click("Повторити")
             compose.runOnIdle { assertEquals(3, model.displayAreas().size, "Redo; ${stateSummary()}") }
             click("На весь екран")
+            repeat(3) { compose.onNodeWithTag("measurement-edit-rotate").performClick() }
             click("Вписати креслення")
             val canvas=compose.onNode(matcher)
             settledCanvas()

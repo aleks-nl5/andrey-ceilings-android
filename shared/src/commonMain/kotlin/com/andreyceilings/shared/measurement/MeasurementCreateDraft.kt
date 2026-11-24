@@ -143,16 +143,29 @@ fun MeasurementCreateDraft.reduce(intent: MeasurementCreateIntent): MeasurementC
     }
 }
 
+enum class MeasurementContourIssueCode {
+    MISSING, LENGTH, PRECISION, RECTANGLE_MINIMUM, CUTOUT_LENGTH, CUTOUT_WIDTH, L_MINIMUM,
+    OPEN, OVERLAP, INTERSECTION, INVALID
+}
+
+data class MeasurementContourIssue(
+    val code: MeasurementContourIssueCode, val fields: Set<String> = emptySet(), val walls: Set<Int> = emptySet()
+)
+
+private class MeasurementLengthException(val code: MeasurementContourIssueCode, message: String) :
+    IllegalArgumentException(message)
+
 data class MeasurementCreateValidation(
     val nameError: String?, val fieldErrors: Map<String, String>,
-    val geometry: FrozenPolygonGeometry?, val geometryError: String?
+    val geometry: FrozenPolygonGeometry?, val geometryError: String?,
+    val contourIssues: List<MeasurementContourIssue> = emptyList()
 ) {
     val canSave: Boolean get() = nameError == null && geometry != null && fieldErrors.isEmpty()
 }
 
 /** Decimal text -> integer mm, without an intermediate floating-point or silent rounding. */
 fun measurementLengthMm(text: String, precision: MeasurementPrecision): Long {
-    require(text.trim().isNotEmpty()) { "Введіть довжину." }
+    if (text.isBlank() || text.trim().last() in listOf('.', ',')) throw MeasurementLengthException(MeasurementContourIssueCode.MISSING, "Введіть довжину.")
     // Preserve the existing exact-zero suffix rule (123.001000 == 123001 mm).
     // Only significant fractional digits consume precision; no non-zero digit is rounded.
     val value = DecimalTextPolicy(Int.MAX_VALUE).committed(text.trim())
@@ -167,16 +180,21 @@ fun measurementLengthMm(text: String, precision: MeasurementPrecision): Long {
     val mm = whole * 1000 + fraction.padEnd(3, '0').toLong()
     require(mm in 1..CeilingPolygonCalculator.MAX_COORDINATE_MM) { "Довжина має бути більшою за нуль і не перевищувати 1000 м." }
     val stepMm = (precision.stepMeters * 1000).toLong()
-    require(mm % stepMm == 0L) { "Довжина має відповідати точності ${precision.label}." }
+    if (mm % stepMm != 0L) throw MeasurementLengthException(MeasurementContourIssueCode.PRECISION,
+        "Довжина має відповідати точності ${precision.label}.")
     return mm
 }
 
 fun validateMeasurementCreate(draft: MeasurementCreateDraft): MeasurementCreateValidation {
     val errors = linkedMapOf<String, String>()
+    val issues = mutableListOf<MeasurementContourIssue>()
     fun length(key: String, label: String, text: String): Long? = try {
         measurementLengthMm(text, draft.precision)
     } catch (failure: IllegalArgumentException) {
-        errors[key] = "$label: ${failure.message}"; null
+        val code = (failure as? MeasurementLengthException)?.code ?: MeasurementContourIssueCode.LENGTH
+        issues += MeasurementContourIssue(code, setOf(key))
+        errors[key] = "$label: ${failure.message}"
+        null
     }
     var geometryError: String? = null
     val geometry = try {
@@ -190,16 +208,29 @@ fun validateMeasurementCreate(draft: MeasurementCreateDraft): MeasurementCreateV
                 val mm = template.parameterKeys.mapNotNull { key ->
                     length(key, measurementTemplateFieldLabel(input.shape, key), input.fields.getValue(key))?.let { key to it }
                 }.toMap()
-                if (errors.isNotEmpty()) null else {
+                if (input.shape == "l_shaped") {
+                    for ((inner, outer, code) in listOf(
+                        Triple("C", "A", MeasurementContourIssueCode.CUTOUT_LENGTH),
+                        Triple("D", "B", MeasurementContourIssueCode.CUTOUT_WIDTH)
+                    )) {
+                        val a = mm[inner]
+                        val b = mm[outer]
+                        if (a != null && b != null && a >= b)
+                            issues += MeasurementContourIssue(code, setOf(inner, outer))
+                    }
+                }
+                if (input.shape == "rectangle") {
+                    val short = mm.filterValues { it < 100 }.keys
+                    if (short.isNotEmpty()) issues += MeasurementContourIssue(
+                        MeasurementContourIssueCode.RECTANGLE_MINIMUM, short)
+                }
+                if (issues.isNotEmpty()) null else {
                     // Retain the existing VerifiedCeilingGeometry capture policies, using exact mm.
-                    if (input.shape == "rectangle") require(mm.values.all { it >= 100 }) {
-                        "Прямокутна стеля має мати сторони не менше 0,1 м."
-                    }
                     val frozen = FrozenPolygonGeometryContract.capture(input.shape, template.build(mm).vertices, mm, draft.precision.stepMeters)
-                    if (input.shape == "l_shaped") require(frozen.areaSquareMeters >= 1.0) {
-                        "Площа L-подібної стелі має бути не меншою за 1 м²."
-                    }
-                    frozen
+                    if (input.shape == "l_shaped" && frozen.areaSquareMeters < 1.0) {
+                        issues += MeasurementContourIssue(MeasurementContourIssueCode.L_MINIMUM, mm.keys)
+                        null
+                    } else frozen
                 }
             }
             is MeasurementOutlineDraft.Orthogonal -> {
@@ -212,8 +243,19 @@ fun validateMeasurementCreate(draft: MeasurementCreateDraft): MeasurementCreateV
             }
         }
     } catch (failure: IllegalArgumentException) {
-        geometryError = failure.message ?: "Некоректна геометрія."; null
+        val problem = failure as? ContourGeometryException
+        val code = when (problem?.problem) {
+            ContourProblem.OPEN -> MeasurementContourIssueCode.OPEN
+            ContourProblem.OVERLAP -> MeasurementContourIssueCode.OVERLAP
+            ContourProblem.INTERSECTION -> MeasurementContourIssueCode.INTERSECTION
+            null -> MeasurementContourIssueCode.INVALID
+        }
+        val sides = (draft.outline as? MeasurementOutlineDraft.Orthogonal)?.sides.orEmpty()
+        val walls = problem?.walls ?: sides.indices.toSet()
+        issues += MeasurementContourIssue(code, walls.mapNotNull { sides.getOrNull(it)?.inputId }.toSet(), walls)
+        geometryError = failure.message ?: "Некоректна геометрія."
+        null
     }
     return MeasurementCreateValidation(if (draft.name.isBlank()) "Введіть назву заміру." else null,
-        errors, geometry, geometryError ?: if (errors.isNotEmpty()) "Заповніть і виправте розміри: креслення поки недоступне." else null)
+        errors, geometry, geometryError ?: if (issues.isNotEmpty()) "Перевірте розміри та форму контуру." else null, issues)
 }

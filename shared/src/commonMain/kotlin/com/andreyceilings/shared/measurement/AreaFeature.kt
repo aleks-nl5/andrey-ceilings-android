@@ -130,11 +130,17 @@ fun areaQuantityMilli(features: List<AreaFeature>, unit: String, includeUnresolv
 }
 
 fun previewArea(old: AreaFeature, geometry: FrozenPolygonGeometry, walls: List<CeilingWall>,
-    geometryChanged: Boolean, edit: AreaFeatureEdit? = null): AreaFeature {
+    geometryChanged: Boolean, edit: AreaFeatureEdit? = null,
+    correspondence: Map<String, String> = emptyMap()): AreaFeature {
     val value=edit?.value ?: old
     if(value.deletedAt!=null)return value
     require(value.mountings.size==value.shape.positions.size)
-    val mapped=value.shape.positions.indices.map { previewMounting(value.point(it),geometry,walls,geometryChanged) }
+    val mapped = value.shape.positions.indices.map {
+        val point = value.point(it)
+        val rebound = point.mounting.anchor?.rebind(correspondence, geometry, walls)
+        val mounting = if (rebound == null) point.mounting else point.mounting.copy(anchor = rebound)
+        previewMounting(point.copy(mounting = mounting), geometry, walls, geometryChanged)
+    }
     val shape=value.shape.withPositions(mapped.map {PointPositionMm(it.xMm,it.yMm)})
     val measured=value.mountings.indices.all { i -> value.mountings[i].anchor?.let {
         solveWallAnchor(geometry,walls,it)?.position==shape.positions[i]

@@ -324,8 +324,8 @@ class MeasurementWorkspaceLayoutTest {
                     val targets = compose.onAllNodesWithTag("measurement-edit-zoom-target", useUnmergedTree = true).fetchSemanticsNodes()
                     val discs = compose.onAllNodesWithTag("measurement-edit-zoom-disc", useUnmergedTree = true).fetchSemanticsNodes()
                     val density = compose.density.density
-                    assertEquals(3, targets.size)
-                    assertEquals(3, discs.size)
+                    assertEquals(4, targets.size)
+                    assertEquals(4, discs.size)
                     targets.forEach {
                         assertEquals(48 * density, it.size.width.toFloat(), 1f)
                         assertEquals(48 * density, it.size.height.toFloat(), 1f)

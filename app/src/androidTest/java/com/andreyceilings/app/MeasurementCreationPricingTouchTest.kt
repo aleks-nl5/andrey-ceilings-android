@@ -36,7 +36,6 @@ class MeasurementCreationPricingTouchTest {
         PriceRepository(db).createInGroup("route.profile", "Route profile", group, 10.0, 100, unit = "м.п.", quantityMode = QuantityMode.CEILING_PERIMETER)
         PriceRepository(db).createInGroup("route.canvas", "Route canvas", group, 20.0, 100, unit = "м²", quantityMode = QuantityMode.CEILING_AREA)
         val measurements = MeasurementsStore(db)
-        val create = MeasurementCreateStore(db) { 1794900000200 }
         val details = MeasurementDetailsStore(db)
         val edit = MeasurementEditStore(db) { 300 }
         val guard = MeasurementCreateNavigationGuard().also { it.bindQuotes(details.elements) }
@@ -46,17 +45,16 @@ class MeasurementCreationPricingTouchTest {
         var uuid = ""; var signature = ""
         fun list() = compose.onAllNodes(SemanticsMatcher.keyIsDefined(SemanticsActions.ScrollToIndex)).onLast()
         fun fill(label: String, value: String) {
-            list().performScrollToNode(hasText(label))
-            compose.onNode(hasText(label) and hasSetTextAction()).performTextInput(value)
+            compose.onNode(hasText(label) and hasSetTextAction()).performScrollTo().performTextInput(value)
         }
         try {
             compose.setContent { if (mounted) CeilingsTheme(false) {
-                if (global) MeasurementsScreen(measurements, create, details, edit, nav,
+                if (global) MeasurementsScreen(measurements, details, edit, nav,
                     MeasurementPrecision.ONE_CENTIMETER, PaddingValues(8.dp), 0.dp, guard,
                     onNavigate = { nav = guard.transition(nav, it) },
                     onUseMeasurement = {}, onOpenEstimates = {}, onCreateProject = {})
-                else nav.measurementCreate?.let { route -> MeasurementCreateScreen(route.projectId,
-                    MeasurementPrecision.ONE_CENTIMETER, create, PaddingValues(8.dp), 0.dp,
+                else nav.measurementCreate?.let { route -> MeasurementCreateWorkspace(route.projectId,
+                    MeasurementPrecision.ONE_CENTIMETER, edit, PaddingValues(8.dp), 0.dp,
                     onBack = { nav = nav.back() }, onSaved = { nav = guard.transition(nav, nav.measurementCreated(project, it)) }, navigationGuard = guard) }
                     ?: nav.measurementDetails?.let { route -> MeasurementDetailsScreen(route.projectId, route.measurementId,
                         details, PaddingValues(8.dp), 0.dp, onBack = { nav = nav.back() }, navigationGuard = guard,
@@ -67,31 +65,24 @@ class MeasurementCreationPricingTouchTest {
                 compose.onNodeWithText("Pricing parent").performClick()
             }
             compose.waitUntil(10000) { compose.onAllNodesWithText("Назва заміру *").fetchSemanticsNodes().isNotEmpty() }
+            compose.onNodeWithTag("measurement-shape-picker").assertExists()
+            assertTrue(MeasurementRepository(db).all().isEmpty())
+            fill("AB, м", if (global) "4,12" else "4.12")
+            fill("BC, м", if (global) "3,34" else "3.34")
             fill("Назва заміру *", "Room")
-            fill(measurementTemplateFieldLabel("rectangle", "length"), if (global) "4,12" else "4.12")
-            fill(measurementTemplateFieldLabel("rectangle", "width"), if (global) "3,34" else "3.34")
-            compose.onNodeWithText("Зберегти").assertIsEnabled().performClick()
-            compose.waitUntil(10000) { nav.measurementDetails != null }
-            val row = MeasurementRepository(db).all().single(); uuid = row.uuid
-            for ((title, role) in listOf("Route profile" to "Основний профіль", "Route canvas" to "Полотно")) {
-                // The shared drawing editor admits actions after its async document read.
-                // Opening a draft is read-only; await the actual chooser rather than a frame.
-                compose.waitUntil(10000) {
-                    if (compose.onAllNodesWithText("З прайсу").fetchSemanticsNodes().isNotEmpty()) true
-                    else {
-                        runCatching { list().performScrollToNode(hasText("Додати елемент")); compose.onNodeWithText("Додати елемент").performClick() }
-                        false
-                    }
-                }
-                compose.onNodeWithText("З прайсу").performClick()
-                compose.waitUntil(10000) { compose.onAllNodesWithText("Пошук за назвою або кодом").fetchSemanticsNodes().isNotEmpty() }
-                compose.onNode(hasText("Пошук за назвою або кодом") and hasSetTextAction()).performTextInput(title)
-                compose.onNode(hasText(title) and hasClickAction() and hasSetTextAction().not()).performClick()
-                compose.onNode(hasText("Погоджено") and hasClickAction()).performScrollTo().performClick()
-                compose.onNode(hasText(role) and hasClickAction()).performScrollTo().performClick()
-                compose.onNodeWithText("Зберегти").assertIsEnabled().performClick()
-                compose.waitUntil(10000) { compose.onAllNodesWithText("Елемент із прайсу").fetchSemanticsNodes().isEmpty() }
+            compose.onNodeWithTag("measurement-edit-context-elements").performClick()
+            for ((title, role) in listOf("Route profile" to "PRIMARY_PROFILE", "Route canvas" to "CANVAS")) {
+                compose.onNodeWithTag("p5b-material-$role").performClick()
+                val row = compose.onNodeWithTag("p5b-catalog-" +
+                    PriceRepository(db).all().single { it.title == title }.uuid)
+                compose.waitUntil(10000) { runCatching { row.fetchSemanticsNode() }.isSuccess }
+                row.performScrollTo().performClick()
             }
+            assertTrue(MeasurementRepository(db).all().isEmpty(), "Selecting materials cannot create a shell row")
+            compose.onNodeWithTag("measurement-edit-save").assertIsEnabled().performClick()
+            compose.waitUntil(10000) { nav.measurementDetails != null }
+            val row = MeasurementRepository(db).all().single()
+            uuid = row.uuid
             val loaded = assertIs<PricingReadResult.Loaded>(LivePricingReader(db).read(project, uuid),
                 "global=$global row=${MeasurementRepository(db).find(row.id)} walls=${db.livePricingQueries.selectPricingWalls(uuid).executeAsList()}")
             assertTrue(loaded.buildPreview().canFinalizeFull, loaded.buildPreview().toString())

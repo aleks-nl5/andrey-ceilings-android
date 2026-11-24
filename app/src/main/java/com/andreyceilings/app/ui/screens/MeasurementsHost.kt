@@ -23,7 +23,7 @@ internal fun MeasurementsHost(
     val store = remember(database) { database?.let { MeasurementsStore(it.database) } }
     val editors = database?.objectsClientsStore
     val fullscreen by navigationGuard.fullscreen.collectAsState()
-    MeasurementsScreen(store, editors?.measurementCreate, editors?.measurementDetails, editors?.measurementEdit,
+    MeasurementsScreen(store, editors?.measurementDetails, editors?.measurementEdit,
         navigation, precision,
         contentPadding = if (navigation.measurementEdit != null) measurementEditorPadding()
         else PaddingValues(start = 16.dp, end = 16.dp,

@@ -1,3 +1,11 @@
+# P5C — спільний редактор контуру (24.11.2026)
+
+[P5C #161](https://github.com/aleks-nl5/andrey-ceilings-android/issues/161) розробляється стеком над [P5B #157](https://github.com/aleks-nl5/andrey-ceilings-android/pull/157) у `feat/p5c-contour-workspace`. Створення та редагування використовують спільний редактор. Поточні розміри проходять доменну валідацію перед розрахунком або записом. Canvas показує умовний контур для неповної чернетки, а рендер PDF використовує заморожену геометрію. [Контракт і приймання P5C](P5C_CONTOUR_WORKSPACE.md).
+
+Приймання включає окремі ручні Android і CMP FULL на SHA P5C, перевірку APK власником і незалежне рев’ю. Після злиття P5B інтегрований SHA потребує нових перевірок.
+
+---
+
 # CURRENT — P5B unified POINT / LINE / AREA UX (owner authorized 22.11.2026)
 
 **Accepted prerequisites:** P5A [#132](https://github.com/aleks-nl5/andrey-ceilings-android/pull/132), CI optimization including owner-merge-only automatic FULL [#152](https://github.com/aleks-nl5/andrey-ceilings-android/pull/152), and L0/L1 localization [#155](https://github.com/aleks-nl5/andrey-ceilings-android/pull/155) merged. [#155](https://github.com/aleks-nl5/andrey-ceilings-android/pull/155) is on `main` at `492ca12d833fe3d7c8008667c2b0bdabcbd0bf9e`. Post-merge Android and Windows/iOS FULL checks were **in progress at P5B kickoff**; verify outcomes before reporting them. Older milestones below are historical where superseded.
@@ -8,7 +16,7 @@
 
 **P5B live geometry indicators — owner 23.11.2026:** implement **always-visible area/perimeter only** in a thin icons+values row under the existing top transparent gradient in normal/fullscreen, updating from valid `MeasurementEditState.draft` **before Save**; if invalid, don't show saved fallback or 0. **Live price third indicator is postponed to P5D**; no dummy column in P5B, no new pricing engine work. [P5B UX spec §1.2](P5B_UX_SPEC.md).
 
-**Later separately:** **P5C** new-measurement UX, invalid contour diagnostics, vertex letters, A/B and viewport fit; **P5D** in-memory pre-Save draft pricing, fourth saved «Кошториси» tab and version selection. **Quick «Полотно» / «Основний профіль» selection is in P5B**, per [owner-approved UX spec](P5B_UX_SPEC.md) and discovery §6.4. #71/#76/#95 remain umbrella OPEN until corresponding product acceptance; #154 localization foundation is independently trackable. No bleed into unrelated workstreams.
+**Separate slices:** **P5C** is tracked in #161; **P5D** in-memory pre-Save draft pricing, fourth saved «Кошториси» tab and version selection. **Quick «Полотно» / «Основний профіль» selection is in P5B**, per [owner-approved UX spec](P5B_UX_SPEC.md) and discovery §6.4. #71/#76/#95 remain umbrella OPEN until corresponding product acceptance; #154 localization foundation is independently trackable. No bleed into unrelated workstreams.
 
 **Owner P5B extension (22.11.2026):** UI must not show X/Y/coordinate labels; direct LINE endpoint drag adjusts length and angle, AREA polygon vertex/rectangle corner drag adjusts shape; actual wall-direction parallel snapping must work away from walls and during LINE endpoint editing. Test real gestures, geometric constraints, Undo/Redo and Save/reopen; [single UX contract](P5B_UX_SPEC.md) §4.1. Internal world-mm retained. These are P5B blockers; P5C/P5D scope unchanged.
 

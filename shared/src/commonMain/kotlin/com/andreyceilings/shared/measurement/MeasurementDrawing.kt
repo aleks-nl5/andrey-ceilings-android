@@ -4,6 +4,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.focusable
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CenterFocusStrong
+import androidx.compose.material.icons.filled.RotateRight
 import androidx.compose.material.icons.filled.ZoomIn
 import androidx.compose.material.icons.filled.ZoomOut
 import androidx.compose.foundation.gestures.*
@@ -19,6 +20,7 @@ import androidx.compose.ui.input.key.*
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.material3.TextButton
 import androidx.compose.ui.unit.IntSize
+import com.andreyceilings.shared.resources.p5c_rotate_drawing
 import com.andreyceilings.shared.resources.Res
 import com.andreyceilings.shared.resources.p5b_parallel_wall
 import com.andreyceilings.shared.resources.p5b_fit_drawing
@@ -74,9 +76,12 @@ object MeasurementDrawingSemantics {
 
 /** The fitted world center and physical scale are independent of the live Canvas bounds. */
 private data class MeasurementDrawingCamera(val center: DrawingPoint, val pixelsPerMm: Double) {
-    fun projection(width: Float, height: Float) = MeasurementDrawingProjection(
-        pixelsPerMm, width / 2.0 - center.x * pixelsPerMm, height / 2.0 - center.y * pixelsPerMm
-    )
+    fun projection(width: Float, height: Float, rotation: MeasurementDrawingRotation): MeasurementDrawingProjection {
+        val rotated = rotation.apply(center)
+        return MeasurementDrawingProjection(
+            pixelsPerMm, width / 2.0 - rotated.x * pixelsPerMm, height / 2.0 - rotated.y * pixelsPerMm, rotation
+        )
+    }
 }
 
 private enum class DrawingTarget { WALL, POINT, LINE, AREA }
@@ -145,9 +150,14 @@ fun MeasurementDrawing(
     onBeginAreaHandleDrag: ((String, Int?) -> Unit)? = null,
     lineCreationKey: String? = null,
     lineSnapEnabled: Boolean = true,
-    onFinishLineCreation: ((PointPositionMm, PointPositionMm) -> Boolean)? = null
+    onFinishLineCreation: ((PointPositionMm, PointPositionMm) -> Boolean)? = null,
+    diagnosticContour: MeasurementDrawingContour? = null,
+    problemWalls: Set<Int> = emptySet(),
+    diagnosticDescription: String? = null,
+    workspaceOrientation: Boolean = false
 ) {
-    val contour = remember(geometry) { measurementDrawingContour(geometry) }
+    val contour = remember(geometry, diagnosticContour) { diagnosticContour ?: measurementDrawingContour(geometry) }
+    val rotateActionLabel = stringResource(Res.string.p5c_rotate_drawing)
     val fitActionLabel = stringResource(Res.string.p5b_fit_drawing)
     val openPropertiesLabel = stringResource(Res.string.p5b_open_properties)
     val drawingDescription = stringResource(Res.string.p5b_drawing_canvas_description,
@@ -157,6 +167,9 @@ fun MeasurementDrawing(
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         return
     }
+    var quarterTurns by rememberSaveable { mutableIntStateOf(0) }
+    val rotation by rememberUpdatedState(if (workspaceOrientation)
+        canonicalDrawingRotation(contour.points, quarterTurns) else MeasurementDrawingRotation.Identity)
     var zoom by rememberSaveable { mutableStateOf(1f) }
     var panX by rememberSaveable { mutableStateOf(0f) }
     var panY by rememberSaveable { mutableStateOf(0f) }
@@ -179,8 +192,22 @@ fun MeasurementDrawing(
     val currentWorkspacePointPlacement by rememberUpdatedState(workspacePointPlacement)
     var pointPlacementPreview by remember { mutableStateOf<PointPositionMm?>(null) }
     LaunchedEffect(placementMode) { if (!placementMode) pointPlacementPreview = null }
-    val fitPoints = if (fitPointPlacements) pointPlacements.map { DrawingPoint(it.xMm.toDouble(), it.yMm.toDouble()) } +
-        linePlacements.flatMap {listOf(DrawingPoint(it.start.xMm.toDouble(),it.start.yMm.toDouble()),DrawingPoint(it.end.xMm.toDouble(),it.end.yMm.toDouble()))} else emptyList()
+    val fitPoints = if (fitPointPlacements) {
+        pointPlacements.map { DrawingPoint(it.xMm.toDouble(), it.yMm.toDouble()) } +
+            linePlacements.flatMap { line -> listOf(line.start, line.end).map { DrawingPoint(it.xMm.toDouble(), it.yMm.toDouble()) } } +
+            (if (workspaceOrientation) areaFeatures.flatMap { area ->
+                when (val shape = area.shape) {
+                    is AreaShape.Polygon -> shape.positions.map { DrawingPoint(it.xMm.toDouble(), it.yMm.toDouble()) }
+                    is AreaShape.Circle -> with(shape) {
+                        listOf(center.xMm - radiusMm, center.xMm + radiusMm).flatMap { x ->
+                            listOf(center.yMm - radiusMm, center.yMm + radiusMm).map { y ->
+                                DrawingPoint(x.toDouble(), y.toDouble())
+                            }
+                        }
+                    }
+                }
+            } else emptyList())
+    } else emptyList()
     val currentAreas by rememberUpdatedState(areaFeatures)
     val currentAreaMode by rememberUpdatedState(areaPlacementMode)
     val currentAreaTap by rememberUpdatedState(onAreaTap)
@@ -232,15 +259,37 @@ fun MeasurementDrawing(
     val viewportBottom by rememberUpdatedState(bottomPx.toFloat())
     fun viewportHeight(height: Float) = (height - viewportTop - viewportBottom).coerceAtLeast(0f)
     val isRtl = LocalLayoutDirection.current == LayoutDirection.Rtl
+    val topOcclusion by rememberUpdatedState(fitTop.value * density)
+    val bottomOcclusion by rememberUpdatedState(fitBottom.value * density)
+    val showControls by rememberUpdatedState(verticalViewControls)
+
+    val labelStyle = MaterialTheme.typography.labelSmall.copy(color = MaterialTheme.colorScheme.onSurface)
+    val measurer = rememberTextMeasurer()
+    val labelText = contour.sideLabels
+    val textLayouts = labelText.map { measurer.measure(it, labelStyle) }
+    val vertexLayouts = contour.vertexNames.map { measurer.measure(it, labelStyle) }
+    val labelMargin by rememberUpdatedState(if (workspaceOrientation) DrawingLabelSize(
+        vertexLayouts.maxOf { it.size.width }.toFloat(),
+        vertexLayouts.maxOf { it.size.height }.toFloat()
+    ) else DrawingLabelSize(0f, 0f))
+    val controlCount = if (workspaceOrientation) 4 else 3
+    fun fitBounds(width: Float, height: Float): Rect {
+        val horizontalControls = height < controlCount * 48f * density
+        val railWidth = if (horizontalControls && workspaceOrientation) 0
+            else if (horizontalControls) controlCount * 48 else 48
+        val rail = if (interactive && showControls) minOf(railWidth * density, width * 0.30f) else 0f
+        val controlHeight = if (interactive && showControls && horizontalControls && workspaceOrientation)
+            minOf(48f * density, height * 0.35f) else 0f
+        val top = minOf(topOcclusion, height * 0.28f)
+        val bottom = maxOf(controlHeight, minOf(bottomOcclusion, height * 0.28f))
+        return Rect(if (isRtl) rail else 0f, top, if (isRtl) width else width - rail, height - bottom)
+    }
 
     fun fitProjection(width: Float, height: Float): MeasurementDrawingProjection? {
-        val railWidth = if (height >= 144f * density) 48f else 144f
-        val rail = if (interactive && verticalViewControls) minOf(railWidth * density, width * 0.30f) else 0f
-        val top = minOf(fitTop.value * density, height * 0.28f)
-        val bottom = minOf(fitBottom.value * density, height * 0.28f)
-        val fitted = measurementDrawingProjection(currentContour, width - rail, height - top - bottom, density, currentFitPoints)
-            ?: return null
-        return fitted.copy(offsetX = fitted.offsetX + if (isRtl) rail else 0f, offsetY = fitted.offsetY + top)
+        val bounds = fitBounds(width, height)
+        val fitted = measurementDrawingProjection(currentContour, bounds.width, bounds.height,
+            density, currentFitPoints, rotation, labelMargin) ?: return null
+        return fitted.copy(offsetX = fitted.offsetX + bounds.left, offsetY = fitted.offsetY + bounds.top)
     }
 
     fun fitCamera(size: IntSize): MeasurementDrawingCamera? {
@@ -275,14 +324,23 @@ fun MeasurementDrawing(
         panY = next.panY
     }
 
-    fun fit() {
+    fun fit(userInitiated: Boolean = true) {
         if (retainCameraOnResize) {
             fittedCamera = fitCamera(canvasSize) ?: fittedCamera
-            cameraAdjusted = true
+            if (userInitiated) cameraAdjusted = true
         }
         zoom = 1f
         panX = 0f
         panY = 0f
+    }
+
+    var fittedQuarterTurns by remember { mutableIntStateOf(quarterTurns) }
+    LaunchedEffect(quarterTurns, contour.points, diagnosticContour != null) {
+        val rotated = fittedQuarterTurns != quarterTurns
+        if (workspaceOrientation && (rotated || diagnosticContour != null || !cameraAdjusted && fittedCamera != null)) {
+            fit(userInitiated = rotated)
+            fittedQuarterTurns = quarterTurns
+        }
     }
 
     // A change between normal and fullscreen must fit the entire drawing into
@@ -311,13 +369,13 @@ fun MeasurementDrawing(
     fun projectDrawing(width: Float, height: Float): MeasurementDrawingProjection? {
         val viewHeight = viewportHeight(height)
         if (width <= 0f || viewHeight <= 0f) return null
-        val base = fittedCamera?.takeIf { retainCameraOnResize }?.projection(width, viewHeight)
+        val base = fittedCamera?.takeIf { retainCameraOnResize }?.projection(width, viewHeight, rotation)
             ?: fitProjection(width, viewHeight)
             ?: return null
         if (!interactive) return base
         val viewport = MeasurementViewport(zoom, panX, panY)
         val origin = viewport.transform(DrawingPoint(base.offsetX, base.offsetY), width, viewHeight)
-        return MeasurementDrawingProjection(base.scale * viewport.zoom, origin.x, origin.y + viewportTop)
+        return MeasurementDrawingProjection(base.scale * viewport.zoom, origin.x, origin.y + viewportTop, base.rotation)
     }
     val semanticsProjection = projectDrawing(canvasSize.width.toFloat(), canvasSize.height.toFloat())
     val currentSelectedPoint by rememberUpdatedState(selectedPointUuid)
@@ -337,18 +395,11 @@ fun MeasurementDrawing(
     val gridInk = MaterialTheme.colorScheme.onSurface
     val warningInk = if (showWorkspaceGrid) MaterialTheme.colorScheme.error else Color(0xFFB3261E)
     val areaWarningInk = if (showWorkspaceGrid) warningInk else Color(0xFFD34C44)
-    val labelStyle = MaterialTheme.typography.labelSmall.copy(color = MaterialTheme.colorScheme.onSurface)
-    val measurer = rememberTextMeasurer()
     val snapLayout = snapReason?.let { measurer.measure(it, labelStyle) }
-    // The contour already has vertex letters A/B/C; draw only dimensions
-    // beside segments. AB/BC labels remain in the separate edit/selection list.
-    val labelText = remember(contour) { contour.sideLabels }
-    val textLayouts = labelText.map { measurer.measure(it, labelStyle) }
     val dimensionLayouts = mountingDimensions.map { measurer.measure(it.label,labelStyle) }
-    val vertexLayouts = contour.vertexNames.map { measurer.measure(it, labelStyle) }
     Column(modifier, verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        if (interactive && !verticalViewControls) Row {
-            TextButton(enabled = !markerGesture, onClick = ::fit) { Text(fitActionLabel) }
+        if (interactive && !verticalViewControls && !workspaceOrientation) Row {
+            TextButton(enabled = !markerGesture, onClick = { fit() }) { Text(fitActionLabel) }
             TextButton(onClick = { move(0f, 0f, 1 / 1.25f) }) { Text("−") }
             TextButton(onClick = { move(0f, 0f, 1.25f) }) { Text("+") }
         } else if (!interactive) Text("Креслення заміру", style = MaterialTheme.typography.titleSmall)
@@ -369,7 +420,7 @@ fun MeasurementDrawing(
                     else -> false
                 }
             }.focusable()
-            .pointerInput(contour, canvasSize, pointEditingEnabled, lineEditingEnabled, areaEditingEnabled, fullscreen, editPointsInFullscreen) {
+            .pointerInput(contour, canvasSize, quarterTurns, pointEditingEnabled, lineEditingEnabled, areaEditingEnabled, fullscreen, editPointsInFullscreen) {
                 var lastTap: DrawingTap? = null
                 awaitEachGesture {
                     val down = awaitFirstDown(requireUnconsumed = false)
@@ -637,7 +688,7 @@ fun MeasurementDrawing(
                 .clipToBounds().onSizeChanged { canvasSize = it }.then(inputModifier)
                 .semantics {
                     contentDescription = drawingDescription
-                    snapReason?.let { stateDescription = it }
+                    (diagnosticDescription ?: snapReason)?.let { stateDescription = it }
                     this[MeasurementDrawingSemantics.Points]=pointPlacements
                     this[MeasurementDrawingSemantics.Lines]=linePlacements
                     this[MeasurementDrawingSemantics.Areas]=areaFeatures
@@ -677,6 +728,11 @@ fun MeasurementDrawing(
                 drawPath(path, ink, style = Stroke(width = 2.5.dp.toPx()))
                 selectedSide?.takeIf { it in points.indices }?.let { i ->
                     drawLine(ink, points[i], points[(i + 1) % points.size], strokeWidth = 8.dp.toPx())
+                }
+                problemWalls.filter { it in points.indices }.forEach { i ->
+                    drawLine(warningInk, points[i], points[(i + 1) % points.size], strokeWidth = 4.dp.toPx())
+                    drawCircle(warningInk, 4.dp.toPx(), points[i])
+                    drawCircle(warningInk, 4.dp.toPx(), points[(i + 1) % points.size])
                 }
                 mountingWallOrdinals.filter { it in points.indices }.forEach { i ->
                     drawLine(ink.copy(alpha=0.65f),points[i],points[(i+1)%points.size],strokeWidth=6.dp.toPx())
@@ -760,35 +816,52 @@ fun MeasurementDrawing(
                     if(marker.mounting.needsReview) drawCircle(markerInk,10.dp.toPx(),center,style=Stroke(1.dp.toPx()))
                     if (marker.uuid == selectedPointUuid || relatedElementUuid != null && marker.elementUuid == relatedElementUuid) drawCircle(ink, 12.dp.toPx(), center, style = Stroke(3.dp.toPx()))
                 }
+                val viewHeight = viewportHeight(size.height)
+                val labelBounds = if (workspaceOrientation) fitBounds(size.width, viewHeight)
+                    else Rect(0f, 0f, size.width, size.height)
+                if (labelBounds.width <= 0f || labelBounds.height <= 0f) return@Canvas
+                val labelOrigin = Offset(labelBounds.left, labelBounds.top + if (workspaceOrientation) viewportTop else 0f)
                 val visibleLabels = layoutMeasurementDrawingForProjectedPoints(
-                    projectedPoints, size.width, size.height,
+                    projectedPoints.map { DrawingPoint(it.x - labelOrigin.x, it.y - labelOrigin.y) },
+                    labelBounds.width, labelBounds.height,
                     textLayouts.map { DrawingLabelSize(it.size.width.toFloat(), it.size.height.toFloat()) }, density,
-                    vertexLayouts.map { DrawingLabelSize(it.size.width.toFloat(), it.size.height.toFloat()) }
+                    vertexLayouts.map { DrawingLabelSize(it.size.width.toFloat(), it.size.height.toFloat()) },
+                    placeCrowdedVertices = workspaceOrientation
                 )
                 visibleLabels.vertexLabels.forEach { label ->
-                    drawText(vertexLayouts[label.sideIndex], topLeft = Offset(label.left, label.top))
+                    val topLeft = labelOrigin + Offset(label.left, label.top)
+                    if (label.needsLeader) drawLine(ink, points[label.sideIndex],
+                        topLeft + Offset(label.width / 2f, label.height / 2f), 1.dp.toPx())
+                    drawText(vertexLayouts[label.sideIndex], topLeft = topLeft)
                 }
                 visibleLabels.labels.forEach { label ->
+                    val topLeft = labelOrigin + Offset(label.left, label.top)
                     drawRoundRect(surface.copy(alpha = 0.96f),
-                        topLeft = Offset(label.left, label.top), size = Size(label.width, label.height),
+                        topLeft = topLeft, size = Size(label.width, label.height),
                         cornerRadius = CornerRadius(3.dp.toPx()))
-                    drawText(textLayouts[label.sideIndex], topLeft = Offset(label.left, label.top))
+                    drawText(textLayouts[label.sideIndex], topLeft = topLeft)
                 }
             }
             if (interactive && verticalViewControls) {
                 val actions: @Composable () -> Unit = {
-                    MeasurementIconAction(fitActionLabel, Icons.Default.CenterFocusStrong, !markerGesture, true, onClick = ::fit)
+                    MeasurementIconAction(fitActionLabel, Icons.Default.CenterFocusStrong, !markerGesture, true, onClick = { fit() })
                     MeasurementIconAction("Збільшити масштаб", Icons.Default.ZoomIn, !markerGesture, true) {
                         move(0f, 0f, 1.25f)
                     }
                     MeasurementIconAction("Зменшити масштаб", Icons.Default.ZoomOut, !markerGesture, true) {
                         move(0f, 0f, 1 / 1.25f)
                     }
+                    if (workspaceOrientation) MeasurementIconAction(
+                        rotateActionLabel, Icons.Default.RotateRight, !markerGesture, true,
+                        modifier = Modifier.testTag("measurement-edit-rotate")
+                    ) { quarterTurns = (quarterTurns + 1) % 4 }
                 }
                 val rail = Modifier.testTag("measurement-edit-zoom-rail")
                 val railHeight = maxHeight - viewportPadding.calculateTopPadding() - viewportPadding.calculateBottomPadding()
-                Box(Modifier.matchParentSize().padding(viewportPadding), contentAlignment = Alignment.CenterEnd) {
-                    if (railHeight >= 144.dp) Column(rail.width(48.dp)) { actions() }
+                val vertical = railHeight >= (48 * controlCount).dp
+                Box(Modifier.matchParentSize().padding(viewportPadding),
+                    contentAlignment = if (!vertical && workspaceOrientation) Alignment.BottomEnd else Alignment.CenterEnd) {
+                    if (vertical) Column(rail.width(48.dp)) { actions() }
                     else Row(rail) { actions() }
                 }
             }

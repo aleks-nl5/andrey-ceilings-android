@@ -31,19 +31,22 @@ class MeasurementCreateSceneTest {
             val geometry = assertNotNull(validateMeasurementCreate(draft).geometry)
             val wireBefore = MeasurementGeometryCodec.write(geometry)
             for (readonly in listOf(false, true)) {
-                val model = MeasurementCreateModel(null, draft)
+                val model = MeasurementEditModel(null, MeasurementEditDocument(0, 0, draft))
                 val scene = ImageComposeScene(500, 1000) {
                     CeilingsTheme(false) {
                         if (readonly) MeasurementDetailsScreen(MeasurementDetailsState.Loaded(MeasurementDetailsData(
                             3, 7, "Кухня", "Об'єкт", "Адреса", "rectangle",
                             20.400000000000002, 18.200000000000003, "", MeasurementGeometryView.Captured(geometry))), onBack = {})
-                        else MeasurementCreateScreen(model,
-                            MeasurementCreateParent.Active("Об'єкт"), onBack = {}, onSaved = {})
+                        else MeasurementEditScreen(model, onBack = {})
                     }
                 }
                 try {
                     scene.render().close()
-                    assertTrue(scene.textContent().contains("Площа: ${expected[i]}"), scene.textContent())
+                    if (readonly) assertTrue(scene.textContent().contains("Площа: ${expected[i]}"), scene.textContent())
+                    else {
+                        assertTrue(scene.descriptions().contains("Площа: 20,40 м²"), scene.descriptions())
+                        assertTrue(scene.descriptions().contains("Периметр: 18,20 м"), scene.descriptions())
+                    }
                     assertEquals(wireBefore, MeasurementGeometryCodec.write(geometry))
                 } finally { scene.close() }
             }
@@ -60,21 +63,23 @@ class MeasurementCreateSceneTest {
             val project = ProjectRepository(db).createReturningId(null, "Scene parent", createdAt = 1)
             val entered = CountDownLatch(1)
             val release = CountDownLatch(1)
-            val store = MeasurementCreateStore(db) {
+            val store = MeasurementEditStore(db) {
                 entered.countDown()
                 check(release.await(15, TimeUnit.SECONDS))
                 2L
             }
-            val model = MeasurementCreateModel(store, draft("rectangle").copy(projectId = project))
+            val model = MeasurementEditModel(store, MeasurementEditDocument(0, 0, MeasurementCreateDraft(project, MeasurementPrecision.ONE_CENTIMETER)))
+            model.accept(MeasurementCreateIntent.Name("Кухня"))
+            model.accept(MeasurementCreateIntent.Dimension("length", "5"))
+            model.accept(MeasurementCreateIntent.Dimension("width", "4"))
             val guard = MeasurementCreateNavigationGuard()
             val navigation = mutableStateOf(AppNavigationState().selectTab(AppRoute.OBJECTS)
                 .openProject(project).createMeasurement(project))
             val scene = ImageComposeScene(360, 1000) {
                 CeilingsTheme(false) {
-                    if (navigation.value.measurementCreate != null) MeasurementCreateScreen(model,
-                        MeasurementCreateParent.Active("Scene parent"), onBack = {
+                    if (navigation.value.measurementCreate != null) MeasurementEditScreen(model, onBack = {
                             navigation.value = guard.transition(navigation.value, navigation.value.back())
-                        }, onSaved = { id -> navigation.value = guard.transition(navigation.value,
+                        }, onCreated = { id -> navigation.value = guard.transition(navigation.value,
                             navigation.value.measurementCreated(project, id)) }, navigationGuard = guard)
                     else androidx.compose.material3.Text("Відкрито замір ${navigation.value.measurementDetails?.measurementId}")
                 }
@@ -82,7 +87,7 @@ class MeasurementCreateSceneTest {
             try {
                 scene.render().close()
                 val editor = navigation.value
-                assertTrue(scene.clickText("Зберегти"))
+                assertTrue(scene.clickTag("measurement-edit-save"))
                 // No frame/effect has run yet: Save must already own navigation.
                 assertTrue(guard.blocksExit(editor))
                 assertTrue(entered.await(10, TimeUnit.SECONDS))
@@ -94,14 +99,15 @@ class MeasurementCreateSceneTest {
                 assertFalse(escaped)
                 navigation.value = guard.transition(navigation.value, navigation.value.selectTab(AppRoute.PRICES))
                 assertEquals(editor, navigation.value)
-                assertFalse(model.cancel())
+                model.discardAndExit()
+                assertTrue(model.state.value.saving)
                 model.save()
                 Snapshot.sendApplyNotifications()
                 scene.render(16_000_000).close()
-                assertTrue(scene.textContent().contains("Збереження триває"))
-                assertTrue(scene.textContent().contains("Новий замір"))
+                assertEquals("Збереження…", scene.tag("measurement-edit-save").config[SemanticsProperties.StateDescription])
+                assertTrue(scene.textContent().contains("Кухня"))
                 release.countDown()
-                val id = withTimeout(10_000) { model.state.first { it.savedId != null }.savedId!! }
+                val id = withTimeout(10_000) { model.state.first { it.createdId != null }.createdId!! }
                 repeat(4) { i -> Snapshot.sendApplyNotifications(); scene.render((i + 2) * 16_000_000L).close() }
                 assertEquals(MeasurementDetails(project, id), navigation.value.measurementDetails)
                 assertTrue(scene.textContent().contains("Відкрито замір $id"))
@@ -127,29 +133,32 @@ class MeasurementCreateSceneTest {
 
     @Test fun editorRendersAllShapesThemesResizeAndWorkingCancel() {
         for (shape in listOf("rectangle", "l_shaped", "polygon")) for (dark in listOf(false, true)) {
-            val model = MeasurementCreateModel(null, draft(shape))
+            val target = draft(shape)
+            val model = MeasurementEditModel(null, MeasurementEditDocument(0, 0,
+                MeasurementCreateDraft(target.projectId, target.precision, outline = target.outline)))
+            model.accept(MeasurementCreateIntent.Name(target.name))
             var backs = 0
             var saves = 0
             val scene = ImageComposeScene(360, 1000) {
                 CeilingsTheme(dark) {
-                    MeasurementCreateScreen(model, MeasurementCreateParent.Active("Обраний об'єкт"),
-                        onBack = { backs++ }, onSaved = { saves++ })
+                    MeasurementEditScreen(model, onBack = { backs++ }, onCreated = { saves++ })
                 }
             }
             try {
                 scene.render().close()
-                assertTrue(scene.textContent().contains("Обраний об'єкт"))
-                // Inline dimensions are now length-only; vertex/side names belong to editor inputs.
-                assertTrue(scene.textContent().contains("5 м"), "Dimension legend must remain visible")
-                assertFalse(scene.textContent().contains("AB:"), "Drawing must not show side-name prefixes")
-                assertTrue(scene.textContent().contains("Площа:"))
+                assertTrue(scene.textContent().contains(target.name))
+                assertTrue(scene.descriptions().contains(if (shape == "l_shaped") "Площа: 14" else "Площа: 20"),
+                    scene.descriptions())
+                assertFalse(scene.textContent().contains("AB:"), "Drawing must use length-only inline labels")
                 assertFalse(scene.textContent().contains("Сторона 1"))
                 scene.constraints = Constraints.fixed(240, 700)
                 scene.render(16_000_000).close()
                 scene.constraints = Constraints.fixed(900, 1000)
                 scene.render(32_000_000).close()
-                assertTrue(scene.clickText("Скасувати"))
-                assertTrue(model.state.value.cancelled)
+                assertTrue(scene.clickTag("measurement-edit-back"))
+                scene.render(48_000_000).close()
+                assertTrue(model.state.value.exitRequested)
+                assertTrue(scene.clickText("Відхилити зміни"))
                 assertEquals(1, backs)
                 assertEquals(0, saves)
             } finally { scene.close() }
@@ -161,14 +170,14 @@ class MeasurementCreateSceneTest {
             PrototypeDatabase.Schema.create(driver)
             val db = PrototypeDatabase(driver)
             val project = ProjectRepository(db).createReturningId(null, "Restore parent", createdAt = 1)
-            val store = MeasurementCreateStore(db) { 2 }
-            val activeStore = mutableStateOf<MeasurementCreateStore?>(store)
+            val store = MeasurementEditStore(db) { 2 }
+            val activeStore = mutableStateOf<MeasurementEditStore?>(store)
             var navigation = AppNavigationState().selectTab(AppRoute.OBJECTS).openProject(project).createMeasurement(project)
             val registry = SaveableStateRegistry(null) { true }
             fun scene(registry: SaveableStateRegistry, precision: MeasurementPrecision) = ImageComposeScene(360, 1000) {
                 CompositionLocalProvider(LocalSaveableStateRegistry provides registry) {
                     CeilingsTheme(false) {
-                        MeasurementCreateScreen(project, precision, activeStore.value, PaddingValues(16.dp), 0.dp,
+                        MeasurementCreateWorkspace(project, precision, activeStore.value, PaddingValues(16.dp), 0.dp,
                             onBack = { navigation = navigation.back() },
                             onSaved = { fail("Restoration must never save") })
                     }
@@ -178,7 +187,7 @@ class MeasurementCreateSceneTest {
             val saved: Map<String, List<Any?>>
             try {
                 first.render().close()
-                val field = first.nodes().first { it.config.getOrNull(SemanticsActions.SetText) != null }
+                val field = first.tag("measurement-edit-contour-name")
                 assertTrue(field.config.getOrNull(SemanticsActions.SetText)?.action?.invoke(AnnotatedString("Відновлена кухня")) == true)
                 Snapshot.sendApplyNotifications()
                 first.render(16_000_000).close()
@@ -194,10 +203,15 @@ class MeasurementCreateSceneTest {
                 activeStore.value = store
                 Snapshot.sendApplyNotifications()
                 restored.render(16_000_000).close()
-                assertTrue(restored.textContent().contains("5 мм"))
-                assertTrue(restored.nodes().any { it.config.getOrNull(SemanticsProperties.EditableText)?.text == "Відновлена кухня" })
+                assertEquals("Відновлена кухня", restored.tag("measurement-edit-contour-name").config[SemanticsProperties.EditableText].text)
+                val length = restored.nodes().single { it.config.getOrNull(SemanticsActions.SetText) != null && it.textTree().contains("AB, м") }
+                assertTrue(length.config[SemanticsActions.SetText].action!!.invoke(AnnotatedString("0.105")))
+                restored.render(32_000_000).close()
+                assertFalse(restored.descriptions().contains("Помилка розмірів"), "Restored 5 mm precision must accept 105 mm")
                 assertFalse(restored.nodes().any { it.config.getOrNull(SemanticsProperties.Text).orEmpty().any { v -> v.text == "Збереження…" } })
-                assertTrue(restored.clickText("Скасувати"))
+                assertTrue(restored.clickTag("measurement-edit-back"))
+                restored.render(48_000_000).close()
+                assertTrue(restored.clickText("Відхилити зміни"))
                 assertNull(navigation.measurementCreate)
                 assertEquals(ProjectDetails(project), navigation.projectDetails)
                 assertTrue(MeasurementRepository(db).all().isEmpty(), "Restoring the form never writes")
@@ -205,16 +219,17 @@ class MeasurementCreateSceneTest {
         }
     }
 
-    @Test fun invalidFormAndUnavailableParentExplainWhySaveIsDisabled() {
-        val model = MeasurementCreateModel(null, MeasurementCreateDraft(7, MeasurementPrecision.ONE_MILLIMETER))
+    @Test fun emptyFormShowsTheDiagnosticCanvasAndExplainsWhySaveIsDisabled() {
+        val model = MeasurementEditModel(null, MeasurementEditDocument(0, 0,
+            MeasurementCreateDraft(7, MeasurementPrecision.ONE_MILLIMETER)))
         val scene = ImageComposeScene(320, 900) {
-            CeilingsTheme(false) { MeasurementCreateScreen(model, MeasurementCreateParent.Unavailable, onBack = {}, onSaved = {}) }
+            CeilingsTheme(false) { MeasurementEditScreen(model, onBack = {}) }
         }
         try {
             scene.render().close()
-            assertTrue(scene.textContent().contains("база недоступна"))
-            assertTrue(scene.textContent().contains("Креслення недоступне"))
-            val save = scene.nodes().first { it.config.getOrNull(SemanticsActions.OnClick) != null && it.textTree().contains("Зберегти") }
+            assertTrue(scene.descriptions().contains("Розміри неповні"))
+            assertTrue(scene.nodes().any { it.config.getOrNull(MeasurementDrawingSemantics.Projection) != null })
+            val save = scene.tag("measurement-edit-save")
             assertTrue(SemanticsProperties.Disabled in save.config)
         } finally { scene.close() }
     }
@@ -226,6 +241,14 @@ class MeasurementCreateSceneTest {
     private fun SemanticsNode.textTree(): String =
         config.getOrNull(SemanticsProperties.Text).orEmpty().joinToString { it.text } + children.joinToString { it.textTree() }
     private fun ImageComposeScene.textContent() = semanticsOwners.joinToString { it.rootSemanticsNode.textTree() }
+    private fun ImageComposeScene.descriptions() = nodes().joinToString {
+        it.config.getOrNull(SemanticsProperties.ContentDescription).orEmpty().joinToString()
+    }
+    private fun ImageComposeScene.tag(tag: String) = nodes().first {
+        it.config.getOrNull(SemanticsProperties.TestTag) == tag
+    }
+    private fun ImageComposeScene.clickTag(tag: String) =
+        tag(tag).config[SemanticsActions.OnClick].action?.invoke() == true
     private fun ImageComposeScene.clickText(text: String): Boolean = nodes().first {
         it.config.getOrNull(SemanticsActions.OnClick) != null && it.textTree().contains(text)
     }.config.getOrNull(SemanticsActions.OnClick)?.action?.invoke() == true

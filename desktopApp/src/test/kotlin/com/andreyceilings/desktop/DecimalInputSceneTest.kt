@@ -19,29 +19,29 @@ import kotlin.test.*
 class DecimalInputSceneTest {
     @Test fun measurementLengthEditorNormalizesFirstSeparatorAndKeepsPartialSaveDisabled() {
         for (dark in listOf(false, true)) {
-            val model = MeasurementCreateModel(null, MeasurementCreateDraft(7,
+            val model = MeasurementEditModel(null, MeasurementEditDocument(0, 0, MeasurementCreateDraft(7,
                 MeasurementPrecision.ONE_MILLIMETER, "Kitchen", outline =
-                    MeasurementOutlineDraft.Template("rectangle", mapOf("length" to "", "width" to "1"))))
+                    MeasurementOutlineDraft.Template("rectangle", mapOf("length" to "", "width" to "1")))))
             val scene = ImageComposeScene(900, 1600) {
-                CeilingsTheme(dark) { MeasurementCreateScreen(model, MeasurementCreateParent.Active("Object"), onBack = {}, onSaved = {}) }
+                CeilingsTheme(dark) { MeasurementEditScreen(model, onBack = {}) }
             }
             fun render() { Snapshot.sendApplyNotifications(); scene.render().close() }
             fun text(node: SemanticsNode): String = node.config.getOrNull(SemanticsProperties.Text).orEmpty()
                 .joinToString { it.text } + node.children.joinToString { text(it) }
             fun field() = scene.nodes().first { it.config.getOrNull(SemanticsActions.SetText) != null &&
-                text(it).contains(measurementTemplateFieldLabel("rectangle", "length")) }
-            fun save() = scene.nodes().first { it.config.getOrNull(SemanticsActions.OnClick) != null && text(it) == "Зберегти" }
+                text(it).contains("AB, м") }
+            fun save() = scene.nodes().first { it.config.getOrNull(SemanticsProperties.TestTag) == "measurement-edit-save" }
             try {
                 render()
                 assertTrue(field().config[SemanticsActions.RequestFocus].action!!.invoke()); render()
                 assertTrue(field().config[SemanticsActions.SetText].action!!.invoke(AnnotatedString("."))); render()
                 assertEquals("0.", field().config[SemanticsProperties.EditableText].text)
                 assertEquals(TextRange(2), field().config[SemanticsProperties.TextSelectionRange])
-                assertTrue(SemanticsProperties.Disabled in save().config)
+                assertTrue(save().config[SemanticsProperties.StateDescription].contains("контур"))
                 assertTrue(field().config[SemanticsActions.InsertTextAtCursor].action!!.invoke(AnnotatedString("5"))); render()
                 assertEquals("0.5", field().config[SemanticsProperties.EditableText].text)
                 assertTrue(field().config[SemanticsProperties.Focused])
-                assertFalse(SemanticsProperties.Disabled in save().config)
+                assertEquals("Незбережено", save().config[SemanticsProperties.StateDescription])
                 assertTrue(validateMeasurementCreate(model.state.value.draft).canSave)
             } finally { scene.close() }
         }
@@ -81,7 +81,7 @@ class DecimalInputSceneTest {
             fun text(node: SemanticsNode): String = node.config.getOrNull(SemanticsProperties.Text).orEmpty()
                 .joinToString { it.text } + node.children.joinToString { text(it) }
             fun save() = scene.nodes().first {
-                it.config.getOrNull(SemanticsActions.OnClick) != null && text(it) == "Зберегти"
+                it.config.getOrNull(SemanticsProperties.TestTag) == "measurement-edit-save"
             }
             fun field() = scene.nodes().first {
                 it.config.getOrNull(SemanticsActions.SetText) != null && text(it).contains("Ціна продажу")
@@ -108,7 +108,7 @@ class DecimalInputSceneTest {
                 assertTrue(field().config[SemanticsActions.SetSelection].action!!.invoke(1, 1, false))
                 render(); render()
                 assertEquals(TextRange(1), field().config[SemanticsProperties.TextSelectionRange])
-                assertFalse(SemanticsProperties.Disabled in save().config)
+                assertEquals("Незбережено", save().config[SemanticsProperties.StateDescription])
                 assertTrue(save().config[SemanticsActions.OnClick].action!!.invoke())
                 render(); render()
                 assertEquals("0,5", saved)

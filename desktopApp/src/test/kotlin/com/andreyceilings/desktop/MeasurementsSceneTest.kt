@@ -23,7 +23,6 @@ class MeasurementsSceneTest {
             val db = PrototypeDatabase(driver)
             val projects = ProjectRepository(db)
             val store = MeasurementsStore(db)
-            val createStore = MeasurementCreateStore(db) { 2 }
             val detailsStore = MeasurementDetailsStore(db)
             val editStore = MeasurementEditStore(db) { 3 }
             val guard = MeasurementCreateNavigationGuard()
@@ -31,7 +30,7 @@ class MeasurementsSceneTest {
             var createProjectRequests = 0
             val scene = ImageComposeScene(400, 1000) {
                 CeilingsTheme(false) {
-                    MeasurementsScreen(store, createStore, detailsStore, editStore,
+                    MeasurementsScreen(store, detailsStore, editStore,
                         navigation.value, MeasurementPrecision.ONE_CENTIMETER, PaddingValues(16.dp), 0.dp, guard,
                         onNavigate = { navigation.value = guard.transition(navigation.value, it) },
                         onUseMeasurement = { fail("Picker cannot calculate") }, onOpenEstimates = {},

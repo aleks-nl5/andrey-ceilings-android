@@ -80,24 +80,78 @@ data class DrawingLabelBounds(
 data class MeasurementDrawingLayout(val points: List<DrawingPoint>, val labels: List<DrawingLabelBounds>,
     val vertexLabels: List<DrawingLabelBounds> = emptyList())
 
-/** The single fit projection used by contour, markers and inverse pointer mapping. */
-data class MeasurementDrawingProjection(val scale: Double, val offsetX: Double, val offsetY: Double) {
-    fun project(point: DrawingPoint) = DrawingPoint(offsetX + point.x * scale, offsetY + point.y * scale)
-    fun inverse(point: DrawingPoint) = DrawingPoint((point.x - offsetX) / scale, (point.y - offsetY) / scale)
+/** Rotation in screen axes. The inverse maps touch coordinates back to the original world axes. */
+data class MeasurementDrawingRotation(val cosine: Double, val sine: Double) {
+    fun apply(point: DrawingPoint) =
+        DrawingPoint(point.x * cosine - point.y * sine, point.x * sine + point.y * cosine)
+
+    fun inverse(point: DrawingPoint) =
+        DrawingPoint(point.x * cosine + point.y * sine, -point.x * sine + point.y * cosine)
+
+    companion object {
+        val Identity = MeasurementDrawingRotation(1.0, 0.0)
+    }
 }
 
-fun measurementDrawingProjection(contour: MeasurementDrawingContour, width: Float, height: Float,
-    density: Float = 1f, extraWorldPoints: List<DrawingPoint> = emptyList()): MeasurementDrawingProjection? {
-    val worldPoints = contour.points + extraWorldPoints
+internal fun canonicalDrawingRotation(points: List<DrawingPoint>, quarterTurns: Int): MeasurementDrawingRotation {
+    val dx = points[1].x - points[0].x
+    val dy = points[1].y - points[0].y
+    val length = hypot(dx, dy)
+    if (length == 0.0) return MeasurementDrawingRotation.Identity
+    val cosine = -dy / length
+    val sine = -dx / length
+    return when (quarterTurns.mod(4)) {
+        0 -> MeasurementDrawingRotation(cosine, sine)
+        1 -> MeasurementDrawingRotation(-sine, cosine)
+        2 -> MeasurementDrawingRotation(-cosine, -sine)
+        else -> MeasurementDrawingRotation(sine, -cosine)
+    }
+}
+
+/** The single fit projection used by contour, markers and inverse pointer mapping. */
+data class MeasurementDrawingProjection(
+    val scale: Double, val offsetX: Double, val offsetY: Double,
+    val rotation: MeasurementDrawingRotation = MeasurementDrawingRotation.Identity
+) {
+    fun project(point: DrawingPoint): DrawingPoint {
+        val rotated = rotation.apply(point)
+        return DrawingPoint(offsetX + rotated.x * scale, offsetY + rotated.y * scale)
+    }
+
+    fun inverse(point: DrawingPoint) =
+        rotation.inverse(DrawingPoint((point.x - offsetX) / scale, (point.y - offsetY) / scale))
+}
+
+fun measurementDrawingProjection(
+    contour: MeasurementDrawingContour, width: Float, height: Float,
+    density: Float = 1f, extraWorldPoints: List<DrawingPoint> = emptyList(),
+    rotation: MeasurementDrawingRotation = MeasurementDrawingRotation.Identity,
+    labelMargin: DrawingLabelSize = DrawingLabelSize(0f, 0f)
+): MeasurementDrawingProjection? {
+    val worldPoints = (contour.points + extraWorldPoints).map(rotation::apply)
     if (!width.isFinite() || !height.isFinite() || width <= 0 || height <= 0 || density <= 0 ||
         !density.isFinite() || contour.points.size < 3 || worldPoints.any { !it.x.isFinite() || !it.y.isFinite() }) return null
     val left = worldPoints.minOf { it.x }; val top = worldPoints.minOf { it.y }
     val dx = worldPoints.maxOf { it.x } - left; val dy = worldPoints.maxOf { it.y } - top
     if (!dx.isFinite() || !dy.isFinite() || dx <= 0 || dy <= 0) return null
     val margin = minOf(36f * density, width * 0.22f, height * 0.22f)
-    val scale = minOf((width - margin * 2) / dx, (height - margin * 2) / dy)
+    val horizontal = maxOf(margin, labelMargin.width + 6f * density).coerceAtMost(width * 0.45f)
+    val vertical = maxOf(margin, labelMargin.height + 6f * density).coerceAtMost(height * 0.45f)
+    val scale = minOf((width - horizontal * 2) / dx, (height - vertical * 2) / dy)
     return MeasurementDrawingProjection(scale, (width - dx * scale) / 2 - left * scale,
-        (height - dy * scale) / 2 - top * scale)
+        (height - dy * scale) / 2 - top * scale, rotation)
+}
+
+/** Prefer the largest scale, with canonical AB as the tie-break for symmetric bounds. */
+fun optimalMeasurementDrawingProjection(
+    contour: MeasurementDrawingContour, width: Float, height: Float,
+    labelMargin: DrawingLabelSize = DrawingLabelSize(0f, 0f)
+): MeasurementDrawingProjection? {
+    if (contour.points.size < 3) return null
+    return (0..1).mapNotNull { quarterTurns ->
+        measurementDrawingProjection(contour, width, height,
+            rotation = canonicalDrawingRotation(contour.points, quarterTurns), labelMargin = labelMargin)
+    }.maxByOrNull { it.scale }
 }
 
 /** Aspect-preserving projection. Omitted inline labels remain in the wrapping legend. */
@@ -125,10 +179,28 @@ fun layoutMeasurementDrawingForProjectedPoints(
     fun overlaps(a: DrawingLabelBounds, b: DrawingLabelBounds): Boolean =
         a.left < b.right + gap && a.right + gap > b.left && a.top < b.bottom + gap && a.bottom + gap > b.top
     val vertexLabels = mutableListOf<DrawingLabelBounds>()
+    fun fitsExterior(candidate: DrawingLabelBounds): Boolean {
+        val left = candidate.left - gap
+        val top = candidate.top - gap
+        val width = (candidate.width + gap * 2).toDouble()
+        val height = (candidate.height + gap * 2).toDouble()
+        val center = DrawingPoint(candidate.left + candidate.width / 2.0, candidate.top + candidate.height / 2.0)
+        var inside = false
+        for (i in points.indices) {
+            val a = points[i]
+            val b = points[(i + 1) % points.size]
+            if (clipMeasurementWallToViewport(
+                    DrawingPoint(a.x - left, a.y - top),
+                    DrawingPoint(b.x - left, b.y - top), width, height
+                ) != null) return false
+            if ((a.y > center.y) != (b.y > center.y) &&
+                center.x < a.x + (b.x - a.x) * (center.y - a.y) / (b.y - a.y)) inside = !inside
+        }
+        return !inside
+    }
+
     fun fitsVertexLabel(candidate: DrawingLabelBounds): Boolean =
-        points.none { point -> point.x >= candidate.left - gap && point.x <= candidate.right + gap &&
-            point.y >= candidate.top - gap && point.y <= candidate.bottom + gap } &&
-            vertexLabels.none { overlaps(candidate, it) }
+        vertexLabels.none { overlaps(candidate, it) } && fitsExterior(candidate)
 
     val measuredVertices = vertexSizes.take(points.size)
     measuredVertices.forEachIndexed { i, size ->
