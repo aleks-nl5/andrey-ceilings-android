@@ -209,9 +209,10 @@ private fun DocumentPagination.roomSection(
         (discount % 100).takeIf { it != 0 }?.let { "," + it.toString().padStart(2, '0').trimEnd('0') }.orEmpty()
     keep(75)
     val subtotal = "До знижки · ${measurementMoney(amounts.subtotalCents)}"
-    val discountCaption = if (amounts.discountMode == com.andreyceilings.shared.livepricing.QuoteDiscountMode.FIXED) "Знижка"
-        else "Знижка $discountText %"
-    val discountLine = "$discountCaption · ${measurementMoney(amounts.discountCents)}"
+    val discountLine = if (amounts.discountMode == com.andreyceilings.shared.livepricing.QuoteDiscountMode.FIXED) {
+        val value = "−${measurementMoney(amounts.discountCents)}"
+        listOfNotNull(options.fixedDiscountLabel, value).joinToString(" · ")
+    } else "Знижка $discountText % · ${measurementMoney(amounts.discountCents)}"
     if (status == null) {
         paragraph(subtotal)
         paragraph(discountLine)

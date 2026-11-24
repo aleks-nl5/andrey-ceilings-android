@@ -443,6 +443,7 @@ internal fun ColumnScope.WorkspaceFrozenQuote(
     var drift by remember(quote.revisionUuid, quote.status) { mutableStateOf<Boolean?>(false) }
     val exporter = LocalEstimateDocumentExporter.current
     val textMeasurer = rememberTextMeasurer()
+    val fixedDiscountLabel = stringResource(Res.string.p5d_pdf_fixed_discount_label)
     val scope = rememberCoroutineScope()
     LaunchedEffect(store, quote.revisionUuid, quote.status) {
         if (quote.status != EstimateWorkflowStatus.APPROVED) return@LaunchedEffect
@@ -463,7 +464,7 @@ internal fun ColumnScope.WorkspaceFrozenQuote(
                 val document = checkNotNull(store.estimateDocument(quote.seriesUuid, quote.revisionUuid))
                 val pages = layoutEstimateDocument(document, DocumentPresentationOptions(EstimateDocumentSection.entries.filter {
                     it != EstimateDocumentSection.ISSUER && it != EstimateDocumentSection.PHOTOS
-                }), textMeasurer)
+                }, fixedDiscountLabel = fixedDiscountLabel), textMeasurer)
                 exporter.exportWithShareConfirmation(pages, action, onComplete = {
                     failed = it != null
                     exporting = false

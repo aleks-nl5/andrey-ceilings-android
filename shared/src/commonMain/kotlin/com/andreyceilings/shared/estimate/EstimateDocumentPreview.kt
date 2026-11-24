@@ -73,6 +73,7 @@ internal fun <T : Any> EstimateDocumentPreviewDialog(
     val exporter = LocalEstimateDocumentExporter.current
     val measurer = rememberTextMeasurer()
     val shareConflict = stringResource(Res.string.p5d_share_status_conflict)
+    val fixedDiscountLabel = stringResource(Res.string.p5d_pdf_fixed_discount_label)
     val scope = rememberCoroutineScope()
     var document by remember { mutableStateOf<T?>(null) }
     var loading by remember { mutableStateOf(true) }
@@ -101,8 +102,8 @@ internal fun <T : Any> EstimateDocumentPreviewDialog(
         }
     }
     // Resolve the page snapshot only while previewing. Keystrokes in the editor do not repaginate.
-    val pages = if (editor) null else remember(document, options, measurer) {
-        document?.let { layout(it, options, measurer) }
+    val pages = if (editor) null else remember(document, options, measurer, fixedDiscountLabel) {
+        document?.let { layout(it, options.copy(fixedDiscountLabel = fixedDiscountLabel), measurer) }
     }
     Dialog(
         onDismissRequest = { if (!exporting) { if (editor) editor = false else onClose() } },

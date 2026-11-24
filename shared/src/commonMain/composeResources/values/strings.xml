@@ -322,4 +322,5 @@
     <string name="p5d_pricing_revision_unavailable">збережений документ недоступний</string>
     <string name="p5d_pricing_cross_project">дані належать іншому об’єкту</string>
     <string name="p5d_discount_percent_value">−%1$s · %2$s%%</string>
+    <string name="p5d_pdf_fixed_discount_label">Знижка</string>
 </resources>
