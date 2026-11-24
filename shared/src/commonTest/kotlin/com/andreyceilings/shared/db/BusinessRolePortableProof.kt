@@ -37,7 +37,8 @@ object BusinessRolePortableProof {
         assertEquals(1L, fixedQuote.frozen.amounts.discountCents)
         assertEquals(QuoteDiscountMode.FIXED, fixedQuote.frozen.amounts.discountMode)
         assertTrue(history.deleteIndividualRevision(fixedSeries.seriesUuid, fixedQuote.revisionUuid, 1, 605))
-        assertEquals(fixedQuote.frozen, history.historicalIndividual(fixedSeries.seriesUuid, fixedQuote.revisionUuid)?.frozen)
+        assertEquals(fixedQuote.frozen, com.andreyceilings.shared.estimate.decodeFrozenIndividualEstimate(db.frozenRevisionQueries
+            .selectHistoricalExactRevision(fixedSeries.seriesUuid, fixedQuote.revisionUuid).executeAsOne().payload))
         verifyFrozenEstimateContents(driver)
         val current = assertIs<PricingReadResult.Loaded>(reader.read(fixture.projectId, fixture.measurementUuid))
         assertTrue(history.individualHistory(saved.seriesUuid).any { it.frozen.formatVersion == 3 })

@@ -145,9 +145,10 @@ object FrozenRevisionProof {
         assertNull(history.exactIndividual(first.seriesUuid, v3.initialRevisionUuid))
         assertFalse(history.setWorkflowStatus(v3.initialRevisionUuid, 1, EstimateWorkflowStatus.SENT, 625))
         assertFalse(history.selectRevision(first.seriesUuid, v3.initialRevisionUuid, 4, 625))
-        assertEquals(second, history.historicalIndividual(first.seriesUuid, v2.initialRevisionUuid)?.copy(
+        assertEquals(second, history.exactIndividual(first.seriesUuid, v2.initialRevisionUuid)?.copy(
             selectedRevisionUuid = second.selectedRevisionUuid, choiceVersion = second.choiceVersion))
-        assertNotNull(history.historicalIndividual(first.seriesUuid, v3.initialRevisionUuid))
+        assertEquals(0L, db.frozenRevisionQueries.selectHistoricalExactRevision(first.seriesUuid, v3.initialRevisionUuid)
+            .executeAsOne().isActive)
         assertEquals(v3, history.appendIndividual(thirdCommand, 625))
         assertEquals(IndividualEstimateSaveFailure.Reason.STALE_REVISION,
             assertFailsWith<IndividualEstimateSaveFailure> { history.appendIndividual(staleAppend, 625) }.reason)
@@ -164,7 +165,8 @@ object FrozenRevisionProof {
             first.initialRevisionUuid to 5L, v2.initialRevisionUuid to 1L, fourth.initialRevisionUuid to 1L), 627))
         assertNull(history.frozenIndividual(first.seriesUuid))
         assertTrue(history.individualHistory(first.seriesUuid).isEmpty())
-        assertEquals(old.frozen, history.historicalIndividual(first.seriesUuid, first.initialRevisionUuid)!!.frozen)
+        assertEquals(old.frozen, decodeFrozenIndividualEstimate(db.frozenRevisionQueries
+            .selectHistoricalExactRevision(first.seriesUuid, first.initialRevisionUuid).executeAsOne().payload))
         assertEquals(fourth, history.appendIndividual(afterDeletion, 628))
         assertTrue(history.setWorkflowStatus(alternativeId, 2, EstimateWorkflowStatus.REJECTED, 629))
         assertTrue(history.deleteIndividualRevision(alternative.seriesUuid, alternativeId, 3, 630))
@@ -177,7 +179,8 @@ object FrozenRevisionProof {
         assertIs<PricingReadResult.Unavailable>(LivePricingReader(db).read(fixture.projectId, fixture.measurementUuid))
         assertEquals(v2, history.appendIndividual(secondCommand, 621))
         assertEquals(v3, history.appendIndividual(thirdCommand, 622))
-        assertEquals(old.frozen, history.historicalIndividual(first.seriesUuid, first.initialRevisionUuid)!!.frozen)
+        assertEquals(old.frozen, decodeFrozenIndividualEstimate(db.frozenRevisionQueries
+            .selectHistoricalExactRevision(first.seriesUuid, first.initialRevisionUuid).executeAsOne().payload))
         assertEquals(sequence + 1, db.estimateHistoryQueries.selectEstimateNumberSettings().executeAsOne().nextSequence)
         verifyFrozenEstimateContents(driver)
     }
