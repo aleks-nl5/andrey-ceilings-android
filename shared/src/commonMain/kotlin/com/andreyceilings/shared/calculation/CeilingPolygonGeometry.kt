@@ -21,6 +21,14 @@ data class CeilingPolygonResult(
     val twiceAreaSquareMm: Long
 )
 
+internal enum class ContourProblem {
+    OPEN, OVERLAP, INTERSECTION
+}
+
+internal class ContourGeometryException(
+    val problem: ContourProblem, val walls: Set<Int>, message: String
+) : IllegalArgumentException(message)
+
 /**
  * One calculation for all straight-edged ceiling forms. Long arithmetic is
  * provably safe with the chosen coordinate/vertex bounds. Every edge,
@@ -84,9 +92,10 @@ object CeilingPolygonCalculator {
             val a = points[i]
             val b = points[(i + 1) % points.size]
             val next = points[(i + 2) % points.size]
-            require(cross(a, b, next) != 0L ||
-                !onSegment(a, b, next) && !onSegment(b, next, a)) {
-                "The ceiling perimeter doubles back along an edge"
+            if (cross(a, b, next) == 0L &&
+                (onSegment(a, b, next) || onSegment(b, next, a))) {
+                throw ContourGeometryException(ContourProblem.OVERLAP, setOf(i, (i + 1) % points.size),
+                    "The ceiling perimeter doubles back along an edge")
             }
             signedTwiceArea += a.xMm * b.yMm - b.xMm * a.yMm
             val dx = (b.xMm - a.xMm).toDouble()
@@ -97,8 +106,9 @@ object CeilingPolygonCalculator {
                 if (j == i + 1 || (i == 0 && j == points.lastIndex)) continue
                 val c = points[j]
                 val d = points[(j + 1) % points.size]
-                require(!intersects(a, b, c, d)) {
-                    "Ceiling contour crosses or touches itself"
+                if (intersects(a, b, c, d)) {
+                    throw ContourGeometryException(ContourProblem.INTERSECTION, setOf(i, j),
+                        "Ceiling contour crosses or touches itself")
                 }
             }
         }

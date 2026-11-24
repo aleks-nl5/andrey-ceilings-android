@@ -116,6 +116,13 @@ data class AppNavigationState(
         if (measurementCreate?.projectId == projectId && measurementId > 0)
             openMeasurement(projectId, measurementId) else this
 
+    /** First workspace Save promotes the draft to an ordinary persistent editor.
+     * Back then follows the same path as any other measurement editor. */
+    fun measurementCreatedInEditor(projectId: Long, measurementId: Long): AppNavigationState =
+        measurementCreated(projectId, measurementId).let { created ->
+            if (created == this) this else created.editMeasurement(projectId, measurementId)
+        }
+
     fun back(available: Set<AppRoute> = allRoutes): AppNavigationState {
         if (current !in available) return restore(snapshot(), available)
         if (measurementQuote) return copy(measurementQuote = false)

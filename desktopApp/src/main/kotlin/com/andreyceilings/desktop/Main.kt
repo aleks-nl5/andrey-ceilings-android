@@ -278,7 +278,7 @@ private fun DesktopPriceHost(
                     measurementCreate = navigation.measurementCreate,
                     measurementCreateNavigationGuard = measurementCreateNavigationGuard,
                     onCreateMeasurement = { onNavigate(navigation.createMeasurement(it)) },
-                    onMeasurementCreated = { projectId, measurementId -> onNavigate(navigation.measurementCreated(projectId, measurementId)) },
+                    onMeasurementCreated = { projectId, measurementId -> onNavigate(navigation.measurementCreatedInEditor(projectId, measurementId)) },
                     onOpenMeasurement = { projectId, measurementId -> onNavigate(navigation.openMeasurement(projectId, measurementId)) },
                     detailsStore = objectsStore,
                     onOpenProject = { onNavigate(navigation.openProject(it)) },

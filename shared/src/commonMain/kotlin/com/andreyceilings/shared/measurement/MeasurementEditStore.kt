@@ -90,6 +90,9 @@ class MeasurementEditStore(private val database: PrototypeDatabase, private val 
 
     private val measurements = MeasurementRepository(database)
     private val projects = ProjectRepository(database)
+    private val creation = MeasurementCreateStore(database, nowMillis)
+
+    internal fun observeCreateParent(projectId: Long): Flow<MeasurementCreateParent> = creation.observeParent(projectId)
     // Only an in-flight/delivered write is retained, scoped to this unlocked database session.
     // Android Activity recreation can reattach to the same operation rather than replaying Save.
     private val pending = MutableStateFlow<Map<String, MeasurementEditModel>>(emptyMap())
@@ -157,7 +160,8 @@ class MeasurementEditStore(private val database: PrototypeDatabase, private val 
 
     fun update(original: MeasurementEditDocument, draft: MeasurementCreateDraft,
         edits: Map<String, PointMountingEdit> = emptyMap(), operationUuid: String = newRecordUuid(),
-        wallToken: String = operationUuid, now: Long = nowMillis(), acceptedWrite: kotlinx.coroutines.CompletableDeferred<Unit>? = null, lineEdits: Map<String,LinePlacementEdit> = emptyMap(), declaredLengths: Map<String,Long> = emptyMap(), areaEdits: Map<String,AreaFeatureEdit> = emptyMap(), declaredAreas: Map<String,Long> = emptyMap(), additions: WorkspacePlacementDraft = WorkspacePlacementDraft()): MeasurementEditDocument {
+        wallToken: String = operationUuid, now: Long = nowMillis(), acceptedWrite: kotlinx.coroutines.CompletableDeferred<Unit>? = null, lineEdits: Map<String,LinePlacementEdit> = emptyMap(), declaredLengths: Map<String,Long> = emptyMap(), areaEdits: Map<String,AreaFeatureEdit> = emptyMap(), declaredAreas: Map<String,Long> = emptyMap(), additions: WorkspacePlacementDraft = WorkspacePlacementDraft(),
+        contourAnchorReference: ContourAnchorReference? = null): MeasurementEditDocument {
         check(!sessionClosed.value || acceptedWrite in writes.value.pending) { "Сесію закрито." }
         var rolledBack = false
         try {
@@ -165,14 +169,60 @@ class MeasurementEditStore(private val database: PrototypeDatabase, private val 
                 // Runs after endTransaction succeeds, only for the outer rollback. Do not infer
                 // this from a platform exception class/message or from absence of a receipt.
                 afterRollback { rolledBack = true }
+                val walls = ceilingDraftWalls(original, draft, wallToken)
+                val geometry = requireNotNull(validateMeasurementCreate(draft).geometry)
+                val correspondence = contourAnchorReference.correspondence(geometry, walls)
+                fun rebind(anchor: WallAnchor): WallAnchor = anchor.rebind(correspondence, geometry, walls) ?: anchor
+                fun rebindMounting(mounting: PointMounting): PointMounting =
+                    mounting.copy(anchor = mounting.anchor?.let(::rebind))
+                val requestedPoints = edits.mapValues { (_, edit) -> edit.copy(anchor = edit.anchor?.let(::rebind)) }
+                val requestedLines = lineEdits.mapValues { (_, edit) -> edit.copy(value = edit.value.copy(
+                    startMounting = rebindMounting(edit.value.startMounting),
+                    endMounting = rebindMounting(edit.value.endMounting)
+                )) }
+                val requestedAreas = areaEdits.mapValues { (_, edit) -> edit.copy(value = edit.value.copy(
+                    mountings = edit.value.mountings.map(::rebindMounting)
+                )) }
+                if (original.measurementId == 0L) {
+                    database.measurementElementsQueries.claimElementWrite("")
+                    val existing = createdDocument(draft, operationUuid, allowClosing = true)
+                    val initial = if (existing == null) {
+                        loadDocument(draft.projectId, creation.createAt(draft, now), allowClosing = true)
+                    } else {
+                        // The existing journal still validates the complete normalized request on replay.
+                        val receipt = checkNotNull(database.ceilingEditsQueries.selectOperation(operationUuid).executeAsOneOrNull())
+                        existing.copy(updatedAt = receipt.expectedUpdatedAt)
+                    }
+                    val id = initial.measurementId
+                    val wallIds = walls.zip(initial.placements.walls).associate { (temporary, stored) -> temporary.uuid to stored.uuid }
+                    fun remap(anchor: WallAnchor): WallAnchor = anchor.copy(
+                        firstWall = requireNotNull(wallIds[anchor.firstWall]),
+                        secondWall = anchor.secondWall?.let { requireNotNull(wallIds[it]) }
+                    )
+                    fun remapMounting(mounting: PointMounting): PointMounting =
+                        mounting.copy(anchor = mounting.anchor?.let(::remap))
+                    val pointEdits = requestedPoints.mapValues { (_, edit) -> edit.copy(anchor = edit.anchor?.let(::remap)) }
+                    val lines = requestedLines.mapValues { (_, edit) -> edit.copy(value = edit.value.copy(
+                        startMounting = remapMounting(edit.value.startMounting),
+                        endMounting = remapMounting(edit.value.endMounting)
+                    )) }
+                    val areas = requestedAreas.mapValues { (_, edit) -> edit.copy(value = edit.value.copy(
+                        mountings = edit.value.mountings.map(::remapMounting)
+                    )) }
+                    WorkspacePlacementWriter(database) {
+                        loadDocument(draft.projectId, id, allowClosing = true)
+                    }.save(initial, draft, pointEdits, operationUuid, wallToken, now, lines, declaredLengths,
+                        areas, declaredAreas, additions)
+                    return@transactionWithResult loadDocument(draft.projectId, id, allowClosing = true)
+                }
                 if (additions.isEmpty) {
-                    CeilingEditRepository(database).save(original, draft, edits, operationUuid, wallToken, now,
-                        lineEdits, declaredLengths, areaEdits, declaredAreas)
+                    CeilingEditRepository(database).save(original, draft, requestedPoints, operationUuid, wallToken, now,
+                        requestedLines, declaredLengths, requestedAreas, declaredAreas)
                 } else {
                     WorkspacePlacementWriter(database) {
                         loadDocument(draft.projectId, original.measurementId, allowClosing = true)
-                    }.save(original, draft, edits, operationUuid, wallToken, now, lineEdits, declaredLengths,
-                        areaEdits, declaredAreas, additions)
+                    }.save(original, draft, requestedPoints, operationUuid, wallToken, now, requestedLines, declaredLengths,
+                        requestedAreas, declaredAreas, additions, correspondence)
                 }
                 loadDocument(draft.projectId, original.measurementId, allowClosing = true)
             }
@@ -184,6 +234,29 @@ class MeasurementEditStore(private val database: PrototypeDatabase, private val 
             }
         }
     }
+    internal fun createdDocument(draft: MeasurementCreateDraft, operation: String,
+        allowClosing: Boolean = false): MeasurementEditDocument? = database.transactionWithResult {
+        val row = measurements.findByUuid(draft.recordUuid) ?: return@transactionWithResult null
+        if (!WorkspacePlacementWriter.currentCreationResult(database, operation, draft, row.updatedAt))
+            throw MeasurementEditConflict()
+        loadDocument(draft.projectId, row.id, allowClosing)
+    }
+
+    /** Receipt verification is mandatory for automatic recovery. Only an explicitly
+     * confirmed reload (operation == null) may select the current record by UUID. */
+    internal suspend fun readCreatedDocument(draft: MeasurementCreateDraft, operation: String? = null): MeasurementEditDocument? =
+        withContext(Dispatchers.Default) {
+            pointRead.withLock {
+                if (sessionClosed.value) throw MeasurementEditConflict()
+                database.transactionWithResult {
+                    if (projects.find(draft.projectId) == null) throw MeasurementEditConflict()
+                    if (operation != null) return@transactionWithResult createdDocument(draft, operation)
+                    val row = measurements.findByUuid(draft.recordUuid) ?: return@transactionWithResult null
+                    loadDocument(draft.projectId, row.id)
+                }
+            }
+        }
+
     fun now(): Long = nowMillis()
     fun operationCommitted(uuid:String,measurement:String,version:Long):Boolean {
         if(sessionClosed.value)return false

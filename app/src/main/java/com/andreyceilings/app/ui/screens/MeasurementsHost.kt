@@ -23,14 +23,12 @@ internal fun MeasurementsHost(
     val store = remember(database) { database?.let { MeasurementsStore(it.database) } }
     val editors = database?.objectsClientsStore
     val fullscreen by navigationGuard.fullscreen.collectAsState()
-    MeasurementsScreen(store, editors?.measurementCreate, editors?.measurementDetails, editors?.measurementEdit,
+    MeasurementsScreen(store, editors?.measurementDetails, editors?.measurementEdit,
         navigation, precision,
-        contentPadding = if (navigation.measurementEdit != null) measurementEditorPadding()
+        contentPadding = if (navigation.measurementEdit != null || navigation.measurementCreate != null) measurementEditorPadding()
         else PaddingValues(start = 16.dp, end = 16.dp,
             top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 72.dp,
-            bottom = maxOf(WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + if (fullscreen) 0.dp else 84.dp,
-                if (navigation.measurementCreate != null)
-                    WindowInsets.ime.asPaddingValues().calculateBottomPadding() else 0.dp)),
+            bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + if (fullscreen) 0.dp else 84.dp),
         systemTopInset = WindowInsets.statusBars.asPaddingValues().calculateTopPadding(),
         navigationGuard = navigationGuard, onNavigate = onNavigate,
         onUseMeasurement = onUseMeasurement, onOpenEstimates = onOpenEstimates, onCreateProject = onCreateProject)

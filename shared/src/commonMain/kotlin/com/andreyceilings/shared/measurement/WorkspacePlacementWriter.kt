@@ -34,7 +34,8 @@ internal class WorkspacePlacementWriter(
         lengths: Map<String, Long>,
         areas: Map<String, AreaFeatureEdit>,
         quantities: Map<String, Long>,
-        additions: WorkspacePlacementDraft
+        additions: WorkspacePlacementDraft,
+        correspondence: Map<String, String> = emptyMap()
     ) {
         val measurement = original.draft.recordUuid
         val receipt = buildJsonObject {
@@ -137,7 +138,8 @@ internal class WorkspacePlacementWriter(
         for ((uuid, point) in additions.points) {
             require(uuid == point.uuid)
             val edit = edits[uuid]
-            val target = previewMounting(point, geometry, placedGeometry.placements.walls, false, edit)
+            val target = previewMounting(point, geometry, placedGeometry.placements.walls,
+                validateMeasurementCreate(original.draft).geometry != geometry, edit, correspondence)
             require(!target.mounting.unresolved)
             val element = elements.find(point.elementUuid) ?: throw MeasurementEditConflict()
             points.addPoint(element.version, placedGeometry.updatedAt, target.xMm, target.yMm, now, uuid)
@@ -155,6 +157,12 @@ internal class WorkspacePlacementWriter(
             mountingCodec.parseToJsonElement(payload).jsonObject["workspace"]?.jsonObject
 
         private fun pointReceiptId(operation: String) = "$operation:points"
+
+        fun currentCreationResult(db: PrototypeDatabase, operation: String, draft: MeasurementCreateDraft, version: Long): Boolean {
+            val receipt = db.ceilingEditsQueries.selectOperation(operation).executeAsOneOrNull() ?: return false
+            return workspaceReceipt(receipt.payload)?.get("draft")?.jsonPrimitive?.content == draft.snapshot() &&
+                currentResult(db, operation, draft.recordUuid, version)
+        }
 
         fun currentResult(db: PrototypeDatabase, operation: String, measurement: String, version: Long): Boolean {
             val first = db.ceilingEditsQueries.selectOperation(operation).executeAsOneOrNull() ?: return false

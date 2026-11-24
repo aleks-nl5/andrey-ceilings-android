@@ -36,7 +36,9 @@ class MeasurementCreateStore(private val database: PrototypeDatabase, private va
         .catch { emit(MeasurementCreateParent.Unavailable) }
         .flowOn(Dispatchers.Default)
 
-    fun create(draft: MeasurementCreateDraft): Long {
+    fun create(draft: MeasurementCreateDraft): Long = createAt(draft, nowMillis())
+
+    internal fun createAt(draft: MeasurementCreateDraft, timestamp: Long): Long {
         val validation = validateMeasurementCreate(draft)
         require(validation.canSave) { validation.nameError ?: validation.fieldErrors.values.firstOrNull() ?: validation.geometryError ?: "Некоректна форма." }
         val geometry = requireNotNull(validation.geometry)
@@ -55,7 +57,7 @@ class MeasurementCreateStore(private val database: PrototypeDatabase, private va
             val widthMm = geometry.vertices.maxOf { it.yMm } - geometry.vertices.minOf { it.yMm }
             measurements.createReturningId(draft.projectId, draft.name.trim(), geometry.shapeType,
                 lengthMm / 1000.0, widthMm / 1000.0, geometry.areaSquareMeters, geometry.perimeterMeters,
-                drawing, draft.notes.trim(), nowMillis(), recordUuid = draft.recordUuid)
+                drawing, draft.notes.trim(), timestamp, recordUuid = draft.recordUuid)
         }
     }
 }

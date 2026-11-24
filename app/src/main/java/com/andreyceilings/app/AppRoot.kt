@@ -171,7 +171,8 @@ private fun CeilingsAppContent(
     val isProjectDetailsOpen = tab == AppTab.OBJECTS && navigation.projectDetails != null
     val isMeasurementDetailsOpen = (isProjectDetailsOpen || tab == AppTab.MEASUREMENTS) &&
         (navigation.measurementDetails != null || navigation.measurementCreate != null || navigation.measurementEdit != null)
-    val isMeasurementEditOpen = isMeasurementDetailsOpen && navigation.measurementEdit != null
+    val isMeasurementEditOpen = isMeasurementDetailsOpen &&
+        (navigation.measurementEdit != null || navigation.measurementCreate != null)
     var projectTitleProgress by remember { mutableFloatStateOf(0f) }
     // Let the shared title own details scrolling rather than enterAlways showing
     // the original toolbar during a reverse swipe.
@@ -575,7 +576,7 @@ private fun CeilingsAppContent(
                             measurementPrecision = measurementPrecision,
                             onCreateMeasurement = { updateNavigation(navigation.createMeasurement(it)) },
                             onMeasurementCreated = { projectId, measurementId ->
-                                updateNavigation(navigation.measurementCreated(projectId, measurementId))
+                                updateNavigation(navigation.measurementCreatedInEditor(projectId, measurementId))
                             },
                             onOpenMeasurement = { projectId, measurementId ->
                                 updateNavigation(navigation.openMeasurement(projectId, measurementId))

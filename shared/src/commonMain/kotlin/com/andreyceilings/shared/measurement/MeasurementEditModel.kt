@@ -1,6 +1,7 @@
 package com.andreyceilings.shared.measurement
 
 import com.andreyceilings.shared.db.newRecordUuid
+import com.andreyceilings.shared.estimate.FrozenPolygonGeometry
 import com.andreyceilings.shared.db.ceilingDraftWalls
 import com.andreyceilings.shared.prices.PlacementKind
 import com.andreyceilings.shared.livepricing.BusinessRole
@@ -35,9 +36,13 @@ data class MeasurementEditState(
     val workspaceSaveConfirmed: Boolean = false,
     val additions: WorkspacePlacementDraft = WorkspacePlacementDraft(),
     val pointElementUuid: String? = null,
-    val coordinates: WorkspaceCoordinatesInput? = null
+    val coordinates: WorkspaceCoordinatesInput? = null,
+    val createdId: Long? = null,
+    val saveFailed: Boolean = false,
+    val contourAnchorReference: ContourAnchorReference? = null
 ) {
-    val dirty: Boolean get() = if (!additions.isEmpty || coordinates?.dirty == true || area.dirty || lineProperties?.dirty==true || lineEdits.isNotEmpty() || declaredLengths.isNotEmpty() || lineStart!=null || linePreview!=null || pointEdits.isNotEmpty() || mountingInput?.dirty==true) true else if (draft == original.draft) false else {
+    val creating: Boolean get() = original.measurementId == 0L
+    val dirty: Boolean get() = if (createdId != null) false else if (!additions.isEmpty || coordinates?.dirty == true || area.dirty || lineProperties?.dirty==true || lineEdits.isNotEmpty() || declaredLengths.isNotEmpty() || lineStart!=null || linePreview!=null || pointEdits.isNotEmpty() || mountingInput?.dirty==true) true else if (draft == original.draft) false else {
         val current = validateMeasurementCreate(draft)
         val baseline = validateMeasurementCreate(original.draft)
         draft.name.trim() != original.draft.name.trim() || draft.notes.trim() != original.draft.notes.trim() ||
@@ -46,7 +51,10 @@ data class MeasurementEditState(
 }
 
 @Serializable
-private data class CeilingFormHistory(val draft: String, val edits: Map<String,PointMountingEdit>, val wallGeneration:String="", val lines: Map<String,LinePlacementEdit> = emptyMap(), val lengths: Map<String,Long> = emptyMap(), val areas: AreaEditorState = AreaEditorState(), val additions: WorkspacePlacementDraft = WorkspacePlacementDraft())
+data class ContourAnchorReference(val geometryJson: String, val walls: List<CeilingWall>)
+
+@Serializable
+private data class CeilingFormHistory(val draft: String, val edits: Map<String,PointMountingEdit>, val wallGeneration:String="", val lines: Map<String,LinePlacementEdit> = emptyMap(), val lengths: Map<String,Long> = emptyMap(), val areas: AreaEditorState = AreaEditorState(), val additions: WorkspacePlacementDraft = WorkspacePlacementDraft(), val contourAnchorReference: ContourAnchorReference? = null)
 private data class CeilingWriteAttempt(val operation: String, val now: Long?)
 
 /** Input transactions are grouped by focus/Done. Shape, turn and topology changes are discrete. */
@@ -62,17 +70,19 @@ class MeasurementEditModel(
     private var inputStart: CeilingFormHistory? = null
     private var attempt: CeilingWriteAttempt? = null
     private var reconcileAttempt: CeilingWriteAttempt? = null
+    private var approvedReloadId: Long? = null
     private fun form(draft: MeasurementCreateDraft = state.value.draft) = CeilingFormHistory(
         draft.snapshot(), state.value.pointEdits, state.value.wallGeneration, state.value.lineEdits,
-        state.value.declaredLengths, state.value.area.history(), state.value.additions
+        state.value.declaredLengths, state.value.area.history(), state.value.additions, state.value.contourAnchorReference
     )
     private var exitAction: (() -> Unit)? = null
-    fun observePoints(): Flow<PointOverlayState> = store?.observePoints(state.value.original)
-        ?: flowOf(PointOverlayState.Unavailable)
+    fun observePoints(): Flow<PointOverlayState> =
+        if (state.value.creating) flowOf(PointOverlayState.Loaded(emptyList(), null))
+        else store?.observePoints(state.value.original) ?: flowOf(PointOverlayState.Unavailable)
 
     private fun publish(draft: MeasurementCreateDraft = state.value.draft) {
         mutableState.value = state.value.copy(draft = draft, canUndo = inputStart?.let { it != form(draft) } == true || undo.isNotEmpty(),
-            canRedo = redo.isNotEmpty(), error = null)
+            canRedo = redo.isNotEmpty(), error = null, saveFailed = false)
     }
     fun beginInput() { if (!state.value.saving && !state.value.checking && !state.value.saved && !state.value.exitReady && inputStart == null) inputStart = form() }
     fun commitInput() {
@@ -88,8 +98,16 @@ class MeasurementEditModel(
         val after = before.reduce(intent)
         if (before == after) return
         if (!grouped) { undo.add(form()); if (undo.size > 100) undo.removeAt(0); redo.clear() }
-        if(intent is MeasurementCreateIntent.Shape || intent is MeasurementCreateIntent.AddSide || intent is MeasurementCreateIntent.RemoveSide || intent is MeasurementCreateIntent.ReplaceCapturedWithSides)
-            mutableState.value=state.value.copy(wallGeneration=newRecordUuid(),drag=null)
+        if (intent is MeasurementCreateIntent.Shape || intent is MeasurementCreateIntent.AddSide ||
+            intent is MeasurementCreateIntent.RemoveSide || intent is MeasurementCreateIntent.ReplaceCapturedWithSides) {
+            val previousGeometry = validateMeasurementCreate(before).geometry
+            val reference = previousGeometry?.let {
+                ContourAnchorReference(MeasurementGeometryCodec.write(it), draftWalls())
+            } ?: state.value.contourAnchorReference
+            cancelPlacement()
+            mutableState.value = state.value.copy(wallGeneration = newRecordUuid(), drag = null, lineDrag = null,
+                mountingInput = null, coordinates = null, lineProperties = null, contourAnchorReference = reference)
+        }
         publish(after)
     }
     fun undo() {
@@ -141,7 +159,45 @@ class MeasurementEditModel(
         action?.invoke()
     }
     /** Reload is a read and is offered explicitly only after a conflict, with discard confirmation. */
-    suspend fun reload() {reloadDocument(keepSelection=false)}
+    suspend fun reload() {
+        val current = state.value
+        if (!current.creating) {
+            reloadDocument(keepSelection = false)
+            return
+        }
+        if (current.saving || current.checking || current.saved || current.exitReady) return
+        // Explicit reload follows discard confirmation. Read by UUID even when a
+        // rejected write cleared its receipt; never replay a write from this action.
+        val source = store ?: return
+        mutableState.value = current.copy(checking = true)
+        try {
+            val loaded = source.readCreatedDocument(current.draft)
+            attempt = null
+            reconcileAttempt = null
+            approvedReloadId = null
+            reconcileAfterRestore = false
+            needsReadAfterRestore = false
+            exitAction = null
+            source.release(token)
+            if (loaded == null) {
+                // No row exists: retain the draft and allow an explicit new Save.
+                mutableState.value = current.copy(checking = false, conflict = false,
+                    uncertain = false, saveFailed = false, error = null, exitRequested = false)
+            } else {
+                // The user chose the actual database record, not receipt confirmation.
+                undo.clear(); redo.clear(); inputStart = null
+                mutableState.value = current.copy(checking = false, conflict = false,
+                    uncertain = false, saveFailed = false, error = null, exitRequested = false,
+                    saved = true, createdId = loaded.measurementId)
+            }
+        } catch (cancelled: CancellationException) {
+            mutableState.value = current
+            throw cancelled
+        } catch (_: Exception) {
+            mutableState.value = current.copy(checking = false, conflict = true,
+                error = MeasurementEditConflict().message)
+        }
+    }
     internal suspend fun reloadDrawing() {reloadDocument(keepSelection=true)}
     private suspend fun reloadDocument(keepSelection:Boolean) {
         if (state.value.saving || state.value.checking || state.value.saved || state.value.exitReady) return
@@ -193,12 +249,22 @@ class MeasurementEditModel(
             val completion=store?.beginWrite() ?: return false
             val command=attempt ?: CeilingWriteAttempt(newRecordUuid(),null).also { attempt=it }
             if(!preserveExitAction)exitAction=null
-            mutableState.value=before.copy(saving=true,exitRequested=false,error=null,drag=null,workspaceSaveConfirmed=false)
+            mutableState.value=before.copy(saving=true,exitRequested=false,error=null,drag=null,workspaceSaveConfirmed=false,saveFailed=false)
             store?.retain(token,this)
             return withContext(NonCancellable+Dispatchers.Default) {
                 try {
                     val timestamp=command.now ?: checkNotNull(store).now().also { attempt=command.copy(now=it) }
-                    val result=checkNotNull(store).update(before.original,before.draft,before.pointEdits,command.operation,before.wallGeneration,timestamp,completion,before.lineEdits,before.declaredLengths,before.area.edits,before.area.quantities,before.additions)
+                    val result=checkNotNull(store).update(before.original,before.draft,before.pointEdits,command.operation,before.wallGeneration,timestamp,completion,before.lineEdits,before.declaredLengths,before.area.edits,before.area.quantities,before.additions,before.contourAnchorReference)
+                    if (before.creating) {
+                        undo.clear()
+                        redo.clear()
+                        mutableState.value = before.copy(
+                            saving = false, error = null, uncertain = false, exitRequested = false,
+                            saved = !preserveExitAction, exitReady = preserveExitAction && exitAction != null,
+                            createdId = result.measurementId
+                        )
+                        return@withContext true
+                    }
                     val geometryChanged=validateMeasurementCreate(before.original.draft).geometry!=validateMeasurementCreate(result.draft).geometry
                     undo.clear();redo.clear();attempt=null
                     val review = geometryChanged && (result.placements.points.any { it.mounting.needsReview } ||
@@ -216,11 +282,11 @@ class MeasurementEditModel(
                 } catch (failure: PointPlacementFailure.RetryConflict) {
                     attempt=null;mutableState.value=before.copy(error=pointFailureMessage(failure),conflict=true);store?.release(token);false
                 } catch (failure: MeasurementEditRejected) {
-                    attempt=null;mutableState.value=before.copy(uncertain=false,error=failure.message);store?.release(token);false
+                    attempt=null;mutableState.value=before.copy(uncertain=false, saveFailed=true, error=failure.message);store?.release(token);false
                 } catch (failure: LinePlacementFailure) {
-                    attempt=null;mutableState.value=before.copy(uncertain=false,error=failure.message);store?.release(token);false
+                    attempt=null;mutableState.value=before.copy(uncertain=false, saveFailed=true, error=failure.message);store?.release(token);false
                 } catch (_: IllegalArgumentException) {
-                    attempt=null;mutableState.value=before.copy(uncertain=false,error="Перевірте контур, стінні опори й відступи. Чернетку збережено; недопустимі дані не записано.");store?.release(token);false
+                    attempt=null;mutableState.value=before.copy(uncertain=false, saveFailed=true, error="Перевірте контур, стінні опори й відступи. Чернетку збережено; недопустимі дані не записано.");store?.release(token);false
                 } catch (_: Exception) {
                     mutableState.value=before.copy(uncertain=true,error="Результат збереження не підтверджено. Повторіть ту саму спробу або перезавантажте запис; чернетку збережено.")
                     false
@@ -254,7 +320,8 @@ class MeasurementEditModel(
     private fun restoreForm(value: CeilingFormHistory) {
         val draft=checkNotNull(MeasurementCreateDraft.restore(value.draft,state.value.draft.projectId))
         mutableState.value=state.value.copy(draft=draft,area=value.areas,lineEdits=value.lines,declaredLengths=value.lengths,pointEdits=value.edits,wallGeneration=value.wallGeneration.ifEmpty { token },drag=null,mountingInput=null,
-            lineStart=null,linePreview=null,lineDrag=null,lineElementUuid=null,pointElementUuid=null,additions=value.additions,coordinates=null)
+            lineStart=null,linePreview=null,lineDrag=null,lineElementUuid=null,pointElementUuid=null,additions=value.additions,
+            coordinates=null, contourAnchorReference=value.contourAnchorReference)
         publish()
     }
     fun markPointsChanged() {
@@ -282,12 +349,19 @@ class MeasurementEditModel(
         (point.uuid in state.value.additions.points || state.value.pointEdits[point.uuid]?.let {
             it.anchor != null || it.freeX != null
         } == true) }
+    private fun wallCorrespondence(geometry: FrozenPolygonGeometry, walls: List<CeilingWall>): Map<String, String> =
+        matchingContourWalls(validateMeasurementCreate(state.value.original.draft).geometry,
+            state.value.original.placements.walls, geometry, walls) +
+            state.value.contourAnchorReference.correspondence(geometry, walls)
+
     fun displayPoints(): List<PointPlacement> {
         val geometry=validateMeasurementCreate(state.value.draft).geometry ?: return state.value.original.placements.points
         val changed=geometry!=validateMeasurementCreate(state.value.original.draft).geometry
+        val walls = draftWalls()
+        val correspondence = wallCorrespondence(geometry, walls)
         return (state.value.original.placements.points + state.value.additions.points.values)
             .filter { it.uuid !in state.value.additions.removedPoints && it.elementUuid !in state.value.additions.removedWorks }.map {
-            previewMounting(it, geometry, draftWalls(), changed, state.value.pointEdits[it.uuid])
+            previewMounting(it, geometry, walls, changed, state.value.pointEdits[it.uuid], correspondence)
         }
     }
     fun selectPoint(uuid: String) {
@@ -752,10 +826,12 @@ class MeasurementEditModel(
         val state=state.value
         val geometry=validateMeasurementCreate(state.draft).geometry ?: return state.original.placements.lines
         val changed=geometry!=validateMeasurementCreate(state.original.draft).geometry
+        val walls = draftWalls()
+        val correspondence = wallCorrespondence(geometry, walls)
         return (state.original.placements.lines.map {it.uuid}+state.lineEdits.keys).distinct().mapNotNull {id ->
             val edit=state.lineEdits[id]
             val line=state.original.placements.lines.find {it.uuid==id} ?: edit?.value ?: return@mapNotNull null
-            if(edit?.value?.deletedAt!=null || line.elementUuid in state.additions.removedWorks) null else previewLine(line,geometry,draftWalls(),changed,edit)
+            if(edit?.value?.deletedAt!=null || line.elementUuid in state.additions.removedWorks) null else previewLine(line,geometry,walls,changed,edit,correspondence)
         }
     }
     fun lineCapacityError(): String? {
@@ -861,7 +937,9 @@ class MeasurementEditModel(
         if(line.start==source.start && line.end==source.end)return
         val geometry=validateMeasurementCreate(state.value.draft).geometry ?: return
         if(!lineStrictlyInside(geometry,line.start,line.end)){mutableState.value=state.value.copy(error=LinePlacementFailure.InvalidSegment().message);return}
-        stageLine(line,remeasuredStart=if(state.value.lineMoveTarget!=2)false else null,remeasuredEnd=if(state.value.lineMoveTarget!=1)false else null)
+        val staged = state.value.original.placements.lines.none { it.uuid == line.uuid }
+        val candidate = if (staged) line.copy(unresolved = false) else line
+        stageLine(candidate,remeasuredStart=if(state.value.lineMoveTarget!=2)false else null,remeasuredEnd=if(state.value.lineMoveTarget!=1)false else null)
     }
     fun openLineMounting(first:Boolean) {
         if(!editable())return
@@ -1005,10 +1083,12 @@ class MeasurementEditModel(
         val s=state.value
         val g=validateMeasurementCreate(s.draft).geometry ?: return s.original.placements.areas
         val changed=g!=validateMeasurementCreate(s.original.draft).geometry
+        val walls = draftWalls()
+        val correspondence = wallCorrespondence(g, walls)
         return (s.original.placements.areas.map {it.uuid}+s.area.edits.keys).distinct().mapNotNull {id ->
             val edit=s.area.edits[id]
             val old=s.original.placements.areas.find {it.uuid==id} ?: edit?.value ?: return@mapNotNull null
-            if(edit?.value?.deletedAt!=null || old.elementUuid in s.additions.removedWorks)null else previewArea(old,g,draftWalls(),changed,edit)
+            if(edit?.value?.deletedAt!=null || old.elementUuid in s.additions.removedWorks)null else previewArea(old,g,walls,changed,edit,correspondence)
         }
     }
     private fun updateArea(change:(AreaEditorState)->AreaEditorState) {
@@ -1127,14 +1207,15 @@ class MeasurementEditModel(
         val a=state.value.area; val moved=a.drag ?: return;cancelAreaDrag()
         val source=displayAreas().find {it.uuid==moved.uuid} ?: return
         if(source.shape==moved.shape)return
-        if(source.unresolved) {
+        val staged = state.value.original.placements.areas.none { it.uuid == moved.uuid }
+        if(source.unresolved && !staged) {
             mutableState.value=state.value.copy(error="Нерозв’язану фігуру потрібно повторно виміряти за стінними опорами. Перетягування не змінює збережене положення.")
             return
         }
         val g=validateMeasurementCreate(state.value.draft).geometry ?: return
         if(!areaStrictlyInside(g,moved.shape)){mutableState.value=state.value.copy(error="Фігура перетинає стіну або себе. Положення не змінено.");return}
         val measured=a.edits[moved.uuid]?.remeasured.orEmpty().filter { source.shape.positions[it] == moved.shape.positions[it] }.toSet()
-        stageArea(moved,remeasured=measured)
+        stageArea(if (staged) moved.copy(unresolved = false) else moved, remeasured=measured)
     }
     fun openAreaMounting(index:Int) {
         if(!editable())return
@@ -1235,6 +1316,9 @@ class MeasurementEditModel(
         put("id", state.value.original.measurementId); put("version", state.value.original.updatedAt); put("token", token)
         put("original", state.value.original.draft.snapshot()); put("draft", state.value.draft.snapshot())
         put("wallGeneration",state.value.wallGeneration)
+        state.value.contourAnchorReference?.let {
+            put("contourAnchorReference", mountingCodec.encodeToJsonElement(ContourAnchorReference.serializer(), it))
+        }
         put("lineElements",encodeAreaElementSnapshots(state.value.original.lineElements))
         put("areaElements",encodeAreaElementSnapshots(state.value.original.areaElements))
         put("materialElements", mountingCodec.encodeToJsonElement(state.value.original.materialElements))
@@ -1265,7 +1349,12 @@ class MeasurementEditModel(
             write.now?.let { put("writeTime", it) }
         }
         put("reviewPrompt",state.value.reviewPrompt);put("reviewing",state.value.reviewing)
-        put("writeStarted", state.value.saving || state.value.saved || state.value.uncertain || reconcileAfterRestore)
+        put("writeStarted", state.value.saving || state.value.saved || state.value.uncertain || state.value.createdId != null || reconcileAfterRestore ||
+            (state.value.creating && reconcileAttempt != null))
+        put("creationConflict", state.value.creating && state.value.conflict)
+        (approvedReloadId ?: state.value.createdId?.takeIf {
+            state.value.creating && state.value.saved && attempt == null && reconcileAttempt == null
+        })?.let { put("approvedReloadId", it) }
         // Leave room for the draft and the rest of Android's saved instance state.
         fun bounded(history: List<CeilingFormHistory>): List<String> {
             var remaining = 64_000
@@ -1322,7 +1411,14 @@ class MeasurementEditModel(
                     mountingInput=json["mountingInput"]?.jsonPrimitive?.content?.let { mountingCodec.decodeFromString<WallAnchorInput>(it) },
                     reviewPrompt=json["reviewPrompt"]?.jsonPrimitive?.booleanOrNull ?: false,
                     reviewing=json["reviewing"]?.jsonPrimitive?.booleanOrNull ?: false,
-                    wallGeneration=json["wallGeneration"]?.jsonPrimitive?.content ?: token)
+                    wallGeneration=json["wallGeneration"]?.jsonPrimitive?.content ?: token,
+                    contourAnchorReference = json["contourAnchorReference"]?.let { value ->
+                        mountingCodec.decodeFromJsonElement(ContourAnchorReference.serializer(), value).also { reference ->
+                            val geometry = MeasurementGeometryCodec.read(reference.geometryJson)
+                            require(reference.walls.map { it.ordinal } == geometry.vertices.indices.toList())
+                        }
+                    })
+                it.approvedReloadId = json["approvedReloadId"]?.jsonPrimitive?.longOrNull
                 it.reconcileAttempt = json["receipt"]?.jsonPrimitive?.content?.let { receipt ->
                     CeilingWriteAttempt(receipt, json["writeTime"]?.jsonPrimitive?.longOrNull)
                 }
@@ -1337,8 +1433,10 @@ class MeasurementEditModel(
                 it.publish()
                 // Reconciliation is performed by the screen as a READ, never a Save replay.
                 it.reconcileAfterRestore = json.getValue("writeStarted").jsonPrimitive.boolean
-                it.needsReadAfterRestore = true
-                it.mutableState.value = it.state.value.copy(checking = store != null)
+                it.needsReadAfterRestore = measurementId != 0L || it.reconcileAfterRestore
+                val creationConflict = measurementId == 0L && json["creationConflict"]?.jsonPrimitive?.booleanOrNull == true
+                it.mutableState.value = it.state.value.copy(checking = store != null && it.needsReadAfterRestore,
+                    conflict = creationConflict, error = if (creationConflict) MeasurementEditConflict().message else null)
             }
         }.getOrNull()
     }
@@ -1352,6 +1450,29 @@ class MeasurementEditModel(
         reconcileAfterRestore = false
         try {
             val before = state.value
+            if (before.creating) {
+                val approvedId = approvedReloadId
+                if (approvedId != null) {
+                    val loaded = store.readCreatedDocument(before.draft)
+                    if (loaded?.measurementId != approvedId) throw MeasurementEditConflict()
+                    approvedReloadId = null
+                    mutableState.value = before.copy(checking = false, conflict = false, uncertain = false,
+                        error = null, saved = true, createdId = loaded.measurementId)
+                    return
+                }
+                val pending = checkNotNull(reconcileAttempt)
+                val created = store.readCreatedDocument(before.draft, pending.operation)
+                reconcileAttempt = null
+                if (created == null) {
+                    attempt = pending
+                    mutableState.value = before.copy(checking = false, conflict = false, uncertain = false, error = null)
+                } else {
+                    attempt = pending
+                    mutableState.value = before.copy(checking = false, conflict = false, uncertain = false, error = null,
+                        saved = true, createdId = created.measurementId)
+                }
+                return
+            }
             val loaded = withContext(Dispatchers.Default) { checkNotNull(store).load(before.draft.projectId, before.original.measurementId) }
             val pending = reconcileAttempt
             reconcileAttempt = null
