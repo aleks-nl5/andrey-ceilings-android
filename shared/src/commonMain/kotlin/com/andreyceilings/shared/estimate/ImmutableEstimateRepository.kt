@@ -83,14 +83,53 @@ class ImmutableEstimateRepository(private val database: PrototypeDatabase) {
             checkNotNull(exactIndividual(seriesUuid, it.revisionUuid))
         }
 
-    /** CAS is scoped to one exact document, including an old alternative. */
-    fun setWorkflowStatus(revisionUuid: String, expectedVersion: Long, status: EstimateWorkflowStatus, now: Long): Boolean {
+    /**
+     * The caller can replace approvals only after confirming the exact set shown to the user.
+     * Legacy callers supply the default empty set and can only make the first approval.
+     */
+    fun setWorkflowStatus(
+        revisionUuid: String,
+        expectedVersion: Long,
+        status: EstimateWorkflowStatus,
+        now: Long,
+        expectedApprovals: Map<String, Long> = emptyMap()
+    ): Boolean {
         require(now > 0 && expectedVersion > 0)
-        return database.transactionWithResult {
-            database.measurementElementsQueries.claimElementWrite("")
-            database.revisionWorkflowQueries.updateRevisionWorkflow(status.name, now, revisionUuid, expectedVersion).executeAsOneOrNull() != null
+        return try {
+            database.transactionWithResult {
+                database.priceGroupsQueries.claimCatalogWrite()
+                val workflow = database.revisionWorkflowQueries
+                val target = workflow.selectActiveQuoteWorkflow(revisionUuid).executeAsOneOrNull()
+                    ?: return@transactionWithResult false
+                if (target.version != expectedVersion) return@transactionWithResult false
+                if (status != EstimateWorkflowStatus.APPROVED && expectedApprovals.isNotEmpty()) {
+                    return@transactionWithResult false
+                }
+                if (status == EstimateWorkflowStatus.APPROVED) {
+                    val measurementUuid = target.measurementUuid ?: return@transactionWithResult false
+                    val approved = workflow.selectApprovedQuoteVersions(target.projectId, measurementUuid)
+                        .executeAsList().associate { it.revisionUuid to it.version }
+                    if (target.status == status.name && approved == mapOf(revisionUuid to expectedVersion) &&
+                        expectedApprovals.isEmpty()
+                    ) return@transactionWithResult true
+                    if (approved != expectedApprovals) return@transactionWithResult false
+                    for ((previousUuid, version) in approved - revisionUuid) {
+                        workflow.updateRevisionWorkflow(EstimateWorkflowStatus.SENT.name, now, previousUuid, version)
+                            .executeAsOneOrNull() ?: throw WorkflowConflict()
+                    }
+                }
+                if (target.status != status.name) {
+                    workflow.updateRevisionWorkflow(status.name, now, revisionUuid, expectedVersion)
+                        .executeAsOneOrNull() ?: throw WorkflowConflict()
+                }
+                true
+            }
+        } catch (_: WorkflowConflict) {
+            false
         }
     }
+
+    private class WorkflowConflict : IllegalStateException()
 
     fun selectRevision(seriesUuid: String, revisionUuid: String, expectedVersion: Long, now: Long): Boolean {
         require(now > 0 && expectedVersion > 0)

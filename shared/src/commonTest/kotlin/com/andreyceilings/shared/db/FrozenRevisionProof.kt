@@ -119,6 +119,20 @@ object FrozenRevisionProof {
         assertTrue(history.selectRevision(first.seriesUuid, first.initialRevisionUuid, 3, 619))
         assertEquals(EstimateWorkflowStatus.APPROVED, history.exactIndividual(first.seriesUuid, first.initialRevisionUuid)!!.status)
         assertEquals(EstimateWorkflowStatus.DRAFT, history.exactIndividual(first.seriesUuid, v3.initialRevisionUuid)!!.status)
+        val alternative = history.saveIndividual(FrozenIndividualEstimateProof.command(db, fixture), 2026, 620)
+        val previousApproval = mapOf(first.initialRevisionUuid to 4L)
+        val alternativeId = alternative.initialRevisionUuid
+        assertFalse(history.setWorkflowStatus(alternativeId, 1, EstimateWorkflowStatus.APPROVED, 621))
+        assertFalse(history.setWorkflowStatus(alternativeId, 1, EstimateWorkflowStatus.APPROVED, 621,
+            mapOf(first.initialRevisionUuid to 3L)))
+        assertTrue(history.setWorkflowStatus(alternativeId, 1, EstimateWorkflowStatus.APPROVED, 621, previousApproval))
+        assertEquals(EstimateWorkflowStatus.SENT, history.exactIndividual(first.seriesUuid, first.initialRevisionUuid)!!.status)
+        assertEquals(EstimateWorkflowStatus.APPROVED, history.exactIndividual(alternative.seriesUuid, alternativeId)!!.status)
+        assertFalse(history.setWorkflowStatus(v3.initialRevisionUuid, 1, EstimateWorkflowStatus.APPROVED, 622, previousApproval))
+        assertEquals(EstimateWorkflowStatus.DRAFT, history.exactIndividual(first.seriesUuid, v3.initialRevisionUuid)!!.status)
+        assertTrue(history.setWorkflowStatus(alternativeId, 2, EstimateWorkflowStatus.APPROVED, 622))
+        assertEquals(2, history.exactIndividual(alternative.seriesUuid, alternativeId)!!.statusVersion)
+        assertEquals(sequence + 1, db.estimateHistoryQueries.selectEstimateNumberSettings().executeAsOne().nextSequence)
         verifyFrozenEstimateContents(driver)
         // Receipts are primary even after mutable source/catalog changes or deletion.
         prices.updateSalePrice(prices.find(fixture.priceId)!!, 25.0, 620)
@@ -127,7 +141,7 @@ object FrozenRevisionProof {
         assertEquals(v2, history.appendIndividual(secondCommand, 621))
         assertEquals(v3, history.appendIndividual(thirdCommand, 622))
         assertEquals(old.frozen, history.exactIndividual(first.seriesUuid, first.initialRevisionUuid)!!.frozen)
-        assertEquals(sequence, db.estimateHistoryQueries.selectEstimateNumberSettings().executeAsOne().nextSequence)
+        assertEquals(sequence + 1, db.estimateHistoryQueries.selectEstimateNumberSettings().executeAsOne().nextSequence)
         verifyFrozenEstimateContents(driver)
     }
 }
