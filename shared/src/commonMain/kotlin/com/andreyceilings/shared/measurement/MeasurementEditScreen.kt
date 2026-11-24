@@ -153,9 +153,11 @@ fun MeasurementEditScreen(
 ) {
     val state by model.state.collectAsState()
     val validation = remember(state.draft) { validateMeasurementCreate(state.draft) }
-    val pointFlow = remember(model, state.original.draft.recordUuid, state.creating) { model.observePoints() }
-    val overlay = key(model, state.original.draft.recordUuid) { pointFlow.collectAsState(if (state.creating) PointOverlayState.Loaded(emptyList(), null)
-        else PointOverlayState.Loading).value }
+    val overlay = key(model, state.original) {
+        val pointFlow = remember { model.observePoints() }
+        pointFlow.collectAsState(if (state.creating) PointOverlayState.Loaded(emptyList(), null)
+            else PointOverlayState.Loading).value
+    }
     LaunchedEffect(overlay,state.original) {
         val incoming=(overlay as? PointOverlayState.Loaded)?.points
         if(incoming!=null && !state.saving && !state.saved && !state.checking && !state.uncertain && (incoming.map {it.uuid}.toSet()!=state.original.placements.points.map {it.uuid}.toSet() ||
