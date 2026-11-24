@@ -1,3 +1,9 @@
+# CURRENT — P5D planning contract (24.11.2026)
+
+P5B #156/#157 and P5C #161/#162 merged. Next tracked work: [#164](https://github.com/aleks-nl5/andrey-ceilings-android/issues/164), [P5D UX SPEC](P5D_UX_SPEC.md), [technical audit](P5D_TECHNICAL_AUDIT.md). **Planning approved; implementation not yet authorized.** Owner approval before feature work, then current main. This supersedes old CURRENT P5A/B/C and early scope: P5D true pre-Save pricing, compact inline individual quote/list/frozen view, fixed or percent discount, max one APPROVED across whole ceiling, no separate choice UI (retain technical structure), PDF only. No duplicate engine or silent Save. Read the new spec, audit, master-first, localization and current CI policy; no new automated UI suite. QUICK; final manual Android/CMP FULL; owner APK and independent review; owner merge. Existing docs below are historical where inconsistent.
+
+---
+
 # P5C — спільний редактор контуру (24.11.2026)
 
 [P5C #161](https://github.com/aleks-nl5/andrey-ceilings-android/issues/161) розробляється стеком над [P5B #157](https://github.com/aleks-nl5/andrey-ceilings-android/pull/157) у `feat/p5c-contour-workspace`. Створення та редагування використовують спільний редактор. Поточні розміри проходять доменну валідацію перед розрахунком або записом. Canvas показує умовний контур для неповної чернетки, а рендер PDF використовує заморожену геометрію. [Контракт і приймання P5C](P5C_CONTOUR_WORKSPACE.md).
