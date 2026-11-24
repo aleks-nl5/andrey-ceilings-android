@@ -1,32 +1,27 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Regular Android CI never generates the large P5A screenshot matrix.
-# When a mandatory instrumented test fails, preserve one diagnostic frame
-# from the still-running emulator without masking the actual failure.
-collect_failed_workspace_capture() {
+# Preserve infrastructure diagnostics without masking the original failure.
+collect_instrumentation_diagnostics() {
   local status=$?
-  local artifact_dir="${RUNNER_TEMP:-app/build}/p5a-workspace"
+  local artifact_dir="${RUNNER_TEMP:-app/build}/android-instrumentation-diagnostics"
   mkdir -p "$artifact_dir"
   # Distinguish a vanished emulator/ADB transport from a genuine assertion or
   # SQLCipher failure. Only transport loss is eligible for one fresh-AVD retry.
   if timeout 10s adb -s emulator-5554 shell true >/dev/null 2>&1; then
-    if ! timeout 10s adb -s emulator-5554 exec-out screencap -p \
-      > "$artifact_dir/android-failure.png"; then
-      rm -f "$artifact_dir/android-failure.png"
-    fi
+    timeout 10s adb -s emulator-5554 logcat -d -v threadtime \
+      'ActivityManager:W' 'AndroidRuntime:E' '*:S' \
+      > "$artifact_dir/android-failure-logcat.txt" || true
+    timeout 10s adb -s emulator-5554 shell dumpsys activity lastanr \
+      > "$artifact_dir/android-last-anr.txt" || true
   else
     touch "$artifact_dir/emulator-disconnected.marker"
     echo "::warning::Android emulator is unreachable after instrumentation failure."
     timeout 10s adb devices -l || true
   fi
-  if timeout 10s adb shell run-as com.andreyceilings.app test -d cache/p5a-workspace >/dev/null 2>&1; then
-    timeout 15s adb exec-out run-as com.andreyceilings.app tar -C cache/p5a-workspace -cf - . \
-      | tar -xf - -C "$artifact_dir" || true
-  fi
   exit "$status"
 }
-trap collect_failed_workspace_capture ERR
+trap collect_instrumentation_diagnostics ERR
 
 # reactivecircus/android-emulator-runner treats each YAML script line as an
 # independent shell command, so keep shell continuations here (not in YAML).
@@ -34,14 +29,6 @@ trap collect_failed_workspace_capture ERR
 # The crash tests are excluded from the normal AndroidJUnitRunner session.
 # Each destructive SIGKILL proof runs in its own adb instrumentation session,
 # and is only accepted when a new process recovers the encrypted DB/key.
-# Mandatory focused pointer smoke check: fail near the recurring issue before
-# spending ~20 minutes on the rest. On success, keep the entire original suite,
-# including both of these tests; no exclusions or assertion retries.
-timeout --kill-after=30s 12m gradle --no-daemon :app:connectedDebugAndroidTest \
-  -Pandroid.testInstrumentationRunnerArguments.class=com.andreyceilings.app.AreaFeatureTouchTest \
-  -Pandroid.testInstrumentationRunnerArguments.notAnnotation=com.andreyceilings.app.IsolatedProcessDeathProof \
-  --stacktrace --warning-mode all
-
 timeout --kill-after=30s 45m gradle --no-daemon :app:connectedDebugAndroidTest \
   -Pandroid.testInstrumentationRunnerArguments.notAnnotation=com.andreyceilings.app.IsolatedProcessDeathProof \
   --stacktrace --warning-mode all
@@ -51,8 +38,6 @@ timeout --kill-after=30s 45m gradle --no-daemon :app:connectedDebugAndroidTest \
 timeout 90s adb install -r app/build/outputs/apk/debug/app-debug.apk
 timeout 90s adb install -r app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
 
-# Screenshot-only UI replay lives in the separate, manually dispatched
-# "Android workspace screenshots (manual)" workflow, not this security gate.
 # Keep the following encrypted DB recovery/integrity proofs mandatory.
 bash ci/verify-sqlcipher-process-death.sh
 bash ci/verify-production-v9-upgrade.sh

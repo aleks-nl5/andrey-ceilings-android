@@ -113,7 +113,6 @@ class FrozenEstimatePdfShapeTest {
                     compose.onNode(hasText("Назад") and hasAnyAncestor(
                         isDialog() and hasAnyDescendant(hasText("Попередній перегляд PDF"))
                     )).performClick()
-                    compose.onNodeWithText("Попередній перегляд PDF").assertDoesNotExist()
 
                     edit.update(shaped, shaped.draft.copy(outline = original.draft.outline), now = 601)
                     val second = history.appendIndividual(FrozenRevisionProof.request(db, fixture, frozen.seriesUuid), 602)

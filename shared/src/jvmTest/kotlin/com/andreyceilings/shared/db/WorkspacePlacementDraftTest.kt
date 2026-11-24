@@ -886,6 +886,47 @@ class WorkspacePlacementDraftTest {
         }
     }
 
+    @Test
+    fun standaloneAreaNoteSurvivesUndoRedoAndAtomicSaveWithoutChangingGeometry() = runBlocking {
+        JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).use { driver ->
+            PriceCatalogSchema.create(driver)
+            val db = PrototypeDatabase(driver)
+            val fixture = PointPlacementProof.fixture(db)
+            val store = MeasurementEditStore(db) { 100 }
+            val original = store.load(fixture.project, fixture.id)
+            val editor = MeasurementEditModel(store, original)
+
+            editor.beginArea(AreaRole.VOID_MARKER, tool = AreaTool.CIRCLE)
+            editor.setAreaDiameter("0,2")
+            editor.areaTap(2000, 1500)
+            editor.acceptAreaCreation()
+            val circle = editor.displayAreas().single()
+            assertEquals(AreaShape.Circle(PointPositionMm(2000, 1500), 100), circle.shape)
+            assertNull(circle.elementUuid)
+
+            editor.openAreaProperties()
+            editor.changeAreaProperties { it.copy(note = "Ventilation") }
+            editor.applyAreaProperties()
+            assertEquals(circle.copy(note = "Ventilation"), editor.displayAreas().single())
+            assertTrue(AreaFeatureRepository(db).all().isEmpty())
+            editor.undo()
+            assertEquals(circle, editor.displayAreas().single())
+            editor.redo()
+            assertEquals("Ventilation", editor.displayAreas().single().note)
+            editor.saveInWorkspace()
+            assertFalse(editor.state.value.dirty, editor.state.value.error)
+
+            val saved = store.load(fixture.project, fixture.id).placements.areas.single()
+            assertEquals(circle.uuid, saved.uuid)
+            assertEquals(circle.shape, saved.shape)
+            assertEquals(circle.role, saved.role)
+            assertNull(saved.elementUuid)
+            assertEquals("Ventilation", saved.note)
+            assertEquals(listOf(fixture.element.uuid), MeasurementElementRepository(db)
+                .forMeasurement(original.draft.recordUuid).map { it.uuid })
+        }
+    }
+
     private suspend fun addItem(db: PrototypeDatabase, title: String, kind: PlacementKind, unit: String): ElementCatalogItem {
         val repository = PriceRepository(db)
         val group = PriceGroupRepository(db).all().first()
