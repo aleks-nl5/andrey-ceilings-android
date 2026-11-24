@@ -177,6 +177,21 @@ data class SavedIndividualQuote(val seriesUuid: String, val createdAt: Long, val
     val selectedRevisionUuid: String? = null, val choiceVersion: Long = 1,
     val historicalHead: HistoricalRevisionHead? = null)
 
+/** A catalog change outside the frozen lines does not by itself make this proposal drift. */
+internal fun FrozenIndividualEstimate.hasPricingDrift(current: PricingReadResult.Loaded): Boolean {
+    if (current.source.signature != sourceSignature) return true
+    if (current.catalog.signature == catalogSignature) return false
+    val items = current.catalog.items.associateBy { it.uuid }
+    val elements = source.elements.associateBy { it.uuid }
+    return rows.any { (_, line) ->
+        val item = items[line.catalogItemUuid] ?: return@any true
+        val selection = elements[line.elementUuid]?.source as? ElementSource.CatalogSelection ?: return@any true
+        item.title != line.title || item.unit != line.unit || item.code != line.stableCode ||
+            item.quantityMode != selection.quantityMode || item.placementKind != selection.placementKind ||
+            PricingMath.salePriceCents(item.salePrice) != line.unitPriceCents
+    }
+}
+
 /** Shared normalized-column audit. It never consults a mutable measurement, project or catalog. */
 fun verifyFrozenStoredIdentity(frozen: FrozenIndividualEstimate, projectId: Long, measurementUuid: String?, publicNumber: String?,
     subtotalCents: Long, discountBasisPoints: Long, discountCents: Long, totalCents: Long) {

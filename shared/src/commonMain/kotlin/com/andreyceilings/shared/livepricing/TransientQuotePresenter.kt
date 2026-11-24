@@ -43,11 +43,18 @@ class TransientQuotePresenter(val measurementUuid: String, val sessionId: String
     private val saveMutable = MutableStateFlow(QuoteSaveState())
     val saveState: StateFlow<QuoteSaveState> = saveMutable.asStateFlow()
     private var pendingSave: IndividualEstimateSaveRequest? = null
+    internal var hasUserChanges: Boolean = false
+        private set
     private val captured get() = saveMutable.value.saving || saveMutable.value.resultSeriesUuid != null
     private val editable get() = !closed && !captured
     private var deferredRead: PricingReadResult? = null
     private var deferredInvalidation = false
-    fun editTitle(value: String) { if (editable) { saveMutable.value = saveMutable.value.copy(title = value); pendingSave = null } }
+    fun editTitle(value: String) {
+        if (!editable || value == saveMutable.value.title) return
+        saveMutable.value = saveMutable.value.copy(title = value)
+        hasUserChanges = true
+        pendingSave = null
+    }
     fun beginSave(projectId: Long): IndividualEstimateSaveRequest? {
         if (saveMutable.value.saving || saveMutable.value.resultSeriesUuid != null) return null
         val current = saveRequest(projectId, saveMutable.value.title.orEmpty()) ?: return null
@@ -260,7 +267,10 @@ class TransientQuotePresenter(val measurementUuid: String, val sessionId: String
         return true
     }
 
-    private fun changed() { mutable.value = mutable.value.copy(acknowledgedFingerprint = null, amounts = null, fingerprint = null) }
+    private fun changed() {
+        hasUserChanges = true
+        mutable.value = mutable.value.copy(acknowledgedFingerprint = null, amounts = null, fingerprint = null)
+    }
     private fun rebuild() {
         val data = loaded ?: return
         val source = data.source

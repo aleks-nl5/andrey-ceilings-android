@@ -135,7 +135,10 @@ fun SavedIndividualQuoteDialog(store: MeasurementElementsStore?, seriesUuid: Str
     }
     fun exit() {
         if (busy || session.presenter?.saveState?.value?.saving == true) return
-        if (session.presenter != null) session.discardPending = true else onDismiss()
+        val editor = session.presenter
+        if (editor == null) onDismiss()
+        else if (editor.hasUserChanges) session.discardPending = true
+        else session.closeDraft(store)
     }
     fun changeStatus(target: SavedIndividualQuote, status: EstimateWorkflowStatus, previous: List<SavedIndividualQuote>) {
         if (store == null || busy) return

@@ -60,6 +60,7 @@ internal fun WorkspaceQuotes(
     modifier: Modifier,
     bottomInset: Dp,
     currentSource: Boolean,
+    pricingBasis: DraftPricingBasis?,
     onStart: (SavedIndividualQuote?) -> Unit,
     onRefresh: () -> Unit
 ) {
@@ -108,7 +109,12 @@ internal fun WorkspaceQuotes(
         }
     }
     Column(modifier.fillMaxWidth().padding(bottom = bottomInset)) {
-        if (error) Text(stringResource(Res.string.p5d_quote_failed), color = MaterialTheme.colorScheme.error)
+        if (error) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(stringResource(Res.string.p5d_quote_failed), Modifier.weight(1f), color = MaterialTheme.colorScheme.error)
+                TextButton(onClick = { error = false; session.refresh++ }) { Text(stringResource(Res.string.p5d_retry)) }
+            }
+        }
         if (presenter != null && route != null && store != null) {
             val current = currentSource && !edit.dirty && !edit.conflict && !edit.uncertain && !edit.saving &&
                 session.measurementVersion == edit.original.updatedAt
@@ -150,6 +156,13 @@ internal fun WorkspaceQuotes(
                     items(versions, key = { it.revisionUuid }) { quote ->
                         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                             WorkspaceQuoteStatusIcon(quote, approved, !busy, ::changeStatus)
+                            if (quote.status == EstimateWorkflowStatus.APPROVED) {
+                                val savedBasis = (pricingBasis as? DraftPricingBasis.Saved)?.read
+                                val show = savedBasis?.let { quote.frozen.hasPricingDrift(it) }
+                                if (show == true) WorkspaceCostHelp(stringResource(Res.string.p5d_drift))
+                                else if (pricingBasis is DraftPricingBasis.Unavailable)
+                                    WorkspaceCostHelp(stringResource(Res.string.p5d_drift_unavailable))
+                            }
                             Row(Modifier.weight(1f).clickable { session.opened = quote }.defaultMinSize(minHeight = 48.dp)
                                 .padding(end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                                 Column(Modifier.weight(1f)) {
@@ -237,7 +250,9 @@ internal fun ColumnScope.WorkspaceQuoteComposer(
     val canSubmit = enabled && state.amounts != null && validEstimateTitle(title) != null &&
         (state.preview?.canFinalizeFull == true || state.canAcknowledge)
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        IconButton(enabled = !save.saving, onClick = { session.discardPending = true }) {
+        IconButton(enabled = !save.saving, onClick = {
+            if (presenter.hasUserChanges) session.discardPending = true else session.closeDraft(store)
+        }) {
             Icon(Icons.Default.Close, stringResource(Res.string.p5d_discard), tint = MaterialTheme.colorScheme.error)
         }
         CompactOutlinedStringField(title, presenter::editTitle, stringResource(Res.string.p5d_title),
@@ -253,7 +268,7 @@ internal fun ColumnScope.WorkspaceQuoteComposer(
     if (!current) {
         TextButton(enabled = !save.saving, onClick = onRefresh) { Text(stringResource(Res.string.p5d_update_quote)) }
     } else {
-        Surface(color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.82f)) {
+        WorkspaceFinancialSummary {
             Column(Modifier.fillMaxWidth().padding(horizontal = 8.dp)) {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
@@ -451,7 +466,7 @@ internal fun ColumnScope.WorkspaceFrozenQuote(
             drift = when (read) {
                 null -> false
                 is PricingReadResult.Unavailable -> null
-                is PricingReadResult.Loaded -> read.source.signature != frozen.sourceSignature || read.catalog.signature != frozen.catalogSignature
+                is PricingReadResult.Loaded -> frozen.hasPricingDrift(read)
             }
         }
     }
@@ -497,7 +512,7 @@ internal fun ColumnScope.WorkspaceFrozenQuote(
         WorkspaceQuoteStatusIcon(quote, approved, !busy && !exporting, onStatus)
         WorkspaceExpand(session)
     }
-    Surface(color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.82f)) {
+    WorkspaceFinancialSummary {
         Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(stringResource(Res.string.p5d_to_pay), Modifier.weight(1f), style = MaterialTheme.typography.labelMedium)
             if (frozen.amounts.discountCents > 0) {
@@ -528,7 +543,7 @@ internal fun ColumnScope.WorkspaceFrozenQuote(
                 Modifier.padding(start = 8.dp), style = MaterialTheme.typography.bodySmall)
         }
     }
-    Surface(color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.82f)) {
+    WorkspaceFinancialSummary {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             WorkspaceTrash(quote.canDeleteQuote && !busy && !exporting, Res.string.p5d_delete_revision, onDelete)
             if (!quote.canDeleteQuote) WorkspaceCostHelp(stringResource(Res.string.p5d_delete_protected))

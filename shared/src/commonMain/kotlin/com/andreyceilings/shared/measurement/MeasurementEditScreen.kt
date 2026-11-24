@@ -201,10 +201,18 @@ fun MeasurementEditScreen(
     val expandedQuote = context == MeasurementEditContext.QUOTES && quotes.expanded
     val handleQuoteBack by rememberUpdatedState<() -> Boolean>({
         when {
-            context != MeasurementEditContext.QUOTES -> false
             quotes.presenter?.saveState?.value?.saving == true -> true
-            quotes.presenter != null -> { quotes.discardPending = true; true }
-            quotes.opened != null -> { quotes.closeView(); true }
+            quotes.presenter != null -> {
+                if (quotes.presenter?.hasUserChanges == true) {
+                    if (fullscreen) {
+                        fullscreenContext = MeasurementEditContext.QUOTES
+                        if (sheet == MeasurementSheet.CLOSED) sheet = MeasurementSheet.COMPACT
+                    } else normalContext = MeasurementEditContext.QUOTES
+                    quotes.discardPending = true
+                } else quotes.closeDraft(quoteStore)
+                true
+            }
+            context == MeasurementEditContext.QUOTES && quotes.opened != null -> { quotes.closeView(); true }
             else -> false
         }
     })
@@ -647,7 +655,7 @@ fun MeasurementEditScreen(
                                 color = MaterialTheme.colorScheme.error)
                             if (quoteStarting) LinearProgressIndicator(Modifier.fillMaxWidth())
                             WorkspaceQuotes(quoteStore, quotes, state, Modifier.weight(1f, fill = false),
-                                normalNavigationUnderlay, currentSource = !sourceStale, onStart = { prepareQuote(it) }, onRefresh = { prepareQuote(null, refresh = true) })
+                                normalNavigationUnderlay, currentSource = !sourceStale, pricingBasis = pricingBasis, onStart = { prepareQuote(it) }, onRefresh = { prepareQuote(null, refresh = true) })
                         }
                         return@SaveableStateProvider
                     }
@@ -964,7 +972,9 @@ fun MeasurementEditScreen(
                     if (frozenGeometry != null && visibleQuote != null) {
                         val source = visibleQuote.frozen.source
                         key(visibleQuote.revisionUuid) {
-                            MeasurementDrawing(MeasurementGeometryView.Captured(frozenGeometry), modifier = Modifier.fillMaxSize(),
+                            val historyLabel = stringResource(Res.string.p5d_frozen_drawing)
+                            MeasurementDrawing(MeasurementGeometryView.Captured(frozenGeometry),
+                                modifier = Modifier.fillMaxSize().semantics { contentDescription = historyLabel },
                                 interactive = true, fillAvailableHeight = true, showSideLegend = false, workspaceOrientation = true,
                                 retainCameraOnResize = true, pointPlacements = source.points,
                                 linePlacements = source.lines, areaFeatures = source.areas)

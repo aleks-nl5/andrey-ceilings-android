@@ -1,5 +1,6 @@
 package com.andreyceilings.shared.measurement
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -10,6 +11,8 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.andreyceilings.shared.livepricing.*
@@ -38,7 +41,7 @@ internal fun WorkspaceLiveCost(
             it.priceableLines.any { it.bucket == PricingBucket.POTENTIAL } || it.potentialIncomplete
         } == true) PricingBucket.entries else listOf(PricingBucket.CONFIRMED)
     Column(modifier) {
-        Surface(color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.82f)) {
+        WorkspaceFinancialSummary {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 groups.forEach { bucket ->
                     val subtotal = preview?.bucketAmount(bucket)
@@ -87,6 +90,13 @@ internal fun WorkspaceLiveCost(
     if (unavailableLink) AlertDialog(onDismissRequest = { unavailableLink = false },
         text = { Text(stringResource(Res.string.p5d_no_element_link)) },
         confirmButton = { TextButton(onClick = { unavailableLink = false }) { Text(stringResource(Res.string.p5d_cancel)) } })
+}
+
+@Composable
+internal fun WorkspaceFinancialSummary(content: @Composable () -> Unit) {
+    val color = MaterialTheme.colorScheme.surfaceContainerHigh
+    Surface(Modifier.fillMaxWidth().background(Brush.verticalGradient(listOf(color.copy(alpha = 0.90f), color.copy(alpha = 0.66f)))),
+        color = Color.Transparent, content = content)
 }
 
 @Composable
