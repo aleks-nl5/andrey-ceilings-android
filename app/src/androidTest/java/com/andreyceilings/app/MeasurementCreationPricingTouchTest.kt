@@ -59,7 +59,10 @@ class MeasurementCreationPricingTouchTest {
                     onUseMeasurement = {}, onOpenEstimates = {}, onCreateProject = {})
                 else nav.measurementCreate?.let { route -> MeasurementCreateWorkspace(route.projectId,
                     MeasurementPrecision.ONE_CENTIMETER, edit, PaddingValues(8.dp), 0.dp,
-                    onBack = { nav = nav.back() }, onSaved = { nav = guard.transition(nav, nav.measurementCreated(project, it)) }, navigationGuard = guard) }
+                    onBack = { nav = nav.back() }, onSaved = { nav = guard.transition(nav, nav.measurementCreatedInEditor(project, it)) }, navigationGuard = guard) }
+                    ?: nav.measurementEdit?.let { route -> MeasurementEditScreen(route.projectId, route.measurementId,
+                        edit, PaddingValues(8.dp), 0.dp, onBack = { nav = guard.transition(nav, nav.back()) },
+                        navigationGuard = guard) }
                     ?: nav.measurementDetails?.let { route -> MeasurementDetailsScreen(route.projectId, route.measurementId,
                         details, PaddingValues(8.dp), 0.dp, onBack = { nav = nav.back() }, navigationGuard = guard,
                         editStore = edit, quoteOpen = nav.measurementQuote, onOpenQuote = { nav = nav.openMeasurementQuote() }) }
@@ -94,7 +97,7 @@ class MeasurementCreationPricingTouchTest {
             }
             assertTrue(MeasurementRepository(db).all().isEmpty(), "Selecting materials cannot create a shell row")
             compose.onNodeWithTag("measurement-edit-save").assertIsEnabled().performClick()
-            compose.waitUntil(10000) { nav.measurementDetails != null }
+            compose.waitUntil(10000) { nav.measurementEdit != null }
             val row = MeasurementRepository(db).all().single()
             uuid = row.uuid
             val loaded = assertIs<PricingReadResult.Loaded>(LivePricingReader(db).read(project, uuid),
@@ -102,6 +105,11 @@ class MeasurementCreationPricingTouchTest {
             assertTrue(loaded.buildPreview().canFinalizeFull, loaded.buildPreview().toString())
             signature = loaded.source.signature
             assertEquals(4, loaded.source.walls.size)
+            compose.waitUntil(10000) {
+                runCatching { compose.onNodeWithTag("measurement-edit-back").assertIsEnabled(); true }.getOrDefault(false)
+            }
+            compose.onNodeWithTag("measurement-edit-back").performClick()
+            compose.waitUntil(10000) { nav.measurementDetails != null }
             compose.waitUntil(10000) {
                 runCatching { list().performScrollToNode(hasText("Попередній кошторис")); compose.onNodeWithText("Попередній кошторис").assertIsEnabled(); true }.getOrDefault(false)
             }

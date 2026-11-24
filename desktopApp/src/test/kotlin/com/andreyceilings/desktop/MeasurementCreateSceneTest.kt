@@ -80,8 +80,8 @@ class MeasurementCreateSceneTest {
                     if (navigation.value.measurementCreate != null) MeasurementEditScreen(model, onBack = {
                             navigation.value = guard.transition(navigation.value, navigation.value.back())
                         }, onCreated = { id -> navigation.value = guard.transition(navigation.value,
-                            navigation.value.measurementCreated(project, id)) }, navigationGuard = guard)
-                    else androidx.compose.material3.Text("Відкрито замір ${navigation.value.measurementDetails?.measurementId}")
+                            navigation.value.measurementCreatedInEditor(project, id)) }, navigationGuard = guard)
+                    else androidx.compose.material3.Text("Відкрито редактор ${navigation.value.measurementEdit?.measurementId}")
                 }
             }
             try {
@@ -109,15 +109,15 @@ class MeasurementCreateSceneTest {
                 release.countDown()
                 val id = withTimeout(10_000) { model.state.first { it.createdId != null }.createdId!! }
                 repeat(4) { i -> Snapshot.sendApplyNotifications(); scene.render((i + 2) * 16_000_000L).close() }
-                assertEquals(MeasurementDetails(project, id), navigation.value.measurementDetails)
-                assertTrue(scene.textContent().contains("Відкрито замір $id"))
+                assertEquals(MeasurementEdit(project, id), navigation.value.measurementEdit)
+                assertTrue(scene.textContent().contains("Відкрито редактор $id"))
                 assertEquals(id, MeasurementRepository(db).forProject(project).single().id)
                 assertFalse(guard.blocksExit(navigation.value))
                 assertTrue(handleNavigationKeyEvent(escape, navigation.value, AppRoute.entries.toSet(), guard) {
                     navigation.value = guard.transition(navigation.value, it)
                 })
                 assertEquals(project, navigation.value.projectDetails?.projectId)
-                assertNull(navigation.value.measurementDetails)
+                assertEquals(MeasurementDetails(project, id), navigation.value.measurementDetails)
             } finally { release.countDown(); scene.close() }
         }
     }

@@ -1226,7 +1226,7 @@ private fun MeasurementSelectedFields(
 
 @Composable
 private fun MeasurementDimensionRows(count: Int, columns: Int, field: @Composable (Int, Modifier) -> Unit) {
-    Column(Modifier.fillMaxWidth()) {
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         for (start in 0 until count step columns) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 for (index in start until start + columns) {

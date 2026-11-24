@@ -32,7 +32,7 @@ fun MeasurementsScreen(
     val back = { onNavigate(navigation.back()) }
     navigation.measurementCreate?.let { route ->
         MeasurementCreateWorkspace(route.projectId, precision, editStore, contentPadding, systemTopInset,
-            onBack = back, onSaved = { onNavigate(navigation.measurementCreated(route.projectId, it)) },
+            onBack = back, onSaved = { onNavigate(navigation.measurementCreatedInEditor(route.projectId, it)) },
             navigationGuard = navigationGuard)
         return
     }

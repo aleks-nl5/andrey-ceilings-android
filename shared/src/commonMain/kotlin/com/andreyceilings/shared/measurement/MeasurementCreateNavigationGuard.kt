@@ -79,7 +79,7 @@ class MeasurementCreateNavigationGuard {
 
     private fun approved(proposed: AppNavigationState): AppNavigationState {
         elements?.leavePointRoute()
-        if (proposed.measurementEdit == null) edit = null
+        if (proposed.measurementEdit == null || edit?.state?.value?.creating == true && proposed.measurementCreate == null) edit = null
         if (proposed.measurementCreate == null) editor = null
         if (proposed.measurementDetails == null && proposed.measurementEdit == null && proposed.measurementCreate == null) fullscreen.value = false
         return proposed
@@ -122,7 +122,7 @@ class MeasurementCreateNavigationGuard {
             return approved(proposed)
         }
         if (editState?.creating == true) {
-            val completed = editState.createdId?.let { current.measurementCreated(editState.draft.projectId, it) }
+            val completed = editState.createdId?.let { current.measurementCreatedInEditor(editState.draft.projectId, it) }
             return if (completed != null && proposed == completed) approved(proposed) else current
         }
         val state = requireNotNull(editor).state.value

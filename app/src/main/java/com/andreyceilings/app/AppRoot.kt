@@ -576,7 +576,7 @@ private fun CeilingsAppContent(
                             measurementPrecision = measurementPrecision,
                             onCreateMeasurement = { updateNavigation(navigation.createMeasurement(it)) },
                             onMeasurementCreated = { projectId, measurementId ->
-                                updateNavigation(navigation.measurementCreated(projectId, measurementId))
+                                updateNavigation(navigation.measurementCreatedInEditor(projectId, measurementId))
                             },
                             onOpenMeasurement = { projectId, measurementId ->
                                 updateNavigation(navigation.openMeasurement(projectId, measurementId))
