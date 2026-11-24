@@ -456,6 +456,14 @@ fun MeasurementDrawing(
                         hypot(screen.x-down.position.x,screen.y-down.position.y)<=halo
                     }
                     val creating=currentAreaMode || currentLineMode || currentMode
+                    val wallPoints = contour.points.map(projection::project)
+                    // A deliberate tap on the wall stroke must not be swallowed by
+                    // a nearby element's larger touch halo. Empty interior taps
+                    // must not switch context just because a wall is 24dp away.
+                    val wallHit = measurementWallAt(wallPoints, down.position.x, down.position.y,
+                        if (workspaceOrientation) 12.dp.toPx() else halo)
+                    val directWallHit = if (workspaceOrientation && !creating)
+                        measurementWallAt(wallPoints, down.position.x, down.position.y, 6.dp.toPx()) else null
                     val area=selectedArea ?: currentAreas.asReversed().minByOrNull(::areaDistance)?.takeIf {areaDistance(it)<=halo}
                     val line=selectedLine ?: currentLines.minByOrNull {lineDistance(it,down.position)}?.takeIf {lineDistance(it,down.position)<=halo}
                     val workspacePointTool = currentMode && currentWorkspacePointPlacement
@@ -611,6 +619,12 @@ fun MeasurementDrawing(
                                         }
                                     } else if (workspacePointTool) {
                                         worldPositionMm(world(position))?.let { point -> currentPointTap(point.xMm, point.yMm) }
+                                    } else if (directWallHit != null &&
+                                        (marker == null || run {
+                                            val p = projection.project(DrawingPoint(marker.xMm.toDouble(), marker.yMm.toDouble()))
+                                            hypot(p.x - down.position.x, p.y - down.position.y) > 9.dp.toPx()
+                                        }) && (line == null || lineDistance(line, down.position) > 5.dp.toPx())) {
+                                        selectTarget(DrawingTarget.WALL, directWallHit.toString()) { currentSelection(directWallHit) }
                                     } else if (marker != null && (!fullscreen || editPointsInFullscreen)) {
                                         selectTarget(DrawingTarget.POINT, marker.uuid) { currentPointSelection(marker.uuid) }
                                     } else if (selectedLine != null) {
@@ -628,9 +642,7 @@ fun MeasurementDrawing(
                                         if (target.x.isFinite() && target.y.isFinite() && target.x in -bound..bound && target.y in -bound..bound)
                                             currentPointTap(target.x.roundToLong(), target.y.roundToLong())
                                     } else {
-                                        val points = contour.points.map(projection::project)
-                                        val wall = measurementWallAt(points, position.x, position.y, 24.dp.toPx())
-                                        if (wall != null) selectTarget(DrawingTarget.WALL, wall.toString()) { currentSelection(wall) }
+                                        if (wallHit != null) selectTarget(DrawingTarget.WALL, wallHit.toString()) { currentSelection(wallHit) }
                                         else if (!currentMode && marker == null) currentEmptyTap()
                                     }
                                     focusRequester.requestFocus()

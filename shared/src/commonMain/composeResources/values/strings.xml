@@ -206,6 +206,7 @@
     <string name="p5c_name_required">Введіть назву заміру.</string>
     <string name="p5c_wall_metres">%1$s, м</string>
     <string name="p5c_metres">%1$s м</string>
+    <string name="p5c_measurement_card_metrics">Площа: %1$s м² · Периметр: %2$s м</string>
     <string name="p5c_shape_rectangle">Прямокутник</string>
     <string name="p5c_shape_l">L-подібна стеля</string>
     <string name="p5c_shape_polygon">Багатокутник (прямі кути)</string>

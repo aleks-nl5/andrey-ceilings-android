@@ -97,11 +97,10 @@ internal fun ObjectsClientsHost(
         headerVisibleFraction = headerVisibleFraction,
         onCreateProjectConsumed = onCreateProjectConsumed,
         horizontalOverlayInset = 16.dp,
-        contentPadding = if (measurementEdit != null) measurementEditorPadding() else PaddingValues(
+        contentPadding = if (measurementEdit != null || measurementCreate != null) measurementEditorPadding() else PaddingValues(
             start = 16.dp, end = 16.dp,
             top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 72.dp,
-            bottom = maxOf(WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + if (fullscreen) 0.dp else 84.dp,
-                if (measurementCreate != null) WindowInsets.ime.asPaddingValues().calculateBottomPadding() else 0.dp)
+            bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + if (fullscreen) 0.dp else 84.dp
         ),
         onSaveClient = { id, draft ->
             withContext(Dispatchers.IO) {

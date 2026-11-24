@@ -334,14 +334,20 @@ fun MeasurementEditScreen(
             if (mode != MeasurementEditContext.COST) lastDrawingContext = mode
         }
     }
-    fun selectSideFromField(side: Int) {
-        if (!enabled || model.promptForDirtyElementBeforeNavigation()) return
+    fun trySelectSide(side: Int): Boolean {
+        if (!enabled || model.promptForDirtyElementBeforeNavigation()) return false
         selected = side
+        selectedWork = null
+        highlightedWorkId = null
+        drawingRelocationTarget = null
         model.clearDrawingSelection()
+        return true
+    }
+    fun selectSideFromField(side: Int) {
+        trySelectSide(side)
     }
     fun select(side: Int) {
-        if (!enabled) return
-        selectSideFromField(side)
+        if (!trySelectSide(side)) return
         if (!fullscreen) {
             openContext(MeasurementEditContext.CONTOUR)
             scope.launch { contourScroll.scrollTo(0) }
@@ -853,8 +859,10 @@ fun MeasurementEditScreen(
                     onOpenSelection = if (fullscreen) { wall ->
                         if (enabled) {
                             if (wall) {
-                                openContext(MeasurementEditContext.CONTOUR)
-                                scope.launch { contourScroll.scrollTo(0) }
+                                if (selected != null && !model.promptForDirtyElementBeforeNavigation()) {
+                                    openContext(MeasurementEditContext.CONTOUR)
+                                    scope.launch { contourScroll.scrollTo(0) }
+                                }
                             } else {
                                 // A double-tap enters the actual geometry editor.
                                 // Single tap only selects/highlights and never expands.

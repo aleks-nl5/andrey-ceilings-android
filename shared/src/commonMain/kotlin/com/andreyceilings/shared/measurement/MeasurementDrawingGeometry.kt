@@ -204,13 +204,32 @@ fun layoutMeasurementDrawingForProjectedPoints(
         vertexLabels.none { overlaps(candidate, it) } &&
             occupiedLabels.none { overlaps(candidate, it) } && fitsExterior(candidate)
 
+    val areaSign = if (points.indices.sumOf { i ->
+        val a = points[i]; val b = points[(i + 1) % points.size]
+        a.x * b.y - b.x * a.y
+    } >= 0) 1 else -1
+    fun outwardNormal(a: DrawingPoint, b: DrawingPoint): DrawingPoint {
+        val dx = b.x - a.x
+        val dy = b.y - a.y
+        val length = hypot(dx, dy)
+        return if (length == 0.0) DrawingPoint(0.0, 0.0)
+            else DrawingPoint(dy / length * areaSign, -dx / length * areaSign)
+    }
     val measuredVertices = vertexSizes.take(points.size)
     measuredVertices.forEachIndexed { i, size ->
         if (size.width <= 0 || size.height <= 0 || size.width > width || size.height > height) return@forEachIndexed
         val point = points[i]
         // Offscreen vertices should never produce clamped labels along the border.
         if (point.x !in 0.0..width.toDouble() || point.y !in 0.0..height.toDouble()) return@forEachIndexed
-        for ((dx, dy) in listOf(1 to -1, -1 to -1, 1 to 1, -1 to 1)) {
+        // Prefer the outside corner bisector, not a fixed top/right screen quadrant.
+        // Compute in projected coordinates so every quarter-turn keeps the label upright.
+        val incoming = outwardNormal(points[(i + points.size - 1) % points.size], point)
+        val outgoing = outwardNormal(point, points[(i + 1) % points.size])
+        val directions = listOf(1 to -1, -1 to -1, 1 to 1, -1 to 1)
+            .sortedByDescending { (dx, dy) ->
+                dx * (incoming.x + outgoing.x) + dy * (incoming.y + outgoing.y)
+            }
+        for ((dx, dy) in directions) {
             val x = (point.x.toFloat() + if (dx > 0) gap * 2 else -size.width - gap * 2).coerceIn(0f, width - size.width)
             val y = (point.y.toFloat() + if (dy > 0) gap * 2 else -size.height - gap * 2).coerceIn(0f, height - size.height)
             val candidate = DrawingLabelBounds(i, x, y, size.width, size.height)
@@ -247,10 +266,6 @@ fun layoutMeasurementDrawingForProjectedPoints(
             closest?.let(vertexLabels::add)
         }
     }
-    val areaSign = if (points.indices.sumOf { i ->
-        val a = points[i]; val b = points[(i + 1) % points.size]
-        a.x * b.y - b.x * a.y
-    } >= 0) 1 else -1
     val labels = mutableListOf<DrawingLabelBounds>()
     sizes.take(points.size).forEachIndexed { i, size ->
         if (size.width <= 0 || size.height <= 0 || size.width > width || size.height > height) return@forEachIndexed
