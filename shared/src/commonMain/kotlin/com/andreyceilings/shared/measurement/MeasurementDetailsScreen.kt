@@ -26,7 +26,7 @@ fun MeasurementDetailsScreen(
     projectId: Long, measurementId: Long, store: MeasurementDetailsStore?,
     contentPadding: PaddingValues, systemTopInset: Dp, onBack: () -> Unit, onEdit: (() -> Unit)? = null,
     navigationGuard: MeasurementCreateNavigationGuard? = null, backLabel: String = "До об'єкта",
-    editStore: MeasurementEditStore? = null, quoteOpen: Boolean = false, onOpenQuote: (() -> Unit)? = null
+    editStore: MeasurementEditStore? = null, quoteOpen: Boolean = false
 ) {
     // Reset collector state with its route/session; never flash a previous record.
     key(projectId, measurementId, store) {
@@ -86,12 +86,6 @@ fun MeasurementDetailsScreen(
             it.uuid == (displayedPoints.find {it.uuid==effectivePoint}?.elementUuid ?: points.modeElementUuid) }
         MeasurementDetailsScreen(state, contentPadding, systemTopInset, onBack, onEdit, navigationGuard, backLabel,
             pricingContent = { compact ->
-                if (!compact && onOpenQuote != null && navigationGuard != null && data?.geometry is MeasurementGeometryView.Captured) {
-                    OutlinedButton(enabled = liveActions && !modalOpen && drawingState?.error == null,
-                        onClick = { if (liveActionsAllowed() && !modalOpen && drawingState?.error == null) onOpenQuote() }) {
-                        Text("Попередній кошторис")
-                    }
-                }
                 MeasurementPricingSection(
                 if (elementsState == MeasurementElementsState.Unavailable) MeasurementPricingState.Unavailable(
                     com.andreyceilings.shared.livepricing.PricingProblemCode.DATABASE_UNAVAILABLE) else pricingState, items.orEmpty(),

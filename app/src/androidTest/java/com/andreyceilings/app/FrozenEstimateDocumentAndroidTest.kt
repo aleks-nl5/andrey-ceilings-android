@@ -100,8 +100,8 @@ class FrozenEstimateDocumentAndroidTest {
                             CeilingsTheme(false) { SavedIndividualQuoteDialog(store, series, revision) {} }
                         }
                     }
-                    compose.waitUntil(10000) { compose.onAllNodesWithText("Створити PDF").fetchSemanticsNodes().isNotEmpty() }
-                    compose.onNodeWithText("Створити PDF").performClick()
+                    compose.waitUntil(10000) { compose.onAllNodesWithContentDescription("Перегляд PDF").fetchSemanticsNodes().isNotEmpty() }
+                    compose.onNodeWithContentDescription("Перегляд PDF").performClick()
                     compose.waitUntil(10000) { compose.onAllNodesWithText("Оформлення").fetchSemanticsNodes().isNotEmpty() }
                     compose.onNodeWithText("Оформлення").performClick()
                     val note = hasText("Примітки") and hasSetTextAction()

@@ -1,8 +1,11 @@
 package com.andreyceilings.app.ui.screens
 
+import android.app.PendingIntent
+import android.content.BroadcastReceiver
 import android.content.ClipData
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.graphics.pdf.PdfDocument
 import android.os.CancellationSignal
 import android.os.ParcelFileDescriptor
@@ -23,6 +26,7 @@ import androidx.compose.ui.graphics.drawscope.CanvasDrawScope
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.LayoutDirection
+import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import com.andreyceilings.shared.estimate.EstimateDocumentAction
 import com.andreyceilings.shared.estimate.EstimateDocumentExporter
@@ -34,6 +38,7 @@ import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -42,6 +47,7 @@ import kotlinx.coroutines.yield
 import java.io.File
 import java.io.IOException
 import java.io.OutputStream
+import java.util.UUID
 import java.nio.file.Files
 
 class EstimatePdfFileProvider : FileProvider()
@@ -87,8 +93,28 @@ internal fun AndroidEstimateDocumentExport(content: @Composable () -> Unit) {
             if (uri != null && message == null) Toast.makeText(context, "PDF збережено.", Toast.LENGTH_SHORT).show()
         }
     }
-    val exporter = EstimateDocumentExporter { pages, action, complete ->
-        if (pendingSave != null) {
+    var pendingShare by remember { mutableStateOf<PendingEstimateShare?>(null) }
+    fun finishShare() {
+        pendingShare?.let {
+            pendingShare = null
+            it.dispose()
+            it.complete(null)
+        }
+    }
+    val chooser = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+        // Some chooser implementations return RESULT_CANCELED both with and without a target.
+        // The chooser's explicit selected-component callback is the confirmation.
+        val share = pendingShare
+        scope.launch {
+            delay(750)
+            if (share != null && pendingShare === share) finishShare()
+        }
+    }
+    DisposableEffect(context) {
+        onDispose { pendingShare?.dispose() }
+    }
+    fun exportDocument(pages: EstimateDocumentPages, action: EstimateDocumentAction, complete: (String?) -> Unit, dispatched: () -> Unit) {
+        if (pendingSave != null || pendingShare != null) {
             complete("Спочатку завершіть збереження PDF.")
         } else {
             scope.launch {
@@ -119,8 +145,24 @@ internal fun AndroidEstimateDocumentExport(content: @Composable () -> Unit) {
                                     clipData = ClipData.newRawUri(pages.fileName, uri)
                                     addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                                 }
-                                context.startActivity(Intent.createChooser(intent, null))
-                                complete(null)
+                                val selectionAction = "${context.packageName}.ESTIMATE_PDF_TARGET.${UUID.randomUUID()}"
+                                val callback = PendingIntent.getBroadcast(context, 0,
+                                    Intent(selectionAction).setPackage(context.packageName),
+                                    PendingIntent.FLAG_ONE_SHOT or PendingIntent.FLAG_MUTABLE)
+                                val receiver = object : BroadcastReceiver() {
+                                    override fun onReceive(context: Context?, selection: Intent?) {
+                                        if (selection?.action != selectionAction ||
+                                            !selection.hasExtra(Intent.EXTRA_CHOSEN_COMPONENT)) return
+                                        dispatched()
+                                        finishShare()
+                                    }
+                                }
+                                ContextCompat.registerReceiver(context, receiver, IntentFilter(selectionAction), ContextCompat.RECEIVER_NOT_EXPORTED)
+                                pendingShare = PendingEstimateShare({
+                                    context.unregisterReceiver(receiver)
+                                    callback.cancel()
+                                }, complete)
+                                chooser.launch(Intent.createChooser(intent, null, callback.intentSender))
                             }
                         }
                     }
@@ -131,13 +173,25 @@ internal fun AndroidEstimateDocumentExport(content: @Composable () -> Unit) {
                     staged?.parentFile?.deleteRecursively()
                     pendingSave = null
                     saveCompletion = null
+                    pendingShare?.dispose()
+                    pendingShare = null
                     complete(ExportFailure)
                 }
             }
         }
     }
+    val exporter = object : EstimateDocumentExporter {
+        override fun export(pages: EstimateDocumentPages, action: EstimateDocumentAction, onComplete: (String?) -> Unit) =
+            exportDocument(pages, action, onComplete) {}
+
+        override fun exportWithShareConfirmation(
+            pages: EstimateDocumentPages, action: EstimateDocumentAction, onComplete: (String?) -> Unit, onShareDispatched: () -> Unit
+        ) = exportDocument(pages, action, onComplete, onShareDispatched)
+    }
     CompositionLocalProvider(LocalEstimateDocumentExporter provides exporter, content = content)
 }
+
+private class PendingEstimateShare(val dispose: () -> Unit, val complete: (String?) -> Unit)
 
 private fun stagePdf(context: Context, directory: String, name: String): File {
     val cache = File(context.cacheDir, directory)

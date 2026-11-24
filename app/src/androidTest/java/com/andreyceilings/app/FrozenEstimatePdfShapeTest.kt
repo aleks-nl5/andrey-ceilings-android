@@ -94,11 +94,11 @@ class FrozenEstimatePdfShapeTest {
                         }
                     }
                     compose.waitUntil(10_000) {
-                        compose.onAllNodesWithText("Створити PDF").fetchSemanticsNodes().isNotEmpty()
+                        compose.onAllNodesWithContentDescription("Перегляд PDF").fetchSemanticsNodes().isNotEmpty()
                     }
                     fun exportFirstRevision(): List<RectF> {
                         compose.runOnIdle { captured = null }
-                        compose.onNodeWithText("Створити PDF").performClick()
+                        compose.onNodeWithContentDescription("Перегляд PDF").performClick()
                         compose.waitUntil(10_000) {
                             compose.onAllNodesWithText("Зберегти PDF").fetchSemanticsNodes().isNotEmpty()
                         }

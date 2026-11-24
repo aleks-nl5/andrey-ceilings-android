@@ -272,7 +272,6 @@ private fun DesktopPriceHost(
                     detailsProjectId = navigation.projectDetails?.projectId,
                     measurementDetails = navigation.measurementDetails,
                     measurementQuote = navigation.measurementQuote,
-                    onOpenMeasurementQuote = { onNavigate(navigation.openMeasurementQuote()) },
                     measurementEdit = navigation.measurementEdit,
                     onEditMeasurement = { projectId, measurementId -> onNavigate(navigation.editMeasurement(projectId, measurementId)) },
                     measurementCreate = navigation.measurementCreate,

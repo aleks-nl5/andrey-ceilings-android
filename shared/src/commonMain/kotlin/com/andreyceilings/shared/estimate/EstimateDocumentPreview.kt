@@ -16,7 +16,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.andreyceilings.shared.measurement.MeasurementElementsStore
+import com.andreyceilings.shared.resources.*
+import org.jetbrains.compose.resources.stringResource
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.launch
 
 enum class EstimateDocumentAction(val label: String) {
@@ -26,6 +29,12 @@ enum class EstimateDocumentAction(val label: String) {
 /** The host owns file permissions and system UI. Completion without a message includes cancellation. */
 fun interface EstimateDocumentExporter {
     fun export(pages: EstimateDocumentPages, action: EstimateDocumentAction, onComplete: (String?) -> Unit)
+
+    /** A chooser launch alone is insufficient to report observed selection of a share target. */
+    fun exportWithShareConfirmation(
+        pages: EstimateDocumentPages, action: EstimateDocumentAction, onComplete: (String?) -> Unit,
+        onShareDispatched: () -> Unit
+    ) = export(pages, action, onComplete)
 }
 
 val LocalEstimateDocumentExporter = staticCompositionLocalOf<EstimateDocumentExporter?> { null }
@@ -37,10 +46,15 @@ internal fun EstimateDocumentPreview(
     revisionUuid: String,
     onClose: () -> Unit
 ) = key(store, seriesUuid, revisionUuid) {
+    var quote by remember { mutableStateOf<SavedIndividualQuote?>(null) }
     EstimateDocumentPreviewDialog(
-        load = { checkNotNull(store.estimateDocument(seriesUuid, revisionUuid)) },
+        load = {
+            quote = checkNotNull(store.savedQuote(seriesUuid, revisionUuid))
+            checkNotNull(store.estimateDocument(seriesUuid, revisionUuid))
+        },
         layout = { document, options, measurer -> layoutEstimateDocument(document, options, measurer) },
-        onClose = onClose
+        onClose = onClose,
+        shareDispatched = { quote?.let { store.markQuoteShareDispatched(it) } ?: false }
     )
 }
 
@@ -53,10 +67,12 @@ internal fun <T : Any> EstimateDocumentPreviewDialog(
     layout: (T, DocumentPresentationOptions, TextMeasurer) -> EstimateDocumentPages,
     onClose: () -> Unit,
     beforeExport: (suspend () -> Unit)? = null,
-    editRoomSections: Boolean = true
+    editRoomSections: Boolean = true,
+    shareDispatched: (suspend () -> Boolean)? = null
 ) {
     val exporter = LocalEstimateDocumentExporter.current
     val measurer = rememberTextMeasurer()
+    val shareConflict = stringResource(Res.string.p5d_share_status_conflict)
     val scope = rememberCoroutineScope()
     var document by remember { mutableStateOf<T?>(null) }
     var loading by remember { mutableStateOf(true) }
@@ -119,10 +135,20 @@ internal fun <T : Any> EstimateDocumentPreviewDialog(
                                     scope.launch {
                                         try {
                                             beforeExport?.invoke()
-                                            exporter.export(pages, action) { result ->
-                                                message = result
+                                            exporter.exportWithShareConfirmation(pages, action, onComplete = { result ->
+                                                if (result != null || message == null) message = result
                                                 exporting = false
-                                            }
+                                            }, onShareDispatched = {
+                                                if (action == EstimateDocumentAction.SHARE && shareDispatched != null) scope.launch(start = CoroutineStart.UNDISPATCHED) {
+                                                    try {
+                                                        if (!shareDispatched()) message = shareConflict
+                                                    } catch (cancelled: CancellationException) {
+                                                        throw cancelled
+                                                    } catch (_: Exception) {
+                                                        message = shareConflict
+                                                    }
+                                                }
+                                            })
                                         } catch (cancelled: CancellationException) {
                                             throw cancelled
                                         } catch (failure: EstimatePreviewLoadFailure) {

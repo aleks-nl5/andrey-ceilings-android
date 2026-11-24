@@ -50,6 +50,7 @@ internal fun WorkspaceElementsHeader(
     canvas: List<MeasurementElement>,
     profile: List<MeasurementElement>,
     activeRole: BusinessRole?,
+    highlightedUuid: String?,
     enabled: Boolean,
     onMaterial: (BusinessRole) -> Unit,
     onAdd: () -> Unit
@@ -66,7 +67,7 @@ internal fun WorkspaceElementsHeader(
                         stringResource(Res.string.p5b_material_archived, item.label)
                     else -> item.label
                 }
-                val active = role == activeRole
+                val active = role == activeRole || (item != null && item.uuid == highlightedUuid)
                 val shape = RoundedCornerShape(12.dp)
                 Column(Modifier.weight(1f).padding(horizontal = 2.dp, vertical = 2.dp)
                     .heightIn(min = 48.dp).clip(shape)

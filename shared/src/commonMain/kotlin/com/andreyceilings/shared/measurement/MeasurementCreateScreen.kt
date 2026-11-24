@@ -40,7 +40,7 @@ import org.jetbrains.compose.resources.stringResource
 fun MeasurementCreateWorkspace(
     projectId: Long, precision: MeasurementPrecision, store: MeasurementEditStore?,
     contentPadding: PaddingValues, systemTopInset: Dp, onBack: () -> Unit, onSaved: (Long) -> Unit,
-    navigationGuard: MeasurementCreateNavigationGuard? = null
+    navigationGuard: MeasurementCreateNavigationGuard? = null, quoteStore: MeasurementElementsStore? = null
 ) {
     if (store == null) {
         Column(Modifier.fillMaxSize().padding(contentPadding)) {
@@ -60,7 +60,7 @@ fun MeasurementCreateWorkspace(
         val parentFlow = remember(store, projectId) { store.observeCreateParent(projectId) }
         val parent by parentFlow.collectAsState(MeasurementCreateParent.Loading)
         MeasurementEditScreen(model, contentPadding, systemTopInset, onBack, navigationGuard,
-            onCreated = onSaved, creationParent = parent)
+            onCreated = onSaved, creationParent = parent, quoteStore = quoteStore)
     }
 }
 
