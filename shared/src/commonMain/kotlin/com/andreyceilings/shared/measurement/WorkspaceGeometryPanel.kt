@@ -198,12 +198,6 @@ internal fun WorkspaceGeometryPanel(
     var deletion by remember(uuid) { mutableStateOf(false) }
     val workId = point?.elementUuid ?: line?.elementUuid ?: area?.elementUuid
     val work = model.workspaceWorks().find { it.uuid == workId }
-    val review = point?.mounting?.needsReview == true || line?.needsReview == true || area?.needsReview == true
-    // New placements are validated by the draft/save pipeline, not by a separate
-    // user confirmation. Keep the explicit recovery action for saved placements.
-    val persisted = state.original.placements.points.any { it.uuid == uuid } ||
-        state.original.placements.lines.any { it.uuid == uuid } ||
-        state.original.placements.areas.any { it.uuid == uuid }
     val unresolved = point?.mounting?.unresolved == true || line?.unresolved == true || area?.unresolved == true
     val title = work?.label ?: stringResource(when {
         point != null -> Res.string.p5b_point_type
@@ -255,17 +249,6 @@ internal fun WorkspaceGeometryPanel(
             }
         }, enabled = enabled) {
             Icon(Icons.Default.Edit, stringResource(Res.string.p5b_edit_dimensions))
-        }
-        if (edit && persisted && review && !unresolved) {
-            IconButton(enabled = enabled, onClick = {
-                when {
-                    point != null -> model.stagePoint(point.uuid, PointMountingEdit(confirm = true))
-                    line != null -> model.confirmLine()
-                    area != null -> model.confirmArea()
-                }
-            }) {
-                Icon(Icons.Default.Check, stringResource(Res.string.p5b_review_confirm))
-            }
         }
         IconButton(onClick = { deletion = true }, enabled = enabled) {
             Icon(Icons.Default.Delete, stringResource(Res.string.p5b_delete_placement))

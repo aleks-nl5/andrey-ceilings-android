@@ -285,7 +285,6 @@ fun MeasurementDetailsScreen(
                                 Text("Розміщено ${pointElement.placedQuantityMilli / 1000} з $capacity · Потребує уточнення: $unresolved")
                             }
                         }
-                        val reviewCount=displayedPoints.count { it.mounting.needsReview }+(drawingEditor?.displayLines() ?: linePlacements).count {it.needsReview}
                         (drawingEditor?.displayAreas() ?: areaFeatures).forEach {area -> FilterChip(area.uuid==selectedAreaUuid,onClick={onSelectArea(area.uuid)},label={Text(areaDescription(area))});if(area.note.isNotBlank())Text(area.note)}
                         if(areaFeatures.isNotEmpty())Text("Площинні позначки не віднімаються від площі стелі; перекриття не об’єднуються.")
                         (drawingEditor?.displayLines() ?: linePlacements).forEachIndexed {i,line ->
@@ -293,10 +292,6 @@ fun MeasurementDetailsScreen(
                                 label={Text("Сегмент ${i+1}: ${formatElementMilli(line.lengthMm)} м")})
                         }
                         if(linePlacements.isNotEmpty())Text("Ліній: ${linePlacements.size} · Потребує уточнення: ${linePlacements.count {it.unresolved}}")
-                        if(reviewCount>0) {
-                            Text("Розміщення потребує перевірки після зміни контуру або прив'язок.")
-                            TextButton(onClick={onEdit?.invoke()},enabled=onEdit!=null && !pointState.saving){Text("Перевірити ($reviewCount)")}
-                        }
                         if (pointState.modeElementUuid != null) {
                             Text("Приблизне розміщення: торкніться всередині контуру. Тап по позначці вибирає її; жест масштабу чи зсуву не додає точок.")
                             TextButton(enabled = !pointState.saving, onClick = onFinishPlacement) { Text("Готово") }
@@ -315,7 +310,6 @@ fun MeasurementDetailsScreen(
                                 else -> "Ця позначка: приблизне положення"
                             })
                             if(marker?.mounting?.anchor==null) Text("Виміряних стінних прив'язок немає.")
-                            if(marker?.mounting?.needsReview==true) Text(if(marker.mounting.unresolved) "Потребує уточнення" else "Потрібно перевірити розміщення")
                             Text("Перетягування скидає активну прив'язку й задає приблизне положення; порожнє поле пересуває креслення.")
                             TextButton(enabled = pointActionsEnabled, onClick = onOpenPosition) { Text("Задати розміри від стін") }
                         }

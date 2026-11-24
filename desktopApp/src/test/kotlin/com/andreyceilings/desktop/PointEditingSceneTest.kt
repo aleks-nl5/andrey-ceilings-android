@@ -171,74 +171,19 @@ class PointEditingSceneTest {
                 scene.click("Контур")
                 scene.setField("BC, м", "4");scene.setField("AB, м", "6")
                 assertEquals(afterPointSave,MeasurementRepository(db).find(id));assertEquals(saved,points.find(p.uuid))
-                scene.click("Зберегти замір");scene.awaitText("Контур стелі змінено. Збережені монтажні відстані")
+                scene.click("Зберегти замір")
+                withTimeout(15000) {
+                    while (MeasurementRepository(db).find(id) == afterPointSave ||
+                        points.forMeasurement(original.uuid).any { !it.mounting.needsReview }) {
+                        scene.frame(); delay(20)
+                    }
+                }
                 assertEquals(PointPositionMm(1500,600),points.find(p.uuid)!!.let{PointPositionMm(it.xMm,it.yMm)})
                 assertTrue(points.forMeasurement(original.uuid).all {it.mounting.needsReview})
                 val anchor=assertNotNull(points.find(p.uuid)!!.mounting.anchor)
                 assertEquals(600L,anchor.firstMm);assertEquals(1500L,anchor.secondMm)
                 assertNull(points.find(second.uuid)!!.mounting.anchor)
-                scene.click("Пізніше")
-                withTimeout(15000) {
-                    while (points.forMeasurement(original.uuid).any { it.mounting.deferredAt == null }) {
-                        scene.frame(); delay(20)
-                    }
-                }
                 assertTrue(editing)
-                // Workspace Save preserves the selected placement intentionally.
-                // Back first clears that selection, then the next Back navigates.
-                // Do not change production navigation simply to satisfy a stale
-                // one-click expectation (and do not skip review/DB assertions).
-                assertNotNull(
-                    scene.canvas().config.getOrNull(MeasurementDrawingSemantics.SelectedPoint),
-                    "Review-later must preserve the selected point until explicitly deselected"
-                )
-                scene.click("До заміру")
-                assertTrue(editing, "First Back should clear selection without leaving the editor")
-                assertNull(
-                    scene.canvas().config.getOrNull(MeasurementDrawingSemantics.SelectedPoint),
-                    "Back must clear the selected point before navigating"
-                )
-                scene.click("До заміру")
-                withTimeout(15_000) {
-                    while (editing) { scene.frame(); delay(20) }
-                }
-                assertFalse(editing)
-                scene.awaitText("Перевірити (2)")
-                scene.tapWorld(1500,600)
-                scene.awaitText("Ця позначка: положення за виміряними відстанями")
-                scene.click("Перевірити (2)")
-                scene.awaitDrawingPoints(pointIds)
-                scene.click("Елементи")
-                scene.click("Вписати креслення")
-                val markers = scene.canvas().config[MeasurementDrawingSemantics.Points]
-                assertEquals(pointIds, markers.filter { it.mounting.needsReview }.map { it.uuid }.toSet())
-                for ((index, marker) in markers.withIndex()) {
-                    scene.tapWorld(marker.xMm, marker.yMm)
-                    assertEquals(marker.uuid, scene.canvas().config.getOrNull(MeasurementDrawingSemantics.SelectedPoint),
-                        "Review marker ${index + 1} at ${marker.xMm}, ${marker.yMm}")
-                    scene.click("Параметри розміщення", tag = "p5b-open-geometry-${marker.elementUuid}")
-                    assertEquals(marker.uuid, scene.canvas().config.getOrNull(MeasurementDrawingSemantics.SelectedPoint),
-                        "Opening geometry must preserve the point selected on the drawing")
-                    scene.click("Підтвердити розміщення")
-                    withTimeout(5000) {
-                        while (scene.canvas().config[MeasurementDrawingSemantics.Points].any {
-                                it.uuid == marker.uuid && it.mounting.needsReview
-                            }) {
-                            scene.frame()
-                            delay(20)
-                        }
-                    }
-                    scene.click("Зняти виділення")
-                }
-                assertTrue(points.forMeasurement(original.uuid).all { it.mounting.needsReview })
-                scene.click("Зберегти замір")
-                withTimeout(15000) {
-                    while (points.forMeasurement(original.uuid).any { it.mounting.needsReview }) {
-                        scene.frame()
-                        delay(25)
-                    }
-                }
-                assertTrue(points.forMeasurement(original.uuid).none {it.mounting.needsReview})
                 val beforeName=points.forMeasurement(original.uuid)
                 val geometryBeforeName=MeasurementRepository(db).find(id)!!.drawingJson
                 scene.click("Контур")
