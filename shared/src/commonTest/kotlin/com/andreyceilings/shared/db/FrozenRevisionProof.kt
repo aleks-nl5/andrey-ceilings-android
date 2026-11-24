@@ -212,5 +212,50 @@ object FrozenRevisionProof {
             .selectHistoricalExactRevision(first.seriesUuid, first.initialRevisionUuid).executeAsOne().payload))
         assertEquals(sequence + 1, db.estimateHistoryQueries.selectEstimateNumberSettings().executeAsOne().nextSequence)
         verifyFrozenEstimateContents(driver)
+        proveDeletedSeriesContinuation(driver, db)
+    }
+
+    private fun proveDeletedSeriesContinuation(driver: SqlDriver, db: PrototypeDatabase) {
+        val fixture = MeasurementPricingFixture.seed(db)
+        val history = ImmutableEstimateRepository(db)
+        val first = history.saveIndividual(FrozenIndividualEstimateProof.command(db, fixture), 2026, 800)
+        val second = history.appendIndividual(request(db, fixture, first.seriesUuid), 801)
+        val old = history.individualHistory(first.seriesUuid)
+        assertTrue(history.deleteIndividualRevision(first.seriesUuid, first.initialRevisionUuid, 1, 802))
+        // Whole-series deletion historically left the remaining version without an individual tombstone.
+        assertTrue(history.deleteIndividualSeries(first.seriesUuid, mapOf(second.initialRevisionUuid to 1L), 803))
+        val parent = old.first().copy(seriesDeletedAt = 803)
+        val fresh = TransientQuotePresenter(fixture.measurementUuid, revisionBase = parent, revisionCarrySource = null)
+        fresh.acceptRead(fresh.beginRead(), LivePricingReader(db).read(fixture.projectId, fixture.measurementUuid))
+        val proposal = AppendIndividualRevisionRequest(checkNotNull(fresh.revisionTarget),
+            checkNotNull(fresh.saveRequest(fixture.projectId, parent.frozen.title)))
+        val failing = object : SqlDriver by driver {
+            override fun execute(identifier: Int?, sql: String, parameters: Int, binders: (SqlPreparedStatement.() -> Unit)?): QueryResult<Long> {
+                val result = driver.execute(identifier, sql, parameters, binders)
+                if (sql.startsWith("INSERT INTO estimate_revision_receipts")) error("Injected continuation failure")
+                return result
+            }
+        }
+        assertFails { ImmutableEstimateRepository(PrototypeDatabase(failing)).appendIndividual(proposal, 804) }
+        assertEquals(803L, history.series(first.seriesUuid)?.deletedAt)
+        assertTrue(history.individualHistory(first.seriesUuid).isEmpty())
+        assertEquals(2, history.revisions(first.seriesUuid).size)
+        assertNull(db.frozenRevisionQueries.selectRevisionReceipt(proposal.calculation.operationUuid).executeAsOneOrNull())
+
+        val third = history.appendIndividual(proposal, 805)
+        assertEquals(first.seriesUuid, third.seriesUuid)
+        assertEquals(first.documentNumber, third.documentNumber)
+        assertEquals(first.localSequence, third.localSequence)
+        val active = history.individualHistory(first.seriesUuid).single()
+        assertEquals(3, active.versionNumber)
+        assertEquals(second.initialRevisionUuid, active.parentRevisionUuid)
+        assertEquals(EstimateWorkflowStatus.DRAFT, active.status)
+        assertNull(db.frozenEstimateQueries.selectFrozenV1(first.seriesUuid).executeAsOneOrNull())
+        for (quote in old) {
+            assertNull(history.exactIndividual(first.seriesUuid, quote.revisionUuid))
+            assertEquals(quote.frozen, history.historicalIndividual(first.seriesUuid, quote.revisionUuid)?.frozen)
+        }
+        assertEquals(third, history.appendIndividual(proposal, 806))
+        verifyFrozenEstimateContents(driver)
     }
 }

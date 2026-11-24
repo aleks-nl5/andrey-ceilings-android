@@ -233,7 +233,7 @@ class ImmutableEstimateRepository(private val database: PrototypeDatabase) {
         return database.transactionWithResult {
             val root = checkNotNull(series(seriesUuid)) { "Estimate series not found" }
             check(root.deletedAt == null) { "Deleted estimate series cannot be revised" }
-            check(database.frozenEstimateQueries.selectFrozenV1(seriesUuid).executeAsOneOrNull() == null) {
+            check(database.frozenRevisionQueries.countFrozenSeries(seriesUuid).executeAsOne() == 0L) {
                 "Exact individual series require the measurement-sourced writer"
             }
             val latest = checkNotNull(queries.selectLatestEstimateRevision(seriesUuid).executeAsOneOrNull()) {

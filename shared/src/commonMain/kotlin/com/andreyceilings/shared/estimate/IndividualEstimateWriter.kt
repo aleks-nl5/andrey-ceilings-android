@@ -41,26 +41,35 @@ internal fun ImmutableEstimateRepository.saveIndividual(
         return@transactionWithResult CreatedEstimateSeries(existing.seriesUuid, existing.documentNumber,
             receipt.revisionUuid, existing.localSequence)
     }
+    val resuming = target?.expectedSeriesDeletedAt
     val previous = target?.let { t ->
         if (!isEstimateUuid(t.seriesUuid) || !isEstimateUuid(t.expectedLatestRevisionUuid) ||
             !isEstimateUuid(t.parentUuid) || t.expectedVersion <= 0 || t.expectedStatusVersion <= 0 ||
-            (t.historicalHead != null && t.parentVersion <= t.expectedVersion))
+            (t.historicalHead != null && t.parentVersion <= t.expectedVersion) || (resuming != null && resuming <= 0))
             fail(IndividualEstimateSaveFailure.Reason.INVALID_COMMAND)
         val root = series(t.seriesUuid) ?: fail(IndividualEstimateSaveFailure.Reason.UNAVAILABLE)
-        if (root.deletedAt != null || root.projectId != request.projectId || root.measurementUuid != request.selection.measurementUuid)
+        if (root.projectId != request.projectId || root.measurementUuid != request.selection.measurementUuid)
             fail(IndividualEstimateSaveFailure.Reason.INVALID_COMMAND)
+        if (root.deletedAt != resuming) fail(IndividualEstimateSaveFailure.Reason.STALE_REVISION)
         if (t.openedRevisionUuid != null && exactIndividual(t.seriesUuid, t.openedRevisionUuid) == null)
             fail(IndividualEstimateSaveFailure.Reason.UNAVAILABLE)
         val latest = frozenIndividual(t.seriesUuid)
         val historicalHead = database.estimateHistoryQueries.selectLatestEstimateRevision(t.seriesUuid).executeAsOneOrNull()
-        if (latest == null || latest.revisionUuid != t.expectedLatestRevisionUuid || latest.versionNumber != t.expectedVersion ||
-            historicalHead == null || historicalHead.revisionUuid != t.parentUuid || historicalHead.versionNumber != t.parentVersion)
+        if (historicalHead == null || historicalHead.revisionUuid != t.parentUuid || historicalHead.versionNumber != t.parentVersion)
             fail(IndividualEstimateSaveFailure.Reason.STALE_REVISION)
-        val frozen = exactIndividual(t.seriesUuid, t.expectedLatestRevisionUuid)
-            ?: fail(IndividualEstimateSaveFailure.Reason.UNAVAILABLE)
+        if (t.parentVersion == Long.MAX_VALUE) fail(IndividualEstimateSaveFailure.Reason.VERSION_EXHAUSTED)
+        val frozen = if (resuming != null) {
+            if (latest != null || t.historicalHead != null || t.openedRevisionUuid != null ||
+                revisions.selectIndividualSeriesForCeiling(request.projectId, request.selection.measurementUuid)
+                    .executeAsList() != listOf(t.seriesUuid))
+                fail(IndividualEstimateSaveFailure.Reason.STALE_REVISION)
+            historicalIndividual(t.seriesUuid, t.expectedLatestRevisionUuid)
+        } else {
+            if (latest == null || latest.revisionUuid != t.expectedLatestRevisionUuid || latest.versionNumber != t.expectedVersion)
+                fail(IndividualEstimateSaveFailure.Reason.STALE_REVISION)
+            exactIndividual(t.seriesUuid, t.expectedLatestRevisionUuid)
+        } ?: fail(IndividualEstimateSaveFailure.Reason.UNAVAILABLE)
         if (frozen.statusVersion != t.expectedStatusVersion) fail(IndividualEstimateSaveFailure.Reason.STALE_STATUS)
-        if (t.parentVersion == Long.MAX_VALUE)
-            fail(IndividualEstimateSaveFailure.Reason.VERSION_EXHAUSTED)
         frozen
     }
     val selection = request.selection
@@ -93,7 +102,7 @@ internal fun ImmutableEstimateRepository.saveIndividual(
         fail(IndividualEstimateSaveFailure.Reason.INVALID_COMMAND)
     val m = checkNotNull(MeasurementRepository(database).findByUuid(selection.measurementUuid))
     val project = checkNotNull(ProjectRepository(database).find(request.projectId))
-    val original = previous?.frozen
+    val original = previous?.frozen?.takeIf { resuming == null }
     if (original != null && original.title == request.title && original.amounts == amounts &&
         QuoteDiscount.parse(original.discountText, original.amounts.discountMode) == discount &&
         original.source.projectTitle == project.title && original.source.measurementName == m.name &&
@@ -167,6 +176,13 @@ internal fun ImmutableEstimateRepository.saveIndividual(
         numberPolicy = policy, publicNumber = EstimateNumbering.printable(created.documentNumber))
     val payload = frozen.encode()
     // These REAL values support legacy history tools only. All P4C1 reads use the exact frozen table.
+    if (resuming != null) {
+        // Whole-series deletion in older builds only marked the series. Preserve every
+        // old version’s invisibility before lifting that marker.
+        revisions.preserveDeletedSeriesRevisions(resuming, created.seriesUuid)
+        if (revisions.resumeDeletedIndividualSeries(created.seriesUuid, resuming).executeAsOneOrNull() == null)
+            fail(IndividualEstimateSaveFailure.Reason.STALE_STATUS)
+    }
     history.insertImmutableEstimateRevision(created.initialRevisionUuid, created.seriesUuid, target?.parentUuid, version, now,
         m.drawingJson, payload, read.source.geometry.precisionStepMeters, rule, "UAH",
         frozen.rounding, amounts.finalCents.toDouble() / 100)

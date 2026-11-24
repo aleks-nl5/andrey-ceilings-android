@@ -41,3 +41,5 @@
 ### Draft PR #166 review follow-up
 
 New individual series creation checks the existing frozen v1 ownership inside the writer transaction, including tombstoned series. Duplicate revisions are rejected before version allocation. Successful retries keep their original receipt. No database migration is required. Focused writer proofs cover historical ownership, retry receipts and identical proposals. The workspace layout and gesture changes are for manual physical APK verification.
+
+Continuing a fully deleted series uses the canonical append receipt and historical parent, retaining the series number. The append transaction preserves existing revision tombstones and fills in missing markers for older whole-series deletions before clearing the series marker. Failure restores the pre-save state. Focused proofs cover rollback, exact old payloads, receipt retry and races against another append or initial create.

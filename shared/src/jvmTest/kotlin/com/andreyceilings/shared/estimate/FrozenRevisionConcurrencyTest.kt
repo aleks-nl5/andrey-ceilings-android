@@ -91,7 +91,7 @@ class FrozenRevisionConcurrencyTest {
     }
 
     @Test fun competingAppendsAndStatusAreSerializedAcrossPhysicalConnections() {
-        for (scenario in listOf("same-operation", "different-operation", "status-race")) {
+        for (scenario in listOf("same-operation", "different-operation", "status-race", "resume-race", "resume-vs-create")) {
             val directory = Files.createTempDirectory("revision-race").toFile()
             val file = directory.resolve("quote.db")
             val pool = Executors.newFixedThreadPool(2)
@@ -102,7 +102,13 @@ class FrozenRevisionConcurrencyTest {
                     val fixture = MeasurementPricingFixture.seed(db)
                     val history = ImmutableEstimateRepository(db)
                     val first = history.saveIndividual(FrozenIndividualEstimateProof.command(db, fixture), 2026, 700)
-                    val command = FrozenRevisionProof.request(db, fixture, first.seriesUuid)
+                    val resuming = scenario.startsWith("resume-")
+                    val activeCommand = FrozenRevisionProof.request(db, fixture, first.seriesUuid)
+                    val command = if (resuming) {
+                        assertTrue(history.deleteIndividualRevision(first.seriesUuid, first.initialRevisionUuid, 1, 701))
+                        activeCommand.copy(target = activeCommand.target.copy(expectedSeriesDeletedAt = 701))
+                    } else activeCommand
+                    val initial = FrozenIndividualEstimateProof.command(db, fixture)
                     val start = CountDownLatch(1)
                     val tasks = (1..2).map { index -> pool.submit<String> {
                         JdbcSqliteDriver("jdbc:sqlite:${file.absolutePath}").use { d ->
@@ -112,11 +118,14 @@ class FrozenRevisionConcurrencyTest {
                             if (scenario == "status-race" && index == 2) {
                                 if (repo.setWorkflowStatus(first.initialRevisionUuid, 1, EstimateWorkflowStatus.APPROVED, 701)) "status" else "stale"
                             } else try {
-                                val request = if (scenario == "different-operation" && index == 2)
+                                if (scenario == "resume-vs-create" && index == 2) {
+                                    repo.saveIndividual(initial, 2026, 702)
+                                }
+                                val request = if ((scenario == "different-operation" || resuming) && index == 2)
                                     command.copy(calculation = command.calculation.copy(operationUuid = newRecordUuid())) else command
-                                repo.appendIndividual(request, 701).initialRevisionUuid
+                                repo.appendIndividual(request, 702).initialRevisionUuid
                             } catch (failure: IndividualEstimateSaveFailure) {
-                                assertTrue(failure.reason in listOf(IndividualEstimateSaveFailure.Reason.STALE_REVISION, IndividualEstimateSaveFailure.Reason.STALE_STATUS))
+                                assertTrue(failure.reason in listOf(IndividualEstimateSaveFailure.Reason.STALE_REVISION, IndividualEstimateSaveFailure.Reason.STALE_STATUS, IndividualEstimateSaveFailure.Reason.SERIES_EXISTS))
                                 "stale"
                             }
                         }
@@ -124,12 +133,12 @@ class FrozenRevisionConcurrencyTest {
                     start.countDown()
                     val results = tasks.map { it.get(20, TimeUnit.SECONDS) }
                     if (scenario == "same-operation") assertEquals(results.first(), results.last())
-                    else if (scenario == "different-operation") assertEquals(1, results.count { it == "stale" })
+                    else if (scenario == "different-operation" || resuming) assertEquals(1, results.count { it == "stale" })
                     else assertTrue("status" in results) // Old alternative remains independently actionable.
                     val latest = history.frozenIndividual(first.seriesUuid)!!
                     assertEquals(if (latest.versionNumber == 1L) 2L else 1L, latest.statusVersion)
                     assertEquals(if ("stale" in results && scenario == "status-race") 1 else 2, history.revisions(first.seriesUuid).size)
-                    assertEquals(history.revisions(first.seriesUuid).size, history.frozenIndividuals().size)
+                    assertEquals(history.revisions(first.seriesUuid).size - if (resuming) 1 else 0, history.frozenIndividuals().size)
                     assertEquals(2, db.estimateHistoryQueries.selectEstimateNumberSettings().executeAsOne().nextSequence)
                     verifyFrozenEstimateContents(driver)
                 }

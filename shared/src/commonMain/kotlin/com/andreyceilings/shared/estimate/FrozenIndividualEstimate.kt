@@ -31,7 +31,8 @@ data class HistoricalRevisionHead(val revisionUuid: String, val versionNumber: L
 data class IndividualRevisionTarget(val seriesUuid: String, val expectedLatestRevisionUuid: String,
     val expectedVersion: Long, val expectedStatusVersion: Long,
     @EncodeDefault(EncodeDefault.Mode.NEVER) val historicalHead: HistoricalRevisionHead? = null,
-    @EncodeDefault(EncodeDefault.Mode.NEVER) val openedRevisionUuid: String? = null
+    @EncodeDefault(EncodeDefault.Mode.NEVER) val openedRevisionUuid: String? = null,
+    @EncodeDefault(EncodeDefault.Mode.NEVER) val expectedSeriesDeletedAt: Long? = null
 ) {
     internal val parentUuid get() = historicalHead?.revisionUuid ?: expectedLatestRevisionUuid
     internal val parentVersion get() = historicalHead?.versionNumber ?: expectedVersion
@@ -175,7 +176,7 @@ data class SavedIndividualQuote(val seriesUuid: String, val createdAt: Long, val
     val status: EstimateWorkflowStatus?, val statusVersion: Long,
     val revisionUuid: String = "", val versionNumber: Long = 1, val parentRevisionUuid: String? = null, val projectId: Long = 0,
     val selectedRevisionUuid: String? = null, val choiceVersion: Long = 1,
-    val historicalHead: HistoricalRevisionHead? = null)
+    val historicalHead: HistoricalRevisionHead? = null, val seriesDeletedAt: Long? = null)
 
 /** Compare drawing and pricing inputs for the workspace warning, independently of provenance. */
 internal fun FrozenIndividualEstimate.hasPricingDrift(current: PricingReadResult.Loaded): Boolean {
@@ -278,6 +279,9 @@ fun verifyFrozenRevisionReceipt(operationUuid: String, command: String, frozen: 
         append.target.parentVersion + 1 == identity.versionNumber && append.target.expectedStatusVersion > 0)
     append.target.historicalHead?.let {
         require(isEstimateUuid(append.target.expectedLatestRevisionUuid) && it.versionNumber > append.target.expectedVersion)
+    }
+    append.target.expectedSeriesDeletedAt?.let {
+        require(it > 0 && append.target.historicalHead == null && append.target.openedRevisionUuid == null)
     }
     append.target.openedRevisionUuid?.let { require(isEstimateUuid(it) && it != identity.revisionUuid) }
     verifyFrozenSaveReceipt(operationUuid, frozenEstimateJson.encodeToString(append.calculation), frozen)

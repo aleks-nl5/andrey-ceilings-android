@@ -243,18 +243,29 @@ class MeasurementElementsStore(private val database: PrototypeDatabase, private 
         estimateAccess { database.frozenRevisionQueries.selectIndividualSeriesForCeiling(projectId, measurementUuid).executeAsList() }
 
     /** Read-only admission; opening/cancelling a revision reserves no number and changes no workflow. */
-    suspend fun prepareRevision(seriesUuid: String, openedRevisionUuid: String? = null): Pair<SavedIndividualQuote, ElementRoute>? = estimateAccess {
+    suspend fun prepareRevision(
+        seriesUuid: String, openedRevisionUuid: String? = null, allowDeletedSeries: Boolean = false
+    ): Pair<SavedIndividualQuote, ElementRoute>? = estimateAccess {
         if (openedRevisionUuid != null && estimates.exactIndividual(seriesUuid, openedRevisionUuid) == null)
             return@estimateAccess null
-        val latest = estimates.frozenIndividual(seriesUuid) ?: return@estimateAccess null
-        val saved = estimates.exactIndividual(seriesUuid, latest.revisionUuid) ?: return@estimateAccess null
+        val historical = estimates.revisions(seriesUuid).lastOrNull() ?: return@estimateAccess null
+        val latest = estimates.frozenIndividual(seriesUuid)
+        val saved = if (latest != null) {
+            val active = estimates.exactIndividual(seriesUuid, latest.revisionUuid) ?: return@estimateAccess null
+            val head = if (historical.revisionUuid == latest.revisionUuid) null
+                else HistoricalRevisionHead(historical.revisionUuid, historical.versionNumber)
+            active.copy(historicalHead = head)
+        } else {
+            if (!allowDeletedSeries || openedRevisionUuid != null) return@estimateAccess null
+            val deletedAt = estimates.series(seriesUuid)?.deletedAt ?: return@estimateAccess null
+            val base = estimates.historicalIndividual(seriesUuid, historical.revisionUuid) ?: return@estimateAccess null
+            if (base.status == null || base.status == EstimateWorkflowStatus.APPROVED) return@estimateAccess null
+            base.copy(seriesDeletedAt = deletedAt)
+        }
         val m = measurements.findByUuid(saved.frozen.source.measurementUuid) ?: return@estimateAccess null
         if (m.deletedAt != null || m.projectId != saved.projectId || projects.find(m.projectId) == null) return@estimateAccess null
         if (pricingReader.readInTransaction(m.projectId, m.uuid) !is PricingReadResult.Loaded) return@estimateAccess null
-        val historical = estimates.revisions(seriesUuid).lastOrNull() ?: return@estimateAccess null
-        val head = if (historical.revisionUuid == latest.revisionUuid) null
-            else HistoricalRevisionHead(historical.revisionUuid, historical.versionNumber)
-        saved.copy(historicalHead = head) to ElementRoute(m.projectId, m.id, m.uuid)
+        saved to ElementRoute(m.projectId, m.id, m.uuid)
     }
     suspend fun setQuoteStatus(
         revisionUuid: String,

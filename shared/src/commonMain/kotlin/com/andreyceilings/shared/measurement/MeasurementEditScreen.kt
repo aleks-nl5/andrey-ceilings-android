@@ -434,7 +434,7 @@ fun MeasurementEditScreen(
                             return@launch
                         }
                         val base = seriesIds.singleOrNull()?.let { id ->
-                            quoteStore.prepareRevision(id, opened?.revisionUuid)?.first ?: run {
+                            quoteStore.prepareRevision(id, opened?.revisionUuid, allowDeletedSeries = opened == null)?.first ?: run {
                                 quoteSeriesBlocked = opened == null
                                 quoteActionError = opened != null
                                 return@launch

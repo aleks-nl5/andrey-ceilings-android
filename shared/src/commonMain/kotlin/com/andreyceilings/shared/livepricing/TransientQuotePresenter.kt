@@ -34,7 +34,7 @@ class TransientQuotePresenter(val measurementUuid: String, val sessionId: String
 ) {
     val revisionTarget = revisionBase?.let { base ->
         IndividualRevisionTarget(base.seriesUuid, base.revisionUuid, base.versionNumber, base.statusVersion, base.historicalHead,
-            revisionCarrySource?.revisionUuid?.takeIf { it != base.revisionUuid })
+            revisionCarrySource?.revisionUuid?.takeIf { it != base.revisionUuid }, base.seriesDeletedAt)
     }
     val compositionUuid: String = newRecordUuid()
     private var request = 0L

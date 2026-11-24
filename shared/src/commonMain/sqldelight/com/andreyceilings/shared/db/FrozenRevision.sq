@@ -89,3 +89,21 @@ SELECT s.seriesUuid FROM estimate_series s
 JOIN estimate_revisions r USING(seriesUuid)
 JOIN estimate_v1_frozen f USING(revisionUuid)
 WHERE s.projectId = ? AND s.measurementUuid = ?;
+
+preserveDeletedSeriesRevisions:
+INSERT INTO estimate_revision_tombstones(revisionUuid, deletedAt)
+SELECT r.revisionUuid, :seriesDeletedAt FROM estimate_revisions r
+WHERE r.seriesUuid = :seriesUuid
+AND NOT EXISTS (SELECT 1 FROM estimate_revision_tombstones d WHERE d.revisionUuid = r.revisionUuid);
+
+resumeDeletedIndividualSeries:
+UPDATE estimate_series SET deletedAt = NULL
+WHERE seriesUuid = :seriesUuid AND deletedAt = :seriesDeletedAt
+AND NOT EXISTS (
+    SELECT 1 FROM estimate_revisions r
+    LEFT JOIN estimate_revision_workflow w USING(revisionUuid)
+    LEFT JOIN estimate_revision_tombstones d USING(revisionUuid)
+    WHERE r.seriesUuid = estimate_series.seriesUuid
+    AND (d.revisionUuid IS NULL OR w.status IS NULL OR w.status = 'APPROVED')
+)
+RETURNING seriesUuid;
