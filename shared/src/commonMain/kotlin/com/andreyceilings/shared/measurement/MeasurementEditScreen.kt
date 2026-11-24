@@ -405,11 +405,19 @@ fun MeasurementEditScreen(
     fun BoxWithConstraintsScope.bodyHeight(headerHeight: Dp) = (maxHeight - headerHeight).coerceAtLeast(0.dp)
     fun BoxWithConstraintsScope.inlineKeyboardPanel() = keyboardVisible && maxWidth >= 480.dp && maxHeight < 140.dp
 
+    // Keep navigation pinned during typing. Only the very short landscape
+    // IME layout prioritizes the focused field and the two essential FABs.
+    fun BoxWithConstraintsScope.normalTabsVisible() = !fullscreen && !inlineKeyboardPanel()
+
     fun BoxWithConstraintsScope.normalPanelHeight(headerHeight: Dp): Dp {
         val bodyHeight = bodyHeight(headerHeight)
         return when {
             inlineKeyboardPanel() -> maxHeight
-            keyboardVisible -> maxOf(bodyHeight * 0.50f, minOf(192.dp, bodyHeight * 0.75f), minOf(88.dp, bodyHeight))
+            keyboardVisible -> maxOf(
+                bodyHeight * 0.50f,
+                minOf(192.dp + tabRowHeight, bodyHeight * 0.75f),
+                minOf(tabRowHeight + 88.dp, bodyHeight)
+            )
             else -> (bodyHeight * 0.60f).coerceAtMost((bodyHeight - 64.dp).coerceAtLeast(0.dp))
         }
     }
@@ -740,7 +748,7 @@ fun MeasurementEditScreen(
                     .testTag("measurement-edit-normal-panel")
             ).then(if (inlineKeyboardPanel) Modifier.padding(start = 60.dp,
                 end = if (statusIsProblem) 112.dp else 60.dp) else Modifier)) {
-                if (!fullscreen && !keyboardVisible) Row(
+                if (normalTabsVisible()) Row(
                     Modifier.fillMaxWidth().onSizeChanged { tabRowPx = it.height }.testTag("measurement-edit-tab-row"),
                     horizontalArrangement = Arrangement.spacedBy(4.dp),
                     verticalAlignment = Alignment.CenterVertically) {
@@ -836,7 +844,7 @@ fun MeasurementEditScreen(
     ) { headerHeight ->
         val normalPanelHeight = normalPanelHeight(headerHeight)
         val inlineKeyboardPanel = inlineKeyboardPanel()
-        val tabBleed = if (!fullscreen && !keyboardVisible) minOf(tabRowHeight, normalPanelHeight) else 0.dp
+        val tabBleed = if (normalTabsVisible()) minOf(tabRowHeight, normalPanelHeight) else 0.dp
         val headerBleed = if (!fullscreen && !inlineKeyboardPanel) headerHeight else 0.dp
         Column(Modifier.fillMaxSize()) {
             Box(Modifier.fillMaxWidth().weight(1f)) {
