@@ -1,0 +1,55 @@
+# Scheduled incremental Actions HISTORY cleanup. Artifact retention is configured
+# separately in upload-artifact steps. No PR code or untrusted event may delete runs.
+name: Retain GitHub Actions history
+
+on:
+  schedule:
+    - cron: '37 4 * * *'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Preview only: do not delete any runs'
+        type: boolean
+        default: true
+        required: true
+      max_delete:
+        description: 'Maximum old runs to delete per execution (1-50)'
+        type: number
+        default: 40
+        required: true
+
+permissions:
+  contents: read
+  actions: write
+
+concurrency:
+  group: actions-history-retention
+  cancel-in-progress: false
+
+jobs:
+  cleanup:
+    name: Retain latest/important runs and clear old history
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+    steps:
+      - name: Checkout trusted default branch
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Prove cleanup selection logic before API deletion
+        run: python3 -m unittest discover -s ci/tests -p 'test_cleanup_actions_runs.py' -v
+      - name: Preview or delete up to 40 old completed runs
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
+          GITHUB_REF: ${{ github.ref }}
+          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run && 'true' || 'false' }}
+          MAX_DELETE: ${{ github.event_name == 'workflow_dispatch' && inputs.max_delete || 40 }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          args=(--max-delete "$MAX_DELETE")
+          if [[ "$DRY_RUN" == true ]]; then args+=(--dry-run); fi
+          python3 ci/cleanup_actions_runs.py "${args[@]}"
