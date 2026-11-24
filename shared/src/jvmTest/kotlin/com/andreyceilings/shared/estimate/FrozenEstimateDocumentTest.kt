@@ -2,6 +2,7 @@ package com.andreyceilings.shared.estimate
 
 import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
 import com.andreyceilings.shared.db.FrozenIndividualEstimateProof
+import com.andreyceilings.shared.db.FrozenRevisionProof
 import com.andreyceilings.shared.db.MeasurementPricingFixture
 import com.andreyceilings.shared.db.PriceCatalogSchema
 import com.andreyceilings.shared.db.PriceGroupRepository
