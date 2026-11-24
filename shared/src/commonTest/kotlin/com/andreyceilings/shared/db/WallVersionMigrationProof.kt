@@ -113,7 +113,7 @@ object WallVersionMigrationProof {
             assertEquals(moved, MeasurementEditStore(db) { 0 }.load(seed.projectId, moved.measurementId))
             assertEquals(expectedWalls(evidence, migrated), db.livePricingQueries.selectPricingWalls(uuid).executeAsList())
             assertEquals(receipts, db.livePricingQueries.selectPricingReceipts(uuid).executeAsList())
-            assertEquals(seed.frozenPayload, assertNotNull(ImmutableEstimateRepository(db).frozenIndividual(seed.seriesUuid)).payload)
+            assertEquals(seed.frozenPayload, db.frozenEstimateQueries.selectFrozenV1(seed.seriesUuid).executeAsOne().payload)
             assertEquals(staleWalls, db.livePricingQueries.selectPricingWalls(seed.stale.uuid).executeAsList())
             assertEquals(seed.stale.copy(updatedAt = seed.stale.updatedAt + 1), MeasurementRepository(db).find(seed.stale.id))
             val reader = LivePricingReader(db)
