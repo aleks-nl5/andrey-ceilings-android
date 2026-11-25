@@ -142,7 +142,7 @@ class FrozenIndividualEstimateTest {
     
             configure("шт.", 515)
             val after = read()
-            assertFalse(frozen.hasMeasurementDrift(after))
+            assertFalse(frozen.hasMeasurementDrift(after.source))
             assertTrue(frozen.hasPricingDrift(after))
             // The user intentionally excluding this row is not the same as a pricing failure.
             val intentional = frozen.copy(omissions = listOf(omitted.copy(reason = ExclusionReason.USER_EXCLUDED, problems = emptyList())))
