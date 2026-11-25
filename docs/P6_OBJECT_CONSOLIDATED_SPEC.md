@@ -111,3 +111,79 @@ Owner approved the technical proposals after read-only inspection of P5D head [e
 5. P6C #140 registries/navigation. Separate calendar #49.
 
 This audit is initial: source code excerpts inspected, not full caller enumeration, schema design, profiling or test execution. Next developer-ready handoff requires those checks on merged main, explicit owner approval, and technical validation of the now-approved carry/deapproval/numbering contract. Do not start code based solely on this file.
+
+---
+
+## P6C — погоджений UX глобального реєстру «Кошториси» (25.11.2026)
+
+Власник погодив 10 рішень нижче. Це актуальний продуктовий контракт і він замінює суперечливі попередні згадки selected version, окремих вкладок, клієнта на картці та прямих дій у реєстрі. Planning only; не починати production implementation. P6C після P6A, #143, P6B (#136).
+
+1. **Екран:** повністю shared CMP поверх KMP; за аналогією з прийнятим екраном «Об'єкти» — стиль карток, типографіка, відступи, moving header, компактний пошук, напівпрозорість/градієнти. Єдиний список обох типів; **без вкладок** (попереднє рішення про три вкладки скасовано). Тип — у фільтрах. Не дублювати workspace або бізнес-дані.
+2. **Картка:** одна компактна картка серії, номер один раз, іконка типу (individual/consolidated), адреса об'єкта + назва стелі для individual або кількість включених стель для consolidated (не видавати спірну кількість за спільну для всіх версій; точне відображення різних manifest — уточнити технічно). **Без імені клієнта на картці.** Усі активні версії видимі без згортання, newest-first; рядок vN, сума, компактна іконка статусу справа від суми. Не повертати окремий механізм selected quote; без inline edit/delete/export.
+3. **Дата:** у кожному рядку vN фактична дата створення цієї версії; без окремої дати серії в заголовку.
+4. **Сортування:** за датою створення останньої версії (default, newest first), датою створення серії, номером, адресою; напрям ascending/descending. Фільтри й сортування в одній панелі з іконки справа від пошуку.
+5. **Фільтри:** тип (усі/individual/consolidated), статус (DRAFT/SENT/APPROVED/REJECTED, можливість кількох), період створення версії (весь час, сьогодні, 7 днів, місяць, рік, власний діапазон); без фільтра за сумою. Reset повертає defaults. Конкретний UI панелі — за погодженим принципом, прототип не є production layout.
+6. **Фільтрація:** відображати лише версії, що відповідають активним фільтрам; якщо немає збігів — приховати всю серію; status і дата мають відповідати одній і тій самій версії. При reset усі активні версії знову видимі. Фільтрація не змінює даних/статусів.
+7. **Пошук:** номер і назва кошторису, адреса об'єкта, назва стелі, ім'я/телефон клієнта (хоча клієнта на картці немає). Без пошуку за матеріалами/роботами. Metadata-only query, без читання всіх frozen payloads.
+8. **Дії:** read-only browse/navigation; tap рядка відкриває саме його series/revision UUID у наявному CMP документі (P5D/P6B). Іконки статусів інформаційні, не відкривають меню; зміни статусу/редагування/видалення/PDF/share/нова версія тільки всередині документа. Немає implicit latest або side effects.
+9. **Стан:** нове відкриття реєстру скидає пошук, фільтри, сортування до defaults; list→document→Back відновлює всі значення та scroll anchor за #141; не плутати новий вхід із поверненням/відновленням дочірнього route.
+10. **Верхня панель:** лише заголовок «Кошториси», пошук та іконка фільтрів/сортування; без статистики, сум або лічильників.
+
+### Технічна підготовка (не дозвіл на код)
+- Перевірка main 25.11: Android `EstimateScreens.kt` містить EstimatesScreen/EstimatesContent та legacy archive; shared `SavedIndividualQuoteScreen.kt` містить SavedIndividualQuoteList/Dialog, P5D workflow. Повністю перенести оболонку в CMP, повторно використовувати документи P5D/P6B, не вважати поточний зовнішній список повністю CMP. Прибрати тестовий архів з основного бізнес-реєстру без видалення даних; точний доступ після аудиту.
+- Один lazy список з stable keys, bounded/paged metadata queries та joins, без N+1, full frozen scans, live repricing або нового фінансового writer. Підтвердити на актуальному main після P6B. Зберегти exact cents/currency/status, tombstones excluded; historical read за існуючими контрактами. Не сумувати версії/типи в реєстрі.
+- Всі нові strings — CMP resources; обидві теми, insets/keyboard, доступність, #141, physical Android APK. Мінімум UI-тестів; common metadata/filter/sort/exact route/state tests, QUICK та фінальний FULL згідно з чинною CI політикою. Owner merge.
+- Непогоджені деталі технічного дизайну (stable tie-break, filtered sorting semantics, різна кількість стель за vN, paging/indexes) — аудит до handoff.
+- Питання 11–35 погоджено нижче; усі три частини P6C завершені продуктово, технічний аудит ще потрібен.
+
+## P6C — погоджений UX глобального реєстру «Стелі» (питання 11–17, 25.11.2026)
+
+11. **Картки:** один спільний CMP-компонент з карткою стелі P6A («Об'єкт»), у глобальному реєстрі додати адресу об'єкта. Компактна мініатюра фактичного збереженого контуру й розміщених елементів, назва, площа, периметр, погоджена сума individual або newest active non-rejected fallback, іконка статусу справа від суми; якщо немає відповідного кошторису — без фінансового рядка. Не live-reprice. Без імені клієнта на картці, без групування за об'єктами. Той самий стиль «Об'єкти»/«Кошториси», moving header/градієнти.
+12. **Сортування:** за створенням стелі (default newest-first), останньою зміною, назвою стелі, адресою, площею або вартістю; ascending/descending. Повторно використовувати панель фільтрів/сортування.
+13. **Фільтри:** об'єкт, стан кошторисів (без кошторису, чернетка, надіслано, погоджено, лише відхилені; multi-select), період створення стелі (весь час, сьогодні, останні 7 днів, поточний місяць/рік, власний період). Без діапазонів площі, периметра, ціни. Точна семантика статусу при кількох версіях має бути узгоджена з P6A summary, аудит перед handoff; не підміняти суму/статус фільтром.
+14. **Пошук:** назва стелі, назва/адреса об'єкта, ім'я/телефон клієнта, номер індивідуального кошторису. Без матеріалів, елементів чи приміток. Metadata-only.
+15. **Дії:** один tap будь-де на картці відкриває саме цю стелю в чинному CMP workspace. Без inline actions, context menu, shortcut to project, delete/copy/edit controls. Робочі дії залишаються всередині відповідної сутності; перевірити доступність чинних необхідних сценаріїв при прибиранні старих кнопок.
+16. **Header:** «Стелі», пошук, єдина іконка фільтрів/сортування, без статистики та окремої кнопки створення; створення через центральний + (погоджений #140 action, не tab).
+17. **Стан:** fresh entry скидає пошук/фільтри/сортування; list→workspace→Back відновлює увесь контекст і scroll anchor #141.
+
+### Технічний напрям реєстру (не production handoff)
+- Read-only перевірка main 25.11: `shared/commonMain/measurement/MeasurementsScreen.kt` вже CMP з KMP `MeasurementsStore` та navigation; Android `MeasurementsHost.kt` лише передає unlocked session, insets, callbacks. Не планувати повторну міграцію цього екрана на CMP. Модернізувати shared UI, винести залишки hardcoded strings у ресурси, не ламати stable route IDs.
+- Reuse P6A thumbnail renderer/cache і фінансову projection: реальний saved contour+placements, без editor Canvas/жестів/сітки/літер/розмірів, лише visible rows, bounded session-memory cache/invalidation geometry+placement revision, clear lock/restore. Global lazy/paged metadata reads, no N+1, no full history/payload scan, no live repricing. Не чекати фінансів/thumbnail перед першим контентом. Перевірити фізичний Android з великою кількістю стель (100/1000 — запропоновані audit datasets, не виміряні результати), холодний/теплий вхід, scroll, пошук/фільтри, швидке повернення; точні критерії та SQL/indexes — audit.
+- #141 до редизайну або окремий узгоджений handoff; preserve source routes/Back, stable keys/anchors, light/dark, IME, accessibility, Android APK acceptance, common tests і мінімум UI tests.
+
+## P6C — погоджена головна панель та персоналізація (питання 18–35, 25.11.2026)
+
+### Остаточний продуктовий контракт (пізніші рішення мають пріоритет)
+18–19. Головна панель налаштовувана, стандартно найближчі роботи першими. Редактор персоналізації лише в Settings → «Вигляд і персоналізація» → «Головна панель» (#137), без додаткової іконки на самій панелі; звичайний доступ до Settings зберігається. Не дублювати налаштування.
+20–22. Картки реєстрів — компактна сітка по дві в рядку, назва/іконка/кількість, tap → відповідний реєстр. Доступні «Стелі», «Кошториси», «Об'єкти», «Клієнти»; за замовчуванням перші дві, інші opt-in. Найближчі роботи на всю ширину. Початковий варіант окремого фінансового блока на всю ширину уточнений п.34.
+23. Кількість кошторисів = число активних series (individual + consolidated), а не vN; одна картка серії = один запис для count. Tombstoned/legacy test records не враховувати.
+24–25, 27. Фінанси = лише погоджена вартість усіх невидалених об'єктів (активних і завершених, незалежно від payment/work status), без графіків, періоду, розподілу оплати. Єдиний shared P6B manifest-aware агрегат: approved consolidated finalCents + approved individual finalCents лише стель поза manifest; якщо немає approved consolidated — approved individuals. Сума по об'єктах без дублювання. Exact cents/checked arithmetic, не змішувати валюти й не вважати суму отриманими платежами; unavailable/corrupt не замінювати нулем, не використовувати курс валют для автоматичної конвертації. Стандартний порядок: найближчі роботи → довідкові фінанси/площа → реєстри → курс валют в самому низу.
+26. Порядок і видимість налаштовуються; drag reorder + доступна альтернатива кнопками, компактний preview/reset, UI preferences застосовуються автоматично після кожної зміни, без окремого Save; відновити defaults одним натисканням. Не переносити цю auto-apply семантику на бізнес-документи чи backup.
+28. Обов'язкові видимі блоки: **найближчі роботи (календар), Стелі, Кошториси, курс валют**. Не дозволяти їх приховати. Фінанси, площа, Об'єкти, Клієнти — опціональні. Курс валют зберегти з усім чинним механізмом роботи, внизу за замовчуванням; порядок усіх блоків налаштовуваний за погодженим принципом. У редакторі показати mandatory status, не захаращувати dashboard lock-іконками.
+29–30. Непарна остання картка реєстрів — на всю ширину (варіант Б). Центрально розташовані більші іконка та назва, кількість — дрібніша довідкова інформація. Іконки `MaterialTheme.colorScheme.primary` (варіант Б після виправлення А), як у поточному DashboardActionTile/CompactMetric. Без нової фіксованої палітри.
+31–32. Фінансовий показник лише інформаційний, без дії на tap і переходу до filtered registry. Початковий горизонтальний full-width варіант п.31 замінено остаточним п.34.
+33–35. Старі окремі action tiles і три CompactMetric замінити новою структурою, але **загальну площу зберегти**. Фінанси та площа — дві компактні інформаційні картки поруч в одному рядку (не один об'єднаний блок і не дві вертикальні), іконка/підпис/значення по центру. Обидві видимі за замовчуванням, приховуються незалежно; якщо одна прихована, інша займає всю ширину. Площа інформаційна, reuse поточний KMP summary real visible measurements, без підміни площі billable area з кошторисів. Синхронізований стиль з фінансами.
+
+### Стандартна конфігурація
+| Блок | Default visible | Hide allowed |
+|---|---|---|
+| Найближчі роботи (#49) | Так | Ні |
+| Погоджена вартість | Так | Так |
+| Загальна площа | Так | Так |
+| Стелі | Так | Ні |
+| Кошториси | Так | Ні |
+| Об'єкти | Ні | Так |
+| Клієнти | Ні | Так |
+| Курс валют | Так, внизу | Ні |
+
+Default: календар на всю ширину; фінанси + площа поруч; Стелі + Кошториси поруч (опціональні Об'єкти/Клієнти в сітці); чинний курс валют внизу. Усі приклади сум/кількості/дат — UX-макети, не реальні дані. Точне packing при reorder між різними типами карток, поведінка на wide layout, storage schema preferences — технічний аудит; не створювати нових продуктних обмежень без погодження. Обов'язковий блок валюти не вимагає доступу до бізнес-БД.
+
+### Навігація, залежності та технічний аудит
+- Зберегти #140 navigation: Панель | Об'єкти | центральний + (Новий замір) | Калькулятор | Календар. Один tap + → project context або picker → існуючий editor, без dummy tab, без анонімних об'єктів; Back/Cancel і saved ceiling route. Dashboard registry tiles → exact lists, optional clients → клієнти в «Об'єкти», no duplicate screens. Пошук і чинна Settings entry доступні незалежно від персоналізації; не вводити нову повнотекстову систему без need. #77/#141 coordination.
+- Read-only перевірка main 25.11: `shared/commonMain/dashboard/DashboardScreen.kt` вже shared CMP, host owns scroll/insets. Є UpcomingEventsCard, DashboardActionTile, CompactMetric, CurrencyRatesCard. `DashboardStore`/ `DashboardSummary` KMP; summary наразі projectCount, measurementCount, measuredAreaSquareMeters через project/measurement Flow, не повний P6B фінансовий агрегат. Extend/reuse shared store; не дублювати бізнес-розрахунок у UI. Existing action tiles «Заміри»/«Калькулятор»/«Об'єкти»/«Кошториси» та compact metrics замінити, preserve routes.
+- P6C не реалізує P7 календар backend. Зберегти чинний реальний empty-state UpcomingEventsCard; після #49 максимум 1 детальна + 3 компактні реальні заплановані роботи, без демо/createdAt. Не переробляти Monobank gateway/cache/refresh, rate errors/date/offline semantics або існуючі callbacks; public data незалежно від SQLCipher. Зберегти loading/unavailable semantics, не відображати fake zero або false error при normal startup.
+- Settings #137: новий погоджений пункт «Вигляд і персоналізація» для dashboard preferences замінює попередню відмову від окремого розділу; тема/мова лишаються header icons. Підключити працездатний editor у рамках P6C (мінімальний settings entry якщо повний P8 ще не готовий); повний Settings redesign #137/#145 не переносити в P6C. Persist stable block IDs/order/visibility, mandatory defaults та restore/reset; local preferences, не encrypted business entities. Конкретний platform storage/backup scope — audit. No inactive/fake controls.
+- Dashboard counts реальних невидалених сутностей; aggregate queries reactive/bounded, без full frozen scans, live repricing, N+1. Exact currency/amount integrity and nonblocking first content. Area/financial source semantics, counts та invalid/unknown data — audit on actual merged P6B, preserve previous accepted area behavior unless separately justified.
+- Acceptance: common unit/domain/query/navigation/preference tests; duplicate/unknown block IDs, missing mandatory entries, reset, reorder, visibility, odd layout, back/restore, exact vN, no duplicate finance, no test/deleted records, currency block regression, no false calendar events. Minimal UI tests; manual physical Android APK for layout/light-dark/IME/accessibility/performance, QUICK and agreed FULL, code review, owner merge. No new Windows/iOS runtime release gates; retain KMP/CMP compilation/tests.
+- **Product planning P6C complete (35 questions, including prior 1–10).** Technical audit, scoped implementation plan and explicit owner authorization still required. No production code/test/CI change in this planning update.
+
