@@ -2,6 +2,10 @@ package com.andreyceilings.shared.estimate
 
 import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
 import com.andreyceilings.shared.db.*
+import com.andreyceilings.shared.livepricing.*
+import com.andreyceilings.shared.measurement.*
+import com.andreyceilings.shared.prices.PlacementKind
+import com.andreyceilings.shared.prices.QuantityMode
 import kotlin.test.*
 
 class FrozenIndividualEstimateTest {
@@ -105,6 +109,45 @@ class FrozenIndividualEstimateTest {
             PriceCatalogSchema.create(it)
             it.execute(null, "PRAGMA foreign_keys=ON", 0)
             FrozenIndividualEstimateProof.run(it)
+        }
+    }
+
+    @Test fun approvedPartialDriftRechecksRelevantOmissions() {
+        JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).use { driver ->
+            PriceCatalogSchema.create(driver)
+            val db = PrototypeDatabase(driver)
+            val history = ImmutableEstimateRepository(db)
+            val fixture = MeasurementPricingFixture.seed(db)
+            val prices = PriceRepository(db)
+            val group = PriceGroupRepository(db).create("Drift " + newRecordUuid(), 510, "шт.", QuantityMode.MANUAL)
+            val id = prices.createInGroup("drift." + newRecordUuid(), "Drift work " + newRecordUuid(),
+                group, 20.0, 511, unit = "шт.", quantityMode = QuantityMode.MANUAL, placementKind = PlacementKind.NONE)
+            val original = checkNotNull(prices.find(id))
+            val work = MeasurementElementRepository(db).createCatalogSelection(fixture.measurementUuid, original.uuid,
+                ElementQuantity.Exact(1000), 512, approval = ElementApproval.APPROVED, businessRole = BusinessRole.ADDITIONAL_WORK)
+            fun read() = assertIs<PricingReadResult.Loaded>(LivePricingReader(db).read(fixture.projectId, fixture.measurementUuid))
+            fun configure(unit: String, now: Long) {
+                prices.updateConfigured(checkNotNull(prices.find(id)), group, original.title, unit,
+                    QuantityMode.MANUAL, PlacementKind.NONE, 20.0, now)
+            }
+            configure("м.п.", 513)
+            val before = read()
+            val saved = history.saveIndividual(FrozenIndividualEstimateProof.command(db, fixture, partial = true), 2026, 514)
+            val frozen = checkNotNull(history.exactIndividual(saved.seriesUuid, saved.initialRevisionUuid)).frozen
+            val omitted = frozen.omissions.single { it.sourceKey == elementKey(work.uuid) }
+            assertEquals(ExclusionReason.UNRESOLVED, omitted.reason)
+            assertTrue(PricingProblemCode.METADATA_DRIFT in omitted.problems)
+            assertFalse(frozen.hasPricingDrift(before))
+            assertFalse(frozen.hasPricingDrift(before.copy(catalog = before.catalog.copy(versionToken = "unrelated change"))))
+    
+            configure("шт.", 515)
+            val after = read()
+            assertFalse(frozen.hasMeasurementDrift(after))
+            assertTrue(frozen.hasPricingDrift(after))
+            // The user intentionally excluding this row is not the same as a pricing failure.
+            val intentional = frozen.copy(omissions = listOf(omitted.copy(reason = ExclusionReason.USER_EXCLUDED, problems = emptyList())))
+            assertFalse(intentional.hasPricingDrift(after))
+            assertEquals(frozen, history.exactIndividual(saved.seriesUuid, saved.initialRevisionUuid)?.frozen)
         }
     }
 }

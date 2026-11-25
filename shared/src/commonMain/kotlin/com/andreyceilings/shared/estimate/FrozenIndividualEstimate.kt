@@ -184,12 +184,27 @@ internal fun FrozenIndividualEstimate.hasPricingDrift(current: PricingReadResult
     if (hasMeasurementDrift(live)) return true
     val elements = source.elements.associateBy { it.uuid }
     val items = current.catalog.items.associateBy { it.uuid }
-    return rows.any { (_, line) ->
+    val includedChanged = rows.any { (_, line) ->
         val item = items[line.catalogItemUuid] ?: return@any true
         val selection = elements[line.elementUuid]?.source as? ElementSource.CatalogSelection ?: return@any true
         item.title != line.title || item.unit != line.unit || item.code != line.stableCode ||
             item.quantityMode != selection.quantityMode || item.placementKind != selection.placementKind ||
             PricingMath.salePriceCents(item.salePrice) != line.unitPriceCents
+    }
+    if (includedChanged) return true
+
+    // A partial approved quote may become outdated even when every included price is
+    // unchanged. Re-evaluate only the previously unresolved omissions, not intentional
+    // exclusions or unrelated catalog entries, using the canonical pricing rules.
+    val unresolvedOmissions = omissions.filter { it.reason == ExclusionReason.UNRESOLVED }
+    if (unresolvedOmissions.isEmpty()) return false
+    val roles = BusinessRoleBindings(live.signature,
+        live.elements.mapNotNull { e -> e.businessRole?.let { e.uuid to it } }.toMap())
+    val preview = LivePricingEngine.buildPreview(live, current.catalog, roles)
+    val currentUnresolved = preview.unresolvedItems.associateBy { it.sourceKey }
+    return unresolvedOmissions.any { omission ->
+        val unresolved = currentUnresolved[omission.sourceKey]
+        unresolved == null || unresolved.reasons.toSet() != omission.problems.toSet()
     }
 }
 

@@ -78,10 +78,11 @@ class TransientQuotePresenter(val measurementUuid: String, val sessionId: String
     private var saveSelection: IndividualEstimateSelection? = null
     private var saveOverrides: List<EstimateQuantityOverride> = emptyList()
     private var loaded: PricingReadResult.Loaded? = null
-    private var excludedConfirmed = emptySet<String>()
-    // Explicit intent survives missing prices/quantities and even removal of the source row.
+    private var explicitlyExcluded = emptySet<String>()
+    // Explicit intent is independent of measurement approval, survives missing prices/quantities
+    // and even removal of the source row.
     // Retain the last known label so the user can identify and explicitly remove a missing work.
-    private var includedDiscussing = emptyMap<String, String>()
+    private var explicitlyIncluded = emptyMap<String, String>()
     private var selectedConfirmed = emptyMap<String, LiveEstimateLine>()
     private var removedConfirmed = emptyMap<String, String>()
     private val mutable = MutableStateFlow(TransientQuoteState())
@@ -145,25 +146,21 @@ class TransientQuotePresenter(val measurementUuid: String, val sessionId: String
     fun select(sourceKey: String, included: Boolean) {
         val s = mutable.value
         if (s.loading || !editable) return
-        if (!included && sourceKey in removedConfirmed) {
+        val row = s.lines.find { it.sourceKey == sourceKey }
+        // Only optional rows are selectable. A previously selected, now unavailable
+        // row may always be explicitly removed from the proposal.
+        if (row?.businessRole != BusinessRole.ADDITIONAL_WORK &&
+            (included || sourceKey !in explicitlyIncluded && sourceKey !in removedConfirmed)) return
+        if (included) {
+            explicitlyExcluded = explicitlyExcluded - sourceKey
+            explicitlyIncluded = explicitlyIncluded + (sourceKey to
+                (s.source?.elements?.find { elementKey(it.uuid) == sourceKey }?.label ?: checkNotNull(row).title))
+        } else {
+            explicitlyIncluded = explicitlyIncluded - sourceKey
+            explicitlyExcluded = explicitlyExcluded + sourceKey
             removedConfirmed = removedConfirmed - sourceKey
             selectedConfirmed = selectedConfirmed - sourceKey
-            changed(); rebuild(); return
         }
-        if (!included && sourceKey in includedDiscussing) {
-            includedDiscussing = includedDiscussing - sourceKey
-            // A previously discussing work may have become confirmed in the refreshed source.
-            if (s.source?.elements?.any { elementKey(it.uuid) == sourceKey &&
-                    it.approval == ElementApproval.APPROVED && it.businessRole == BusinessRole.ADDITIONAL_WORK } == true)
-                excludedConfirmed = excludedConfirmed + sourceKey
-            changed(); rebuild(); return
-        }
-        val row = s.lines.find { it.sourceKey == sourceKey } ?: return
-        if (row.businessRole != BusinessRole.ADDITIONAL_WORK) return
-        if (row.bucket == PricingBucket.CONFIRMED) excludedConfirmed =
-            if (included) excludedConfirmed - sourceKey else excludedConfirmed + sourceKey
-        else if (included) includedDiscussing = includedDiscussing + (sourceKey to
-            (s.source?.elements?.find { elementKey(it.uuid) == sourceKey }?.label ?: row.title))
         changed(); rebuild()
     }
 
@@ -203,7 +200,7 @@ class TransientQuotePresenter(val measurementUuid: String, val sessionId: String
         mutable.update { s -> if (!editable) s else s.copy(
             acknowledgedFingerprint = if (checked && s.canAcknowledge) s.fingerprint else null) }
     }
-    fun close() { closedState.value = true; beginRead(); excludedConfirmed = emptySet(); includedDiscussing = emptyMap()
+    fun close() { closedState.value = true; beginRead(); explicitlyExcluded = emptySet(); explicitlyIncluded = emptyMap()
         mutable.value = TransientQuoteState(loading = false, unavailable = PricingProblemCode.DATABASE_UNAVAILABLE) }
 
     /** Captures one explicit intent; calling code retains this object across uncertain retries. */
@@ -282,24 +279,23 @@ class TransientQuotePresenter(val measurementUuid: String, val sessionId: String
         val sourceKeys = source.elements.map { elementKey(it.uuid) }.toSet()
         val removed = selectedConfirmed.filterKeys { it !in sourceKeys }.mapValues { it.value.title }
         removedConfirmed = (removedConfirmed + removed).filterKeys { it !in sourceKeys }
-        val unavailableSelected = includedDiscussing.mapNotNull { (key, label) ->
+        val unavailableSelected = (explicitlyIncluded.mapNotNull { (key, label) ->
             if (base.priceableLines.any { it.sourceKey == key }) null
             else UnavailableSelectedWork(key, source.elements.find { elementKey(it.uuid) == key }?.label ?: label,
                 base.unresolvedItems.find { it.sourceKey == key }?.reasons.orEmpty())
         } + removedConfirmed.map { (key, label) ->
             UnavailableSelectedWork(key, label, listOf(PricingProblemCode.SELECTION_MISSING))
-        }
+        }).distinctBy { it.sourceKey }
         val keys = base.priceableLines.filter { row ->
-            if (row.bucket == PricingBucket.CONFIRMED) row.businessRole != BusinessRole.ADDITIONAL_WORK || row.sourceKey !in excludedConfirmed
-            else row.businessRole == BusinessRole.ADDITIONAL_WORK && row.sourceKey in includedDiscussing
-        }.map { it.sourceKey }.toSet() + includedDiscussing.keys
+            if (row.businessRole != BusinessRole.ADDITIONAL_WORK) row.bucket == PricingBucket.CONFIRMED
+            else row.sourceKey in explicitlyIncluded ||
+                (row.bucket == PricingBucket.CONFIRMED && row.sourceKey !in explicitlyExcluded)
+        }.map { it.sourceKey }.toSet() + explicitlyIncluded.keys
         selectedConfirmed = keys.mapNotNull { key ->
             currentByKey[key]?.takeIf { it.bucket == PricingBucket.CONFIRMED }?.let { key to it }
         }.toMap()
-        // A temporarily unpriced row keeps the user's exclusion intent while its stable source still exists.
-        excludedConfirmed = excludedConfirmed.intersect(source.elements.filter {
-            it.approval == ElementApproval.APPROVED && it.businessRole == BusinessRole.ADDITIONAL_WORK
-        }.map { elementKey(it.uuid) }.toSet())
+        // Explicit decisions belong to the quote session, not to approval buckets.
+        // Keep exclusions even across temporary unavailability and approval changes.
         var selection = IndividualEstimateSelection(source.projectUuid, measurementUuid, compositionUuid,
             source.signature, data.catalog.signature, "", keys)
         val s = mutable.value
