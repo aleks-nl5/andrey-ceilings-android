@@ -4,6 +4,33 @@ P5B #156/#157 and P5C #161/#162 merged. Next tracked work: [#164](https://github
 
 ---
 
+# NEXT — P6 «Об'єкт» і зведені кошториси (25.11.2026)
+
+**Продуктове планування погоджено власником (27 рішень); реалізація ще не дозволена.** Канонічний [P6 spec + первинний технічний аудит](P6_OBJECT_CONSOLIDATED_SPEC.md), [#136](https://github.com/aleks-nl5/andrey-ceilings-android/issues/136), документаційний [PR #167](https://github.com/aleks-nl5/andrey-ceilings-android/pull/167). Цей блок описує наступний етап, а не замінює поточні gates P5D #164 / PR #166 вище. Перед кодом повторно перевірити merged main, FULL, залежності та погодити bounded handoff. Не вважати початковий аудит завершеним технічним проєктуванням або результатом runtime benchmark.
+
+## Запропонована послідовність після P5D
+
+| Етап | Scope | Залежність / критерій |
+|---|---|---|
+| Завершення P5D | #164 / #166; owner merge, main FULL, звірка umbrella #71/#76/#95/#154 | Не розширювати P5D; окремо відстежити відкладені індикатори розміщення |
+| Безпека даних | [#144](https://github.com/aleks-nl5/andrey-ceilings-android/issues/144) — lifecycle автоматичного backup після змін БД | Підтвердити runtime дефект, окремий PR до нових фінансових таблиць |
+| P6A | [#136](https://github.com/aleks-nl5/andrey-ceilings-android/issues/136) — компактний Об'єкт, стелі, клієнт, summary | Nonblocking open; фізичний Android 20–30 стель, до/після; без fake consolidated state |
+| Нумерація | [#143](https://github.com/aleks-nl5/andrey-ceilings-android/issues/143) — без суфікса, shared/independent counters, prefixes | До P6B; незалежно від P6A за потреби; атомарна унікальність, незмінність старих номерів |
+| P6B | #136 — збережені зведені кошториси, версійність, транзакційні статуси, PDF | Verified frozen sources, migration/backup/restore, інтегроване APK-приймання P6A/B |
+| P6C | [#140](https://github.com/aleks-nl5/andrey-ceilings-android/issues/140) — глобальні Стелі/Кошториси, центральний +, пошук | #141 перед редизайном, #77 узгодити; окремий PR |
+| P7 | [#49](https://github.com/aleks-nl5/andrey-ceilings-android/issues/49) — робочий календар | Після P6; окремий UX/архітектурний етап |
+
+Порядок P6A та #143 — пропозиція delivery, нумерація обов'язково перед P6B. Подальша Android-first [#138](https://github.com/aleks-nl5/andrey-ceilings-android/issues/138) дорожня карта: CMP Settings (#137/#145, #114), незалежний калькулятор #139, інкрементальна локалізація і стабілізація → перший Android-реліз за окремими рішеннями власника. Windows/iOS продуктові hosts #42 та sync #123–127 відкладені, shared KMP/CMP перевірки зберігаються.
+
+## Ключові продуктові зміни P6
+
+- Об'єкт: єдиний вертикальний список, адреса/площа/периметр/погоджена сума → статуси роботи й оплати → клієнт → примітки → Стелі → Зведені кошториси; existing chrome/градієнти/FAB. Реальні компактні мініатюри, збережені суми зі статусом справа, без N+1 або live repricing. Погоджений підсумок об'єкта не подвоює індивідуальні суми стель у погодженому зведеному.
+- Зведений: одна серія на об'єкт, максимум одна approved vN, відкритий список, повноекранний CMP, точний immutable manifest; preselect approved individual, manual rejected allowed, deleted excluded; нова версія або exact carry без дубля. Додаткова fixed/percent знижка; **явний Save до PDF/друку/поширення**; детальний PDF з frozen даних, без архіву PDF bytes.
+- Статуси та logical deletion: атомарне погодження зведеного й включених individual, підтвердження при зміні включеного погодження, default-off checkbox для скасування пов'язаних погоджень, share handoff DRAFT→SENT для включених чернеток. Захищене видалення, історичний доступ до tombstones, approved-only загальні/локальні drift warnings. Робота й оплата незалежні.
+- Ці рішення замінюють стару концепцію transient export, окремого selected UI, згорнутих груп, відсутності загальної знижки. Повний контракт — у P6 spec; не використовувати історичні фрагменти roadmap для суперечливих рішень. No new broad UI suite; resource-backed localization, domain/finance/PDF/DB/restore proofs, owner APK + review + owner-only merge.
+
+---
+
 # P5C — спільний редактор контуру (24.11.2026)
 
 [P5C #161](https://github.com/aleks-nl5/andrey-ceilings-android/issues/161) розробляється стеком над [P5B #157](https://github.com/aleks-nl5/andrey-ceilings-android/pull/157) у `feat/p5c-contour-workspace`. Створення та редагування використовують спільний редактор. Поточні розміри проходять доменну валідацію перед розрахунком або записом. Canvas показує умовний контур для неповної чернетки, а рендер PDF використовує заморожену геометрію. [Контракт і приймання P5C](P5C_CONTOUR_WORKSPACE.md).
