@@ -22,7 +22,7 @@ import java.util.concurrent.atomic.AtomicInteger
 @RunWith(AndroidJUnit4::class)
 class SqlDelightProductionAdaptersTest {
     @Test
-    fun editsNotifyBackupListenersAndEncryptedPortableBackupValidates() = runBlocking {
+    fun editsNotifyQueryObserversAndEncryptedPortableBackupValidates() = runBlocking {
         val context: Context = ApplicationProvider.getApplicationContext()
         val filename = "sqldelight_test_backups.db"
         context.deleteDatabase(filename)
@@ -30,6 +30,8 @@ class SqlDelightProductionAdaptersTest {
         val password = "strong-test-backup-password".toCharArray()
         try {
             CeilingsDatabase.openIsolatedForTesting(context, filename, key).use { database ->
+                // Query invalidation is independent of the retired DB-change backup trigger.
+                // The portable snapshot below is explicitly requested, not observer-driven.
                 val updates = AtomicInteger()
                 val observer = object : SqlDelightChangeTracker.Observer("clients") {
                     override fun onInvalidated(tables: Set<String>) {
