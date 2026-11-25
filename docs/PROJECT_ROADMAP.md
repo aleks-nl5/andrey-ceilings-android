@@ -8,6 +8,8 @@ P5B #156/#157 and P5C #161/#162 merged. Next tracked work: [#164](https://github
 
 **Продуктове планування погоджено власником (27 рішень); реалізація ще не дозволена.** Канонічний [P6 spec + первинний технічний аудит](P6_OBJECT_CONSOLIDATED_SPEC.md), [#136](https://github.com/aleks-nl5/andrey-ceilings-android/issues/136), документаційний [PR #167](https://github.com/aleks-nl5/andrey-ceilings-android/pull/167). Цей блок описує наступний етап, а не замінює поточні gates P5D #164 / PR #166 вище. Перед кодом повторно перевірити merged main, FULL, залежності та погодити bounded handoff. Не вважати початковий аудит завершеним технічним проєктуванням або результатом runtime benchmark.
 
+**P6A технічний напрям погоджено 25.11.2026:** [детальний аудит та acceptance §A.1](P6_OBJECT_CONSOLIDATED_SPEC.md#a1-p6a--погоджений-технічний-напрям-25112026-follow-up). Повторно використовуємо CMP екран/Store; легка пакетна frozen SQL metadata-вибірка в межах об'єкта, без N+1 і live pricing; погоджена сума з individual до P6B. Мініатюра збереженого контуру й розміщених елементів окремим CMP-компонентом, лише видимі, обмежений session-memory кеш за geometry/placement revision; без disk cache, попередньо без міграції. Baseline і порівняння фізичного Android 1/10/30 стель, nonblocking first content, scroll, локальна інвалідація. P6A не реалізує P6B; зберігає перехідний transient consolidated шлях до P6B. Порядок: #166 → #167 → #144 → P6A → #143 → P6B. Це планування, не дозвіл на код.
+
 ## Запропонована послідовність після P5D
 
 | Етап | Scope | Залежність / критерій |
