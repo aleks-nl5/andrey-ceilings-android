@@ -5,12 +5,19 @@ import app.cash.sqldelight.db.SqlDriver
 import com.andreyceilings.shared.estimate.*
 
 /** Full import/reopen audit, including tombstones. Does not reprice any historical revision. */
-fun verifyFrozenEstimateContents(driver: SqlDriver, version: Long = 19) {
+fun verifyFrozenEstimateContents(driver: SqlDriver, version: Long = PriceCatalogSchema.version) {
     fun rejectRows(sql: String) {
         val invalid = driver.executeQuery(null, sql, { c -> c.next(); QueryResult.Value(c.getLong(0)) }, 0).value
         check(invalid == 0L) { "Invalid exact revision provenance" }
     }
     check(!driver.executeQuery(null, "PRAGMA foreign_key_check", { c -> QueryResult.Value(c.next().value) }, 0).value) { "Broken frozen revision foreign key" }
+    if (version >= 21) {
+        rejectRows("""SELECT count(*) FROM estimate_revision_tombstones d
+            LEFT JOIN estimate_revision_workflow w USING(revisionUuid)
+            WHERE typeof(d.deletedAt) != 'integer' OR d.deletedAt <= 0
+            OR w.status IS NULL OR w.status = 'APPROVED'
+            OR d.revisionUuid NOT IN (SELECT revisionUuid FROM estimate_v1_frozen UNION ALL SELECT revisionUuid FROM estimate_revision_frozen)""")
+    }
     if (version >= 18) {
         rejectRows("""SELECT count(*) FROM estimate_revision_workflow w WHERE typeof(version) != 'integer' OR version <= 0
             OR (status IS NULL AND updatedAt IS NOT NULL) OR (status IS NOT NULL AND
@@ -60,6 +67,7 @@ fun verifyFrozenEstimateContents(driver: SqlDriver, version: Long = 19) {
             while (c.next().value) {
                 val payload = checkNotNull(c.getString(0))
                 val frozen = decodeFrozenIndividualEstimate(payload)
+                check(version >= 21 || frozen.formatVersion < 4) { "Fixed discounts require schema 21" }
                 verifyFrozenStoredIdentity(frozen, checkNotNull(c.getLong(6)), c.getString(7), c.getString(5),
                     checkNotNull(c.getLong(1)), checkNotNull(c.getLong(2)), checkNotNull(c.getLong(3)), checkNotNull(c.getLong(4)))
                 verifyFrozenRevisionIdentity(frozen, checkNotNull(c.getString(8)), checkNotNull(c.getString(9)), checkNotNull(c.getLong(10)), c.getString(11))

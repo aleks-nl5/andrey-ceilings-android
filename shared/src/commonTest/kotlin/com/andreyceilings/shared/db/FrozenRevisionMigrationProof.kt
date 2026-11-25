@@ -25,7 +25,7 @@ object FrozenRevisionMigrationProof {
             val history = ImmutableEstimateRepository(db)
             val first = history.saveIndividual(FrozenIndividualEstimateProof.command(db, fixture), 2026, 600)
             db.frozenEstimateQueries.updateEstimateWorkflow(EstimateWorkflowStatus.APPROVED.name, 601, first.seriesUuid, 1).executeAsOne()
-            val payload = db.frozenEstimateQueries.selectFrozenV1(first.seriesUuid).executeAsOne().payload
+            val payload = readPreV21FrozenV1Payload(old, first.seriesUuid)
             old.execute(null, "DROP TABLE estimate_revision_choice", 0)
             old.execute(null, "DROP TABLE estimate_revision_workflow", 0)
             old.execute(null, "DROP TABLE estimate_revision_receipts", 0)
@@ -48,7 +48,7 @@ object FrozenRevisionMigrationProof {
         assertFails { open(interrupted).close() }
         open(v16Schema).use { old ->
             assertEquals(beforeSchema, PriceNameMigrationProof.schema(old))
-            assertEquals(beforePayload, PrototypeDatabase(old).frozenEstimateQueries.selectFrozenV1List().executeAsList().single().payload)
+            assertEquals(beforePayload, readPreV21FrozenV1Payload(old))
         }
         var saved: List<Pair<String, String>> = emptyList()
         open(production).use { current ->
@@ -66,3 +66,25 @@ object FrozenRevisionMigrationProof {
         }
     }
 }
+
+/**
+ * Test-only historical read: fixtures intentionally reopen the exact pre-v21 schema.
+ * Retain the old v1 active-series/workflow joins without referring to the v21
+ * tombstone table. Production reads after migration must still use current queries.
+ */
+internal fun readPreV21FrozenV1Payload(driver: SqlDriver, seriesUuid: String? = null): String =
+    driver.executeQuery(null, """
+        SELECT f.payload
+        FROM estimate_v1_frozen f JOIN estimate_revisions r USING(revisionUuid)
+        JOIN estimate_series s USING(seriesUuid) JOIN estimate_workflow w USING(seriesUuid)
+        WHERE s.deletedAt IS NULL AND r.versionNumber = 1
+        AND (? IS NULL OR s.seriesUuid = ?)
+    """.trimIndent(), { cursor ->
+        check(cursor.next().value) { "Missing historical v1 payload" }
+        val payload = checkNotNull(cursor.getString(0))
+        check(!cursor.next().value) { "Ambiguous historical v1 payload" }
+        QueryResult.Value(payload)
+    }, 2) {
+        bindString(0, seriesUuid)
+        bindString(1, seriesUuid)
+    }.value

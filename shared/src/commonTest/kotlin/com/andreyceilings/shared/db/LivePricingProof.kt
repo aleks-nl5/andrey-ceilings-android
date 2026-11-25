@@ -134,7 +134,6 @@ object LivePricingProof {
         assertEquals(beforeChanges, changes())
         assertEquals(0, writeAttempts)
         val measurement = MeasurementRepository(database).findByUuid(fixture.measurementUuid)!!
-        val model = MeasurementEditModel(null, MeasurementEditStore(database) { 200 }.load(fixture.projectId, measurement.id))
         val quoteStore = MeasurementElementsStore(database, { 200 }, kotlinx.coroutines.Dispatchers.Unconfined)
         val sessions = MeasurementQuoteSession()
         val details = AppNavigationState()
@@ -189,19 +188,6 @@ object LivePricingProof {
         quoteStore.close()
         newVisit.acceptRead(newVisit.beginRead(), loaded); assertNull(newVisit.state.value.amounts)
         freshSessions.clear()
-        assertEquals(beforeChanges, changes())
-        val draft = assertIs<PricingReadResult.Loaded>(loaded.withValidatedDraft(model, loaded.source.signature))
-        assertEquals(loaded.source.elements, draft.source.elements)
-        assertEquals(loaded.source.geometry, draft.source.geometry)
-        assertEquals(beforeChanges, changes())
-        assertEquals(PricingReadResult.Unavailable(PricingProblemCode.STALE_SOURCE), loaded.withValidatedDraft(model, "old"))
-        model.accept(MeasurementCreateIntent.Dimension("length", "5"))
-        val changedDraft = assertIs<PricingReadResult.Loaded>(loaded.withValidatedDraft(model, loaded.source.signature))
-        assertEquals(15.0, changedDraft.source.geometry.areaSquareMeters)
-        assertNotEquals(loaded.source.signature, changedDraft.source.signature)
-        assertEquals(12000, preview.confirmedTotalCents) // original snapshot remains immutable
-        model.accept(MeasurementCreateIntent.Dimension("length", ""))
-        assertEquals(PricingReadResult.Unavailable(PricingProblemCode.INVALID_GEOMETRY), loaded.withValidatedDraft(model, loaded.source.signature))
         assertEquals(beforeChanges, changes())
         val elements = MeasurementElementRepository(database)
         val e = elements.find(fixture.elementUuid)!!

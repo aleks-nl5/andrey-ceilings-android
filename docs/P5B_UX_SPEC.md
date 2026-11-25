@@ -156,3 +156,6 @@
 
 **Статус на цій даті:** виправлення робимо без Codex безпосередньо в Draft PR #157. Деякі пункти поки мають часткову реалізацію/потребують Android APK і CI; не маркувати весь P5B готовим до приймання лише через цей документ.
 
+## 7. P5D follow-up — current owner decisions (25.11.2026)
+
+The dated owner overrides above take precedence over the initial acceptance list: single tap selects/highlights without opening geometry properties; full-screen double tap or explicit settings opens properties. One annotation shortcut menu, trash rather than rare-action ellipsis, declared LINE length independent from segment geometry, optional Unknown, and 60% normal panel remain canonical. The fourth tab and live amount are now P5D, not a P5B regression. Current CI policy is P5B_TEST_POLICY_2026-11-24.md; no automated gesture/layout suite. Context feedback uses a shared CMP icon/popover; critical persistence failures remain visible. A11 local un-applied quantity and A4/A5/A10 require physical regression checks, not assumed acceptance.

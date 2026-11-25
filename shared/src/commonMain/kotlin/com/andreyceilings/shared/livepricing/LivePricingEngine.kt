@@ -86,8 +86,8 @@ object LivePricingEngine {
             val reviewed = source.points.any { it.elementUuid == e.uuid && (it.mounting.needsReview || it.mounting.unresolved) } ||
                 source.lines.any { it.elementUuid == e.uuid && (it.needsReview || it.unresolved) } ||
                 source.areas.any { it.elementUuid == e.uuid && (it.needsReview || it.unresolved) }
-            if (reviewed) reasons += PricingProblemCode.PLACEMENT_REVIEW
             val flags = if (selection?.placementKind == PlacementKind.NONE) emptyList() else buildList {
+                if (reviewed) add(PricingProblemCode.PLACEMENT_REVIEW)
                 if (e.placement == ElementPlacement.UNPLACED) add(PricingProblemCode.PLACEMENT_UNPLACED)
                 if (e.placement == ElementPlacement.APPROXIMATE) add(PricingProblemCode.PLACEMENT_APPROXIMATE)
                 if (quantity != null && e.placedQuantityMilli < quantity) add(PricingProblemCode.PLACEMENT_PARTIAL)

@@ -965,6 +965,52 @@ class WorkspacePlacementDraftTest {
         }
     }
 
+    @Test
+    fun invalidAreaParametersCannotOrphanSelectionOrBlockAfterDiscard() = runBlocking {
+        JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).use { driver ->
+            PriceCatalogSchema.create(driver)
+            val db = PrototypeDatabase(driver)
+            val fixture = PointPlacementProof.fixture(db)
+            val store = MeasurementEditStore(db) { 100 }
+            val editor = MeasurementEditModel(store, store.load(fixture.project, fixture.id))
+
+            editor.beginArea(AreaRole.VOID_MARKER, tool = AreaTool.CIRCLE)
+            editor.setAreaDiameter("0,2")
+            editor.areaTap(2000, 1500)
+            editor.acceptAreaCreation()
+            val circle = editor.displayAreas().single()
+            editor.openAreaProperties()
+            editor.changeAreaProperties { it.copy(diameter = "100", diameterMeasured = true) }
+            assertNull(editor.areaPropertiesCandidate(circle, assertNotNull(editor.state.value.area.properties)))
+            assertFalse(editor.canSaveMountingDraft())
+
+            // The header X used to clear selection while leaving the dirty input hidden.
+            editor.clearDrawingSelection()
+            assertEquals(circle.uuid, editor.state.value.area.selected)
+            assertTrue(editor.state.value.area.dismissProperties)
+            editor.continueAreaProperties()
+            assertEquals("100", editor.state.value.area.properties?.diameter)
+            editor.clearDrawingSelection()
+            editor.discardAreaProperties()
+            assertNull(editor.state.value.area.properties)
+            assertFalse(editor.state.value.area.dismissProperties)
+            assertFalse(editor.promptForDirtyElementBeforeNavigation())
+            assertTrue(editor.canSaveMountingDraft())
+            assertEquals(circle, editor.displayAreas().single())
+            editor.clearDrawingSelection()
+            assertNull(editor.state.value.area.selected)
+            editor.selectArea(circle.uuid)
+            editor.deleteArea()
+            assertTrue(editor.displayAreas().isEmpty())
+            assertTrue(editor.canSaveMountingDraft())
+            editor.undo()
+            assertEquals(circle, editor.displayAreas().single())
+            editor.saveInWorkspace()
+            assertFalse(editor.state.value.dirty, editor.state.value.error)
+            assertEquals(circle.uuid, store.load(fixture.project, fixture.id).placements.areas.single().uuid)
+        }
+    }
+
     private suspend fun addItem(db: PrototypeDatabase, title: String, kind: PlacementKind, unit: String): ElementCatalogItem {
         val repository = PriceRepository(db)
         val group = PriceGroupRepository(db).all().first()

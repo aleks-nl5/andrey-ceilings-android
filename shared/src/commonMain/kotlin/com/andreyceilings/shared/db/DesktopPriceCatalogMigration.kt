@@ -31,7 +31,15 @@ fun openDesktopPriceCatalog(driver: SqlDriver, previouslyExisting: Boolean) {
             "SELECT count(*) FROM sqlite_master WHERE name = 'ceiling_refresh_unchanged_wall_versions'", { cursor ->
                 cursor.next(); QueryResult.Value(cursor.getLong(0) == 1L)
             }, 0).value
-        val versionFloor = if (wallVersionSchema) maxOf(20L, persistedVersion) else persistedVersion
+        val structuralVersion = when {
+            columns("estimate_revision_tombstones").isNotEmpty() -> {
+                check(wallVersionSchema) { "Revision tombstones require the wall-version schema" }
+                21L
+            }
+            wallVersionSchema -> 20L
+            else -> 0L
+        }
+        val versionFloor = maxOf(structuralVersion, persistedVersion)
         val projectColumns = columns("projects")
         check("status" in projectColumns && "seriesUuid" in columns("estimates")) {
             "Існуюча SQLCipher БД має непідтримувану схему. Оновлення скасовано."
@@ -100,7 +108,7 @@ fun openDesktopPriceCatalog(driver: SqlDriver, previouslyExisting: Boolean) {
         if (oldVersion < PriceCatalogSchema.version)
             PriceCatalogSchema.migrate(driver, oldVersion, PriceCatalogSchema.version)
         PriceCatalogSchema.verifyStructure(driver)
-        verifyFrozenEstimateContents(driver)
+        verifyFrozenEstimateContents(driver, PriceCatalogSchema.version)
         StarterPriceCatalog.initialize(database)
         driver.execute(null, "PRAGMA user_version = ${PriceCatalogSchema.version}", 0)
     }

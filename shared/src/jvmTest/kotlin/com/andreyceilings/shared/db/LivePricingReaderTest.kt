@@ -2,7 +2,9 @@ package com.andreyceilings.shared.db
 
 import app.cash.sqldelight.db.*
 import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
+import com.andreyceilings.shared.calculation.MeasurementPrecision
 import com.andreyceilings.shared.livepricing.*
+import com.andreyceilings.shared.prices.*
 import com.andreyceilings.shared.measurement.*
 import java.nio.file.Files
 import java.util.concurrent.*
@@ -10,6 +12,77 @@ import kotlin.test.*
 import kotlinx.coroutines.*
 
 class LivePricingReaderTest {
+    @Test fun currentDraftPreviewStaysReadOnlyAndMatchesCommittedPricing() = runBlocking {
+        JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).use { driver ->
+            PriceCatalogSchema.create(driver)
+            val database = PrototypeDatabase(driver)
+            val fixture = LivePricingProof.seed(database)
+            val reader = LivePricingReader(database)
+            val measurement = assertNotNull(MeasurementRepository(database).findByUuid(fixture.measurementUuid))
+            val loaded = assertIs<PricingReadResult.Loaded>(reader.read(fixture.projectId, fixture.measurementUuid))
+            val preview = loaded.buildPreview()
+            val model = MeasurementEditModel(null, MeasurementEditStore(database) { 200 }.load(fixture.projectId, measurement.id))
+            fun changes() = driver.executeQuery(null, "SELECT total_changes()", { cursor ->
+                cursor.next()
+                QueryResult.Value(cursor.getLong(0))
+            }, 0).value
+            val beforeChanges = changes()
+            val basis = DraftPricingBasis.Saved(loaded)
+            val draft = assertIs<DraftPricingResult.Loaded>(projectDraftPricing(model, model.state.value, basis))
+            assertEquals(loaded.source.elements.toSet(), draft.projection.elements.toSet())
+            assertEquals(loaded.source.geometry, draft.projection.geometry)
+            assertEquals(preview.confirmedTotalCents, draft.preview.confirmedTotalCents)
+            assertEquals(beforeChanges, changes())
+            val oldState = model.state.value
+            model.accept(MeasurementCreateIntent.Dimension("length", "5"))
+            assertEquals(DraftPricingResult.Unavailable(PricingProblemCode.STALE_SOURCE), projectDraftPricing(model, oldState, basis))
+            val changedDraft = assertIs<DraftPricingResult.Loaded>(projectDraftPricing(model, model.state.value, basis))
+            assertEquals(15.0, changedDraft.projection.geometry.areaSquareMeters)
+            assertEquals(15000L, changedDraft.preview.confirmedTotalCents)
+            assertNotEquals(loaded.source.signature, changedDraft.projection.signature)
+            assertEquals(12000, preview.confirmedTotalCents)
+            model.accept(MeasurementCreateIntent.Dimension("length", ""))
+            assertEquals(DraftPricingResult.Unavailable(PricingProblemCode.INVALID_GEOMETRY),
+                projectDraftPricing(model, model.state.value, basis))
+            assertEquals(beforeChanges, changes())
+            val createStore = MeasurementEditStore(database) { 205 }
+            val creation = MeasurementEditModel(createStore, MeasurementEditDocument(0L, 0L,
+                MeasurementCreateDraft(fixture.projectId, MeasurementPrecision.ONE_MILLIMETER, "Pre-save",
+                    outline = MeasurementOutlineDraft.Template("rectangle", mapOf("length" to "4", "width" to "3")))))
+            val picker = createStore.placementCatalog()
+            val canvas = picker.single { it.uuid == (loaded.source.elements.single { e -> e.businessRole == BusinessRole.CANVAS }
+                .source as ElementSource.CatalogSelection).priceItemUuid }
+            val profile = picker.single { it.uuid == (loaded.source.elements.single { e -> e.businessRole == BusinessRole.PRIMARY_PROFILE }
+                .source as ElementSource.CatalogSelection).priceItemUuid }
+            assertTrue(creation.chooseMaterial(BusinessRole.CANVAS, canvas))
+            assertTrue(creation.chooseMaterial(BusinessRole.PRIMARY_PROFILE, profile))
+            val additional = picker.firstOrNull { it.placementKind == PlacementKind.POINT && it.mode == QuantityMode.MANUAL && it.unit == "шт." }
+            additional?.let { creation.addCatalogWork(it, ElementQuantity.Exact(6000), place = false) }
+            val createBasis = DraftPricingBasis.Created(loaded.source.projectUuid, loaded.catalog)
+            val beforeSave = assertIs<DraftPricingResult.Loaded>(projectDraftPricing(creation, creation.state.value, createBasis))
+            assertEquals(12000L, beforeSave.preview.confirmedTotalCents)
+            additional?.let { work ->
+                val pointRow = beforeSave.preview.priceableLines.single { it.catalogItemUuid == work.uuid }
+                assertEquals(6000L, pointRow.effectiveBillableQuantityMilli)
+                assertTrue(PricingProblemCode.PLACEMENT_UNPLACED in pointRow.reviewFlags)
+                creation.undo()
+                val undone = assertIs<DraftPricingResult.Loaded>(projectDraftPricing(creation, creation.state.value, createBasis))
+                assertTrue(undone.preview.priceableLines.none { it.catalogItemUuid == work.uuid })
+                creation.redo()
+                val redone = assertIs<DraftPricingResult.Loaded>(projectDraftPricing(creation, creation.state.value, createBasis))
+                assertEquals(beforeSave.preview.priceableLines, redone.preview.priceableLines)
+            }
+            assertEquals(beforeChanges, changes())
+            assertTrue(creation.saveInWorkspace(forQuote = true))
+            val committed = creation.state.value
+            assertFalse(committed.creating)
+            assertFalse(committed.dirty)
+            val newCanonical = assertIs<PricingReadResult.Loaded>(reader.read(fixture.projectId, committed.draft.recordUuid))
+            assertEquals(beforeSave.preview.priceableLines, newCanonical.buildPreview().priceableLines)
+            assertEquals(beforeSave.preview.confirmedTotalCents, newCanonical.buildPreview().confirmedTotalCents)
+        }
+    }
+
     @Test fun deployedV19FileUpgradeRepairsOnlyTheProvenWallSet() =
         physicalWallRepair { file -> JdbcSqliteDriver("jdbc:sqlite:${file.absolutePath}") }
 
@@ -66,7 +139,8 @@ class LivePricingReaderTest {
     @Test fun version19MigrationRepairsOnlyWallsBackedByACompletedEdit() {
         JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).use { driver ->
             PriceCatalogSchema.create(driver)
-            // The v20 trigger is the only structural difference from v19.
+            // Reconstruct the physical v19 schema from the current fixture.
+            driver.execute(null, "DROP TABLE estimate_revision_tombstones", 0)
             driver.execute(null, "DROP TRIGGER ceiling_refresh_unchanged_wall_versions", 0)
             PriceCatalogSchema.verifyStructure(driver, 19)
             val db = PrototypeDatabase(driver)

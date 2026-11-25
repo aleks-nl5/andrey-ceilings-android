@@ -20,6 +20,7 @@ object RevisionWorkflowMigrationProof {
         var payloads = emptyList<String>()
         val schema = open(v17Schema).use { d ->
             PrototypeDatabase.Schema.migrate(d, 17, 18)
+            PrototypeDatabase.Schema.migrate(d, 20, 21)
             val db = PrototypeDatabase(d); val fixture = MeasurementPricingFixture.seed(db)
             val repo = ImmutableEstimateRepository(db)
             val first = repo.saveIndividual(FrozenIndividualEstimateProof.command(db, fixture), 2026, 600)
@@ -28,6 +29,7 @@ object RevisionWorkflowMigrationProof {
             payloads = db.frozenRevisionQueries.selectExactHistory(series).executeAsList().map { it.payload }
             // This is the only status persisted by the original v17 application.
             db.frozenEstimateQueries.updateEstimateWorkflow("APPROVED", 602, series, 1).executeAsOne()
+            d.execute(null, "DROP TABLE estimate_revision_tombstones", 0)
             d.execute(null, "DROP TABLE estimate_revision_choice", 0)
             d.execute(null, "DROP TABLE estimate_revision_workflow", 0)
             verifyFrozenEstimateStructure(d, 17)

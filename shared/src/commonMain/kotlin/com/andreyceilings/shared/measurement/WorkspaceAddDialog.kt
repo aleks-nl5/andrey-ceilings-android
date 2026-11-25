@@ -24,7 +24,7 @@ import androidx.compose.material.icons.filled.RadioButtonUnchecked
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.ArrowForward
 import androidx.compose.material.icons.filled.OpenWith
-import androidx.compose.material.icons.filled.HelpOutline
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -42,6 +42,8 @@ import com.andreyceilings.shared.livepricing.BusinessRole
 import com.andreyceilings.shared.prices.PlacementKind
 import com.andreyceilings.shared.prices.normalizedNameKey
 import com.andreyceilings.shared.resources.*
+import com.andreyceilings.shared.ui.ContextFeedbackIcon
+import com.andreyceilings.shared.ui.ContextFeedbackKind
 import kotlinx.coroutines.CancellationException
 import org.jetbrains.compose.resources.stringResource
 
@@ -50,11 +52,13 @@ internal fun WorkspaceElementsHeader(
     canvas: List<MeasurementElement>,
     profile: List<MeasurementElement>,
     activeRole: BusinessRole?,
+    highlightedUuid: String?,
     enabled: Boolean,
     onMaterial: (BusinessRole) -> Unit,
     onAdd: () -> Unit
 ) {
     Column {
+        WorkspaceFinancialSummary {
         Row(verticalAlignment = Alignment.CenterVertically) {
             for (role in listOf(BusinessRole.CANVAS, BusinessRole.PRIMARY_PROFILE)) {
                 val current = if (role == BusinessRole.CANVAS) canvas else profile
@@ -66,26 +70,34 @@ internal fun WorkspaceElementsHeader(
                         stringResource(Res.string.p5b_material_archived, item.label)
                     else -> item.label
                 }
-                val active = role == activeRole
+                val active = role == activeRole || (item != null && item.uuid == highlightedUuid)
                 val shape = RoundedCornerShape(12.dp)
-                Column(Modifier.weight(1f).padding(horizontal = 2.dp, vertical = 2.dp)
+                Row(Modifier.weight(1f).padding(horizontal = 2.dp, vertical = 3.dp)
                     .heightIn(min = 48.dp).clip(shape)
-                    .then(if (active) Modifier.background(MaterialTheme.colorScheme.secondaryContainer)
-                        .border(1.dp, MaterialTheme.colorScheme.primary, shape) else Modifier)
-                    .clickable(enabled = enabled && current.size <= 1) { onMaterial(role) }
+                    .background(if (active) MaterialTheme.colorScheme.secondaryContainer
+                        else MaterialTheme.colorScheme.surface)
+                    .border(1.dp, if (active) MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.outlineVariant, shape)
+                    .clickable(enabled = enabled && current.size <= 1, role = androidx.compose.ui.semantics.Role.Button) { onMaterial(role) }
                     .testTag("p5b-material-${role.name}").semantics { selected = active }
-                    .padding(horizontal = 6.dp, vertical = 4.dp),
-                    verticalArrangement = Arrangement.Center) {
-                    Text(stringResource(materialLabel(role)), style = MaterialTheme.typography.labelMedium, maxLines = 2,
-                        overflow = TextOverflow.Ellipsis)
-                    Text(state, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    .padding(start = 6.dp, end = 2.dp, top = 4.dp, bottom = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.Center) {
+                        Text(stringResource(materialLabel(role)), style = MaterialTheme.typography.labelMedium, maxLines = 2,
+                            overflow = TextOverflow.Ellipsis)
+                        Text(state, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                    Icon(Icons.Default.KeyboardArrowDown, contentDescription = null, modifier = Modifier.size(16.dp),
+                        tint = if (enabled && current.size <= 1) MaterialTheme.colorScheme.onSurfaceVariant
+                            else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f))
                 }
             }
             IconButton(onClick = onAdd, modifier = Modifier.testTag("measurement-workspace-add"), enabled = enabled) {
                 Icon(Icons.Default.Add, stringResource(Res.string.p5b_add_title))
             }
         }
-        HorizontalDivider()
+        }
+        WorkspacePanelDivider()
     }
 }
 
@@ -186,8 +198,9 @@ internal fun WorkspaceCatalogSearch(
                         }, stringResource(Res.string.p5b_declared_quantity, work.unit.orEmpty()),
                             modifier = Modifier.fillMaxWidth(), compact = true,
                             isError = existingQuantityInvalid, allowDecimalSeparator = work.unit != "шт.")
-                        WorkspaceQuantityHelp(Modifier.align(Alignment.CenterEnd).padding(end = 2.dp))
                     }
+                    if (existingQuantityInvalid) WorkspaceFieldError(stringResource(Res.string.p5b_quantity_invalid))
+                    else WorkspaceQuantityHelp()
                     IconButton(onClick = {
                         val parsed = if (existingQuantity.isBlank()) ElementQuantity.Unknown
                             else parseElementMilli(existingQuantity, work.unit)?.let { ElementQuantity.Exact(it) }
@@ -198,11 +211,10 @@ internal fun WorkspaceCatalogSearch(
                         Icon(Icons.Default.Close, stringResource(Res.string.p5b_cancel_placement))
                     }
                 }
-                if (existingQuantityInvalid) Text(stringResource(Res.string.p5b_quantity_invalid),
-                    color = MaterialTheme.colorScheme.error)
             }
             if (!canPlace && !editExisting)
-                Text(stringResource(Res.string.p5b_capacity_full), style = MaterialTheme.typography.labelSmall)
+                ContextFeedbackIcon(stringResource(Res.string.p5b_capacity_full),
+                    stringResource(Res.string.p5b_capacity_full), ContextFeedbackKind.WARNING)
         } else if (item != null) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = { selectedCatalog = null; selectedWork = null },
@@ -212,18 +224,9 @@ internal fun WorkspaceCatalogSearch(
                 Text(item.title, style = MaterialTheme.typography.titleSmall,
                     modifier = Modifier.weight(1f).testTag("p5b-catalog-detail-title"), maxLines = 2, overflow = TextOverflow.Ellipsis)
                 if (item.placementKind == PlacementKind.NONE && item.mode == com.andreyceilings.shared.prices.QuantityMode.ENTERED_LENGTH) {
-                    var helpOpen by remember(item.uuid) { mutableStateOf(false) }
-                    Box {
-                        IconButton(onClick = { helpOpen = true }, modifier = Modifier.size(40.dp).testTag("p5b-line-kind-help")) {
-                            Icon(Icons.Default.HelpOutline, stringResource(Res.string.p5b_line_kind_help))
-                        }
-                        DropdownMenu(expanded = helpOpen, onDismissRequest = { helpOpen = false }) {
-                            DropdownMenuItem(text = {
-                                Text(stringResource(Res.string.p5b_line_kind_required),
-                                    style = MaterialTheme.typography.bodySmall)
-                            }, onClick = { helpOpen = false })
-                        }
-                    }
+                    ContextFeedbackIcon(stringResource(Res.string.p5b_line_kind_required),
+                        stringResource(Res.string.p5b_line_kind_help), ContextFeedbackKind.HELP,
+                        modifier = Modifier.testTag("p5b-line-kind-help"))
                 }
             }
             Text(stringResource(placementLabel(item.placementKind)), style = MaterialTheme.typography.bodySmall)
@@ -245,8 +248,9 @@ internal fun WorkspaceCatalogSearch(
                             stringResource(Res.string.p5b_declared_quantity, item.unit),
                             modifier = Modifier.fillMaxWidth(), compact = true, isError = entered == null,
                             allowDecimalSeparator = item.unit != "шт.")
-                        WorkspaceQuantityHelp(Modifier.align(Alignment.CenterEnd).padding(end = 2.dp))
                     }
+                    if (entered == null) WorkspaceFieldError(stringResource(Res.string.p5b_quantity_invalid))
+                    else WorkspaceQuantityHelp()
                 } else Text(formatElementQuantity(default, item.unit), modifier = Modifier.weight(1f))
                 if (item.placementKind != PlacementKind.NONE) IconButton(enabled = canPlace, onClick = {
                     model.addCatalogWork(item, checkNotNull(entered), place = true,
@@ -420,17 +424,6 @@ private fun WorkspaceBinocularsIcon() {
 
 @Composable
 internal fun WorkspaceQuantityHelp(modifier: Modifier = Modifier) {
-    var expanded by remember { mutableStateOf(false) }
-    Box(modifier) {
-        IconButton(onClick = { expanded = !expanded }, modifier = Modifier.size(40.dp)) {
-            Icon(Icons.Default.HelpOutline, stringResource(Res.string.p5b_quantity_help_short),
-                modifier = Modifier.size(21.dp))
-        }
-        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-            DropdownMenuItem(text = {
-                Text(stringResource(Res.string.p5b_quantity_help_description),
-                    style = MaterialTheme.typography.bodySmall)
-            }, onClick = { expanded = false })
-        }
-    }
+    ContextFeedbackIcon(stringResource(Res.string.p5b_quantity_help_description),
+        stringResource(Res.string.p5b_quantity_help_short), ContextFeedbackKind.HELP, modifier)
 }

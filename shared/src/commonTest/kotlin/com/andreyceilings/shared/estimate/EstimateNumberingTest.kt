@@ -131,4 +131,13 @@ class EstimateNumberingTest {
         assertEquals(EstimateNumbering.preview(EstimateNumberPolicy()), EstimateNumbering.preview(EstimateNumberPolicy()))
         assertEquals("AC-2026-00001-K7Q2M8TR92", EstimateNumbering.preview(EstimateNumberPolicy()))
     }
+
+    @Test fun compactNumberHidesOnlyGeneratedToken() {
+        val policy = EstimateNumberPolicy(prefix = "КШ", sequenceWidth = 4)
+        assertEquals("КШ-2026-0036", EstimateNumbering.displayNumber("КШ-2026-0036-2B27AE138F", policy))
+        val custom = policy.copy(template = "{prefix}/{suffix}/{year}/{sequence}", suffixLabel = "AB")
+        assertEquals("КШ/AB/2026/0036", EstimateNumbering.displayNumber("КШ/AB-2B27AE138F/2026/0036", custom))
+        assertEquals("КШ-2026-0036", EstimateNumbering.displayNumber("КШ-2026-0036", policy))
+    }
+
 }

@@ -15,11 +15,31 @@ insertRevisionWorkflow:
 INSERT INTO estimate_revision_workflow VALUES (?, 'DRAFT', 1, ?);
 insertRevisionChoice:
 INSERT INTO estimate_revision_choice VALUES (?, NULL, 1, NULL);
+selectActiveQuoteWorkflow:
+SELECT r.revisionUuid, r.seriesUuid, s.projectId, s.measurementUuid, w.status, w.version
+FROM estimate_revision_workflow w
+JOIN estimate_revisions r USING(revisionUuid)
+JOIN estimate_series s USING(seriesUuid)
+WHERE r.revisionUuid = ? AND s.deletedAt IS NULL
+AND NOT EXISTS (SELECT 1 FROM estimate_revision_tombstones d WHERE d.revisionUuid = r.revisionUuid)
+AND r.revisionUuid IN (SELECT revisionUuid FROM estimate_v1_frozen UNION ALL SELECT revisionUuid FROM estimate_revision_frozen);
+
+selectApprovedQuoteVersions:
+SELECT r.revisionUuid, w.version
+FROM estimate_revision_workflow w
+JOIN estimate_revisions r USING(revisionUuid)
+JOIN estimate_series s USING(seriesUuid)
+WHERE s.projectId = :projectId AND s.measurementUuid = :measurementUuid AND s.deletedAt IS NULL
+AND w.status = 'APPROVED'
+AND NOT EXISTS (SELECT 1 FROM estimate_revision_tombstones d WHERE d.revisionUuid = r.revisionUuid)
+AND r.revisionUuid IN (SELECT revisionUuid FROM estimate_v1_frozen UNION ALL SELECT revisionUuid FROM estimate_revision_frozen);
+
 updateRevisionWorkflow:
 UPDATE estimate_revision_workflow SET status = ?, version = version + 1, updatedAt = max(coalesce(updatedAt, 0) + 1, ?)
 WHERE revisionUuid = ? AND version = ? AND version < 9223372036854775807 AND coalesce(updatedAt, 0) < 9223372036854775807
 AND EXISTS (SELECT 1 FROM estimate_revisions r JOIN estimate_series s ON s.seriesUuid = r.seriesUuid
- WHERE r.revisionUuid = estimate_revision_workflow.revisionUuid AND s.deletedAt IS NULL)
+ WHERE r.revisionUuid = estimate_revision_workflow.revisionUuid AND s.deletedAt IS NULL
+ AND NOT EXISTS (SELECT 1 FROM estimate_revision_tombstones d WHERE d.revisionUuid = r.revisionUuid))
 RETURNING version;
 selectRevisionChoice:
 SELECT * FROM estimate_revision_choice WHERE seriesUuid = ?;
@@ -28,5 +48,14 @@ UPDATE estimate_revision_choice SET selectedRevisionUuid = :revisionUuid, versio
 WHERE seriesUuid = :seriesUuid AND version = :expectedVersion AND version < 9223372036854775807 AND coalesce(updatedAt, 0) < 9223372036854775807
 AND EXISTS (SELECT 1 FROM estimate_revisions r JOIN estimate_series s ON s.seriesUuid = r.seriesUuid
  WHERE r.seriesUuid = :seriesUuid AND r.revisionUuid = :revisionUuid AND s.deletedAt IS NULL
- AND r.revisionUuid IN (SELECT revisionUuid FROM estimate_v1_frozen UNION ALL SELECT revisionUuid FROM estimate_revision_frozen))
+ AND NOT EXISTS (SELECT 1 FROM estimate_revision_tombstones d WHERE d.revisionUuid = r.revisionUuid)
+AND r.revisionUuid IN (SELECT revisionUuid FROM estimate_v1_frozen UNION ALL SELECT revisionUuid FROM estimate_revision_frozen))
 RETURNING version;
+
+selectActiveSeriesWorkflow:
+SELECT r.revisionUuid, w.status, w.version FROM estimate_revisions r
+JOIN estimate_revision_workflow w USING(revisionUuid)
+JOIN estimate_series s USING(seriesUuid)
+WHERE r.seriesUuid = ? AND s.deletedAt IS NULL
+AND NOT EXISTS (SELECT 1 FROM estimate_revision_tombstones d WHERE d.revisionUuid = r.revisionUuid)
+AND r.revisionUuid IN (SELECT revisionUuid FROM estimate_v1_frozen UNION ALL SELECT revisionUuid FROM estimate_revision_frozen);

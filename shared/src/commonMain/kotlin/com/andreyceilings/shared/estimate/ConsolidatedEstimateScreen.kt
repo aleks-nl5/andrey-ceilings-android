@@ -179,7 +179,6 @@ private fun ConsolidatedRoomCard(
                                 Text("${option.number} · v${option.version} · ${option.title}")
                                 Text("$status · ${measurementMoney(option.finalCents)}",
                                     style = MaterialTheme.typography.bodySmall)
-                                if (option.selectedForWork) Text("Обрано для роботи", style = MaterialTheme.typography.bodySmall)
                             }
                         }
                     }

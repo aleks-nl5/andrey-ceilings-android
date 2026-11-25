@@ -25,7 +25,8 @@ fun DecimalInputField(
     modifier: Modifier = Modifier, enabled: Boolean = true, isError: Boolean = false,
     signed: Boolean = false, allowDecimalSeparator: Boolean = true,
     onNext: (() -> Unit)? = null,
-    compact: Boolean = false
+    compact: Boolean = false,
+    dense: Boolean = false
 ) {
     val requester = remember { FocusRequester() }
     var field by remember { mutableStateOf(TextFieldValue(value, TextRange(value.length))) }
@@ -59,10 +60,10 @@ fun DecimalInputField(
         imeAction = if (onNext == null) ImeAction.Default else ImeAction.Next
     )
     val actions = KeyboardActions(onNext = onNext?.let { next -> { next() } })
-    if (compact) {
+    if (compact || dense) {
         CompactOutlinedField(field, ::update, label, modifier = inputModifier,
             enabled = enabled, isError = isError, keyboardOptions = options,
-            keyboardActions = actions, leadingIcon = signIcon)
+            keyboardActions = actions, leadingIcon = signIcon, dense = dense)
     } else {
         OutlinedTextField(field, ::update, label = { Text(label) },
             modifier = inputModifier, enabled = enabled, singleLine = true,

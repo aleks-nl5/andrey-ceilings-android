@@ -24,6 +24,7 @@ import com.andreyceilings.shared.input.DecimalInputField
 import com.andreyceilings.shared.livepricing.*
 import com.andreyceilings.shared.estimate.*
 import androidx.compose.runtime.saveable.rememberSaveable
+import org.jetbrains.compose.resources.stringResource
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.CancellationException
 
@@ -44,7 +45,7 @@ fun MeasurementQuoteScreen(presenter: TransientQuotePresenter, store: Measuremen
     val state by presenter.state.collectAsState()
     MeasurementQuoteContent(state, { if (!presenter.saveState.value.saving) onBack() },
         { if (!presenter.saveState.value.saving) retry++ }, presenter::select, presenter::editQuantity,
-        presenter::confirmQuantity, presenter::resetQuantity, presenter::editDiscount,
+        presenter::confirmQuantity, presenter::resetQuantity, { presenter.editDiscount(it) },
         presenter::confirmDiscount, presenter::acknowledge, contentPadding, systemTopInset,
         editingEnabled = !saveState.saving && saveState.resultSeriesUuid == null,
         backLabel = if (presenter.revisionBase == null) "До заміру" else "До кошторису",
@@ -58,7 +59,10 @@ fun MeasurementQuoteScreen(presenter: TransientQuotePresenter, store: Measuremen
                 enabled = !saveState.saving, singleLine = true, isError = actualTitle.isNotEmpty() && validEstimateTitle(actualTitle) == null,
                 supportingText = { Text("Від 1 до 160 символів") }, modifier = Modifier.fillMaxWidth())
             if (saveState.saving) Text("Зберігаємо зафіксований кошторис. Дочекайтеся завершення.")
-            saveState.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+            saveState.error?.let { error ->
+                val resource = quoteSaveFailureResource(saveState.failureReason)
+                Text(if (resource == null) error else stringResource(resource), color = MaterialTheme.colorScheme.error)
+            }
             if (!canSave && !saveState.saving) Text(when {
                 validEstimateTitle(actualTitle) == null -> "Вкажіть назву кошторису (1–160 символів)."
                 state.loading -> "Зачекайте завершення перевірки заміру та прайсу."

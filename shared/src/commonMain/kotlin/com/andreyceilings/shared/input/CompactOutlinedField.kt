@@ -44,7 +44,8 @@ fun CompactOutlinedField(
     leadingIcon: (@Composable () -> Unit)? = null,
     // Compact height must never imply a smaller value font: standard M3 input is bodyLarge.
     textStyle: TextStyle = MaterialTheme.typography.bodyLarge,
-    maxLines: Int = 1
+    maxLines: Int = 1,
+    dense: Boolean = false
 ) {
     require(maxLines > 0)
     val singleLine = maxLines == 1
@@ -52,7 +53,8 @@ fun CompactOutlinedField(
     val colors = OutlinedTextFieldDefaults.colors()
     BasicTextField(
         value = value, onValueChange = onValueChange,
-        modifier = modifier.fillMaxWidth().heightIn(min = CeilingsFieldDefaults.CompactHeight),
+        modifier = modifier.fillMaxWidth().heightIn(min = if (dense && singleLine)
+            CeilingsFieldDefaults.DenseCompactHeight else CeilingsFieldDefaults.CompactHeight),
         enabled = enabled, singleLine = singleLine, maxLines = maxLines,
         keyboardOptions = keyboardOptions, keyboardActions = keyboardActions,
         textStyle = textStyle.copy(color = if (enabled) MaterialTheme.colorScheme.onSurface
@@ -67,7 +69,8 @@ fun CompactOutlinedField(
                 // Let Material3 animate its default expanded/floating label typography.
                 label = { Text(label, maxLines = 1, overflow = TextOverflow.Ellipsis) },
                 leadingIcon = leadingIcon, colors = colors,
-                contentPadding = CeilingsFieldDefaults.CompactContentPadding
+                contentPadding = if (dense && singleLine) CeilingsFieldDefaults.DenseCompactContentPadding
+                else CeilingsFieldDefaults.CompactContentPadding
             )
         }
     )
@@ -81,7 +84,8 @@ fun CompactOutlinedStringField(
     modifier: Modifier = Modifier, enabled: Boolean = true, isError: Boolean = false,
     keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
     keyboardActions: KeyboardActions = KeyboardActions.Default,
-    maxLines: Int = 1
+    maxLines: Int = 1,
+    dense: Boolean = false
 ) {
     var field by remember { mutableStateOf(TextFieldValue(value, selection = TextRange(value.length))) }
     LaunchedEffect(value) {
@@ -95,6 +99,7 @@ fun CompactOutlinedStringField(
             field = next
             if (next.text != value) onValueChange(next.text)
         }, label = label, modifier = modifier, enabled = enabled, isError = isError,
-        keyboardOptions = keyboardOptions, keyboardActions = keyboardActions, maxLines = maxLines
+        keyboardOptions = keyboardOptions, keyboardActions = keyboardActions, maxLines = maxLines,
+        dense = dense
     )
 }

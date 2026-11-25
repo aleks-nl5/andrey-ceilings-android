@@ -32,13 +32,15 @@ SELECT f.*, r.seriesUuid, r.createdAt, s.publicNumber, s.projectId, s.measuremen
  w.status, w.version AS statusVersion, w.updatedAt AS statusUpdatedAt
 FROM estimate_v1_frozen f JOIN estimate_revisions r USING(revisionUuid)
 JOIN estimate_series s USING(seriesUuid) JOIN estimate_workflow w USING(seriesUuid)
-WHERE s.seriesUuid = ? AND s.deletedAt IS NULL AND r.versionNumber = 1;
+WHERE s.seriesUuid = ? AND s.deletedAt IS NULL AND r.versionNumber = 1
+AND NOT EXISTS (SELECT 1 FROM estimate_revision_tombstones d WHERE d.revisionUuid = r.revisionUuid);
 selectFrozenV1List:
 SELECT s.seriesUuid, s.projectId, s.measurementUuid, s.publicNumber, s.createdAt,
  f.payload, f.subtotalCents, f.discountBasisPoints, f.discountCents, f.totalCents, w.status, w.version AS statusVersion
 FROM estimate_series s JOIN estimate_revisions r USING(seriesUuid)
 JOIN estimate_v1_frozen f USING(revisionUuid) JOIN estimate_workflow w USING(seriesUuid)
-WHERE s.deletedAt IS NULL AND r.versionNumber = 1 ORDER BY s.createdAt DESC, s.seriesUuid;
+WHERE s.deletedAt IS NULL AND r.versionNumber = 1
+AND NOT EXISTS (SELECT 1 FROM estimate_revision_tombstones d WHERE d.revisionUuid = r.revisionUuid) ORDER BY s.createdAt DESC, s.seriesUuid;
 setEstimatePublicNumber:
 UPDATE estimate_series SET publicNumber = ? WHERE seriesUuid = ? AND publicNumber IS NULL;
 selectEstimatePublicNumber:
