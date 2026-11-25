@@ -772,17 +772,15 @@ fun MeasurementEditScreen(
                             Column(scrollBounds.then(if (elementsContext) Modifier else panelTag)
                                 .verticalScroll(scroll)
                                 .then(if (elementsContext) Modifier.testTag("p5b-elements-scroll") else Modifier)
-                                .padding(top = if (context == MeasurementEditContext.CONTOUR) 14.dp else 6.dp,
+                                .padding(start = 10.dp, end = 10.dp, top = if (context == MeasurementEditContext.CONTOUR) 14.dp else 6.dp,
                                     bottom = 12.dp + normalNavigationUnderlay),
                                 verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             when (context) {
                                 MeasurementEditContext.CONTOUR -> {
-                                    WorkspaceFinancialSummary {
-                                        MeasurementShapePicker(draft.shape, enabled) { shape ->
-                                            if (shape != draft.shape && !model.promptForDirtyElementBeforeNavigation()) {
-                                                if (draft.outline.hasEnteredDimensions()) pendingShape = shape
-                                                else applyShape(shape)
-                                            }
+                                    MeasurementShapePicker(draft.shape, enabled) { shape ->
+                                        if (shape != draft.shape && !model.promptForDirtyElementBeforeNavigation()) {
+                                            if (draft.outline.hasEnteredDimensions()) pendingShape = shape
+                                            else applyShape(shape)
                                         }
                                     }
                                     val nameFocus = remember { FocusRequester() }
@@ -970,7 +968,7 @@ fun MeasurementEditScreen(
                     Surface(Modifier.fillMaxWidth().weight(1f).testTag("measurement-edit-panel-surface"), shape = WorkspacePanelShape,
                         color = MaterialTheme.colorScheme.background, contentColor = MaterialTheme.colorScheme.onBackground,
                         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)) {
-                        contextPanel(Modifier.fillMaxSize().padding(horizontal = 10.dp))
+                        contextPanel(Modifier.fillMaxSize())
                     }
                 } else AnimatedVisibility(
                     visible = sheet != MeasurementSheet.CLOSED,
@@ -1008,7 +1006,7 @@ fun MeasurementEditScreen(
                         }
                         Surface(Modifier.fillMaxWidth(), shape = WorkspacePanelShape,
                             color = MaterialTheme.colorScheme.background, contentColor = MaterialTheme.colorScheme.onBackground) {
-                            contextPanel(Modifier.heightIn(max = sheetMaxHeight).padding(horizontal = 12.dp))
+                            contextPanel(Modifier.heightIn(max = sheetMaxHeight))
                         }
                     }
                 }

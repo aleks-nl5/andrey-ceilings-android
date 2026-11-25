@@ -599,7 +599,7 @@ internal fun WorkspaceStandaloneAreaList(
                 .then(relocation)
                 .clip(RoundedCornerShape(10.dp))
                 .background(if (isSelected) MaterialTheme.colorScheme.secondaryContainer
-                    else Color.Transparent, RoundedCornerShape(10.dp))
+                    else workspaceAlternatingRowColor(index), RoundedCornerShape(10.dp))
                 .testTag("p5b-standalone-area-${feature.uuid}"),
                 verticalAlignment = Alignment.CenterVertically) {
                 // Reserve the same leading 36dp status slot as catalog work.
@@ -632,8 +632,7 @@ internal fun WorkspaceStandaloneAreaList(
                     Icon(Icons.Default.Delete, stringResource(Res.string.p5b_delete_placement))
                 }
             }
-            HorizontalDivider(Modifier.padding(top = 5.dp, bottom = 6.dp),
-                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+            WorkspacePanelDivider()
             if (deletion) AlertDialog(
                 onDismissRequest = { deletion = false },
                 title = { Text(stringResource(Res.string.p5b_delete_placement)) },
@@ -666,7 +665,7 @@ internal fun WorkspaceWorkList(
     val works = model.workspaceWorks()
     // One editor for the whole list: switching pencils must open the next one in one click.
     var quantityEditingWork by rememberSaveable { mutableStateOf<String?>(null) }
-    for (work in works) key(work.uuid) {
+    for ((index, work) in works.withIndex()) key(work.uuid) {
         var deletion by remember { mutableStateOf(false) }
         var approvalMenu by remember { mutableStateOf(false) }
         val isSelected = selected == work.uuid
@@ -697,7 +696,7 @@ internal fun WorkspaceWorkList(
             .testTag("p5b-work-row-${work.uuid}")
             .clip(RoundedCornerShape(10.dp))
             .background(if (isHighlighted || isSelected) MaterialTheme.colorScheme.secondaryContainer.copy(
-                alpha = if (isHighlighted) 0.9f else 0.48f) else Color.Transparent,
+                alpha = if (isHighlighted) 0.9f else 0.48f) else workspaceAlternatingRowColor(index),
                 RoundedCornerShape(10.dp))
             .semantics { this.selected = isSelected || isHighlighted }
             .clickable(enabled = enabled) { onSelect(work.uuid) },
@@ -814,8 +813,7 @@ internal fun WorkspaceWorkList(
             }
             if (invalidQuantity) Text(stringResource(Res.string.p5b_quantity_invalid), color = MaterialTheme.colorScheme.error)
         }
-        HorizontalDivider(Modifier.padding(top = 5.dp, bottom = 6.dp),
-            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+        WorkspacePanelDivider()
         if (deletion) AlertDialog(onDismissRequest = { deletion = false },
             title = { Text(stringResource(Res.string.p5b_delete_work)) },
             text = { Text(stringResource(Res.string.p5b_delete_work_explain, work.label)) },

@@ -4,6 +4,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
@@ -135,7 +136,7 @@ internal fun WorkspaceQuotes(
             WorkspaceFinancialSummary {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Text(stringResource(Res.string.p5d_quotes), Modifier.weight(1f).padding(start = 8.dp),
-                    style = MaterialTheme.typography.titleSmall)
+                    style = MaterialTheme.typography.titleLarge)
                 if (approved.size > 1) WorkspaceCostHelp(stringResource(Res.string.p5d_approval_conflict))
                 IconButton(enabled = store != null && !busy && !edit.saving && !edit.checking, onClick = { onStart(null) }) {
                     Icon(Icons.Default.Add, stringResource(Res.string.p5d_new_quote))
@@ -149,11 +150,11 @@ internal fun WorkspaceQuotes(
                 rows.orEmpty().groupBy { it.seriesUuid }.forEach { (series, versions) ->
                     item(key = series) {
                         val head = versions.first()
-                        HorizontalDivider(Modifier.padding(horizontal = 8.dp), color = MaterialTheme.colorScheme.outlineVariant)
+                        WorkspacePanelDivider()
                         Row(Modifier.fillMaxWidth().padding(start = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                             Column(Modifier.weight(1f)) {
                                 Text(head.frozen.title, style = MaterialTheme.typography.titleSmall)
-                                Text(head.frozen.publicNumber, style = MaterialTheme.typography.labelSmall)
+                                Text(EstimateNumbering.displayNumber(head.frozen.publicNumber, head.frozen.numberPolicy), style = MaterialTheme.typography.labelSmall)
                             }
                             val eligible = versions.all { it.canDeleteQuote }
                             if (!eligible) WorkspaceCostHelp(stringResource(Res.string.p5d_delete_protected))
@@ -163,7 +164,8 @@ internal fun WorkspaceQuotes(
                             }
                         }
                     }
-                    items(versions, key = { it.revisionUuid }) { quote ->
+                    itemsIndexed(versions, key = { _, it -> it.revisionUuid }) { index, quote ->
+                        WorkspaceListRow(index) {
                         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                             WorkspaceQuoteStatusIcon(quote, approved, !busy, ::changeStatus)
                             Row(Modifier.weight(1f).defaultMinSize(minHeight = 56.dp)
@@ -183,6 +185,7 @@ internal fun WorkspaceQuotes(
                                 }
                                 Text(measurementMoney(quote.frozen.amounts.finalCents), style = MaterialTheme.typography.bodyMedium)
                             }
+                        }
                         }
                     }
                 }
@@ -260,6 +263,7 @@ internal fun ColumnScope.WorkspaceQuoteComposer(
     val title = save.title.orEmpty()
     val canSubmit = enabled && state.amounts != null && validEstimateTitle(title) != null &&
         (state.preview?.canFinalizeFull == true || state.canAcknowledge)
+    WorkspaceFinancialSummary {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         IconButton(enabled = !save.saving, onClick = {
             if (presenter.hasUserChanges) session.discardPending = true else session.closeDraft(store)
@@ -273,6 +277,7 @@ internal fun ColumnScope.WorkspaceQuoteComposer(
             if (state.canAcknowledge) partialFingerprint = state.fingerprint
             else store.submitQuote(presenter, route.projectId)
         }) { Icon(Icons.Default.Save, stringResource(Res.string.p5d_save_quote)) }
+    }
     }
     save.error?.let {
         Text(stringResource(quoteSaveFailureResource(save.failureReason) ?: Res.string.p5d_quote_failed),
@@ -368,8 +373,9 @@ internal fun ColumnScope.WorkspaceQuoteComposer(
                     }
                 }
             }
-            items(state.lines.sortedWith(compareBy({ it.bucket }, { it.businessRole?.ordinal ?: Int.MAX_VALUE })),
-                key = { it.sourceKey }) { line ->
+            itemsIndexed(state.lines.sortedWith(compareBy({ it.bucket }, { it.businessRole?.ordinal ?: Int.MAX_VALUE })),
+                key = { _, it -> it.sourceKey }) { index, line ->
+                WorkspaceListRow(index) {
                 val selected = line.sourceKey in state.selected
                 val id = line.elementUuid
                 val element = state.source?.elements?.firstOrNull { it.uuid == id }
@@ -411,18 +417,23 @@ internal fun ColumnScope.WorkspaceQuoteComposer(
                         Icon(Icons.Default.Refresh, stringResource(Res.string.p5d_reset_quantity))
                     }
                 }
-            }
-            items(state.unresolved, key = { it.sourceKey }) { row ->
-                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 8.dp)) {
-                    Text(row.label, Modifier.weight(1f))
-                    WorkspaceCostHelp(row.reasons.map { workspacePricingProblem(it) }.joinToString("\n"))
                 }
             }
-            items(state.unavailableSelectedDiscussing, key = { "unavailable:${it.sourceKey}" }) { row ->
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Checkbox(true, onCheckedChange = { presenter.select(row.sourceKey, it) }, enabled = enabled)
-                    Text(row.label, Modifier.weight(1f))
-                    WorkspaceCostHelp(row.problems.map { workspacePricingProblem(it) }.joinToString("\n"))
+            itemsIndexed(state.unresolved, key = { _, it -> it.sourceKey }) { index, row ->
+                WorkspaceListRow(state.lines.size + index) {
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).padding(horizontal = 8.dp)) {
+                        Text(row.label, Modifier.weight(1f, fill = false))
+                        WorkspaceCostHelp(row.reasons.map { workspacePricingProblem(it) }.joinToString("\n"), compact = true)
+                    }
+                }
+            }
+            itemsIndexed(state.unavailableSelectedDiscussing, key = { _, it -> "unavailable:${it.sourceKey}" }) { index, row ->
+                WorkspaceListRow(state.lines.size + state.unresolved.size + index) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(true, onCheckedChange = { presenter.select(row.sourceKey, it) }, enabled = enabled)
+                        Text(row.label, Modifier.weight(1f, fill = false))
+                        WorkspaceCostHelp(row.problems.map { workspacePricingProblem(it) }.joinToString("\n"), compact = true)
+                    }
                 }
             }
         }
@@ -516,19 +527,22 @@ internal fun ColumnScope.WorkspaceFrozenQuote(
             }
         }
     }
+    WorkspaceFinancialSummary {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         IconButton(onClick = onBack, enabled = !exporting) {
             Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(Res.string.p5d_back_quotes))
         }
         Column(Modifier.weight(1f)) {
             Text(frozen.title, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
-            Text(stringResource(Res.string.p5d_revision_heading, frozen.publicNumber, quote.versionNumber),
+            Text(stringResource(Res.string.p5d_revision_heading, EstimateNumbering.displayNumber(frozen.publicNumber, frozen.numberPolicy), quote.versionNumber),
                 style = MaterialTheme.typography.labelSmall)
         }
         if (drift != false) WorkspaceCostHelp(stringResource(if (drift == null) Res.string.p5d_drift_unavailable else Res.string.p5d_drift))
         WorkspaceQuoteStatusIcon(quote, approved, !busy && !exporting, onStatus)
         WorkspaceExpand(session)
     }
+    }
+    WorkspacePanelDivider()
     WorkspaceFinancialSummary {
         Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(stringResource(Res.string.p5d_to_pay), Modifier.weight(1f), style = MaterialTheme.typography.labelMedium)
@@ -545,20 +559,24 @@ internal fun ColumnScope.WorkspaceFrozenQuote(
     if (failed || statusConflict) Text(stringResource(if (statusConflict) Res.string.p5d_share_status_conflict else Res.string.p5d_quote_failed),
         color = MaterialTheme.colorScheme.error)
     LazyColumn(Modifier.fillMaxWidth().weight(1f)) {
-        items(frozen.rows, key = { it.uuid }) { row ->
-            WorkspaceFinancialRow(row.line)
-            if (row.line.quantityOrigin == QuantityOrigin.EXPLICIT_BILLABLE_OVERRIDE)
-                Text(formatElementMilli(row.line.sourceQuantityMilli), Modifier.padding(start = 8.dp),
-                    textDecoration = TextDecoration.LineThrough, style = MaterialTheme.typography.labelSmall)
+        itemsIndexed(frozen.rows, key = { _, it -> it.uuid }) { index, row ->
+            WorkspaceListRow(index) {
+                WorkspaceFinancialRow(row.line)
+                if (row.line.quantityOrigin == QuantityOrigin.EXPLICIT_BILLABLE_OVERRIDE)
+                    Text(formatElementMilli(row.line.sourceQuantityMilli), Modifier.padding(start = 8.dp),
+                        textDecoration = TextDecoration.LineThrough, style = MaterialTheme.typography.labelSmall)
+            }
         }
         if (frozen.omissions.isNotEmpty()) item {
-            Text(stringResource(Res.string.p5d_partial), Modifier.padding(start = 8.dp), style = MaterialTheme.typography.labelMedium)
+            WorkspaceGroupHeading(stringResource(Res.string.p5d_partial))
         }
-        items(frozen.omissions) { item ->
-            val label = frozen.source.elements.firstOrNull { elementKey(it.uuid) == item.sourceKey }?.label ?: item.sourceKey
-            Text(stringResource(Res.string.p5d_line_problem, label, if (item.reason == ExclusionReason.USER_EXCLUDED)
-                stringResource(Res.string.p5d_excluded) else item.problems.map { workspacePricingProblem(it) }.joinToString()),
-                Modifier.padding(start = 8.dp), style = MaterialTheme.typography.bodySmall)
+        itemsIndexed(frozen.omissions) { index, item ->
+            WorkspaceListRow(frozen.rows.size + index) {
+                val label = frozen.source.elements.firstOrNull { elementKey(it.uuid) == item.sourceKey }?.label ?: item.sourceKey
+                Text(stringResource(Res.string.p5d_line_problem, label, if (item.reason == ExclusionReason.USER_EXCLUDED)
+                    stringResource(Res.string.p5d_excluded) else item.problems.map { workspacePricingProblem(it) }.joinToString()),
+                    Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp), style = MaterialTheme.typography.bodyMedium)
+            }
         }
     }
     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
@@ -638,7 +656,7 @@ internal fun WorkspaceQuoteStatusIcon(
 private fun WorkspaceQuoteIdentity(quote: SavedIndividualQuote) {
     Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
         Text(quote.frozen.title, style = MaterialTheme.typography.titleSmall)
-        Text(stringResource(Res.string.p5d_revision_heading, quote.frozen.publicNumber, quote.versionNumber))
+        Text(stringResource(Res.string.p5d_revision_heading, EstimateNumbering.displayNumber(quote.frozen.publicNumber, quote.frozen.numberPolicy), quote.versionNumber))
         Text(measurementMoney(quote.frozen.amounts.finalCents))
     }
 }

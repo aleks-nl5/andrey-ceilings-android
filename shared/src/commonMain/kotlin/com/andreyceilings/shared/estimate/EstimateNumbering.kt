@@ -123,6 +123,40 @@ object EstimateNumbering {
         }
     }
 
+    /**
+     * Compact workspace label only. The full issued public number remains immutable
+     * in storage and PDF; never use this abbreviated label as an identity.
+     * Match the stored template, rather than guessing from a trailing hex string.
+     */
+    fun displayNumber(publicNumber: String, policy: EstimateNumberPolicy): String {
+        if ("{suffix}" !in policy.template) return publicNumber
+        val pattern = buildString {
+            append("^")
+            var offset = 0
+            for (match in templateToken.findAll(policy.template)) {
+                append(Regex.escape(policy.template.substring(offset, match.range.first)))
+                append(when (match.groupValues[1]) {
+                    "prefix" -> Regex.escape(policy.prefix)
+                    "year" -> "[0-9]{4}"
+                    "sequence" -> "[0-9]+"
+                    "suffix" -> (if (policy.suffixLabel.isEmpty()) "" else Regex.escape(policy.suffixLabel) + "-") + "([A-Z0-9]{8,10})"
+                    else -> return publicNumber
+                })
+                offset = match.range.last + 1
+            }
+            append(Regex.escape(policy.template.substring(offset)))
+            append("$")
+        }
+        val token = Regex(pattern).matchEntire(publicNumber)?.groups?.get(1) ?: return publicNumber
+        val start = token.range.first
+        val end = token.range.last + 1
+        val separators = "-_./"
+        val removeStart = if (start > 0 && publicNumber[start - 1] in separators) start - 1 else start
+        val removeEnd = if (removeStart == start && end < publicNumber.length &&
+            publicNumber[end] in separators) end + 1 else end
+        return publicNumber.removeRange(removeStart, removeEnd).ifBlank { publicNumber }
+    }
+
     /** UI editor only: strip the private UUID placeholder from legacy formats. */
     fun printableTemplate(internalTemplate: String): String {
         val cleaned = internalTemplate.replace("{uuid}", "")
