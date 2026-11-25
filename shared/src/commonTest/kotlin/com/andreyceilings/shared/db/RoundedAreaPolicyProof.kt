@@ -84,7 +84,7 @@ object RoundedAreaPolicyProof {
                 bindString(0, revision)
                 bindString(1, series)
             }
-            payload = db.frozenEstimateQueries.selectFrozenV1(series).executeAsOne().payload
+            payload = readPreV21FrozenV1Payload(d, series)
         }
         open(production).use { d ->
             val repo = ImmutableEstimateRepository(PrototypeDatabase(d))

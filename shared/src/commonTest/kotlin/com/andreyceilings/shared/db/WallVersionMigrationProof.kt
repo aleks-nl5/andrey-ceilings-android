@@ -76,7 +76,7 @@ object WallVersionMigrationProof {
         presenter.close()
         val staleFixture = MeasurementPricingFixture.seed(db)
         val stale = assertNotNull(measurements.findByUuid(staleFixture.measurementUuid))
-        return Seed(row.projectId, document, stale, quote.seriesUuid, db.frozenEstimateQueries.selectFrozenV1(quote.seriesUuid).executeAsOne().payload,
+        return Seed(row.projectId, document, stale, quote.seriesUuid, readPreV21FrozenV1Payload(driver, quote.seriesUuid),
             preview)
     }
 
@@ -113,7 +113,9 @@ object WallVersionMigrationProof {
             assertEquals(moved, MeasurementEditStore(db) { 0 }.load(seed.projectId, moved.measurementId))
             assertEquals(expectedWalls(evidence, migrated), db.livePricingQueries.selectPricingWalls(uuid).executeAsList())
             assertEquals(receipts, db.livePricingQueries.selectPricingReceipts(uuid).executeAsList())
-            assertEquals(seed.frozenPayload, db.frozenEstimateQueries.selectFrozenV1(seed.seriesUuid).executeAsOne().payload)
+            val payload = if (migrated) db.frozenEstimateQueries.selectFrozenV1(seed.seriesUuid).executeAsOne().payload
+                else readPreV21FrozenV1Payload(driver, seed.seriesUuid)
+            assertEquals(seed.frozenPayload, payload)
             assertEquals(staleWalls, db.livePricingQueries.selectPricingWalls(seed.stale.uuid).executeAsList())
             assertEquals(seed.stale.copy(updatedAt = seed.stale.updatedAt + 1), MeasurementRepository(db).find(seed.stale.id))
             val reader = LivePricingReader(db)
