@@ -34,6 +34,8 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.text.TextStyle
 import com.andreyceilings.shared.measurement.MeasurementDrawingContour
 import com.andreyceilings.shared.measurement.formatMeasurementAreaCompact
 import com.andreyceilings.shared.measurement.formatMeasurementLengthCompact
@@ -101,7 +103,12 @@ internal fun CompactCeilingCard(
 
 /** Measure complete values; only wrap the trailing amount when the row cannot fit. */
 @Composable
-internal fun CompactMetricsRow(area: Double?, perimeter: Double?, trailing: (@Composable () -> Unit)? = null) {
+internal fun CompactMetricsRow(
+    area: Double?, perimeter: Double?,
+    textStyle: TextStyle = MaterialTheme.typography.bodySmall,
+    iconSize: Dp = 14.dp,
+    trailing: (@Composable () -> Unit)? = null
+) {
     val unknown = stringResource(Res.string.p5d_unknown)
     val areaValue = stringResource(Res.string.p5b_live_area_value, area?.let(::formatMeasurementAreaCompact) ?: unknown)
     val perimeterValue = stringResource(Res.string.p5b_live_perimeter_value, perimeter?.let(::formatMeasurementLengthCompact) ?: unknown)
@@ -110,8 +117,8 @@ internal fun CompactMetricsRow(area: Double?, perimeter: Double?, trailing: (@Co
         content = {
             FlowRow(horizontalArrangement = Arrangement.spacedBy(5.dp),
                 itemVerticalAlignment = Alignment.CenterVertically) {
-                CompactMetric(Icons.Default.CropSquare, areaValue, stringResource(Res.string.p5b_live_area_label, areaValue))
-                CompactMetric(Icons.Default.Straighten, perimeterValue, stringResource(Res.string.p5b_live_perimeter_label, perimeterValue))
+                CompactMetric(Icons.Default.CropSquare, areaValue, stringResource(Res.string.p5b_live_area_label, areaValue), textStyle, iconSize)
+                CompactMetric(Icons.Default.Straighten, perimeterValue, stringResource(Res.string.p5b_live_perimeter_label, perimeterValue), textStyle, iconSize)
             }
             if (trailing != null) Box { trailing() }
         }
@@ -132,10 +139,14 @@ internal fun CompactMetricsRow(area: Double?, perimeter: Double?, trailing: (@Co
 }
 
 @Composable
-internal fun CompactMetric(icon: ImageVector, value: String, label: String) {
+internal fun CompactMetric(
+    icon: ImageVector, value: String, label: String,
+    textStyle: TextStyle = MaterialTheme.typography.bodySmall,
+    iconSize: Dp = 14.dp
+) {
     Row(horizontalArrangement = Arrangement.spacedBy(3.dp), verticalAlignment = Alignment.CenterVertically) {
-        Icon(icon, label, Modifier.size(14.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
-        Text(value, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Icon(icon, label, Modifier.size(iconSize), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(value, style = textStyle, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 

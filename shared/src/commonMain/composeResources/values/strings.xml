@@ -335,7 +335,7 @@
     <string name="p5b_unsaved_measurement">Незбережено</string>
     <string name="p5b_clean_measurement">Змін немає</string>
     <string name="p5b_feedback_warning">Попередження: %1$s</string>
-    <string name="p6a_amount_uah">%1$d,%2$s грн</string>
+    <string name="p6a_amount_uah">%1$d,%2$s ₴</string>
     <string name="p6a_ceiling_contour">Збережений контур стелі</string>
     <string name="p6a_contour_unavailable">Контур недоступний</string>
     <string name="p6a_finance_unavailable">Сума недоступна</string>

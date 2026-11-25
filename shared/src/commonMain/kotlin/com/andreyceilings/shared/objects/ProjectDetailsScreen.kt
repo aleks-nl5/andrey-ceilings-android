@@ -949,9 +949,11 @@ private fun ProjectDetailsSummary(ceilings: List<ProjectMeasurement>, finance: P
             else -> stringResource(Res.string.p6a_approved_total, amount)
         }
     }
-    CompactMetricsRow(metrics?.first, metrics?.second) {
+    val summaryStyle = MaterialTheme.typography.bodyLarge
+    val summaryIconSize = 18.dp
+    CompactMetricsRow(metrics?.first, metrics?.second, textStyle = summaryStyle, iconSize = summaryIconSize) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            CompactMetric(Icons.Default.Payments, amount, label)
+            CompactMetric(Icons.Default.Payments, amount, label, summaryStyle, summaryIconSize)
             if (finance == ProjectFinanceState.Unavailable) {
                 IconButton(onClick = onRetry) {
                     Icon(Icons.Default.Refresh, stringResource(Res.string.p5d_retry), Modifier.size(16.dp))
