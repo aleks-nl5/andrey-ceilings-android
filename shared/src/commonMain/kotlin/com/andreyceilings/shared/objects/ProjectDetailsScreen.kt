@@ -60,7 +60,7 @@ import com.andreyceilings.shared.theme.CeilingsEdge
 import com.andreyceilings.shared.theme.CeilingsEdgeGradient
 import com.andreyceilings.shared.measurement.formatMeasurementAreaCompact
 import com.andreyceilings.shared.measurement.formatMeasurementLengthCompact
-import com.andreyceilings.shared.resources.Res
+import com.andreyceilings.shared.resources.*
 import com.andreyceilings.shared.resources.p5d_retry
 import com.andreyceilings.shared.resources.p5d_unknown
 import com.andreyceilings.shared.resources.p6a_add_ceiling
@@ -789,13 +789,15 @@ private fun DetailsCard(
  * application Material theme and its status colors, not platform default tints.
  */
 @Composable
-private fun WorkStagePicker(
+internal fun WorkStagePicker(
     projectId: Long,
     status: String,
     enabled: Boolean,
     onSelect: (String) -> Unit
 ) {
     var expanded by remember(projectId) { mutableStateOf(false) }
+    val label = localizedWorkStage(status)
+    val description = stringResource(Res.string.oc_change_work, label)
     Box {
         Surface(
             onClick = { expanded = true },
@@ -809,14 +811,14 @@ private fun WorkStagePicker(
             Row(
                 Modifier.fillMaxHeight().padding(horizontal = 9.dp)
                     .semantics {
-                        contentDescription = "Змінити етап робіт: ${ProjectStatusRules.workLabel(status)}"
+                        contentDescription = description
                     },
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(5.dp)
             ) {
                 WorkStatusMark(status)
                 Text(
-                    ProjectStatusRules.workLabel(status),
+                    label,
                     modifier = Modifier.weight(1f, fill = false),
                     style = MaterialTheme.typography.labelMedium,
                     maxLines = 1,
@@ -837,12 +839,12 @@ private fun WorkStagePicker(
         ) {
             ProjectWorkStage.entries.forEach { stage ->
                 DropdownMenuItem(
-                    text = { Text(stage.label, style = MaterialTheme.typography.bodyMedium) },
+                    text = { Text(localizedWorkStage(stage.wireId), style = MaterialTheme.typography.bodyMedium) },
                     leadingIcon = { WorkStatusMark(stage.wireId) },
                     trailingIcon = {
                         if (stage.wireId == status) {
                             Icon(
-                                Icons.Default.Check, contentDescription = "Поточний етап",
+                                Icons.Default.Check, contentDescription = stringResource(Res.string.oc_current_work),
                                 tint = MaterialTheme.colorScheme.primary
                             )
                         }
@@ -858,7 +860,7 @@ private fun WorkStagePicker(
 }
 
 @Composable
-private fun PaymentStatusPicker(
+internal fun PaymentStatusPicker(
     projectId: Long,
     status: String,
     enabled: Boolean,
@@ -866,6 +868,8 @@ private fun PaymentStatusPicker(
 ) {
     var expanded by remember(projectId) { mutableStateOf(false) }
     val tint = paymentStateTint(status)
+    val label = localizedPayment(status, compact = true)
+    val description = stringResource(Res.string.oc_change_payment, label)
     Box {
         Surface(
             onClick = { expanded = true },
@@ -879,17 +883,13 @@ private fun PaymentStatusPicker(
             Row(
                 Modifier.fillMaxHeight().padding(horizontal = 11.dp)
                     .semantics {
-                        contentDescription = "Змінити оплату: ${ProjectStatusRules.paymentLabel(status)}"
+                        contentDescription = description
                     },
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(5.dp)
             ) {
                 Text(
-                    when (status) {
-                        "unknown" -> "Невизначено"
-                        "partial" -> "Часткова"
-                        else -> ProjectStatusRules.paymentLabel(status)
-                    },
+                    label,
                     style = MaterialTheme.typography.labelMedium,
                     maxLines = 1
                 )
@@ -907,7 +907,7 @@ private fun PaymentStatusPicker(
         ) {
             ProjectPaymentStatus.entries.forEach { payment ->
                 DropdownMenuItem(
-                    text = { Text(payment.label, style = MaterialTheme.typography.bodyMedium) },
+                    text = { Text(localizedPayment(payment.wireId), style = MaterialTheme.typography.bodyMedium) },
                     leadingIcon = {
                         Box(
                             Modifier.size(11.dp).background(
@@ -919,7 +919,7 @@ private fun PaymentStatusPicker(
                     trailingIcon = {
                         if (payment.wireId == status) {
                             Icon(
-                                Icons.Default.Check, contentDescription = "Поточна оплата",
+                                Icons.Default.Check, contentDescription = stringResource(Res.string.oc_current_payment),
                                 tint = MaterialTheme.colorScheme.primary
                             )
                         }

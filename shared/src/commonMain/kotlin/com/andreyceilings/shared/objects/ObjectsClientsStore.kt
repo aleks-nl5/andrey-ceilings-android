@@ -162,6 +162,7 @@ class ObjectsClientsStore(
         val name = draft.name.trim()
         require(name.isNotBlank()) { "Введіть ім'я клієнта." }
         return if (id == null) {
+            require(draft.phone.any(Char::isDigit))
             clients.createReturningId(name, draft.phone.trim(), draft.email.trim(),
                 draft.notes.trim(), nowMillis())
         } else {

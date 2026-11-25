@@ -232,7 +232,7 @@ class FrozenEstimateDocumentAndroidTest {
                                     rows = ObjectsClientsRows(emptyList(), emptyList()),
                                     detailsProjectId = living.projectId, detailsStore = objects,
                                     onOpenProject = {}, onCloseProject = {}, databaseAvailable = true,
-                                    onSaveClient = { _, _ -> }, onSaveProject = { _, _ -> },
+                                    onSaveClient = { _, _ -> error("Unexpected client write") }, onSaveProject = { _, _ -> },
                                     onDeleteClient = {}, onDeleteProject = {}, onDial = {},
                                     onExternalAction = { _, _ -> }
                                 )

@@ -14,7 +14,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.draggable
-import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -27,7 +26,6 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -51,7 +49,6 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
@@ -60,7 +57,6 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TextField
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.layout.layout
 import com.andreyceilings.shared.navigation.MeasurementDetails
@@ -104,15 +100,12 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.Dp
 import com.andreyceilings.shared.ui.CeilingsScreenScaffold
 import com.andreyceilings.shared.ui.CeilingsFab
 import androidx.compose.foundation.layout.WindowInsets
 import com.andreyceilings.shared.theme.ceilingsStatusColors
 import com.andreyceilings.shared.navigation.AppHeaderHeight
-import com.andreyceilings.shared.domain.ClientAlphabetIndex
-import com.andreyceilings.shared.domain.ClientLetterJump
 import com.andreyceilings.shared.domain.ClientListEntry
 import com.andreyceilings.shared.domain.GlobalSearchResults
 import com.andreyceilings.shared.domain.ObjectsClientsSearch
@@ -127,13 +120,17 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
-import com.andreyceilings.shared.resources.Res
+import com.andreyceilings.shared.resources.*
+import org.jetbrains.compose.resources.stringResource
 import com.andreyceilings.shared.resources.client_project_count
 import com.andreyceilings.shared.resources.p6a_delete_swipe
 import org.jetbrains.compose.resources.pluralStringResource
 
 enum class ObjectsClientsTab { PROJECTS, CLIENTS }
 enum class ContactAction { GOOGLE_MAPS, WAZE, WHATSAPP, TELEGRAM, VIBER }
+
+private val ObjectsCreateFabBottom = 142.dp
+private val ObjectsCreateFabExtent = 76.dp
 
 internal enum class SwipeSide { LEFT, RIGHT }
 internal data class OpenSwipe(val id: String, val side: SwipeSide)
@@ -160,7 +157,7 @@ fun ObjectsClientsScreen(
     onOpenProject: (Long) -> Unit,
     onCloseProject: () -> Unit,
     databaseAvailable: Boolean,
-    onSaveClient: suspend (Long?, ClientDraft) -> Unit,
+    onSaveClient: suspend (Long?, ClientDraft) -> Long,
     onSaveProject: suspend (Long?, ProjectDraft) -> Unit,
     onDeleteClient: suspend (Long) -> Unit,
     onDeleteProject: suspend (Long) -> Unit,
@@ -207,7 +204,8 @@ fun ObjectsClientsScreen(
     var search by rememberSaveable { mutableStateOf("") }
     var selectedWork by rememberSaveable { mutableStateOf<String?>(null) }
     var selectedPayment by rememberSaveable { mutableStateOf<String?>(null) }
-    var editor by remember { mutableStateOf<EditorTarget?>(null) }
+    var editor by remember(detailsStore) { mutableStateOf<EditorTarget?>(null) }
+    var viewedClientId by remember(detailsStore, detailsProjectId) { mutableStateOf<Long?>(null) }
     var deleting by remember { mutableStateOf<DeletionTarget?>(null) }
     var deletionError by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
@@ -216,7 +214,7 @@ fun ObjectsClientsScreen(
     val localSwipeState = remember { CardSwipeState() }
     val cardSwipes = swipeState ?: localSwipeState
     var openSwipe by cardSwipes.opened
-    LaunchedEffect(cardSwipes, detailsProjectId, detailsStore, databaseAvailable, editor, deleting) {
+    LaunchedEffect(cardSwipes, detailsProjectId, detailsStore, databaseAvailable, editor, deleting, viewedClientId) {
         cardSwipes.dismiss()
     }
 
@@ -241,10 +239,6 @@ fun ObjectsClientsScreen(
         ObjectsClientsSearch.clients(rows.clients, search)
     }
     LaunchedEffect(deleting) { deletionError = null }
-    val clientLetters = remember(clients) { ClientAlphabetIndex.markers(clients) }
-    // Do not overlap the global search suggestions with a redundant letter rail.
-    val showClientLetters = databaseAvailable && selectedTab == ObjectsClientsTab.CLIENTS &&
-        search.isBlank() && clientLetters.isNotEmpty() && !searchFocused
 
     // Keep the on-scroll focus action fresh inside the remembered connection.
     val dismissSearchOnScroll = rememberUpdatedState(newValue = { dismissSearchFocus() })
@@ -344,7 +338,7 @@ fun ObjectsClientsScreen(
     val baseListPadding = PaddingValues(
         start = contentPadding.calculateLeftPadding(layoutDirection),
         end = contentPadding.calculateRightPadding(layoutDirection),
-        bottom = contentPadding.calculateBottomPadding()
+        bottom = maxOf(contentPadding.calculateBottomPadding(), ObjectsCreateFabBottom + ObjectsCreateFabExtent + 8.dp)
     )
 
     Box(modifier.fillMaxSize().then(if (swipeState == null) Modifier.dismissCardSwipeOnInteraction(cardSwipes) else Modifier)) {
@@ -400,36 +394,11 @@ fun ObjectsClientsScreen(
                 }
             },
             overlay = { measuredPadding ->
-                // A phonebook rail exists only for the clients tab. Labels correspond
-                // to real first-letter groups in the *rendered* alphabetically sorted
-                // list. Leave the lower corner clear for the animated create FAB.
-                if (showClientLetters) {
-                    BoxWithConstraints(
-                        modifier = Modifier.align(Alignment.CenterEnd)
-                            .fillMaxHeight()
-                            .padding(top = measuredPadding.calculateTopPadding() + 8.dp,
-                                bottom = 226.dp, end = horizontalOverlayInset)
-                            .width(24.dp)
-                            .zIndex(1f)
-                    ) {
-                        val letterHeight = (maxHeight / clientLetters.size).coerceAtMost(18.dp)
-                        ClientsAlphabetRail(
-                            markers = clientLetters,
-                            letterHeight = letterHeight,
-                            modifier = Modifier.align(Alignment.Center),
-                            onSelect = { marker ->
-                                dismissSearchFocus()
-                                openSwipe = null
-                                scope.launch { listState.scrollToItem(marker.listIndex) }
-                            }
-                        )
-                    }
-                }
                 // Results overlay is attached to the *pinned* search bar, not to the
                 // LazyColumn. It remains immediately below the field no matter how far
                 // the projects/clients list was scrolled. Keyboard resize limits height.
                 if (databaseAvailable && searchFocused && search.isNotBlank() &&
-                    editor == null && deleting == null) {
+                    editor == null && deleting == null && viewedClientId == null) {
                     ObjectsSearchSuggestions(
                         results = results,
                         activeTab = selectedTab,
@@ -443,7 +412,8 @@ fun ObjectsClientsScreen(
                         onClient = { client ->
                             dismissSearchFocus()
                             switchListTab(ObjectsClientsTab.CLIENTS)
-                            editor = EditorTarget.Client(client)
+                            message = null
+                            viewedClientId = client.id
                         },
                         onDismiss = { dismissSearchFocus() },
                         modifier = Modifier.align(Alignment.TopCenter)
@@ -452,7 +422,7 @@ fun ObjectsClientsScreen(
                             .zIndex(3f)
                     )
                 }
-                val showFab = databaseAvailable && !busy && fabVisible && editor == null && !searchFocused
+                val showFab = databaseAvailable && !busy && fabVisible && editor == null && viewedClientId == null && !searchFocused
                 ObjectsClientsCreateFab(
                     visible = showFab,
                     actionLabel = if (selectedTab == ObjectsClientsTab.PROJECTS)
@@ -460,7 +430,7 @@ fun ObjectsClientsScreen(
                     // The 76dp drawing area reserves 10dp around the 56dp circle,
                     // including its painted shadow. Preserve the original FAB center.
                     modifier = Modifier.align(Alignment.BottomEnd)
-                        .padding(end = horizontalOverlayInset + 6.dp, bottom = 142.dp),
+                        .padding(end = horizontalOverlayInset + 6.dp, bottom = ObjectsCreateFabBottom),
                     onClick = {
                         dismissSearchFocus()
                         message = null
@@ -474,7 +444,6 @@ fun ObjectsClientsScreen(
             LazyColumn(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(end = if (showClientLetters) 16.dp else 0.dp)
                     .nestedScroll(fabGestureConnection)
                     .pointerInput(Unit) {
                         // A tap on unused list space dismisses the keyboard;
@@ -549,7 +518,7 @@ fun ObjectsClientsScreen(
                         }
                     } else items(clients, key = { "c-${it.id}" }) { row ->
                         ClientCard(row,
-                            onEdit = { dismissSearchFocus(); openSwipe = null; editor = EditorTarget.Client(row) },
+                            onOpen = { dismissSearchFocus(); openSwipe = null; message = null; viewedClientId = row.id },
                             onDelete = { dismissSearchFocus(); openSwipe = null; deleting = DeletionTarget.Client(row) },
                             onDial = { phone -> dismissSearchFocus(); onDial(phone) },
                             onExternalAction = { action, value ->
@@ -597,7 +566,7 @@ fun ObjectsClientsScreen(
             onOpenMeasurement = { onOpenMeasurement(detailsProjectId, it) },
             onCreateMeasurement = { onCreateMeasurement(detailsProjectId) },
             onDial = onProjectDial,
-            onOpenClient = { client -> message = null; editor = EditorTarget.Client(client) },
+            onOpenClient = { client -> message = null; viewedClientId = client.id },
             onBack = onCloseProject,
             onEdit = { project -> message = null; editor = EditorTarget.Project(project) }
         )
@@ -627,6 +596,20 @@ fun ObjectsClientsScreen(
     }
     }
 
+    val currentViewedClient = rows.clients.firstOrNull { it.id == viewedClientId }
+    if (editor == null && deleting == null && currentViewedClient != null) {
+        ClientReadCard(
+            item = currentViewedClient,
+            onDismiss = { viewedClientId = null; message = null },
+            onEdit = { message = null; editor = EditorTarget.Client(currentViewedClient) },
+            onDelete = { deleting = DeletionTarget.Client(currentViewedClient) },
+            onDial = onProjectDial,
+            onExternalAction = onExternalAction
+        )
+    }
+    LaunchedEffect(viewedClientId, currentViewedClient, databaseAvailable) {
+        if (viewedClientId != null && (!databaseAvailable || currentViewedClient == null)) viewedClientId = null
+    }
     when (val target = editor) {
         is EditorTarget.Client -> ClientEditor(
             initial = target.item, busy = busy,
@@ -651,6 +634,7 @@ fun ObjectsClientsScreen(
         )
         is EditorTarget.Project -> ProjectEditor(
             initial = target.item, clients = rows.clients, busy = busy,
+            onCreateClient = { draft -> onSaveClient(null, draft) },
             onDismiss = { if (!busy) editor = null },
             onSave = { draft ->
                 if (!busy) {
@@ -683,14 +667,11 @@ fun ObjectsClientsScreen(
             titleContentColor = MaterialTheme.colorScheme.onSurface,
             textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
             onDismissRequest = { if (!busy) deleting = null },
-            title = { Text("Видалити ${if (isClient) "клієнта" else "об'єкт"}?") },
+            title = { Text(stringResource(if (isClient) Res.string.oc_delete_client_title else Res.string.oc_delete_project_title)) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(if (isClient)
-                        "«$name». Клієнта з активними об'єктами видалити не можна."
-                    else "«$name». Об'єкт із замірами видалити не можна: спочатку " +
-                        "перенесіть або видаліть заміри. Якщо їх немає, пов'язані " +
-                        "кошториси та історичні ревізії будуть приховані в списках.")
+                    Text(stringResource(if (isClient) Res.string.oc_delete_client_confirm
+                        else Res.string.oc_delete_project_confirm, name))
                     // A failed delete must be visible here; a list-bottom
                     // message could be far offscreen after a long scroll.
                     deletionError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
@@ -708,6 +689,7 @@ fun ObjectsClientsScreen(
                             }
                             message = null
                             deletionError = null
+                            if (target is DeletionTarget.Client && viewedClientId == target.item.id) viewedClientId = null
                             deleting = null
                         } catch (cancelled: CancellationException) {
                             throw cancelled
@@ -716,10 +698,10 @@ fun ObjectsClientsScreen(
                             // Keep the dialog open so the user sees the reason.
                         } finally { busy = false }
                     }
-                }) { Text("Видалити", color = MaterialTheme.colorScheme.error) }
+                }) { Text(stringResource(Res.string.oc_delete), color = MaterialTheme.colorScheme.error) }
             },
             dismissButton = { TextButton(onClick = { deleting = null }, enabled = !busy) {
-                Text("Скасувати")
+                Text(stringResource(Res.string.p5d_cancel))
             } }
         )
     }
@@ -756,68 +738,6 @@ private fun ObjectsClientsCreateFab(
     ) {
         Icon(Icons.Default.Add, contentDescription = actionLabel,
             tint = colors.onPrimaryContainer.copy(alpha = progress))
-    }
-}
-
-/**
- * Tappable and draggable alphabet strip, similar to a contacts app.
- * Touch and drag only in the narrow strip; client cards retain their existing
- * horizontal swipe actions, and the list itself retains vertical scroll.
- */
-@Composable
-private fun ClientsAlphabetRail(
-    markers: List<ClientLetterJump>,
-    letterHeight: Dp,
-    modifier: Modifier = Modifier,
-    onSelect: (ClientLetterJump) -> Unit
-) {
-    if (markers.isEmpty() || letterHeight <= 0.dp) return
-    val currentSelect by rememberUpdatedState(onSelect)
-    val slotHeightPx = with(LocalDensity.current) { letterHeight.toPx() }
-    Column(
-        modifier = modifier
-            .width(24.dp)
-            .pointerInput(markers, slotHeightPx) {
-                var previousIndex = -1
-                fun selectAt(y: Float) {
-                    val index = (y / slotHeightPx).toInt().coerceIn(0, markers.lastIndex)
-                    if (index != previousIndex) {
-                        previousIndex = index
-                        currentSelect(markers[index])
-                    }
-                }
-                detectDragGestures(
-                    onDragStart = { selectAt(it.y) },
-                    onDrag = { change, _ ->
-                        selectAt(change.position.y)
-                        change.consume()
-                    },
-                    onDragEnd = { previousIndex = -1 },
-                    onDragCancel = { previousIndex = -1 }
-                )
-            },
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        markers.forEach { marker ->
-            Box(
-                modifier = Modifier.fillMaxWidth().height(letterHeight)
-                    .clickable(
-                        role = Role.Button,
-                        onClickLabel = "Перейти до літери ${marker.letter}",
-                        onClick = { currentSelect(marker) }
-                    ),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = marker.letter.toString(),
-                    color = MaterialTheme.colorScheme.primary,
-                    style = MaterialTheme.typography.labelSmall.copy(
-                        fontSize = if (letterHeight < 13.dp) 9.sp else 11.sp
-                    ),
-                    maxLines = 1
-                )
-            }
-        }
     }
 }
 
@@ -1106,7 +1026,7 @@ internal fun WorkStatusMark(status: String) {
         RequestedWorkArtwork(status, color)
     } else {
         Icon(symbol,
-            contentDescription = ProjectStatusRules.workLabel(status),
+            contentDescription = localizedWorkStage(status),
             modifier = Modifier.size(24.dp),
             tint = color)
     }
@@ -1256,7 +1176,7 @@ private fun ProjectCard(
 @Composable
 private fun ClientCard(
     item: ClientListEntry,
-    onEdit: () -> Unit,
+    onOpen: () -> Unit,
     onDelete: () -> Unit,
     onDial: (String) -> Unit,
     onExternalAction: (ContactAction, String) -> Unit,
@@ -1279,7 +1199,7 @@ private fun ClientCard(
             modifier = Modifier.fillMaxWidth()
                 .clip(ProjectCardShape)
                 .clickable {
-                    if (openSwipe?.id == id) onSwipeClose() else onEdit()
+                    if (openSwipe?.id == id) onSwipeClose() else onOpen()
                 },
             shape = ProjectCardShape,
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
@@ -1539,131 +1459,3 @@ private fun OverflowActions(
     }
 }
 
-@Composable
-private fun ClientEditor(
-    initial: ClientListEntry?,
-    busy: Boolean,
-    error: String?,
-    onDismiss: () -> Unit,
-    onSave: (ClientDraft) -> Unit
-) {
-    var name by remember(initial?.id) { mutableStateOf(initial?.name.orEmpty()) }
-    var phone by remember(initial?.id) { mutableStateOf(initial?.phone.orEmpty()) }
-    var email by remember(initial?.id) { mutableStateOf(initial?.email.orEmpty()) }
-    var notes by remember(initial?.id) { mutableStateOf(initial?.notes.orEmpty()) }
-    AlertDialog(onDismissRequest = onDismiss,
-        containerColor = MaterialTheme.colorScheme.surface,
-        titleContentColor = MaterialTheme.colorScheme.onSurface,
-        textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-        title = { Text(if (initial == null) "Новий клієнт" else "Редагувати клієнта") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(value = name, onValueChange = { name = it },
-                    label = { Text("Ім'я *") }, singleLine = true)
-                OutlinedTextField(value = phone, onValueChange = { phone = it },
-                    label = { Text("Телефон") }, singleLine = true)
-                OutlinedTextField(value = email, onValueChange = { email = it },
-                    label = { Text("Email") }, singleLine = true)
-                OutlinedTextField(value = notes, onValueChange = { notes = it },
-                    label = { Text("Примітки") })
-                if (error != null) Text(error, color = MaterialTheme.colorScheme.error)
-            }
-        },
-        confirmButton = {
-            TextButton(enabled = !busy && name.isNotBlank(),
-                onClick = { onSave(ClientDraft(name, phone, email, notes)) }) { Text("Зберегти") }
-        },
-        dismissButton = { TextButton(enabled = !busy, onClick = onDismiss) { Text("Скасувати") } }
-    )
-}
-
-@Composable
-private fun ProjectEditor(
-    initial: ProjectListEntry?,
-    clients: List<ClientListEntry>,
-    busy: Boolean,
-    error: String?,
-    onDismiss: () -> Unit,
-    onSave: (ProjectDraft) -> Unit
-) {
-    var address by remember(initial?.id) { mutableStateOf(initial?.address.orEmpty()) }
-    var notes by remember(initial?.id) { mutableStateOf(initial?.notes.orEmpty()) }
-    // Legacy 'paid' was only a billing signal. Require a real work stage on edit.
-    var work by remember(initial?.id) {
-        mutableStateOf(initial?.workStatus?.takeIf(ProjectStatusRules::isKnownWorkStage)
-            ?: if (initial == null) ProjectWorkStage.MEASUREMENT.wireId else "")
-    }
-    var payment by remember(initial?.id) {
-        mutableStateOf(initial?.paymentStatus ?: ProjectPaymentStatus.UNPAID.wireId)
-    }
-    var clientId by remember(initial?.id) { mutableStateOf(initial?.clientId) }
-    var showClientMenu by remember { mutableStateOf(false) }
-    var showWorkMenu by remember { mutableStateOf(false) }
-    var showPaymentMenu by remember { mutableStateOf(false) }
-    AlertDialog(onDismissRequest = onDismiss,
-        containerColor = MaterialTheme.colorScheme.surface,
-        titleContentColor = MaterialTheme.colorScheme.onSurface,
-        textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-        title = { Text(if (initial == null) "Новий об'єкт" else "Редагувати об'єкт") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(value = address, onValueChange = { address = it },
-                    label = { Text("Адреса об'єкта *") }, singleLine = true)
-                Box {
-                    TextButton(onClick = { showClientMenu = true }) {
-                        Text("Клієнт: " + (clients.firstOrNull { it.id == clientId }?.name ?: "Не вказаний"))
-                    }
-                    DropdownMenu(expanded = showClientMenu,
-                        onDismissRequest = { showClientMenu = false },
-                        containerColor = MaterialTheme.colorScheme.surface) {
-                        DropdownMenuItem(text = { Text("Без клієнта") },
-                            onClick = { clientId = null; showClientMenu = false })
-                        clients.forEach { client ->
-                            DropdownMenuItem(text = { Text(client.name) },
-                                onClick = { clientId = client.id; showClientMenu = false })
-                        }
-                    }
-                }
-                Box {
-                    TextButton(onClick = { showWorkMenu = true }) {
-                        Text("Робота: " + if (work.isBlank()) "Оберіть етап" else
-                            ProjectStatusRules.workLabel(work))
-                    }
-                    DropdownMenu(expanded = showWorkMenu,
-                        onDismissRequest = { showWorkMenu = false },
-                        containerColor = MaterialTheme.colorScheme.surface) {
-                        ProjectWorkStage.entries.forEach { stage ->
-                            DropdownMenuItem(text = { Text(stage.label) },
-                                onClick = { work = stage.wireId; showWorkMenu = false })
-                        }
-                    }
-                }
-                Box {
-                    TextButton(onClick = { showPaymentMenu = true }) {
-                        Text("Оплата: " + ProjectStatusRules.paymentLabel(payment))
-                    }
-                    DropdownMenu(expanded = showPaymentMenu,
-                        onDismissRequest = { showPaymentMenu = false },
-                        containerColor = MaterialTheme.colorScheme.surface) {
-                        ProjectPaymentStatus.entries.forEach { status ->
-                            DropdownMenuItem(text = { Text(status.label) },
-                                onClick = { payment = status.wireId; showPaymentMenu = false })
-                        }
-                    }
-                }
-                OutlinedTextField(value = notes, onValueChange = { notes = it },
-                    label = { Text("Примітки") })
-                if (error != null) Text(error, color = MaterialTheme.colorScheme.error)
-            }
-        },
-        confirmButton = {
-            TextButton(
-                enabled = !busy && address.isNotBlank() && ProjectStatusRules.isKnownWorkStage(work),
-                onClick = {
-                    onSave(ProjectDraft(address, clientId, work, payment, notes))
-                }
-            ) { Text("Зберегти") }
-        },
-        dismissButton = { TextButton(enabled = !busy, onClick = onDismiss) { Text("Скасувати") } }
-    )
-}

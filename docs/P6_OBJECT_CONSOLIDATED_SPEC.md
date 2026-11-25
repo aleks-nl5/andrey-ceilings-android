@@ -211,3 +211,9 @@ Default: календар на всю ширину; фінанси + площа 
 - Acceptance: common unit/domain/query/navigation/preference tests; duplicate/unknown block IDs, missing mandatory entries, reset, reorder, visibility, odd layout, back/restore, exact vN, no duplicate finance, no test/deleted records, currency block regression, no false calendar events. Minimal UI tests; manual physical Android APK for layout/light-dark/IME/accessibility/performance, QUICK and agreed FULL, code review, owner merge. No new Windows/iOS runtime release gates; retain KMP/CMP compilation/tests.
 - **Product planning P6C complete (35 questions, including prior 1–10).** Technical audit, scoped implementation plan and explicit owner authorization still required. No production code/test/CI change in this planning update.
 
+
+
+### P6A — Owner APK follow-up: Objects and Clients
+- Reserve bottom scroll space above the create FAB for both lists; remove alphabet rail UI and its width reservation, retain alphabetical sorting and search.
+- New clients require name and phone with at least one digit; no schema migration or retroactive mandatory field for legacy clients. Reuse compact CMP fields and project status pickers. Client selector supports search, no-client choice and inline create; preserve project draft, select returned client ID immediately, independent explicit client save (client remains if project draft is cancelled).
+- Single read-only client card from registry, search and project details; edit via pencil, delete via trash using existing confirmation and linked-object safeguard, phone/email and existing WhatsApp/Telegram/Viber actions. Preserve both swipe directions. All new text and status picker labels use CMP resources. Functional coverage and physical APK acceptance; no new UI suite.
