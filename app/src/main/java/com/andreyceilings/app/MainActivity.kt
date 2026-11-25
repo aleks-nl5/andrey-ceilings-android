@@ -49,6 +49,13 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // #144: remove the retired one-time trigger without changing the two active modes.
+        AutomaticBackupSettings.removeLegacyDatabaseChangeMode(applicationContext)
+        runCatching {
+            AutomaticBackupScheduler.cancelLegacyDatabaseChange(applicationContext)
+        }.onFailure { failure ->
+            android.util.Log.w("AutomaticBackup", "Legacy backup work cancellation failed", failure)
+        }
         WindowCompat.enableEdgeToEdge(window)
         themeMode.value = runCatching {
             ThemeMode.valueOf(getSharedPreferences("app_preferences", MODE_PRIVATE)

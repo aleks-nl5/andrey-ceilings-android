@@ -470,23 +470,6 @@ internal fun SettingsScreen(
             var periodicEnabled by remember { mutableStateOf(AutomaticBackupSettings.periodicEnabled(context)) }
             var selectedSchedule by remember { mutableStateOf(AutomaticBackupSettings.schedule(context)) }
             var backgroundEnabled by remember { mutableStateOf(AutomaticBackupSettings.backgroundEnabled(context)) }
-            var databaseChangeEnabled by remember { mutableStateOf(AutomaticBackupSettings.databaseChangeEnabled(context)) }
-            DisposableEffect(databaseChangeEnabled, database) {
-                val db = database
-                val observer = if (databaseChangeEnabled && db != null) {
-                    object : com.andreyceilings.app.data.db.SqlDelightChangeTracker.Observer(
-                        "clients", "projects", "room_measurements", "price_items", "estimates"
-                    ) {
-                        override fun onInvalidated(tables: Set<String>) {
-                            if (AutomaticBackupSettings.anyEnabled(context) &&
-                                BackupPasswordStore.folder(context) != null) {
-                                AutomaticBackupScheduler.triggerOnDatabaseChange(context)
-                            }
-                        }
-                    }.also { db.changeTracker.addObserver(it) }
-                } else null
-                onDispose { if (observer != null && db != null) db.changeTracker.removeObserver(observer) }
-            }
             ListItem(
                 headlineContent = { Text("Резервування за графіком") },
                 supportingContent = { Text("Створювати копію за вибраною періодичністю") },
@@ -501,9 +484,7 @@ internal fun SettingsScreen(
                             periodicEnabled = true
                         }.onFailure { automaticStatus = it.message ?: "Не вдалося ввімкнути графік." }
                     } else {
-                        val anotherModeEnabled =
-                            AutomaticBackupSettings.backgroundEnabled(context) ||
-                            AutomaticBackupSettings.databaseChangeEnabled(context)
+                        val anotherModeEnabled = AutomaticBackupSettings.backgroundEnabled(context)
                         if (!anotherModeEnabled) {
                             // Keep the switch enabled until the user confirms the destructive action.
                             showDisableAllConfirmation = true
@@ -550,41 +531,13 @@ internal fun SettingsScreen(
                             backgroundEnabled = true
                         }.onFailure { automaticStatus = it.message ?: "Не вдалося ввімкнути резервування." }
                     } else {
-                        val anotherModeEnabled =
-                            AutomaticBackupSettings.periodicEnabled(context) ||
-                            AutomaticBackupSettings.databaseChangeEnabled(context)
+                        val anotherModeEnabled = AutomaticBackupSettings.periodicEnabled(context)
                         if (!anotherModeEnabled) {
                             // Do not change the stored or displayed switch state before confirmation.
                             showDisableAllConfirmation = true
                         } else {
                             AutomaticBackupSettings.setBackgroundEnabled(context, false)
                             backgroundEnabled = false
-                        }
-                    }
-                }) }
-            )
-            ListItem(
-                headlineContent = { Text("Резервування після змін БД") },
-                supportingContent = { Text("Створювати копію після змін у таблицях бази даних") },
-                trailingContent = { Switch(checked = databaseChangeEnabled, onCheckedChange = { enabled ->
-                    if (enabled) {
-                        runCatching {
-                            check(BackupPasswordStore.folder(context) != null) { "Спочатку виберіть папку для копій." }
-                            val saved = BackupPasswordStore.readPassword(context) ?: error("Спочатку збережіть пароль автоматичних копій.")
-                            saved.fill(Char.MIN_VALUE)
-                            AutomaticBackupSettings.setDatabaseChangeEnabled(context, true)
-                            databaseChangeEnabled = true
-                        }.onFailure { automaticStatus = it.message ?: "Не вдалося ввімкнути резервування." }
-                    } else {
-                        val anotherModeEnabled =
-                            AutomaticBackupSettings.periodicEnabled(context) ||
-                            AutomaticBackupSettings.backgroundEnabled(context)
-                        if (!anotherModeEnabled) {
-                            // Do not change the stored or displayed switch state before confirmation.
-                            showDisableAllConfirmation = true
-                        } else {
-                            AutomaticBackupSettings.setDatabaseChangeEnabled(context, false)
-                            databaseChangeEnabled = false
                         }
                     }
                 }) }
@@ -623,7 +576,6 @@ internal fun SettingsScreen(
                                 AutomaticBackupScheduler.disableAll(context)
                                 AutomaticBackupSettings.setPeriodicEnabled(context, false)
                                 AutomaticBackupSettings.setBackgroundEnabled(context, false)
-                                AutomaticBackupSettings.setDatabaseChangeEnabled(context, false)
                                 BackupPasswordStore.folder(context)?.let { uri ->
                                     androidx.documentfile.provider.DocumentFile.fromTreeUri(context, uri)
                                         ?.listFiles()?.filter { it.name?.matches(Regex("СтеляПро_\\d{8}_\\d{6}\\.stpb")) == true }
@@ -631,7 +583,6 @@ internal fun SettingsScreen(
                                 }
                                 periodicEnabled = false
                                 backgroundEnabled = false
-                                databaseChangeEnabled = false
                                 automaticStatus = "Автоматичне резервування вимкнено; автоматичні .stpb-копії видалено."
                             }.onFailure { automaticStatus = "Не вдалося завершити вимкнення: " + (it.message ?: "невідома помилка") }
                             showDisableAllConfirmation = false

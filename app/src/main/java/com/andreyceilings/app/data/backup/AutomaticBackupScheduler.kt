@@ -10,11 +10,11 @@ import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import java.util.concurrent.TimeUnit
 
-/** Schedules the three independent triggers that share the same portable-backup worker. */
+/** Schedules the two independent triggers that share the same portable-backup worker. */
 object AutomaticBackupScheduler {
     private const val PERIODIC_WORK_NAME = "stelapro_periodic_portable_backup"
     private const val BACKGROUND_WORK_NAME = "stelapro_background_portable_backup"
-    private const val DATABASE_WORK_NAME = "stelapro_database_change_portable_backup"
+    private const val LEGACY_DATABASE_WORK_NAME = "stelapro_database_change_portable_backup"
 
     private fun constraints() = Constraints.Builder()
         .setRequiredNetworkType(NetworkType.NOT_REQUIRED)
@@ -41,7 +41,10 @@ object AutomaticBackupScheduler {
 
     fun triggerOnBackground(context: Context) = enqueueOnce(context, BACKGROUND_WORK_NAME)
 
-    fun triggerOnDatabaseChange(context: Context) = enqueueOnce(context, DATABASE_WORK_NAME)
+    /** Best-effort cancellation of the retired one-time request on app startup. */
+    fun cancelLegacyDatabaseChange(context: Context) {
+        WorkManager.getInstance(context.applicationContext).cancelUniqueWork(LEGACY_DATABASE_WORK_NAME)
+    }
 
     private fun enqueueOnce(context: Context, name: String) {
         val request = OneTimeWorkRequestBuilder<AutomaticBackupWorker>()
@@ -54,6 +57,6 @@ object AutomaticBackupScheduler {
     fun disableAll(context: Context) {
         WorkManager.getInstance(context.applicationContext).cancelUniqueWork(PERIODIC_WORK_NAME)
         WorkManager.getInstance(context.applicationContext).cancelUniqueWork(BACKGROUND_WORK_NAME)
-        WorkManager.getInstance(context.applicationContext).cancelUniqueWork(DATABASE_WORK_NAME)
+        cancelLegacyDatabaseChange(context)
     }
 }
