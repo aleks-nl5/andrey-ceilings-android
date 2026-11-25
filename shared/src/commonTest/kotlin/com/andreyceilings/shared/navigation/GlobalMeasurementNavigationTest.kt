@@ -28,13 +28,13 @@ class GlobalMeasurementNavigationTest {
         for (list in listOf(AppNavigationState().selectTab(AppRoute.MEASUREMENTS),
             AppNavigationState().selectTab(AppRoute.SETTINGS).navigate(AppRoute.MEASUREMENTS))) {
             val details = list.openMeasurement(7, 12)
-            val edit = details.editMeasurement(7, 12)
+            val edit = list.openCeilingWorkspace(7, 12)
             assertEquals(edit, AppNavigationState.restore(edit.snapshot()))
-            assertEquals(details, edit.back())
-            assertEquals(details, edit.measurementSaved(7, 12))
+            assertEquals(list, edit.back())
+            assertEquals(list, edit.measurementSaved(7, 12))
             assertSame(edit, edit.measurementSaved(8, 12))
             assertSame(edit, edit.measurementSaved(7, 13))
-            assertEquals(list, edit.measurementSaved(7, 12).back())
+            assertEquals(list.back(), edit.measurementSaved(7, 12).back())
             assertEquals(list, details.back())
             assertNull(edit.selectTab(AppRoute.PRICES).measurementEdit)
         }

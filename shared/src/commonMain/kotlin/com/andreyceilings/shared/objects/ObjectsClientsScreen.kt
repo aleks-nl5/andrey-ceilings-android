@@ -183,7 +183,8 @@ fun ObjectsClientsScreen(
     measurementPrecision: com.andreyceilings.shared.calculation.MeasurementPrecision = com.andreyceilings.shared.calculation.MeasurementPrecision.ONE_CENTIMETER,
     onCreateMeasurement: (Long) -> Unit = {},
     onMeasurementCreated: (Long, Long) -> Unit = { _, _ -> },
-    measurementCreateNavigationGuard: com.andreyceilings.shared.measurement.MeasurementCreateNavigationGuard? = null
+    measurementCreateNavigationGuard: com.andreyceilings.shared.measurement.MeasurementCreateNavigationGuard? = null,
+    onProjectDial: (String) -> Unit = onDial
 ) {
     val scope = rememberCoroutineScope()
     val focusManager = LocalFocusManager.current
@@ -587,7 +588,7 @@ fun ObjectsClientsScreen(
             active = measurement == null && create == null && edit == null,
             onOpenMeasurement = { onOpenMeasurement(detailsProjectId, it) },
             onCreateMeasurement = { onCreateMeasurement(detailsProjectId) },
-            onDial = onDial,
+            onDial = onProjectDial,
             onOpenClient = { client -> message = null; editor = EditorTarget.Client(client) },
             onBack = onCloseProject,
             onEdit = { project -> message = null; editor = EditorTarget.Project(project) }
@@ -606,7 +607,8 @@ fun ObjectsClientsScreen(
             projectId = edit.projectId, measurementId = edit.measurementId, store = detailsStore?.measurementEdit,
             contentPadding = contentPadding, systemTopInset = systemTopInset,
             onBack = onCloseMeasurement,
-            navigationGuard = measurementCreateNavigationGuard, quoteStore = detailsStore?.measurementDetails?.elements
+            navigationGuard = measurementCreateNavigationGuard, quoteStore = detailsStore?.measurementDetails?.elements,
+            legacyDetailsStore = detailsStore?.measurementDetails
         )
         if (create != null) com.andreyceilings.shared.measurement.MeasurementCreateWorkspace(
             projectId = create.projectId, precision = measurementPrecision, store = detailsStore?.measurementEdit,

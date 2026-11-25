@@ -20,6 +20,8 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material.icons.filled.Email
+import androidx.compose.material.icons.filled.Payments
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -56,7 +58,8 @@ import com.andreyceilings.shared.theme.CeilingsEdgeGradient
 import com.andreyceilings.shared.measurement.formatMeasurementAreaCompact
 import com.andreyceilings.shared.measurement.formatMeasurementLengthCompact
 import com.andreyceilings.shared.resources.Res
-import com.andreyceilings.shared.resources.p5c_measurement_card_metrics
+import com.andreyceilings.shared.resources.p5d_retry
+import com.andreyceilings.shared.resources.p5d_unknown
 import com.andreyceilings.shared.resources.p6a_add_ceiling
 import com.andreyceilings.shared.resources.p6a_approved_total
 import com.andreyceilings.shared.resources.p6a_call_client
@@ -88,6 +91,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.retryWhen
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.collect
@@ -200,11 +204,19 @@ internal fun ProjectDetailsScreen(
     val detailsListState = rememberSaveable(projectId, saver = LazyListState.Saver) {
         LazyListState()
     }
-    val finance = if (visibleProject == null) ProjectFinanceState.Loading else key(store, projectId) {
-        val financeFlow = remember(store, projectId) {
+    var financeRetry by remember(store, projectId) { mutableIntStateOf(0) }
+    val finance = if (visibleProject == null) ProjectFinanceState.Loading else key(store, projectId, active, financeRetry) {
+        val financeFlow = remember(store, projectId, active, financeRetry) {
             store?.observeProjectQuoteSummary(projectId)
                 ?.map<ProjectQuoteSummary?, ProjectFinanceState> {
                     if (it == null) ProjectFinanceState.Unavailable else ProjectFinanceState.Loaded(it)
+                }?.retryWhen { cause, attempt ->
+                    if (cause is CancellationException) throw cause
+                    if (attempt >= 2) false else {
+                        emit(ProjectFinanceState.Unavailable)
+                        delay(500L * (attempt + 1))
+                        true
+                    }
                 }?.catch { emit(ProjectFinanceState.Unavailable) }
                 ?: flowOf(ProjectFinanceState.Unavailable)
         }
@@ -434,7 +446,7 @@ internal fun ProjectDetailsScreen(
                     if (project == null) item { Text("Об'єкт не знайдено або його видалено.") }
                     else {
                         item(key = "project-summary") {
-                            ProjectDetailsSummary(state.data.measurements, finance)
+                            ProjectDetailsSummary(state.data.measurements, finance) { financeRetry++ }
                         }
                         item(key = "status") {
                             DetailsCard {
@@ -833,29 +845,32 @@ private fun PaymentStatusPicker(
 }
 
 @Composable
-private fun ProjectDetailsSummary(ceilings: List<ProjectMeasurement>, finance: ProjectFinanceState) {
+private fun ProjectDetailsSummary(ceilings: List<ProjectMeasurement>, finance: ProjectFinanceState, onRetry: () -> Unit) {
     val metrics = remember(ceilings) {
         if (ceilings.any { !it.area.isFinite() || !it.perimeter.isFinite() || it.area < 0 || it.perimeter < 0 }) null
         else (ceilings.sumOf { it.area } to ceilings.sumOf { it.perimeter })
             .takeIf { it.first.isFinite() && it.second.isFinite() }
     }
-    val amount = when (finance) {
+    val cents = (finance as? ProjectFinanceState.Loaded)?.summary?.approvedCents
+    val amount = if (cents != null) compactQuoteAmount(cents) else stringResource(Res.string.p5d_unknown)
+    val label = when (finance) {
         ProjectFinanceState.Loading -> stringResource(Res.string.p6a_finance_loading)
         ProjectFinanceState.Unavailable -> stringResource(Res.string.p6a_finance_unavailable)
         is ProjectFinanceState.Loaded -> when {
             finance.summary.approvedUnavailable -> stringResource(Res.string.p6a_finance_unavailable)
             finance.summary.approvedCents == null -> stringResource(Res.string.p6a_no_approved_quotes)
-            else -> stringResource(Res.string.p6a_approved_total, compactQuoteAmount(finance.summary.approvedCents))
+            else -> stringResource(Res.string.p6a_approved_total, amount)
         }
     }
-    DetailsCard {
-        Text(
-            if (metrics == null) stringResource(Res.string.p6a_metrics_unavailable)
-            else stringResource(Res.string.p5c_measurement_card_metrics,
-                formatMeasurementAreaCompact(metrics.first), formatMeasurementLengthCompact(metrics.second)),
-            style = MaterialTheme.typography.bodySmall
-        )
-        Text(amount, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    CompactMetricsRow(metrics?.first, metrics?.second) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            CompactMetric(Icons.Default.Payments, amount, label)
+            if (finance == ProjectFinanceState.Unavailable) {
+                IconButton(onClick = onRetry) {
+                    Icon(Icons.Default.Refresh, stringResource(Res.string.p5d_retry), Modifier.size(16.dp))
+                }
+            }
+        }
     }
 }
 

@@ -278,7 +278,7 @@ private fun DesktopPriceHost(
                     measurementCreateNavigationGuard = measurementCreateNavigationGuard,
                     onCreateMeasurement = { onNavigate(navigation.createMeasurement(it)) },
                     onMeasurementCreated = { projectId, measurementId -> onNavigate(navigation.measurementCreatedInEditor(projectId, measurementId)) },
-                    onOpenMeasurement = { projectId, measurementId -> onNavigate(navigation.openMeasurement(projectId, measurementId)) },
+                    onOpenMeasurement = { projectId, measurementId -> onNavigate(navigation.openCeilingWorkspace(projectId, measurementId)) },
                     detailsStore = objectsStore,
                     onOpenProject = { onNavigate(navigation.openProject(it)) },
                     onCloseProject = { onNavigate(navigation.back(availableRoutes)) },
@@ -310,6 +310,10 @@ private fun DesktopPriceHost(
                     },
                     onDial = { phone ->
                         openExternal("tel:" + phone.filter { it.isDigit() || it == '+' })
+                    },
+                    onProjectDial = { phone ->
+                        check(Desktop.isDesktopSupported() && Desktop.getDesktop().isSupported(Desktop.Action.BROWSE))
+                        Desktop.getDesktop().browse(URI("tel:" + phone.filter { it.isDigit() || it == '+' }))
                     },
                     onExternalAction = { action, raw ->
                         val encoded = URLEncoder.encode(raw, "UTF-8")

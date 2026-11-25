@@ -578,7 +578,7 @@ private fun CeilingsAppContent(
                                 updateNavigation(navigation.measurementCreatedInEditor(projectId, measurementId))
                             },
                             onOpenMeasurement = { projectId, measurementId ->
-                                updateNavigation(navigation.openMeasurement(projectId, measurementId))
+                                updateNavigation(navigation.openCeilingWorkspace(projectId, measurementId))
                             },
                             onOpenProject = { updateNavigation(navigation.openProject(it)) },
                             onCloseProject = { updateNavigation(navigation.back()) },

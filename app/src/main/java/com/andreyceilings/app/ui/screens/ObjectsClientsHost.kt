@@ -123,6 +123,9 @@ internal fun ObjectsClientsHost(
         onDial = { phone ->
             if (phone.isNotBlank()) openIntent(Uri.fromParts("tel", phone.trim(), null), dial = true)
         },
+        onProjectDial = { phone ->
+            context.startActivity(Intent(Intent.ACTION_DIAL, Uri.fromParts("tel", phone.trim(), null)))
+        },
         onExternalAction = { action, raw ->
             val uri = when (action) {
                 ContactAction.GOOGLE_MAPS ->

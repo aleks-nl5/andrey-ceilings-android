@@ -5,6 +5,9 @@
 **#144 завершено (25.11.2026).** [PR #170](https://github.com/aleks-nl5/andrey-ceilings-android/pull/170) злито, [#144](https://github.com/aleks-nl5/andrey-ceilings-android/issues/144) закрито. Android більше не планує автоматичний backup після змін БД. Розклад, фоновий і ручний режими, наявні копії, retention та відновлення збережено.
 
 ## P6A — Об'єкт (рішення 1–8, 26)
+
+**Owner follow-up after APK, 25.11.2026 (supersedes earlier layout):** under the address, icon-only area/perimeter/approved amount, no card, amount on the right; ceiling cards use the same geometry icons and put the saved amount followed by its status icon on the metrics row, wrapping rather than clipping on narrow displays. Normal object/global/consolidated routes enter the workspace directly; Back returns to source, ordinary Save remains in workspace. Legacy snapshot routes and historical read-only fallback remain until P6C #140 cleanup. Contact actions propagate launch failure; financial metadata retries bounded transient reads and offers explicit retry. No messenger additions. Re-accept physical APK after polish; no new UI suite.
+
 1. Єдиний вертикальний список: адреса/підсумки → статус роботи/оплати → клієнт → примітки → Стелі → Зведені кошториси. Зберегти existing moving header, FAB, overlay/градієнти та анімацію адреси.
 2. Картка стелі: компактна мініатюра лише фактичного збереженого зовнішнього контуру, без розміщених елементів, сітки, розмірів, літер чи інтерактиву; назва, площа, периметр, фінансовий показник; один тап → той самий workspace «Стеля».
 3. Фінансовий показник: погоджений individual, інакше остання активна невідхилена версія; іконка статусу справа від суми, без рядка якщо немає відповідної версії. Не live-reprice.

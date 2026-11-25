@@ -38,7 +38,8 @@ fun MeasurementsScreen(
     }
     navigation.measurementEdit?.let { route ->
         MeasurementEditScreen(route.projectId, route.measurementId, editStore, contentPadding, systemTopInset,
-            onBack = back, navigationGuard = navigationGuard, quoteStore = detailsStore?.elements)
+            onBack = back, navigationGuard = navigationGuard, quoteStore = detailsStore?.elements,
+            legacyDetailsStore = detailsStore)
         return
     }
     navigation.measurementDetails?.let { route ->
@@ -117,9 +118,9 @@ fun MeasurementsScreen(
                                         "периметр ${formatMeasurementLength(row.perimeterMeters, capturedPrecision)} м")
                                     MeasurementDrawing(geometry, Modifier.fillMaxWidth())
                                     FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                        TextButton(onClick = { onNavigate(navigation.openMeasurement(row.projectId, row.id)) }, enabled = !busy) { Text("Переглянути") }
+                                        TextButton(onClick = { onNavigate(navigation.openCeilingWorkspace(row.projectId, row.id)) }, enabled = !busy) { Text("Переглянути") }
                                         TextButton(onClick = {
-                                            onNavigate(navigation.openMeasurement(row.projectId, row.id).editMeasurement(row.projectId, row.id))
+                                            onNavigate(navigation.openCeilingWorkspace(row.projectId, row.id))
                                         }, enabled = !busy && geometry is MeasurementGeometryView.Captured) { Text("Редагувати") }
                                         TextButton(onClick = { action { onUseMeasurement(checkNotNull(store).geometry(row.projectId, row.id)) } },
                                             enabled = !busy && geometry is MeasurementGeometryView.Captured) { Text("Розрахувати") }
