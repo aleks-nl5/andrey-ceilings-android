@@ -35,7 +35,8 @@ internal enum class EstimateDocumentSection(val label: String, val editable: Boo
 internal data class DocumentPresentationOptions(
     val order: List<EstimateDocumentSection>,
     val hidden: Set<EstimateDocumentSection> = emptySet(),
-    val text: Map<EstimateDocumentSection, String> = emptyMap()
+    val text: Map<EstimateDocumentSection, String> = emptyMap(),
+    val fixedDiscountLabel: String? = null
 )
 
 internal data class DocumentIssuer(val name: String, val contacts: List<String>, val logo: ImageBitmap?)

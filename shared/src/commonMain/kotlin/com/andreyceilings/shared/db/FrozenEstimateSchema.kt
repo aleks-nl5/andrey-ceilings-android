@@ -4,7 +4,7 @@ import app.cash.sqldelight.db.QueryResult
 import app.cash.sqldelight.db.SqlDriver
 
 /** Strict physical admission for encrypted reopen/import; never repair a partial v16 in place. */
-fun verifyFrozenEstimateStructure(driver: SqlDriver, version: Long = 19) {
+fun verifyFrozenEstimateStructure(driver: SqlDriver, version: Long = PriceCatalogSchema.version) {
     val expected = mutableMapOf(
         "estimate_v1_frozen" to """CREATE TABLE estimate_v1_frozen (
     revisionUuid TEXT NOT NULL PRIMARY KEY REFERENCES estimate_revisions(revisionUuid) ON DELETE RESTRICT,
@@ -83,6 +83,10 @@ fun verifyFrozenEstimateStructure(driver: SqlDriver, version: Long = 19) {
     updatedAt INTEGER CHECK ((selectedRevisionUuid IS NULL AND updatedAt IS NULL) OR (selectedRevisionUuid IS NOT NULL AND typeof(updatedAt) = 'integer' AND updatedAt > 0))
 );"""
     }
+    if (version >= 21) expected["estimate_revision_tombstones"] = """CREATE TABLE estimate_revision_tombstones (
+    revisionUuid TEXT NOT NULL PRIMARY KEY REFERENCES estimate_revisions(revisionUuid) ON DELETE RESTRICT,
+    deletedAt INTEGER NOT NULL CHECK (typeof(deletedAt) = 'integer' AND deletedAt > 0)
+);"""
     expected.forEach { (name, definition) ->
         val actual = driver.executeQuery(null, "SELECT sql FROM sqlite_master WHERE name = ?", { cursor ->
             QueryResult.Value(if (cursor.next().value) cursor.getString(0) else null)

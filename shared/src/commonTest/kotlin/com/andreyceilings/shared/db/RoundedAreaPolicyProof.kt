@@ -52,7 +52,9 @@ object RoundedAreaPolicyProof {
         assertEquals(drawing, MeasurementRepository(db).findByUuid(f.measurementUuid)!!.drawingJson)
         verifyFrozenEstimateContents(driver)
         // New v1 uses the same explicit format/policy without inventing a parent identity.
-        val standalone = repo.saveIndividual(FrozenRevisionProof.presenter(db, f).saveRequest(f.projectId, "Rounded area")!!, 2026, 607)
+        val standalone = FrozenRevisionProof.withLegacyAlternative(driver, listOf(first.seriesUuid), f.measurementUuid) {
+            repo.saveIndividual(FrozenRevisionProof.presenter(db, f).saveRequest(f.projectId, "Rounded area")!!, 2026, 607)
+        }
         val saved = repo.exactIndividual(standalone.seriesUuid, standalone.initialRevisionUuid)!!
         assertEquals(3, saved.frozen.formatVersion)
         assertNull(saved.frozen.revisionIdentity)
@@ -75,9 +77,14 @@ object RoundedAreaPolicyProof {
             val repo = ImmutableEstimateRepository(db)
             val saved = repo.saveIndividual(FrozenIndividualEstimateProof.command(db, f), 2026, 600)
             series = saved.seriesUuid; revision = saved.initialRevisionUuid
-            repo.setWorkflowStatus(revision, 1, EstimateWorkflowStatus.APPROVED, 601)
-            repo.selectRevision(series, revision, 1, 602)
-            payload = repo.frozenIndividual(series)!!.payload
+            d.execute(null, "UPDATE estimate_revision_workflow SET status = 'APPROVED', version = 2, updatedAt = 601 WHERE revisionUuid = ?", 1) {
+                bindString(0, revision)
+            }
+            d.execute(null, "UPDATE estimate_revision_choice SET selectedRevisionUuid = ?, version = 2, updatedAt = 602 WHERE seriesUuid = ?", 2) {
+                bindString(0, revision)
+                bindString(1, series)
+            }
+            payload = readPreV21FrozenV1Payload(d, series)
         }
         open(production).use { d ->
             val repo = ImmutableEstimateRepository(PrototypeDatabase(d))

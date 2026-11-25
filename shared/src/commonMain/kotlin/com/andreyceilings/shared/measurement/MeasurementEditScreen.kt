@@ -11,6 +11,8 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.ui.semantics.Role
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -34,6 +36,9 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.CropSquare
 import androidx.compose.material.icons.filled.Category
 import androidx.compose.material.icons.filled.Straighten
+import androidx.compose.material.icons.filled.Payments
+import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.ReceiptLong
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material3.*
@@ -71,6 +76,8 @@ import androidx.compose.ui.unit.dp
 import com.andreyceilings.shared.calculation.*
 import com.andreyceilings.shared.input.CompactOutlinedStringField
 import com.andreyceilings.shared.estimate.FrozenPolygonGeometry
+import com.andreyceilings.shared.estimate.SavedIndividualQuote
+import com.andreyceilings.shared.livepricing.*
 import com.andreyceilings.shared.resources.*
 import org.jetbrains.compose.resources.stringResource
 import com.andreyceilings.shared.ui.CeilingsWorkspaceScaffold
@@ -87,20 +94,28 @@ private enum class MeasurementSheet { CLOSED, COMPACT, EXPANDED }
 private const val SheetMotionMillis = 240
 private val WorkspacePanelShape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp)
 
-private enum class MeasurementEditContext { CONTOUR, ELEMENTS, COST }
+private enum class MeasurementEditContext { CONTOUR, ELEMENTS, COST, QUOTES }
+
+private fun MeasurementEditContext.tabIcon(): ImageVector = when (this) {
+    MeasurementEditContext.CONTOUR -> Icons.Default.CropSquare
+    MeasurementEditContext.ELEMENTS -> Icons.Default.Category
+    MeasurementEditContext.COST -> Icons.Default.Payments
+    MeasurementEditContext.QUOTES -> Icons.Default.ReceiptLong
+}
 
 @Composable
 private fun MeasurementEditContext.displayLabel(): String = stringResource(when (this) {
     MeasurementEditContext.CONTOUR -> Res.string.p5b_context_contour
     MeasurementEditContext.ELEMENTS -> Res.string.p5b_context_elements
     MeasurementEditContext.COST -> Res.string.p5b_context_cost
+    MeasurementEditContext.QUOTES -> Res.string.p5d_quotes
 })
 
 @Composable
 fun MeasurementEditScreen(
     projectId: Long, measurementId: Long, store: MeasurementEditStore?,
     contentPadding: PaddingValues, systemTopInset: Dp, onBack: () -> Unit,
-    navigationGuard: MeasurementCreateNavigationGuard?
+    navigationGuard: MeasurementCreateNavigationGuard?, quoteStore: MeasurementElementsStore? = null
 ) {
     val editorPadding = measurementEditorPadding(contentPadding, systemTopInset)
     // Do not consume restored form state against Android's temporary null session
@@ -132,7 +147,7 @@ fun MeasurementEditScreen(
         if (editor == null) Column(Modifier.fillMaxSize().padding(editorPadding)) {
             Text(error ?: "Завантаження заміру…", color = MaterialTheme.colorScheme.onSurface)
             TextButton(onClick = onBack) { Text("До заміру") }
-        } else MeasurementEditScreen(editor, contentPadding, systemTopInset, onBack, navigationGuard)
+        } else MeasurementEditScreen(editor, contentPadding, systemTopInset, onBack, navigationGuard, quoteStore = quoteStore)
     }
 }
 
@@ -143,13 +158,16 @@ fun MeasurementEditScreen(
     navigationGuard: MeasurementCreateNavigationGuard? = null,
     imeInsets: WindowInsets? = null,
     onCreated: ((Long) -> Unit)? = null,
-    creationParent: MeasurementCreateParent? = null
+    creationParent: MeasurementCreateParent? = null,
+    quoteStore: MeasurementElementsStore? = null
 ) {
     val state by model.state.collectAsState()
     val validation = remember(state.draft) { validateMeasurementCreate(state.draft) }
-    val pointFlow = remember(model, state.original.draft.recordUuid) { model.observePoints() }
-    val overlay = key(model, state.original.draft.recordUuid) { pointFlow.collectAsState(if (state.creating) PointOverlayState.Loaded(emptyList(), null)
-        else PointOverlayState.Loading).value }
+    val overlay = key(model, state.original) {
+        val pointFlow = remember { model.observePoints() }
+        pointFlow.collectAsState(if (state.creating) PointOverlayState.Loaded(emptyList(), null)
+            else PointOverlayState.Loading).value
+    }
     LaunchedEffect(overlay,state.original) {
         val incoming=(overlay as? PointOverlayState.Loaded)?.points
         if(incoming!=null && !state.saving && !state.saved && !state.checking && !state.uncertain && (incoming.map {it.uuid}.toSet()!=state.original.placements.points.map {it.uuid}.toSet() ||
@@ -160,6 +178,12 @@ fun MeasurementEditScreen(
     val measurementUuid = state.original.draft.recordUuid
     var fullscreen by rememberSaveable(measurementUuid) { mutableStateOf(navigationGuard?.fullscreen?.value == true) }
     val draft = state.draft
+    val pricingBasis by key(model, draft.projectId, measurementUuid, state.creating) {
+        remember { model.observeDraftPricingBasis(draft.projectId, measurementUuid, state.creating) }.collectAsState(null)
+    }
+    val draftPricing = remember(model, state, pricingBasis) {
+        pricingBasis?.let { projectDraftPricing(model, state, it) }
+    }
     val sideIds = (draft.outline as? MeasurementOutlineDraft.Orthogonal)?.sides?.map { it.inputId }
     var selected by rememberSaveable(measurementUuid, draft.shape, sideIds) {
         mutableStateOf<Int?>(null)
@@ -169,11 +193,53 @@ fun MeasurementEditScreen(
         else MeasurementEditContext.CONTOUR
     ) }
     var fullscreenContext by rememberSaveable(measurementUuid) { mutableStateOf(MeasurementEditContext.CONTOUR) }
-    var lastDrawingContext by rememberSaveable(measurementUuid) { mutableStateOf(MeasurementEditContext.CONTOUR) }
     var sheet by rememberSaveable(measurementUuid) { mutableStateOf(MeasurementSheet.CLOSED) }
     var lastOpenSheet by rememberSaveable(measurementUuid) { mutableStateOf(MeasurementSheet.COMPACT) }
     SideEffect { if (sheet != MeasurementSheet.CLOSED) lastOpenSheet = sheet }
+    var lastDrawingContext by rememberSaveable(measurementUuid) { mutableStateOf(MeasurementEditContext.CONTOUR) }
     val context = if (fullscreen) fullscreenContext else normalContext
+    val quotes = remember(model, quoteStore) { WorkspaceQuoteSession() }
+    val sourceStale = (draftPricing as? DraftPricingResult.Unavailable)?.reason == PricingProblemCode.STALE_SOURCE
+    val quotePresenter = quotes.presenter
+    if (quotePresenter != null && quoteStore != null && !state.creating) {
+        val route = ElementRoute(draft.projectId, state.original.measurementId, measurementUuid)
+        val current = !sourceStale && !state.dirty && !state.conflict && !state.uncertain && !state.saving &&
+            quotes.measurementVersion == state.original.updatedAt
+        ObserveWorkspaceQuotePricing(quoteStore, quotePresenter, route, current)
+    }
+    val visibleQuote = quotes.opened?.takeIf { context == MeasurementEditContext.QUOTES && (!fullscreen || sheet != MeasurementSheet.CLOSED) }
+    val frozenGeometry = remember(visibleQuote?.revisionUuid) {
+        visibleQuote?.let { MeasurementGeometryCodec.read(it.frozen.source.drawingJson) }
+    }
+    val expandedQuote = context == MeasurementEditContext.QUOTES && quotes.expanded
+    var pendingQuoteExit by remember(quotes) { mutableStateOf<(() -> Unit)?>(null) }
+    val quoteRouteExit = remember(quotes) {
+        { proceed: () -> Unit ->
+            if (quotes.presenter?.hasUserChanges == true) {
+                if (pendingQuoteExit == null) pendingQuoteExit = proceed
+                true
+            } else false
+        }
+    }
+    val handleQuoteBack by rememberUpdatedState<() -> Boolean>({
+        when {
+            context != MeasurementEditContext.QUOTES -> false
+            quotes.presenter?.saveState?.value?.saving == true -> true
+            quotes.presenter != null -> {
+                if (quotes.presenter?.hasUserChanges == true) {
+                    quotes.discardPending = true
+                } else quotes.closeDraft(quoteStore)
+                true
+            }
+            context == MeasurementEditContext.QUOTES && quotes.opened != null -> { quotes.closeView(); true }
+            else -> false
+        }
+    })
+    DisposableEffect(quotes) {
+        onDispose {
+            if (quotes.presenter?.saveState?.value?.saving != true) quotes.closeDraft(quoteStore)
+        }
+    }
     var statusDetails by rememberSaveable(measurementUuid) { mutableStateOf(false) }
     var saveBlockOpen by remember { mutableStateOf(false) }
     var pendingShape by rememberSaveable(measurementUuid) { mutableStateOf<String?>(null) }
@@ -230,6 +296,7 @@ fun MeasurementEditScreen(
     val surfaceBack = remember(model, measurementUuid, navigationGuard) {
         {
             when {
+                handleQuoteBack() -> true
                 showAdd && currentCatalogSubpageBack != null -> {
                     currentCatalogSubpageBack?.invoke()
                     true
@@ -256,11 +323,13 @@ fun MeasurementEditScreen(
             }
         }
     }
-    DisposableEffect(model, navigationGuard) {
+    DisposableEffect(model, navigationGuard, quoteRouteExit) {
         navigationGuard?.bindEdit(model); navigationGuard?.bindSurface(surfaceBack)
+        navigationGuard?.bindQuoteExit(quoteRouteExit)
         onDispose {
             model.cancelPointDrag(); model.cancelLineDrag(); model.cancelAreaDrag()
             navigationGuard?.unbindEdit(model); navigationGuard?.unbindSurface(surfaceBack)
+            navigationGuard?.unbindQuoteExit(quoteRouteExit)
         }
     }
     SideEffect { navigationGuard?.fullscreen?.value = fullscreen }
@@ -281,7 +350,8 @@ fun MeasurementEditScreen(
             savedFeedback = false
         }
     }
-    val canLeaveSurface = !state.saving && !state.checking && !state.saved && !state.exitReady
+    val quoteSaving = quotes.presenter?.saveState?.collectAsState()?.value?.saving == true
+    val canLeaveSurface = !quoteSaving && !state.saving && !state.checking && !state.saved && !state.exitReady
     val enabled = canLeaveSurface && !state.uncertain
     val saveConfirmed = savedFeedback && !state.dirty && !state.saving
     val parentReady = creationParent == null || creationParent is MeasurementCreateParent.Active
@@ -325,14 +395,65 @@ fun MeasurementEditScreen(
         }
     }
     fun openContext(mode: MeasurementEditContext, extent: MeasurementSheet = MeasurementSheet.COMPACT) {
+        if (mode == MeasurementEditContext.CONTOUR || mode == MeasurementEditContext.ELEMENTS) lastDrawingContext = mode
         if (fullscreen) {
             if (fullscreenContext != mode) focus.clearFocus()
             fullscreenContext = mode
             if (sheet != MeasurementSheet.EXPANDED || extent == MeasurementSheet.EXPANDED) sheet = extent
         } else {
             normalContext = mode
-            if (mode != MeasurementEditContext.COST) lastDrawingContext = mode
         }
+    }
+    var quoteStartPending by remember { mutableStateOf<(() -> Unit)?>(null) }
+    var quoteSeriesBlocked by remember { mutableStateOf(false) }
+    var quoteActionError by remember { mutableStateOf(false) }
+    var quoteStarting by remember { mutableStateOf(false) }
+    fun prepareQuote(opened: SavedIndividualQuote?, refresh: Boolean = false) {
+        if (quoteStore == null || quoteStarting || model.promptForDirtyElementBeforeNavigation()) return
+        val current = model.state.value
+        val needsSave = current.creating || current.dirty || current.uncertain
+        val proceed: () -> Unit = {
+            quoteStarting = true
+            quoteActionError = false
+            quoteSeriesBlocked = false
+            focus.clearFocus()
+            scope.launch(start = CoroutineStart.UNDISPATCHED) {
+                try {
+                    val saved = if (needsSave) model.saveInWorkspace(forQuote = true) else true
+                    if (!needsSave && sourceStale && !current.conflict) model.reloadDrawing()
+                    val committed = model.state.value
+                    if (!saved || committed.creating || committed.dirty || committed.conflict || committed.uncertain) {
+                        quoteActionError = true
+                        return@launch
+                    }
+                    if (!refresh) {
+                        val seriesIds = if (opened == null) quoteStore.individualSeriesForCeiling(
+                            committed.draft.projectId, committed.draft.recordUuid) else listOf(opened.seriesUuid)
+                        if (seriesIds.size > 1) {
+                            quoteSeriesBlocked = true
+                            return@launch
+                        }
+                        val base = seriesIds.singleOrNull()?.let { id ->
+                            quoteStore.prepareRevision(id, opened?.revisionUuid, allowDeletedSeries = opened == null)?.first ?: run {
+                                quoteSeriesBlocked = opened == null
+                                quoteActionError = opened != null
+                                return@launch
+                            }
+                        }
+                        quotes.presenter = quoteStore.newQuote(committed.draft.recordUuid, base, opened)
+                        quotes.opened = null
+                    }
+                    quotes.measurementVersion = committed.original.updatedAt
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (_: Exception) {
+                    quoteActionError = true
+                } finally {
+                    quoteStarting = false
+                }
+            }
+        }
+        if (needsSave) quoteStartPending = proceed else proceed()
     }
     fun trySelectSide(side: Int): Boolean {
         if (!enabled || model.promptForDirtyElementBeforeNavigation()) return false
@@ -413,6 +534,7 @@ fun MeasurementEditScreen(
         val bodyHeight = bodyHeight(headerHeight)
         return when {
             inlineKeyboardPanel() -> maxHeight
+            expandedQuote -> bodyHeight
             keyboardVisible -> maxOf(
                 bodyHeight * 0.50f,
                 minOf(192.dp + tabRowHeight, bodyHeight * 0.75f),
@@ -438,7 +560,12 @@ fun MeasurementEditScreen(
                         icon = Icons.AutoMirrored.Filled.ArrowBack,
                         enabled = canLeaveSurface,
                         modifier = Modifier.testTag("measurement-edit-back")
-                    ) { if (!surfaceBack()) model.requestExit(onBack) }
+                    ) {
+                        if (!surfaceBack()) {
+                            if (navigationGuard != null) onBack()
+                            else if (!quoteRouteExit { model.requestExit(onBack) }) model.requestExit(onBack)
+                        }
+                    }
                     if (inlineKeyboardPanel) Spacer(Modifier.weight(1f)) else Column(Modifier.weight(1f)) {
                         Text(draft.name.ifBlank { stringResource(Res.string.p5c_ceiling) }, maxLines = 1,
                             overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleMedium)
@@ -457,9 +584,13 @@ fun MeasurementEditScreen(
                             if (fullscreen) Icons.Default.FullscreenExit else Icons.Default.Fullscreen,
                             canLeaveSurface
                         ) {
+                            if (model.promptForDirtyElementBeforeNavigation()) return@MeasurementIconAction
                             if (fullscreen) exitFullscreen() else {
                                 focus.clearFocus()
-                                fullscreenContext = normalContext.takeUnless { it == MeasurementEditContext.COST } ?: lastDrawingContext
+                                fullscreenContext = when (normalContext) {
+                                    MeasurementEditContext.CONTOUR, MeasurementEditContext.ELEMENTS -> normalContext
+                                    else -> lastDrawingContext
+                                }
                                 sheet = MeasurementSheet.CLOSED
                                 fullscreen = true
                             }
@@ -478,8 +609,12 @@ fun MeasurementEditScreen(
                             tint = if (showContourIssues && !contourError) warningInk else MaterialTheme.colorScheme.error
                         )
                     }
+                    val savingLabel = stringResource(Res.string.p5b_saving_measurement)
+                    val savedLabel = stringResource(Res.string.p5b_saved_measurement)
+                    val dirtyLabel = stringResource(Res.string.p5b_unsaved_measurement)
+                    val cleanLabel = stringResource(Res.string.p5b_clean_measurement)
                     MeasurementEditorFab(
-                        label = "Зберегти замір",
+                        label = stringResource(Res.string.p5b_save_measurement),
                         icon = if (saveConfirmed) Icons.Default.Check else Icons.Default.Save,
                         // If the draft is dirty, Save stays tappable so it can explain a
                         // validation blocker. A blocked tap MUST NOT write anything.
@@ -487,18 +622,25 @@ fun MeasurementEditScreen(
                         confirmed = saveConfirmed,
                         modifier = Modifier.testTag("measurement-edit-save").semantics {
                             stateDescription = when {
-                                state.saving -> "Збереження…"
-                                saveConfirmed -> "Збережено"
+                                state.saving -> savingLabel
+                                saveConfirmed -> savedLabel
                                 saveBlockedReason != null -> saveBlockedReason
-                                state.dirty -> "Незбережено"
-                                else -> "Змін немає"
+                                state.dirty -> dirtyLabel
+                                else -> cleanLabel
                             }
                             liveRegion = LiveRegionMode.Polite
                         },
                         onClick = { if (canSave) save() else saveBlockOpen = true }
                     )
                 }
-                MeasurementGeometrySummary(validation.geometry)
+                val live = (draftPricing as? DraftPricingResult.Loaded)?.preview
+                MeasurementGeometrySummary(frozenGeometry ?: validation.geometry,
+                    if (visibleQuote != null) visibleQuote.frozen.amounts.finalCents else live?.bucketAmount(PricingBucket.CONFIRMED),
+                    visibleQuote == null && live?.let {
+                        it.mandatoryProblems.isNotEmpty() || it.unresolvedItems.any { row -> row.bucket == PricingBucket.CONFIRMED }
+                    } == true,
+                    historical = visibleQuote != null)
+
             }
         },
         overlay = { headerHeight ->
@@ -542,12 +684,51 @@ fun MeasurementEditScreen(
                 else -> (bodyHeight - 104.dp).coerceAtLeast(0.dp)
             }
             val visibleSheet = if (sheet == MeasurementSheet.CLOSED) lastOpenSheet else sheet
-            val sheetMaxHeight = if (visibleSheet == MeasurementSheet.EXPANDED || keyboardVisible)
+            val sheetMaxHeight = if (expandedQuote || visibleSheet == MeasurementSheet.EXPANDED || keyboardVisible)
                 sheetContentHeight else minOf(sheetContentHeight, maxHeight * 0.32f)
             val contextPanel: @Composable (Modifier) -> Unit = { panelModifier ->
+                val type = MaterialTheme.typography
+                MaterialTheme(typography = type.copy(
+                    bodyMedium = type.bodyMedium.copy(fontSize = type.bodyMedium.fontSize * 1.07f),
+                    bodySmall = type.bodySmall.copy(fontSize = type.bodySmall.fontSize * 1.07f),
+                    labelSmall = type.labelSmall.copy(fontSize = type.labelSmall.fontSize * 1.07f)
+                )) {
                 panelState.SaveableStateProvider(
                     "$measurementUuid:$fullscreen:${context.name}"
                 ) {
+                    if (context == MeasurementEditContext.QUOTES) {
+                        Column(panelModifier) {
+                            if (quoteActionError) Text(stringResource(Res.string.p5d_measurement_required),
+                                color = MaterialTheme.colorScheme.error)
+                            if (quoteSeriesBlocked) Text(stringResource(Res.string.p5d_series_blocked),
+                                color = MaterialTheme.colorScheme.error)
+                            if (quoteStarting) LinearProgressIndicator(Modifier.fillMaxWidth())
+                            WorkspaceQuotes(quoteStore, quotes, state, Modifier.weight(1f, fill = false),
+                                normalNavigationUnderlay, currentSource = !sourceStale, pricingBasis = pricingBasis, onStart = { prepareQuote(it) }, onRefresh = { prepareQuote(null, refresh = true) })
+                        }
+                        return@SaveableStateProvider
+                    }
+                    if (context == MeasurementEditContext.COST) {
+                        WorkspaceLiveCost(draftPricing, panelModifier, normalNavigationUnderlay) { id ->
+                            val work = model.workspaceWorks().any { it.uuid == id }
+                            val material = listOf(BusinessRole.CANVAS, BusinessRole.PRIMARY_PROFILE)
+                                .any { role -> model.materials(role).any { it.uuid == id } }
+                            if ((!work && !material) || model.promptForDirtyElementBeforeNavigation()) false
+                            else {
+                                dismissCatalog()
+                                model.cancelPlacement()
+                                model.clearDrawingSelection()
+                                selected = null
+                                selectedWork = if (work) id else null
+                                highlightedWorkId = id
+                                drawingRelocationTarget = id
+                                drawingSelectionRequest++
+                                showElements()
+                                true
+                            }
+                        }
+                        return@SaveableStateProvider
+                    }
                     val scroll = if (context == MeasurementEditContext.CONTOUR) contourScroll else rememberScrollState()
                     val activePlacementTool = state.pointElementUuid
                         ?: state.lineElementUuid ?: state.area.tool?.name
@@ -570,6 +751,7 @@ fun MeasurementEditScreen(
                                 canvas = model.materials(com.andreyceilings.shared.livepricing.BusinessRole.CANVAS),
                                 profile = model.materials(com.andreyceilings.shared.livepricing.BusinessRole.PRIMARY_PROFILE),
                                 activeRole = if (showAdd) materialPicker else null,
+                                highlightedUuid = highlightedWorkId,
                                 enabled = enabled && overlay is PointOverlayState.Loaded &&
                                     (state.creating || validation.geometry != null),
                                 onMaterial = { role ->
@@ -595,7 +777,7 @@ fun MeasurementEditScreen(
                             Column(scrollBounds.then(if (elementsContext) Modifier else panelTag)
                                 .verticalScroll(scroll)
                                 .then(if (elementsContext) Modifier.testTag("p5b-elements-scroll") else Modifier)
-                                .padding(top = if (context == MeasurementEditContext.CONTOUR) 14.dp else 6.dp,
+                                .padding(start = 10.dp, end = 10.dp, top = if (context == MeasurementEditContext.CONTOUR) 14.dp else 6.dp,
                                     bottom = 12.dp + normalNavigationUnderlay),
                                 verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             when (context) {
@@ -716,29 +898,12 @@ fun MeasurementEditScreen(
                                         }
                                     }
                                 }
-                                MeasurementEditContext.COST -> {
-                                    Text("Розрахунок за останнім збереженим заміром", style = MaterialTheme.typography.titleSmall)
-                                    if (state.creating) {
-                                        Text(stringResource(Res.string.p5c_cost_after_save))
-                                    } else if (state.dirty) {
-                                        Text("Збережіть зміни, щоб переглянути розрахунок для оновленого заміру.")
-                                    } else {
-                                        TextButton(enabled = enabled && !state.conflict && overlay is PointOverlayState.Loaded,
-                                            onClick = {
-                                                model.requestExit {
-                                                    fullscreen = false
-                                                    navigationGuard?.fullscreen?.value = false
-                                                    onBack()
-                                                }
-                                            }) {
-                                            Text("Переглянути збережений розрахунок у картці заміру")
-                                        }
-                                    }
-                                }
+                                MeasurementEditContext.COST, MeasurementEditContext.QUOTES -> Unit
                             }
                             }
                         }
                     }
+                }
                 }
             }
             val showNormalTabs = normalTabsVisible()
@@ -752,24 +917,34 @@ fun MeasurementEditScreen(
                 if (showNormalTabs) Row(
                     Modifier.fillMaxWidth().onSizeChanged { tabRowPx = it.height }.testTag("measurement-edit-tab-row"),
                     horizontalArrangement = Arrangement.spacedBy(4.dp),
-                    verticalAlignment = Alignment.CenterVertically) {
-                    val tabLines = if (LocalDensity.current.fontScale >= 1.35f) 2 else 1
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
                     MeasurementEditContext.entries.forEach { mode ->
-                        FilterChip(
-                            selected = context == mode,
-                            onClick = { if (context != mode) { focus.clearFocus(); openContext(mode) } },
-                            label = { Text(mode.displayLabel(), Modifier.fillMaxWidth(), textAlign = TextAlign.Center,
-                                maxLines = tabLines, softWrap = tabLines > 1, overflow = TextOverflow.Ellipsis) },
-                            modifier = Modifier.weight(1f).testTag("measurement-edit-context-${mode.name.lowercase()}"),
-                            colors = FilterChipDefaults.filterChipColors(
-                                // The three tabs remain unchanged: only the content
-                                // below them scrolls beneath the OS navigation bar.
-                                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                                labelColor = MaterialTheme.colorScheme.onSurface,
-                                selectedContainerColor = MaterialTheme.colorScheme.secondaryContainer,
-                                selectedLabelColor = MaterialTheme.colorScheme.onSecondaryContainer
-                            )
-                        )
+                        val active = context == mode
+                        val label = mode.displayLabel()
+                        Surface(
+                            modifier = (if (active) Modifier.weight(1f) else Modifier.width(48.dp))
+                                .height(48.dp).padding(vertical = 4.dp)
+                                .testTag("measurement-edit-context-${mode.name.lowercase()}"),
+                            color = if (active) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh,
+                            contentColor = if (active) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurface,
+                            shape = RoundedCornerShape(8.dp),
+                            border = BorderStroke(1.dp, if (active) MaterialTheme.colorScheme.outline else MaterialTheme.colorScheme.outlineVariant)
+                        ) {
+                            Row(
+                                Modifier.fillMaxSize().selectable(active, enabled = canLeaveSurface, role = Role.Tab) {
+                                    if (!active && !model.promptForDirtyElementBeforeNavigation()) {
+                                        focus.clearFocus()
+                                        openContext(mode)
+                                    }
+                                },
+                                horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(mode.tabIcon(), contentDescription = if (active) null else label, modifier = Modifier.size(18.dp))
+                                if (active) Text(label, style = MaterialTheme.typography.labelLarge)
+                            }
+                        }
                     }
                 }
                 AnimatedVisibility(visible = fullscreen && !keyboardVisible,
@@ -780,7 +955,7 @@ fun MeasurementEditScreen(
                             val expanded = sheet != MeasurementSheet.CLOSED && context == mode
                             MeasurementEditorFab(
                                 label = mode.displayLabel(),
-                                icon = if (mode == MeasurementEditContext.CONTOUR) Icons.Default.CropSquare else Icons.Default.Category,
+                                icon = mode.tabIcon(),
                                 enabled = canLeaveSurface,
                                 modifier = Modifier.testTag("measurement-edit-context-${mode.name.lowercase()}")
                                     .measurementSheetDrag(onUp = { openContext(mode, MeasurementSheet.EXPANDED) }, onDown = ::closeSheet)
@@ -798,7 +973,7 @@ fun MeasurementEditScreen(
                     Surface(Modifier.fillMaxWidth().weight(1f).testTag("measurement-edit-panel-surface"), shape = WorkspacePanelShape,
                         color = MaterialTheme.colorScheme.background, contentColor = MaterialTheme.colorScheme.onBackground,
                         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)) {
-                        contextPanel(Modifier.fillMaxSize().padding(horizontal = 10.dp))
+                        contextPanel(Modifier.fillMaxSize())
                     }
                 } else AnimatedVisibility(
                     visible = sheet != MeasurementSheet.CLOSED,
@@ -836,7 +1011,7 @@ fun MeasurementEditScreen(
                         }
                         Surface(Modifier.fillMaxWidth(), shape = WorkspacePanelShape,
                             color = MaterialTheme.colorScheme.background, contentColor = MaterialTheme.colorScheme.onBackground) {
-                            contextPanel(Modifier.heightIn(max = sheetMaxHeight).padding(horizontal = 12.dp))
+                            contextPanel(Modifier.heightIn(max = sheetMaxHeight))
                         }
                     }
                 }
@@ -849,104 +1024,151 @@ fun MeasurementEditScreen(
         val headerBleed = if (!fullscreen && !inlineKeyboardPanel) headerHeight else 0.dp
         Column(Modifier.fillMaxSize()) {
             Box(Modifier.fillMaxWidth().weight(1f)) {
-                MeasurementDrawing(geometry?.let { MeasurementGeometryView.Captured(it) } ?: MeasurementGeometryView.Unavailable,
-                    diagnosticContour = diagnostic, diagnosticDescription = contourDescription,
-                    problemWalls = problemWalls, workspaceOrientation = true,
-                    modifier = Modifier.fillMaxSize(), interactive = true, fillAvailableHeight = true, showSideLegend = false,
-                    retainCameraOnResize = true, autoFitOnFullscreenChange = true,
-                    verticalViewControls = !keyboardVisible, showWorkspaceGrid = true,
-                    // The Spacer below already reserves the panel EXCEPT its
-                    // overlaid tab row. Canvas therefore ends at the tab row's
-                    // BOTTOM, not its visible TOP. Keep Canvas full sized for the
-                    // grid/gestures, but exclude the measured tab-row height from
-                    // camera fit, hit testing and viewport controls. Do NOT
-                    // subtract normalPanelHeight a second time.
-                    viewportPadding = PaddingValues(
-                        top = headerBleed,
-                        bottom = if (fullscreen) editorPadding.calculateBottomPadding() else tabBleed
-                    ),
-                    onOpenSelection = if (fullscreen) { wall ->
-                        if (enabled) {
-                            if (wall) {
-                                if (selected != null && !model.promptForDirtyElementBeforeNavigation()) {
-                                    openContext(MeasurementEditContext.CONTOUR)
-                                    scope.launch { contourScroll.scrollTo(0) }
-                                }
-                            } else {
-                                // A double-tap enters the actual geometry editor.
-                                // Single tap only selects/highlights and never expands.
-                                if (!model.promptForDirtyElementBeforeNavigation()) {
-                                    when {
-                                        state.selectedPointUuid != null -> model.openMounting()
-                                        state.selectedLineUuid != null -> model.openLineProperties()
-                                        state.area.selected != null -> model.openAreaProperties()
+                if (!expandedQuote) {
+                    if (frozenGeometry != null && visibleQuote != null) {
+                        val source = visibleQuote.frozen.source
+                        key(visibleQuote.revisionUuid) {
+                            val historyLabel = stringResource(Res.string.p5d_frozen_drawing)
+                            MeasurementDrawing(MeasurementGeometryView.Captured(frozenGeometry),
+                                modifier = Modifier.fillMaxSize().semantics { contentDescription = historyLabel },
+                                interactive = true, fillAvailableHeight = true, showSideLegend = false, workspaceOrientation = true,
+                                retainCameraOnResize = true, pointPlacements = source.points,
+                                linePlacements = source.lines, areaFeatures = source.areas)
+                        }
+                    } else panelState.SaveableStateProvider("$measurementUuid:live-drawing") {
+                        MeasurementDrawing(geometry?.let { MeasurementGeometryView.Captured(it) } ?: MeasurementGeometryView.Unavailable,
+                            diagnosticContour = diagnostic, diagnosticDescription = contourDescription,
+                            problemWalls = problemWalls, workspaceOrientation = true,
+                            modifier = Modifier.fillMaxSize(), interactive = true, fillAvailableHeight = true, showSideLegend = false,
+                            retainCameraOnResize = true, autoFitOnFullscreenChange = true,
+                            verticalViewControls = !keyboardVisible, showWorkspaceGrid = true,
+                            // The Spacer below already reserves the panel EXCEPT its
+                            // overlaid tab row. Canvas therefore ends at the tab row's
+                            // BOTTOM, not its visible TOP. Keep Canvas full sized for the
+                            // grid/gestures, but exclude the measured tab-row height from
+                            // camera fit, hit testing and viewport controls. Do NOT
+                            // subtract normalPanelHeight a second time.
+                            viewportPadding = PaddingValues(
+                                top = headerBleed,
+                                bottom = if (fullscreen) editorPadding.calculateBottomPadding() else tabBleed
+                            ),
+                            onOpenSelection = if (fullscreen) { wall ->
+                                if (enabled) {
+                                    if (wall) {
+                                        if (selected != null && !model.promptForDirtyElementBeforeNavigation()) {
+                                            openContext(MeasurementEditContext.CONTOUR)
+                                            scope.launch { contourScroll.scrollTo(0) }
+                                        }
+                                    } else {
+                                        // A double-tap enters the actual geometry editor.
+                                        // Single tap only selects/highlights and never expands.
+                                        if (!model.promptForDirtyElementBeforeNavigation()) {
+                                            when {
+                                                state.selectedPointUuid != null -> model.openMounting()
+                                                state.selectedLineUuid != null -> model.openLineProperties()
+                                                state.area.selected != null -> model.openAreaProperties()
+                                            }
+                                            selectedWork = null
+                                            showElements()
+                                        }
                                     }
+                                }
+                            } else null,
+                            fitTop = if (fullscreen) headerHeight else 0.dp,
+                            fitBottom = if (fullscreen) 56.dp else 0.dp,
+                            cameraFitReady = overlay !is PointOverlayState.Loading && !state.checking,
+                            selectedSide = selected, onSelectSide = ::select, fullscreen = fullscreen,
+                            onEmptyTap = {
+                                if (enabled && !model.promptForDirtyElementBeforeNavigation()) {
+                                    selected = null
                                     selectedWork = null
+                                    model.clearDrawingSelection()
+                                    if (fullscreen && sheet != MeasurementSheet.CLOSED) closeSheet()
+                                }
+                            },
+                            pointPlacements = if (overlay is PointOverlayState.Loaded && geometry != null) model.displayPoints() else emptyList(), fitPointPlacements = true,
+                            selectedPointUuid=state.selectedPointUuid,onSelectPoint = { selectElement(it, model::selectPoint) },
+                            placementMode = enabled && geometry != null && state.pointElementUuid != null,
+                            workspacePointPlacement = true,
+                            relatedElementUuid = selectedWork,
+                            onBeginLineHandleDrag = model::beginLineHandleDrag,
+                            onBeginAreaHandleDrag = model::beginAreaHandleDrag,
+                            onPlacePoint = { x, y ->
+                                if (model.placeWorkspacePoint(x, y)) {
+                                    selected = null
                                     showElements()
                                 }
-                            }
-                        }
-                    } else null,
-                    fitTop = if (fullscreen) headerHeight else 0.dp,
-                    fitBottom = if (fullscreen) 56.dp else 0.dp,
-                    cameraFitReady = overlay !is PointOverlayState.Loading && !state.checking,
-                    selectedSide = selected, onSelectSide = ::select, fullscreen = fullscreen,
-                    onEmptyTap = {
-                        if (enabled && !model.promptForDirtyElementBeforeNavigation()) {
-                            selected = null
-                            selectedWork = null
-                            model.clearDrawingSelection()
-                            if (fullscreen && sheet != MeasurementSheet.CLOSED) closeSheet()
-                        }
-                    },
-                    pointPlacements = if (overlay is PointOverlayState.Loaded && geometry != null) model.displayPoints() else emptyList(), fitPointPlacements = true,
-                    selectedPointUuid=state.selectedPointUuid,onSelectPoint = { selectElement(it, model::selectPoint) },
-                    placementMode = enabled && geometry != null && state.pointElementUuid != null,
-                    workspacePointPlacement = true,
-                    relatedElementUuid = selectedWork,
-                    onBeginLineHandleDrag = model::beginLineHandleDrag,
-                    onBeginAreaHandleDrag = model::beginAreaHandleDrag,
-                    onPlacePoint = { x, y ->
-                        if (model.placeWorkspacePoint(x, y)) {
-                            selected = null
-                            showElements()
-                        }
-                    },
-                    pointEditingEnabled=enabled && overlay is PointOverlayState.Loaded && validation.geometry!=null,editPointsInFullscreen=true,
-                    pointDrag=state.drag,onBeginPointDrag=model::beginPointDrag,onPreviewPointDrag=model::previewPointDrag,
-                    onFinishPointDrag=model::finishPointDrag,onCancelPointDrag=model::cancelPointDrag,
-                    mountingDimensions=if(geometry==null) emptyList() else mountingDimensions(model.displayPoints().find { it.uuid==state.selectedPointUuid },geometry,model.draftWalls())+
-                        model.displayLines().find {it.uuid==state.selectedLineUuid}?.takeUnless {it.unresolved}?.let {line ->
-                            mountingDimensions(line.endpoint(true),geometry,model.draftWalls())+mountingDimensions(line.endpoint(false),geometry,model.draftWalls())
-                        }.orEmpty()+model.displayAreas().find {it.uuid==state.area.selected}?.takeUnless {it.unresolved}?.let {a ->
-                            mountingDimensions(a.point(state.area.mountingIndex ?: state.area.moveVertex ?: 0),geometry,model.draftWalls())
-                        }.orEmpty(),
-                    areaFeatures=if (geometry == null) emptyList() else model.displayAreas() +
-                        listOfNotNull(model.areaCreationShape()?.let { shape ->
-                            AreaFeature("area-preview", state.draft.recordUuid, shape, state.original.updatedAt, 0, 0, role = state.area.role)
-                        }),
-                    selectedAreaUuid=state.area.selected,areaPlacementMode=enabled && geometry!=null && state.area.tool!=null,onAreaTap=model::areaTap,onSelectArea = { selectElement(it, model::selectArea) },
-                    areaEditingEnabled=enabled && validation.geometry!=null,areaDrag=state.area.drag,areaCreationPoints=state.area.vertices,
-                    onBeginAreaDrag=model::beginAreaDrag,onPreviewAreaDrag=model::previewAreaDrag,onFinishAreaDrag=model::finishAreaDrag,onCancelAreaDrag=model::cancelAreaDrag,
-                    linePlacements=if (geometry == null) emptyList() else model.displayLines() + listOfNotNull(state.linePreview),selectedLineUuid=state.selectedLineUuid,
-                    linePlacementMode=enabled && geometry!=null && state.lineElementUuid!=null,onLineTap=model::lineTap,onSelectLine = { selectElement(it, model::selectLine) },
-                    lineCreationKey = state.lineElementUuid,
-                    lineSnapEnabled = lineSnapEnabled,
-                    onFinishLineCreation = { start, end ->
-                        model.finishWorkspaceLine(start, end).also { completed ->
-                            if (completed) {
-                                selected = null
-                                showElements()
-                            }
-                        }
-                    },
-                    lineStartPoint=state.lineStart,lineEditingEnabled=enabled && validation.geometry!=null,lineDrag=state.lineDrag,onBeginLineDrag=model::beginLineDrag,
-                    onPreviewLineDrag=model::previewLineDrag,onFinishLineDrag=model::finishLineDrag,onCancelLineDrag=model::cancelLineDrag,
-                    mountingWallOrdinals=if(validation.geometry==null) emptyList() else model.displayPoints().find { it.uuid==state.selectedPointUuid }?.mounting?.anchor?.let { a ->
-                        model.draftWalls().filter { it.uuid==a.firstWall || it.uuid==a.secondWall }.map { it.ordinal } }.orEmpty())
+                            },
+                            pointEditingEnabled=enabled && overlay is PointOverlayState.Loaded && validation.geometry!=null,editPointsInFullscreen=true,
+                            pointDrag=state.drag,onBeginPointDrag=model::beginPointDrag,onPreviewPointDrag=model::previewPointDrag,
+                            onFinishPointDrag=model::finishPointDrag,onCancelPointDrag=model::cancelPointDrag,
+                            mountingDimensions=if(geometry==null) emptyList() else mountingDimensions(model.displayPoints().find { it.uuid==state.selectedPointUuid },geometry,model.draftWalls())+
+                                model.displayLines().find {it.uuid==state.selectedLineUuid}?.takeUnless {it.unresolved}?.let {line ->
+                                    mountingDimensions(line.endpoint(true),geometry,model.draftWalls())+mountingDimensions(line.endpoint(false),geometry,model.draftWalls())
+                                }.orEmpty()+model.displayAreas().find {it.uuid==state.area.selected}?.takeUnless {it.unresolved}?.let {a ->
+                                    mountingDimensions(a.point(state.area.mountingIndex ?: state.area.moveVertex ?: 0),geometry,model.draftWalls())
+                                }.orEmpty(),
+                            areaFeatures=if (geometry == null) emptyList() else model.displayAreas() +
+                                listOfNotNull(model.areaCreationShape()?.let { shape ->
+                                    AreaFeature("area-preview", state.draft.recordUuid, shape, state.original.updatedAt, 0, 0, role = state.area.role)
+                                }),
+                            selectedAreaUuid=state.area.selected,areaPlacementMode=enabled && geometry!=null && state.area.tool!=null,onAreaTap=model::areaTap,onSelectArea = { selectElement(it, model::selectArea) },
+                            areaEditingEnabled=enabled && validation.geometry!=null,areaDrag=state.area.drag,areaCreationPoints=state.area.vertices,
+                            onBeginAreaDrag=model::beginAreaDrag,onPreviewAreaDrag=model::previewAreaDrag,onFinishAreaDrag=model::finishAreaDrag,onCancelAreaDrag=model::cancelAreaDrag,
+                            linePlacements=if (geometry == null) emptyList() else model.displayLines() + listOfNotNull(state.linePreview),selectedLineUuid=state.selectedLineUuid,
+                            linePlacementMode=enabled && geometry!=null && state.lineElementUuid!=null,onLineTap=model::lineTap,onSelectLine = { selectElement(it, model::selectLine) },
+                            lineCreationKey = state.lineElementUuid,
+                            lineSnapEnabled = lineSnapEnabled,
+                            onFinishLineCreation = { start, end ->
+                                model.finishWorkspaceLine(start, end).also { completed ->
+                                    if (completed) {
+                                        selected = null
+                                        showElements()
+                                    }
+                                }
+                            },
+                            lineStartPoint=state.lineStart,lineEditingEnabled=enabled && validation.geometry!=null,lineDrag=state.lineDrag,onBeginLineDrag=model::beginLineDrag,
+                            onPreviewLineDrag=model::previewLineDrag,onFinishLineDrag=model::finishLineDrag,onCancelLineDrag=model::cancelLineDrag,
+                            mountingWallOrdinals=if(validation.geometry==null) emptyList() else model.displayPoints().find { it.uuid==state.selectedPointUuid }?.mounting?.anchor?.let { a ->
+                                model.draftWalls().filter { it.uuid==a.firstWall || it.uuid==a.secondWall }.map { it.ordinal } }.orEmpty())
+                    }
+                }
             }
             if (!fullscreen) Spacer(Modifier.height(normalPanelHeight - tabBleed))
         }
+    }
+    // Confirmation belongs to the entire workspace, not to a selected row.
+    // A hidden/unmounted editor must never make a dirty draft impossible to dismiss.
+    val lineDismiss = state.linePropertiesDismiss && state.lineProperties != null
+    val areaDismiss = state.area.dismissProperties && state.area.properties != null
+    if (lineDismiss || areaDismiss) AlertDialog(
+        onDismissRequest = {
+            if (lineDismiss) model.continueLineProperties() else model.continueAreaProperties()
+        },
+        title = { Text(stringResource(Res.string.p5b_discard_parameters_title)) },
+        text = { Text(stringResource(Res.string.p5b_discard_parameters_message)) },
+        confirmButton = {
+            TextButton(onClick = {
+                if (lineDismiss) model.continueLineProperties() else model.continueAreaProperties()
+            }) { Text(stringResource(Res.string.p5b_discard_parameters_continue)) }
+        },
+        dismissButton = {
+            TextButton(onClick = {
+                if (lineDismiss) model.discardLineProperties() else model.discardAreaProperties()
+            }, colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)) {
+                Text(stringResource(Res.string.p5b_discard_parameters_confirm))
+            }
+        }
+    )
+
+    quoteStartPending?.let { proceed ->
+        AlertDialog(onDismissRequest = { quoteStartPending = null },
+            title = { Text(stringResource(Res.string.p5d_save_measurement)) },
+            text = { Text(stringResource(Res.string.p5d_measurement_required)) },
+            dismissButton = { TextButton(onClick = { quoteStartPending = null }) { Text(stringResource(Res.string.p5d_cancel)) } },
+            confirmButton = { TextButton(onClick = { quoteStartPending = null; proceed() }) {
+                Text(stringResource(Res.string.p5d_save_continue))
+            } })
     }
     pendingShape?.let { shape ->
         AlertDialog(
@@ -981,6 +1203,23 @@ fun MeasurementEditScreen(
                         Text("Перезавантажити запис")
                     }
                 }
+            }
+        )
+    }
+
+    pendingQuoteExit?.let { proceed ->
+        AlertDialog(
+            onDismissRequest = { pendingQuoteExit = null },
+            title = { Text(stringResource(Res.string.p5d_discard_title)) },
+            dismissButton = {
+                TextButton(onClick = {
+                    pendingQuoteExit = null
+                    proceed()
+                    // Keep the quote until this route actually leaves, including when measurement exit is cancelled.
+                }) { Text(stringResource(Res.string.p5d_discard), color = MaterialTheme.colorScheme.error) }
+            },
+            confirmButton = {
+                TextButton(onClick = { pendingQuoteExit = null }) { Text(stringResource(Res.string.p5d_cancel)) }
             }
         )
     }
@@ -1248,7 +1487,7 @@ private fun MeasurementDimensionRows(count: Int, columns: Int, field: @Composabl
 }
 
 @Composable
-private fun MeasurementGeometrySummary(geometry: FrozenPolygonGeometry?) {
+private fun MeasurementGeometrySummary(geometry: FrozenPolygonGeometry?, cents: Long?, incomplete: Boolean, historical: Boolean = false) {
     val area = geometry?.let { formatMeasurementAreaCompact(it.areaSquareMeters) }.orEmpty()
     val perimeter = geometry?.let { formatMeasurementLengthCompact(it.perimeterMeters) }.orEmpty()
     val areaValue = if (geometry == null) stringResource(Res.string.p5b_live_area_unavailable)
@@ -1259,7 +1498,7 @@ private fun MeasurementGeometrySummary(geometry: FrozenPolygonGeometry?) {
     Row(
         Modifier.fillMaxWidth().offset(y = (-7).dp).padding(horizontal = 12.dp, vertical = 1.dp)
             .testTag("measurement-live-geometry"),
-        horizontalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterHorizontally),
+        horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterHorizontally),
         verticalAlignment = Alignment.CenterVertically
     ) {
         MeasurementGeometryMetric(Icons.Default.CropSquare, areaValue, stringResource(
@@ -1268,6 +1507,18 @@ private fun MeasurementGeometrySummary(geometry: FrozenPolygonGeometry?) {
         MeasurementGeometryMetric(Icons.Default.Straighten, perimeterValue, stringResource(
             if (geometry == null) Res.string.p5b_live_perimeter_invalid_label else Res.string.p5b_live_perimeter_label, perimeterValue),
             color, "measurement-live-perimeter")
+        val value = cents?.let(::measurementMoney) ?: stringResource(Res.string.p5d_unknown)
+        val costLabel = when {
+            historical -> stringResource(Res.string.p5d_frozen_total, value)
+            cents == null -> stringResource(Res.string.p5d_amount_unavailable)
+            else -> stringResource(Res.string.p5d_confirmed_amount, value)
+        }
+        val description = if (incomplete && cents != null)
+            "$costLabel. ${stringResource(Res.string.p5d_amount_incomplete)}" else costLabel
+        MeasurementGeometryMetric(if (historical) Icons.Default.History else Icons.Default.Payments,
+            if (incomplete && cents != null) "$value*" else value, description,
+            if (cents == null || incomplete) MaterialTheme.colorScheme.onSurfaceVariant else color, "measurement-live-amount")
+
     }
 }
 

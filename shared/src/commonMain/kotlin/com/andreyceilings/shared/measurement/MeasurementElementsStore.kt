@@ -38,7 +38,10 @@ sealed interface MeasurementElementsState {
 class MeasurementElementsStore(private val database: PrototypeDatabase, private val nowMillis: () -> Long,
     private val modelDispatcher: CoroutineDispatcher = Dispatchers.Main.immediate) {
     private val quotePresenters = MutableStateFlow<Set<TransientQuotePresenter>>(emptySet())
-    fun newQuote(measurementUuid: String, revisionBase: SavedIndividualQuote? = null): TransientQuotePresenter = TransientQuotePresenter(measurementUuid, revisionBase = revisionBase).also { presenter ->
+    fun newQuote(
+        measurementUuid: String, revisionBase: SavedIndividualQuote? = null, carrySource: SavedIndividualQuote? = revisionBase
+    ): TransientQuotePresenter = TransientQuotePresenter(measurementUuid, revisionBase = revisionBase,
+        revisionCarrySource = carrySource).also { presenter ->
         quotePresenters.update { if (closed) it else it + presenter }
         if (closed) releaseQuote(presenter)
     }
@@ -169,7 +172,7 @@ class MeasurementElementsStore(private val database: PrototypeDatabase, private 
         val sections = rooms.map { room ->
             request.ensureActive()
             val ref = refs.getValue(room.uuid)
-            val (saved, problem) = readConsolidatedRevision(ref.seriesUuid, ref.revisionUuid)
+            val (saved, problem) = readConsolidatedRevision(ref.seriesUuid, ref.revisionUuid, historical = true)
             if (saved == null) return@consolidatedRead reject(problem)
             val frozen = saved.frozen
             if (saved.projectId != projectId || frozen.source.projectUuid != projectUuid ||
@@ -209,10 +212,13 @@ class MeasurementElementsStore(private val database: PrototypeDatabase, private 
         measurements.forProject(projectId).sortedWith(compareByDescending<Room_measurements> { it.createdAt }
             .thenByDescending { it.id })
 
-    private fun readConsolidatedRevision(seriesUuid: String, revisionUuid: String):
+    private fun readConsolidatedRevision(
+        seriesUuid: String, revisionUuid: String, historical: Boolean = false
+    ):
         Pair<SavedIndividualQuote?, ConsolidatedDocumentProblem> {
         val saved = try {
-            estimates.exactIndividual(seriesUuid, revisionUuid)
+            if (historical) estimates.historicalIndividual(seriesUuid, revisionUuid)
+            else estimates.exactIndividual(seriesUuid, revisionUuid)
         } catch (_: UnsupportedFrozenEstimateFormat) {
             return null to ConsolidatedDocumentProblem.UNSUPPORTED_FORMAT
         } catch (_: UnsupportedFrozenEstimateCurrency) {
@@ -233,18 +239,81 @@ class MeasurementElementsStore(private val database: PrototypeDatabase, private 
 
     suspend fun quoteHistory(seriesUuid: String): List<SavedIndividualQuote> = estimateAccess { estimates.individualHistory(seriesUuid) }
 
+    internal suspend fun individualSeriesForCeiling(projectId: Long, measurementUuid: String): List<String> =
+        estimateAccess { database.frozenRevisionQueries.selectIndividualSeriesForCeiling(projectId, measurementUuid).executeAsList() }
+
     /** Read-only admission; opening/cancelling a revision reserves no number and changes no workflow. */
-    suspend fun prepareRevision(seriesUuid: String): Pair<SavedIndividualQuote, ElementRoute>? = estimateAccess {
-        val latest = estimates.frozenIndividual(seriesUuid) ?: return@estimateAccess null
-        val saved = estimates.exactIndividual(seriesUuid, latest.revisionUuid) ?: return@estimateAccess null
+    suspend fun prepareRevision(
+        seriesUuid: String, openedRevisionUuid: String? = null, allowDeletedSeries: Boolean = false
+    ): Pair<SavedIndividualQuote, ElementRoute>? = estimateAccess {
+        if (openedRevisionUuid != null && estimates.exactIndividual(seriesUuid, openedRevisionUuid) == null)
+            return@estimateAccess null
+        val historical = estimates.revisions(seriesUuid).lastOrNull() ?: return@estimateAccess null
+        val latest = estimates.frozenIndividual(seriesUuid)
+        val saved = if (latest != null) {
+            val active = estimates.exactIndividual(seriesUuid, latest.revisionUuid) ?: return@estimateAccess null
+            val head = if (historical.revisionUuid == latest.revisionUuid) null
+                else HistoricalRevisionHead(historical.revisionUuid, historical.versionNumber)
+            active.copy(historicalHead = head)
+        } else {
+            if (!allowDeletedSeries || openedRevisionUuid != null) return@estimateAccess null
+            val deletedAt = estimates.series(seriesUuid)?.deletedAt ?: return@estimateAccess null
+            val base = estimates.historicalIndividual(seriesUuid, historical.revisionUuid) ?: return@estimateAccess null
+            if (base.status == null || base.status == EstimateWorkflowStatus.APPROVED) return@estimateAccess null
+            base.copy(seriesDeletedAt = deletedAt)
+        }
         val m = measurements.findByUuid(saved.frozen.source.measurementUuid) ?: return@estimateAccess null
         if (m.deletedAt != null || m.projectId != saved.projectId || projects.find(m.projectId) == null) return@estimateAccess null
         if (pricingReader.readInTransaction(m.projectId, m.uuid) !is PricingReadResult.Loaded) return@estimateAccess null
         saved to ElementRoute(m.projectId, m.id, m.uuid)
     }
-    suspend fun setQuoteStatus(revisionUuid: String, expectedVersion: Long, status: EstimateWorkflowStatus): Boolean = estimateAccess {
-        estimates.setWorkflowStatus(revisionUuid, expectedVersion, status, nowMillis())
+    suspend fun setQuoteStatus(
+        revisionUuid: String,
+        expectedVersion: Long,
+        status: EstimateWorkflowStatus,
+        expectedApprovals: Map<String, Long> = emptyMap()
+    ): Boolean = estimateAccess {
+        estimates.setWorkflowStatus(revisionUuid, expectedVersion, status, nowMillis(), expectedApprovals)
     }
+    internal class QuoteShareResult(val revisionUuid: String, val changed: Boolean)
+    private val shareResult = MutableStateFlow<QuoteShareResult?>(null)
+    internal val quoteShareResult = shareResult.asStateFlow()
+
+    /** Accept the platform callback synchronously. The store drains this write on session shutdown. */
+    internal fun markQuoteShareDispatched(quote: SavedIndividualQuote, onComplete: (Boolean) -> Unit = {}) {
+        if (quote.status != EstimateWorkflowStatus.DRAFT) {
+            onComplete(true)
+            return
+        }
+        fun finish(changed: Boolean) {
+            shareResult.value = QuoteShareResult(quote.revisionUuid, changed)
+            onComplete(changed)
+        }
+        val completion = beginWrite()
+        if (completion == null) {
+            finish(false)
+            return
+        }
+        CoroutineScope(SupervisorJob() + modelDispatcher).launch(start = CoroutineStart.UNDISPATCHED) {
+            val changed = withContext(NonCancellable + Dispatchers.Default) {
+                try {
+                    estimates.setWorkflowStatus(quote.revisionUuid, quote.statusVersion, EstimateWorkflowStatus.SENT, nowMillis())
+                } catch (_: Exception) {
+                    false
+                } finally {
+                    endWrite(completion)
+                }
+            }
+            finish(changed)
+        }
+    }
+
+    suspend fun deleteQuoteRevision(seriesUuid: String, revisionUuid: String, expectedStatusVersion: Long): Boolean =
+        estimateAccess { estimates.deleteIndividualRevision(seriesUuid, revisionUuid, expectedStatusVersion, nowMillis()) }
+
+    suspend fun deleteQuoteSeries(seriesUuid: String, expectedActiveVersions: Map<String, Long>): Boolean =
+        estimateAccess { estimates.deleteIndividualSeries(seriesUuid, expectedActiveVersions, nowMillis()) }
+
     suspend fun selectQuoteRevision(seriesUuid: String, revisionUuid: String, expectedVersion: Long): Boolean = estimateAccess {
         estimates.selectRevision(seriesUuid, revisionUuid, expectedVersion, nowMillis())
     }
@@ -281,7 +350,7 @@ class MeasurementElementsStore(private val database: PrototypeDatabase, private 
                     IndividualEstimateSaveFailure.Reason.NUMBER_POLICY -> "Перевірте формат номера та суфікс у налаштуваннях."
                     IndividualEstimateSaveFailure.Reason.SEQUENCE_EXHAUSTED -> "Лічильник номерів вичерпано або пошкоджено. Перевірте налаштування нумерації."
                     else -> "Кошторис не збережено. Перевірте склад і доступність бази."
-                })
+                }, failure.reason)
             } catch (_: Exception) { presenter.saveFailed("Не вдалося підтвердити збереження. Повторіть ту саму дію або перевірте список кошторисів.") }
         }
     }

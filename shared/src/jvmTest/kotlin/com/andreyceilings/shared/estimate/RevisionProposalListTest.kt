@@ -27,7 +27,9 @@ class RevisionProposalListTest {
                 }
                 assertTrue(store.setQuoteStatus(first.initialRevisionUuid, 2, EstimateWorkflowStatus.SENT))
                 assertEquals(EstimateWorkflowStatus.DRAFT, store.savedQuote(first.seriesUuid, third.initialRevisionUuid)!!.status)
-                val other = repo.saveIndividual(FrozenIndividualEstimateProof.command(db, f).copy(operationUuid = newRecordUuid()), 2026, 605)
+                val other = FrozenRevisionProof.withLegacyAlternative(driver, listOf(first.seriesUuid), f.measurementUuid) {
+                    repo.saveIndividual(FrozenIndividualEstimateProof.command(db, f), 2026, 605)
+                }
                 assertFalse(store.selectQuoteRevision(first.seriesUuid, other.initialRevisionUuid, 2))
                 assertFalse(store.selectQuoteRevision(first.seriesUuid, third.initialRevisionUuid, 1))
                 assertTrue(store.selectQuoteRevision(first.seriesUuid, second.initialRevisionUuid, 2))

@@ -53,10 +53,15 @@ fun WallAnchorEditor(model: MeasurementEditModel, inline: Boolean = false) {
     val state by model.state.collectAsState()
     val input=state.mountingInput ?: return
     if (state.mountingDismiss) {
-        AlertDialog(onDismissRequest=model::continueMounting,title={Text("Відхилити введені відстані?")},
-            text={Text("Незастосовані монтажні розміри буде втрачено. Інша чернетка стелі залишиться.")},
-            confirmButton={TextButton(onClick=model::discardMounting){Text("Відхилити відстані")}},
-            dismissButton={TextButton(onClick=model::continueMounting){Text("Продовжити")}})
+        AlertDialog(onDismissRequest = model::continueMounting,
+            title = { Text(stringResource(Res.string.p5b_discard_parameters_title)) },
+            text = { Text(stringResource(Res.string.p5b_discard_parameters_message)) },
+            dismissButton = { TextButton(onClick = model::discardMounting) {
+                Text(stringResource(Res.string.p5b_discard_parameters_confirm), color = MaterialTheme.colorScheme.error)
+            } },
+            confirmButton = { TextButton(onClick = model::continueMounting) {
+                Text(stringResource(Res.string.p5b_discard_parameters_continue))
+            } })
         return
     }
     val secondField = remember { FocusRequester() }
@@ -64,6 +69,7 @@ fun WallAnchorEditor(model: MeasurementEditModel, inline: Boolean = false) {
     val geometry=validateMeasurementCreate(state.draft).geometry
     val walls=model.draftWalls()
     val solution=geometry?.let { g -> input.anchor()?.let { solveWallAnchor(g,walls,it) } }
+    val invalid = input.firstText.isNotBlank() && input.secondText.isNotBlank() && solution == null
     val fields: @Composable () -> Unit = { Column(
         Modifier.fillMaxWidth().then(if (inline) Modifier else Modifier.verticalScroll(rememberScrollState())),
         verticalArrangement=Arrangement.spacedBy(8.dp)) {
@@ -88,7 +94,7 @@ fun WallAnchorEditor(model: MeasurementEditModel, inline: Boolean = false) {
                     distance = input.firstText, fieldLabel = firstLabel,
                     fieldTag = "p5b-first-wall-distance",
                     onDistance = { value -> model.updateMounting { it.copy(firstText = value) } },
-                    onNext = if (editorFocus) ({ secondField.requestFocus() }) else null)
+                    onNext = if (editorFocus) ({ secondField.requestFocus() }) else null, invalid = invalid)
                 if (input.kind == WallAnchor.Kind.TWO_WALLS) {
                     WallAnchorCompactWallRow(stringResource(Res.string.p5b_anchor_second_wall), walls,
                         input.secondWall,
@@ -97,7 +103,7 @@ fun WallAnchorEditor(model: MeasurementEditModel, inline: Boolean = false) {
                         fieldLabel = stringResource(Res.string.p5b_anchor_distance_short),
                         fieldTag = "p5b-second-wall-distance",
                         onDistance = { value -> model.updateMounting { it.copy(secondText = value) } },
-                        focus = secondField)
+                        focus = secondField, invalid = invalid)
                 } else {
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -108,7 +114,7 @@ fun WallAnchorEditor(model: MeasurementEditModel, inline: Boolean = false) {
                             stringResource(Res.string.p5b_anchor_inward_distance_short),
                             modifier = measurementFieldFocusModifier().testTag("p5b-second-wall-distance")
                                 .focusRequester(secondField).weight(1f),
-                            compact = true)
+                            compact = true, isError = invalid)
                     }
                 }
             } else {
@@ -137,9 +143,8 @@ fun WallAnchorEditor(model: MeasurementEditModel, inline: Boolean = false) {
                     modifier = measurementFieldFocusModifier().focusRequester(secondField), compact = true)
             }
             // Do not show a large red geometry error before the user has typed both dimensions.
-            if (input.firstText.isNotBlank() && input.secondText.isNotBlank() && solution == null)
-                Text(stringResource(Res.string.p5b_wall_anchor_invalid),
-                    color = MaterialTheme.colorScheme.error)
+            if (invalid && !inline)
+                WorkspaceFieldError(stringResource(Res.string.p5b_wall_anchor_invalid))
             else if (solution != null && !inline)
                 Text(stringResource(Res.string.p5b_wall_anchor_verified,
                     formatPointMetres(solution.firstActualMm.roundToLong()),
@@ -155,7 +160,8 @@ fun WallAnchorEditor(model: MeasurementEditModel, inline: Boolean = false) {
     }
     if (inline) {
         fields()
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
+            if (invalid) WorkspaceFieldError(stringResource(Res.string.p5b_wall_anchor_invalid))
             IconButton(onClick = model::dismissMounting) {
                 Icon(Icons.Default.Close, stringResource(Res.string.p5b_cancel_placement))
             }
@@ -173,7 +179,7 @@ private fun WallAnchorCompactWallRow(
     title: String, walls: List<CeilingWall>, selected: String,
     onWall: (String) -> Unit, distance: String, fieldLabel: String,
     fieldTag: String, onDistance: (String) -> Unit,
-    focus: FocusRequester? = null, onNext: (() -> Unit)? = null
+    focus: FocusRequester? = null, onNext: (() -> Unit)? = null, invalid: Boolean = false
 ) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -200,6 +206,6 @@ private fun WallAnchorCompactWallRow(
         DecimalInputField(distance, onDistance, fieldLabel,
             modifier = measurementFieldFocusModifier().testTag(fieldTag).then(
                 if (focus != null) Modifier.focusRequester(focus) else Modifier).weight(1f),
-            compact = true, onNext = onNext)
+            compact = true, onNext = onNext, isError = invalid)
     }
 }

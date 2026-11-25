@@ -566,7 +566,6 @@ private fun CeilingsAppContent(
                             detailsProjectId = navigation.projectDetails?.projectId,
                             measurementDetails = navigation.measurementDetails,
                             measurementQuote = navigation.measurementQuote,
-                            onOpenMeasurementQuote = { updateNavigation(navigation.openMeasurementQuote()) },
                             measurementEdit = navigation.measurementEdit,
                             onEditMeasurement = { projectId, measurementId ->
                                 updateNavigation(navigation.editMeasurement(projectId, measurementId))

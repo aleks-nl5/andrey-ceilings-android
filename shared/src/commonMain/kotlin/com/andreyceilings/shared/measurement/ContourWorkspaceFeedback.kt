@@ -1,12 +1,5 @@
 package com.andreyceilings.shared.measurement
 
-import androidx.compose.foundation.layout.Box
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Warning
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -15,6 +8,8 @@ import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import com.andreyceilings.shared.resources.*
+import com.andreyceilings.shared.ui.ContextFeedbackIcon
+import com.andreyceilings.shared.ui.ContextFeedbackKind
 import org.jetbrains.compose.resources.stringResource
 
 /** Uses the workspace's existing Save explanation anchor and contextual menu. */
@@ -23,20 +18,10 @@ internal fun MeasurementValidationFeedback(
     label: String, messages: List<String>, expanded: Boolean,
     onExpanded: (Boolean) -> Unit, tint: Color
 ) {
-    Box {
-        MeasurementIconAction(label, Icons.Default.Warning, tint = tint,
-            modifier = Modifier.testTag("measurement-edit-save-block-reason").semantics {
-                liveRegion = LiveRegionMode.Polite
-            }) { onExpanded(!expanded) }
-        DropdownMenu(expanded = expanded, onDismissRequest = { onExpanded(false) }) {
-            messages.forEach { message ->
-                DropdownMenuItem(
-                    text = { Text(message, style = MaterialTheme.typography.bodySmall) },
-                    onClick = { onExpanded(false) }
-                )
-            }
-        }
-    }
+    ContextFeedbackIcon(messages.joinToString("\n"), label, ContextFeedbackKind.ERROR,
+        modifier = Modifier.testTag("measurement-edit-save-block-reason").semantics {
+            liveRegion = LiveRegionMode.Polite
+        }, expanded = expanded, onExpanded = onExpanded, tint = tint)
 }
 
 @Composable

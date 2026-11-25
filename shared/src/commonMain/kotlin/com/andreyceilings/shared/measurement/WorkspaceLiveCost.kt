@@ -1,0 +1,214 @@
+package com.andreyceilings.shared.measurement
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
+import com.andreyceilings.shared.livepricing.*
+import com.andreyceilings.shared.resources.*
+import com.andreyceilings.shared.ui.ContextFeedbackIcon
+import com.andreyceilings.shared.ui.ContextFeedbackKind
+import org.jetbrains.compose.resources.stringResource
+
+internal fun LiveEstimatePreview.bucketAmount(bucket: PricingBucket): Long? {
+    if (fatalProblems.isNotEmpty()) return null
+    val known = priceableLines.any { it.bucket == bucket }
+    val incomplete = unresolvedItems.any { it.bucket == bucket } ||
+        (bucket == PricingBucket.CONFIRMED && mandatoryProblems.isNotEmpty())
+    if (!known && incomplete) return null
+    return if (bucket == PricingBucket.CONFIRMED) confirmedTotalCents else potentialTotalCents
+}
+
+@Composable
+internal fun WorkspaceLiveCost(
+    result: DraftPricingResult?,
+    modifier: Modifier,
+    bottomInset: Dp,
+    onElement: (String) -> Boolean
+) {
+    val preview = (result as? DraftPricingResult.Loaded)?.preview
+    var unavailableLink by remember { mutableStateOf(false) }
+    val groups = if (preview?.let {
+            it.priceableLines.any { it.bucket == PricingBucket.POTENTIAL } || it.potentialIncomplete
+        } == true) PricingBucket.entries else listOf(PricingBucket.CONFIRMED)
+    Column(modifier) {
+        val issues = when (result) {
+            null -> stringResource(Res.string.p5d_amount_pending)
+            is DraftPricingResult.Unavailable -> workspacePricingProblem(result.reason)
+            is DraftPricingResult.Loaded -> (result.preview.fatalProblems + result.preview.mandatoryProblems)
+                .map { workspacePricingProblem(it.code) }.distinct().joinToString("\n")
+                .ifBlank { if (result.preview.unresolvedItems.isNotEmpty()) stringResource(Res.string.p5d_amount_incomplete) else "" }
+        }
+        WorkspaceFinancialSummary {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
+                groups.forEach { bucket ->
+                    val subtotal = preview?.bucketAmount(bucket)
+                    val title = bucketLabel(bucket)
+                    Column(
+                        Modifier.weight(1f).padding(horizontal = 8.dp, vertical = 4.dp),
+                        horizontalAlignment = if (bucket == PricingBucket.POTENTIAL) Alignment.End else Alignment.Start
+                    ) {
+                        Row(Modifier.heightIn(min = 24.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Text(title, style = MaterialTheme.typography.labelMedium, maxLines = 1)
+                            if (bucket == PricingBucket.CONFIRMED && issues.isNotBlank()) WorkspaceCostHelp(issues, compact = true, kind = ContextFeedbackKind.WARNING)
+                        }
+                        Text(if (subtotal == null) stringResource(Res.string.p5d_unknown)
+                            else if (bucket == PricingBucket.POTENTIAL) stringResource(Res.string.p5d_plus_amount, measurementMoney(subtotal))
+                            else measurementMoney(subtotal), style = MaterialTheme.typography.titleLarge,
+                            fontWeight = if (bucket == PricingBucket.CONFIRMED) FontWeight.SemiBold else FontWeight.Normal)
+                    }
+                }
+            }
+        }
+        WorkspacePanelDivider()
+        Column(Modifier.fillMaxWidth().weight(1f, fill = false).verticalScroll(rememberScrollState())
+            .padding(bottom = bottomInset + 8.dp)) {
+            for (bucket in groups) {
+                val priced = preview?.priceableLines.orEmpty().filter { it.bucket == bucket }
+                    .sortedBy { it.businessRole?.ordinal ?: Int.MAX_VALUE }
+                val unresolved = preview?.unresolvedItems.orEmpty().filter { it.bucket == bucket }
+                if (priced.isNotEmpty() || unresolved.isNotEmpty()) {
+                    WorkspaceGroupHeading(bucketLabel(bucket))
+                }
+                for ((index, line) in priced.withIndex()) {
+                    WorkspaceListRow(index) {
+                        WorkspaceFinancialRow(line, showRate = true,
+                            onOpen = line.elementUuid?.let { id -> { unavailableLink = !onElement(id) } })
+                    }
+                }
+                for ((index, item) in unresolved.withIndex()) {
+                    WorkspaceListRow(priced.size + index) {
+                        Row(Modifier.fillMaxWidth().defaultMinSize(minHeight = 48.dp)
+                            .clickable { unavailableLink = item.elementUuid?.let(onElement) != true }
+                            .padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Text(item.label, Modifier.weight(1f, fill = false), style = MaterialTheme.typography.bodyMedium)
+                            WorkspaceCostHelp(item.reasons.map { workspacePricingProblem(it) }.joinToString("\n"), compact = true, kind = ContextFeedbackKind.WARNING)
+                        }
+                    }
+                }
+            }
+        }
+    }
+    if (unavailableLink) AlertDialog(onDismissRequest = { unavailableLink = false },
+        text = { Text(stringResource(Res.string.p5d_no_element_link)) },
+        confirmButton = { TextButton(onClick = { unavailableLink = false }) { Text(stringResource(Res.string.p5d_cancel)) } })
+}
+
+@Composable
+internal fun WorkspaceFinancialSummary(content: @Composable () -> Unit) {
+    Surface(Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.surfaceVariant,
+        contentColor = MaterialTheme.colorScheme.onSurface, content = content)
+}
+
+@Composable
+internal fun WorkspacePanelDivider() {
+    HorizontalDivider(Modifier.padding(horizontal = 8.dp), color = MaterialTheme.colorScheme.outlineVariant)
+}
+
+@Composable
+internal fun workspaceAlternatingRowColor(index: Int): Color =
+    if (index % 2 == 0) Color.Transparent else MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.38f)
+
+@Composable
+internal fun WorkspaceListRow(index: Int, content: @Composable () -> Unit) {
+    Column(Modifier.fillMaxWidth().background(workspaceAlternatingRowColor(index))) {
+        content()
+        WorkspacePanelDivider()
+    }
+}
+
+@Composable
+internal fun WorkspaceGroupHeading(label: String) {
+    Text(label, Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp),
+        textAlign = TextAlign.Center, style = MaterialTheme.typography.labelLarge,
+        fontWeight = FontWeight.SemiBold)
+    WorkspacePanelDivider()
+}
+
+@Composable
+internal fun bucketLabel(bucket: PricingBucket) = stringResource(
+    if (bucket == PricingBucket.CONFIRMED) Res.string.p5d_confirmed else Res.string.p5d_discussing
+)
+
+@Composable
+internal fun WorkspaceFinancialRow(line: LiveEstimateLine, showRate: Boolean = false, onOpen: (() -> Unit)? = null) {
+    Row(Modifier.fillMaxWidth().defaultMinSize(minHeight = 48.dp)
+        .then(if (onOpen != null) Modifier.clickable(onClick = onOpen) else Modifier)
+        .padding(horizontal = 8.dp, vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f).padding(end = 4.dp)) {
+            Row(Modifier.heightIn(min = 24.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(line.title, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f, fill = false))
+                if (line.reviewFlags.isNotEmpty()) {
+                    WorkspaceCostHelp(line.reviewFlags.map { workspacePricingProblem(it) }.joinToString("\n"),
+                        description = stringResource(Res.string.p5d_placement_details), compact = true, kind = ContextFeedbackKind.WARNING)
+                }
+            }
+            if (showRate) Text(stringResource(Res.string.p5d_line_rate, formatElementMilli(line.effectiveBillableQuantityMilli),
+                line.unit, measurementMoney(line.unitPriceCents)), style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+            else if (line.quantityOrigin == QuantityOrigin.EXPLICIT_BILLABLE_OVERRIDE) {
+                Text(stringResource(Res.string.p5d_override_quantity, formatElementMilli(line.effectiveBillableQuantityMilli), line.unit),
+                    style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+        Text(measurementMoney(line.totalCents), style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+    }
+}
+
+@Composable
+internal fun WorkspaceCostHelp(text: String, description: String? = null, compact: Boolean = false,
+    kind: ContextFeedbackKind = ContextFeedbackKind.INFO) {
+    ContextFeedbackIcon(text, description ?: stringResource(Res.string.p5d_cost_details), kind, compact = compact)
+}
+
+@Composable
+internal fun WorkspaceFieldError(message: String, modifier: Modifier = Modifier) {
+    ContextFeedbackIcon(message, message,
+        ContextFeedbackKind.ERROR, modifier)
+}
+
+@Composable
+internal fun workspacePricingProblem(code: PricingProblemCode): String = stringResource(when (code) {
+    PricingProblemCode.PARENT_UNAVAILABLE -> Res.string.p5d_pricing_parent_unavailable
+    PricingProblemCode.INVALID_GEOMETRY -> Res.string.p5d_pricing_invalid_geometry
+    PricingProblemCode.INVALID_SOURCE -> Res.string.p5d_pricing_invalid_source
+    PricingProblemCode.STALE_SOURCE, PricingProblemCode.STALE_CATALOG -> Res.string.p5d_pricing_stale_source
+    PricingProblemCode.DATABASE_UNAVAILABLE -> Res.string.p5d_pricing_database_unavailable
+    PricingProblemCode.ROLE_UNDETERMINED -> Res.string.p5d_pricing_role_undetermined
+    PricingProblemCode.DUPLICATE_MAIN_CANVAS -> Res.string.p5d_pricing_duplicate_main_canvas
+    PricingProblemCode.DUPLICATE_PRIMARY_PROFILE -> Res.string.p5d_pricing_duplicate_primary_profile
+    PricingProblemCode.CATALOG_MISSING -> Res.string.p5d_pricing_catalog_missing
+    PricingProblemCode.METADATA_DRIFT -> Res.string.p5d_pricing_metadata_drift
+    PricingProblemCode.UNSUPPORTED_UNIT -> Res.string.p5d_pricing_unsupported_unit
+    PricingProblemCode.INVALID_PRICE -> Res.string.p5d_pricing_invalid_price
+    PricingProblemCode.UNKNOWN_QUANTITY -> Res.string.p5d_pricing_unknown_quantity
+    PricingProblemCode.RANGE_QUANTITY -> Res.string.p5d_pricing_range_quantity
+    PricingProblemCode.QUANTITY_PRECISION -> Res.string.p5d_pricing_quantity_precision
+    PricingProblemCode.INVALID_QUANTITY -> Res.string.p5d_pricing_invalid_quantity
+    PricingProblemCode.SELECTION_MISSING -> Res.string.p5d_pricing_selection_missing
+    PricingProblemCode.PLACEMENT_REVIEW -> Res.string.p5d_pricing_placement_review
+    PricingProblemCode.PLACEMENT_UNPLACED -> Res.string.p5d_pricing_placement_unplaced
+    PricingProblemCode.PLACEMENT_APPROXIMATE -> Res.string.p5d_pricing_placement_approximate
+    PricingProblemCode.PLACEMENT_PARTIAL -> Res.string.p5d_pricing_placement_partial
+    PricingProblemCode.MISSING_MANDATORY_CANVAS -> Res.string.p5d_pricing_missing_mandatory_canvas
+    PricingProblemCode.MISSING_MANDATORY_PRIMARY_PROFILE -> Res.string.p5d_pricing_missing_mandatory_primary_profile
+    PricingProblemCode.INVALID_MANDATORY_CANVAS -> Res.string.p5d_pricing_invalid_mandatory_canvas
+    PricingProblemCode.INVALID_MANDATORY_PRIMARY_PROFILE -> Res.string.p5d_pricing_invalid_mandatory_primary_profile
+    PricingProblemCode.MANDATORY_BASE_REQUIRED -> Res.string.p5d_pricing_mandatory_base_required
+    PricingProblemCode.OVERFLOW -> Res.string.p5d_pricing_overflow
+    PricingProblemCode.INVALID_OVERRIDE, PricingProblemCode.INVALID_SELECTION -> Res.string.p5d_pricing_invalid_override
+    PricingProblemCode.DUPLICATE_SOURCE, PricingProblemCode.PROVENANCE_OVERLAP, PricingProblemCode.PROVENANCE_MISSING, PricingProblemCode.AMBIGUOUS_COVERAGE -> Res.string.p5d_pricing_duplicate_source
+    PricingProblemCode.EMPTY_DOCUMENT -> Res.string.p5d_pricing_empty_document
+    PricingProblemCode.REVISION_UNAVAILABLE -> Res.string.p5d_pricing_revision_unavailable
+    PricingProblemCode.CROSS_PROJECT -> Res.string.p5d_pricing_cross_project
+})

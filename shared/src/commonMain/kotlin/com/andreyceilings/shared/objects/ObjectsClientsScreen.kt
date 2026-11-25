@@ -174,7 +174,7 @@ fun ObjectsClientsScreen(
     onProjectHeaderProgress: (Float) -> Unit = {},
     onListTabChanged: (ObjectsClientsTab) -> Unit = {},
     measurementDetails: MeasurementDetails? = null,
-    measurementQuote: Boolean = false, onOpenMeasurementQuote: (() -> Unit)? = null,
+    measurementQuote: Boolean = false,
     onOpenMeasurement: (Long, Long) -> Unit = { _, _ -> },
     onCloseMeasurement: () -> Unit = onCloseProject,
     measurementEdit: com.andreyceilings.shared.navigation.MeasurementEdit? = null,
@@ -599,19 +599,19 @@ fun ObjectsClientsScreen(
             onBack = onCloseMeasurement,
             onEdit = { onEditMeasurement(measurement.projectId, measurement.measurementId) },
             navigationGuard = measurementCreateNavigationGuard, editStore=detailsStore?.measurementEdit,
-            quoteOpen = measurementQuote, onOpenQuote = onOpenMeasurementQuote
+            quoteOpen = measurementQuote
         )
         if (edit != null) com.andreyceilings.shared.measurement.MeasurementEditScreen(
             projectId = edit.projectId, measurementId = edit.measurementId, store = detailsStore?.measurementEdit,
             contentPadding = contentPadding, systemTopInset = systemTopInset,
             onBack = onCloseMeasurement,
-            navigationGuard = measurementCreateNavigationGuard
+            navigationGuard = measurementCreateNavigationGuard, quoteStore = detailsStore?.measurementDetails?.elements
         )
         if (create != null) com.andreyceilings.shared.measurement.MeasurementCreateWorkspace(
             projectId = create.projectId, precision = measurementPrecision, store = detailsStore?.measurementEdit,
             contentPadding = contentPadding, systemTopInset = systemTopInset,
             onBack = onCloseMeasurement, onSaved = { onMeasurementCreated(create.projectId, it) },
-            navigationGuard = measurementCreateNavigationGuard
+            navigationGuard = measurementCreateNavigationGuard, quoteStore = detailsStore?.measurementDetails?.elements
         )
     }
     }

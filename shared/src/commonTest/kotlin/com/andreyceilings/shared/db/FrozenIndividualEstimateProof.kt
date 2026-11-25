@@ -55,11 +55,15 @@ object FrozenIndividualEstimateProof {
             assertEquals(record.payload, history.frozenIndividual(saved.seriesUuid)!!.payload)
         }
         assertFailsWith<IndividualEstimateSaveFailure> { history.saveIndividual(original.copy(title = "Other"), 2026, 300) }
-        val another = history.saveIndividual(original.copy(operationUuid = newRecordUuid()), 2026, 301)
+        assertEquals(IndividualEstimateSaveFailure.Reason.SERIES_EXISTS,
+            assertFailsWith<IndividualEstimateSaveFailure> {
+                history.saveIndividual(original.copy(operationUuid = newRecordUuid()), 2026, 301)
+            }.reason)
+        val another = history.saveIndividual(command(db, MeasurementPricingFixture.seed(db)), 2026, 301)
         assertNotEquals(saved.seriesUuid, another.seriesUuid)
         assertEquals(before + 2, db.estimateHistoryQueries.selectEstimateNumberSettings().executeAsOne().nextSequence)
         // Failure after number/v1/status insertion must roll back every row and the counter.
-        val rollbackCommand = original.copy(operationUuid = newRecordUuid())
+        val rollbackCommand = command(db, MeasurementPricingFixture.seed(db))
         val failing = object : SqlDriver by driver {
             override fun execute(identifier: Int?, sql: String, parameters: Int, binders: (SqlPreparedStatement.() -> Unit)?): QueryResult<Long> {
                 if (sql.startsWith("INSERT INTO estimate_save_receipts")) error("Injected late receipt failure")
@@ -113,7 +117,7 @@ object FrozenIndividualEstimateProof {
         assertTrue(decodeFrozenIndividualEstimate(history.frozenIndividual(partialSaved.seriesUuid)!!.payload).partial)
         // SQLite must not promote an exhausted counter to REAL.
         driver.execute(null, "UPDATE estimate_number_settings SET nextSequence = 9223372036854775807", 0)
-        assertFails { history.saveIndividual(partialCommand.copy(operationUuid = newRecordUuid()), 2026, 502) }
+        assertFails { history.saveIndividual(command(db, MeasurementPricingFixture.seed(db)), 2026, 502) }
         assertEquals(Long.MAX_VALUE, db.estimateHistoryQueries.selectEstimateNumberSettings().executeAsOne().nextSequence)
         driver.execute(null, "UPDATE estimate_number_settings SET nextSequence = ${next + 1}", 0)
     }

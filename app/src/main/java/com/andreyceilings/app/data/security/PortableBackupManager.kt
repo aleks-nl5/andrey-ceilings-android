@@ -229,8 +229,8 @@ internal object PortableBackupManager {
                 check(invalidRevisionRows("SELECT count(*) FROM estimate_number_settings WHERE typeof(nextSequence) != 'integer' OR nextSequence <= 0 OR typeof(sequenceWidth) != 'integer'") == 0L) {
                     "Пошкоджені числові налаштування нумерації кошторисів."
                 }
-                com.andreyceilings.shared.db.verifyFrozenEstimateStructure(driver)
-                com.andreyceilings.shared.db.verifyFrozenEstimateContents(driver)
+                com.andreyceilings.shared.db.verifyFrozenEstimateStructure(driver, com.andreyceilings.shared.db.PriceCatalogSchema.version)
+                com.andreyceilings.shared.db.verifyFrozenEstimateContents(driver, com.andreyceilings.shared.db.PriceCatalogSchema.version)
                 check(invalidRevisionRows(
                     "SELECT count(*) FROM estimate_v1_frozen f JOIN estimate_revisions r USING(revisionUuid) " +
                         "JOIN estimate_series s USING(seriesUuid) WHERE r.versionNumber != 1 OR s.publicNumber IS NULL " +

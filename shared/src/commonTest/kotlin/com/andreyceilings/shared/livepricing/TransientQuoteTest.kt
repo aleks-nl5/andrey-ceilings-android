@@ -60,6 +60,16 @@ class TransientQuoteTest {
         assertEquals(50, QuoteDiscount.parseBasisPoints(".5"))
         for (bad in listOf("", "0.", "100.01", "-1", "101", "1.001", "1..2", "9999999999999999999999"))
             assertNull(QuoteDiscount.parseBasisPoints(bad), bad)
+        val fixed = QuoteDiscountMode.FIXED
+        assertEquals(QuoteDiscountValue.Fixed(1), QuoteDiscount.parse(",01", fixed))
+        assertEquals(QuoteDiscountValue.Fixed(Long.MAX_VALUE), QuoteDiscount.parse("92233720368547758.07", fixed))
+        for (invalid in listOf("-0.01", "92233720368547758.08", "0.001", "1.")) {
+            assertNull(QuoteDiscount.parse(invalid, fixed), invalid)
+        }
+        assertEquals(QuoteAmounts(7, 0, 0, 7, fixed), QuoteDiscount.calculate(7, QuoteDiscountValue.Fixed(0)))
+        assertEquals(QuoteAmounts(7, 0, 7, 0, fixed), QuoteDiscount.calculate(7, QuoteDiscountValue.Fixed(7)))
+        assertNull(QuoteDiscount.calculate(7, QuoteDiscountValue.Fixed(8)))
+        assertEquals(0L, QuoteDiscount.calculate(Long.MAX_VALUE, QuoteDiscountValue.Fixed(Long.MAX_VALUE))?.finalCents)
         assertFailsWith<IllegalArgumentException> { QuoteDiscount.calculate(-1, 0) }
         assertFailsWith<IllegalArgumentException> { QuoteDiscount.calculate(1, 10001) }
     }
@@ -205,6 +215,43 @@ class TransientQuoteTest {
         p.acceptRead(p.beginRead(), data)
         assertFalse("element:o0" in p.state.value.selected)
         assertEquals(ExclusionReason.USER_EXCLUDED, p.state.value.preview!!.excluded.single { it.sourceKey == "element:o0" }.reason)
+    }
+
+    @Test fun explicitSelectionSurvivesApprovalChangesButDefaultsFollowMeasurement() {
+        val data = TransientQuoteFixture.loaded(optionalCount = 2)
+        fun approval(id: String, value: ElementApproval) = data.copy(source = data.source.copy(
+            elements = data.source.elements.map { if (it.uuid == id) it.copy(approval = value) else it }))
+        val included = TransientQuoteFixture.presenter(data)
+        included.select("element:o0", false)
+        included.select("element:o0", true)
+        included.acceptRead(included.beginRead(), approval("o0", ElementApproval.DISCUSSING))
+        assertTrue("element:o0" in included.state.value.selected)
+        assertEquals(PricingBucket.POTENTIAL, included.state.value.lines.single { it.sourceKey == "element:o0" }.bucket)
+        assertEquals(3000L, included.state.value.amounts?.subtotalCents)
+        included.acceptRead(included.beginRead(), data)
+        assertTrue("element:o0" in included.state.value.selected)
+
+        val excluded = TransientQuoteFixture.presenter(data)
+        excluded.select("element:o0", false)
+        excluded.acknowledge(true)
+        assertTrue(excluded.state.value.acknowledged)
+        excluded.acceptRead(excluded.beginRead(), approval("o0", ElementApproval.DISCUSSING))
+        assertFalse("element:o0" in excluded.state.value.selected)
+        excluded.acceptRead(excluded.beginRead(), data)
+        assertFalse("element:o0" in excluded.state.value.selected)
+        assertFalse(excluded.state.value.acknowledged)
+        assertEquals(ExclusionReason.USER_EXCLUDED, excluded.state.value.preview!!.excluded.single { it.sourceKey == "element:o0" }.reason)
+
+        val defaults = TransientQuoteFixture.presenter(data)
+        defaults.acceptRead(defaults.beginRead(), approval("o0", ElementApproval.DISCUSSING))
+        assertFalse("element:o0" in defaults.state.value.selected)
+        assertTrue("element:o1" in defaults.state.value.selected)
+        defaults.select("element:d", true)
+        defaults.acceptRead(defaults.beginRead(), approval("d", ElementApproval.APPROVED))
+        defaults.select("element:d", false)
+        defaults.acceptRead(defaults.beginRead(), data)
+        defaults.acceptRead(defaults.beginRead(), approval("d", ElementApproval.APPROVED))
+        assertFalse("element:d" in defaults.state.value.selected)
     }
 
     @Test fun selectedDiscussingUnavailableCannotBecomeSilentlyReducedReadyFull() {

@@ -90,7 +90,16 @@ selectEstimateSeriesForProject:
 SELECT * FROM estimate_series WHERE projectId = ? AND deletedAt IS NULL ORDER BY createdAt DESC;
 
 softDeleteEstimateSeries:
-UPDATE estimate_series SET deletedAt = ? WHERE seriesUuid = ? AND deletedAt IS NULL;
+UPDATE estimate_series SET deletedAt = ? WHERE seriesUuid = ? AND deletedAt IS NULL
+AND NOT EXISTS (
+    SELECT 1 FROM estimate_revisions r
+    LEFT JOIN estimate_revision_workflow w USING(revisionUuid)
+    WHERE r.seriesUuid = estimate_series.seriesUuid
+    AND r.revisionUuid IN (SELECT revisionUuid FROM estimate_v1_frozen UNION ALL SELECT revisionUuid FROM estimate_revision_frozen)
+    AND NOT EXISTS (SELECT 1 FROM estimate_revision_tombstones d WHERE d.revisionUuid = r.revisionUuid)
+    AND (w.status IS NULL OR w.status = 'APPROVED')
+)
+RETURNING seriesUuid;
 
 insertImmutableEstimateRevision:
 INSERT INTO estimate_revisions(revisionUuid, seriesUuid, parentRevisionUuid, versionNumber,

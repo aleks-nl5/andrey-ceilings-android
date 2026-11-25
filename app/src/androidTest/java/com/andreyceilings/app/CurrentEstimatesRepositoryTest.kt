@@ -35,7 +35,7 @@ class CurrentEstimatesRepositoryTest {
             insertLegacy("Legacy independent test")
             assertEquals(onlyV1, history.frozenIndividuals())
             assertEquals(frozen, history.frozenIndividual(saved.seriesUuid)?.payload)
-            history.softDeleteSeries(saved.seriesUuid, 1200)
+            assertTrue(history.deleteIndividualSeries(saved.seriesUuid, mapOf(saved.initialRevisionUuid to 1L), 1200))
             assertTrue(history.frozenIndividuals().isEmpty())
             assertEquals(2, legacy.count())
             assertEquals(1, history.revisions(saved.seriesUuid).size)

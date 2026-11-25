@@ -1,40 +1,111 @@
 package com.andreyceilings.shared.livepricing
 
 import com.andreyceilings.shared.measurement.*
+import com.andreyceilings.shared.prices.PlacementKind
 
-/** Capture on the model's UI dispatcher. The persisted basis must come from a coherent reader.
- * All active elements are retained, including ones absent from the editor's overlay projections.
- */
-fun PricingReadResult.Loaded.withValidatedDraft(model: MeasurementEditModel, basisSourceSignature: String): PricingReadResult {
-    val before = model.state.value
+internal sealed interface DraftPricingBasis {
+    data class Created(val projectUuid: String, val catalog: ActiveCatalogSnapshot) : DraftPricingBasis
+    data class Saved(val read: PricingReadResult.Loaded) : DraftPricingBasis
+    data class Unavailable(val reason: PricingProblemCode) : DraftPricingBasis
+}
+
+internal sealed interface DraftPricingResult {
+    class Loaded(internal val projection: LiveEstimateSource, val preview: LiveEstimatePreview) : DraftPricingResult
+    data class Unavailable(val reason: PricingProblemCode) : DraftPricingResult
+}
+
+/** Only a persisted read can supply a quote command. This projection never carries receipt proof. */
+internal fun projectDraftPricing(
+    model: MeasurementEditModel, before: MeasurementEditState, basis: DraftPricingBasis
+): DraftPricingResult {
+    fun unavailable(reason: PricingProblemCode) = DraftPricingResult.Unavailable(reason)
+    if (before !== model.state.value || before.saving || before.checking || before.conflict ||
+        before.uncertain || before.saved || before.draft.recordUuid != before.original.draft.recordUuid ||
+        before.draft.projectId != before.original.draft.projectId
+    ) return unavailable(PricingProblemCode.STALE_SOURCE)
+    if (basis is DraftPricingBasis.Unavailable) return unavailable(basis.reason)
+    val geometry = validateMeasurementCreate(before.draft).geometry
+        ?: return unavailable(PricingProblemCode.INVALID_GEOMETRY)
     val original = before.original
-    if (basisSourceSignature != source.signature || !model.canSaveMountingDraft() || before.drag != null || before.lineDrag != null || before.area.drag != null ||
-        before.mountingInput != null || before.lineStart != null || before.linePreview != null || before.area.tool != null ||
-        before.saving || before.checking || before.conflict || before.uncertain || before.saved ||
-        before.draft.recordUuid != source.measurementUuid ||
-        before.draft.projectId != original.draft.projectId || before.draft.projectId.toString() != source.versions["projectId"] ||
-        original.updatedAt.toString() != source.versions["measurementUpdatedAt"] ||
-        original.sourceDrawingJson?.let { runCatching { MeasurementGeometryCodec.read(it) }.getOrNull() } != source.geometry ||
-        original.placements.points != source.points || original.placements.lines != source.lines || original.placements.areas != source.areas ||
-        validateMeasurementCreate(original.draft).geometry != source.geometry ||
-        (original.lineElements + original.areaElements).any { old -> source.elements.singleOrNull { it.uuid == old.uuid } != old } ||
-        original.placements.elements.any { (id, version) -> source.elements.singleOrNull { it.uuid == id }?.updatedAt != version })
-        return PricingReadResult.Unavailable(PricingProblemCode.STALE_SOURCE)
-    if (before.declaredLengths.keys.any { id -> source.elements.singleOrNull { it.uuid == id }?.supportsLinePlacement() != true } ||
-        before.area.quantities.keys.any { id -> source.elements.singleOrNull { it.uuid == id }?.supportsAreaPlacement() != true })
-        return PricingReadResult.Unavailable(PricingProblemCode.INVALID_SOURCE)
-    val validation = validateMeasurementCreate(before.draft)
-    if (!validation.canSave || validation.geometry == null) return PricingReadResult.Unavailable(PricingProblemCode.INVALID_GEOMETRY)
-    return try {
-        val elements = source.elements.map { e ->
-            val quantity = before.declaredLengths[e.uuid] ?: before.area.quantities[e.uuid]
-            if (quantity == null) e else e.copy(quantity = ElementQuantity.Exact(quantity))
+    val projectUuid: String
+    val catalog: ActiveCatalogSnapshot
+    when (basis) {
+        is DraftPricingBasis.Created -> {
+            if (!before.creating) return unavailable(PricingProblemCode.STALE_SOURCE)
+            projectUuid = basis.projectUuid
+            catalog = basis.catalog
         }
-        val draft = source.copy(geometry = validation.geometry, elements = elements,
-            points = model.displayPoints(), lines = model.displayLines(), areas = model.displayAreas(), walls = model.draftWalls(),
-            versions = source.versions + mapOf("draft" to before.draft.snapshot(), "draftSession" to model.token,
-                "draftWallGeneration" to before.wallGeneration))
-        if (model.state.value !== before) PricingReadResult.Unavailable(PricingProblemCode.STALE_SOURCE)
-        else PricingReadResult.Loaded(draft, catalog)
-    } catch (_: IllegalArgumentException) { PricingReadResult.Unavailable(PricingProblemCode.INVALID_SOURCE) }
+        is DraftPricingBasis.Saved -> {
+            val (saved, loadedCatalog) = basis.read
+            val baseline = (original.pointElements + original.lineElements + original.areaElements +
+                original.materialElements + original.otherElements).distinctBy { it.uuid }.associateBy { it.uuid }
+            if (before.creating || saved.measurementUuid != before.draft.recordUuid ||
+                saved.versions["projectId"] != before.draft.projectId.toString() ||
+                saved.versions["measurementUpdatedAt"] != original.updatedAt.toString() ||
+                validateMeasurementCreate(original.draft).geometry != saved.geometry ||
+                original.placements.points != saved.points || original.placements.lines != saved.lines ||
+                original.placements.areas != saved.areas || original.placements.walls != saved.walls ||
+                baseline != saved.elements.associateBy { it.uuid }
+            ) return unavailable(PricingProblemCode.STALE_SOURCE)
+            projectUuid = saved.projectUuid
+            catalog = loadedCatalog
+        }
+        is DraftPricingBasis.Unavailable -> return unavailable(basis.reason)
+    }
+
+    return try {
+        val points = model.displayPoints()
+        val lines = model.displayLines()
+        val areas = model.displayAreas()
+        val elements = (model.workspaceWorks() + model.materials(BusinessRole.CANVAS) +
+            model.materials(BusinessRole.PRIMARY_PROFILE)).map { element ->
+            val placed: Long
+            val hasPlacement: Boolean
+            val exact: Boolean
+            when ((element.source as? ElementSource.CatalogSelection)?.placementKind) {
+                PlacementKind.POINT -> {
+                    val active = points.filter { it.elementUuid == element.uuid && !it.mounting.unresolved }
+                    hasPlacement = active.isNotEmpty()
+                    placed = active.size * 1000L
+                    exact = active.all { it.precision == PointPrecision.EXACT }
+                }
+                PlacementKind.LINE -> {
+                    val active = lines.filter { it.elementUuid == element.uuid && !it.unresolved }
+                    hasPlacement = active.isNotEmpty()
+                    placed = active.fold(0L) { sum, line -> PricingMath.add(sum, line.lengthMm) }
+                    exact = active.all { it.startMounting.anchor != null && it.endMounting.anchor != null }
+                }
+                PlacementKind.AREA -> {
+                    val active = areas.filter { it.elementUuid == element.uuid && !it.unresolved }
+                    hasPlacement = active.isNotEmpty()
+                    placed = areaQuantityMilli(active, checkNotNull(element.unit))
+                    exact = active.all { area ->
+                        area.mountings.all { it.anchor != null } && (area.shape !is AreaShape.Circle || area.radiusMeasured)
+                    }
+                }
+                else -> return@map element
+            }
+            element.copy(placedQuantityMilli = placed, placement = when {
+                !hasPlacement -> ElementPlacement.UNPLACED
+                exact -> ElementPlacement.EXACT
+                else -> ElementPlacement.APPROXIMATE
+            })
+        }
+        val projection = LiveEstimateSource(projectUuid, before.draft.recordUuid, geometry, elements,
+            points, lines, areas, model.draftWalls(), mapOf(
+                "draft" to before.draft.snapshot(), "draftSession" to model.token,
+                "draftWallGeneration" to before.wallGeneration
+            ))
+        val roles = BusinessRoleBindings(projection.signature,
+            elements.mapNotNull { e -> e.businessRole?.let { e.uuid to it } }.toMap())
+        val preview = LivePricingEngine.buildPreview(projection, catalog, roles, "draft:${model.token}")
+        if (model.state.value !== before) unavailable(PricingProblemCode.STALE_SOURCE)
+        else DraftPricingResult.Loaded(projection, preview)
+    } catch (_: PricingOverflow) {
+        unavailable(PricingProblemCode.OVERFLOW)
+    } catch (_: IllegalArgumentException) {
+        unavailable(PricingProblemCode.INVALID_SOURCE)
+    } catch (_: IllegalStateException) {
+        unavailable(PricingProblemCode.INVALID_SOURCE)
+    }
 }

@@ -53,7 +53,14 @@ class ImmutableEstimateRepository(private val database: PrototypeDatabase) {
     fun frozenIndividuals() = database.frozenRevisionQueries.selectExactList().executeAsList()
 
     fun exactIndividual(seriesUuid: String, revisionUuid: String): SavedIndividualQuote? =
-        database.frozenRevisionQueries.selectExactRevision(seriesUuid, revisionUuid).executeAsOneOrNull()?.let {
+        readIndividual(seriesUuid, revisionUuid, includeDeleted = false)
+
+    internal fun historicalIndividual(seriesUuid: String, revisionUuid: String): SavedIndividualQuote? =
+        readIndividual(seriesUuid, revisionUuid, includeDeleted = true)
+
+    private fun readIndividual(seriesUuid: String, revisionUuid: String, includeDeleted: Boolean): SavedIndividualQuote? =
+        database.frozenRevisionQueries.selectHistoricalExactRevision(seriesUuid, revisionUuid).executeAsOneOrNull()?.let {
+            if (!includeDeleted && it.isActive != 1L) return null
             val f = decodeFrozenIndividualEstimate(it.payload)
             verifyFrozenStoredIdentity(f, it.projectId, it.measurementUuid, it.publicNumber,
                 it.subtotalCents, it.discountBasisPoints, it.discountCents, it.totalCents)
@@ -63,7 +70,7 @@ class ImmutableEstimateRepository(private val database: PrototypeDatabase) {
             if (it.versionNumber > 1) {
                 val parent = checkNotNull(revision(checkNotNull(it.parentRevisionUuid)))
                 require(parent.seriesUuid == seriesUuid && parent.versionNumber == it.versionNumber - 1)
-                require(database.frozenRevisionQueries.selectExactRevision(seriesUuid, parent.revisionUuid).executeAsOneOrNull() != null)
+                require(database.frozenRevisionQueries.selectHistoricalExactRevision(seriesUuid, parent.revisionUuid).executeAsOneOrNull() != null)
             }
             if (it.versionNumber == 1L) {
                 val receipt = checkNotNull(database.frozenEstimateQueries.selectV1ReceiptByRevision(it.revisionUuid).executeAsOneOrNull())
@@ -83,14 +90,53 @@ class ImmutableEstimateRepository(private val database: PrototypeDatabase) {
             checkNotNull(exactIndividual(seriesUuid, it.revisionUuid))
         }
 
-    /** CAS is scoped to one exact document, including an old alternative. */
-    fun setWorkflowStatus(revisionUuid: String, expectedVersion: Long, status: EstimateWorkflowStatus, now: Long): Boolean {
+    /**
+     * The caller can replace approvals only after confirming the exact set shown to the user.
+     * Legacy callers supply the default empty set and can only make the first approval.
+     */
+    fun setWorkflowStatus(
+        revisionUuid: String,
+        expectedVersion: Long,
+        status: EstimateWorkflowStatus,
+        now: Long,
+        expectedApprovals: Map<String, Long> = emptyMap()
+    ): Boolean {
         require(now > 0 && expectedVersion > 0)
-        return database.transactionWithResult {
-            database.measurementElementsQueries.claimElementWrite("")
-            database.revisionWorkflowQueries.updateRevisionWorkflow(status.name, now, revisionUuid, expectedVersion).executeAsOneOrNull() != null
+        return try {
+            database.transactionWithResult {
+                database.priceGroupsQueries.claimCatalogWrite()
+                val workflow = database.revisionWorkflowQueries
+                val target = workflow.selectActiveQuoteWorkflow(revisionUuid).executeAsOneOrNull()
+                    ?: return@transactionWithResult false
+                if (target.version != expectedVersion) return@transactionWithResult false
+                if (status != EstimateWorkflowStatus.APPROVED && expectedApprovals.isNotEmpty()) {
+                    return@transactionWithResult false
+                }
+                if (status == EstimateWorkflowStatus.APPROVED) {
+                    val measurementUuid = target.measurementUuid ?: return@transactionWithResult false
+                    val approved = workflow.selectApprovedQuoteVersions(target.projectId, measurementUuid)
+                        .executeAsList().associate { it.revisionUuid to it.version }
+                    if (target.status == status.name && approved == mapOf(revisionUuid to expectedVersion) &&
+                        expectedApprovals.isEmpty()
+                    ) return@transactionWithResult true
+                    if (approved != expectedApprovals) return@transactionWithResult false
+                    for ((previousUuid, version) in approved - revisionUuid) {
+                        workflow.updateRevisionWorkflow(EstimateWorkflowStatus.SENT.name, now, previousUuid, version)
+                            .executeAsOneOrNull() ?: throw WorkflowConflict()
+                    }
+                }
+                if (target.status != status.name) {
+                    workflow.updateRevisionWorkflow(status.name, now, revisionUuid, expectedVersion)
+                        .executeAsOneOrNull() ?: throw WorkflowConflict()
+                }
+                true
+            }
+        } catch (_: WorkflowConflict) {
+            false
         }
     }
+
+    private class WorkflowConflict : IllegalStateException()
 
     fun selectRevision(seriesUuid: String, revisionUuid: String, expectedVersion: Long, now: Long): Boolean {
         require(now > 0 && expectedVersion > 0)
@@ -187,7 +233,7 @@ class ImmutableEstimateRepository(private val database: PrototypeDatabase) {
         return database.transactionWithResult {
             val root = checkNotNull(series(seriesUuid)) { "Estimate series not found" }
             check(root.deletedAt == null) { "Deleted estimate series cannot be revised" }
-            check(database.frozenEstimateQueries.selectFrozenV1(seriesUuid).executeAsOneOrNull() == null) {
+            check(database.frozenRevisionQueries.countFrozenSeries(seriesUuid).executeAsOne() == 0L) {
                 "Exact individual series require the measurement-sourced writer"
             }
             val latest = checkNotNull(queries.selectLatestEstimateRevision(seriesUuid).executeAsOneOrNull()) {
@@ -202,10 +248,43 @@ class ImmutableEstimateRepository(private val database: PrototypeDatabase) {
         }
     }
 
-    /** Tombstones reserve both the UUID and document number permanently. */
+    /** Legacy non-frozen series retain their existing deletion route. */
     fun softDeleteSeries(seriesUuid: String, deletedAt: Long) {
-        require(deletedAt > 0L)
-        queries.softDeleteEstimateSeries(deletedAt, seriesUuid)
+        require(deletedAt > 0)
+        database.transaction {
+            database.priceGroupsQueries.claimCatalogWrite()
+            if (database.frozenRevisionQueries.countFrozenSeries(seriesUuid).executeAsOne() == 0L) {
+                queries.softDeleteEstimateSeries(deletedAt, seriesUuid).executeAsOneOrNull()
+            }
+        }
+    }
+
+    fun deleteIndividualRevision(seriesUuid: String, revisionUuid: String, expectedStatusVersion: Long, now: Long): Boolean {
+        require(now > 0 && expectedStatusVersion > 0)
+        return database.transactionWithResult {
+            database.priceGroupsQueries.claimCatalogWrite()
+            val workflow = database.revisionWorkflowQueries
+            database.frozenRevisionQueries.insertRevisionTombstone(
+                deletedAt = now, revisionUuid = revisionUuid, seriesUuid = seriesUuid,
+                expectedStatusVersion = expectedStatusVersion
+            ).executeAsOneOrNull() ?: return@transactionWithResult false
+            if (workflow.selectActiveSeriesWorkflow(seriesUuid).executeAsList().isEmpty()) {
+                checkNotNull(queries.softDeleteEstimateSeries(now, seriesUuid).executeAsOneOrNull())
+            }
+            true
+        }
+    }
+
+    fun deleteIndividualSeries(seriesUuid: String, expectedActiveVersions: Map<String, Long>, now: Long): Boolean {
+        require(now > 0)
+        return database.transactionWithResult {
+            database.priceGroupsQueries.claimCatalogWrite()
+            val active = database.revisionWorkflowQueries.selectActiveSeriesWorkflow(seriesUuid).executeAsList()
+            if (active.isEmpty() || active.any { it.status == null || it.status == EstimateWorkflowStatus.APPROVED.name } ||
+                active.associate { it.revisionUuid to it.version } != expectedActiveVersions
+            ) return@transactionWithResult false
+            queries.softDeleteEstimateSeries(now, seriesUuid).executeAsOneOrNull() != null
+        }
     }
 
     private fun insertRevision(

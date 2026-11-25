@@ -33,19 +33,19 @@ fun MeasurementsScreen(
     navigation.measurementCreate?.let { route ->
         MeasurementCreateWorkspace(route.projectId, precision, editStore, contentPadding, systemTopInset,
             onBack = back, onSaved = { onNavigate(navigation.measurementCreatedInEditor(route.projectId, it)) },
-            navigationGuard = navigationGuard)
+            navigationGuard = navigationGuard, quoteStore = detailsStore?.elements)
         return
     }
     navigation.measurementEdit?.let { route ->
         MeasurementEditScreen(route.projectId, route.measurementId, editStore, contentPadding, systemTopInset,
-            onBack = back, navigationGuard = navigationGuard)
+            onBack = back, navigationGuard = navigationGuard, quoteStore = detailsStore?.elements)
         return
     }
     navigation.measurementDetails?.let { route ->
         MeasurementDetailsScreen(route.projectId, route.measurementId, detailsStore, contentPadding, systemTopInset,
             onBack = back, onEdit = { onNavigate(navigation.editMeasurement(route.projectId, route.measurementId)) },
             navigationGuard = navigationGuard, backLabel = "До замірів", editStore=editStore,
-            quoteOpen = navigation.measurementQuote, onOpenQuote = { onNavigate(navigation.openMeasurementQuote()) })
+            quoteOpen = navigation.measurementQuote)
         return
     }
     key(store) {

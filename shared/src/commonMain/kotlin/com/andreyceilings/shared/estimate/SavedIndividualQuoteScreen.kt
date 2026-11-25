@@ -1,242 +1,233 @@
 package com.andreyceilings.shared.estimate
 
-import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.andreyceilings.shared.measurement.*
+import com.andreyceilings.shared.resources.*
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
+import org.jetbrains.compose.resources.stringResource
 
-/** Shared list: the stable series ID opens exactly the same frozen card in every context. */
+/** External library routes retain exact revision identity and use the workspace workflow controls. */
 @Composable
 fun SavedIndividualQuoteList(store: MeasurementElementsStore?, projectId: Long? = null, measurementUuid: String? = null) {
-    var selected by rememberSaveable(projectId, measurementUuid) { mutableStateOf<String?>(null) }
-    var selectedDocument by rememberSaveable(projectId, measurementUuid) { mutableStateOf<String?>(null) }
+    var selectedSeries by rememberSaveable(projectId, measurementUuid) { mutableStateOf<String?>(null) }
+    var selectedRevision by rememberSaveable(projectId, measurementUuid) { mutableStateOf<String?>(null) }
     var generation by remember { mutableIntStateOf(0) }
     var rows by remember(store, projectId, measurementUuid) { mutableStateOf<List<SavedIndividualQuote>?>(null) }
     var error by remember { mutableStateOf(false) }
-    LaunchedEffect(store, projectId, measurementUuid, generation) {
-        rows = null; error = false
-        try { rows = checkNotNull(store).savedQuotes(projectId, measurementUuid) }
-        catch (cancelled: CancellationException) { throw cancelled }
+    var busy by remember { mutableStateOf(false) }
+    var deleteSeries by remember { mutableStateOf<List<SavedIndividualQuote>?>(null) }
+    val scope = rememberCoroutineScope()
+    fun change(action: suspend (MeasurementElementsStore) -> Boolean) {
+        if (store == null || busy) return
+        busy = true
+        error = false
+        scope.launch {
+            try { error = !action(store) }
+            catch (e: CancellationException) { throw e }
+            catch (_: Exception) { error = true }
+            finally { busy = false; generation++ }
+        }
+    }
+    val shareResult = store?.quoteShareResult?.collectAsState()?.value
+    LaunchedEffect(store, projectId, measurementUuid, generation, shareResult) {
+        if (store == null) {
+            rows = emptyList()
+            return@LaunchedEffect
+        }
+        try { rows = store.savedQuotes(projectId, measurementUuid) }
+        catch (e: CancellationException) { throw e }
         catch (_: Exception) { error = true }
     }
-    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text("Збережені кошториси", style = MaterialTheme.typography.titleMedium)
-        if (error) Text("Не вдалося прочитати збережені кошториси.", color = MaterialTheme.colorScheme.error)
+    Column(Modifier.fillMaxWidth()) {
+        Text(stringResource(Res.string.p5d_quotes), style = MaterialTheme.typography.titleMedium)
+        if (error) Text(stringResource(Res.string.p5d_quote_failed), color = MaterialTheme.colorScheme.error)
         else if (rows == null) LinearProgressIndicator(Modifier.fillMaxWidth())
-        else if (rows.isNullOrEmpty()) Text("Збережених кошторисів ще немає")
-        rows.orEmpty().groupBy { it.seriesUuid }.values.forEach { alternatives ->
-            Text("${alternatives.first().frozen.publicNumber} · варіантів: ${alternatives.size}", style = MaterialTheme.typography.titleSmall)
-            alternatives.forEach { row ->
-            OutlinedCard(onClick = { selected = row.seriesUuid; selectedDocument = row.revisionUuid }, modifier = Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(12.dp)) {
-                    Text(row.frozen.title, style = MaterialTheme.typography.titleSmall)
-                    Text("${row.frozen.publicNumber} · v${row.versionNumber} · ${row.status?.label ?: "Статус не зафіксовано"}")
-                    Text("${row.frozen.source.projectTitle} / ${row.frozen.source.measurementName}")
-                    Text(measurementMoney(row.frozen.amounts.finalCents))
-                    if (row.selectedRevisionUuid == row.revisionUuid) Text("Обрано для роботи")
+        else if (rows.isNullOrEmpty()) Text(stringResource(Res.string.p5d_no_quotes))
+        rows.orEmpty().groupBy { it.seriesUuid }.values.forEach { series ->
+            val head = series.first()
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(head.frozen.title, style = MaterialTheme.typography.titleSmall)
+                    Text(EstimateNumbering.displayNumber(head.frozen.publicNumber, head.frozen.numberPolicy), style = MaterialTheme.typography.labelSmall)
+                }
+                val allowed = series.all { it.canDeleteQuote }
+                if (!allowed) WorkspaceCostHelp(stringResource(Res.string.p5d_delete_protected))
+                WorkspaceTrash(allowed && !busy, Res.string.p5d_delete_series) { deleteSeries = series.toList() }
+            }
+            series.forEach { quote ->
+                val approved = rows.orEmpty().filter {
+                    it.projectId == quote.projectId && it.frozen.source.measurementUuid == quote.frozen.source.measurementUuid &&
+                        it.status == EstimateWorkflowStatus.APPROVED
+                }
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    WorkspaceQuoteStatusIcon(quote, approved, !busy) { target, status, previous ->
+                        change { it.setQuoteStatus(target.revisionUuid, target.statusVersion, status,
+                            previous.associate { old -> old.revisionUuid to old.statusVersion }) }
+                    }
+                    Row(Modifier.weight(1f).defaultMinSize(minHeight = 48.dp).clickable {
+                        selectedSeries = quote.seriesUuid
+                        selectedRevision = quote.revisionUuid
+                    }, verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text(stringResource(Res.string.p5d_version, quote.versionNumber))
+                            if (quote.frozen.title != head.frozen.title) Text(quote.frozen.title, style = MaterialTheme.typography.labelSmall)
+                        }
+                        Text(measurementMoney(quote.frozen.amounts.finalCents))
+                    }
                 }
             }
         }
-        }
-        TextButton(onClick = { generation++ }) { Text("Оновити список") }
     }
-    selected?.let { id -> SavedIndividualQuoteDialog(store, id, selectedDocument) { selected = null; generation++ } }
+    deleteSeries?.let { versions ->
+        WorkspaceQuoteDeleteDialog(versions, series = true, onClose = { deleteSeries = null }) {
+            deleteSeries = null
+            change { it.deleteQuoteSeries(versions.first().seriesUuid, versions.associate { row -> row.revisionUuid to row.statusVersion }) }
+        }
+    }
+    selectedSeries?.let { series -> SavedIndividualQuoteDialog(store, series, selectedRevision) {
+        selectedSeries = null
+        selectedRevision = null
+        generation++
+    } }
 }
 
-/** Full-window read-only route. Only its series UUID is restored; Android Dialog owns gesture Back. */
 @Composable
 fun SavedIndividualQuoteDialog(store: MeasurementElementsStore?, seriesUuid: String, revisionUuid: String? = null, onDismiss: () -> Unit) {
-    var selectedRevision by rememberSaveable(seriesUuid) { mutableStateOf(revisionUuid) }
-    var generation by remember { mutableIntStateOf(0) }
-    var history by remember { mutableStateOf<List<SavedIndividualQuote>>(emptyList()) }
-    var preparation by remember { mutableStateOf<Pair<SavedIndividualQuote, ElementRoute>?>(null) }
-    var editing by rememberSaveable(seriesUuid) { mutableStateOf(false) }
-    var editor by remember { mutableStateOf<Pair<com.andreyceilings.shared.livepricing.TransientQuotePresenter, ElementRoute>?>(null) }
-    var data by remember(store, seriesUuid) { mutableStateOf<SavedIndividualQuote?>(null) }
-    var error by remember { mutableStateOf<String?>(null) }
-    var loading by remember { mutableStateOf(true) }
-    var busy by remember { mutableStateOf(false) }
-    var confirmingChoice by remember { mutableStateOf(false) }
-    var pdfRevision by rememberSaveable(seriesUuid) { mutableStateOf<String?>(null) }
+    val session = remember(store, seriesUuid, revisionUuid) { WorkspaceQuoteSession() }
+    var selected by rememberSaveable(seriesUuid, revisionUuid) { mutableStateOf(revisionUuid) }
+    var quote by remember(session) { mutableStateOf<SavedIndividualQuote?>(null) }
+    var history by remember(session) { mutableStateOf(emptyList<SavedIndividualQuote>()) }
+    var approved by remember(session) { mutableStateOf(emptyList<SavedIndividualQuote>()) }
+    var editorRoute by remember(session) { mutableStateOf<ElementRoute?>(null) }
+    var error by remember(session) { mutableStateOf(false) }
+    var busy by remember(session) { mutableStateOf(false) }
+    var delete by remember(session) { mutableStateOf<SavedIndividualQuote?>(null) }
     val scope = rememberCoroutineScope()
-    LaunchedEffect(store, seriesUuid, generation) {
-        loading = true; error = null; data = null; preparation = null
+
+    val shareResult = store?.quoteShareResult?.collectAsState()?.value
+    LaunchedEffect(store, selected, session.refresh, shareResult) {
         try {
-            val loaded = checkNotNull(store).savedQuote(seriesUuid, selectedRevision)
-            if (loaded == null) error = "Документ не знайдено."
+            val exact = checkNotNull(store).savedQuote(seriesUuid, selected)
+            if (exact == null) { error = true; quote = null }
             else {
-                val loadedHistory = store.quoteHistory(seriesUuid)
-                val loadedPreparation = store.prepareRevision(seriesUuid)
-                // Publish the complete card together. Pinning its UUID must not cancel
-                // this load and expose a second, temporarily disabled document frame.
-                selectedRevision = loaded.revisionUuid
-                history = loadedHistory
-                preparation = loadedPreparation
-                data = loaded
+                selected = exact.revisionUuid
+                history = store.quoteHistory(seriesUuid)
+                approved = store.savedQuotes(exact.projectId, exact.frozen.source.measurementUuid)
+                    .filter { it.status == EstimateWorkflowStatus.APPROVED }
+                quote = exact
             }
-        }
-        catch (cancelled: CancellationException) { throw cancelled }
-        catch (_: Exception) { error = "Документ недоступний або збережені дані пошкоджено." }
-        finally { loading = false }
+        } catch (e: CancellationException) { throw e }
+        catch (_: Exception) { error = true }
     }
-    Dialog(onDismissRequest = { if (!busy) onDismiss() }, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+    LaunchedEffect(session.opened?.revisionUuid) {
+        session.opened?.let { saved -> selected = saved.revisionUuid; session.opened = null }
+    }
+    DisposableEffect(session) {
+        onDispose { if (session.presenter?.saveState?.value?.saving != true) session.closeDraft(store) }
+    }
+    fun exit() {
+        if (busy || session.presenter?.saveState?.value?.saving == true) return
+        val editor = session.presenter
+        if (editor == null) onDismiss()
+        else if (editor.hasUserChanges) session.discardPending = true
+        else session.closeDraft(store)
+    }
+    fun changeStatus(target: SavedIndividualQuote, status: EstimateWorkflowStatus, previous: List<SavedIndividualQuote>) {
+        if (store == null || busy) return
+        busy = true
+        error = false
+        scope.launch {
+            try { error = !store.setQuoteStatus(target.revisionUuid, target.statusVersion, status,
+                previous.associate { it.revisionUuid to it.statusVersion }) }
+            catch (e: CancellationException) { throw e }
+            catch (_: Exception) { error = true }
+            finally { busy = false; session.refresh++ }
+        }
+    }
+
+    Dialog(onDismissRequest = ::exit, properties = DialogProperties(usePlatformDefaultWidth = false, dismissOnClickOutside = false)) {
         Surface(Modifier.fillMaxSize()) {
-            LazyColumn(Modifier.fillMaxSize().safeDrawingPadding(), contentPadding = PaddingValues(16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                item { TextButton(onClick = onDismiss, enabled = !busy) { Text("Назад") } }
-                if (loading) item { LinearProgressIndicator(Modifier.fillMaxWidth()) }
-                error?.let { item { Text(it, color = MaterialTheme.colorScheme.error) } }
-                data?.let { saved ->
-                    val f = saved.frozen
-                    item {
-                        Text(f.title, style = MaterialTheme.typography.headlineSmall)
-                        Text("${f.publicNumber} · v${saved.versionNumber}", style = MaterialTheme.typography.titleMedium)
-                        Text("${f.source.projectTitle} / ${f.source.measurementName}")
-                        Text("Створено: ${kotlin.time.Instant.fromEpochMilliseconds(saved.createdAt)}")
-                        Text("Статус пропозиції: ${saved.status?.label ?: "Статус не зафіксовано"}")
-                        if (saved.selectedRevisionUuid == saved.revisionUuid) Text("Обрано для роботи")
-                        OutlinedButton(enabled = !busy && !loading && store != null,
-                            onClick = { pdfRevision = saved.revisionUuid }) { Text("Створити PDF") }
+            Column(Modifier.fillMaxSize().safeDrawingPadding().padding(horizontal = 12.dp)) {
+                if (error) Text(stringResource(Res.string.p5d_quote_failed), color = MaterialTheme.colorScheme.error)
+                val editor = session.presenter
+                val route = editorRoute
+                val opened = quote
+                when {
+                    editor != null && route != null && store != null ->
+                        WorkspaceQuoteComposer(store, session, editor, route, current = true, onRefresh = {})
+                    opened == null || store == null -> {
+                        TextButton(onClick = ::exit) { Text(stringResource(Res.string.p5d_back_quotes)) }
+                        if (!error) LinearProgressIndicator(Modifier.fillMaxWidth())
                     }
-                    items(EstimateWorkflowStatus.entries.toList()) { status ->
-                        OutlinedButton(enabled = !busy && !loading && status != saved.status, onClick = {
-                            busy = true; error = null
-                            scope.launch {
-                                try {
-                                    val changed = checkNotNull(store).setQuoteStatus(saved.revisionUuid, saved.statusVersion, status)
-                                    data = store.savedQuote(seriesUuid, saved.revisionUuid)
-                                    history = store.quoteHistory(seriesUuid)
-                                    preparation = store.prepareRevision(seriesUuid)
-                                    if (!changed) error = "Статус уже змінено. Перевірте актуальне значення."
-                                } catch (cancelled: CancellationException) { throw cancelled }
-                                catch (_: Exception) { error = "Не вдалося змінити статус. Оновіть документ." }
-                                finally { busy = false }
-                            }
-                        }) { Text(status.label) }
-                    }
-                    item {
-                        Text("Варіанти пропозиції", style = MaterialTheme.typography.titleMedium)
-                        history.forEach { revision ->
-                            TextButton(enabled = !busy && revision.revisionUuid != saved.revisionUuid,
-                                onClick = { selectedRevision = revision.revisionUuid; generation++ }) {
-                                Text("v${revision.versionNumber}${if (revision == history.firstOrNull()) " · найновіша" else ""} · ${revision.status?.label ?: "Статус не зафіксовано"}${if (revision.selectedRevisionUuid == revision.revisionUuid) " · обрано для роботи" else ""} · ${revision.frozen.title} · ${measurementMoney(revision.frozen.amounts.finalCents)}")
+                    else -> {
+                        if (!session.expanded) {
+                            val source = opened.frozen.source
+                            val geometry = remember(source.drawingJson) { MeasurementGeometryCodec.read(source.drawingJson) }
+                            key(opened.revisionUuid) {
+                                MeasurementDrawing(MeasurementGeometryView.Captured(geometry), compact = true, interactive = true,
+                                    pointPlacements = source.points, linePlacements = source.lines, areaFeatures = source.areas,
+                                    showSideLegend = false, modifier = Modifier.fillMaxWidth().height(160.dp))
                             }
                         }
-                        Button(enabled = !busy && !loading && preparation != null, onClick = {
-                            preparation?.let { (base, route) ->
-                                editing = true
-                                editor = checkNotNull(store).revisionQuote(base, route) to route
-                            }
-                        }) { Text("Створити нову версію") }
-                        if (preparation == null) Text("Нову версію неможливо створити: актуальний замір або його об’єкт недоступний. Історію збережено.")
-                    }
-                    item {
-                        OutlinedButton(enabled = !busy && saved.selectedRevisionUuid != saved.revisionUuid,
-                            onClick = { confirmingChoice = true }) { Text("Обрати для роботи") }
-                        Text("Вибір пропозиції не змінює статус інших версій.")
-                    }
-                    item { FrozenQuoteDrawing(f.source) }
-                    items(f.rows, key = { it.uuid }) { frozen ->
-                        val row = frozen.line
-                        Card(Modifier.fillMaxWidth()) {
-                            Column(Modifier.padding(12.dp)) {
-                                Text(row.title, style = MaterialTheme.typography.titleSmall)
-                                Text("${row.stableCode} · ${if (row.bucket == com.andreyceilings.shared.livepricing.PricingBucket.CONFIRMED) "Погоджено" else "Обговорюється — включено явно"}")
-                                if (row.quantityRoundingPolicy != null) {
-                                    val geometry = remember(f.source.drawingJson) { MeasurementGeometryCodec.read(f.source.drawingJson) }
-                                    Text("Площа заміру: ${formatMeasurementArea(geometry.areaSquareMeters, com.andreyceilings.shared.calculation.MeasurementPrecision.fromStep(geometry.precisionStepMeters))} м²")
-                                    Text("Розрахункова площа округлена до 0,001 м²")
+                        if (history.size > 1) {
+                            var choose by remember { mutableStateOf(false) }
+                            Box {
+                                TextButton(onClick = { choose = true }) {
+                                    Text(stringResource(Res.string.p5d_version, opened.versionNumber))
                                 }
-                                Text("${if (row.quantityRoundingPolicy != null) "Із заміру (до 0,001 м²)" else "Із заміру"}: ${formatElementMilli(row.sourceQuantityMilli)} ${row.unit}")
-                                Text("До оплати: ${formatElementMilli(row.effectiveBillableQuantityMilli)} ${row.unit}")
-                                row.overrideNote?.takeIf { it.isNotBlank() }?.let { Text(it) }
-                                Text("${measurementMoney(row.unitPriceCents)} / ${row.unit} · ${measurementMoney(row.totalCents)}")
+                                DropdownMenu(choose, onDismissRequest = { choose = false }) {
+                                    history.forEach { alternative ->
+                                        DropdownMenuItem(text = { Text(stringResource(Res.string.p5d_line_problem,
+                                            stringResource(Res.string.p5d_version, alternative.versionNumber), alternative.frozen.title)) },
+                                            onClick = { choose = false; selected = alternative.revisionUuid })
+                                    }
+                                }
                             }
                         }
-                    }
-                    if (f.partial) item {
-                        Text("Частковий · невраховані роботи підтверджено")
-                        f.omissions.forEach { omission ->
-                            val label = f.source.elements.find { "element:${it.uuid}" == omission.sourceKey }?.label ?: omission.sourceKey
-                            Text("$label: ${if (omission.reason == com.andreyceilings.shared.livepricing.ExclusionReason.USER_EXCLUDED) "виключено вами" else omission.problems.joinToString { pricingProblemText(it) }}")
-                        }
-                    }
-                    item {
-                        Text("До знижки: ${measurementMoney(f.amounts.subtotalCents)}")
-                        Text("Знижка ${f.discountText}%: ${measurementMoney(f.amounts.discountCents)}")
-                        Text(measurementMoney(f.amounts.finalCents), style = MaterialTheme.typography.headlineSmall)
+                        WorkspaceFrozenQuote(store, session, opened, approved, busy, ::changeStatus,
+                            onNewRevision = { origin ->
+                                if (origin != null && !busy) {
+                                    busy = true
+                                    error = false
+                                    scope.launch {
+                                        try {
+                                            val (base, currentRoute) = checkNotNull(store.prepareRevision(origin.seriesUuid, origin.revisionUuid))
+                                            editorRoute = currentRoute
+                                            session.presenter = store.newQuote(currentRoute.measurementUuid, base, origin)
+                                        } catch (e: CancellationException) { throw e }
+                                        catch (_: Exception) { error = true }
+                                        finally { busy = false }
+                                    }
+                                }
+                            }, onDelete = { delete = opened }, onBack = ::exit)
                     }
                 }
             }
         }
     }
-    pdfRevision?.let { exactRevision ->
-        store?.let { EstimateDocumentPreview(it, seriesUuid, exactRevision) { pdfRevision = null } }
-    }
-    if (confirmingChoice) data?.let { saved ->
-        AlertDialog(onDismissRequest = { if (!busy) confirmingChoice = false },
-            title = { Text("Обрати v${saved.versionNumber} для роботи?") },
-            text = { Text("Ця пропозиція стане обраною замість попереднього вибору. Статуси та збережені суми всіх версій залишаться незмінними.") },
-            confirmButton = { TextButton(enabled = !busy, onClick = {
-                busy = true
-                scope.launch {
-                    try {
-                        val changed = checkNotNull(store).selectQuoteRevision(seriesUuid, saved.revisionUuid, saved.choiceVersion)
-                        data = store.savedQuote(seriesUuid, saved.revisionUuid)
-                        history = store.quoteHistory(seriesUuid)
-                        preparation = store.prepareRevision(seriesUuid)
-                        confirmingChoice = false
-                        if (!changed) error = "Вибір уже змінено. Перевірте актуальне значення."
-                    } catch (cancelled: CancellationException) { throw cancelled }
-                    catch (_: Exception) { error = "Не вдалося зберегти вибір. Оновіть документ." }
-                    finally { busy = false }
-                }
-            }) { Text("Обрати") } },
-            dismissButton = { TextButton(enabled = !busy, onClick = { confirmingChoice = false }) { Text("Скасувати") } })
-    }
-    LaunchedEffect(editing, preparation) {
-        if (editing && editor == null) {
-            editor = store?.retainedRevision(seriesUuid)
-            if (editor == null) preparation?.let { (base, route) -> editor = checkNotNull(store).revisionQuote(base, route) to route }
-        }
-    }
-    editor?.let { (presenter, route) ->
-        val save by presenter.saveState.collectAsState()
-        fun closeEditor() {
-            if (!presenter.saveState.value.saving) {
-                store?.releaseQuote(presenter); editor = null; editing = false; generation++
+    delete?.let { target ->
+        WorkspaceQuoteDeleteDialog(listOf(target), series = false, onClose = { delete = null }) {
+            delete = null
+            if (store == null || busy) return@WorkspaceQuoteDeleteDialog
+            busy = true
+            scope.launch {
+                try {
+                    if (store.deleteQuoteRevision(target.seriesUuid, target.revisionUuid, target.statusVersion)) onDismiss()
+                    else error = true
+                } catch (e: CancellationException) { throw e }
+                catch (_: Exception) { error = true }
+                finally { busy = false; session.refresh++ }
             }
         }
-        Dialog(onDismissRequest = { closeEditor() }, properties = DialogProperties(usePlatformDefaultWidth = false,
-            dismissOnBackPress = !save.saving, dismissOnClickOutside = false)) {
-            Surface(Modifier.fillMaxSize()) {
-                MeasurementQuoteScreen(presenter, checkNotNull(store), route, PaddingValues(16.dp), 0.dp) { closeEditor() }
-            }
-        }
-    }
-
-}
-
-@Composable
-private fun FrozenQuoteDrawing(source: FrozenIndividualSource) {
-    val geometry = remember(source.drawingJson) { MeasurementGeometryCodec.read(source.drawingJson) }
-    Column {
-        Text("Збережене креслення", style = MaterialTheme.typography.titleMedium)
-        MeasurementDrawing(MeasurementGeometryView.Captured(geometry),
-            pointPlacements = source.points, linePlacements = source.lines, areaFeatures = source.areas)
-        Text("Площа: ${formatMeasurementArea(geometry.areaSquareMeters, com.andreyceilings.shared.calculation.MeasurementPrecision.fromStep(geometry.precisionStepMeters))} м² · Периметр: ${formatMeasurementLength(geometry.perimeterMeters, com.andreyceilings.shared.calculation.MeasurementPrecision.fromStep(geometry.precisionStepMeters))} м")
     }
 }

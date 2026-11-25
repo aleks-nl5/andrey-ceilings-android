@@ -137,8 +137,28 @@ class LivePricingTest {
         assertNotEquals(s.signature, withPoint.signature)
         val review = withPoint.copy(points = listOf(p.copy(mounting = p.mounting.copy(needsReview = true))))
         assertNotEquals(withPoint.signature, review.signature)
-        assertTrue(preview(review, catalog).unresolvedItems.single().reasons.contains(PricingProblemCode.PLACEMENT_REVIEW))
+        val reviewedLine = preview(review, catalog).priceableLines.single()
+        assertContains(reviewedLine.reviewFlags, PricingProblemCode.PLACEMENT_REVIEW)
+        assertEquals(preview(s, catalog).priceableLines.single().totalCents, reviewedLine.totalCents)
         assertNotEquals(catalog.signature, catalog.copy(items = listOf(i.copy(groupUpdatedAt = 2))).signature)
+    }
+
+    @Test fun declaredQuantityRemainsBillableWhenPlacementMovesOrIsLost() {
+        val light = item("light", placement = PlacementKind.POINT)
+        val element = element(light, ElementQuantity.Exact(6000))
+        val catalog = withBases(ActiveCatalogSnapshot(listOf(light)))
+        val source = withBases(LiveEstimateSource("p", "m", geometry(), listOf(element)))
+        val point = PointPlacement("point", element.uuid, 1000, 1000, 1, 1, 1, null)
+        val displaced = point.copy(xMm = -500, mounting = point.mounting.copy(needsReview = true, unresolved = true))
+        for (placement in listOf(emptyList(), listOf(point), listOf(displaced))) {
+            val result = preview(source.copy(points = placement), catalog)
+            assertTrue(result.canFinalizeFull)
+            val line = result.priceableLines.single { it.elementUuid == element.uuid }
+            assertEquals(6000L, line.effectiveBillableQuantityMilli)
+            assertEquals(PricingMath.lineCents(line.unitPriceCents, 6000), line.totalCents)
+        }
+        val invalid = preview(source.copy(points = listOf(displaced.copy(mounting = point.mounting))), catalog)
+        assertFalse(invalid.canFinalizeFull)
     }
 
     @Test fun capturedPrecisionPolygonAndSubMilliAreaHasExplicitRoundingPolicy() {

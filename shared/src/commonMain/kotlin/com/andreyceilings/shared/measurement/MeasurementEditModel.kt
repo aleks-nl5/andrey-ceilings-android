@@ -5,6 +5,8 @@ import com.andreyceilings.shared.estimate.FrozenPolygonGeometry
 import com.andreyceilings.shared.db.ceilingDraftWalls
 import com.andreyceilings.shared.prices.PlacementKind
 import com.andreyceilings.shared.livepricing.BusinessRole
+import com.andreyceilings.shared.livepricing.DraftPricingBasis
+import com.andreyceilings.shared.livepricing.PricingProblemCode
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.decodeFromString
@@ -79,6 +81,10 @@ class MeasurementEditModel(
     fun observePoints(): Flow<PointOverlayState> =
         if (state.value.creating) flowOf(PointOverlayState.Loaded(emptyList(), null))
         else store?.observePoints(state.value.original) ?: flowOf(PointOverlayState.Unavailable)
+
+    internal fun observeDraftPricingBasis(projectId: Long, measurementUuid: String, creating: Boolean): Flow<DraftPricingBasis?> =
+        store?.observeDraftPricingBasis(projectId, measurementUuid, creating)
+            ?: flowOf(DraftPricingBasis.Unavailable(PricingProblemCode.DATABASE_UNAVAILABLE))
 
     private fun publish(draft: MeasurementCreateDraft = state.value.draft) {
         mutableState.value = state.value.copy(draft = draft, canUndo = inputStart?.let { it != form(draft) } == true || undo.isNotEmpty(),
@@ -220,9 +226,8 @@ class MeasurementEditModel(
         }
     }
     suspend fun save(keepEditing: Boolean = false) {saveAttempt(keepEditing,preserveExitAction=false)}
-    internal suspend fun saveInWorkspace() {
-        saveAttempt(keepEditing = true, preserveExitAction = false, workspace = true)
-    }
+    internal suspend fun saveInWorkspace(forQuote: Boolean = false): Boolean =
+        saveAttempt(keepEditing = true, preserveExitAction = false, workspace = true, keepCreatedWorkspace = forQuote)
 
     private fun workspaceSaved(document: MeasurementEditDocument, before: MeasurementEditState, review: Boolean): MeasurementEditState {
         val selectedLine = before.selectedLineUuid?.takeIf { id -> document.placements.lines.any { it.uuid == id } }
@@ -237,7 +242,7 @@ class MeasurementEditModel(
             workspaceSaveConfirmed = true)
     }
 
-    private suspend fun saveAttempt(keepEditing:Boolean,preserveExitAction:Boolean,workspace:Boolean = false):Boolean {
+    private suspend fun saveAttempt(keepEditing:Boolean,preserveExitAction:Boolean,workspace:Boolean = false, keepCreatedWorkspace: Boolean = false):Boolean {
         if (!mutex.tryLock()) return false
         try {
             if (state.value.saving || state.value.checking || state.value.saved || state.value.exitReady ||
@@ -255,7 +260,7 @@ class MeasurementEditModel(
                 try {
                     val timestamp=command.now ?: checkNotNull(store).now().also { attempt=command.copy(now=it) }
                     val result=checkNotNull(store).update(before.original,before.draft,before.pointEdits,command.operation,before.wallGeneration,timestamp,completion,before.lineEdits,before.declaredLengths,before.area.edits,before.area.quantities,before.additions,before.contourAnchorReference)
-                    if (before.creating) {
+                    if (before.creating && !keepCreatedWorkspace) {
                         undo.clear()
                         redo.clear()
                         mutableState.value = before.copy(
@@ -265,7 +270,7 @@ class MeasurementEditModel(
                         )
                         return@withContext true
                     }
-                    val geometryChanged=validateMeasurementCreate(before.original.draft).geometry!=validateMeasurementCreate(result.draft).geometry
+                    val geometryChanged=!before.creating && validateMeasurementCreate(before.original.draft).geometry!=validateMeasurementCreate(result.draft).geometry
                     undo.clear();redo.clear();attempt=null
                     val review = geometryChanged && (result.placements.points.any { it.mounting.needsReview } ||
                         result.placements.lines.any { it.needsReview } || result.placements.areas.any { it.needsReview })
@@ -587,7 +592,7 @@ class MeasurementEditModel(
     }
 
     internal fun deleteWorkspaceWork(uuid: String) {
-        if (!editable()) return
+        if (!editable() || promptForDirtyElementBeforeNavigation()) return
         val work = workspaceWorks().find { it.uuid == uuid } ?: return
         cancelPlacement()
         clearDrawingSelection()
@@ -686,7 +691,7 @@ class MeasurementEditModel(
     }
 
     internal fun startWorkspacePlacement(element: MeasurementElement) {
-        if (!editable()) return
+        if (!editable() || promptForDirtyElementBeforeNavigation()) return
         when ((element.source as? ElementSource.CatalogSelection)?.placementKind) {
             PlacementKind.POINT -> {
                 if (!pointCanBePlaced(element.uuid)) return
@@ -909,8 +914,13 @@ class MeasurementEditModel(
         lineCapacityError()?.let {mutableState.value=state.value.copy(error=it)}
     }
     fun clearDrawingSelection() {
-        if(!editable())return
+        // Never remove the selection while an unapplied editor still owns it.
+        // The workspace-level confirmation remains reachable even if the panel changes.
+        if (!editable() || promptForDirtyElementBeforeNavigation()) return
         cancelAreaDrag();cancelLineDrag();cancelPointDrag()
+        discardLineProperties()
+        discardAreaProperties()
+        discardMounting()
         mutableState.value=state.value.copy(selectedPointUuid=null,selectedLineUuid=null,area=state.value.area.copy(selected=null))
     }
     fun setLineMoveTarget(target:Int) { if(editable())mutableState.value=state.value.copy(lineMoveTarget=target) }
@@ -1291,11 +1301,13 @@ class MeasurementEditModel(
     fun requestAreaDelete() {if(editable())updateArea {it.copy(deleteConfirm=true)}}
     fun cancelAreaDelete() {updateArea {it.copy(deleteConfirm=false)}}
     fun deleteArea() {
-        if(!editable())return
+        if (!editable() || promptForDirtyElementBeforeNavigation()) return
         val a=displayAreas().find {it.uuid==state.value.area.selected} ?: return
         if(state.value.original.placements.areas.any {it.uuid==a.uuid})stageArea(a.copy(deletedAt=0)) else {
             commitInput();undo.add(form());redo.clear();updateArea {it.copy(edits=it.edits-a.uuid)};publish()
         }
+        discardAreaProperties()
+        discardMounting()
         updateArea {it.copy(selected=null,deleteConfirm=false)}
     }
     fun requestAreaQuantity(id:String?) {if(editable())updateArea {it.copy(quantityConfirm=id)}}
@@ -1368,10 +1380,11 @@ class MeasurementEditModel(
     }.toString()
 
     companion object {
-        fun restore(store: MeasurementEditStore?, snapshot: String, projectId: Long, measurementId: Long): MeasurementEditModel? = runCatching {
+        fun restore(store: MeasurementEditStore?, snapshot: String, projectId: Long, expectedMeasurementId: Long): MeasurementEditModel? = runCatching {
             require(snapshot.length <= 2_000_000)
             val json = Json.parseToJsonElement(snapshot).jsonObject
-            require(json.getValue("id").jsonPrimitive.long == measurementId)
+            val measurementId = json.getValue("id").jsonPrimitive.long
+            require(measurementId == expectedMeasurementId || (expectedMeasurementId == 0L && measurementId > 0L))
             val token = json.getValue("token").jsonPrimitive.content
             store?.retained(token)?.let { retained ->
                 require(retained.state.value.original.measurementId == measurementId && retained.state.value.draft.projectId == projectId)
