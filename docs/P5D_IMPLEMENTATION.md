@@ -76,12 +76,13 @@ Final P5D review follow-up: explicit optional quote inclusion/exclusion now belo
 - [x] [Android FULL #1367](https://github.com/aleks-nl5/andrey-ceilings-android/actions/runs/45658264031) SUCCESS on the same exact SHA: JVM, encrypted instrumentation, release APK and signed production open/recovery passed.
 - [x] [CMP FULL #1104](https://github.com/aleks-nl5/andrey-ceilings-android/actions/runs/45658307795) SUCCESS on the same exact SHA: Windows JVM/SQLCipher, macOS Desktop compilation/shared JVM and iOS Simulator/SQLCipher passed. Scoped macOS UI smoke and Android retry/failure diagnostics were skipped as expected by policy.
 - [x] Tested SHA is 26 commits ahead and zero behind main `d13f03dc7932e437043fe06df5f49bf051433cc8`; PR mergeable before this acceptance-record update. The subsequent Markdown-only delta must be checked separately and accepted by the owner; do not claim an exact-head FULL for the documentation commit.
-- [ ] Owner marks Ready and merges; verify both automatic main FULL runs on the merged SHA before closing the accepted work.
+- [x] Owner merged #166 at `523a37da3be3ead8895f70737aedd6b9adff08e0` and explicitly closed #164/#95/#76/#71 after acceptance/audit.
+- [ ] Post-merge integration: [Android FULL #1368](https://github.com/aleks-nl5/andrey-ceilings-android/actions/runs/45668216284) (in progress) and [CMP FULL #1105](https://github.com/aleks-nl5/andrey-ceilings-android/actions/runs/45668216320) (in progress) on merge SHA `523a37da3be3ead8895f70737aedd6b9adff08e0`. Post-merge FULL is not yet confirmed green; verify both before subsequent merge or production work; fix/revert on failure.
 
 ### Scope remaining outside PR #166
 
 - PDF compact layout/page breaks, drawing sizing, totals placement, and short printed number presentation: separate follow-up; preserve exact frozen values and original document identity. Existing extra-page concern is layout, not accepted evidence of changed finances.
-- Deferred/partial placement indicators on ceiling/project lists and optional work filter: non-blocking P5D follow-up under #76; agree UX and create a dedicated tracked issue before closing #76 if absent. Existing editor shows declared/placed quantity; lack of placement never blocks pricing solely for that reason.
+- Deferred/partial placement indicators on ceiling/project lists and optional work filter: non-blocking follow-up transferred from #76 to [#168](https://github.com/aleks-nl5/andrey-ceilings-android/issues/168), low priority, outside P6. Existing editor shows declared/placed quantity; lack of placement never blocks pricing solely for that reason.
 - Full localization remains its own workstream. No historical-series consolidation/renumbering or migration solely for old test records. No automated UI suite.
-- #164 remains open until P5D merge/verification. #95 and #76 require their own final criteria audit; do not auto-close umbrella issues with this PR.
+- #164, #95, #76 and #71 closed by explicit owner decision after the audits; closure is not evidence of unconfirmed post-merge CI. #154 remains separately open.
 
