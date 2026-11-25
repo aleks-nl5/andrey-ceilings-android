@@ -47,3 +47,15 @@ Continuing a fully deleted series uses the canonical append receipt and historic
 Owner APK follow-up: the shared series lookup used by the workspace and transactional writer now returns all active series if present, otherwise only the newest-created historical series. This keeps deleted alternatives from blocking creation while preserving the lifetime number rule, explicit selection for multiple active series, and atomic continuation. The existing portable continuation proof also covers active precedence, rejection of stale continuation, and selection when all legacy series are deleted. CI/APK verification remains required.
 
 Owner APK follow-up: neutral shape selector; edge-to-edge themed workspace headers; centered cost group headings, compact inline information icons and aligned larger totals. Shared alternating row tint and dividers are used in element, cost and quote lists. Compact quote labels omit the generated public token using the frozen numbering policy; stored identifiers and issued PDF numbers are unchanged. Physical APK verification remains required.
+
+### Physical regression checklist (owner, pending)
+
+- 2×3 m ceiling: choose both main materials, verify auto-approval and current geometry/cost; Save and reopen.
+- Add POINT with quantity 3, tap three times; drag a selected point, single tap highlights, fullscreen double tap opens distances. Empty distances don't show early red warning; invalid pair shows contextual warning, valid pair clears it.
+- LINE: drag endpoint and body, toggle snap; declared length unchanged by drag; transfer from drawing after confirmation updates the declared field. Invalid length/width shows error icon; apply blocked until valid.
+- AREA: rectangle corner retains rectangle; polygon vertex; circle diameter; obstacle and hole are not billable; invalid dimensions show error icon. Undo/Redo and Save/reopen.
+- Work quantity A11: type without apply, switch pencils and back; verify un-applied value is preserved or explicitly discarded, never implicitly saved. Switch tabs and Back; test geometry pending edits separately.
+- Back from catalog detail to search then list; dirty geometry discard dialog has red left action and safe right action. Test all four tabs with keyboard and both themes; normal/fullscreen fit; no duplicate system gradients. Verify info/help/error popovers and circular ripple.
+- Quote deletion/discard: red destructive action left, cancel right; approved protected. Verify current quote draft remains intact when cancelling navigation.
+
+Shared feedback components and affected labels are localized via CMP resources; existing unrelated domain error strings remain for the dedicated localization stage. No new automated UI tests. CI and physical APK acceptance still pending.

@@ -342,7 +342,8 @@ internal fun WorkspaceGeometryPanel(
                     DecimalInputField(input.length.orEmpty(),
                         { model.changeLineProperties(length = it) },
                         stringResource(Res.string.p5b_line_length),
-                        modifier = measurementFieldFocusModifier().weight(1f).testTag("p5b-line-declared-length"), compact = true)
+                        modifier = measurementFieldFocusModifier().weight(1f).testTag("p5b-line-declared-length"),
+                        isError = !valid && input.valid, compact = true)
                     Spacer(Modifier.width(6.dp))
                     DecimalInputField(input.width, { model.changeLineProperties(width = it) },
                         stringResource(Res.string.p5b_line_size),
@@ -353,17 +354,13 @@ internal fun WorkspaceGeometryPanel(
                     CompactOutlinedStringField(input.note, { model.changeLineProperties(note = it) },
                         label = stringResource(Res.string.p5b_line_note),
                         modifier = Modifier.weight(1f).testTag("p5b-line-note"))
+                    if (!valid) WorkspaceFieldError(stringResource(Res.string.p5b_line_parameters_invalid))
                     IconButton(onClick = model::applyLineProperties, enabled = valid) {
                         Icon(Icons.Default.Check, stringResource(Res.string.p5b_apply_draft))
                     }
                     IconButton(onClick = model::dismissLineProperties) {
                         Icon(Icons.Default.Close, stringResource(Res.string.p5b_cancel_placement))
                     }
-                }
-                if (!valid) {
-                    Text(stringResource(Res.string.p5b_quantity_invalid),
-                        color = MaterialTheme.colorScheme.error,
-                        style = MaterialTheme.typography.labelSmall)
                 }
             }
         }
@@ -374,25 +371,26 @@ internal fun WorkspaceGeometryPanel(
                 WorkspaceShortAction(stringResource(Res.string.p5b_size_short), Icons.Default.Edit,
                     model::openAreaProperties)
             state.area.properties?.let { input ->
+                val valid = model.areaPropertiesCandidate(area, input) != null
                 if (input.width != null && input.height != null) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         DecimalInputField(input.width, { value -> model.changeAreaProperties { it.copy(width = value) } },
                             stringResource(Res.string.p5b_rectangle_width),
-                            modifier = measurementFieldFocusModifier().weight(1f), compact = true)
+                            modifier = measurementFieldFocusModifier().weight(1f), isError = !valid, compact = true)
                         Spacer(Modifier.width(6.dp))
                         DecimalInputField(input.height, { value -> model.changeAreaProperties { it.copy(height = value) } },
                             stringResource(Res.string.p5b_rectangle_height),
-                            modifier = measurementFieldFocusModifier().weight(1f), compact = true)
+                            modifier = measurementFieldFocusModifier().weight(1f), isError = !valid, compact = true)
                     }
                 }
                 if (area.shape is AreaShape.Circle) DecimalInputField(input.diameter,
                     { value -> model.changeAreaProperties { it.copy(diameter = value, diameterMeasured = true) } },
-                    stringResource(Res.string.p5b_numeric_diameter), modifier = measurementFieldFocusModifier(), compact = true)
-                val valid = model.areaPropertiesCandidate(area, input) != null
+                    stringResource(Res.string.p5b_numeric_diameter), modifier = measurementFieldFocusModifier(), isError = !valid, compact = true)
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     CompactOutlinedStringField(input.note, { value -> model.changeAreaProperties { it.copy(note = value) } },
                         label = stringResource(Res.string.p5b_placement_note),
                         modifier = Modifier.weight(1f).testTag("p5b-area-note"))
+                    if (!valid) WorkspaceFieldError(stringResource(Res.string.p5b_dimensions_invalid))
                     IconButton(onClick = model::applyAreaProperties, enabled = valid) {
                         Icon(Icons.Default.Check, stringResource(Res.string.p5b_apply_draft))
                     }
@@ -400,8 +398,6 @@ internal fun WorkspaceGeometryPanel(
                         Icon(Icons.Default.Close, stringResource(Res.string.p5b_cancel_placement))
                     }
                 }
-                if (!valid)
-                    Text(stringResource(Res.string.p5b_dimensions_invalid), color = MaterialTheme.colorScheme.error)
             }
         }
         if (state.mountingInput?.pointUuid == uuid) {
@@ -794,8 +790,9 @@ internal fun WorkspaceWorkList(
                         modifier = measurementFieldFocusModifier().fillMaxWidth()
                             .testTag("p5b-work-quantity-${work.uuid}"),
                         compact = true, isError = invalidQuantity, allowDecimalSeparator = work.unit != "шт.")
-                    WorkspaceQuantityHelp(Modifier.align(Alignment.CenterEnd).padding(end = 2.dp))
                 }
+                if (invalidQuantity) WorkspaceFieldError(stringResource(Res.string.p5b_quantity_invalid))
+                else WorkspaceQuantityHelp()
                 IconButton(onClick = {
                     val value = if (quantity.isBlank()) ElementQuantity.Unknown
                         else parseElementMilli(quantity, work.unit)?.let { ElementQuantity.Exact(it) }
@@ -811,7 +808,6 @@ internal fun WorkspaceWorkList(
                     Icon(Icons.Default.Close, stringResource(Res.string.p5b_cancel_placement))
                 }
             }
-            if (invalidQuantity) Text(stringResource(Res.string.p5b_quantity_invalid), color = MaterialTheme.colorScheme.error)
         }
         WorkspacePanelDivider()
         if (deletion) AlertDialog(onDismissRequest = { deletion = false },

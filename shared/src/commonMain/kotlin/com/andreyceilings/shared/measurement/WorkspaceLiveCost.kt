@@ -3,16 +3,12 @@ package com.andreyceilings.shared.measurement
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Info
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -20,6 +16,8 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.andreyceilings.shared.livepricing.*
 import com.andreyceilings.shared.resources.*
+import com.andreyceilings.shared.ui.ContextFeedbackIcon
+import com.andreyceilings.shared.ui.ContextFeedbackKind
 import org.jetbrains.compose.resources.stringResource
 
 internal fun LiveEstimatePreview.bucketAmount(bucket: PricingBucket): Long? {
@@ -62,7 +60,7 @@ internal fun WorkspaceLiveCost(
                     ) {
                         Row(Modifier.heightIn(min = 24.dp), verticalAlignment = Alignment.CenterVertically) {
                             Text(title, style = MaterialTheme.typography.labelMedium, maxLines = 1)
-                            if (bucket == PricingBucket.CONFIRMED && issues.isNotBlank()) WorkspaceCostHelp(issues, compact = true)
+                            if (bucket == PricingBucket.CONFIRMED && issues.isNotBlank()) WorkspaceCostHelp(issues, compact = true, kind = ContextFeedbackKind.WARNING)
                         }
                         Text(if (subtotal == null) stringResource(Res.string.p5d_unknown)
                             else if (bucket == PricingBucket.POTENTIAL) stringResource(Res.string.p5d_plus_amount, measurementMoney(subtotal))
@@ -94,7 +92,7 @@ internal fun WorkspaceLiveCost(
                             .clickable { unavailableLink = item.elementUuid?.let(onElement) != true }
                             .padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                             Text(item.label, Modifier.weight(1f, fill = false), style = MaterialTheme.typography.bodyMedium)
-                            WorkspaceCostHelp(item.reasons.map { workspacePricingProblem(it) }.joinToString("\n"), compact = true)
+                            WorkspaceCostHelp(item.reasons.map { workspacePricingProblem(it) }.joinToString("\n"), compact = true, kind = ContextFeedbackKind.WARNING)
                         }
                     }
                 }
@@ -152,7 +150,7 @@ internal fun WorkspaceFinancialRow(line: LiveEstimateLine, showRate: Boolean = f
                 Text(line.title, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f, fill = false))
                 if (line.reviewFlags.isNotEmpty()) {
                     WorkspaceCostHelp(line.reviewFlags.map { workspacePricingProblem(it) }.joinToString("\n"),
-                        description = stringResource(Res.string.p5d_placement_details), compact = true)
+                        description = stringResource(Res.string.p5d_placement_details), compact = true, kind = ContextFeedbackKind.WARNING)
                 }
             }
             if (showRate) Text(stringResource(Res.string.p5d_line_rate, formatElementMilli(line.effectiveBillableQuantityMilli),
@@ -168,25 +166,15 @@ internal fun WorkspaceFinancialRow(line: LiveEstimateLine, showRate: Boolean = f
 }
 
 @Composable
-internal fun WorkspaceCostHelp(text: String, description: String? = null, compact: Boolean = false) {
-    var open by remember { mutableStateOf(false) }
-    Box {
-        if (compact) {
-            // Keep the inline glyph on the text baseline; clickable supplies expanded touch hit testing.
-            Box(Modifier.size(24.dp).clip(CircleShape)
-                .clickable(role = androidx.compose.ui.semantics.Role.Button) { open = true },
-                contentAlignment = Alignment.Center) {
-                Icon(Icons.Default.Info, description ?: stringResource(Res.string.p5d_cost_details), Modifier.size(18.dp))
-            }
-        } else {
-            IconButton(onClick = { open = true }) {
-                Icon(Icons.Default.Info, description ?: stringResource(Res.string.p5d_cost_details), Modifier.size(18.dp))
-            }
-        }
-        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
-            Text(text, Modifier.widthIn(max = 280.dp).padding(12.dp), style = MaterialTheme.typography.bodySmall)
-        }
-    }
+internal fun WorkspaceCostHelp(text: String, description: String? = null, compact: Boolean = false,
+    kind: ContextFeedbackKind = ContextFeedbackKind.INFO) {
+    ContextFeedbackIcon(text, description ?: stringResource(Res.string.p5d_cost_details), kind, compact = compact)
+}
+
+@Composable
+internal fun WorkspaceFieldError(message: String, modifier: Modifier = Modifier) {
+    ContextFeedbackIcon(message, message,
+        ContextFeedbackKind.ERROR, modifier)
 }
 
 @Composable

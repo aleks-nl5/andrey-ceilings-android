@@ -327,4 +327,12 @@
     <string name="p5d_placement_details">Деталі розміщення</string>
     <string name="p5d_series_blocked">Перевірте історію кошторисів стелі перед створенням версії.</string>
     <string name="p5d_duplicate_quote">Вміст збігається з останньою версією. Внесіть зміни, щоб зберегти нову.</string>
+    <string name="p5b_validation_error">Помилка: %1$s</string>
+    <string name="p5b_line_parameters_invalid">Перевірте заявлену довжину, ширину та наявні розміщення.</string>
+    <string name="p5b_save_measurement">Зберегти замір</string>
+    <string name="p5b_saving_measurement">Збереження…</string>
+    <string name="p5b_saved_measurement">Збережено</string>
+    <string name="p5b_unsaved_measurement">Незбережено</string>
+    <string name="p5b_clean_measurement">Змін немає</string>
+    <string name="p5b_feedback_warning">Попередження: %1$s</string>
 </resources>

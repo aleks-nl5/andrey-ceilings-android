@@ -81,3 +81,7 @@ When the chosen series is fully deleted, **+** starts a fresh proposal from the 
 The normal workspace uses four outlined tabs with a receipt icon for quotes. Rounded themed headers and subtle dividers group related controls. Cost help stays with the confirmed total, placement details stay with their row, and potential totals align to the right. The quote total has stronger emphasis and omissions scroll alongside included rows. Quote trash icons use the theme’s monochrome treatment. An element row is a single visual touch surface with independently actionable icons.
 
 [Owner review on Draft PR #166](https://github.com/aleks-nl5/andrey-ceilings-android/pull/166#issuecomment-7146553569) · [Continuation after deletion](https://github.com/aleks-nl5/andrey-ceilings-android/pull/166#issuecomment-7146790832)
+
+## 12. Owner APK follow-up (25.11.2026)
+
+The later owner-approved presentation supersedes the gradient inside individual financial summaries: edge-to-edge themed headers with visible fill in both themes, centered group labels, aligned larger amounts, subtle alternating rows and dividers. This does not change system-bar gradients. Compact quote labels hide the generated public token in the UI only; persisted number and PDF remain unchanged pending separate PDF work. Shared context feedback distinguishes neutral help/info, warning and validation error; no long inline validation text, but critical save errors remain visible. See the updated P5B test policy and physical checklist in P5D_IMPLEMENTATION.md.

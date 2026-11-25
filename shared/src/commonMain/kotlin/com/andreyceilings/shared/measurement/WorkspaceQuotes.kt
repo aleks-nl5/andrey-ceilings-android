@@ -26,6 +26,8 @@ import com.andreyceilings.shared.input.CompactOutlinedStringField
 import com.andreyceilings.shared.input.DecimalInputField
 import com.andreyceilings.shared.livepricing.*
 import com.andreyceilings.shared.resources.*
+import com.andreyceilings.shared.ui.ContextFeedbackIcon
+import com.andreyceilings.shared.ui.ContextFeedbackKind
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.stringResource
@@ -137,7 +139,7 @@ internal fun WorkspaceQuotes(
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Text(stringResource(Res.string.p5d_quotes), Modifier.weight(1f).padding(start = 8.dp),
                     style = MaterialTheme.typography.titleLarge)
-                if (approved.size > 1) WorkspaceCostHelp(stringResource(Res.string.p5d_approval_conflict))
+                if (approved.size > 1) WorkspaceCostHelp(stringResource(Res.string.p5d_approval_conflict), kind = ContextFeedbackKind.ERROR)
                 IconButton(enabled = store != null && !busy && !edit.saving && !edit.checking, onClick = { onStart(null) }) {
                     Icon(Icons.Default.Add, stringResource(Res.string.p5d_new_quote))
                 }
@@ -174,9 +176,9 @@ internal fun WorkspaceQuotes(
                                 if (quote.status == EstimateWorkflowStatus.APPROVED) {
                                     val savedBasis = (pricingBasis as? DraftPricingBasis.Saved)?.read
                                     val show = savedBasis?.let { quote.frozen.hasPricingDrift(it) }
-                                    if (show == true) WorkspaceCostHelp(stringResource(Res.string.p5d_drift))
+                                    if (show == true) WorkspaceCostHelp(stringResource(Res.string.p5d_drift), kind = ContextFeedbackKind.WARNING)
                                     else if (pricingBasis is DraftPricingBasis.Unavailable)
-                                        WorkspaceCostHelp(stringResource(Res.string.p5d_drift_unavailable))
+                                        WorkspaceCostHelp(stringResource(Res.string.p5d_drift_unavailable), kind = ContextFeedbackKind.WARNING)
                                 }
                                 Column(Modifier.weight(1f)) {
                                     Text(stringResource(Res.string.p5d_version, quote.versionNumber), style = MaterialTheme.typography.bodyMedium)
@@ -329,14 +331,14 @@ internal fun ColumnScope.WorkspaceQuoteComposer(
         if (state.loading) LinearProgressIndicator(Modifier.fillMaxWidth())
         val problem = state.unavailable?.let { workspacePricingProblem(it) }
             ?: state.preview?.fatalProblems?.takeIf { it.isNotEmpty() }?.map { workspacePricingProblem(it.code) }?.joinToString("\n")
-        if (problem != null) WorkspaceCostHelp(problem)
+        if (problem != null) WorkspaceCostHelp(problem, kind = ContextFeedbackKind.ERROR)
         else if (!canSubmit && !state.loading) {
             val help = when {
                 state.preview?.canFinalizeFull == true && state.edits.values.none { !it.confirmed } ->
                     stringResource(Res.string.p5d_discount_invalid)
                 else -> stringResource(Res.string.p5d_amount_unavailable)
             }
-            WorkspaceCostHelp(help)
+            WorkspaceCostHelp(help, kind = ContextFeedbackKind.WARNING)
         }
         if (presenter.revisionCarrySource != null) Box {
             IconButton(enabled = enabled && state.source != null, onClick = { showCarry = true }) {
@@ -362,7 +364,7 @@ internal fun ColumnScope.WorkspaceQuoteComposer(
                     }
             }
         }
-        if (carryError) WorkspaceCostHelp(stringResource(Res.string.p5d_carry_failed))
+        if (carryError) WorkspaceCostHelp(stringResource(Res.string.p5d_carry_failed), kind = ContextFeedbackKind.WARNING)
         LazyColumn(Modifier.fillMaxWidth().weight(1f, fill = false)) {
             val unavailableEditIds = state.edits.keys.filter { id -> state.lines.none { it.elementUuid == id } }
             items(unavailableEditIds, key = { "override:$it" }) { id ->
@@ -423,7 +425,7 @@ internal fun ColumnScope.WorkspaceQuoteComposer(
                 WorkspaceListRow(state.lines.size + index) {
                     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).padding(horizontal = 8.dp)) {
                         Text(row.label, Modifier.weight(1f, fill = false))
-                        WorkspaceCostHelp(row.reasons.map { workspacePricingProblem(it) }.joinToString("\n"), compact = true)
+                        WorkspaceCostHelp(row.reasons.map { workspacePricingProblem(it) }.joinToString("\n"), compact = true, kind = ContextFeedbackKind.WARNING)
                     }
                 }
             }

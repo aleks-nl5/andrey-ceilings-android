@@ -608,8 +608,12 @@ fun MeasurementEditScreen(
                             tint = if (showContourIssues && !contourError) warningInk else MaterialTheme.colorScheme.error
                         )
                     }
+                    val savingLabel = stringResource(Res.string.p5b_saving_measurement)
+                    val savedLabel = stringResource(Res.string.p5b_saved_measurement)
+                    val dirtyLabel = stringResource(Res.string.p5b_unsaved_measurement)
+                    val cleanLabel = stringResource(Res.string.p5b_clean_measurement)
                     MeasurementEditorFab(
-                        label = "Зберегти замір",
+                        label = stringResource(Res.string.p5b_save_measurement),
                         icon = if (saveConfirmed) Icons.Default.Check else Icons.Default.Save,
                         // If the draft is dirty, Save stays tappable so it can explain a
                         // validation blocker. A blocked tap MUST NOT write anything.
@@ -617,11 +621,11 @@ fun MeasurementEditScreen(
                         confirmed = saveConfirmed,
                         modifier = Modifier.testTag("measurement-edit-save").semantics {
                             stateDescription = when {
-                                state.saving -> "Збереження…"
-                                saveConfirmed -> "Збережено"
+                                state.saving -> savingLabel
+                                saveConfirmed -> savedLabel
                                 saveBlockedReason != null -> saveBlockedReason
-                                state.dirty -> "Незбережено"
-                                else -> "Змін немає"
+                                state.dirty -> dirtyLabel
+                                else -> cleanLabel
                             }
                             liveRegion = LiveRegionMode.Polite
                         },

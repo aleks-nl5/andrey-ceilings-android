@@ -24,7 +24,6 @@ import androidx.compose.material.icons.filled.RadioButtonUnchecked
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.ArrowForward
 import androidx.compose.material.icons.filled.OpenWith
-import androidx.compose.material.icons.filled.HelpOutline
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -42,6 +41,8 @@ import com.andreyceilings.shared.livepricing.BusinessRole
 import com.andreyceilings.shared.prices.PlacementKind
 import com.andreyceilings.shared.prices.normalizedNameKey
 import com.andreyceilings.shared.resources.*
+import com.andreyceilings.shared.ui.ContextFeedbackIcon
+import com.andreyceilings.shared.ui.ContextFeedbackKind
 import kotlinx.coroutines.CancellationException
 import org.jetbrains.compose.resources.stringResource
 
@@ -189,8 +190,9 @@ internal fun WorkspaceCatalogSearch(
                         }, stringResource(Res.string.p5b_declared_quantity, work.unit.orEmpty()),
                             modifier = Modifier.fillMaxWidth(), compact = true,
                             isError = existingQuantityInvalid, allowDecimalSeparator = work.unit != "шт.")
-                        WorkspaceQuantityHelp(Modifier.align(Alignment.CenterEnd).padding(end = 2.dp))
                     }
+                    if (existingQuantityInvalid) WorkspaceFieldError(stringResource(Res.string.p5b_quantity_invalid))
+                    else WorkspaceQuantityHelp()
                     IconButton(onClick = {
                         val parsed = if (existingQuantity.isBlank()) ElementQuantity.Unknown
                             else parseElementMilli(existingQuantity, work.unit)?.let { ElementQuantity.Exact(it) }
@@ -201,11 +203,10 @@ internal fun WorkspaceCatalogSearch(
                         Icon(Icons.Default.Close, stringResource(Res.string.p5b_cancel_placement))
                     }
                 }
-                if (existingQuantityInvalid) Text(stringResource(Res.string.p5b_quantity_invalid),
-                    color = MaterialTheme.colorScheme.error)
             }
             if (!canPlace && !editExisting)
-                Text(stringResource(Res.string.p5b_capacity_full), style = MaterialTheme.typography.labelSmall)
+                ContextFeedbackIcon(stringResource(Res.string.p5b_capacity_full),
+                    stringResource(Res.string.p5b_capacity_full), ContextFeedbackKind.WARNING)
         } else if (item != null) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = { selectedCatalog = null; selectedWork = null },
@@ -215,18 +216,9 @@ internal fun WorkspaceCatalogSearch(
                 Text(item.title, style = MaterialTheme.typography.titleSmall,
                     modifier = Modifier.weight(1f).testTag("p5b-catalog-detail-title"), maxLines = 2, overflow = TextOverflow.Ellipsis)
                 if (item.placementKind == PlacementKind.NONE && item.mode == com.andreyceilings.shared.prices.QuantityMode.ENTERED_LENGTH) {
-                    var helpOpen by remember(item.uuid) { mutableStateOf(false) }
-                    Box {
-                        IconButton(onClick = { helpOpen = true }, modifier = Modifier.size(40.dp).testTag("p5b-line-kind-help")) {
-                            Icon(Icons.Default.HelpOutline, stringResource(Res.string.p5b_line_kind_help))
-                        }
-                        DropdownMenu(expanded = helpOpen, onDismissRequest = { helpOpen = false }) {
-                            DropdownMenuItem(text = {
-                                Text(stringResource(Res.string.p5b_line_kind_required),
-                                    style = MaterialTheme.typography.bodySmall)
-                            }, onClick = { helpOpen = false })
-                        }
-                    }
+                    ContextFeedbackIcon(stringResource(Res.string.p5b_line_kind_required),
+                        stringResource(Res.string.p5b_line_kind_help), ContextFeedbackKind.HELP,
+                        modifier = Modifier.testTag("p5b-line-kind-help"))
                 }
             }
             Text(stringResource(placementLabel(item.placementKind)), style = MaterialTheme.typography.bodySmall)
@@ -248,8 +240,9 @@ internal fun WorkspaceCatalogSearch(
                             stringResource(Res.string.p5b_declared_quantity, item.unit),
                             modifier = Modifier.fillMaxWidth(), compact = true, isError = entered == null,
                             allowDecimalSeparator = item.unit != "шт.")
-                        WorkspaceQuantityHelp(Modifier.align(Alignment.CenterEnd).padding(end = 2.dp))
                     }
+                    if (entered == null) WorkspaceFieldError(stringResource(Res.string.p5b_quantity_invalid))
+                    else WorkspaceQuantityHelp()
                 } else Text(formatElementQuantity(default, item.unit), modifier = Modifier.weight(1f))
                 if (item.placementKind != PlacementKind.NONE) IconButton(enabled = canPlace, onClick = {
                     model.addCatalogWork(item, checkNotNull(entered), place = true,
@@ -423,17 +416,6 @@ private fun WorkspaceBinocularsIcon() {
 
 @Composable
 internal fun WorkspaceQuantityHelp(modifier: Modifier = Modifier) {
-    var expanded by remember { mutableStateOf(false) }
-    Box(modifier) {
-        IconButton(onClick = { expanded = !expanded }, modifier = Modifier.size(40.dp)) {
-            Icon(Icons.Default.HelpOutline, stringResource(Res.string.p5b_quantity_help_short),
-                modifier = Modifier.size(21.dp))
-        }
-        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-            DropdownMenuItem(text = {
-                Text(stringResource(Res.string.p5b_quantity_help_description),
-                    style = MaterialTheme.typography.bodySmall)
-            }, onClick = { expanded = false })
-        }
-    }
+    ContextFeedbackIcon(stringResource(Res.string.p5b_quantity_help_description),
+        stringResource(Res.string.p5b_quantity_help_short), ContextFeedbackKind.HELP, modifier)
 }
