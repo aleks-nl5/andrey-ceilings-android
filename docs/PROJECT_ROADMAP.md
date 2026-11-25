@@ -13,7 +13,7 @@ P5B #156/#157 and P5C #161/#162 merged. Next tracked work: [#164](https://github
 | Етап | Scope | Залежність / критерій |
 |---|---|---|
 | Завершення P5D | #164 / #166; owner merge, main FULL, звірка umbrella #71/#76/#95/#154 | Не розширювати P5D; окремо відстежити відкладені індикатори розміщення |
-| Безпека даних | [#144](https://github.com/aleks-nl5/andrey-ceilings-android/issues/144) — lifecycle автоматичного backup після змін БД | Підтвердити runtime дефект, окремий PR до нових фінансових таблиць |
+| Безпека даних | [#144](https://github.com/aleks-nl5/andrey-ceilings-android/issues/144) — видалення режиму backup після змін БД | Невеликий окремий PR; зберегти наявні копії, розклад/фон/ручне резервування; без нової схеми |
 | P6A | [#136](https://github.com/aleks-nl5/andrey-ceilings-android/issues/136) — компактний Об'єкт, стелі, клієнт, summary | Nonblocking open; фізичний Android 20–30 стель, до/після; без fake consolidated state |
 | Нумерація | [#143](https://github.com/aleks-nl5/andrey-ceilings-android/issues/143) — без суфікса, shared/independent counters, prefixes | До P6B; незалежно від P6A за потреби; атомарна унікальність, незмінність старих номерів |
 | P6B | #136 — збережені зведені кошториси, версійність, транзакційні статуси, PDF | Verified frozen sources, migration/backup/restore, інтегроване APK-приймання P6A/B |
