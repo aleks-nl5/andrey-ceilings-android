@@ -131,7 +131,7 @@ object EstimateNumbering {
     fun displayNumber(publicNumber: String, policy: EstimateNumberPolicy): String {
         if ("{suffix}" !in policy.template) return publicNumber
         val pattern = buildString {
-            append("^")
+            append("^(")
             var offset = 0
             for (match in templateToken.findAll(policy.template)) {
                 append(Regex.escape(policy.template.substring(offset, match.range.first)))
@@ -139,17 +139,18 @@ object EstimateNumbering {
                     "prefix" -> Regex.escape(policy.prefix)
                     "year" -> "[0-9]{4}"
                     "sequence" -> "[0-9]+"
-                    "suffix" -> (if (policy.suffixLabel.isEmpty()) "" else Regex.escape(policy.suffixLabel) + "-") + "([A-Z0-9]{8,10})"
+                    "suffix" -> (if (policy.suffixLabel.isEmpty()) "" else Regex.escape(policy.suffixLabel) + "-") + ")([A-Z0-9]{8,10})("
                     else -> return publicNumber
                 })
                 offset = match.range.last + 1
             }
             append(Regex.escape(policy.template.substring(offset)))
-            append("$")
+            append(")$")
         }
-        val token = Regex(pattern).matchEntire(publicNumber)?.groups?.get(1) ?: return publicNumber
-        val start = token.range.first
-        val end = token.range.last + 1
+        val match = Regex(pattern).matchEntire(publicNumber) ?: return publicNumber
+        // Capture the prefix as well as the token: MatchGroup.range is not common Kotlin API.
+        val start = match.groupValues[1].length
+        val end = start + match.groupValues[2].length
         val separators = "-_./"
         val removeStart = if (start > 0 && publicNumber[start - 1] in separators) start - 1 else start
         val removeEnd = if (removeStart == start && end < publicNumber.length &&
