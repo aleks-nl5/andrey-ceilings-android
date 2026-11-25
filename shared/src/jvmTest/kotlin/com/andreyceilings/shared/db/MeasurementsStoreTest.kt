@@ -54,7 +54,7 @@ class MeasurementsStoreTest {
                 guard.fullscreen.value = true
                 guard.bindSurface { true }
                 assertTrue(guard.deliverEditResult(route, project, id) { approved = it })
-                assertEquals(originalRoute, approved)
+                assertEquals(originalRoute.back(), approved)
                 assertFalse(guard.deliverEditResult(route, project, id) {}, "Result is one-shot")
                 model.delivered()
                 assertEquals("Edited $shape", loaded().measurements.first { it.id == id }.name)

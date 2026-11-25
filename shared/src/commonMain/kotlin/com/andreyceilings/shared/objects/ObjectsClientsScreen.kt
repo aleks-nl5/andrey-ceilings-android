@@ -129,13 +129,14 @@ import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
 import com.andreyceilings.shared.resources.Res
 import com.andreyceilings.shared.resources.client_project_count
+import com.andreyceilings.shared.resources.p6a_delete_swipe
 import org.jetbrains.compose.resources.pluralStringResource
 
 enum class ObjectsClientsTab { PROJECTS, CLIENTS }
 enum class ContactAction { GOOGLE_MAPS, WAZE, WHATSAPP, TELEGRAM, VIBER }
 
-private enum class SwipeSide { LEFT, RIGHT }
-private data class OpenSwipe(val id: String, val side: SwipeSide)
+internal enum class SwipeSide { LEFT, RIGHT }
+internal data class OpenSwipe(val id: String, val side: SwipeSide)
 
 private sealed interface EditorTarget {
     data class Client(val item: ClientListEntry?) : EditorTarget
@@ -1337,7 +1338,7 @@ private fun ClientCard(
  * Another row's swipe, list scrolling or any other action clears the opened row.
  */
 @Composable
-private fun SwipeActionsSurface(
+internal fun SwipeActionsSurface(
     id: String,
     actions: List<Pair<String, ContactAction>>,
     openSwipe: OpenSwipe?,
@@ -1345,6 +1346,8 @@ private fun SwipeActionsSurface(
     onSwipeClose: () -> Unit,
     onDelete: () -> Unit,
     onAction: (ContactAction) -> Unit,
+    modifier: Modifier = Modifier,
+    deleteTrayHeight: Dp = 80.dp,
     content: @Composable () -> Unit
 ) {
     val density = LocalDensity.current
@@ -1382,7 +1385,7 @@ private fun SwipeActionsSurface(
         }
     }
 
-    Box(Modifier.fillMaxWidth()) {
+    Box(modifier.fillMaxWidth()) {
         // Keep action buttons mounted behind the card while the tray is opening.
         // Slight spacing and compact themed pictograms distinguish each destination.
         if (actions.isNotEmpty() && (displayed < 0f || target < 0f)) {
@@ -1404,13 +1407,13 @@ private fun SwipeActionsSurface(
         if (displayed > 0f || target > 0f) {
             Box(
                 Modifier.align(Alignment.CenterStart)
-                    .width(76.dp).height(80.dp)
+                    .width(76.dp).height(deleteTrayHeight)
                     .clip(RoundedCornerShape(18.dp))
                     .background(MaterialTheme.colorScheme.errorContainer)
                     .clickable { onSwipeClose(); onDelete() },
                 contentAlignment = Alignment.Center
             ) {
-                Icon(Icons.Default.Delete, contentDescription = "Видалити з підтвердженням",
+                Icon(Icons.Default.Delete, contentDescription = org.jetbrains.compose.resources.stringResource(Res.string.p6a_delete_swipe),
                     tint = MaterialTheme.colorScheme.onErrorContainer)
             }
         }

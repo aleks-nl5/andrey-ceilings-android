@@ -16,6 +16,9 @@ import com.andreyceilings.shared.navigation.AppNavigationState
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.launch
+import com.andreyceilings.shared.resources.Res
+import com.andreyceilings.shared.resources.p6a_delete_ceiling_approved
+import org.jetbrains.compose.resources.stringResource
 
 /** Shared global list and actions. Hosts supply only session stores, insets and navigation. */
 @Composable
@@ -56,12 +59,14 @@ fun MeasurementsScreen(
         val scope = rememberCoroutineScope()
         var busy by remember { mutableStateOf(false) }
         var error by remember { mutableStateOf<String?>(null) }
+        val approvedDeleteError = stringResource(Res.string.p6a_delete_ceiling_approved)
         fun action(block: suspend () -> Unit) {
             if (busy) return
             busy = true
             scope.launch(start = CoroutineStart.UNDISPATCHED) {
                 try { block(); error = null }
                 catch (cancelled: CancellationException) { throw cancelled }
+                catch (_: CeilingHasApprovedQuote) { error = approvedDeleteError }
                 catch (_: Exception) { error = "Не вдалося виконати дію. Перевірте доступність заміру та бази даних." }
                 finally { busy = false }
             }

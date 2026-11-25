@@ -354,4 +354,9 @@
     <string name="p6a_no_client">Не вказано</string>
     <string name="p6a_consolidated">Зведений кошторис</string>
     <string name="p6a_metrics_unavailable">Площа й периметр недоступні</string>
+    <string name="p6a_delete_swipe">Видалити з підтвердженням</string>
+    <string name="p6a_delete_ceiling">Видалити стелю</string>
+    <string name="p6a_delete_ceiling_confirm">«%1$s». Стеля, її елементи та кошториси зникнуть з активних списків. Видалити?</string>
+    <string name="p6a_delete_ceiling_approved">Спочатку зніміть погодження кошторису цієї стелі.</string>
+    <string name="p6a_delete_ceiling_failed">Не вдалося видалити стелю. Перевірте доступність об’єкта та бази даних.</string>
 </resources>

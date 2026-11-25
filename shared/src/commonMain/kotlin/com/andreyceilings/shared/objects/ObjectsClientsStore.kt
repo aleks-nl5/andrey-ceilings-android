@@ -243,6 +243,11 @@ class ObjectsClientsStore(
         clients.delete(id)
     }
 
+    suspend fun deleteCeiling(projectId: Long, measurementId: Long, expectedUuid: String) {
+        check(!sessionClosed.value)
+        com.andreyceilings.shared.measurement.MeasurementsStore(database).delete(projectId, measurementId, expectedUuid)
+    }
+
     fun deleteProject(id: Long) {
         checkNotNull(projects.find(id)) { "Об'єкт уже видалено." }
         // Removing a project currently hides estimates, but does NOT cascade

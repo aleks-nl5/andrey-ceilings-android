@@ -14,6 +14,9 @@ import kotlinx.coroutines.withTimeout
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertFailsWith
+import com.andreyceilings.shared.measurement.CeilingHasApprovedQuote
+import com.andreyceilings.shared.measurement.MeasurementsStore
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -80,6 +83,36 @@ class ProjectQuoteMetadataTest {
             assertNull(withTimeout(5_000) { updates.receive() })
             assertNull(store.observeProjectQuoteSummary(project).first())
             collector.cancelAndJoin()
+        }
+    }
+
+    @Test
+    fun deleteCeilingRequiresMatchingOwnerAndUuidAndRejectsApprovedQuote(): Unit = runBlocking {
+        JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).use { driver ->
+            PrototypeDatabase.Schema.create(driver)
+            val db = PrototypeDatabase(driver)
+            val store = ObjectsClientsStore(db) { 50L }
+            val project = store.saveProject(null, ProjectDraft("A"))
+            val other = store.saveProject(null, ProjectDraft("B"))
+            val measurements = MeasurementRepository(db)
+            val id = measurements.createReturningId(project, "Ceiling", createdAt = 1)
+            val uuid = assertNotNull(measurements.find(id)).uuid
+            db.saveFixtureQuote(project, uuid, "series", 1, 101)
+            db.revisionWorkflowQueries.updateRevisionWorkflow("APPROVED", 20, "series-1", 1).executeAsOne()
+            assertFailsWith<CeilingHasApprovedQuote> { store.deleteCeiling(project, id, uuid) }
+            assertFailsWith<CeilingHasApprovedQuote> { MeasurementsStore(db).delete(project, id) }
+            assertNotNull(measurements.find(id))
+            db.revisionWorkflowQueries.updateRevisionWorkflow("SENT", 21, "series-1", 2).executeAsOne()
+            assertFailsWith<IllegalStateException> { store.deleteCeiling(other, id, uuid) }
+            assertFailsWith<IllegalStateException> { store.deleteCeiling(project, id, "wrong-uuid") }
+            assertNotNull(measurements.find(id))
+            store.deleteCeiling(project, id, uuid)
+            assertNull(measurements.find(id))
+            assertTrue(measurements.tombstones().any { it.id == id })
+            assertTrue(assertNotNull(store.observeProjectQuoteSummary(project).first()).ceilings.isEmpty())
+            // Keep immutable history; no quote version is physically deleted.
+            assertEquals(1, db.revisionWorkflowQueries.selectActiveSeriesWorkflow("series").executeAsList().size)
+            store.closeAndAwaitProjectReads()
         }
     }
 

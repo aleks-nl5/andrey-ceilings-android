@@ -11,6 +11,9 @@ sealed interface MeasurementsState {
     data class Loaded(val measurements: List<Room_measurements>, val projects: List<Projects>) : MeasurementsState
 }
 
+/** A ceiling with an active approved frozen quote cannot be removed via a list. */
+class CeilingHasApprovedQuote : IllegalStateException()
+
 /** Global list uses the same active SQLDelight records and tombstones as Project Details. */
 class MeasurementsStore(private val database: PrototypeDatabase) {
     private val measurements = MeasurementRepository(database)
@@ -23,10 +26,15 @@ class MeasurementsStore(private val database: PrototypeDatabase) {
         .catch { emit(MeasurementsState.Unavailable) }
         .flowOn(Dispatchers.Default)
 
-    suspend fun delete(projectId: Long, measurementId: Long) = withContext(Dispatchers.Default) {
+    suspend fun delete(projectId: Long, measurementId: Long, expectedUuid: String? = null) = withContext(Dispatchers.Default) {
         database.transaction {
+            // Acquire the writer before checking status/ownership to prevent an approval race.
+            database.measurementElementsQueries.claimElementWrite("")
             checkNotNull(projects.find(projectId))
-            check(measurements.find(measurementId)?.projectId == projectId)
+            val row = checkNotNull(measurements.find(measurementId))
+            check(row.projectId == projectId && (expectedUuid == null || row.uuid == expectedUuid))
+            if (database.revisionWorkflowQueries.selectApprovedQuoteVersions(projectId, row.uuid).executeAsList().isNotEmpty())
+                throw CeilingHasApprovedQuote()
             measurements.delete(measurementId)
         }
     }

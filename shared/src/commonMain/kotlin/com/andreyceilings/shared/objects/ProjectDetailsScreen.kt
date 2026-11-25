@@ -26,6 +26,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.layout.onSizeChanged
@@ -43,6 +44,8 @@ import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -61,6 +64,13 @@ import com.andreyceilings.shared.resources.Res
 import com.andreyceilings.shared.resources.p5d_retry
 import com.andreyceilings.shared.resources.p5d_unknown
 import com.andreyceilings.shared.resources.p6a_add_ceiling
+import com.andreyceilings.shared.resources.p6a_delete_swipe
+import com.andreyceilings.shared.resources.p6a_delete_ceiling
+import com.andreyceilings.shared.resources.p6a_delete_ceiling_confirm
+import com.andreyceilings.shared.resources.p6a_delete_ceiling_approved
+import com.andreyceilings.shared.resources.p6a_delete_ceiling_failed
+import com.andreyceilings.shared.resources.p5d_cancel
+import com.andreyceilings.shared.measurement.CeilingHasApprovedQuote
 import com.andreyceilings.shared.resources.p6a_approved_total
 import com.andreyceilings.shared.resources.p6a_call_client
 import com.andreyceilings.shared.resources.p6a_call_unavailable
@@ -204,6 +214,16 @@ internal fun ProjectDetailsScreen(
     val detailsListState = rememberSaveable(projectId, saver = LazyListState.Saver) {
         LazyListState()
     }
+    var openCeilingSwipe by remember(store, projectId) { mutableStateOf<OpenSwipe?>(null) }
+    var deletingCeiling by remember(store, projectId) { mutableStateOf<ProjectMeasurement?>(null) }
+    var deletingBusy by remember(store, projectId) { mutableStateOf(false) }
+    var deleteError by remember(store, projectId) { mutableStateOf<String?>(null) }
+    LaunchedEffect(detailsListState, active, composer) {
+        openCeilingSwipe = null
+        snapshotFlow { detailsListState.isScrollInProgress }.collect { scrolling ->
+            if (scrolling) openCeilingSwipe = null
+        }
+    }
     var financeRetry by remember(store, projectId) { mutableIntStateOf(0) }
     val finance = if (visibleProject == null) ProjectFinanceState.Loading else key(store, projectId, active, financeRetry) {
         val financeFlow = remember(store, projectId, active, financeRetry) {
@@ -292,6 +312,45 @@ internal fun ProjectDetailsScreen(
     var statusError by remember(projectId) { mutableStateOf<String?>(null) }
     var updatingStatus by remember(projectId) { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+    val approvedDeleteError = stringResource(Res.string.p6a_delete_ceiling_approved)
+    val generalDeleteError = stringResource(Res.string.p6a_delete_ceiling_failed)
+    deletingCeiling?.let { target ->
+        AlertDialog(
+            onDismissRequest = { if (!deletingBusy) deletingCeiling = null },
+            title = { Text(stringResource(Res.string.p6a_delete_ceiling)) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(stringResource(Res.string.p6a_delete_ceiling_confirm, target.name))
+                    deleteError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                }
+            },
+            dismissButton = {
+                TextButton(enabled = !deletingBusy, onClick = {
+                    deletingBusy = true
+                    deleteError = null
+                    scope.launch {
+                        try {
+                            checkNotNull(store).deleteCeiling(projectId, target.id, target.uuid)
+                            deletingCeiling = null
+                        } catch (cancelled: CancellationException) {
+                            throw cancelled
+                        } catch (_: CeilingHasApprovedQuote) {
+                            deleteError = approvedDeleteError
+                        } catch (_: Exception) {
+                            deleteError = generalDeleteError
+                        } finally {
+                            deletingBusy = false
+                        }
+                    }
+                }) { Text(stringResource(Res.string.p6a_delete_ceiling), color = MaterialTheme.colorScheme.error) }
+            },
+            confirmButton = {
+                TextButton(enabled = !deletingBusy, onClick = { deletingCeiling = null }) {
+                    Text(stringResource(Res.string.p5d_cancel))
+                }
+            }
+        )
+    }
 
     // Update only the selected field; never rebuild an entire object draft from
     // possibly stale UI values. One operation at a time and no optimistic fake status.
@@ -511,13 +570,41 @@ internal fun ProjectDetailsScreen(
                                 contourFlow.collectAsState(initial = null).value
                             } else null
                             val quotes = (finance as? ProjectFinanceState.Loaded)?.summary
-                            CompactCeilingCard(
-                                measurement, contour, quotes?.ceilings?.get(measurement.id),
-                                measurement.id in quotes?.unavailableCeilings.orEmpty()
+                            val swipeId = "ceiling-${measurement.uuid}"
+                            val deleteLabel = stringResource(Res.string.p6a_delete_swipe)
+                            val requestDelete = {
+                                openCeilingSwipe = null
+                                deleteError = null
+                                deletingCeiling = measurement
+                            }
+                            SwipeActionsSurface(
+                                id = swipeId,
+                                actions = emptyList(),
+                                openSwipe = openCeilingSwipe,
+                                onSwipeOpen = { openCeilingSwipe = it },
+                                onSwipeClose = { openCeilingSwipe = null },
+                                onDelete = requestDelete,
+                                onAction = {},
+                                modifier = Modifier.clipToBounds().semantics {
+                                    customActions = listOf(CustomAccessibilityAction(deleteLabel) {
+                                        requestDelete()
+                                        true
+                                    })
+                                },
+                                deleteTrayHeight = 70.dp
                             ) {
-                                settleJob?.cancel()
-                                settleJob = null
-                                onOpenMeasurement(measurement.id)
+                                CompactCeilingCard(
+                                    measurement, contour, quotes?.ceilings?.get(measurement.id),
+                                    measurement.id in quotes?.unavailableCeilings.orEmpty()
+                                ) {
+                                    if (openCeilingSwipe != null) {
+                                        openCeilingSwipe = null
+                                    } else {
+                                        settleJob?.cancel()
+                                        settleJob = null
+                                        onOpenMeasurement(measurement.id)
+                                    }
+                                }
                             }
                         }
                         if (elements != null) item(key = "consolidated-estimate") {
