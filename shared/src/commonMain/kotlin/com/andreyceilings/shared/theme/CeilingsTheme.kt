@@ -130,8 +130,8 @@ object CeilingsFieldDefaults {
     val CompactHeight = 52.dp
     val CompactContentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
     // Opt-in for dense quote headers; minimum only, never cap text/label height.
-    val DenseCompactHeight = 44.dp
-    val DenseCompactContentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp)
+    val DenseCompactHeight = 40.dp
+    val DenseCompactContentPadding = PaddingValues(horizontal = 10.dp, vertical = 1.dp)
 }
 
 val CeilingsShapes = Shapes(

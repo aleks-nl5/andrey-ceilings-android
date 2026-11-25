@@ -24,6 +24,7 @@ import androidx.compose.material.icons.filled.RadioButtonUnchecked
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.ArrowForward
 import androidx.compose.material.icons.filled.OpenWith
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -71,17 +72,24 @@ internal fun WorkspaceElementsHeader(
                 }
                 val active = role == activeRole || (item != null && item.uuid == highlightedUuid)
                 val shape = RoundedCornerShape(12.dp)
-                Column(Modifier.weight(1f).padding(horizontal = 2.dp, vertical = 2.dp)
+                Row(Modifier.weight(1f).padding(horizontal = 2.dp, vertical = 3.dp)
                     .heightIn(min = 48.dp).clip(shape)
-                    .then(if (active) Modifier.background(MaterialTheme.colorScheme.secondaryContainer)
-                        .border(1.dp, MaterialTheme.colorScheme.primary, shape) else Modifier)
-                    .clickable(enabled = enabled && current.size <= 1) { onMaterial(role) }
+                    .background(if (active) MaterialTheme.colorScheme.secondaryContainer
+                        else MaterialTheme.colorScheme.surface)
+                    .border(1.dp, if (active) MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.outlineVariant, shape)
+                    .clickable(enabled = enabled && current.size <= 1, role = androidx.compose.ui.semantics.Role.Button) { onMaterial(role) }
                     .testTag("p5b-material-${role.name}").semantics { selected = active }
-                    .padding(horizontal = 6.dp, vertical = 4.dp),
-                    verticalArrangement = Arrangement.Center) {
-                    Text(stringResource(materialLabel(role)), style = MaterialTheme.typography.labelMedium, maxLines = 2,
-                        overflow = TextOverflow.Ellipsis)
-                    Text(state, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    .padding(start = 6.dp, end = 2.dp, top = 4.dp, bottom = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.Center) {
+                        Text(stringResource(materialLabel(role)), style = MaterialTheme.typography.labelMedium, maxLines = 2,
+                            overflow = TextOverflow.Ellipsis)
+                        Text(state, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                    Icon(Icons.Default.KeyboardArrowDown, contentDescription = null, modifier = Modifier.size(16.dp),
+                        tint = if (enabled && current.size <= 1) MaterialTheme.colorScheme.onSurfaceVariant
+                            else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f))
                 }
             }
             IconButton(onClick = onAdd, modifier = Modifier.testTag("measurement-workspace-add"), enabled = enabled) {

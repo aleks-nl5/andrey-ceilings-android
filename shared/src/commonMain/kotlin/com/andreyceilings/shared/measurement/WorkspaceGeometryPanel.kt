@@ -250,7 +250,9 @@ internal fun WorkspaceGeometryPanel(
         }, enabled = enabled) {
             Icon(Icons.Default.Edit, stringResource(Res.string.p5b_edit_dimensions))
         }
-        IconButton(onClick = { deletion = true }, enabled = enabled) {
+        IconButton(onClick = {
+            if (!model.promptForDirtyElementBeforeNavigation()) deletion = true
+        }, enabled = enabled) {
             Icon(Icons.Default.Delete, stringResource(Res.string.p5b_delete_placement))
         }
         IconButton(onClick = model::clearDrawingSelection) {
@@ -412,29 +414,6 @@ internal fun WorkspaceGeometryPanel(
         }
     }
 
-    // The cancel icon must never silently discard an edited line/area. Once the
-    // user confirms or continues, the model and the visible panel stay in sync.
-    val lineDismiss = state.linePropertiesDismiss && state.lineProperties?.uuid == uuid
-    val areaDismiss = state.area.dismissProperties && state.area.properties?.uuid == uuid
-    if (lineDismiss || areaDismiss) AlertDialog(
-        onDismissRequest = {
-            if (lineDismiss) model.continueLineProperties() else model.continueAreaProperties()
-        },
-        title = { Text(stringResource(Res.string.p5b_discard_parameters_title)) },
-        text = { Text(stringResource(Res.string.p5b_discard_parameters_message)) },
-        confirmButton = {
-            TextButton(onClick = {
-                if (lineDismiss) model.continueLineProperties() else model.continueAreaProperties()
-            }) { Text(stringResource(Res.string.p5b_discard_parameters_continue)) }
-        },
-        dismissButton = {
-            TextButton(onClick = {
-                if (lineDismiss) model.discardLineProperties() else model.discardAreaProperties()
-            }, colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)) {
-                Text(stringResource(Res.string.p5b_discard_parameters_confirm))
-            }
-        }
-    )
 
     if (deletion) AlertDialog(onDismissRequest = { deletion = false },
         title = { Text(stringResource(Res.string.p5b_delete_placement)) },
@@ -776,7 +755,9 @@ internal fun WorkspaceWorkList(
                 modifier = Modifier.size(40.dp).testTag("p5b-edit-work-${work.uuid}")) {
                 Icon(Icons.Default.Edit, stringResource(Res.string.p5b_edit_work))
             }
-            IconButton(onClick = { deletion = true }, enabled = enabled,
+            IconButton(onClick = {
+                if (!model.promptForDirtyElementBeforeNavigation()) deletion = true
+            }, enabled = enabled,
                 modifier = Modifier.size(40.dp).testTag("p5b-delete-work-${work.uuid}")) {
                 Icon(Icons.Default.Delete, stringResource(Res.string.p5b_delete_work))
             }

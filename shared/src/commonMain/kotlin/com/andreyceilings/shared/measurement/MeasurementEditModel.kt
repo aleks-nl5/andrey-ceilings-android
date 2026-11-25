@@ -592,7 +592,7 @@ class MeasurementEditModel(
     }
 
     internal fun deleteWorkspaceWork(uuid: String) {
-        if (!editable()) return
+        if (!editable() || promptForDirtyElementBeforeNavigation()) return
         val work = workspaceWorks().find { it.uuid == uuid } ?: return
         cancelPlacement()
         clearDrawingSelection()
@@ -691,7 +691,7 @@ class MeasurementEditModel(
     }
 
     internal fun startWorkspacePlacement(element: MeasurementElement) {
-        if (!editable()) return
+        if (!editable() || promptForDirtyElementBeforeNavigation()) return
         when ((element.source as? ElementSource.CatalogSelection)?.placementKind) {
             PlacementKind.POINT -> {
                 if (!pointCanBePlaced(element.uuid)) return
@@ -914,8 +914,13 @@ class MeasurementEditModel(
         lineCapacityError()?.let {mutableState.value=state.value.copy(error=it)}
     }
     fun clearDrawingSelection() {
-        if(!editable())return
+        // Never remove the selection while an unapplied editor still owns it.
+        // The workspace-level confirmation remains reachable even if the panel changes.
+        if (!editable() || promptForDirtyElementBeforeNavigation()) return
         cancelAreaDrag();cancelLineDrag();cancelPointDrag()
+        discardLineProperties()
+        discardAreaProperties()
+        discardMounting()
         mutableState.value=state.value.copy(selectedPointUuid=null,selectedLineUuid=null,area=state.value.area.copy(selected=null))
     }
     fun setLineMoveTarget(target:Int) { if(editable())mutableState.value=state.value.copy(lineMoveTarget=target) }
@@ -1296,11 +1301,13 @@ class MeasurementEditModel(
     fun requestAreaDelete() {if(editable())updateArea {it.copy(deleteConfirm=true)}}
     fun cancelAreaDelete() {updateArea {it.copy(deleteConfirm=false)}}
     fun deleteArea() {
-        if(!editable())return
+        if (!editable() || promptForDirtyElementBeforeNavigation()) return
         val a=displayAreas().find {it.uuid==state.value.area.selected} ?: return
         if(state.value.original.placements.areas.any {it.uuid==a.uuid})stageArea(a.copy(deletedAt=0)) else {
             commitInput();undo.add(form());redo.clear();updateArea {it.copy(edits=it.edits-a.uuid)};publish()
         }
+        discardAreaProperties()
+        discardMounting()
         updateArea {it.copy(selected=null,deleteConfirm=false)}
     }
     fun requestAreaQuantity(id:String?) {if(editable())updateArea {it.copy(quantityConfirm=id)}}

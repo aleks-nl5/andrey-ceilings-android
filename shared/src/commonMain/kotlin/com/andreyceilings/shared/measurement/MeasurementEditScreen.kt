@@ -584,6 +584,7 @@ fun MeasurementEditScreen(
                             if (fullscreen) Icons.Default.FullscreenExit else Icons.Default.Fullscreen,
                             canLeaveSurface
                         ) {
+                            if (model.promptForDirtyElementBeforeNavigation()) return@MeasurementIconAction
                             if (fullscreen) exitFullscreen() else {
                                 focus.clearFocus()
                                 fullscreenContext = when (normalContext) {
@@ -1136,6 +1137,30 @@ fun MeasurementEditScreen(
             if (!fullscreen) Spacer(Modifier.height(normalPanelHeight - tabBleed))
         }
     }
+    // Confirmation belongs to the entire workspace, not to a selected row.
+    // A hidden/unmounted editor must never make a dirty draft impossible to dismiss.
+    val lineDismiss = state.linePropertiesDismiss && state.lineProperties != null
+    val areaDismiss = state.area.dismissProperties && state.area.properties != null
+    if (lineDismiss || areaDismiss) AlertDialog(
+        onDismissRequest = {
+            if (lineDismiss) model.continueLineProperties() else model.continueAreaProperties()
+        },
+        title = { Text(stringResource(Res.string.p5b_discard_parameters_title)) },
+        text = { Text(stringResource(Res.string.p5b_discard_parameters_message)) },
+        confirmButton = {
+            TextButton(onClick = {
+                if (lineDismiss) model.continueLineProperties() else model.continueAreaProperties()
+            }) { Text(stringResource(Res.string.p5b_discard_parameters_continue)) }
+        },
+        dismissButton = {
+            TextButton(onClick = {
+                if (lineDismiss) model.discardLineProperties() else model.discardAreaProperties()
+            }, colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)) {
+                Text(stringResource(Res.string.p5b_discard_parameters_confirm))
+            }
+        }
+    )
+
     quoteStartPending?.let { proceed ->
         AlertDialog(onDismissRequest = { quoteStartPending = null },
             title = { Text(stringResource(Res.string.p5d_save_measurement)) },

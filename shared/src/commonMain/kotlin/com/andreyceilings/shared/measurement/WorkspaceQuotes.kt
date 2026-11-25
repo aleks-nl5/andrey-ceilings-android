@@ -273,7 +273,7 @@ internal fun ColumnScope.WorkspaceQuoteComposer(
             Icon(Icons.Default.Close, stringResource(Res.string.p5d_discard), tint = MaterialTheme.colorScheme.error)
         }
         CompactOutlinedStringField(title, presenter::editTitle, stringResource(Res.string.p5d_title),
-            enabled = !save.saving, modifier = Modifier.weight(1f).padding(top = 8.dp),
+            enabled = !save.saving, modifier = Modifier.weight(1f).padding(top = 8.dp, bottom = 4.dp),
             dense = true,
             keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Done))
         IconButton(enabled = canSubmit, onClick = {
@@ -312,7 +312,7 @@ internal fun ColumnScope.WorkspaceQuoteComposer(
                         Text(stringResource(if (state.discountMode == QuoteDiscountMode.PERCENT)
                             Res.string.p5d_discount_percent else Res.string.p5d_discount_money))
                     }
-                    Box(Modifier.widthIn(max = 108.dp)) {
+                    Box(Modifier.widthIn(max = 88.dp).padding(top = 8.dp, bottom = 4.dp)) {
                         DecimalInputField(state.discountText, { presenter.editDiscount(it, confirmed = true) },
                             stringResource(Res.string.p5d_discount), enabled = enabled,
                             compact = true, dense = true,
