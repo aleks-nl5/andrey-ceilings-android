@@ -59,3 +59,5 @@ Owner APK follow-up: neutral shape selector; edge-to-edge themed workspace heade
 - Quote deletion/discard: red destructive action left, cancel right; approved protected. Verify current quote draft remains intact when cancelling navigation.
 
 Shared feedback components and affected labels are localized via CMP resources; existing unrelated domain error strings remain for the dedicated localization stage. No new automated UI tests. CI and physical APK acceptance still pending.
+
+Owner APK follow-up: quote title and discount opt into the shared dense single-line field variant (44 dp minimum, 2 dp vertical interior padding, standard bodyLarge input and floating label). No fixed maximum height; font scaling can grow the field. Other compact fields retain 52 dp. Verify text/label visibility at normal and increased font scale, with focus, keyboard, percent and fixed discounts, both themes.

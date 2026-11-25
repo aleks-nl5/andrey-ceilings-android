@@ -274,6 +274,7 @@ internal fun ColumnScope.WorkspaceQuoteComposer(
         }
         CompactOutlinedStringField(title, presenter::editTitle, stringResource(Res.string.p5d_title),
             enabled = !save.saving, modifier = Modifier.weight(1f).padding(top = 8.dp),
+            dense = true,
             keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Done))
         IconButton(enabled = canSubmit, onClick = {
             if (state.canAcknowledge) partialFingerprint = state.fingerprint
@@ -314,6 +315,7 @@ internal fun ColumnScope.WorkspaceQuoteComposer(
                     Box(Modifier.widthIn(max = 108.dp)) {
                         DecimalInputField(state.discountText, { presenter.editDiscount(it, confirmed = true) },
                             stringResource(Res.string.p5d_discount), enabled = enabled,
+                            compact = true, dense = true,
                             isError = QuoteDiscount.parse(state.discountText, state.discountMode) == null ||
                                 (!state.discountConfirmed && state.discountText.isNotEmpty()))
                     }
