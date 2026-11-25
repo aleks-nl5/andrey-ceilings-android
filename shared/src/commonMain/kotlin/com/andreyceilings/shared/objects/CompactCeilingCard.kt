@@ -39,6 +39,7 @@ import androidx.compose.ui.text.TextStyle
 import com.andreyceilings.shared.measurement.MeasurementDrawingContour
 import com.andreyceilings.shared.measurement.formatMeasurementAreaCompact
 import com.andreyceilings.shared.measurement.formatMeasurementLengthCompact
+import com.andreyceilings.shared.measurement.formatMeasurementMoneyNumber
 import com.andreyceilings.shared.measurement.measurementDrawingProjection
 import com.andreyceilings.shared.measurement.workspaceStatusAppearance
 import com.andreyceilings.shared.measurement.workspaceStatusLabel
@@ -56,7 +57,7 @@ import org.jetbrains.compose.resources.stringResource
 
 @Composable
 internal fun compactQuoteAmount(cents: Long): String =
-    stringResource(Res.string.p6a_amount_uah, cents / 100, (cents % 100).toString().padStart(2, '0'))
+    stringResource(Res.string.p6a_amount_uah, formatMeasurementMoneyNumber(cents))
 
 @Composable
 internal fun CompactCeilingCard(

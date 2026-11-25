@@ -32,11 +32,14 @@ internal enum class EstimateDocumentSection(val label: String, val editable: Boo
     PHOTOS("Фото об’єкта")
 }
 
+internal data class DocumentMoneyColumnLabels(val unitPrice: String, val total: String)
+
 internal data class DocumentPresentationOptions(
     val order: List<EstimateDocumentSection>,
     val hidden: Set<EstimateDocumentSection> = emptySet(),
     val text: Map<EstimateDocumentSection, String> = emptyMap(),
-    val fixedDiscountLabel: String? = null
+    val fixedDiscountLabel: String? = null,
+    val moneyColumnLabels: DocumentMoneyColumnLabels? = null
 )
 
 internal data class DocumentIssuer(val name: String, val contacts: List<String>, val logo: ImageBitmap?)

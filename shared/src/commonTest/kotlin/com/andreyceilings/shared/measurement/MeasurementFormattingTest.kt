@@ -4,6 +4,16 @@ import com.andreyceilings.shared.calculation.MeasurementPrecision
 import kotlin.test.*
 
 class MeasurementFormattingTest {
+    @Test fun hryvniaPresentationUsesExactCentsAndSeparateSymbol() {
+        assertEquals("0,00 ₴", measurementMoney(0))
+        assertEquals("0,01 ₴", measurementMoney(1))
+        assertEquals("10080,00 ₴", measurementMoney(1008000))
+        assertEquals("19706,20 ₴", measurementMoney(1970620))
+        assertEquals("-0,01 ₴", measurementMoney(-1))
+        assertEquals("92233720368547758,07", formatMeasurementMoneyNumber(Long.MAX_VALUE))
+        assertEquals("-92233720368547758,08", formatMeasurementMoneyNumber(Long.MIN_VALUE))
+    }
+
     @kotlin.test.Test fun workspaceAreaShortensOnlyVisiblePrecision() {
         kotlin.test.assertEquals("6,00", formatMeasurementAreaCompact(6.0))
         kotlin.test.assertEquals("13,76", formatMeasurementAreaCompact(13.7608))

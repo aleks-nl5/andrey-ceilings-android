@@ -309,6 +309,8 @@ class FrozenEstimateDocumentAndroidTest {
                     assertTrue("Частковийкошторис" in compactText, text)
                     assertTrue("Монтажліхтаря" in compactText, text)
                     assertTrue("Загаломдооплати" in compactText, text)
+                    assertTrue("Ціна,₴" in compactText, text)
+                    assertTrue("Сума,₴" in compactText, text)
                     assertTrue(Regex("Кількість").findAll(compactText).count() > 10, text)
                     assertEquals(10, Regex("Збереженекреслення").findAll(compactText).count(), text)
                     assertEquals(40, Regex("декоративного").findAll(compactText).count(), text)

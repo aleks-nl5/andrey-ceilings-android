@@ -30,6 +30,7 @@ import com.andreyceilings.shared.measurement.formatElementMilli
 import com.andreyceilings.shared.measurement.layoutMeasurementDrawingForProjectedPoints
 import com.andreyceilings.shared.measurement.optimalMeasurementDrawingProjection
 import com.andreyceilings.shared.measurement.measurementMoney
+import com.andreyceilings.shared.measurement.formatMeasurementMoneyNumber
 import kotlin.math.roundToInt
 
 /** Resolved A4 pages. The platform draws the same vector content as the preview. */
@@ -137,7 +138,8 @@ internal fun layoutEstimateDocument(
     measurer: TextMeasurer,
     issuerProvider: DocumentIssuerProvider? = null,
     photoProvider: DocumentPhotoProvider? = null
-): EstimateDocumentPages = DocumentPagination(document.fileName, "${document.publicNumber} · v${document.version}", measurer).apply {
+): EstimateDocumentPages = DocumentPagination(document.fileName, "${document.publicNumber} · v${document.version}", measurer,
+    requireNotNull(options.moneyColumnLabels)).apply {
     paragraph("Кошторис робіт", 25, bold = true)
     roomSection(document, options, issuerProvider, photoProvider)
 }.finish()
@@ -147,7 +149,7 @@ internal fun layoutConsolidatedEstimateDocument(
     options: DocumentPresentationOptions,
     measurer: TextMeasurer
 ): EstimateDocumentPages = DocumentPagination(
-    document.fileName, "Зведений кошторис", measurer
+    document.fileName, "Зведений кошторис", measurer, requireNotNull(options.moneyColumnLabels)
 ).apply {
     paragraph("Об’єкт · ${document.currentProjectTitle}", 21, bold = true)
     document.currentAddress?.let { paragraph("Актуальна адреса · $it") }
@@ -274,7 +276,8 @@ private data class DocumentParagraph(val text: String, val font: Int = 11, val b
 private class DocumentPagination(
     private val fileName: String,
     private val pageHeading: String,
-    private val measurer: TextMeasurer
+    private val measurer: TextMeasurer,
+    private val moneyColumns: DocumentMoneyColumnLabels
 ) {
     private val pages = mutableListOf<MutableList<DocumentMark>>()
     private var marks = mutableListOf<DocumentMark>()
@@ -401,7 +404,7 @@ private class DocumentPagination(
     ) {
         val widths = listOf(172, 63, 73, 103, 104)
         val offsets = widths.runningFold(40, Int::plus)
-        val header = listOf("Позиція", "Од.", "Кількість", "Ціна, грн", "Сума, грн")
+        val header = listOf("Позиція", "Од.", "Кількість", moneyColumns.unitPrice, moneyColumns.total)
         val headerCells = header.mapIndexed { index, text -> lines(text, widths[index] - 8, 10, bold = true) }
         fun band(cells: List<List<TextLayoutResult>>, line: Int) {
             var height = 0
@@ -430,8 +433,8 @@ private class DocumentPagination(
                 }
             }
             val values = listOf(name, row.unit, formatElementMilli(row.quantityMilli),
-                measurementMoney(row.unitPriceCents).removeSuffix(" грн"),
-                measurementMoney(row.totalCents).removeSuffix(" грн"))
+                formatMeasurementMoneyNumber(row.unitPriceCents),
+                formatMeasurementMoneyNumber(row.totalCents))
             val cells = values.mapIndexed { index, text ->
                 val width = widths[index] - 8
                 if (index < 2) lines(text, width, 10) else number(text, width)
