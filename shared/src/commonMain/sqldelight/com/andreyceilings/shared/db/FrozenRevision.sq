@@ -84,11 +84,22 @@ RETURNING revisionUuid;
 countFrozenSeries:
 SELECT count(*) FROM estimate_v1_frozen f JOIN estimate_revisions r USING(revisionUuid) WHERE r.seriesUuid = ?;
 
+-- All active individual series take priority. With none, return only the newest
+-- historical series so the same public number can be continued after deletion.
 selectIndividualSeriesForCeiling:
 SELECT s.seriesUuid FROM estimate_series s
 JOIN estimate_revisions r USING(seriesUuid)
 JOIN estimate_v1_frozen f USING(revisionUuid)
-WHERE s.projectId = ? AND s.measurementUuid = ?;
+WHERE s.projectId = ? AND s.measurementUuid = ?
+AND (s.deletedAt IS NULL OR s.seriesUuid = (
+    SELECT candidate.seriesUuid FROM estimate_series candidate
+    JOIN estimate_revisions cr ON cr.seriesUuid = candidate.seriesUuid
+    JOIN estimate_v1_frozen cf ON cf.revisionUuid = cr.revisionUuid
+    WHERE candidate.projectId = s.projectId AND candidate.measurementUuid = s.measurementUuid
+    ORDER BY CASE WHEN candidate.deletedAt IS NULL THEN 0 ELSE 1 END,
+        candidate.createdAt DESC, candidate.localSequence DESC, candidate.seriesUuid DESC
+    LIMIT 1
+));
 
 preserveDeletedSeriesRevisions:
 INSERT INTO estimate_revision_tombstones(revisionUuid, deletedAt)

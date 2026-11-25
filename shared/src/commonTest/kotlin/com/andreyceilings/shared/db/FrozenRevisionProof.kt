@@ -218,7 +218,13 @@ object FrozenRevisionProof {
     private fun proveDeletedSeriesContinuation(driver: SqlDriver, db: PrototypeDatabase) {
         val fixture = MeasurementPricingFixture.seed(db)
         val history = ImmutableEstimateRepository(db)
-        val first = history.saveIndividual(FrozenIndividualEstimateProof.command(db, fixture), 2026, 800)
+        val older = history.saveIndividual(FrozenIndividualEstimateProof.command(db, fixture), 2026, 799)
+        val first = withLegacyAlternative(driver, listOf(older.seriesUuid), fixture.measurementUuid) {
+            history.saveIndividual(FrozenIndividualEstimateProof.command(db, fixture), 2026, 800)
+        }
+        fun candidates() = db.frozenRevisionQueries.selectIndividualSeriesForCeiling(
+            fixture.projectId, fixture.measurementUuid).executeAsList()
+        assertEquals(setOf(older.seriesUuid, first.seriesUuid), candidates().toSet())
         val second = history.appendIndividual(request(db, fixture, first.seriesUuid), 801)
         val old = history.individualHistory(first.seriesUuid)
         assertTrue(history.deleteIndividualRevision(first.seriesUuid, first.initialRevisionUuid, 1, 802))
@@ -229,6 +235,17 @@ object FrozenRevisionProof {
         fresh.acceptRead(fresh.beginRead(), LivePricingReader(db).read(fixture.projectId, fixture.measurementUuid))
         val proposal = AppendIndividualRevisionRequest(checkNotNull(fresh.revisionTarget),
             checkNotNull(fresh.saveRequest(fixture.projectId, parent.frozen.title)))
+        // An active older series outranks the newer deleted one.
+        assertEquals(listOf(older.seriesUuid), candidates())
+        assertEquals(IndividualEstimateSaveFailure.Reason.STALE_REVISION,
+            assertFailsWith<IndividualEstimateSaveFailure> { history.appendIndividual(proposal, 804) }.reason)
+        assertTrue(history.deleteIndividualRevision(older.seriesUuid, older.initialRevisionUuid, 1, 804))
+        // All historical series are now deleted: continue the newest-created one.
+        assertEquals(listOf(first.seriesUuid), candidates())
+        assertEquals(IndividualEstimateSaveFailure.Reason.SERIES_EXISTS,
+            assertFailsWith<IndividualEstimateSaveFailure> {
+                history.saveIndividual(FrozenIndividualEstimateProof.command(db, fixture), 2026, 804)
+            }.reason)
         val failing = object : SqlDriver by driver {
             override fun execute(identifier: Int?, sql: String, parameters: Int, binders: (SqlPreparedStatement.() -> Unit)?): QueryResult<Long> {
                 val result = driver.execute(identifier, sql, parameters, binders)
@@ -248,6 +265,9 @@ object FrozenRevisionProof {
         assertEquals(first.localSequence, third.localSequence)
         val active = history.individualHistory(first.seriesUuid).single()
         assertEquals(3, active.versionNumber)
+        assertEquals(listOf(first.seriesUuid), candidates())
+        assertNull(history.exactIndividual(older.seriesUuid, older.initialRevisionUuid))
+        assertNotNull(history.series(older.seriesUuid)?.deletedAt)
         assertEquals(second.initialRevisionUuid, active.parentRevisionUuid)
         assertEquals(EstimateWorkflowStatus.DRAFT, active.status)
         assertNull(db.frozenEstimateQueries.selectFrozenV1(first.seriesUuid).executeAsOneOrNull())
