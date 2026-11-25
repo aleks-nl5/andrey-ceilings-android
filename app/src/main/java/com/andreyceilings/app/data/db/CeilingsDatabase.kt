@@ -47,6 +47,7 @@ internal class CeilingsDatabase private constructor(
         // The production restore gate has drained every outer pricing transaction before this call.
         kotlinx.coroutines.runBlocking { objectsClientsStore.measurementDetails.elements.closePricingReads() }
         objectsClientsStore.measurementEdit.closePointReads()
+        objectsClientsStore.closeProjectReads()
         changeTracker.close()
         driver.close()
     }

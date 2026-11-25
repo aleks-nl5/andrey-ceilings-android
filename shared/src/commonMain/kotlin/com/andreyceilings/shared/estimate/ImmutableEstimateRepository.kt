@@ -52,6 +52,9 @@ class ImmutableEstimateRepository(private val database: PrototypeDatabase) {
 
     fun frozenIndividuals() = database.frozenRevisionQueries.selectExactList().executeAsList()
 
+    internal fun projectQuoteMetadata(projectId: Long) =
+        database.frozenRevisionQueries.selectProjectQuoteMetadata(projectId)
+
     fun exactIndividual(seriesUuid: String, revisionUuid: String): SavedIndividualQuote? =
         readIndividual(seriesUuid, revisionUuid, includeDeleted = false)
 

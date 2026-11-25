@@ -118,3 +118,47 @@ AND NOT EXISTS (
     AND (d.revisionUuid IS NULL OR w.status IS NULL OR w.status = 'APPROVED')
 )
 RETURNING seriesUuid;
+
+-- Object summary only. Open/export still verifies the exact frozen document.
+selectProjectQuoteMetadata:
+WITH candidates AS (
+    SELECT m.id AS ceilingId, s.seriesUuid, r.revisionUuid, r.versionNumber, r.createdAt,
+        r.currency, coalesce(w.status, '') AS workflowStatus,
+        CASE
+            WHEN trim(m.uuid) = '' OR trim(s.seriesUuid) = '' OR trim(r.revisionUuid) = ''
+                OR typeof(r.versionNumber) != 'integer' OR r.versionNumber < 1
+                OR typeof(r.createdAt) != 'integer' OR r.createdAt < 1
+                OR typeof(w.version) != 'integer' OR w.version < 1
+                OR typeof(w.updatedAt) != 'integer' OR w.updatedAt < 1 THEN -1
+            WHEN r.versionNumber = 1 AND f.revisionUuid IS NOT NULL
+                AND n.revisionUuid IS NULL AND typeof(f.totalCents) = 'integer' THEN f.totalCents
+            WHEN r.versionNumber > 1 AND n.revisionUuid IS NOT NULL
+                AND f.revisionUuid IS NULL AND typeof(n.totalCents) = 'integer' THEN n.totalCents
+            ELSE -1
+        END AS finalCents,
+        row_number() OVER (
+            PARTITION BY s.seriesUuid
+            ORDER BY CASE WHEN w.status = 'APPROVED' THEN 0 ELSE 1 END, r.versionNumber DESC
+        ) AS seriesRank
+    FROM projects p
+    JOIN estimate_series s ON s.projectId = p.id AND s.deletedAt IS NULL
+    JOIN room_measurements m ON m.uuid = s.measurementUuid AND m.projectId = p.id AND m.deletedAt IS NULL
+    JOIN estimate_revisions r ON r.seriesUuid = s.seriesUuid
+    LEFT JOIN estimate_revision_workflow w ON w.revisionUuid = r.revisionUuid
+    LEFT JOIN estimate_v1_frozen f ON f.revisionUuid = r.revisionUuid
+    LEFT JOIN estimate_revision_frozen n ON n.revisionUuid = r.revisionUuid
+    WHERE p.id = :projectId AND p.deletedAt IS NULL
+        AND (w.status IS NULL OR w.status != 'REJECTED')
+        AND (w.status IS NOT NULL OR f.revisionUuid IS NOT NULL OR n.revisionUuid IS NOT NULL)
+        AND NOT EXISTS (SELECT 1 FROM estimate_revision_tombstones d WHERE d.revisionUuid = r.revisionUuid)
+), ranked AS (
+    SELECT ceilingId, workflowStatus, currency, finalCents,
+        row_number() OVER (
+            PARTITION BY ceilingId
+            ORDER BY CASE WHEN workflowStatus = 'APPROVED' THEN 0 ELSE 1 END,
+                createdAt DESC, versionNumber DESC, seriesUuid DESC, revisionUuid DESC
+        ) AS displayRank
+    FROM candidates WHERE workflowStatus = 'APPROVED' OR seriesRank = 1
+)
+SELECT ceilingId, workflowStatus, currency, CAST(finalCents AS INTEGER) AS finalCents
+FROM ranked WHERE workflowStatus = 'APPROVED' OR displayRank = 1;

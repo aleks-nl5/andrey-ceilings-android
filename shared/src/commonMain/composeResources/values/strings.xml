@@ -335,4 +335,23 @@
     <string name="p5b_unsaved_measurement">Незбережено</string>
     <string name="p5b_clean_measurement">Змін немає</string>
     <string name="p5b_feedback_warning">Попередження: %1$s</string>
+    <string name="p6a_amount_uah">%1$d,%2$s грн</string>
+    <string name="p6a_ceiling_contour">Збережений контур стелі</string>
+    <string name="p6a_contour_unavailable">Контур недоступний</string>
+    <string name="p6a_finance_unavailable">Сума недоступна</string>
+    <string name="p6a_finance_loading">Сума завантажується…</string>
+    <string name="p6a_approved_total">Погоджено · %1$s</string>
+    <string name="p6a_no_approved_quotes">Немає погоджених</string>
+    <string name="p6a_ceilings_count">Стелі (%1$d)</string>
+    <string name="p6a_no_ceilings">Стель ще немає.</string>
+    <string name="p6a_add_ceiling">Створити замір для об’єкта</string>
+    <string name="p6a_open_client">Відкрити картку клієнта</string>
+    <string name="p6a_call_client">Зателефонувати</string>
+    <string name="p6a_email_client">Написати листа</string>
+    <string name="p6a_call_unavailable">Не вдалося відкрити телефонний застосунок.</string>
+    <string name="p6a_email_unavailable">Не вдалося відкрити поштовий застосунок.</string>
+    <string name="p6a_client">Клієнт</string>
+    <string name="p6a_no_client">Не вказано</string>
+    <string name="p6a_consolidated">Зведений кошторис</string>
+    <string name="p6a_metrics_unavailable">Площа й периметр недоступні</string>
 </resources>

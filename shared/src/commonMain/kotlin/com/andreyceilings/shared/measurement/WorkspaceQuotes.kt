@@ -689,7 +689,7 @@ internal fun WorkspaceTrash(enabled: Boolean, label: org.jetbrains.compose.resou
 }
 
 @Composable
-private fun workspaceStatusAppearance(status: EstimateWorkflowStatus?) = when (status) {
+internal fun workspaceStatusAppearance(status: EstimateWorkflowStatus?) = when (status) {
     EstimateWorkflowStatus.DRAFT -> Icons.Default.EditNote to MaterialTheme.colorScheme.onSurfaceVariant
     EstimateWorkflowStatus.SENT -> Icons.AutoMirrored.Filled.Send to MaterialTheme.colorScheme.primary
     EstimateWorkflowStatus.APPROVED -> Icons.Default.CheckCircle to Color(0xFF32965D)

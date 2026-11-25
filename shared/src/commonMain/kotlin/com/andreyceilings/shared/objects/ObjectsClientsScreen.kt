@@ -588,6 +588,7 @@ fun ObjectsClientsScreen(
             onOpenMeasurement = { onOpenMeasurement(detailsProjectId, it) },
             onCreateMeasurement = { onCreateMeasurement(detailsProjectId) },
             onDial = onDial,
+            onOpenClient = { client -> message = null; editor = EditorTarget.Client(client) },
             onBack = onCloseProject,
             onEdit = { project -> message = null; editor = EditorTarget.Project(project) }
         )
