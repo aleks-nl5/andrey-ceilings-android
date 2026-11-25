@@ -60,39 +60,74 @@ internal fun ClientReadCard(
             }
         },
         text = {
-            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text(pluralStringResource(Res.plurals.client_project_count, item.activeProjectCount, item.activeProjectCount),
-                    style = MaterialTheme.typography.labelMedium)
-                if (item.phone.isNotBlank()) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(item.phone, Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
-                        IconButton(onClick = {
-                            error = if (runCatching { onDial(item.phone) }.isFailure) callError else null
-                        }) { Icon(Icons.Default.Call, stringResource(Res.string.p6a_call_client)) }
-                    }
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-                        listOf("WhatsApp" to ContactAction.WHATSAPP, "Telegram" to ContactAction.TELEGRAM,
-                            "Viber" to ContactAction.VIBER).forEach { (name, action) ->
-                            IconButton(onClick = { onExternalAction(action, item.phone) }, modifier = Modifier.semantics { contentDescription = name }) {
-                                Box(Modifier.size(40.dp).background(MaterialTheme.colorScheme.primaryContainer, CircleShape),
-                                    contentAlignment = Alignment.Center) {
-                                    ExternalBrandArtwork(action, modifier = Modifier.size(28.dp))
+            Column(Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                // A quiet count badge, then separate contact and notes sections.
+                Surface(
+                    shape = CircleShape,
+                    color = MaterialTheme.colorScheme.primaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                ) {
+                    Text(pluralStringResource(Res.plurals.client_project_count, item.activeProjectCount, item.activeProjectCount),
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                        style = MaterialTheme.typography.labelMedium)
+                }
+                if (item.phone.isNotBlank() || item.email.isNotBlank()) {
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                    if (item.phone.isNotBlank()) {
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                                    Text(stringResource(Res.string.oc_phone),
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    Text(item.phone, style = MaterialTheme.typography.bodyLarge,
+                                        color = MaterialTheme.colorScheme.onSurface)
+                                }
+                                IconButton(onClick = {
+                                    error = if (runCatching { onDial(item.phone) }.isFailure) callError else null
+                                }) { Icon(Icons.Default.Call, stringResource(Res.string.p6a_call_client),
+                                    tint = MaterialTheme.colorScheme.primary) }
+                            }
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                                listOf("WhatsApp" to ContactAction.WHATSAPP, "Telegram" to ContactAction.TELEGRAM,
+                                    "Viber" to ContactAction.VIBER).forEach { (name, action) ->
+                                    IconButton(onClick = { onExternalAction(action, item.phone) },
+                                        modifier = Modifier.semantics { contentDescription = name }) {
+                                        Box(Modifier.size(40.dp).background(MaterialTheme.colorScheme.primaryContainer, CircleShape),
+                                            contentAlignment = Alignment.Center) {
+                                            ExternalBrandArtwork(action, modifier = Modifier.size(28.dp))
+                                        }
+                                    }
                                 }
                             }
                         }
                     }
-                }
-                if (item.email.isNotBlank()) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(item.email, Modifier.weight(1f))
-                        IconButton(onClick = {
-                            error = if (runCatching { uri.openUri("mailto:" + item.email.trim()) }.isFailure) mailError else null
-                        }) { Icon(Icons.Default.Email, stringResource(Res.string.p6a_email_client)) }
+                    if (item.email.isNotBlank()) {
+                        if (item.phone.isNotBlank()) HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                                Text(stringResource(Res.string.oc_email),
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text(item.email, style = MaterialTheme.typography.bodyLarge,
+                                    color = MaterialTheme.colorScheme.onSurface)
+                            }
+                            IconButton(onClick = {
+                                error = if (runCatching { uri.openUri("mailto:" + item.email.trim()) }.isFailure) mailError else null
+                            }) { Icon(Icons.Default.Email, stringResource(Res.string.p6a_email_client),
+                                tint = MaterialTheme.colorScheme.primary) }
+                        }
                     }
                 }
                 if (item.notes.isNotBlank()) {
-                    Text(stringResource(Res.string.oc_notes), style = MaterialTheme.typography.labelMedium)
-                    Text(item.notes)
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text(stringResource(Res.string.oc_notes), style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(item.notes, style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurface)
+                    }
                 }
                 error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
             }

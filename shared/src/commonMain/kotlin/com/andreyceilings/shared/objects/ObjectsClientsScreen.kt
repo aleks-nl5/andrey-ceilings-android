@@ -678,31 +678,34 @@ fun ObjectsClientsScreen(
                 }
             },
             confirmButton = {
-                TextButton(enabled = !busy, onClick = {
-                    if (busy) return@TextButton
-                    busy = true
-                    scope.launch {
-                        try {
-                            when (target) {
-                                is DeletionTarget.Client -> onDeleteClient(target.item.id)
-                                is DeletionTarget.Project -> onDeleteProject(target.item.id)
-                            }
-                            message = null
-                            deletionError = null
-                            if (target is DeletionTarget.Client && viewedClientId == target.item.id) viewedClientId = null
-                            deleting = null
-                        } catch (cancelled: CancellationException) {
-                            throw cancelled
-                        } catch (failure: Exception) {
-                            deletionError = failure.message ?: "Не вдалося видалити запис."
-                            // Keep the dialog open so the user sees the reason.
-                        } finally { busy = false }
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    TextButton(enabled = !busy, onClick = {
+                        if (busy) return@TextButton
+                        busy = true
+                        scope.launch {
+                            try {
+                                when (target) {
+                                    is DeletionTarget.Client -> onDeleteClient(target.item.id)
+                                    is DeletionTarget.Project -> onDeleteProject(target.item.id)
+                                }
+                                message = null
+                                deletionError = null
+                                if (target is DeletionTarget.Client && viewedClientId == target.item.id) viewedClientId = null
+                                deleting = null
+                            } catch (cancelled: CancellationException) {
+                                throw cancelled
+                            } catch (failure: Exception) {
+                                deletionError = failure.message ?: "Не вдалося видалити запис."
+                                // Keep the dialog open so the user sees the reason.
+                            } finally { busy = false }
+                        }
+                    }) { Text(stringResource(Res.string.oc_delete), color = MaterialTheme.colorScheme.error) }
+                    Spacer(Modifier.weight(1f))
+                    TextButton(onClick = { deleting = null }, enabled = !busy) {
+                        Text(stringResource(Res.string.p5d_cancel))
                     }
-                }) { Text(stringResource(Res.string.oc_delete), color = MaterialTheme.colorScheme.error) }
-            },
-            dismissButton = { TextButton(onClick = { deleting = null }, enabled = !busy) {
-                Text(stringResource(Res.string.p5d_cancel))
-            } }
+                }
+            }
         )
     }
 }
@@ -1230,12 +1233,12 @@ private fun ClientCard(
                 }
                 Row(
                     modifier = Modifier.fillMaxWidth().padding(end = 9.dp),
-                    verticalAlignment = Alignment.CenterVertically,
+                    verticalAlignment = Alignment.Bottom,
                     horizontalArrangement = Arrangement.spacedBy(7.dp)
                 ) {
                     if (item.phone.isNotBlank()) {
                         Row(
-                            Modifier.weight(1f).heightIn(min = 40.dp)
+                            Modifier.weight(1f)
                                 .clickable(role = Role.Button) { onSwipeClose(); onDial(item.phone) },
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(4.dp)
@@ -1243,13 +1246,14 @@ private fun ClientCard(
                             Icon(Icons.Default.Call, contentDescription = stringResource(Res.string.p6a_call_client),
                                 modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
                             Text(item.phone, color = MaterialTheme.colorScheme.primary,
-                                style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         }
                     } else {
                         Spacer(Modifier.weight(1f))
                     }
                     Box(
                         Modifier.background(MaterialTheme.colorScheme.primaryContainer, CircleShape)
+                            .border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.36f), CircleShape)
                             .padding(horizontal = 9.dp, vertical = 4.dp)
                     ) {
                         Text(pluralStringResource(
