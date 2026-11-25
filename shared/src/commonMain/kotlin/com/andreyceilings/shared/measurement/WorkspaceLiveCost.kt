@@ -3,6 +3,7 @@ package com.andreyceilings.shared.measurement
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -11,6 +12,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -171,7 +173,8 @@ internal fun WorkspaceCostHelp(text: String, description: String? = null, compac
     Box {
         if (compact) {
             // Keep the inline glyph on the text baseline; clickable supplies expanded touch hit testing.
-            Box(Modifier.size(24.dp).clickable(role = androidx.compose.ui.semantics.Role.Button) { open = true },
+            Box(Modifier.size(24.dp).clip(CircleShape)
+                .clickable(role = androidx.compose.ui.semantics.Role.Button) { open = true },
                 contentAlignment = Alignment.Center) {
                 Icon(Icons.Default.Info, description ?: stringResource(Res.string.p5d_cost_details), Modifier.size(18.dp))
             }
