@@ -253,7 +253,8 @@ object FrozenRevisionProof {
         assertNull(db.frozenEstimateQueries.selectFrozenV1(first.seriesUuid).executeAsOneOrNull())
         for (quote in old) {
             assertNull(history.exactIndividual(first.seriesUuid, quote.revisionUuid))
-            assertEquals(quote.frozen, history.historicalIndividual(first.seriesUuid, quote.revisionUuid)?.frozen)
+            assertEquals(quote.frozen, decodeFrozenIndividualEstimate(db.frozenRevisionQueries
+                .selectHistoricalExactRevision(first.seriesUuid, quote.revisionUuid).executeAsOne().payload))
         }
         assertEquals(third, history.appendIndividual(proposal, 806))
         verifyFrozenEstimateContents(driver)
