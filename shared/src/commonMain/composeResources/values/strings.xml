@@ -406,4 +406,7 @@
     <string name="oc_work_unrecognized">Невідомий етап</string>
     <string name="oc_payment_unknown_short">Невизначено</string>
     <string name="oc_payment_partial_full">Частково оплачено</string>
+    <string name="oc_no_matching_clients">Клієнтів не знайдено</string>
+    <string name="oc_returning_client">Постійний клієнт</string>
+    <string name="oc_many_projects_client">Клієнт з багатьма об’єктами</string>
 </resources>

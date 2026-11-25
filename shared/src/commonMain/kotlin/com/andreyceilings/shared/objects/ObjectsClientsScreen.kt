@@ -1067,16 +1067,16 @@ internal fun PaymentStateTag(status: String, prefix: String = "") {
 }
 
 @Composable
-private fun ClientExperienceMark(count: Int) {
+internal fun ClientExperienceMark(count: Int) {
     val symbol = when {
         count <= 1 -> Icons.Default.Person
         count <= 5 -> Icons.Default.Group
         else -> Icons.Default.Groups
     }
     val label = when {
-        count <= 1 -> "Клієнт"
-        count <= 5 -> "Постійний клієнт"
-        else -> "Клієнт з багатьма об'єктами"
+        count <= 1 -> stringResource(Res.string.p6a_client)
+        count <= 5 -> stringResource(Res.string.oc_returning_client)
+        else -> stringResource(Res.string.oc_many_projects_client)
     }
     Icon(symbol, contentDescription = label, modifier = Modifier.size(24.dp),
         tint = MaterialTheme.colorScheme.primary)
@@ -1204,55 +1204,60 @@ private fun ClientCard(
             shape = ProjectCardShape,
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
         ) {
-            Row(
-                Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 11.dp),
-                verticalAlignment = Alignment.CenterVertically
+            Column(
+                Modifier.fillMaxWidth().padding(start = 12.dp, end = 3.dp, top = 9.dp, bottom = 11.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
-                ClientExperienceMark(item.activeProjectCount)
-                Spacer(Modifier.width(10.dp))
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(5.dp)
-                    ) {
-                        Text(item.name, modifier = Modifier.weight(1f),
-                            fontWeight = FontWeight.SemiBold, maxLines = 1,
-                            overflow = TextOverflow.Ellipsis)
-                        Box(
-                            Modifier.background(MaterialTheme.colorScheme.primaryContainer,
-                                CircleShape)
-                                .padding(horizontal = 9.dp, vertical = 4.dp)
-                        ) {
-                            Text(
-                                pluralStringResource(
-                                    Res.plurals.client_project_count, item.activeProjectCount, item.activeProjectCount
-                                ),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onPrimaryContainer,
-                                maxLines = 1)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(5.dp)
+                ) {
+                    ClientExperienceMark(item.activeProjectCount)
+                    Spacer(Modifier.width(5.dp))
+                    Text(item.name, modifier = Modifier.weight(1f),
+                        fontWeight = FontWeight.SemiBold, maxLines = 2,
+                        overflow = TextOverflow.Ellipsis)
+                    OverflowActions(
+                        onMenuOpened = onAnyInteraction,
+                        onDelete = { onSwipeClose(); onDelete() },
+                        actions = actions,
+                        onAction = { action ->
+                            onSwipeClose()
+                            onExternalAction(action, item.phone)
                         }
-                    }
+                    )
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(end = 9.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(7.dp)
+                ) {
                     if (item.phone.isNotBlank()) {
-                        TextButton(
-                            onClick = { onSwipeClose(); onDial(item.phone) },
-                            contentPadding = PaddingValues(0.dp)
+                        Row(
+                            Modifier.weight(1f).heightIn(min = 40.dp)
+                                .clickable(role = Role.Button) { onSwipeClose(); onDial(item.phone) },
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
-                            Icon(Icons.Default.Call, contentDescription = null,
-                                modifier = Modifier.size(16.dp))
-                            Spacer(Modifier.width(4.dp))
-                            Text(item.phone, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Icon(Icons.Default.Call, contentDescription = stringResource(Res.string.p6a_call_client),
+                                modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
+                            Text(item.phone, color = MaterialTheme.colorScheme.primary,
+                                style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         }
+                    } else {
+                        Spacer(Modifier.weight(1f))
+                    }
+                    Box(
+                        Modifier.background(MaterialTheme.colorScheme.primaryContainer, CircleShape)
+                            .padding(horizontal = 9.dp, vertical = 4.dp)
+                    ) {
+                        Text(pluralStringResource(
+                            Res.plurals.client_project_count, item.activeProjectCount, item.activeProjectCount
+                        ), style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer, maxLines = 1)
                     }
                 }
-                OverflowActions(
-                    onMenuOpened = onAnyInteraction,
-                    onDelete = { onSwipeClose(); onDelete() },
-                    actions = actions,
-                    onAction = { action ->
-                        onSwipeClose()
-                        onExternalAction(action, item.phone)
-                    }
-                )
             }
         }
     }

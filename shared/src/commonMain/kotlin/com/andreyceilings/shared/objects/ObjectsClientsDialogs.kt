@@ -9,6 +9,9 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.lazy.items
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -54,10 +57,6 @@ internal fun ClientReadCard(
                 IconButton(onClick = onEdit) {
                     Icon(Icons.Default.Edit, stringResource(Res.string.oc_edit_client))
                 }
-                IconButton(onClick = onDelete) {
-                    Icon(Icons.Default.Delete, stringResource(Res.string.oc_delete_client),
-                        tint = MaterialTheme.colorScheme.error)
-                }
             }
         },
         text = {
@@ -98,7 +97,16 @@ internal fun ClientReadCard(
                 error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
             }
         },
-        confirmButton = { TextButton(onClick = onDismiss) { Text(stringResource(Res.string.oc_close)) } }
+        confirmButton = {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = onDelete) {
+                    Icon(Icons.Default.Delete, stringResource(Res.string.oc_delete_client),
+                        tint = MaterialTheme.colorScheme.error)
+                }
+                Spacer(Modifier.weight(1f))
+                TextButton(onClick = onDismiss) { Text(stringResource(Res.string.oc_close)) }
+            }
+        }
     )
 }
 
@@ -120,7 +128,10 @@ internal fun ClientEditor(
         containerColor = MaterialTheme.colorScheme.surface,
         title = { Text(stringResource(if (creating) Res.string.oc_new_client else Res.string.oc_edit_client)) },
         text = {
-            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            // Floating labels extend above the compact field; keep that space
+            // inside the scroll viewport rather than clipping the first label.
+            Column(Modifier.verticalScroll(rememberScrollState()).padding(top = 10.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 CompactOutlinedStringField(name, { name = it }, stringResource(Res.string.oc_name_required), enabled = !busy)
                 CompactOutlinedStringField(phone, { phone = it },
                     stringResource(if (creating) Res.string.oc_phone_required else Res.string.oc_phone),
@@ -193,23 +204,33 @@ internal fun ProjectEditor(
             containerColor = MaterialTheme.colorScheme.surface,
             title = { Text(stringResource(Res.string.oc_choose_client)) },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Column(Modifier.fillMaxWidth().padding(top = 10.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     CompactOutlinedStringField(query, { query = it }, stringResource(Res.string.oc_search_client))
-                    androidx.compose.foundation.lazy.LazyColumn(Modifier.heightIn(max = 300.dp)) {
-                        item {
-                            TextButton(onClick = { clientId = null; pickingClient = false }) {
-                                Text(stringResource(Res.string.oc_without_client))
-                            }
-                        }
-                        items(filtered.size) { index ->
-                            val client = filtered[index]
-                            Row(Modifier.fillMaxWidth().clickable { clientId = client.id; pickingClient = false }
-                                .padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Column(Modifier.weight(1f)) {
-                                    Text(client.name)
-                                    if (client.phone.isNotBlank()) Text(client.phone, style = MaterialTheme.typography.bodySmall)
-                                }
-                                if (client.id == clientId) Icon(Icons.Default.Check, null)
+                    ClientChoiceCard(
+                        title = stringResource(Res.string.oc_without_client),
+                        selected = clientId == null,
+                        onClick = { clientId = null; pickingClient = false },
+                        leading = { Icon(Icons.Default.PersonOutline, null, tint = MaterialTheme.colorScheme.onSurfaceVariant) }
+                    )
+                    if (filtered.isEmpty()) {
+                        Text(stringResource(Res.string.oc_no_matching_clients),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(vertical = 8.dp))
+                    } else {
+                        androidx.compose.foundation.lazy.LazyColumn(
+                            Modifier.fillMaxWidth().heightIn(max = 320.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            items(filtered, key = { it.id }) { client ->
+                                ClientChoiceCard(
+                                    title = client.name,
+                                    phone = client.phone,
+                                    selected = client.id == clientId,
+                                    onClick = { clientId = client.id; pickingClient = false },
+                                    leading = { ClientExperienceMark(client.activeProjectCount) }
+                                )
                             }
                         }
                     }
@@ -223,7 +244,8 @@ internal fun ProjectEditor(
             containerColor = MaterialTheme.colorScheme.surface,
             title = { Text(stringResource(if (initial == null) Res.string.oc_new_project else Res.string.oc_edit_project)) },
             text = {
-                Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Column(Modifier.verticalScroll(rememberScrollState()).padding(top = 10.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     CompactOutlinedStringField(address, { address = it }, stringResource(Res.string.oc_address_required), enabled = !busy)
                     Text(stringResource(Res.string.p6a_client), style = MaterialTheme.typography.labelMedium)
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -255,6 +277,46 @@ internal fun ProjectEditor(
             },
             dismissButton = { TextButton(enabled = !busy, onClick = onDismiss) { Text(stringResource(Res.string.p5d_cancel)) } }
         )
+    }
+}
+
+/** Theme-aligned, compact selection row; no contact or delete side effects. */
+@Composable
+private fun ClientChoiceCard(
+    title: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+    leading: @Composable () -> Unit,
+    phone: String = ""
+) {
+    val colors = MaterialTheme.colorScheme
+    Surface(
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth().semantics { this.selected = selected },
+        shape = MaterialTheme.shapes.large,
+        color = if (selected) colors.primaryContainer else colors.surfaceContainerHigh,
+        contentColor = if (selected) colors.onPrimaryContainer else colors.onSurface,
+        border = androidx.compose.foundation.BorderStroke(1.dp,
+            if (selected) colors.primary else colors.outlineVariant)
+    ) {
+        Row(
+            Modifier.fillMaxWidth().heightIn(min = 48.dp).padding(horizontal = 12.dp, vertical = 9.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            leading()
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(title, style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                if (phone.isNotBlank()) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Icon(Icons.Default.Call, null, Modifier.size(14.dp))
+                        Text(phone, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                }
+            }
+            if (selected) Icon(Icons.Default.Check, null, Modifier.size(20.dp))
+        }
     }
 }
 
