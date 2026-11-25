@@ -185,7 +185,8 @@ fun ObjectsClientsScreen(
     onCreateMeasurement: (Long) -> Unit = {},
     onMeasurementCreated: (Long, Long) -> Unit = { _, _ -> },
     measurementCreateNavigationGuard: com.andreyceilings.shared.measurement.MeasurementCreateNavigationGuard? = null,
-    onProjectDial: (String) -> Unit = onDial
+    onProjectDial: (String) -> Unit = onDial,
+    swipeState: CardSwipeState? = null
 ) {
     val scope = rememberCoroutineScope()
     val focusManager = LocalFocusManager.current
@@ -212,7 +213,12 @@ fun ObjectsClientsScreen(
     var busy by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
     var fabVisible by remember { mutableStateOf(true) }
-    var openSwipe by remember { mutableStateOf<OpenSwipe?>(null) }
+    val localSwipeState = remember { CardSwipeState() }
+    val cardSwipes = swipeState ?: localSwipeState
+    var openSwipe by cardSwipes.opened
+    LaunchedEffect(cardSwipes, detailsProjectId, detailsStore, databaseAvailable, editor, deleting) {
+        cardSwipes.dismiss()
+    }
 
     // The list has a tab-keyed scroll state, but the host TopAppBar's scroll
     // state lives outside this screen. Reset both when switching tabs.
@@ -341,7 +347,7 @@ fun ObjectsClientsScreen(
         bottom = contentPadding.calculateBottomPadding()
     )
 
-    Box(modifier.fillMaxSize()) {
+    Box(modifier.fillMaxSize().then(if (swipeState == null) Modifier.dismissCardSwipeOnInteraction(cardSwipes) else Modifier)) {
     // Do not leave the background list or its FAB clickable beneath details.
     if (detailsProjectId == null) BoxWithConstraints(Modifier.fillMaxSize()) {
         val viewportHeight = maxHeight
@@ -389,7 +395,7 @@ fun ObjectsClientsScreen(
                         value = search,
                         onChange = { search = it; openSwipe = null },
                         onClear = { search = ""; openSwipe = null },
-                        onFocusChange = { searchFocused = it }
+                        onFocusChange = { searchFocused = it; if (it) cardSwipes.dismiss() }
                     )
                 }
             },
@@ -532,7 +538,7 @@ fun ObjectsClientsScreen(
                             openSwipe = openSwipe,
                             onSwipeOpen = { dismissSearchFocus(); openSwipe = it },
                             onSwipeClose = { openSwipe = null },
-                            onAnyInteraction = { dismissSearchFocus() })
+                            onAnyInteraction = { dismissSearchFocus(); cardSwipes.dismiss() })
                     }
                 } else {
                     if (clients.isEmpty()) {
@@ -553,7 +559,7 @@ fun ObjectsClientsScreen(
                             openSwipe = openSwipe,
                             onSwipeOpen = { dismissSearchFocus(); openSwipe = it },
                             onSwipeClose = { openSwipe = null },
-                            onAnyInteraction = { dismissSearchFocus() })
+                            onAnyInteraction = { dismissSearchFocus(); cardSwipes.dismiss() })
                     }
                 }
                 if (message != null) item(key = "message") {
@@ -586,6 +592,7 @@ fun ObjectsClientsScreen(
             ),
             systemTopInset = systemTopInset,
             onHeaderProgress = onProjectHeaderProgress,
+            swipeState = cardSwipes,
             active = measurement == null && create == null && edit == null,
             onOpenMeasurement = { onOpenMeasurement(detailsProjectId, it) },
             onCreateMeasurement = { onCreateMeasurement(detailsProjectId) },
@@ -1424,6 +1431,7 @@ internal fun SwipeActionsSurface(
                     state = dragState,
                     orientation = Orientation.Horizontal,
                     onDragStarted = {
+                        if (openSwipe?.id != id) onSwipeClose()
                         settleAnimation.stop()
                         dragged = settleAnimation.value
                         startOfDrag = dragged

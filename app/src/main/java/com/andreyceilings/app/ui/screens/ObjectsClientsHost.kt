@@ -16,6 +16,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.andreyceilings.app.data.db.CeilingsDatabase
+import com.andreyceilings.shared.objects.CardSwipeState
 import com.andreyceilings.shared.objects.ContactAction
 import com.andreyceilings.shared.objects.ObjectsClientsRows
 import com.andreyceilings.shared.objects.ObjectsClientsScreen
@@ -49,7 +50,8 @@ internal fun ObjectsClientsHost(
     measurementPrecision: com.andreyceilings.shared.calculation.MeasurementPrecision = com.andreyceilings.shared.calculation.MeasurementPrecision.ONE_CENTIMETER,
     onCreateMeasurement: (Long) -> Unit = {},
     onMeasurementCreated: (Long, Long) -> Unit = { _, _ -> },
-    measurementCreateNavigationGuard: com.andreyceilings.shared.measurement.MeasurementCreateNavigationGuard? = null
+    measurementCreateNavigationGuard: com.andreyceilings.shared.measurement.MeasurementCreateNavigationGuard? = null,
+    swipeState: CardSwipeState? = null
 ) {
     val context = LocalContext.current
     val fullscreen = measurementCreateNavigationGuard?.fullscreen?.collectAsState()?.value == true
@@ -74,6 +76,7 @@ internal fun ObjectsClientsHost(
 
     ObjectsClientsScreen(
         rows = rows,
+        swipeState = swipeState,
         detailsProjectId = detailsProjectId,
         measurementDetails = measurementDetails,
         measurementQuote = measurementQuote,

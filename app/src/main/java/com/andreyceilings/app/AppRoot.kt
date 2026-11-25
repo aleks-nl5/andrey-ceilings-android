@@ -53,6 +53,8 @@ import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.runtime.*
+import com.andreyceilings.shared.objects.CardSwipeState
+import com.andreyceilings.shared.objects.dismissCardSwipeOnInteraction
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.core.view.WindowCompat
 import androidx.compose.runtime.key
@@ -144,6 +146,8 @@ private fun CeilingsAppContent(
     var navigation by rememberSaveable(stateSaver = navigationStateSaver) {
         mutableStateOf(initialNavigation)
     }
+    val cardSwipes = remember(database) { CardSwipeState() }
+    LaunchedEffect(navigation, cardSwipes) { cardSwipes.dismiss() }
     val editorSession: MeasurementEditorSession = androidx.lifecycle.viewmodel.compose.viewModel()
     val measurementCreateNavigationGuard = editorSession.navigationGuard
     SideEffect {
@@ -551,6 +555,7 @@ private fun CeilingsAppContent(
             modifier = Modifier
                 .fillMaxSize()
                 .background(MaterialTheme.colorScheme.background)
+                .then(if (tab == AppTab.OBJECTS) Modifier.dismissCardSwipeOnInteraction(cardSwipes) else Modifier)
                 .nestedScroll(if (isProjectDetailsOpen || isMeasurementDetailsOpen) passiveDetailsScroll
                     else topAppBarScrollBehavior.nestedScrollConnection)
         ) {
@@ -563,6 +568,7 @@ private fun CeilingsAppContent(
                     when (tab) {
                         AppTab.OBJECTS -> ObjectsClientsHost(
                             database = database,
+                            swipeState = cardSwipes,
                             detailsProjectId = navigation.projectDetails?.projectId,
                             measurementDetails = navigation.measurementDetails,
                             measurementQuote = navigation.measurementQuote,

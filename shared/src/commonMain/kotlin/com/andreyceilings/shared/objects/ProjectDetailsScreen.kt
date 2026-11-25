@@ -183,7 +183,8 @@ internal fun ProjectDetailsScreen(
     onOpenClient: (ClientListEntry) -> Unit,
     active: Boolean = true,
     onOpenMeasurement: (Long) -> Unit = {},
-    onCreateMeasurement: () -> Unit = {}
+    onCreateMeasurement: () -> Unit = {},
+    swipeState: CardSwipeState = remember { CardSwipeState() }
 ) {
     val flow = remember(store, projectId) {
         store?.observeProjectDetails(projectId)?.map<ProjectDetailsData, DetailsState> { DetailsState.Loaded(it) }
@@ -214,7 +215,7 @@ internal fun ProjectDetailsScreen(
     val detailsListState = rememberSaveable(projectId, saver = LazyListState.Saver) {
         LazyListState()
     }
-    var openCeilingSwipe by remember(store, projectId) { mutableStateOf<OpenSwipe?>(null) }
+    var openCeilingSwipe by swipeState.opened
     var deletingCeiling by remember(store, projectId) { mutableStateOf<ProjectMeasurement?>(null) }
     var deletingBusy by remember(store, projectId) { mutableStateOf(false) }
     var deleteError by remember(store, projectId) { mutableStateOf<String?>(null) }
@@ -571,6 +572,7 @@ internal fun ProjectDetailsScreen(
                             } else null
                             val quotes = (finance as? ProjectFinanceState.Loaded)?.summary
                             val swipeId = "ceiling-${measurement.uuid}"
+                            val rowWasOpen = openCeilingSwipe?.id == swipeId
                             val deleteLabel = stringResource(Res.string.p6a_delete_swipe)
                             val requestDelete = {
                                 openCeilingSwipe = null
@@ -597,9 +599,10 @@ internal fun ProjectDetailsScreen(
                                     measurement, contour, quotes?.ceilings?.get(measurement.id),
                                     measurement.id in quotes?.unavailableCeilings.orEmpty()
                                 ) {
-                                    if (openCeilingSwipe != null) {
+                                    if (rowWasOpen) {
                                         openCeilingSwipe = null
                                     } else {
+                                        openCeilingSwipe = null
                                         settleJob?.cancel()
                                         settleJob = null
                                         onOpenMeasurement(measurement.id)
