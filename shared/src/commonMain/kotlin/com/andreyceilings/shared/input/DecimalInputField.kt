@@ -28,7 +28,8 @@ fun DecimalInputField(
     onNext: (() -> Unit)? = null,
     compact: Boolean = false,
     dense: Boolean = false,
-    selectAllOnFocus: Boolean = false
+    selectAllOnFocus: Boolean = false,
+    zeroWhenBlankOnBlur: Boolean = false
 ) {
     val requester = remember { FocusRequester() }
     var field by remember { mutableStateOf(TextFieldValue(value, TextRange(value.length))) }
@@ -60,6 +61,9 @@ fun DecimalInputField(
     val inputModifier = modifier.fillMaxWidth().focusRequester(requester).onFocusChanged {
         if (selectAllOnFocus && it.isFocused && !focused) {
             field = field.copy(selection = TextRange(0, field.text.length))
+        }
+        if (zeroWhenBlankOnBlur && focused && !it.isFocused && field.text.isEmpty()) {
+            update(TextFieldValue("0", TextRange(1)))
         }
         focused = it.isFocused
     }

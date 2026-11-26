@@ -20,7 +20,7 @@ internal data class ConsolidatedDiscount(val mode: QuoteDiscountMode, val value:
 
     companion object {
         fun parse(text: String, mode: QuoteDiscountMode): ConsolidatedDiscount? = when (
-            val value = QuoteDiscount.parse(text, mode)
+            val value = QuoteDiscount.parse(text.ifBlank { "0" }, mode)
         ) {
             is QuoteDiscountValue.Percentage -> ConsolidatedDiscount(mode, value.basisPoints.toLong())
             is QuoteDiscountValue.Fixed -> ConsolidatedDiscount(mode, value.cents)

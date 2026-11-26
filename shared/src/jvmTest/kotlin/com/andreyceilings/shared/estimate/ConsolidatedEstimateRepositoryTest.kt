@@ -160,6 +160,13 @@ class ConsolidatedEstimateRepositoryTest {
     }
 
     @Test fun exactDiscountAndOverflow() {
+        for (mode in QuoteDiscountMode.entries) {
+            val zero = ConsolidatedDiscount(mode, 0)
+            assertEquals(zero, ConsolidatedDiscount.parse("", mode))
+            assertEquals(zero, ConsolidatedDiscount.parse("0", mode))
+            assertEquals(204L, consolidatedAmounts(listOf(101, 103), zero)?.finalCents)
+            assertNull(ConsolidatedDiscount.parse("not a number", mode))
+        }
         val percent = ConsolidatedDiscount(QuoteDiscountMode.PERCENT, 1250)
         val amounts = assertNotNull(consolidatedAmounts(listOf(101, 103), percent))
         assertEquals(26, amounts.discountCents.toInt())

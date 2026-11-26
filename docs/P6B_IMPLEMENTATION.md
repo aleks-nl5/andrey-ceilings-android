@@ -34,3 +34,7 @@ The starting main revision was `6a5cac216f9bb0a96d7fb1c9e726fcc3ac29d127`. Andro
 ## Owner APK polish (26.11.2026)
 
 Owner requested the compact consolidated create/read-only dialog (approximately half-height, expands for IME/exact source details), empty new title with default on Save, fixed footer with compact discount input and centred amount, copy/PDF/save/trash icons, visually separated version dropdown, swapped deletion actions and icon-based PDF toolbar. Shared ordinary text inputs request sentence capitalization; numeric, technical, phone, email and password inputs are not capitalized. PDF toolbar accessibility descriptions replace text selectors in existing tests. No pricing, workflow, ledger or schema changes. The physical UI appearance and IME behavior require renewed APK acceptance; QUICK first, FULL only after owner acceptance.
+
+### Second physical APK feedback
+
+Empty consolidated discount is zero in either mode, editable as blank and normalized to `0` on blur. Exact individual review uses an inset 78%-height scrollable dialog with compact bordered positions, muted secondary text and right-aligned fixed total. PDF actions share a single toolbar beneath the title, preserving accessibility labels. Compact ordinary text explicitly requests Text keyboard type and sentence capitalization for both Text and Unspecified defaults; phone/email/numeric options remain unchanged. IME and visual acceptance still require the physical APK.

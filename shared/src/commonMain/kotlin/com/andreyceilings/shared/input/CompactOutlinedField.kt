@@ -101,8 +101,10 @@ fun CompactOutlinedStringField(
             field = next
             if (next.text != value) onValueChange(next.text)
         }, label = label, modifier = modifier, enabled = enabled, isError = isError,
-        keyboardOptions = if (keyboardOptions.keyboardType == KeyboardType.Text)
-            keyboardOptions.copy(capitalization = KeyboardCapitalization.Sentences)
+        // Default KeyboardOptions may use Unspecified, not Text.
+        keyboardOptions = if (keyboardOptions.keyboardType == KeyboardType.Text ||
+            keyboardOptions.keyboardType == KeyboardType.Unspecified)
+            keyboardOptions.copy(keyboardType = KeyboardType.Text, capitalization = KeyboardCapitalization.Sentences)
         else keyboardOptions, keyboardActions = keyboardActions, maxLines = maxLines,
         dense = dense
     )

@@ -214,8 +214,10 @@ internal fun ConsolidatedEstimateScreen(
             contentAlignment = Alignment.Center) {
             val keyboardVisible = WindowInsets.ime.getBottom(LocalDensity.current) > 0
             // Use the available area while the keyboard is open; keep the footer reachable.
-            val dialogHeight = if (keyboardVisible || individual != null) maxHeight
-                else (maxHeight * 0.55f).coerceIn(minOf(300.dp, maxHeight), maxHeight)
+            val dialogHeight = if (keyboardVisible) maxHeight else {
+                val fraction = if (individual != null) 0.78f else 0.55f
+                (maxHeight * fraction).coerceIn(minOf(300.dp, maxHeight), maxHeight)
+            }
             Surface(Modifier.widthIn(max = 640.dp).fillMaxWidth().height(dialogHeight),
                 shape = RoundedCornerShape(24.dp), color = MaterialTheme.colorScheme.surface,
                 tonalElevation = 2.dp, shadowElevation = 6.dp) {
@@ -238,7 +240,8 @@ internal fun ConsolidatedEstimateScreen(
                                     Text(stringResource(Res.string.p5d_revision_heading,
                                         exact?.publicNumber ?: checkNotNull(opened).frozen.publicNumber,
                                         exact?.version ?: checkNotNull(opened).frozen.version),
-                                        style = MaterialTheme.typography.labelMedium)
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
                             }
                             if (opened != null && exact == null) {
@@ -351,7 +354,7 @@ internal fun ConsolidatedEstimateScreen(
                                     stringResource(Res.string.p5d_discount), Modifier.width(92.dp),
                                     enabled = !saving, isError = discount == null || (cents.isNotEmpty() &&
                                         cents.size == selected.size && amounts == null), compact = true, dense = true,
-                                    selectAllOnFocus = true)
+                                    selectAllOnFocus = true, zeroWhenBlankOnBlur = true)
                                 OutlinedButton(enabled = !saving, onClick = {
                                     session.discountMode.value = if (discountMode == QuoteDiscountMode.PERCENT) QuoteDiscountMode.FIXED
                                         else QuoteDiscountMode.PERCENT
@@ -498,29 +501,55 @@ private fun ConsolidatedRoomRow(
 @Composable
 private fun ConsolidatedIndividualDetails(document: FrozenEstimateDocument, source: FrozenIndividualSource, modifier: Modifier) {
     val geometry = remember(source.drawingJson) { MeasurementGeometryCodec.read(source.drawingJson) }
-    LazyColumn(modifier.fillMaxWidth(), contentPadding = PaddingValues(12.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        item {
-            Text(document.room, style = MaterialTheme.typography.titleMedium)
-            Text(document.createdOn, style = MaterialTheme.typography.labelMedium)
-        }
-        item {
-            MeasurementDrawing(MeasurementGeometryView.Captured(geometry), Modifier.fillMaxWidth().height(220.dp),
-                pointPlacements = source.points, linePlacements = source.lines, areaFeatures = source.areas,
-                fitPointPlacements = true)
-        }
-        items(document.rows) { row ->
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text(row.title)
-                    Text("${formatElementMilli(row.quantityMilli)} ${row.unit} · ${measurementMoney(row.unitPriceCents)}",
-                        style = MaterialTheme.typography.labelMedium)
+    val colors = MaterialTheme.colorScheme
+    Column(modifier.fillMaxWidth()) {
+        LazyColumn(Modifier.weight(1f).fillMaxWidth(), contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            item {
+                Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically) {
+                    if (document.room != document.title) {
+                        Text(document.room, Modifier.weight(1f), style = MaterialTheme.typography.titleSmall)
+                    } else Spacer(Modifier.weight(1f))
+                    Text(document.createdOn, style = MaterialTheme.typography.labelSmall,
+                        color = colors.onSurfaceVariant)
                 }
-                Text(measurementMoney(row.totalCents))
+            }
+            item {
+                Surface(shape = MaterialTheme.shapes.medium, color = colors.surfaceContainerLow,
+                    border = BorderStroke(1.dp, colors.outlineVariant)) {
+                    MeasurementDrawing(MeasurementGeometryView.Captured(geometry),
+                        Modifier.fillMaxWidth().height(160.dp).padding(6.dp),
+                        pointPlacements = source.points, linePlacements = source.lines, areaFeatures = source.areas,
+                        fitPointPlacements = true)
+                }
+            }
+            items(document.rows) { row ->
+                Surface(shape = MaterialTheme.shapes.medium, color = colors.surfaceContainerLow,
+                    border = BorderStroke(1.dp, colors.outlineVariant)) {
+                    Row(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 7.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Column(Modifier.weight(1f)) {
+                            Text(row.title, style = MaterialTheme.typography.bodyMedium)
+                            Text("${formatElementMilli(row.quantityMilli)} ${row.unit} · ${measurementMoney(row.unitPriceCents)}",
+                                style = MaterialTheme.typography.labelMedium, color = colors.onSurfaceVariant)
+                        }
+                        Text(measurementMoney(row.totalCents), style = MaterialTheme.typography.titleSmall)
+                    }
+                }
+            }
+            items(document.omissions) { omission ->
+                Text(omission, style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
             }
         }
-        items(document.omissions) { omission -> Text(omission, style = MaterialTheme.typography.bodySmall) }
-        item { Text(measurementMoney(document.amounts.finalCents), style = MaterialTheme.typography.titleLarge) }
+        HorizontalDivider(color = colors.outlineVariant)
+        Surface(color = colors.surfaceContainer, tonalElevation = 3.dp) {
+            Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
+                horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
+                Text(measurementMoney(document.amounts.finalCents), style = MaterialTheme.typography.titleLarge)
+            }
+        }
     }
 }
 
