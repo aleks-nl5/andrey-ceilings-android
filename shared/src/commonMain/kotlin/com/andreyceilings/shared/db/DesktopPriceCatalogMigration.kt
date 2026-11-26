@@ -33,7 +33,7 @@ fun openDesktopPriceCatalog(driver: SqlDriver, previouslyExisting: Boolean) {
         val structuralVersion = when {
             columns("estimate_issuance_policy").isNotEmpty() || columns("estimate_number_reservations").isNotEmpty() -> {
                 check(wallVersionSchema && columns("estimate_revision_tombstones").isNotEmpty())
-                22L
+                if (runCatching { verifyPointPlacementStructure(driver, 23L) }.isSuccess) 23L else 22L
             }
             columns("estimate_revision_tombstones").isNotEmpty() -> {
                 check(wallVersionSchema) { "Revision tombstones require the wall-version schema" }
