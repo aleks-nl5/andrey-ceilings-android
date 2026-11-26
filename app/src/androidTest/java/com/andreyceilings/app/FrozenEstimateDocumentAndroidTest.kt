@@ -239,8 +239,13 @@ class FrozenEstimateDocumentAndroidTest {
                             }
                         }
                     }
-                    compose.waitUntil(10000) { compose.onAllNodesWithText("Зведений кошторис").fetchSemanticsNodes().isNotEmpty() }
-                    compose.onNodeWithText("Зведений кошторис").performClick()
+                    // P6A puts the consolidated action after the lazy ceiling list.
+                    // Wait for the project to load, then reveal the offscreen action.
+                    compose.waitUntil(10000) { compose.onAllNodesWithText("Квартира / Центр").fetchSemanticsNodes().isNotEmpty() }
+                    val consolidatedAction = hasText("Зведений кошторис") and hasClickAction()
+                    compose.onNode(SemanticsMatcher.keyIsDefined(SemanticsActions.ScrollToIndex))
+                        .performScrollToNode(consolidatedAction)
+                    compose.onNode(consolidatedAction).performClick()
                     compose.waitUntil(10000) { compose.onAllNodesWithText("Переглянути зведений PDF").fetchSemanticsNodes().isNotEmpty() }
                     val preview = compose.onNodeWithText("Переглянути зведений PDF")
                     val list = compose.onAllNodes(SemanticsMatcher.keyIsDefined(SemanticsActions.ScrollToIndex)).onLast()
