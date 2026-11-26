@@ -1,6 +1,5 @@
 package com.andreyceilings.shared.estimate
 
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -16,97 +15,15 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.stringResource
 
-/** External library routes retain exact revision identity and use the workspace workflow controls. */
 @Composable
-fun SavedIndividualQuoteList(store: MeasurementElementsStore?, projectId: Long? = null, measurementUuid: String? = null) {
-    var selectedSeries by rememberSaveable(projectId, measurementUuid) { mutableStateOf<String?>(null) }
-    var selectedRevision by rememberSaveable(projectId, measurementUuid) { mutableStateOf<String?>(null) }
-    var generation by remember { mutableIntStateOf(0) }
-    var rows by remember(store, projectId, measurementUuid) { mutableStateOf<List<SavedIndividualQuote>?>(null) }
-    var error by remember { mutableStateOf(false) }
-    var busy by remember { mutableStateOf(false) }
-    var deleteSeries by remember { mutableStateOf<List<SavedIndividualQuote>?>(null) }
-    val scope = rememberCoroutineScope()
-    val changeLinkedStatus = linkedQuoteStatusChange()
-    fun change(action: suspend (MeasurementElementsStore) -> Boolean) {
-        if (store == null || busy) return
-        busy = true
-        error = false
-        scope.launch {
-            try { error = !action(store) }
-            catch (e: CancellationException) { throw e }
-            catch (_: Exception) { error = true }
-            finally { busy = false; generation++ }
-        }
-    }
-    val shareResult = store?.quoteShareResult?.collectAsState()?.value
-    LaunchedEffect(store, projectId, measurementUuid, generation, shareResult) {
-        if (store == null) {
-            rows = emptyList()
-            return@LaunchedEffect
-        }
-        try { rows = store.savedQuotes(projectId, measurementUuid) }
-        catch (e: CancellationException) { throw e }
-        catch (_: Exception) { error = true }
-    }
-    Column(Modifier.fillMaxWidth()) {
-        Text(stringResource(Res.string.p5d_quotes), style = MaterialTheme.typography.titleMedium)
-        if (error) Text(stringResource(Res.string.p5d_quote_failed), color = MaterialTheme.colorScheme.error)
-        else if (rows == null) LinearProgressIndicator(Modifier.fillMaxWidth())
-        else if (rows.isNullOrEmpty()) Text(stringResource(Res.string.p5d_no_quotes))
-        rows.orEmpty().groupBy { it.seriesUuid }.values.forEach { series ->
-            val head = series.first()
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text(head.frozen.title, style = MaterialTheme.typography.titleSmall)
-                    Text(head.frozen.publicNumber, style = MaterialTheme.typography.labelSmall)
-                }
-                val allowed = series.all { it.canDeleteQuote }
-                if (!allowed) WorkspaceCostHelp(stringResource(Res.string.p5d_delete_protected))
-                WorkspaceTrash(allowed && !busy, Res.string.p5d_delete_series) { deleteSeries = series.toList() }
-            }
-            series.forEach { quote ->
-                val approved = rows.orEmpty().filter {
-                    it.projectId == quote.projectId && it.frozen.source.measurementUuid == quote.frozen.source.measurementUuid &&
-                        it.status == EstimateWorkflowStatus.APPROVED
-                }
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    WorkspaceQuoteStatusIcon(quote, approved, !busy) { target, status, previous ->
-                        change { changeLinkedStatus(it, target, status, previous) }
-                    }
-                    Row(Modifier.weight(1f).defaultMinSize(minHeight = 48.dp).clickable {
-                        selectedSeries = quote.seriesUuid
-                        selectedRevision = quote.revisionUuid
-                    }, verticalAlignment = Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f)) {
-                            Text(stringResource(Res.string.p5d_version, quote.versionNumber))
-                            if (quote.frozen.title != head.frozen.title) Text(quote.frozen.title, style = MaterialTheme.typography.labelSmall)
-                        }
-                        Text(measurementMoney(quote.frozen.amounts.finalCents))
-                    }
-                }
-            }
-        }
-    }
-    deleteSeries?.let { versions ->
-        WorkspaceQuoteDeleteDialog(versions, series = true, onClose = { deleteSeries = null }) {
-            deleteSeries = null
-            change { it.deleteQuoteSeries(versions.first().seriesUuid, versions.associate { row -> row.revisionUuid to row.statusVersion }) }
-        }
-    }
-    selectedSeries?.let { series -> SavedIndividualQuoteDialog(store, series, selectedRevision) {
-        selectedSeries = null
-        selectedRevision = null
-        generation++
-    } }
-}
-
-@Composable
-fun SavedIndividualQuoteDialog(store: MeasurementElementsStore?, seriesUuid: String, revisionUuid: String? = null, onDismiss: () -> Unit) {
+fun SavedIndividualQuoteDialog(
+    store: MeasurementElementsStore?, seriesUuid: String, revisionUuid: String? = null,
+    expectedProjectId: Long? = null, onDismiss: () -> Unit
+) {
     val session = remember(store, seriesUuid, revisionUuid) { WorkspaceQuoteSession() }
     var selected by rememberSaveable(seriesUuid, revisionUuid) { mutableStateOf(revisionUuid) }
     var quote by remember(session) { mutableStateOf<SavedIndividualQuote?>(null) }
-    var history by remember(session) { mutableStateOf(emptyList<SavedIndividualQuote>()) }
+    var history by remember(session) { mutableStateOf(emptyList<com.andreyceilings.shared.db.IndividualVersionOptions>()) }
     var approved by remember(session) { mutableStateOf(emptyList<SavedIndividualQuote>()) }
     var editorRoute by remember(session) { mutableStateOf<ElementRoute?>(null) }
     var error by remember(session) { mutableStateOf(false) }
@@ -117,18 +34,21 @@ fun SavedIndividualQuoteDialog(store: MeasurementElementsStore?, seriesUuid: Str
 
     val shareResult = store?.quoteShareResult?.collectAsState()?.value
     LaunchedEffect(store, selected, session.refresh, shareResult) {
+        error = false
+        if (selected != quote?.revisionUuid) quote = null
         try {
-            val exact = checkNotNull(store).savedQuote(seriesUuid, selected)
+            val source = checkNotNull(store)
+            val exact = if (expectedProjectId != null) source.registryQuote(seriesUuid, checkNotNull(selected), expectedProjectId)
+                else source.savedQuote(seriesUuid, selected)
             if (exact == null) { error = true; quote = null }
             else {
                 selected = exact.revisionUuid
-                history = store.quoteHistory(seriesUuid)
-                approved = store.savedQuotes(exact.projectId, exact.frozen.source.measurementUuid)
-                    .filter { it.status == EstimateWorkflowStatus.APPROVED }
+                history = source.quoteVersionOptions(seriesUuid)
+                approved = source.approvedQuotesForCeiling(exact.projectId, exact.frozen.source.measurementUuid)
                 quote = exact
             }
         } catch (e: CancellationException) { throw e }
-        catch (_: Exception) { error = true }
+        catch (_: Exception) { error = true; quote = null }
     }
     LaunchedEffect(session.opened?.revisionUuid) {
         session.opened?.let { saved -> selected = saved.revisionUuid; session.opened = null }
@@ -188,7 +108,7 @@ fun SavedIndividualQuoteDialog(store: MeasurementElementsStore?, seriesUuid: Str
                                 DropdownMenu(choose, onDismissRequest = { choose = false }) {
                                     history.forEach { alternative ->
                                         DropdownMenuItem(text = { Text(stringResource(Res.string.p5d_line_problem,
-                                            stringResource(Res.string.p5d_version, alternative.versionNumber), alternative.frozen.title)) },
+                                            stringResource(Res.string.p5d_version, alternative.versionNumber), alternative.title.orEmpty())) },
                                             onClick = { choose = false; selected = alternative.revisionUuid })
                                     }
                                 }

@@ -144,8 +144,10 @@ WHERE w.projectId = :projectId AND w.status = 'APPROVED' AND m.measurementUuid =
 AND m.individualRevisionUuid = :individualRevisionUuid;
 
 approvedFinance:
-SELECT r.finalCents, r.discountMode, r.discountValue, m.measurementUuid, m.individualRevisionUuid
+SELECT w.projectId AS ownerId, r.finalCents, r.discountMode, r.discountValue, m.measurementUuid, m.individualRevisionUuid
 FROM consolidated_workflow w JOIN consolidated_revisions r USING(revisionUuid)
 LEFT JOIN consolidated_members m ON m.consolidatedRevisionUuid = w.revisionUuid
-WHERE w.projectId = :projectId AND w.status = 'APPROVED'
+JOIN projects p ON p.id = w.projectId AND p.deletedAt IS NULL
+WHERE w.projectId BETWEEN coalesce(:projectId, 1) AND coalesce(:projectId, 9223372036854775807)
+AND w.status = 'APPROVED'
 ORDER BY m.position;

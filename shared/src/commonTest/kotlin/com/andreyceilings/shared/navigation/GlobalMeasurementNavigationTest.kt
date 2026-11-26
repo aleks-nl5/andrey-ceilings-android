@@ -44,10 +44,27 @@ class GlobalMeasurementNavigationTest {
         val list = AppNavigationState().selectTab(AppRoute.MEASUREMENTS)
         for (start in listOf(list, AppNavigationState(), AppNavigationState().selectTab(AppRoute.OBJECTS).openProject(7))) {
             val picker = start.requestQuickCreate(AppQuickCreate.MEASUREMENT)
-            assertEquals(list.chooseMeasurementProject(), picker)
+            assertEquals(start.current, picker.current)
+            assertTrue(picker.measurementProjectPicker)
+            assertEquals(start, picker.back())
+            assertSame(picker, picker.requestQuickCreate(AppQuickCreate.MEASUREMENT))
+            val created = picker.createMeasurement(9).measurementCreatedInEditor(9, 10)
+            assertEquals(MeasurementEdit(9, 10), created.measurementEdit)
+            assertEquals(start, created.back())
             assertEquals(picker, AppNavigationState.restore(picker.snapshot()))
             assertNull(picker.pendingQuickCreate)
         }
+    }
+
+    @Test fun quickCreateUsesAnExplicitlyVerifiedProjectAndReturnsToIt() {
+        val project = AppNavigationState().selectTab(AppRoute.OBJECTS).openProject(7)
+        val create = project.requestQuickCreate(AppQuickCreate.MEASUREMENT, activeProjectId = 7)
+        assertEquals(MeasurementCreate(7), create.measurementCreate)
+        assertEquals(create, AppNavigationState.restore(create.snapshot()))
+        assertEquals(project, create.back())
+        assertTrue(project.requestQuickCreate(AppQuickCreate.MEASUREMENT, activeProjectId = 8).measurementProjectPicker)
+        val registry = project.navigate(AppRoute.MEASUREMENTS)
+        assertEquals(project, AppNavigationState.restore(registry.snapshot()).back())
     }
 
     @Test fun malformedOrUnavailableGlobalChildrenAreRejected() {

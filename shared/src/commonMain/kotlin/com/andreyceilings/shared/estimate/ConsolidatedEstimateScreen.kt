@@ -50,7 +50,8 @@ internal fun ConsolidatedEstimateScreen(
     store: MeasurementElementsStore,
     session: ConsolidatedComposerSession,
     onClose: () -> Unit,
-    onCarry: (String) -> Unit
+    onCarry: (String) -> Unit,
+    expectedSeriesUuid: String? = null
 ) {
     val revisionUuid by session.savedRevision.collectAsState()
     val selected by session.selection.collectAsState()
@@ -81,13 +82,14 @@ internal fun ConsolidatedEstimateScreen(
     LaunchedEffect(store, revisionUuid, refresh, reload) {
         try {
             if (revisionUuid != null) {
-                saved = checkNotNull(store.savedConsolidated(checkNotNull(revisionUuid)))
+                saved = checkNotNull(store.savedConsolidated(checkNotNull(revisionUuid),
+                    expectedProjectId = projectId.takeIf { expectedSeriesUuid != null }, expectedSeriesUuid = expectedSeriesUuid))
                 drift = store.consolidatedDrift(checkNotNull(saved))
             } else {
                 val rooms = store.consolidatedRooms(projectId)
                 catalog = rooms
                 if (session.draftBasis.value == null) {
-                    val carried = session.basedOn?.let { checkNotNull(store.savedConsolidated(it)).frozen }
+                    val carried = session.basedOn?.let { checkNotNull(store.savedConsolidated(it, projectId, expectedSeriesUuid)).frozen }
                     val selection = carried?.draft?.selection?.associateBy { it.measurementUuid }
                         ?: rooms.rooms.mapNotNull { room ->
                             room.revisions.singleOrNull { it.status == EstimateWorkflowStatus.APPROVED }?.ref

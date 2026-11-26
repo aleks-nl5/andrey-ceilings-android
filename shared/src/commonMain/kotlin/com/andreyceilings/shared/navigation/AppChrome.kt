@@ -56,6 +56,8 @@ import com.andreyceilings.shared.resources.Res
 import com.andreyceilings.shared.resources.app_name
 import com.andreyceilings.shared.resources.app_tagline
 import com.andreyceilings.shared.resources.navigate_action
+import com.andreyceilings.shared.resources.p6c_ceilings
+import com.andreyceilings.shared.resources.p6c_new_measurement
 import com.andreyceilings.shared.resources.settings_action
 import org.jetbrains.compose.resources.stringResource
 
@@ -70,8 +72,16 @@ data class AppDestination(
     val caption: String,
     val icon: ImageVector,
     val enabled: Boolean = true,
-    val quickCreateLabel: String? = null
+    val quickCreateLabel: String? = null,
+    val actionOnly: Boolean = false
 )
+
+@Composable
+fun appRouteDisplayTitle(route: AppRoute): String =
+    if (route == AppRoute.MEASUREMENTS) stringResource(Res.string.p6c_ceilings) else route.title
+
+@Composable
+fun measurementQuickCreateLabel(): String = stringResource(Res.string.p6c_new_measurement)
 
 enum class NavigationFeedback { TAP, LONG_PRESS }
 
@@ -126,10 +136,10 @@ fun AppFloatingNavigation(
             destinations.forEach { item ->
                 AppFloatingItem(
                     destination = item,
-                    selected = selectedId == item.id,
+                    selected = !item.actionOnly && selectedId == item.id,
                     onSelect = {
                         onFeedback(NavigationFeedback.TAP)
-                        onSelect(item.id)
+                        if (item.actionOnly) onQuickCreate(item.id) else onSelect(item.id)
                     },
                     onQuickCreate = {
                         onFeedback(NavigationFeedback.LONG_PRESS)
@@ -153,22 +163,22 @@ private fun AppFloatingItem(
 ) {
     val interactions = remember { MutableInteractionSource() }
     val scheme = MaterialTheme.colorScheme
-    val indicatorColor = if (selected) {
+    val indicatorColor = if (destination.actionOnly) scheme.primaryContainer else if (selected) {
         lerp(scheme.primaryContainer, scheme.primary, 0.18f)
     } else {
         Color.Transparent
     }
-    val contentColor = if (selected) scheme.primary else scheme.onSurfaceVariant
+    val contentColor = if (destination.actionOnly) scheme.onPrimaryContainer else if (selected) scheme.primary else scheme.onSurfaceVariant
 
     Column(
         modifier = modifier.fillMaxHeight()
-            .semantics { this.selected = selected }
+            .semantics { if (!destination.actionOnly) this.selected = selected }
             .combinedClickable(
                 interactionSource = interactions,
                 indication = null,
                 enabled = destination.enabled,
-                role = Role.Tab,
-                onClickLabel = stringResource(Res.string.navigate_action, destination.title),
+                role = if (destination.actionOnly) Role.Button else Role.Tab,
+                onClickLabel = if (destination.actionOnly) destination.title else stringResource(Res.string.navigate_action, destination.title),
                 onLongClickLabel = destination.quickCreateLabel,
                 onLongClick = if (destination.quickCreateLabel != null) onQuickCreate else null,
                 onClick = onSelect
@@ -190,7 +200,7 @@ private fun AppFloatingItem(
                 modifier = Modifier.widthIn(min = 22.dp).height(22.dp)
             )
         }
-        Text(
+        if (destination.caption.isNotEmpty()) Text(
             destination.caption,
             textAlign = TextAlign.Center,
             style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp, letterSpacing = (-0.25).sp),

@@ -41,17 +41,18 @@ internal fun ObjectsClientsHost(
     openCreateProject: Boolean,
     headerVisibleFraction: Float,
     onCreateProjectConsumed: () -> Unit,
-    measurementDetails: com.andreyceilings.shared.navigation.MeasurementDetails? = null,
-    measurementQuote: Boolean = false,
     onOpenMeasurement: (Long, Long) -> Unit = { _, _ -> },
     measurementEdit: com.andreyceilings.shared.navigation.MeasurementEdit? = null,
-    onEditMeasurement: (Long, Long) -> Unit = { _, _ -> },
     measurementCreate: com.andreyceilings.shared.navigation.MeasurementCreate? = null,
     measurementPrecision: com.andreyceilings.shared.calculation.MeasurementPrecision = com.andreyceilings.shared.calculation.MeasurementPrecision.ONE_CENTIMETER,
     onCreateMeasurement: (Long) -> Unit = {},
     onMeasurementCreated: (Long, Long) -> Unit = { _, _ -> },
     measurementCreateNavigationGuard: com.andreyceilings.shared.measurement.MeasurementCreateNavigationGuard? = null,
-    swipeState: CardSwipeState? = null
+    swipeState: CardSwipeState? = null,
+    onOpenCeilingRegistry: (() -> Unit)? = null,
+    initialClients: Boolean = false,
+    initialSearch: String = "",
+    searchRequest: Int = 0
 ) {
     val context = LocalContext.current
     val fullscreen = measurementCreateNavigationGuard?.fullscreen?.collectAsState()?.value == true
@@ -61,9 +62,8 @@ internal fun ObjectsClientsHost(
     val flow = remember(store) {
         store?.rows ?: flowOf(ObjectsClientsRows(emptyList(), emptyList()))
     }
-    val rows by flow.collectAsState(
-        initial = ObjectsClientsRows(emptyList(), emptyList())
-    )
+    val loadedRows by flow.collectAsState(initial = null as ObjectsClientsRows?)
+    val rows = loadedRows ?: ObjectsClientsRows(emptyList(), emptyList())
 
     fun openIntent(uri: Uri, dial: Boolean = false) {
         val intent = Intent(if (dial) Intent.ACTION_DIAL else Intent.ACTION_VIEW, uri)
@@ -76,13 +76,15 @@ internal fun ObjectsClientsHost(
 
     ObjectsClientsScreen(
         rows = rows,
+        rowsReady = loadedRows != null,
+        initialTab = if (initialClients) ObjectsClientsTab.CLIENTS else ObjectsClientsTab.PROJECTS,
+        initialSearch = initialSearch,
+        searchRequest = searchRequest,
+        onOpenCeilingRegistry = onOpenCeilingRegistry,
         swipeState = swipeState,
         detailsProjectId = detailsProjectId,
-        measurementDetails = measurementDetails,
-        measurementQuote = measurementQuote,
         measurementCreate = measurementCreate,
         measurementEdit = measurementEdit,
-        onEditMeasurement = onEditMeasurement,
         measurementPrecision = measurementPrecision,
         onCreateMeasurement = onCreateMeasurement,
         onMeasurementCreated = onMeasurementCreated,

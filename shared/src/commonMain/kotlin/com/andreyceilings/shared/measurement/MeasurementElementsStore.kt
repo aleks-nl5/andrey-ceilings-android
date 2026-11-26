@@ -98,6 +98,26 @@ class MeasurementElementsStore(private val database: PrototypeDatabase, private 
         val id = revisionUuid ?: estimates.frozenIndividual(seriesUuid)?.revisionUuid ?: return@estimateAccess null
         estimates.exactIndividual(seriesUuid, id)
     }
+    internal suspend fun registryQuote(seriesUuid: String, revisionUuid: String, expectedProjectId: Long): SavedIndividualQuote? =
+        estimateAccess {
+            val saved = estimates.exactIndividual(seriesUuid, revisionUuid) ?: return@estimateAccess null
+            val room = measurements.findByUuid(saved.frozen.source.measurementUuid)
+            saved.takeIf {
+                it.projectId == expectedProjectId && room?.deletedAt == null && room?.projectId == expectedProjectId &&
+                    projects.find(expectedProjectId)?.uuid == saved.frozen.source.projectUuid
+            }
+        }
+
+    internal suspend fun quoteVersionOptions(seriesUuid: String) = estimateAccess {
+        database.frozenRevisionQueries.individualVersionOptions(seriesUuid).executeAsList()
+    }
+
+    internal suspend fun approvedQuotesForCeiling(projectId: Long, measurementUuid: String) = estimateAccess {
+        database.frozenRevisionQueries.approvedIndividualReferences(projectId, measurementUuid).executeAsList().map {
+            checkNotNull(estimates.exactIndividual(it.seriesUuid, it.revisionUuid))
+        }
+    }
+
     internal suspend fun estimateDocument(
         seriesUuid: String,
         revisionUuid: String,
@@ -214,8 +234,13 @@ class MeasurementElementsStore(private val database: PrototypeDatabase, private 
 
     internal suspend fun consolidatedHead(projectId: Long) = estimateAccess { consolidated.head(projectId) }
 
-    internal suspend fun savedConsolidated(revisionUuid: String) = estimateAccess {
-        consolidated.read(revisionUuid)
+    internal suspend fun savedConsolidated(revisionUuid: String, expectedProjectId: Long? = null,
+        expectedSeriesUuid: String? = null) = estimateAccess {
+        val saved = consolidated.read(revisionUuid) ?: return@estimateAccess null
+        if (expectedProjectId != null && projects.find(expectedProjectId)?.uuid != saved.frozen.projectUuid) {
+            return@estimateAccess null
+        }
+        saved.takeIf { expectedSeriesUuid == null || it.frozen.seriesUuid == expectedSeriesUuid }
     }
 
     internal suspend fun consolidatedDrift(saved: SavedConsolidatedEstimate): Map<String, Boolean?> = estimateAccess {

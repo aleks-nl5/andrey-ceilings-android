@@ -1186,12 +1186,6 @@ FROM room_measurements m JOIN projects p ON p.id = m.projectId
 WHERE m.projectId = :projectId AND p.deletedAt IS NULL AND m.deletedAt IS NULL
 ORDER BY m.createdAt DESC, m.id DESC;
 
-selectProjectCeilingContour:
-SELECT m.shape, m.drawingJson, m.lengthMeters, m.widthMeters
-FROM room_measurements m JOIN projects p ON p.id = m.projectId
-WHERE m.uuid = :ceilingUuid AND m.projectId = :projectId
-    AND m.deletedAt IS NULL AND p.deletedAt IS NULL;
-
 selectMeasurementByUuid:
 SELECT * FROM room_measurements WHERE uuid = ?;
 

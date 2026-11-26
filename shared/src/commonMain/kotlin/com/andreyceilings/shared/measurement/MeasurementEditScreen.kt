@@ -23,6 +23,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Calculate
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Redo
 import androidx.compose.material.icons.automirrored.filled.Undo
@@ -115,7 +116,8 @@ private fun MeasurementEditContext.displayLabel(): String = stringResource(when 
 fun MeasurementEditScreen(
     projectId: Long, measurementId: Long, store: MeasurementEditStore?,
     contentPadding: PaddingValues, systemTopInset: Dp, onBack: () -> Unit,
-    navigationGuard: MeasurementCreateNavigationGuard?, quoteStore: MeasurementElementsStore? = null
+    navigationGuard: MeasurementCreateNavigationGuard?, quoteStore: MeasurementElementsStore? = null,
+    onUseMeasurement: ((FrozenPolygonGeometry) -> Unit)? = null
 ) {
     val editorPadding = measurementEditorPadding(contentPadding, systemTopInset)
     // Do not consume restored form state against Android's temporary null session
@@ -153,7 +155,8 @@ fun MeasurementEditScreen(
             Text(stringResource(if (unavailable) Res.string.p6a_workspace_unavailable else Res.string.p6a_workspace_loading),
                 color = MaterialTheme.colorScheme.onSurface)
             TextButton(onClick = onBack) { Text(stringResource(Res.string.p5c_back)) }
-        } else MeasurementEditScreen(checkNotNull(editor), contentPadding, systemTopInset, onBack, navigationGuard, quoteStore = quoteStore)
+        } else MeasurementEditScreen(checkNotNull(editor), contentPadding, systemTopInset, onBack, navigationGuard,
+            quoteStore = quoteStore, onUseMeasurement = onUseMeasurement)
     }
 }
 
@@ -165,7 +168,8 @@ fun MeasurementEditScreen(
     imeInsets: WindowInsets? = null,
     onCreated: ((Long) -> Unit)? = null,
     creationParent: MeasurementCreateParent? = null,
-    quoteStore: MeasurementElementsStore? = null
+    quoteStore: MeasurementElementsStore? = null,
+    onUseMeasurement: ((FrozenPolygonGeometry) -> Unit)? = null
 ) {
     val state by model.state.collectAsState()
     val validation = remember(state.draft) { validateMeasurementCreate(state.draft) }
@@ -577,6 +581,13 @@ fun MeasurementEditScreen(
                             overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleMedium)
                     }
                     if (!inlineKeyboardPanel) {
+                        if (!fullscreen && !state.creating && !state.dirty && onUseMeasurement != null) {
+                            val captured = validation.geometry
+                            MeasurementIconAction(stringResource(Res.string.p6c_calculate_ceiling), Icons.Default.Calculate,
+                                enabled && captured != null) {
+                                captured?.let(onUseMeasurement)
+                            }
+                        }
                         MeasurementIconAction("Скасувати дію", Icons.AutoMirrored.Filled.Undo, enabled && state.canUndo) {
                             focus.clearFocus()
                             model.undo()

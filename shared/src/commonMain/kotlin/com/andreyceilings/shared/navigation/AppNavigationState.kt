@@ -45,14 +45,16 @@ data class AppNavigationState(
     val measurementCreate: MeasurementCreate? = null,
     val measurementEdit: MeasurementEdit? = null,
     val measurementProjectPicker: Boolean = false,
-    val measurementQuote: Boolean = false
+    val measurementQuote: Boolean = false,
+    val quickMeasurement: Boolean = false,
+    val registrySourceProject: ProjectDetails? = null
 ) {
     fun selectTab(target: AppRoute, available: Set<AppRoute> = allRoutes): AppNavigationState {
         if (target !in available || current == target) return this
         return copy(
             current = target,
             backStack = if (target == AppRoute.DASHBOARD) emptyList() else listOf(AppRoute.DASHBOARD),
-            pendingQuickCreate = null, projectDetails = null, measurementDetails = null, measurementQuote = false, measurementCreate = null, measurementEdit = null, measurementProjectPicker = false
+            pendingQuickCreate = null, projectDetails = null, measurementDetails = null, measurementQuote = false, measurementCreate = null, measurementEdit = null, measurementProjectPicker = false, quickMeasurement = false, registrySourceProject = null
         )
     }
 
@@ -61,13 +63,17 @@ data class AppNavigationState(
         return copy(
             current = target,
             backStack = (backStack.filterNot { it == target } + current).takeLast(maxHistory),
-            pendingQuickCreate = null, projectDetails = null, measurementDetails = null, measurementQuote = false, measurementCreate = null, measurementEdit = null, measurementProjectPicker = false
+            pendingQuickCreate = null, projectDetails = null, measurementDetails = null, measurementQuote = false, measurementCreate = null, measurementEdit = null, measurementProjectPicker = false, quickMeasurement = false, registrySourceProject = when {
+                target == AppRoute.OBJECTS -> null
+                current == AppRoute.OBJECTS -> projectDetails
+                else -> registrySourceProject
+            }
         )
     }
 
     fun replace(target: AppRoute, available: Set<AppRoute> = allRoutes): AppNavigationState {
         if (target !in available || current == target) return this
-        return copy(current = target, pendingQuickCreate = null, projectDetails = null, measurementDetails = null, measurementQuote = false, measurementCreate = null, measurementEdit = null, measurementProjectPicker = false)
+        return copy(current = target, pendingQuickCreate = null, projectDetails = null, measurementDetails = null, measurementQuote = false, measurementCreate = null, measurementEdit = null, measurementProjectPicker = false, quickMeasurement = false, registrySourceProject = null)
     }
 
     fun openProject(projectId: Long): AppNavigationState =
@@ -76,7 +82,7 @@ data class AppNavigationState(
         else copy(projectDetails = ProjectDetails(projectId), measurementDetails = null, measurementQuote = false, measurementCreate = null, measurementEdit = null, measurementProjectPicker = false, pendingQuickCreate = null)
 
     private fun hasMeasurementParent(projectId: Long): Boolean = projectId > 0 &&
-        (current == AppRoute.MEASUREMENTS ||
+        (quickMeasurement || current == AppRoute.MEASUREMENTS ||
             (current == AppRoute.OBJECTS && projectDetails?.projectId == projectId))
 
     /** A persistent screen, with explicit selection even when there is just one project. */
@@ -90,6 +96,12 @@ data class AppNavigationState(
         val target = MeasurementDetails(projectId, measurementId)
         return if (measurementDetails == target) this
             else copy(measurementDetails = target, measurementQuote = false, measurementCreate = null, measurementEdit = null, measurementProjectPicker = false, pendingQuickCreate = null)
+    }
+
+    /** Older saved identity-only routes enter the current workspace. */
+    fun restoreCeilingWorkspace(): AppNavigationState {
+        val legacy = measurementDetails ?: return this
+        return openCeilingWorkspace(legacy.projectId, legacy.measurementId)
     }
 
     /** Ordinary ceiling navigation skips the retired intermediate details screen. */
@@ -135,6 +147,9 @@ data class AppNavigationState(
     fun back(available: Set<AppRoute> = allRoutes): AppNavigationState {
         if (current !in available) return restore(snapshot(), available)
         if (measurementQuote) return copy(measurementQuote = false)
+        if (quickMeasurement) return copy(quickMeasurement = false, measurementDetails = null,
+            measurementEdit = null, measurementCreate = null, measurementProjectPicker = false,
+            pendingQuickCreate = null)
         if (measurementEdit != null) return copy(measurementDetails = null, measurementQuote = false,
             measurementEdit = null, measurementProjectPicker = false, pendingQuickCreate = null)
         if (measurementCreate != null) return copy(measurementCreate = null, measurementEdit = null, measurementProjectPicker = false, pendingQuickCreate = null)
@@ -146,23 +161,32 @@ data class AppNavigationState(
             return copy(
                 current = backStack[index],
                 backStack = backStack.take(index),
-                pendingQuickCreate = null
+                pendingQuickCreate = null,
+                projectDetails = registrySourceProject.takeIf { backStack[index] == AppRoute.OBJECTS },
+                registrySourceProject = registrySourceProject.takeUnless { backStack[index] == AppRoute.OBJECTS }
             )
         }
         return if (current != AppRoute.DASHBOARD && AppRoute.DASHBOARD in available)
             AppNavigationState() else copy(pendingQuickCreate = null)
     }
 
-    /** Measurement Quick Create opens a persistent picker; object creation remains a one-shot host command. */
+    /** The host verifies the active project before deciding between the editor and picker. */
     fun requestQuickCreate(
         action: AppQuickCreate,
-        available: Set<AppRoute> = allRoutes
+        available: Set<AppRoute> = allRoutes,
+        activeProjectId: Long? = null
     ): AppNavigationState {
         if (action.destination !in available) return this
-        val target = selectTab(action.destination, available).copy(pendingQuickCreate = action,
-            projectDetails = null, measurementDetails = null, measurementQuote = false, measurementCreate = null, measurementEdit = null,
-            measurementProjectPicker = false)
-        return if (action == AppQuickCreate.MEASUREMENT) target.chooseMeasurementProject() else target
+        if (action == AppQuickCreate.MEASUREMENT) {
+            if (quickMeasurement || measurementCreate != null || measurementEdit != null ||
+                measurementDetails != null || measurementProjectPicker) return this
+            val project = activeProjectId?.takeIf { current == AppRoute.OBJECTS && projectDetails?.projectId == it }
+            return copy(quickMeasurement = true, pendingQuickCreate = null,
+                measurementCreate = project?.let(::MeasurementCreate), measurementProjectPicker = project == null)
+        }
+        return selectTab(action.destination, available).copy(pendingQuickCreate = action,
+            projectDetails = null, measurementDetails = null, measurementQuote = false,
+            measurementCreate = null, measurementEdit = null, measurementProjectPicker = false, quickMeasurement = false)
     }
 
     fun consumeQuickCreate(action: AppQuickCreate): AppNavigationState =
@@ -171,6 +195,8 @@ data class AppNavigationState(
     /** Save only route IDs. One-shot commands and confidential data are excluded. */
     fun snapshot(): List<String> =
         listOf(current.name) + backStack.takeLast(maxHistory).map { it.name } +
+            (registrySourceProject?.let { listOf("REGISTRY_SOURCE_PROJECT:${it.projectId}") } ?: emptyList()) +
+            (if (quickMeasurement) listOf("QUICK_MEASUREMENT") else emptyList()) +
             (projectDetails?.let { listOf("PROJECT_DETAILS:${it.projectId}") } ?: emptyList()) +
             (measurementDetails?.let { listOf("${if (measurementQuote) "MEASUREMENT_QUOTE" else "MEASUREMENT_DETAILS"}:${it.projectId}:${it.measurementId}") } ?: emptyList()) +
             (measurementCreate?.let { listOf("MEASUREMENT_CREATE:${it.projectId}") } ?: emptyList()) +
@@ -198,7 +224,15 @@ data class AppNavigationState(
             val hasCreateTail = snapshot.lastOrNull()?.startsWith("MEASUREMENT_CREATE:") == true
             val hasEditTail = snapshot.lastOrNull()?.startsWith("MEASUREMENT_EDIT:") == true
             val childCount = snapshot.count { it.startsWith("MEASUREMENT_DETAILS:") || it.startsWith("MEASUREMENT_QUOTE:") || it.startsWith("MEASUREMENT_CREATE:") || it.startsWith("MEASUREMENT_EDIT:") }
-            val projectToken = snapshot.getOrNull(snapshot.lastIndex - if (hasMeasurementTail || hasCreateTail || hasEditTail) 1 else 0)
+            val picker = snapshot.lastOrNull() == "MEASUREMENT_PROJECT_PICKER" &&
+                snapshot.count { it == "MEASUREMENT_PROJECT_PICKER" } == 1
+            val quick = snapshot.count { it == "QUICK_MEASUREMENT" } == 1 &&
+                AppRoute.MEASUREMENTS in available && (hasCreateTail || hasEditTail || picker)
+            val projectToken = snapshot.getOrNull(snapshot.lastIndex - if (hasMeasurementTail || hasCreateTail || hasEditTail || picker) 1 else 0)
+            val source = snapshot.singleOrNull { it.startsWith("REGISTRY_SOURCE_PROJECT:") }
+                ?.substringAfter(':')?.let(::canonicalId)?.takeIf {
+                    AppRoute.OBJECTS in history && route != AppRoute.OBJECTS
+                }?.let(::ProjectDetails)
             val projectId = projectToken?.takeIf { it.startsWith("PROJECT_DETAILS:") }
                 ?.substringAfter(":")?.let(::canonicalId)
                 ?.takeIf { route == AppRoute.OBJECTS && snapshot.count { it.startsWith("PROJECT_DETAILS:") } == 1 }
@@ -214,19 +248,19 @@ data class AppNavigationState(
             ) canonicalId(args[1])?.let { parent -> canonicalId(args[2])?.let { MeasurementDetails(parent, it) } } else null
             val createArgs = if (hasCreateTail) snapshot.last().split(":") else emptyList()
             val create = if (createArgs.size == 2 && childCount == 1 &&
-                ((details != null && canonicalId(createArgs[1]) == projectId) || globalParent))
+                ((details != null && canonicalId(createArgs[1]) == projectId) || globalParent || quick))
                 canonicalId(createArgs[1])?.let(::MeasurementCreate) else null
             val editArgs = if (hasEditTail) snapshot.last().split(":") else emptyList()
             val edit = if (editArgs.size == 3 && childCount == 1 &&
-                ((details != null && canonicalId(editArgs[1]) == projectId) || globalParent))
+                ((details != null && canonicalId(editArgs[1]) == projectId) || globalParent || quick))
                 canonicalId(editArgs[1])?.let { parent -> canonicalId(editArgs[2])?.let { MeasurementEdit(parent, it) } } else null
             return AppNavigationState(route, history, projectDetails = details,
                 measurementDetails = measurement, measurementCreate = create, measurementEdit = edit,
                 measurementQuote = hasQuoteTail && measurement != null,
-                measurementProjectPicker = route == AppRoute.MEASUREMENTS && childCount == 0 &&
-                    snapshot.lastOrNull() == "MEASUREMENT_PROJECT_PICKER" &&
-                    snapshot.count { it == "MEASUREMENT_PROJECT_PICKER" } == 1 &&
-                    snapshot.none { it.startsWith("PROJECT_DETAILS:") })
+                measurementProjectPicker = picker && childCount == 0 &&
+                    (quick || route == AppRoute.MEASUREMENTS && details == null),
+                quickMeasurement = quick && (picker || create != null || edit != null),
+                registrySourceProject = source)
         }
     }
 }

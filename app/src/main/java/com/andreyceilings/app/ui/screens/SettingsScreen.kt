@@ -1,5 +1,7 @@
 package com.andreyceilings.app.ui.screens
 
+import com.andreyceilings.shared.dashboard.DashboardAppearanceSettings
+
 import com.andreyceilings.shared.localization.AppLanguageSettings
 import com.andreyceilings.shared.localization.AppLanguageState
 import com.andreyceilings.app.ui.theme.AppAlertDialog
@@ -60,6 +62,8 @@ internal fun SettingsScreen(
     themeMode: ThemeMode,
     onThemeModeChange: (ThemeMode) -> Unit,
     onOpenPriceList: () -> Unit,
+    dashboardPreferences: com.andreyceilings.shared.dashboard.DashboardPreferences,
+    onDashboardPreferences: suspend (com.andreyceilings.shared.dashboard.DashboardPreferences) -> Boolean,
     measurementPrecision: MeasurementPrecision,
     onMeasurementPrecision: (MeasurementPrecision) -> Unit,
     appLanguage: AppLanguageState
@@ -207,6 +211,7 @@ internal fun SettingsScreen(
             ListItem(colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surface), leadingContent = { Icon(Icons.Default.Info, null, tint = MaterialTheme.colorScheme.primary) }, headlineContent = { Text("Версія застосунку") }, supportingContent = { Text(appVersionLabel) })
             HorizontalDivider()
             AppLanguageSettings(appLanguage)
+            DashboardAppearanceSettings(dashboardPreferences, onDashboardPreferences)
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Column {
                     Text("Тема оформлення", style = MaterialTheme.typography.titleSmall)

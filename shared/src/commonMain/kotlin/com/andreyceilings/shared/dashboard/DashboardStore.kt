@@ -1,24 +1,30 @@
 package com.andreyceilings.shared.dashboard
 
-import com.andreyceilings.shared.db.MeasurementRepository
-import com.andreyceilings.shared.db.ProjectRepository
+import app.cash.sqldelight.coroutines.asFlow
+import app.cash.sqldelight.coroutines.mapToOne
+import com.andreyceilings.shared.db.DashboardSummary as DashboardRows
 import com.andreyceilings.shared.db.PrototypeDatabase
+import com.andreyceilings.shared.objects.ObjectsClientsStore
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.map
 
-/** No Android Context or OS-specific date logic; one encrypted database supplied by the host. */
-class DashboardStore(database: PrototypeDatabase) {
-    private val projects = ProjectRepository(database)
-    private val measurements = MeasurementRepository(database)
+class DashboardStore private constructor(
+    internal val rows: Flow<DashboardRows?>,
+    internal val quoteCount: Flow<Long?>?,
+    private val finance: (() -> Flow<Long?>)?
+) {
+    constructor(database: PrototypeDatabase) : this(
+        database.registryQueries.dashboardSummary().asFlow().mapToOne(Dispatchers.Default), null, null
+    )
 
-    val summary: Flow<DashboardSummary> = combine(
-        projects.observeAll(), measurements.observeAll()
-    ) { activeProjects, activeMeasurements ->
-        DashboardSummary.fromRecords(
-            activeProjectIds = activeProjects.map { it.id }.toSet(),
-            measurements = activeMeasurements.map {
-                DashboardMeasurement(it.projectId, it.areaSquareMeters)
-            }
-        )
+    constructor(session: ObjectsClientsStore) : this(session.observeDashboardSummary(),
+        session.observeDashboardQuoteCount(), session::observeDashboardFinance)
+
+    val summary: Flow<DashboardSummary> = rows.filterNotNull().map {
+        DashboardSummary(checkNotNull(it.projectCount).toInt(), it.ceilingCount.toInt(), it.area)
     }
+
+    internal fun approvedFinance(): Flow<Long?>? = finance?.invoke()
 }

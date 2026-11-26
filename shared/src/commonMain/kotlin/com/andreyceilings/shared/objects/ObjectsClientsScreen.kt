@@ -35,7 +35,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.AlertDialog
@@ -58,9 +57,8 @@ import androidx.compose.animation.core.tween
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.saveable.rememberSaveable
+import com.andreyceilings.shared.navigation.rememberRegistryScroll
 import androidx.compose.ui.layout.layout
-import com.andreyceilings.shared.navigation.MeasurementDetails
-import com.andreyceilings.shared.measurement.MeasurementDetailsScreen
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -171,19 +169,21 @@ fun ObjectsClientsScreen(
     onCreateProjectConsumed: () -> Unit = {},
     onProjectHeaderProgress: (Float) -> Unit = {},
     onListTabChanged: (ObjectsClientsTab) -> Unit = {},
-    measurementDetails: MeasurementDetails? = null,
-    measurementQuote: Boolean = false,
     onOpenMeasurement: (Long, Long) -> Unit = { _, _ -> },
     onCloseMeasurement: () -> Unit = onCloseProject,
     measurementEdit: com.andreyceilings.shared.navigation.MeasurementEdit? = null,
-    onEditMeasurement: (Long, Long) -> Unit = { _, _ -> },
     measurementCreate: com.andreyceilings.shared.navigation.MeasurementCreate? = null,
     measurementPrecision: com.andreyceilings.shared.calculation.MeasurementPrecision = com.andreyceilings.shared.calculation.MeasurementPrecision.ONE_CENTIMETER,
     onCreateMeasurement: (Long) -> Unit = {},
     onMeasurementCreated: (Long, Long) -> Unit = { _, _ -> },
     measurementCreateNavigationGuard: com.andreyceilings.shared.measurement.MeasurementCreateNavigationGuard? = null,
     onProjectDial: (String) -> Unit = onDial,
-    swipeState: CardSwipeState? = null
+    swipeState: CardSwipeState? = null,
+    rowsReady: Boolean = true,
+    initialTab: ObjectsClientsTab = ObjectsClientsTab.PROJECTS,
+    initialSearch: String = "",
+    searchRequest: Int = 0,
+    onOpenCeilingRegistry: (() -> Unit)? = null
 ) {
     val scope = rememberCoroutineScope()
     val focusManager = LocalFocusManager.current
@@ -196,12 +196,8 @@ fun ObjectsClientsScreen(
             searchFocused = false
         }
     }
-    var selectedTab by rememberSaveable { mutableStateOf(ObjectsClientsTab.PROJECTS) }
-    // Each tab mounts a fresh scroll state when selected. The top position is
-    // visible immediately (before side effects), and neither tab inherits the
-    // other tab's list index, offset or ongoing fling on re-entry.
-    val listState = rememberSaveable(selectedTab, saver = LazyListState.Saver) { LazyListState() }
-    var search by rememberSaveable { mutableStateOf("") }
+    var selectedTab by rememberSaveable { mutableStateOf(initialTab) }
+    var search by rememberSaveable { mutableStateOf(initialSearch) }
     var selectedWork by rememberSaveable { mutableStateOf<String?>(null) }
     var selectedPayment by rememberSaveable { mutableStateOf<String?>(null) }
     var editor by remember(detailsStore) { mutableStateOf<EditorTarget?>(null) }
@@ -238,6 +234,18 @@ fun ObjectsClientsScreen(
     val clients = remember(rows.clients, search) {
         ObjectsClientsSearch.clients(rows.clients, search)
     }
+    val rowKeys = remember(databaseAvailable, rowsReady, selectedTab, projects, clients, message) {
+        if (!rowsReady || !databaseAvailable) null else buildList<String> {
+            if (selectedTab == ObjectsClientsTab.PROJECTS) {
+                add("filters")
+                if (projects.isEmpty()) add("empty-projects") else projects.forEach { add("p-${it.id}") }
+            } else {
+                if (clients.isEmpty()) add("empty-clients") else clients.forEach { add("c-${it.id}") }
+            }
+            if (message != null) add("message")
+        }
+    }
+    val listState = rememberRegistryScroll(rowKeys, selectedTab.name, detailsProjectId == null)
     LaunchedEffect(deleting) { deletionError = null }
 
     // Keep the on-scroll focus action fresh inside the remembered connection.
@@ -300,6 +308,14 @@ fun ObjectsClientsScreen(
                 openSwipe = null
                 dismissSearchOnScroll.value()
             }
+        }
+    }
+    var appliedSearch by rememberSaveable { mutableIntStateOf(searchRequest) }
+    LaunchedEffect(searchRequest) {
+        if (searchRequest > appliedSearch) {
+            appliedSearch = searchRequest
+            switchListTab(initialTab)
+            search = initialSearch
         }
     }
     LaunchedEffect(requestCreateProject, databaseAvailable) {
@@ -540,7 +556,6 @@ fun ObjectsClientsScreen(
     }
 
     if (detailsProjectId != null) {
-        val measurement = measurementDetails?.takeIf { it.projectId == detailsProjectId }
         val edit = measurementEdit?.takeIf { it.projectId == detailsProjectId }
         val create = measurementCreate?.takeIf { it.projectId == detailsProjectId }
         // Retain the real Project Details composition/list state. An unplaced
@@ -548,7 +563,7 @@ fun ObjectsClientsScreen(
         Box(Modifier.fillMaxSize().layout { measurable, constraints ->
             val placeable = measurable.measure(constraints)
             layout(placeable.width, placeable.height) {
-                if (measurement == null && create == null && edit == null) placeable.place(0, 0)
+                if (create == null && edit == null) placeable.place(0, 0)
             }
         }) {
         ProjectDetailsScreen(
@@ -562,24 +577,16 @@ fun ObjectsClientsScreen(
             systemTopInset = systemTopInset,
             onHeaderProgress = onProjectHeaderProgress,
             swipeState = cardSwipes,
-            active = measurement == null && create == null && edit == null,
+            active = create == null && edit == null,
             onOpenMeasurement = { onOpenMeasurement(detailsProjectId, it) },
             onCreateMeasurement = { onCreateMeasurement(detailsProjectId) },
+            onOpenCeilingRegistry = onOpenCeilingRegistry,
             onDial = onProjectDial,
             onOpenClient = { client -> message = null; viewedClientId = client.id },
             onBack = onCloseProject,
             onEdit = { project -> message = null; editor = EditorTarget.Project(project) }
         )
         }
-        if (measurement != null) MeasurementDetailsScreen(
-            projectId = measurement.projectId, measurementId = measurement.measurementId,
-            store = detailsStore?.measurementDetails,
-            contentPadding = contentPadding, systemTopInset = systemTopInset,
-            onBack = onCloseMeasurement,
-            onEdit = { onEditMeasurement(measurement.projectId, measurement.measurementId) },
-            navigationGuard = measurementCreateNavigationGuard, editStore=detailsStore?.measurementEdit,
-            quoteOpen = measurementQuote
-        )
         if (edit != null) com.andreyceilings.shared.measurement.MeasurementEditScreen(
             projectId = edit.projectId, measurementId = edit.measurementId, store = detailsStore?.measurementEdit,
             contentPadding = contentPadding, systemTopInset = systemTopInset,

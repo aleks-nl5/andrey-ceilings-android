@@ -68,6 +68,7 @@ internal fun CompactCeilingCard(
     quote: CeilingQuoteSummary?,
     quoteUnavailable: Boolean,
     quoteLoading: Boolean = false,
+    address: String? = null,
     onOpen: () -> Unit
 ) {
     Card(
@@ -83,6 +84,10 @@ internal fun CompactCeilingCard(
             CeilingThumbnail(contour, Modifier.size(width = 68.dp, height = 52.dp))
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text(ceiling.name, style = MaterialTheme.typography.titleSmall)
+                if (!address.isNullOrBlank()) {
+                    Text(address, style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
                 CompactMetricsRow(ceiling.area, ceiling.perimeter,
                     trailing = if (quote != null) {
                         {

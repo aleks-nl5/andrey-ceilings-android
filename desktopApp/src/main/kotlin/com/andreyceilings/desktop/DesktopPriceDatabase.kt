@@ -82,7 +82,7 @@ internal class DesktopPriceDatabase private constructor(
                     PriceRepository(database).all()
                     val objects = ObjectsClientsStore(database, System::currentTimeMillis)
                     com.andreyceilings.shared.db.ProjectRepository(database).all()
-                    DesktopPriceDatabase(PriceRepository(database), DashboardStore(database),
+                    DesktopPriceDatabase(PriceRepository(database), DashboardStore(objects),
                         objects, driver)
                 } catch (error: Throwable) {
                     driver.close()

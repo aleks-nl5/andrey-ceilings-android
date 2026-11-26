@@ -122,7 +122,7 @@ RETURNING seriesUuid;
 -- Object summary only. Open/export still verifies the exact frozen document.
 selectProjectQuoteMetadata:
 WITH candidates AS (
-    SELECT m.id AS ceilingId, m.uuid AS ceilingUuid, s.seriesUuid, r.revisionUuid, r.versionNumber, r.createdAt,
+    SELECT p.id AS ownerId, m.id AS ceilingId, m.uuid AS ceilingUuid, s.seriesUuid, r.revisionUuid, r.versionNumber, r.createdAt,
         r.currency, coalesce(w.status, '') AS workflowStatus,
         CASE
             WHEN trim(m.uuid) = '' OR trim(s.seriesUuid) = '' OR trim(r.revisionUuid) = ''
@@ -147,12 +147,13 @@ WITH candidates AS (
     LEFT JOIN estimate_revision_workflow w ON w.revisionUuid = r.revisionUuid
     LEFT JOIN estimate_v1_frozen f ON f.revisionUuid = r.revisionUuid
     LEFT JOIN estimate_revision_frozen n ON n.revisionUuid = r.revisionUuid
-    WHERE p.id = :projectId AND p.deletedAt IS NULL
+    WHERE p.id BETWEEN coalesce(:projectId, 1) AND coalesce(:projectId, 9223372036854775807)
+        AND p.deletedAt IS NULL
         AND (w.status IS NULL OR w.status != 'REJECTED')
         AND (w.status IS NOT NULL OR f.revisionUuid IS NOT NULL OR n.revisionUuid IS NOT NULL)
         AND NOT EXISTS (SELECT 1 FROM estimate_revision_tombstones d WHERE d.revisionUuid = r.revisionUuid)
 ), ranked AS (
-    SELECT ceilingId, ceilingUuid, revisionUuid, workflowStatus, currency, finalCents,
+    SELECT ownerId, ceilingId, ceilingUuid, revisionUuid, workflowStatus, currency, finalCents,
         row_number() OVER (
             PARTITION BY ceilingId
             ORDER BY CASE WHEN workflowStatus = 'APPROVED' THEN 0 ELSE 1 END,
@@ -160,5 +161,23 @@ WITH candidates AS (
         ) AS displayRank
     FROM candidates WHERE workflowStatus = 'APPROVED' OR seriesRank = 1
 )
-SELECT ceilingId, ceilingUuid, revisionUuid, workflowStatus, currency, CAST(finalCents AS INTEGER) AS finalCents
+SELECT ownerId, ceilingId, ceilingUuid, revisionUuid, workflowStatus, currency, CAST(finalCents AS INTEGER) AS finalCents
 FROM ranked WHERE workflowStatus = 'APPROVED' OR displayRank = 1;
+
+individualVersionOptions:
+SELECT r.revisionUuid, r.versionNumber,
+    CAST(CASE WHEN json_valid(r.detailsJson) THEN json_extract(r.detailsJson, '$.document.title') END AS TEXT) AS title
+FROM estimate_revisions r
+JOIN estimate_series s ON s.seriesUuid = r.seriesUuid
+JOIN estimate_revision_workflow w ON w.revisionUuid = r.revisionUuid
+WHERE s.seriesUuid = :seriesUuid AND s.deletedAt IS NULL
+AND NOT EXISTS (SELECT 1 FROM estimate_revision_tombstones d WHERE d.revisionUuid = r.revisionUuid)
+ORDER BY r.versionNumber DESC;
+
+approvedIndividualReferences:
+SELECT r.seriesUuid, r.revisionUuid FROM estimate_series s
+JOIN estimate_revisions r ON r.seriesUuid = s.seriesUuid
+JOIN estimate_revision_workflow w ON w.revisionUuid = r.revisionUuid
+WHERE s.projectId = :projectId AND s.measurementUuid = :measurementUuid AND s.deletedAt IS NULL
+AND w.status = 'APPROVED'
+AND NOT EXISTS (SELECT 1 FROM estimate_revision_tombstones d WHERE d.revisionUuid = r.revisionUuid);

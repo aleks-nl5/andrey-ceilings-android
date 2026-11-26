@@ -339,11 +339,5 @@ class TransientQuoteTest {
         assertFalse(AppNavigationState.restore(listOf("MEASUREMENTS", "MEASUREMENT_DETAILS:1:2", "MEASUREMENT_QUOTE:1:2")).measurementQuote)
     }
 
-    @Test fun visibilityRespondsToViewportInsteadOfScrollPercentage() {
-        assertEquals(0f, quoteSummaryVisibility(1000, 200, 0, 1000))
-        assertEquals(.5f, quoteSummaryVisibility(900, 200, 0, 1000))
-        assertEquals(1f, quoteSummaryVisibility(800, 200, 0, 1000))
-        assertEquals(0f, quoteSummaryVisibility(800, 200, 0, 700))
-        assertEquals(1f, quoteSummaryVisibility(0, 1200, 0, 700))
-    }
+
 }
