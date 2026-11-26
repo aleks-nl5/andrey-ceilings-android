@@ -57,6 +57,9 @@ internal fun rememberRegistryScroll(
         if (!restored.done) {
             if (anchor.order.isNotEmpty()) list.scrollToItem(registryAnchor(anchor.order, anchor.index, keys), anchor.offset)
             restored.done = true
+        } else if (anchor.order.isNotEmpty() && anchor.order.getOrNull(anchor.index) !in keys) {
+            // The list can remain composed under a dialog while its anchor is deleted.
+            list.scrollToItem(registryAnchor(anchor.order, anchor.index, keys), anchor.offset)
         }
         snapshotFlow {
             val index = list.firstVisibleItemIndex

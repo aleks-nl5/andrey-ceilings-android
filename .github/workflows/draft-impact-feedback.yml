@@ -100,6 +100,7 @@ jobs:
           gradle --no-daemon :shared:jvmTest
           --tests '*LineCreationSnapTest' --tests '*MeasurementFormattingTest' --tests '*ProjectQuoteMetadataTest'
           --tests '*MeasurementEditModelTest' --tests '*MeasurementNavigationTest'
+          --tests '*RegistryTest' --tests '*MeasurementCreateNavigationTest' --tests '*AppNavigationStateTest'
           --tests '*EstimateNumberingTest' --tests '*EstimateNumberSettingsPersistenceTest'
           --tests '*EstimateV22MigrationTest'
           --tests '*FrozenEstimateConcurrencyTest'

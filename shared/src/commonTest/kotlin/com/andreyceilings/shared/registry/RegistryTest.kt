@@ -80,6 +80,23 @@ class RegistryTest {
         assertEquals(listOf(DashboardBlock.CEILINGS, DashboardBlock.QUOTES), shuffled.rows()[2])
     }
 
+    @Test fun invalidAmountMatchesUnavailableRatherThanWorkflowStatus() {
+        val row = series("1", 1, listOf(version("a", 1, 1000, "Invalid", EstimateWorkflowStatus.APPROVED).copy(amount = null)))
+        val filter = RegistryFilter(sort = RegistrySort.LATEST, statuses = setOf("APPROVED"))
+        assertTrue(filterQuoteRegistry(listOf(row), filter).isEmpty())
+        assertEquals("a", filterQuoteRegistry(listOf(row), filter.copy(statuses = setOf("UNAVAILABLE"))).single().versions.single().id)
+    }
+
+    @Test fun periodPresetsUseInclusiveLocalDatesAcrossYearBoundary() {
+        val today = LocalDate(2026, 1, 3)
+        assertEquals(null to null, registryPeriod(RegistryPeriod.ALL, today))
+        assertEquals(today to today, registryPeriod(RegistryPeriod.TODAY, today))
+        assertEquals(LocalDate(2025, 12, 28) to today, registryPeriod(RegistryPeriod.LAST_7_DAYS, today))
+        assertEquals(LocalDate(2026, 1, 1) to today, registryPeriod(RegistryPeriod.MONTH, today))
+        val later = LocalDate(2026, 11, 26)
+        assertEquals(LocalDate(2026, 1, 1) to later, registryPeriod(RegistryPeriod.YEAR, later))
+    }
+
     private fun series(id: String, created: Long, versions: List<RegistryRevision>) =
         RegistrySeries(id, false, 1, "C-1", created, "Street", "Project", "Main ceiling", "Client", "+1 555-0100", versions)
 

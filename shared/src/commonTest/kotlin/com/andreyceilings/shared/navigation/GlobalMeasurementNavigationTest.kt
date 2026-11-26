@@ -67,6 +67,23 @@ class GlobalMeasurementNavigationTest {
         assertEquals(project, AppNavigationState.restore(registry.snapshot()).back())
     }
 
+    @Test fun calculatorReturnsToExactCeilingAcrossRestore() {
+        val root = AppNavigationState()
+        val origins = listOf(
+            root.selectTab(AppRoute.MEASUREMENTS).openCeilingWorkspace(7, 12),
+            root.selectTab(AppRoute.OBJECTS).openProject(7).openCeilingWorkspace(7, 12),
+            root.requestQuickCreate(AppQuickCreate.MEASUREMENT).createMeasurement(7).measurementCreatedInEditor(7, 12)
+        )
+        for (origin in origins) {
+            val calculator = origin.navigate(AppRoute.CALCULATOR)
+            assertNull(calculator.measurementEdit)
+            assertEquals(origin, calculator.back())
+            assertEquals(calculator, AppNavigationState.restore(calculator.snapshot()))
+            assertEquals(origin, AppNavigationState.restore(calculator.snapshot()).back())
+            assertNull(calculator.selectTab(AppRoute.PRICES).back().measurementEdit)
+        }
+    }
+
     @Test fun malformedOrUnavailableGlobalChildrenAreRejected() {
         for (token in listOf("MEASUREMENT_DETAILS:07:12", "MEASUREMENT_DETAILS:7:0", "MEASUREMENT_DETAILS:7:12:3",
             "MEASUREMENT_CREATE:+7", "MEASUREMENT_CREATE:0", "MEASUREMENT_EDIT:7:012")) {

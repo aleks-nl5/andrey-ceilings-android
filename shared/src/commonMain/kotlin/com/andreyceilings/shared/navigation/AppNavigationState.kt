@@ -47,14 +47,15 @@ data class AppNavigationState(
     val measurementProjectPicker: Boolean = false,
     val measurementQuote: Boolean = false,
     val quickMeasurement: Boolean = false,
-    val registrySourceProject: ProjectDetails? = null
+    val registrySourceProject: ProjectDetails? = null,
+    val calculatorOrigin: List<String> = emptyList()
 ) {
     fun selectTab(target: AppRoute, available: Set<AppRoute> = allRoutes): AppNavigationState {
         if (target !in available || current == target) return this
         return copy(
             current = target,
             backStack = if (target == AppRoute.DASHBOARD) emptyList() else listOf(AppRoute.DASHBOARD),
-            pendingQuickCreate = null, projectDetails = null, measurementDetails = null, measurementQuote = false, measurementCreate = null, measurementEdit = null, measurementProjectPicker = false, quickMeasurement = false, registrySourceProject = null
+            pendingQuickCreate = null, projectDetails = null, measurementDetails = null, measurementQuote = false, measurementCreate = null, measurementEdit = null, measurementProjectPicker = false, quickMeasurement = false, registrySourceProject = null, calculatorOrigin = emptyList()
         )
     }
 
@@ -67,13 +68,15 @@ data class AppNavigationState(
                 target == AppRoute.OBJECTS -> null
                 current == AppRoute.OBJECTS -> projectDetails
                 else -> registrySourceProject
-            }
+            }, calculatorOrigin = if (target == AppRoute.CALCULATOR && measurementEdit != null)
+                copy(calculatorOrigin = emptyList()).snapshot() else if (target == AppRoute.CALCULATOR)
+                emptyList() else calculatorOrigin
         )
     }
 
     fun replace(target: AppRoute, available: Set<AppRoute> = allRoutes): AppNavigationState {
         if (target !in available || current == target) return this
-        return copy(current = target, pendingQuickCreate = null, projectDetails = null, measurementDetails = null, measurementQuote = false, measurementCreate = null, measurementEdit = null, measurementProjectPicker = false, quickMeasurement = false, registrySourceProject = null)
+        return copy(current = target, pendingQuickCreate = null, projectDetails = null, measurementDetails = null, measurementQuote = false, measurementCreate = null, measurementEdit = null, measurementProjectPicker = false, quickMeasurement = false, registrySourceProject = null, calculatorOrigin = emptyList())
     }
 
     fun openProject(projectId: Long): AppNavigationState =
@@ -156,6 +159,10 @@ data class AppNavigationState(
         if (measurementDetails != null) return copy(measurementDetails = null, measurementQuote = false, pendingQuickCreate = null)
         if (projectDetails != null) return copy(projectDetails = null, measurementDetails = null, measurementQuote = false, measurementCreate = null, measurementEdit = null, measurementProjectPicker = false, pendingQuickCreate = null)
         if (measurementProjectPicker) return copy(measurementProjectPicker = false, pendingQuickCreate = null)
+        if (current == AppRoute.CALCULATOR && calculatorOrigin.isNotEmpty()) {
+            val origin = restore(calculatorOrigin, available)
+            if (origin.measurementEdit != null && origin.current == backStack.lastOrNull()) return origin
+        }
         val index = backStack.indexOfLast { it in available && it != current }
         if (index >= 0) {
             return copy(
@@ -163,7 +170,8 @@ data class AppNavigationState(
                 backStack = backStack.take(index),
                 pendingQuickCreate = null,
                 projectDetails = registrySourceProject.takeIf { backStack[index] == AppRoute.OBJECTS },
-                registrySourceProject = registrySourceProject.takeUnless { backStack[index] == AppRoute.OBJECTS }
+                registrySourceProject = registrySourceProject.takeUnless { backStack[index] == AppRoute.OBJECTS },
+                calculatorOrigin = calculatorOrigin.takeUnless { current == AppRoute.CALCULATOR }.orEmpty()
             )
         }
         return if (current != AppRoute.DASHBOARD && AppRoute.DASHBOARD in available)
@@ -196,6 +204,7 @@ data class AppNavigationState(
     fun snapshot(): List<String> =
         listOf(current.name) + backStack.takeLast(maxHistory).map { it.name } +
             (registrySourceProject?.let { listOf("REGISTRY_SOURCE_PROJECT:${it.projectId}") } ?: emptyList()) +
+            (calculatorOrigin.takeIf { it.isNotEmpty() }?.let { listOf("CALCULATOR_ORIGIN:" + it.joinToString("|")) } ?: emptyList()) +
             (if (quickMeasurement) listOf("QUICK_MEASUREMENT") else emptyList()) +
             (projectDetails?.let { listOf("PROJECT_DETAILS:${it.projectId}") } ?: emptyList()) +
             (measurementDetails?.let { listOf("${if (measurementQuote) "MEASUREMENT_QUOTE" else "MEASUREMENT_DETAILS"}:${it.projectId}:${it.measurementId}") } ?: emptyList()) +
@@ -254,13 +263,23 @@ data class AppNavigationState(
             val edit = if (editArgs.size == 3 && childCount == 1 &&
                 ((details != null && canonicalId(editArgs[1]) == projectId) || globalParent || quick))
                 canonicalId(editArgs[1])?.let { parent -> canonicalId(editArgs[2])?.let { MeasurementEdit(parent, it) } } else null
+            val calculatorSource = snapshot.singleOrNull { it.startsWith("CALCULATOR_ORIGIN:") }
+                ?.substringAfter(':')?.split('|')?.takeIf { tokens ->
+                    tokens.size <= maxHistory + 5 && tokens.none { it.startsWith("CALCULATOR_ORIGIN:") } &&
+                        tokens.firstOrNull()?.let(AppRoute::fromId)?.let { it in available && it != AppRoute.CALCULATOR } == true &&
+                        (route == AppRoute.CALCULATOR || AppRoute.CALCULATOR in history)
+                }?.takeIf { tokens ->
+                    val origin = restore(tokens, available)
+                    val calculatorIndex = if (route == AppRoute.CALCULATOR) history.size else history.indexOf(AppRoute.CALCULATOR)
+                    origin.measurementEdit != null && origin.current == history.getOrNull(calculatorIndex - 1)
+                }.orEmpty()
             return AppNavigationState(route, history, projectDetails = details,
                 measurementDetails = measurement, measurementCreate = create, measurementEdit = edit,
                 measurementQuote = hasQuoteTail && measurement != null,
                 measurementProjectPicker = picker && childCount == 0 &&
                     (quick || route == AppRoute.MEASUREMENTS && details == null),
                 quickMeasurement = quick && (picker || create != null || edit != null),
-                registrySourceProject = source)
+                registrySourceProject = source, calculatorOrigin = calculatorSource)
         }
     }
 }

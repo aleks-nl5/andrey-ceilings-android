@@ -35,6 +35,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.withContext
 import kotlinx.datetime.LocalDate
+import kotlin.time.Clock
 import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.stringResource
 
@@ -349,6 +350,22 @@ private fun RegistryOptions(controls: RegistryControls, projects: Map<Long, Stri
                                 else -> workspaceStatusLabel(EstimateWorkflowStatus.valueOf(kind.name))
                             })
                         })
+                    }
+                }
+                val today = dateOf(Clock.System.now().toEpochMilliseconds())
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    RegistryPeriod.entries.forEach { period ->
+                        val (first, last) = registryPeriod(period, today)
+                        FilterChip(valid && from == first && through == last, {
+                            start = first?.toString().orEmpty()
+                            end = last?.toString().orEmpty()
+                        }, label = { Text(stringResource(when (period) {
+                            RegistryPeriod.ALL -> Res.string.p6c_period_all
+                            RegistryPeriod.TODAY -> Res.string.p6c_period_today
+                            RegistryPeriod.LAST_7_DAYS -> Res.string.p6c_period_week
+                            RegistryPeriod.MONTH -> Res.string.p6c_period_month
+                            RegistryPeriod.YEAR -> Res.string.p6c_period_year
+                        })) })
                     }
                 }
                 OutlinedTextField(start, { start = it }, singleLine = true,

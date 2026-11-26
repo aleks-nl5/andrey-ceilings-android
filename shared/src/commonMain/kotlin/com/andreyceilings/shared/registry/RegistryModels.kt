@@ -5,7 +5,9 @@ import com.andreyceilings.shared.db.ConsolidatedVersions
 import com.andreyceilings.shared.db.IndividualVersions
 import com.andreyceilings.shared.estimate.EstimateWorkflowStatus
 import com.andreyceilings.shared.objects.CeilingQuoteSummary
+import kotlinx.datetime.DatePeriod
 import kotlinx.datetime.LocalDate
+import kotlinx.datetime.minus
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
 import kotlin.time.Instant
@@ -36,6 +38,17 @@ internal data class RegistryFilter(
     }
 }
 
+internal enum class RegistryPeriod { ALL, TODAY, LAST_7_DAYS, MONTH, YEAR }
+
+internal fun registryPeriod(period: RegistryPeriod, today: LocalDate): Pair<LocalDate?, LocalDate?> =
+    when (period) {
+        RegistryPeriod.ALL -> null to null
+        RegistryPeriod.TODAY -> today to today
+        RegistryPeriod.LAST_7_DAYS -> today.minus(DatePeriod(days = 6)) to today
+        RegistryPeriod.MONTH -> LocalDate(today.year, today.monthNumber, 1) to today
+        RegistryPeriod.YEAR -> LocalDate(today.year, 1, 1) to today
+    }
+
 internal data class RegistryRevision(
     val id: String,
     val version: Long,
@@ -44,7 +57,9 @@ internal data class RegistryRevision(
     val status: EstimateWorkflowStatus?,
     val amount: Long?,
     val ceilingCount: Long? = null
-)
+) {
+    val filterStatus: String get() = if (amount == null || status == null) CeilingQuoteKind.UNAVAILABLE.name else status.name
+}
 
 internal data class RegistrySeries(
     val id: String,
@@ -110,7 +125,7 @@ internal fun filterQuoteRegistry(
             query.matchesPhone(row.phone)
         val versions = row.versions.filter { version ->
             (sharedMatch || query.matchesFields(version.title)) &&
-                (filter.statuses.isEmpty() || (version.status?.name ?: CeilingQuoteKind.UNAVAILABLE.name) in filter.statuses) &&
+                (filter.statuses.isEmpty() || version.filterStatus in filter.statuses) &&
                 filter.acceptsDate(version.createdAt, zone)
         }.sortedByDescending { it.version }
         row.copy(versions = versions).takeIf { versions.isNotEmpty() }

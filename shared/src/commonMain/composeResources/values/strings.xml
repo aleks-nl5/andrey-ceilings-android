@@ -479,6 +479,11 @@
     <string name="p6c_ceiling_count">Стель: %1$s</string>
     <string name="p6c_no_quote">Без кошторису</string>
     <string name="p6c_only_rejected">Лише відхилені</string>
+    <string name="p6c_period_all">Весь час</string>
+    <string name="p6c_period_today">Сьогодні</string>
+    <string name="p6c_period_week">Останні 7 днів</string>
+    <string name="p6c_period_month">Поточний місяць</string>
+    <string name="p6c_period_year">Поточний рік</string>
     <string name="p6c_date_from">Від (РРРР-ММ-ДД)</string>
     <string name="p6c_date_through">До включно (РРРР-ММ-ДД)</string>
     <string name="p6c_apply">Застосувати</string>
