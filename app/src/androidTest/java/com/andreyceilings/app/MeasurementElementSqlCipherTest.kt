@@ -59,13 +59,13 @@ class MeasurementElementSqlCipherTest {
         try {
             for (version in listOf(6, 7)) {
                 context.deleteDatabase(name)
-                val driver = if (version == 6) AndroidSqliteDriver(MeasurementElementMigrationProof.v6Schema,
-                    context, name, factory = SupportOpenHelperFactory(key.copyOf(), null, true))
-                else createEncryptedPrototypeDriver(context, key, name, enableWalForTesting = true, initializePriceCatalog = true)
+                val driver = openHistoricalBackupSource(context, key, name, version)
                 val (before, element) = driver.use {
                     MeasurementElementMigrationProof.populate(it)
+                    assertEquals(version.toLong(), PriceNameUniquenessProof.scalar(it, "PRAGMA user_version"))
+                    assertTrue(PriceNameUniquenessProof.scalar(it, "SELECT count(*) FROM estimate_revisions") > 0L)
                     val before = MeasurementElementMigrationProof.snapshot(it)
-                    val db = PrototypeDatabase(it)
+                    val db = if (version == 7) historicalElementDatabase(it) else PrototypeDatabase(it)
                     val element = if (version == 7) MeasurementElementRepository(db).createWish(
                         MeasurementRepository(db).all().single().uuid, "Restored wish", 400, uuid = "restored-wish") else null
                     before to element
@@ -75,6 +75,7 @@ class MeasurementElementSqlCipherTest {
                     val restored = SqlCipherRestoreManager.restore(context, PortableBackupPayload.Contents(image, key))
                     assertEquals(PriceCatalogSchema.version, restored.queryLong("PRAGMA user_version"))
                     assertEquals(withoutPreV22Estimates(before), MeasurementElementMigrationProof.snapshot(restored.driver))
+                    assertTrue(EstimateV22MigrationProof.counts(restored.driver).values.all { it == 0L })
                     assertEquals(element, MeasurementElementRepository(restored.database).find("restored-wish"))
                     val storedKey = DatabaseKeyManager.getOrCreatePassphrase(context)
                     try { assertContentEquals(key, storedKey) } finally { storedKey.fill(0) }
@@ -103,13 +104,13 @@ class MeasurementElementSqlCipherTest {
                 val copyName = "elements-v$version-copy-test.db"
                 context.deleteDatabase(name); context.deleteDatabase(copyName)
                 try {
-                    val driver = if (version == 6) AndroidSqliteDriver(MeasurementElementMigrationProof.v6Schema,
-                        context, name, factory = SupportOpenHelperFactory(key.copyOf(), null, true))
-                    else createEncryptedPrototypeDriver(context, key, name, enableWalForTesting = true, initializePriceCatalog = true)
+                    val driver = openHistoricalBackupSource(context, key, name, version)
                     val (oldRows, element) = driver.use {
                         MeasurementElementMigrationProof.populate(it)
+                        assertEquals(version.toLong(), PriceNameUniquenessProof.scalar(it, "PRAGMA user_version"))
+                        assertTrue(PriceNameUniquenessProof.scalar(it, "SELECT count(*) FROM estimate_revisions") > 0L)
                         val oldRows = MeasurementElementMigrationProof.snapshot(it)
-                        val db = PrototypeDatabase(it)
+                        val db = if (version == 7) historicalElementDatabase(it) else PrototypeDatabase(it)
                         val element = if (version == 7) MeasurementElementRepository(db).createWish(
                             MeasurementRepository(db).all().single().uuid, "Backup wish", 400, uuid = "backup-wish") else null
                         val path = context.getDatabasePath(copyName).absolutePath.replace("'", "''")
@@ -123,6 +124,7 @@ class MeasurementElementSqlCipherTest {
                     val envelope = try { PortableBackupEnvelope.seal(payload, password) } finally { payload.fill(0) }
                     val contents = try { PortableBackupManager.validate(context, envelope, password) } finally { envelope.fill(0) }
                     try {
+                        assertTrue(contents.clearsPreV22Estimates)
                         assertContentEquals(before, contents.database)
                         assertContentEquals(before, source.readBytes(), "Preflight upgrades only its private copy")
                         // The same payload bytes installed by restore open through the production upgrader.
@@ -131,6 +133,7 @@ class MeasurementElementSqlCipherTest {
                             enableWalForTesting = true, initializePriceCatalog = true).use { restored ->
                             assertEquals(PriceCatalogSchema.version, PriceNameUniquenessProof.scalar(restored, "PRAGMA user_version"))
                             assertEquals(withoutPreV22Estimates(oldRows), MeasurementElementMigrationProof.snapshot(restored))
+                            assertTrue(EstimateV22MigrationProof.counts(restored).values.all { it == 0L })
                             assertEquals(element, MeasurementElementRepository(PrototypeDatabase(restored)).find("backup-wish"))
                         }
                     } finally { contents.database.fill(0); contents.passphrase.fill(0); before.fill(0) }
@@ -138,4 +141,17 @@ class MeasurementElementSqlCipherTest {
             }
         } finally { key.fill(0); password.fill('\u0000') }
     }
+
+    // Open the actual source version. Current-schema databases must never be
+    // populated with historical estimate rows that bypass the issuance ledger.
+    private fun openHistoricalBackupSource(context: Context, key: ByteArray, name: String, version: Int): SqlDriver {
+        val schema = when (version) {
+            6 -> MeasurementElementMigrationProof.v6Schema
+            7 -> PointPlacementMigrationProof.v7Schema
+            else -> error("Unsupported historical fixture")
+        }
+        return AndroidSqliteDriver(schema, context, name,
+            factory = SupportOpenHelperFactory(key.copyOf(), null, true))
+    }
+
 }
