@@ -1,3 +1,7 @@
+## P6C technical contract — approved 26.11.2026
+
+The 35 product decisions below remain in force. [P6C technical plan and Codex handoff](P6C_CODEX_HANDOFF.md) records all 15 owner-approved technical decisions and resolves the remaining technical ambiguities (filters, ordering, counts, paging, preferences, navigation, scroll restoration). One production Draft PR; no production implementation before separate owner authorization. No change to P6B business rules or CI policy.
+
 ## Implementation checkpoint — P6B accepted (26.11.2026)
 
 PR #180 is merged into main at `f96e8e4875e57032bafe8071a0d7f78c532b0b17`; P6A and #143A prerequisites are complete, schema v24. Owner accepted physical APK 10/10 and final pre-merge QUICK #245 / Android FULL #1385 / CMP FULL #1122 passed. See [final acceptance evidence](P6B_IMPLEMENTATION.md). Owner permits proceeding without waiting for post-merge FULL #1386/#1123 (pending at checkpoint); verify actual results before next production merge. #136 remains open through P6C. The product decisions below remain binding; historical technical audits are not current implementation status. P6C/#140 requires a fresh audit and separately approved handoff.
