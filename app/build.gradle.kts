@@ -1,3 +1,8 @@
+import org.gradle.api.attributes.Attribute
+import org.gradle.api.attributes.Usage
+import org.gradle.api.attributes.java.TargetJvmEnvironment
+import org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.plugin.compose")
@@ -77,7 +82,30 @@ android {
     packaging { resources.excludes += "/META-INF/{AL2.0,LGPL2.1}" }
 }
 
+// The app instrumentation proof exercises the actual internal shared writer and
+// PDF layout. Give only the debug instrumentation compiler friend access to
+// the Android API classes jar; do not widen production visibility or suppress
+// Kotlin visibility diagnostics.
+val sharedInstrumentationFriends by configurations.creating {
+    isCanBeResolved = true
+    isCanBeConsumed = false
+    isTransitive = false
+    attributes {
+        attribute(Usage.USAGE_ATTRIBUTE, objects.named(Usage::class.java, Usage.JAVA_API))
+        attribute(TargetJvmEnvironment.TARGET_JVM_ENVIRONMENT_ATTRIBUTE,
+            objects.named(TargetJvmEnvironment::class.java, TargetJvmEnvironment.ANDROID))
+        attribute(Attribute.of("artifactType", String::class.java), "android-classes-jar")
+    }
+}
+
+tasks.withType<KotlinJvmCompile>().configureEach {
+    if (name == "compileDebugAndroidTestKotlin") {
+        friendPaths.from(sharedInstrumentationFriends.incoming.files)
+    }
+}
+
 dependencies {
+    add(sharedInstrumentationFriends.name, project(":shared"))
     // Shared KMP calculator and encrypted SQLDelight repositories.
     implementation(project(":shared"))
     implementation("app.cash.sqldelight:runtime:2.4.1")
