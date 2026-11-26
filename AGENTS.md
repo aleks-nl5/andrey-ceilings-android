@@ -10,18 +10,6 @@ P5B #156/#157 and P5C #161/#162 merged. [P5D #164](https://github.com/aleks-nl5/
 
 ---
 
-## DEFERRED — Libellaro Firebase distribution / updates / Crashlytics (26.11.2026)
-
-Owner approved 21 product decisions; canonical [contract](docs/FIREBASE_DISTRIBUTION_PLAN.md), [#174](https://github.com/aleks-nl5/andrey-ceilings-android/issues/174). **Documentation only; defer F0–F6 until core Android-first functional phases are finished and owner separately authorizes work.** No change to P6, existing CI, or backup policy now.
-
-- Android-only, offline-first; App Distribution on Spark, optional tester Google sign-in, no mandatory separate app, no Firebase business-data storage/sync. Crashlytics opt-in only, no sensitive records, no Analytics/Performance Monitoring. Isolate tester SDK from shared domain and future Play builds.
-- Manual publication only, exact main SHA with successful Android and CMP FULL (no rerun); shared monotonic versionCode across PR/stable APKs, manual versionName, same package/signing identity, editable changelog and private stable APK archive.
-- Nonblocking check at startup at most every 24h + manual, one compact notice per release and persistent indicator, separate settings screen. Three download modes, Wi-Fi default, auto-resume or restart; keep active version when newer appears; explicit system install, clean APK only on success.
-- Temporary secure backup immediately before install, explicit warning/override if backup fails; delete only after new version starts and DB integrity verified; preserve existing copies, support all published stable migration paths.
-- F0 must prove supported API/SDK feasibility, network policy, independent download/install and tester auth without exposing publisher credentials; recheck Android developer verification, free limits, privacy. If infeasible, return to owner before changing requirements. No undocumented endpoints. See contract for complete decisions, acceptance and separate authorization gates.
-
----
-
 ## NEXT — P6 «Об'єкт» / consolidated estimates (owner-approved planning, 25.11.2026)
 
 **#144 завершено (25.11.2026).** [PR #170](https://github.com/aleks-nl5/andrey-ceilings-android/pull/170) злито, [#144](https://github.com/aleks-nl5/andrey-ceilings-android/issues/144) закрито. Android більше не планує автоматичний backup після змін БД. Розклад, фоновий і ручний режими, наявні копії, retention та відновлення збережено.

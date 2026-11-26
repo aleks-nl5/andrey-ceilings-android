@@ -10,24 +10,6 @@ P5B #156/#157 and P5C #161/#162 merged. [P5D #164](https://github.com/aleks-nl5/
 
 ---
 
-# DEFERRED — Libellaro: Firebase App Distribution та Crashlytics (26.11.2026)
-
-**21 продуктове рішення погоджено; реалізацію відкладено до завершення основних функціональних етапів Android-first roadmap.** [Канонічний контракт](FIREBASE_DISTRIBUTION_PLAN.md), [Issue #174](https://github.com/aleks-nl5/andrey-ceilings-android/issues/174). Не змінює порядок P6, календаря, налаштувань, калькулятора, локалізації чи інших основних функціональних етапів. Перед стартом — окреме погодження власника.
-
-| Етап | Результат |
-|---|---|
-| F0 | Ізольований прототип: documented API/SDK, auth, download/install, network policy, Android verification, privacy; погодити компроміси до коду. |
-| F1 | Spark, закрита група, персональні запрошення/посилання, перший ручний signed APK. |
-| F2 | Manual-only GitHub Actions; exact main SHA Android + CMP FULL success; versionName вручну, спільний монотонний versionCode, редагований changelog, приватні GitHub Releases. |
-| F3 | Окремий екран оновлень; добровільна авторизація, 24h/manual check, компактне повідомлення/індикатор, 3 режими download (Wi-Fi default), explicit install. |
-| F4 | Тимчасовий захищений backup до інсталяції, warning/override при помилці, cleanup після startup + DB integrity, міграції з усіх stable. |
-| F5 | Crashlytics opt-in, можливість вимкнути, privacy/redaction; без Analytics/Performance Monitoring. |
-| F6 | Scoped CI, незалежний review, фізичний Android APK, recovery/upgrade acceptance. |
-
-Firebase — лише доставка/оновлення Android та погоджена діагностика; не cloud database/sync, не обов'язковий account, не Windows/iOS release. Offline-first, чинний package/signing key, існуючі резервні копії та процес тестування PR зберігаються. F0 — обов'язковий gate, не обіцянка реалізовності Beta SDK; за обмежень повернутися до власника. Документація не є доказом реалізації чи успішних тестів.
-
----
-
 # NEXT — P6 «Об'єкт» і зведені кошториси (25.11.2026)
 
 **#144 завершено (25.11.2026).** [PR #170](https://github.com/aleks-nl5/andrey-ceilings-android/pull/170) злито, [#144](https://github.com/aleks-nl5/andrey-ceilings-android/issues/144) закрито. Android більше не планує автоматичний backup після змін БД. Розклад, фоновий і ручний режими, наявні копії, retention та відновлення збережено.
