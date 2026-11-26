@@ -443,7 +443,7 @@ private fun <T> RegistryDropdown(
     var expanded by remember { mutableStateOf(false) }
     Box(modifier) {
         OutlinedButton(onClick = { expanded = true }, modifier = Modifier.fillMaxWidth(),
-            contentPadding = PaddingValues(start = if (label.isEmpty()) 6.dp else 13.dp, end = 5.dp, top = 4.dp, bottom = 4.dp)) {
+            contentPadding = PaddingValues(start = 13.dp, end = 5.dp, top = 4.dp, bottom = 4.dp)) {
             Column(Modifier.weight(1f)) {
                 if (label.isNotEmpty()) Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text(selected, maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyLarge)

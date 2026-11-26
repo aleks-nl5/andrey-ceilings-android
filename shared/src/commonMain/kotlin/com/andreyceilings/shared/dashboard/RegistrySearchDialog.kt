@@ -40,6 +40,7 @@ import org.jetbrains.compose.resources.stringResource
 /** Modal search over the current screen. All reads are local, compact and session-scoped. */
 @Composable
 fun RegistrySearchDialog(store: ObjectsClientsStore?, onClose: () -> Unit,
+    properties: DialogProperties = DialogProperties(usePlatformDefaultWidth = false, dismissOnClickOutside = false),
     onOpen: (GlobalRegistryTarget) -> Unit) = key(store) {
     var query by remember { mutableStateOf("") }
     val objectFlow = remember(store) { store?.uiObjectsRows() }
@@ -63,8 +64,7 @@ fun RegistrySearchDialog(store: ObjectsClientsStore?, onClose: () -> Unit,
         }
     }
     val current = matches?.takeIf { it.first == query }?.second
-    Dialog(onDismissRequest = onClose,
-        properties = DialogProperties(usePlatformDefaultWidth = false, dismissOnClickOutside = false)) {
+    Dialog(onDismissRequest = onClose, properties = properties) {
         val focusRequester = remember { FocusRequester() }
         val keyboard = LocalSoftwareKeyboardController.current
         val colors = MaterialTheme.colorScheme
@@ -77,10 +77,11 @@ fun RegistrySearchDialog(store: ObjectsClientsStore?, onClose: () -> Unit,
             Box(Modifier.matchParentSize().clickable(
                 interactionSource = remember { MutableInteractionSource() }, indication = null,
                 onClickLabel = cancel, onClick = onClose))
-            BoxWithConstraints(Modifier.align(Alignment.TopCenter).fillMaxWidth().safeDrawingPadding()
-                .imePadding().padding(horizontal = 12.dp, vertical = 8.dp),
+            // The search column owns the dialog's safe/IME insets. Measure results
+            // in the actual space left below the input, rather than a fixed row estimate.
+            Box(Modifier.fillMaxSize().safeDrawingPadding().imePadding()
+                .padding(horizontal = 12.dp, vertical = 8.dp),
                 contentAlignment = Alignment.TopCenter) {
-                val resultsHeight = (maxHeight - 60.dp).coerceAtLeast(0.dp)
                 Column(Modifier.widthIn(max = 620.dp).fillMaxWidth(),
                     verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -92,8 +93,8 @@ fun RegistrySearchDialog(store: ObjectsClientsStore?, onClose: () -> Unit,
                             IconButton(onClick = onClose) { Icon(Icons.Default.Close, cancel) }
                         }
                     }
-                    if (query.isNotBlank() && resultsHeight > 0.dp) {
-                        Card(Modifier.fillMaxWidth().heightIn(max = resultsHeight),
+                    if (query.isNotBlank()) {
+                        Card(Modifier.fillMaxWidth().weight(1f, fill = false),
                             shape = RoundedCornerShape(17.dp),
                             colors = CardDefaults.cardColors(containerColor = colors.surface, contentColor = colors.onSurface),
                             elevation = CardDefaults.cardElevation(defaultElevation = 6.dp),

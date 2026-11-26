@@ -69,6 +69,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.DialogProperties
 import com.andreyceilings.shared.localization.AndroidAppLanguageResources
 import com.andreyceilings.shared.localization.AndroidAppLanguageStorage
 import com.andreyceilings.shared.localization.AppLanguageState
@@ -255,7 +256,15 @@ private fun CeilingsAppContent(
     }
 
     var initialSearch by remember { mutableStateOf("") }
+    // Only the screens without their own search field need the global action.
+    val showGlobalSearch = !isMeasurementDetailsOpen && when {
+        navigation.measurementProjectPicker -> true
+        tab == AppTab.OBJECTS -> isProjectDetailsOpen
+        tab == AppTab.MEASUREMENTS || tab == AppTab.ESTIMATES || tab == AppTab.PRICES -> false
+        else -> true
+    }
     var openSearch by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(showGlobalSearch) { if (!showGlobalSearch) openSearch = false }
     var requestedClientId by remember(database) { mutableStateOf<Long?>(null) }
     var requestedQuote by remember(database) { mutableStateOf<GlobalRegistryTarget.Quote?>(null) }
     var searchGeneration by rememberSaveable { mutableIntStateOf(0) }
@@ -852,7 +861,7 @@ private fun CeilingsAppContent(
             scrollBehavior = if (isProjectDetailsOpen) null else topAppBarScrollBehavior,
             onSettings = { openNested(AppTab.SETTINGS) },
             extraActions = {
-                RegistrySearchAction { openSearch = true }
+                if (showGlobalSearch) RegistrySearchAction { openSearch = true }
                 ThemeModeSelector(mode = themeMode, onModeChange = onThemeModeChange, compact = true)
             },
             modifier = Modifier.align(Alignment.TopCenter)
@@ -866,7 +875,13 @@ private fun CeilingsAppContent(
                 .height(navigationBarInset + systemPanelGradientHeight)
         )
 
-        if (openSearch) RegistrySearchDialog(database?.objectsClientsStore, onClose = { openSearch = false }) { hit ->
+        if (showGlobalSearch && openSearch) RegistrySearchDialog(
+            database?.objectsClientsStore, onClose = { openSearch = false },
+            // Android Dialog has its own window; opt into edge-to-edge so its
+            // content receives the IME insets instead of being panned behind it.
+            properties = DialogProperties(usePlatformDefaultWidth = false,
+                dismissOnClickOutside = false, decorFitsSystemWindows = false)
+        ) { hit ->
             openSearch = false
             val target = when (hit) {
                 is GlobalRegistryTarget.Project, is GlobalRegistryTarget.Client -> AppTab.OBJECTS
