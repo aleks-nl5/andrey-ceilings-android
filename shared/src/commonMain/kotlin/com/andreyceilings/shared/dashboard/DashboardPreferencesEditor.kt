@@ -1,6 +1,7 @@
 package com.andreyceilings.shared.dashboard
 
-import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.foundation.gestures.detectDragGestures
+import kotlin.math.roundToInt
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -32,22 +33,33 @@ fun DashboardPreferencesEditor(
                 val current by rememberUpdatedState(preferences)
                 val change by rememberUpdatedState(onChange)
                 val busy by rememberUpdatedState(saving)
+                var dragging by remember { mutableStateOf<DashboardBlock?>(null) }
+                var dragDistance by remember { mutableFloatStateOf(0f) }
                 preferences.order.forEachIndexed { index, block ->
                     key(block) {
                         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                             Icon(Icons.Default.DragHandle, stringResource(Res.string.p6c_drag),
-                                Modifier.size(36.dp).padding(6.dp).pointerInput(block) {
-                                    var accumulated = 0f
+                                Modifier.size(44.dp).pointerInput(block) {
                                     val step = 48.dp.toPx()
-                                    detectDragGesturesAfterLongPress(onDragStart = { accumulated = 0f }) { event, delta ->
-                                        event.consume()
-                                        accumulated += delta.y
-                                        if (!busy && kotlin.math.abs(accumulated) >= step) {
-                                            change(current.move(block, if (accumulated > 0) 1 else -1))
-                                            accumulated = 0f
+                                    detectDragGestures(
+                                        onDragStart = { if (!busy) { dragging = block; dragDistance = 0f } },
+                                        onDragCancel = { dragging = null; dragDistance = 0f },
+                                        onDragEnd = {
+                                            if (dragging == block && !busy) {
+                                                val distance = (dragDistance / step).roundToInt()
+                                                if (distance != 0) change(current.move(block, distance))
+                                            }
+                                            dragging = null
+                                            dragDistance = 0f
+                                        }
+                                    ) { event, delta ->
+                                        if (dragging == block) {
+                                            event.consume()
+                                            dragDistance += delta.y
                                         }
                                     }
-                                })
+                                }.padding(9.dp),
+                                tint = if (dragging == block) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
                             Column(Modifier.weight(1f)) {
                                 Text(stringResource(block.label()), style = MaterialTheme.typography.bodySmall)
                                 if (block.mandatory) Text(stringResource(Res.string.p6c_required),

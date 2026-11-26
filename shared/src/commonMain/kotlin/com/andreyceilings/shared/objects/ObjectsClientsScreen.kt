@@ -184,7 +184,8 @@ fun ObjectsClientsScreen(
     initialTab: ObjectsClientsTab = ObjectsClientsTab.PROJECTS,
     initialSearch: String = "",
     searchRequest: Int = 0,
-    onOpenCeilingRegistry: (() -> Unit)? = null
+    onOpenCeilingRegistry: (() -> Unit)? = null,
+    returnToProjectsRequest: Int = 0
 ) {
     val scope = rememberCoroutineScope()
     val focusManager = LocalFocusManager.current
@@ -224,6 +225,15 @@ fun ObjectsClientsScreen(
             fabVisible = true
         }
         openSwipe = null
+    }
+
+    var appliedReturn by rememberSaveable { mutableIntStateOf(returnToProjectsRequest) }
+    LaunchedEffect(returnToProjectsRequest) {
+        if (returnToProjectsRequest != appliedReturn) {
+            appliedReturn = returnToProjectsRequest
+            dismissSearchFocus()
+            switchListTab(ObjectsClientsTab.PROJECTS)
+        }
     }
 
     val results = remember(rows, search) {
@@ -780,16 +790,19 @@ private fun ObjectsTabButton(
 }
 
 @Composable
-private fun CompactObjectsSearchField(
+internal fun CompactObjectsSearchField(
     value: String,
     onChange: (String) -> Unit,
     onClear: () -> Unit,
-    onFocusChange: (Boolean) -> Unit
+    onFocusChange: (Boolean) -> Unit,
+    placeholder: String = "Пошук об'єктів та клієнтів",
+    clearLabel: String = "Очистити пошук",
+    modifier: Modifier = Modifier
 ) {
     val colors = MaterialTheme.colorScheme
     val shape = RoundedCornerShape(15.dp)
     Row(
-        Modifier.fillMaxWidth().height(47.dp)
+        modifier.fillMaxWidth().height(47.dp)
             .background(colors.surface, shape)
             .border(1.dp, colors.outline.copy(alpha = 0.7f), shape)
             .padding(start = 12.dp, end = 4.dp),
@@ -810,7 +823,7 @@ private fun CompactObjectsSearchField(
             decorationBox = { inner ->
                 Box {
                     if (value.isEmpty()) {
-                        Text("Пошук об'єктів та клієнтів",
+                        Text(placeholder,
                             style = MaterialTheme.typography.bodyMedium,
                             color = colors.onSurfaceVariant,
                             maxLines = 1,
@@ -822,7 +835,7 @@ private fun CompactObjectsSearchField(
         )
         if (value.isNotEmpty()) {
             IconButton(onClick = onClear, modifier = Modifier.size(36.dp)) {
-                Icon(Icons.Default.Close, contentDescription = "Очистити пошук",
+                Icon(Icons.Default.Close, contentDescription = clearLabel,
                     tint = colors.onSurfaceVariant, modifier = Modifier.size(20.dp))
             }
         }

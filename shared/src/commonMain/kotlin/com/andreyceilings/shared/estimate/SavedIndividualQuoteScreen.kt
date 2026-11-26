@@ -1,6 +1,7 @@
 package com.andreyceilings.shared.estimate
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -76,8 +77,15 @@ fun SavedIndividualQuoteDialog(
     }
 
     Dialog(onDismissRequest = ::exit, properties = DialogProperties(usePlatformDefaultWidth = false, dismissOnClickOutside = false)) {
-        Surface(Modifier.fillMaxSize()) {
-            Column(Modifier.fillMaxSize().safeDrawingPadding().padding(horizontal = 12.dp)) {
+        BoxWithConstraints(Modifier.fillMaxSize().safeDrawingPadding().imePadding().padding(horizontal = 12.dp),
+            contentAlignment = Alignment.Center) {
+            val keyboardVisible = WindowInsets.ime.getBottom(androidx.compose.ui.platform.LocalDensity.current) > 0
+            val dialogHeight = if (keyboardVisible || session.presenter != null) maxHeight
+                else (maxHeight * 0.78f).coerceIn(minOf(300.dp, maxHeight), maxHeight)
+            Surface(Modifier.widthIn(max = 640.dp).fillMaxWidth().height(dialogHeight),
+                shape = RoundedCornerShape(24.dp), color = MaterialTheme.colorScheme.surface,
+                contentColor = MaterialTheme.colorScheme.onSurface, tonalElevation = 2.dp, shadowElevation = 6.dp) {
+            Column(Modifier.fillMaxSize().padding(horizontal = 12.dp)) {
                 if (error) Text(stringResource(Res.string.p5d_quote_failed), color = MaterialTheme.colorScheme.error)
                 val editor = session.presenter
                 val route = editorRoute
@@ -129,11 +137,12 @@ fun SavedIndividualQuoteDialog(
                                         finally { busy = false }
                                     }
                                 }
-                            }, onDelete = { delete = opened }, onBack = ::exit)
+                            }, onDelete = { delete = opened }, onBack = ::exit, registryPresentation = true)
                     }
                 }
             }
         }
+    }
     }
     delete?.let { target ->
         WorkspaceQuoteDeleteDialog(listOf(target), series = false, onClose = { delete = null }) {

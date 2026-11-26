@@ -59,7 +59,7 @@ fun DashboardScreen(
                     blocks.forEach { block ->
                         val value = when (block) {
                             DashboardBlock.FINANCE -> (finance as? RegistryRead.Ready)?.data?.let { compactQuoteAmount(it) }
-                                ?: stringResource(if (finance is RegistryRead.Loading) Res.string.p6a_finance_loading else Res.string.p6a_finance_unavailable)
+                                ?: if (store == null || finance is RegistryRead.Loading) "" else stringResource(Res.string.p6a_finance_unavailable)
                             DashboardBlock.AREA -> area
                             DashboardBlock.CEILINGS -> stats?.ceilingCount?.toString()
                             DashboardBlock.QUOTES -> countText
@@ -67,8 +67,8 @@ fun DashboardScreen(
                             DashboardBlock.CLIENTS -> stats?.clientCount?.toString()
                             else -> null
                         } ?: when (if (block == DashboardBlock.QUOTES) count else summary) {
-                            RegistryRead.Loading -> stringResource(Res.string.p6c_loading)
-                            else -> stringResource(Res.string.p6c_unavailable)
+                            RegistryRead.Loading -> ""
+                            else -> if (store == null) "" else stringResource(Res.string.p6c_unavailable)
                         }
                         val action = when (block) {
                             DashboardBlock.CEILINGS -> onCeilings
@@ -98,9 +98,9 @@ private fun DashboardTile(block: DashboardBlock, value: String, modifier: Modifi
         ) {
             Icon(block.icon(), null, tint = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.size(if (isRegistry) 32.dp else 20.dp))
-            Text(stringResource(block.label()), style = if (isRegistry) MaterialTheme.typography.titleSmall
-                else MaterialTheme.typography.labelMedium)
-            Text(value, style = if (isRegistry) MaterialTheme.typography.bodySmall else MaterialTheme.typography.titleSmall,
+            Text(stringResource(block.label()), style = if (isRegistry) MaterialTheme.typography.titleMedium
+                else MaterialTheme.typography.titleSmall, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+            Text(value, minLines = 1, style = if (isRegistry) MaterialTheme.typography.bodySmall else MaterialTheme.typography.titleSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }

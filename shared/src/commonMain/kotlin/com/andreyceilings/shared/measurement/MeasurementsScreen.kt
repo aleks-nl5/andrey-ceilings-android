@@ -35,7 +35,8 @@ fun MeasurementsScreen(
     onNavigate: (AppNavigationState) -> Unit,
     initialSearch: String = "",
     searchRequest: Int = 0,
-    onUseMeasurement: ((com.andreyceilings.shared.estimate.FrozenPolygonGeometry) -> Unit)? = null
+    onUseMeasurement: ((com.andreyceilings.shared.estimate.FrozenPolygonGeometry) -> Unit)? = null,
+    headerVisibleFraction: Float = 1f
 ) {
     val back = { onNavigate(navigation.back()) }
     val details = store?.measurementDetails
@@ -55,7 +56,7 @@ fun MeasurementsScreen(
     if (navigation.measurementProjectPicker) {
         MeasurementProjectPicker(store, contentPadding, back) { onNavigate(navigation.createMeasurement(it)) }
     } else {
-        CeilingRegistryScreen(store, contentPadding, initialSearch, searchRequest) { project, ceiling ->
+        CeilingRegistryScreen(store, contentPadding, initialSearch, searchRequest, headerVisibleFraction) { project, ceiling ->
             onNavigate(navigation.openCeilingWorkspace(project, ceiling))
         }
     }

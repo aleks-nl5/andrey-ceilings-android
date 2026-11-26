@@ -178,6 +178,8 @@ private fun CeilingsAppContent(
         }
     }
     var objectsStartInClients by rememberSaveable { mutableStateOf(false) }
+    var clientsBackToObjects by rememberSaveable { mutableStateOf(false) }
+    var returnToProjectsRequest by rememberSaveable { mutableIntStateOf(0) }
     val scope = rememberCoroutineScope()
     var tabChangedAt by remember { mutableLongStateOf(SystemClock.elapsedRealtime()) }
     var lastBackPressTime by remember { mutableStateOf(0L) }
@@ -258,7 +260,10 @@ private fun CeilingsAppContent(
     val searchRequest = if (tab == repeatedSearchRoute) searchGeneration else 0
     fun navigateTo(target: AppTab, clients: Boolean = false, query: String = "") {
         if (target == tab) return
-        objectsStartInClients = if (target == AppTab.OBJECTS) clients else objectsStartInClients
+        if (target == AppTab.OBJECTS) {
+            objectsStartInClients = clients
+            clientsBackToObjects = false
+        }
         initialSearch = query
         AppRoute.entries.filter { it != tab }.forEach { registryState.removeState(it.name) }
         updateNavigation(navigation.selectTab(target))
@@ -267,7 +272,10 @@ private fun CeilingsAppContent(
     fun openNested(target: AppTab, query: String = "", clients: Boolean = false) {
         if (target == tab) return
         initialSearch = query
-        if (target == AppTab.OBJECTS) objectsStartInClients = clients
+        if (target == AppTab.OBJECTS) {
+            objectsStartInClients = clients
+            clientsBackToObjects = false
+        }
         registryState.removeState(target.name)
         updateNavigation(navigation.navigate(target))
     }
@@ -424,7 +432,11 @@ private fun CeilingsAppContent(
             // Commit only after a fully completed gesture (never during a swipe).
             completed = true
             predictiveBackProgress.snapTo(0f)
-            updateNavigation(navigation.back())
+            if (tab == AppTab.OBJECTS && navigation.projectDetails == null && !navigation.quickMeasurement && clientsBackToObjects) {
+                clientsBackToObjects = false
+                objectsStartInClients = false
+                returnToProjectsRequest++
+            } else updateNavigation(navigation.back())
             lastBackPressTime = 0L
         } catch (cancelled: CancellationException) {
             throw cancelled
@@ -658,7 +670,7 @@ private fun CeilingsAppContent(
         registryState.SaveableStateProvider(routeSlot) {
             if (navigation.quickMeasurement) {
                 MeasurementsHost(database, navigation, measurementPrecision, measurementCreateNavigationGuard, ::updateNavigation,
-                    onUseMeasurement = useCeilingInCalculator)
+                    onUseMeasurement = useCeilingInCalculator, headerVisibleFraction = 1f - topAppBarScrollBehavior.state.collapsedFraction)
             } else if (tab == AppTab.OBJECTS || tab == AppTab.MEASUREMENTS || tab == AppTab.ESTIMATES || tab == AppTab.PRICES || tab == AppTab.CALENDAR) {
                 Box(
                     Modifier.fillMaxSize().nestedScroll(screenScrollConnection)
@@ -687,7 +699,10 @@ private fun CeilingsAppContent(
                             searchRequest = searchRequest,
                             onCloseProject = { updateNavigation(navigation.back()) },
                             onProjectHeaderProgress = { projectTitleProgress = it.coerceIn(0f, 1f) },
-                            onListTabChanged = {
+                            returnToProjectsRequest = returnToProjectsRequest,
+                             onListTabChanged = { selected ->
+                                 clientsBackToObjects = selected == com.andreyceilings.shared.objects.ObjectsClientsTab.CLIENTS
+                                 objectsStartInClients = clientsBackToObjects
                                 // The CMP list resets on tab change; reset the parent
                                 // enterAlways header and scroll-based shading too.
                                 topAppBarScrollBehavior.state.heightOffset = 0f
@@ -702,10 +717,11 @@ private fun CeilingsAppContent(
                         AppTab.MEASUREMENTS -> MeasurementsHost(
                             database, navigation, measurementPrecision, measurementCreateNavigationGuard,
                             ::updateNavigation, initialSearch = initialSearch, searchRequest = searchRequest,
-                            onUseMeasurement = useCeilingInCalculator
+                            onUseMeasurement = useCeilingInCalculator, headerVisibleFraction = 1f - topAppBarScrollBehavior.state.collapsedFraction
                         )
                         AppTab.ESTIMATES -> QuoteRegistryScreen(database?.objectsClientsStore,
-                            PaddingValues(top = topContentPadding, bottom = bottomContentPadding), initialSearch, searchRequest)
+                            PaddingValues(top = topContentPadding, bottom = bottomContentPadding), initialSearch, searchRequest,
+                             headerVisibleFraction = 1f - topAppBarScrollBehavior.state.collapsedFraction)
                         AppTab.PRICES -> PriceListScreen(database, darkTheme = useDarkTheme)
                         AppTab.CALENDAR -> CalendarScreen(database)
                         else -> Unit
@@ -823,7 +839,8 @@ private fun CeilingsAppContent(
             // rather than covering it with the 93% collapsed-header shade.
             shadeOpacity = if (tab == AppTab.OBJECTS && !isProjectDetailsOpen)
                 0.50f else headerShadeOpacity,
-            drawGradient = tab != AppTab.OBJECTS || isProjectDetailsOpen,
+            drawGradient = (tab != AppTab.OBJECTS || isProjectDetailsOpen) &&
+                !(tab == AppTab.ESTIMATES || tab == AppTab.MEASUREMENTS && !navigation.measurementProjectPicker),
             statusBarHeight = statusBarInset,
             windowInsets = WindowInsets.statusBars,
             scrollBehavior = if (isProjectDetailsOpen) null else topAppBarScrollBehavior,

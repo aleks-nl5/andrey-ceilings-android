@@ -83,17 +83,19 @@ internal fun CompactCeilingCard(
         ) {
             CeilingThumbnail(contour, Modifier.size(width = 68.dp, height = 52.dp))
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text(ceiling.name, style = MaterialTheme.typography.titleSmall)
+                Text(ceiling.name, style = if (address != null) MaterialTheme.typography.titleMedium else MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onSurface)
                 if (!address.isNullOrBlank()) {
-                    Text(address, style = MaterialTheme.typography.bodySmall,
+                    Text(address, style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 CompactMetricsRow(ceiling.area, ceiling.perimeter,
+                    textStyle = if (address != null) MaterialTheme.typography.bodyMedium else MaterialTheme.typography.bodySmall,
                     trailing = if (quote != null) {
                         {
                             Row(verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(3.dp)) {
-                                Text(compactQuoteAmount(quote.finalCents), style = MaterialTheme.typography.bodySmall)
+                                Text(compactQuoteAmount(quote.finalCents), style = if (address != null) MaterialTheme.typography.bodyMedium else MaterialTheme.typography.bodySmall)
                                 val (icon, tint) = workspaceStatusAppearance(quote.status)
                                 Icon(icon, workspaceStatusLabel(quote.status), Modifier.size(14.dp), tint = tint)
                             }

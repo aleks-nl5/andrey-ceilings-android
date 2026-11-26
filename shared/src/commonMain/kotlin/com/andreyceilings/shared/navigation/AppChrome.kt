@@ -18,6 +18,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -169,6 +171,19 @@ private fun AppFloatingItem(
         Color.Transparent
     }
     val contentColor = if (destination.actionOnly) scheme.onPrimaryContainer else if (selected) scheme.primary else scheme.onSurfaceVariant
+
+    if (destination.actionOnly) {
+        Box(modifier.fillMaxHeight(), contentAlignment = Alignment.Center) {
+            Box(Modifier.size(46.dp).clip(CircleShape).background(indicatorColor)
+                .combinedClickable(interactionSource = interactions, indication = ripple(bounded = true),
+                    enabled = destination.enabled, role = Role.Button, onClickLabel = destination.title,
+                    onClick = onSelect),
+                contentAlignment = Alignment.Center) {
+                Icon(destination.icon, contentDescription = null, tint = contentColor, modifier = Modifier.size(26.dp))
+            }
+        }
+        return
+    }
 
     Column(
         modifier = modifier.fillMaxHeight()

@@ -581,13 +581,6 @@ fun MeasurementEditScreen(
                             overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleMedium)
                     }
                     if (!inlineKeyboardPanel) {
-                        if (!fullscreen && !state.creating && !state.dirty && onUseMeasurement != null) {
-                            val captured = validation.geometry
-                            MeasurementIconAction(stringResource(Res.string.p6c_calculate_ceiling), Icons.Default.Calculate,
-                                enabled && captured != null) {
-                                captured?.let(onUseMeasurement)
-                            }
-                        }
                         MeasurementIconAction("Скасувати дію", Icons.AutoMirrored.Filled.Undo, enabled && state.canUndo) {
                             focus.clearFocus()
                             model.undo()

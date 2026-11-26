@@ -17,7 +17,8 @@ internal fun MeasurementsHost(
     onNavigate: (AppNavigationState) -> Unit,
     initialSearch: String = "",
     searchRequest: Int = 0,
-    onUseMeasurement: ((com.andreyceilings.shared.estimate.FrozenPolygonGeometry) -> Unit)? = null
+    onUseMeasurement: ((com.andreyceilings.shared.estimate.FrozenPolygonGeometry) -> Unit)? = null,
+    headerVisibleFraction: Float = 1f
 ) {
     val fullscreen by navigationGuard.fullscreen.collectAsState()
     MeasurementsScreen(database?.objectsClientsStore,
@@ -27,7 +28,7 @@ internal fun MeasurementsHost(
             top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 72.dp,
             bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + if (fullscreen) 0.dp else 84.dp),
         systemTopInset = WindowInsets.statusBars.asPaddingValues().calculateTopPadding(),
-        navigationGuard = navigationGuard, onNavigate = onNavigate, initialSearch = initialSearch, searchRequest = searchRequest, onUseMeasurement = onUseMeasurement)
+        navigationGuard = navigationGuard, onNavigate = onNavigate, initialSearch = initialSearch, searchRequest = searchRequest, onUseMeasurement = onUseMeasurement, headerVisibleFraction = headerVisibleFraction)
 }
 
 /** The editor supplies its own chrome and applies the keyboard inset after consuming system bars. */
