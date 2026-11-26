@@ -584,8 +584,7 @@ fun ObjectsClientsScreen(
             projectId = edit.projectId, measurementId = edit.measurementId, store = detailsStore?.measurementEdit,
             contentPadding = contentPadding, systemTopInset = systemTopInset,
             onBack = onCloseMeasurement,
-            navigationGuard = measurementCreateNavigationGuard, quoteStore = detailsStore?.measurementDetails?.elements,
-            legacyDetailsStore = detailsStore?.measurementDetails
+            navigationGuard = measurementCreateNavigationGuard, quoteStore = detailsStore?.measurementDetails?.elements
         )
         if (create != null) com.andreyceilings.shared.measurement.MeasurementCreateWorkspace(
             projectId = create.projectId, precision = measurementPrecision, store = detailsStore?.measurementEdit,

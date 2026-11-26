@@ -18,6 +18,7 @@ import androidx.compose.material.icons.filled.Straighten
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -53,6 +54,7 @@ import com.andreyceilings.shared.resources.p6a_amount_uah
 import com.andreyceilings.shared.resources.p6a_ceiling_contour
 import com.andreyceilings.shared.resources.p6a_contour_unavailable
 import com.andreyceilings.shared.resources.p6a_finance_unavailable
+import com.andreyceilings.shared.resources.p6a_finance_loading
 import org.jetbrains.compose.resources.stringResource
 
 @Composable
@@ -65,6 +67,7 @@ internal fun CompactCeilingCard(
     contour: MeasurementDrawingContour?,
     quote: CeilingQuoteSummary?,
     quoteUnavailable: Boolean,
+    quoteLoading: Boolean = false,
     onOpen: () -> Unit
 ) {
     Card(
@@ -94,6 +97,12 @@ internal fun CompactCeilingCard(
                         {
                             Icon(Icons.Default.Warning, stringResource(Res.string.p6a_finance_unavailable),
                                 Modifier.size(16.dp), tint = MaterialTheme.colorScheme.error)
+                        }
+                    } else if (quoteLoading) {
+                        {
+                            val loadingLabel = stringResource(Res.string.p6a_finance_loading)
+                            CircularProgressIndicator(Modifier.size(14.dp).semantics { contentDescription = loadingLabel },
+                                strokeWidth = 2.dp)
                         }
                     } else null
                 )

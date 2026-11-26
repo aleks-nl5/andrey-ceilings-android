@@ -342,6 +342,8 @@
     <string name="p6a_contour_unavailable">Контур недоступний</string>
     <string name="p6a_finance_unavailable">Сума недоступна</string>
     <string name="p6a_finance_loading">Сума завантажується…</string>
+    <string name="p6a_workspace_unavailable">Замір недоступний для редагування. Перевірте об’єкт і збережену геометрію.</string>
+    <string name="p6a_workspace_loading">Завантаження заміру…</string>
     <string name="p6a_approved_total">Погоджено · %1$s</string>
     <string name="p6a_no_approved_quotes">Немає погоджених</string>
     <string name="p6a_ceilings_count">Стелі (%1$d)</string>

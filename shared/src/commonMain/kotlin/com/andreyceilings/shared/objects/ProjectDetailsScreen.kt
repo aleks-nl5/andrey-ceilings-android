@@ -597,7 +597,9 @@ internal fun ProjectDetailsScreen(
                             ) {
                                 CompactCeilingCard(
                                     measurement, contour, quotes?.ceilings?.get(measurement.id),
-                                    measurement.id in quotes?.unavailableCeilings.orEmpty()
+                                    quoteUnavailable = finance == ProjectFinanceState.Unavailable ||
+                                        measurement.id in quotes?.unavailableCeilings.orEmpty(),
+                                    quoteLoading = finance == ProjectFinanceState.Loading
                                 ) {
                                     if (rowWasOpen) {
                                         openCeilingSwipe = null

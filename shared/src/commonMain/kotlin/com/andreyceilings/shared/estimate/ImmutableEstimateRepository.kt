@@ -117,6 +117,14 @@ class ImmutableEstimateRepository(private val database: PrototypeDatabase) {
                 }
                 if (status == EstimateWorkflowStatus.APPROVED) {
                     val measurementUuid = target.measurementUuid ?: return@transactionWithResult false
+                    // The same SQLite writer transaction also serializes ceiling deletion.
+                    // Historical documents remain readable, but cannot acquire a new approval.
+                    val business = database.businessSchemaQueries
+                    val ceiling = business.selectMeasurementByUuid(measurementUuid).executeAsOneOrNull()
+                        ?: return@transactionWithResult false
+                    if (ceiling.deletedAt != null || ceiling.projectId != target.projectId ||
+                        business.selectProjectById(target.projectId).executeAsOneOrNull() == null
+                    ) return@transactionWithResult false
                     val approved = workflow.selectApprovedQuoteVersions(target.projectId, measurementUuid)
                         .executeAsList().associate { it.revisionUuid to it.version }
                     if (target.status == status.name && approved == mapOf(revisionUuid to expectedVersion) &&

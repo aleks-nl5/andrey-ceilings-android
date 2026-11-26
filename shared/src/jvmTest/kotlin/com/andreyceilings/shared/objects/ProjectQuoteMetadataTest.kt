@@ -5,6 +5,7 @@ import com.andreyceilings.shared.db.MeasurementRepository
 import com.andreyceilings.shared.db.ProjectRepository
 import com.andreyceilings.shared.db.PrototypeDatabase
 import com.andreyceilings.shared.estimate.EstimateWorkflowStatus
+import com.andreyceilings.shared.estimate.ImmutableEstimateRepository
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.first
@@ -98,11 +99,16 @@ class ProjectQuoteMetadataTest {
             val id = measurements.createReturningId(project, "Ceiling", createdAt = 1)
             val uuid = assertNotNull(measurements.find(id)).uuid
             db.saveFixtureQuote(project, uuid, "series", 1, 101)
-            db.revisionWorkflowQueries.updateRevisionWorkflow("APPROVED", 20, "series-1", 1).executeAsOne()
+            // The metadata fixture omits the choice row required by exact historical reads.
+            db.revisionWorkflowQueries.insertRevisionChoice("series")
+            val history = ImmutableEstimateRepository(db)
+            db.saveFixtureQuote(other, uuid, "wrong-owner", 1, 102)
+            assertFalse(history.setWorkflowStatus("wrong-owner-1", 1, EstimateWorkflowStatus.APPROVED, 19))
+            assertTrue(history.setWorkflowStatus("series-1", 1, EstimateWorkflowStatus.APPROVED, 20))
             assertFailsWith<CeilingHasApprovedQuote> { store.deleteCeiling(project, id, uuid) }
             assertFailsWith<CeilingHasApprovedQuote> { MeasurementsStore(db).delete(project, id) }
             assertNotNull(measurements.find(id))
-            db.revisionWorkflowQueries.updateRevisionWorkflow("SENT", 21, "series-1", 2).executeAsOne()
+            assertTrue(history.setWorkflowStatus("series-1", 2, EstimateWorkflowStatus.SENT, 21))
             assertFailsWith<IllegalStateException> { store.deleteCeiling(other, id, uuid) }
             assertFailsWith<IllegalStateException> { store.deleteCeiling(project, id, "wrong-uuid") }
             assertNotNull(measurements.find(id))
@@ -110,7 +116,10 @@ class ProjectQuoteMetadataTest {
             assertNull(measurements.find(id))
             assertTrue(measurements.tombstones().any { it.id == id })
             assertTrue(assertNotNull(store.observeProjectQuoteSummary(project).first()).ceilings.isEmpty())
-            // Keep immutable history; no quote version is physically deleted.
+            // Delete first, then attempt approval through the shared document writer.
+            val before = db.frozenRevisionQueries.selectHistoricalExactRevision("series", "series-1").executeAsOne()
+            assertFalse(history.setWorkflowStatus("series-1", 3, EstimateWorkflowStatus.APPROVED, 22))
+            assertEquals(before, db.frozenRevisionQueries.selectHistoricalExactRevision("series", "series-1").executeAsOne())
             assertEquals(1, db.revisionWorkflowQueries.selectActiveSeriesWorkflow("series").executeAsList().size)
             store.closeAndAwaitProjectReads()
         }

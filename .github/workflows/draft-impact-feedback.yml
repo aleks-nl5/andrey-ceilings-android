@@ -98,7 +98,7 @@ jobs:
       - name: Run shared geometry and formatting regressions
         run: >-
           gradle --no-daemon :shared:jvmTest
-          --tests '*LineCreationSnapTest' --tests '*MeasurementFormattingTest'
+          --tests '*LineCreationSnapTest' --tests '*MeasurementFormattingTest' --tests '*ProjectQuoteMetadataTest'
           --stacktrace --warning-mode all
       - name: Verify unsigned release candidate for trusted signing
         shell: bash

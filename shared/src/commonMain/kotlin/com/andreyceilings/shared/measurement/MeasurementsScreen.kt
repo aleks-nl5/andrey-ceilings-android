@@ -41,8 +41,7 @@ fun MeasurementsScreen(
     }
     navigation.measurementEdit?.let { route ->
         MeasurementEditScreen(route.projectId, route.measurementId, editStore, contentPadding, systemTopInset,
-            onBack = back, navigationGuard = navigationGuard, quoteStore = detailsStore?.elements,
-            legacyDetailsStore = detailsStore)
+            onBack = back, navigationGuard = navigationGuard, quoteStore = detailsStore?.elements)
         return
     }
     navigation.measurementDetails?.let { route ->
