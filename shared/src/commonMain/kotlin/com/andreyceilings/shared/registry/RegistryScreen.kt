@@ -22,6 +22,7 @@ import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.window.Dialog
 import com.andreyceilings.shared.ui.CeilingsScreenScaffold
 import com.andreyceilings.shared.navigation.AppHeaderHeight
 import com.andreyceilings.shared.objects.CompactObjectsSearchField
@@ -231,7 +232,9 @@ fun CeilingRegistryScreen(
 @Composable
 fun QuoteRegistryScreen(store: ObjectsClientsStore?, contentPadding: PaddingValues, initialSearch: String = "",
     searchRequest: Int = 0,
-    headerVisibleFraction: Float = 1f
+    headerVisibleFraction: Float = 1f,
+    requestedQuote: GlobalRegistryTarget.Quote? = null,
+    onQuoteRequestConsumed: () -> Unit = {}
 ) {
     val controls = rememberRegistryControls(RegistrySort.LATEST, initialSearch, searchRequest)
     var retry by remember { mutableIntStateOf(0) }
@@ -247,6 +250,13 @@ fun QuoteRegistryScreen(store: ObjectsClientsStore?, contentPadding: PaddingValu
     }
     val visible = filtered?.second.takeIf { series != null }
     var document by rememberSaveable { mutableStateOf(arrayListOf<String>()) }
+    LaunchedEffect(requestedQuote, store) {
+        if (requestedQuote != null && store != null) {
+            document = arrayListOf(requestedQuote.revisionId, requestedQuote.seriesId, requestedQuote.projectId.toString(),
+                if (requestedQuote.consolidated) "consolidated" else "individual")
+            onQuoteRequestConsumed()
+        }
+    }
     val revision = document.getOrNull(0)
     val seriesId = document.getOrNull(1)
     val projectId = document.getOrNull(2)?.toLongOrNull()
@@ -433,10 +443,10 @@ private fun <T> RegistryDropdown(
     var expanded by remember { mutableStateOf(false) }
     Box(modifier) {
         OutlinedButton(onClick = { expanded = true }, modifier = Modifier.fillMaxWidth(),
-            contentPadding = PaddingValues(horizontal = 9.dp, vertical = 3.dp)) {
+            contentPadding = PaddingValues(start = if (label.isEmpty()) 6.dp else 13.dp, end = 5.dp, top = 4.dp, bottom = 4.dp)) {
             Column(Modifier.weight(1f)) {
                 if (label.isNotEmpty()) Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text(selected, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyLarge)
+                Text(selected, maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyLarge)
             }
             Icon(Icons.Default.ArrowDropDown, null, Modifier.size(18.dp))
         }
@@ -466,13 +476,16 @@ private fun RegistryOptions(controls: RegistryControls, projects: Map<Long, Stri
     val all = stringResource(Res.string.p6c_all)
     val kinds = CeilingQuoteKind.entries.filter { !quotes || it != CeilingQuoteKind.NONE }
     var statusExpanded by remember { mutableStateOf(false) }
-    AlertDialog(onDismissRequest = { controls.show(false) },
-        modifier = Modifier.widthIn(max = 620.dp).fillMaxWidth(0.94f),
-        properties = DialogProperties(usePlatformDefaultWidth = false),
-        containerColor = MaterialTheme.colorScheme.surface,
-        title = { Text(stringResource(Res.string.p6c_filters)) },
-        text = {
-            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+    Dialog(onDismissRequest = { controls.show(false) }, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        Surface(Modifier.widthIn(max = 620.dp).fillMaxWidth(0.96f),
+            shape = MaterialTheme.shapes.extraLarge, color = MaterialTheme.colorScheme.surface,
+            contentColor = MaterialTheme.colorScheme.onSurface) {
+        Column(Modifier.padding(horizontal = 12.dp, vertical = 14.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text(stringResource(Res.string.p6c_filters), Modifier.padding(horizontal = 3.dp),
+                style = MaterialTheme.typography.headlineSmall)
+            Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(5.dp), verticalAlignment = Alignment.CenterVertically) {
                     RegistryDropdown("", stringResource(draft.sort.label()), sorts,
                         { stringResource(it.label()) }, { draft = draft.copy(sort = it) }, Modifier.weight(1f))
@@ -505,7 +518,7 @@ private fun RegistryOptions(controls: RegistryControls, projects: Map<Long, Stri
                 Box(Modifier.weight(1f)) {
                     val selected = kinds.filter { it.name in draft.statuses }
                     OutlinedButton(onClick = { statusExpanded = true }, modifier = Modifier.fillMaxWidth(),
-                        contentPadding = PaddingValues(horizontal = 9.dp, vertical = 3.dp)) {
+                        contentPadding = PaddingValues(start = 13.dp, end = 5.dp, top = 4.dp, bottom = 4.dp)) {
                         Column(Modifier.weight(1f)) {
                             Text(stringResource(Res.string.p6c_status), style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -562,15 +575,20 @@ private fun RegistryOptions(controls: RegistryControls, projects: Map<Long, Stri
                     }
                 }
             }
-        },
-        confirmButton = { TextButton(enabled = valid, onClick = {
-            controls.update(draft)
-            controls.show(false)
-        }) { Text(stringResource(Res.string.p6c_apply)) } },
-        dismissButton = { TextButton(onClick = {
-            controls.update(RegistryFilter(sort = controls.defaultSort))
-            controls.show(false)
-        }) { Text(stringResource(Res.string.p6c_reset)) } })
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically) {
+                TextButton(onClick = {
+                    controls.update(RegistryFilter(sort = controls.defaultSort))
+                    controls.show(false)
+                }) { Text(stringResource(Res.string.p6c_reset)) }
+                TextButton(enabled = valid, onClick = {
+                    controls.update(draft)
+                    controls.show(false)
+                }) { Text(stringResource(Res.string.p6c_apply)) }
+            }
+        }
+        }
+    }
     dateSide?.let { from ->
         val initial = if (from) draft.from else draft.through
         val state = rememberDatePickerState(initialSelectedDateMillis = initial?.toEpochDays()?.toLong()?.times(86_400_000L))

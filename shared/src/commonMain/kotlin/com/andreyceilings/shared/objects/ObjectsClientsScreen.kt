@@ -185,7 +185,9 @@ fun ObjectsClientsScreen(
     initialSearch: String = "",
     searchRequest: Int = 0,
     onOpenCeilingRegistry: (() -> Unit)? = null,
-    returnToProjectsRequest: Int = 0
+    returnToProjectsRequest: Int = 0,
+    requestedClientId: Long? = null,
+    onClientRequestConsumed: () -> Unit = {}
 ) {
     val scope = rememberCoroutineScope()
     val focusManager = LocalFocusManager.current
@@ -607,6 +609,14 @@ fun ObjectsClientsScreen(
     }
     }
 
+    LaunchedEffect(requestedClientId, rowsReady, databaseAvailable) {
+        if (requestedClientId != null && rowsReady && databaseAvailable) {
+            dismissSearchFocus()
+            cardSwipes.dismiss()
+            viewedClientId = rows.clients.firstOrNull { it.id == requestedClientId }?.id
+            onClientRequestConsumed()
+        }
+    }
     val currentViewedClient = rows.clients.firstOrNull { it.id == viewedClientId }
     if (editor == null && deleting == null && currentViewedClient != null) {
         ClientReadCard(
@@ -791,7 +801,8 @@ internal fun CompactObjectsSearchField(
     onFocusChange: (Boolean) -> Unit,
     placeholder: String = stringResource(Res.string.p6c_objects_clients_search),
     clearLabel: String = stringResource(Res.string.p6c_clear_search),
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    inputModifier: Modifier = Modifier
 ) {
     val colors = MaterialTheme.colorScheme
     val shape = RoundedCornerShape(15.dp)
@@ -812,7 +823,7 @@ internal fun CompactObjectsSearchField(
             keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(capitalization = androidx.compose.ui.text.input.KeyboardCapitalization.Sentences),
             textStyle = MaterialTheme.typography.bodyMedium.copy(color = colors.onSurface),
             cursorBrush = androidx.compose.ui.graphics.SolidColor(colors.primary),
-            modifier = Modifier.weight(1f)
+            modifier = Modifier.weight(1f).then(inputModifier)
                 .onFocusChanged { onFocusChange(it.isFocused) },
             decorationBox = { inner ->
                 Box {
@@ -954,7 +965,7 @@ private fun SuggestionsDivider() {
 }
 
 @Composable
-private fun SearchResultRow(
+internal fun SearchResultRow(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     title: String,
     detail: String?,

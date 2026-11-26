@@ -111,6 +111,7 @@ class ObjectsClientsStore(
     internal fun cachedProjectDetails(projectId: Long) = projectDetailsCache.value?.takeIf { it.first == projectId }?.second
     internal fun cachedProjectFinance(projectId: Long) = projectFinanceCache.value?.takeIf { it.first == projectId }
     internal fun cachedContours(): Map<String, MeasurementDrawingContour?> = contours.snapshot()
+    internal fun uiObjectsRows() = objectsCache.observe(rows)
     internal fun uiRegistryCeilings() = ceilingCache.observe(observeRegistryCeilings())
     internal fun uiRegistryCeilingFinance() = ceilingFinanceCache.observe(observeRegistryCeilingFinance())
     internal fun uiRegistryQuotes() = quoteCache.observe(observeRegistryQuotes())

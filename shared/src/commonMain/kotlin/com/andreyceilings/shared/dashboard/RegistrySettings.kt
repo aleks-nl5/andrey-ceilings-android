@@ -13,7 +13,6 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import com.andreyceilings.shared.navigation.AppRoute
 import com.andreyceilings.shared.resources.*
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
@@ -60,24 +59,6 @@ fun DashboardAppearanceSettings(
         }, onClose = { if (!saving) page = 1 }, saving = saving, saveFailed = error)
     }
 }
-
-@Composable
-fun RegistrySearchDialog(onClose: () -> Unit, onOpen: (AppRoute, String, Boolean) -> Unit) {
-    var query by rememberSaveable { mutableStateOf("") }
-    AlertDialog(onDismissRequest = onClose, title = { Text(stringResource(Res.string.p6c_global_search)) },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                OutlinedTextField(query, { query = it }, Modifier.fillMaxWidth(), singleLine = true,
-                    label = { Text(stringResource(Res.string.p6c_search)) })
-                TextButton(onClick = { onOpen(AppRoute.OBJECTS, query, false) }) { Text(stringResource(Res.string.p6c_objects)) }
-                TextButton(onClick = { onOpen(AppRoute.OBJECTS, query, true) }) { Text(stringResource(Res.string.p6c_clients)) }
-                TextButton(onClick = { onOpen(AppRoute.MEASUREMENTS, query, false) }) { Text(stringResource(Res.string.p6c_ceilings)) }
-                TextButton(onClick = { onOpen(AppRoute.ESTIMATES, query, false) }) { Text(stringResource(Res.string.p6c_quotes)) }
-            }
-        },
-        confirmButton = { TextButton(onClick = onClose) { Text(stringResource(Res.string.p5d_cancel)) } })
-}
-
 
 @Composable
 fun RegistrySearchAction(onClick: () -> Unit) {

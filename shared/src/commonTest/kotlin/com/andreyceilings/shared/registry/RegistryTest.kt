@@ -14,6 +14,26 @@ import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class RegistryTest {
+    @Test fun globalSearchMatchesAcrossRegistriesAndOpensOnlyMatchingQuoteVersions() {
+        val objects = com.andreyceilings.shared.objects.ObjectsClientsRows(
+            listOf(com.andreyceilings.shared.domain.ProjectListEntry(1L, "Room", "Street", 2L,
+                "Client", "", "", "")),
+            listOf(com.andreyceilings.shared.domain.ClientListEntry(2L, "Client", "123", "", "", 1)))
+        val ceiling = ActiveCeilings(3L, "c3", 1L, "Room", 1.0, 2.0, 1L, 1L, "Project", "Street", "Client", "123")
+        val quote = series("series", 1, listOf(
+            version("exact", 1, 1000, "Room", EstimateWorkflowStatus.DRAFT),
+            version("other", 2, 2000, "Other", EstimateWorkflowStatus.DRAFT)))
+        val hits = globalRegistryMatches("Room", objects, listOf(ceiling), emptyMap(), listOf(quote))
+        assertEquals(listOf(1L), hits.projects.map { it.id })
+        assertEquals(listOf(3L), hits.ceilings.map { it.id })
+        assertEquals(listOf("exact"), hits.quotes.map { it.second.id })
+        assertTrue(hits.clients.isEmpty())
+        val clientHits = globalRegistryMatches("Client", objects, listOf(ceiling), emptyMap(), listOf(quote))
+        assertEquals(listOf(2L), clientHits.clients.map { it.id })
+        assertEquals(listOf("other", "exact"), clientHits.quotes.map { it.second.id })
+        assertTrue(globalRegistryMatches(" ", objects, listOf(ceiling), emptyMap(), listOf(quote)).isEmpty)
+    }
+
     @Test fun sessionSnapshotPreservesLastReadAndCannotRepopulateAfterClose() {
         val cache = SessionReadCache<Long>()
         assertEquals(RegistryRead.Loading, cache.read)

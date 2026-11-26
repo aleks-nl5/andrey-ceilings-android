@@ -87,6 +87,7 @@ import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import com.andreyceilings.shared.dashboard.DashboardPreferences
 import com.andreyceilings.shared.registry.QuoteRegistryScreen
 import com.andreyceilings.shared.dashboard.RegistrySearchDialog
+import com.andreyceilings.shared.registry.GlobalRegistryTarget
 import com.andreyceilings.shared.dashboard.RegistrySearchAction
 import com.andreyceilings.app.ui.theme.CeilingsTheme
 import com.andreyceilings.app.ui.theme.ThemeMode
@@ -255,6 +256,8 @@ private fun CeilingsAppContent(
 
     var initialSearch by remember { mutableStateOf("") }
     var openSearch by rememberSaveable { mutableStateOf(false) }
+    var requestedClientId by remember(database) { mutableStateOf<Long?>(null) }
+    var requestedQuote by remember(database) { mutableStateOf<GlobalRegistryTarget.Quote?>(null) }
     var searchGeneration by rememberSaveable { mutableIntStateOf(0) }
     var repeatedSearchRoute by remember { mutableStateOf<AppTab?>(null) }
     val searchRequest = if (tab == repeatedSearchRoute) searchGeneration else 0
@@ -700,6 +703,8 @@ private fun CeilingsAppContent(
                             onCloseProject = { updateNavigation(navigation.back()) },
                             onProjectHeaderProgress = { projectTitleProgress = it.coerceIn(0f, 1f) },
                             returnToProjectsRequest = returnToProjectsRequest,
+                            requestedClientId = requestedClientId,
+                            onClientRequestConsumed = { requestedClientId = null },
                              onListTabChanged = { selected ->
                                  clientsBackToObjects = selected == com.andreyceilings.shared.objects.ObjectsClientsTab.CLIENTS
                                  objectsStartInClients = clientsBackToObjects
@@ -721,7 +726,8 @@ private fun CeilingsAppContent(
                         )
                         AppTab.ESTIMATES -> QuoteRegistryScreen(database?.objectsClientsStore,
                             PaddingValues(top = topContentPadding, bottom = bottomContentPadding), initialSearch, searchRequest,
-                             headerVisibleFraction = 1f - topAppBarScrollBehavior.state.collapsedFraction)
+                            headerVisibleFraction = 1f - topAppBarScrollBehavior.state.collapsedFraction,
+                            requestedQuote = requestedQuote, onQuoteRequestConsumed = { requestedQuote = null })
                         AppTab.PRICES -> PriceListScreen(database, darkTheme = useDarkTheme)
                         AppTab.CALENDAR -> CalendarScreen(database)
                         else -> Unit
@@ -860,17 +866,34 @@ private fun CeilingsAppContent(
                 .height(navigationBarInset + systemPanelGradientHeight)
         )
 
-        if (openSearch) RegistrySearchDialog(onClose = { openSearch = false }) { target, query, clients ->
+        if (openSearch) RegistrySearchDialog(database?.objectsClientsStore, onClose = { openSearch = false }) { hit ->
             openSearch = false
-            if (target == tab) {
-                initialSearch = query
-                objectsStartInClients = clients
-                repeatedSearchRoute = target
-                searchGeneration++
-                if (navigation.projectDetails != null) updateNavigation(navigation.back())
-            } else {
+            val target = when (hit) {
+                is GlobalRegistryTarget.Project, is GlobalRegistryTarget.Client -> AppTab.OBJECTS
+                is GlobalRegistryTarget.Ceiling -> AppTab.MEASUREMENTS
+                is GlobalRegistryTarget.Quote -> AppTab.ESTIMATES
+            }
+            if (target != tab) {
+                initialSearch = ""
                 repeatedSearchRoute = null
-                openNested(target, query, clients)
+                registryState.removeState(target.name)
+                if (target == AppTab.OBJECTS) {
+                    objectsStartInClients = hit is GlobalRegistryTarget.Client
+                    clientsBackToObjects = false
+                }
+            }
+            val destination = navigation.navigate(target)
+            when (hit) {
+                is GlobalRegistryTarget.Project -> updateNavigation(destination.openProject(hit.id))
+                is GlobalRegistryTarget.Ceiling -> updateNavigation(destination.openCeilingWorkspace(hit.projectId, hit.id))
+                is GlobalRegistryTarget.Client -> {
+                    requestedClientId = hit.id
+                    updateNavigation(destination)
+                }
+                is GlobalRegistryTarget.Quote -> {
+                    requestedQuote = hit
+                    updateNavigation(destination)
+                }
             }
         }
 

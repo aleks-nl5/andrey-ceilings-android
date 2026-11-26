@@ -53,7 +53,9 @@ internal fun ObjectsClientsHost(
     initialClients: Boolean = false,
     initialSearch: String = "",
     searchRequest: Int = 0,
-    returnToProjectsRequest: Int = 0
+    returnToProjectsRequest: Int = 0,
+    requestedClientId: Long? = null,
+    onClientRequestConsumed: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val fullscreen = measurementCreateNavigationGuard?.fullscreen?.collectAsState()?.value == true
@@ -82,6 +84,8 @@ internal fun ObjectsClientsHost(
         initialSearch = initialSearch,
         searchRequest = searchRequest,
         returnToProjectsRequest = returnToProjectsRequest,
+        requestedClientId = requestedClientId,
+        onClientRequestConsumed = onClientRequestConsumed,
         onOpenCeilingRegistry = onOpenCeilingRegistry,
         swipeState = swipeState,
         detailsProjectId = detailsProjectId,
