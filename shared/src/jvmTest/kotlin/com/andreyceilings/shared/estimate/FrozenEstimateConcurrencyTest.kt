@@ -33,9 +33,13 @@ class FrozenEstimateConcurrencyTest {
                 allocator.issue(EstimateType.CONSOLIDATED, later) { error("Injected document write failure") }
             }
             assertEquals("КШ/26/0002", repo.previewNumbers(later).consolidated)
-            val reserved = allocator.issue(EstimateType.CONSOLIDATED, later) { it }
+            val source = issueNumberTestIndividual(db, later)
+            val stored = ConsolidatedEstimateRepository(db).save(numberTestConsolidatedCommand(db, source), later, 702)
+            val reserved = db.estimateIssuanceQueries.selectReservation(stored.seriesUuid).executeAsOne()
             assertEquals(2L, reserved.sequence)
+            assertEquals("КШ/26/0002", reserved.publicNumber)
             assertEquals("КШ/26/0001", repo.series(first.seriesUuid)?.publicNumber)
+            verifyFrozenEstimateContents(driver)
         }
     }
     @Test fun exhaustedCommonAnnualSequenceRejectsSaveWithoutPartialWrites() {
@@ -49,18 +53,35 @@ class FrozenEstimateConcurrencyTest {
             assertTrue(repo.configureIssuancePolicy(policy))
             val room = MeasurementPricingFixture.seed(db)
             val command = FrozenIndividualEstimateProof.command(db, room)
-            // Seed a coherent high-water reservation for the future consolidated type.
-            // Reaching Long.MAX_VALUE by issuing each intermediate number is impractical.
+            // Build real consolidated provenance at the maximum sequence. A temporary
+            // synthetic predecessor makes the boundary reachable without billions of writes.
+            // The predecessor must never survive into the valid database fixture.
+            val previousYear = LocalDate(2025, 11, 26)
+            val source = issueNumberTestIndividual(db, previousYear)
+            val otherSource = issueNumberTestIndividual(db, previousYear)
+            val consolidated = ConsolidatedEstimateRepository(db)
+            val consolidatedCommand = numberTestConsolidatedCommand(db, otherSource)
             val resolved = policy.resolve(EstimateType.CONSOLIDATED)
             val issuance = db.estimateIssuanceQueries
+            val predecessor = newRecordUuid()
             issuance.insertReservation(
-                newRecordUuid(), EstimateNumbering.render(resolved, date, Long.MAX_VALUE),
+                predecessor, EstimateNumbering.render(resolved, date, Long.MAX_VALUE - 1),
                 EstimateType.CONSOLIDATED.name, date.toString(), date.year.toLong(),
-                Long.MAX_VALUE, frozenEstimateJson.encodeToString(resolved), policy.mode.name
+                Long.MAX_VALUE - 1, frozenEstimateJson.encodeToString(resolved), policy.mode.name
             )
+            assertFailsWith<IllegalStateException> { verifyFrozenEstimateContents(driver) }
+            val exhausted = consolidated.save(numberTestConsolidatedCommand(db, source), date, 699)
+            assertEquals(Long.MAX_VALUE, issuance.selectReservation(exhausted.seriesUuid).executeAsOne().sequence)
+            driver.execute(null, "DELETE FROM estimate_number_reservations WHERE seriesUuid = ?", 1) {
+                bindString(0, predecessor)
+            }
+            verifyFrozenEstimateContents(driver)
+            fun documentCounts() = EstimateV22MigrationProof.counts(driver) +
+                listOf("consolidated_series", "consolidated_revisions", "consolidated_members", "consolidated_workflow")
+                    .associateWith { PriceNameUniquenessProof.scalar(driver, "SELECT count(*) FROM $it") }
             val before = issuance.selectAllReservations().executeAsList()
-            val beforeDocuments = EstimateV22MigrationProof.counts(driver)
-            assertTrue(beforeDocuments.values.all { it == 0L })
+            val beforeDocuments = documentCounts()
+            val beforeConsolidated = assertNotNull(consolidated.read(exhausted.revisionUuid))
             val failure = assertFailsWith<IndividualEstimateSaveFailure> {
                 repo.saveIndividual(command, date, 700)
             }
@@ -71,14 +92,22 @@ class FrozenEstimateConcurrencyTest {
                 }
             }
             assertEquals(IndividualEstimateSaveFailure.Reason.SEQUENCE_EXHAUSTED, consolidatedFailure.reason)
+            val actualConsolidatedFailure = assertFailsWith<IndividualEstimateSaveFailure> {
+                consolidated.save(consolidatedCommand, date, 700)
+            }
+            assertEquals(IndividualEstimateSaveFailure.Reason.SEQUENCE_EXHAUSTED, actualConsolidatedFailure.reason)
             assertEquals(before, issuance.selectAllReservations().executeAsList())
-            assertEquals(beforeDocuments, EstimateV22MigrationProof.counts(driver))
+            assertEquals(beforeDocuments, documentCounts())
+            assertEquals(beforeConsolidated.frozen, consolidated.read(exhausted.revisionUuid)?.frozen)
+            assertNull(consolidated.head(otherSource.projectId))
             verifyFrozenEstimateContents(driver)
             // Exhaustion is annual: the same command can succeed in the next year.
             val nextDate = LocalDate(2027, 1, 1)
             val saved = repo.saveIndividual(command, nextDate, 701)
             assertEquals(1L, saved.localSequence)
             assertEquals("КШ-2027-0001", repo.series(saved.seriesUuid)?.publicNumber)
+            val nextConsolidated = consolidated.save(consolidatedCommand, nextDate, 702)
+            assertEquals(2L, issuance.selectReservation(nextConsolidated.seriesUuid).executeAsOne().sequence)
             verifyFrozenEstimateContents(driver)
         }
     }
@@ -142,4 +171,21 @@ class FrozenEstimateConcurrencyTest {
             }
         } finally { pool.shutdownNow(); directory.deleteRecursively() }
     }
+}
+
+/** Real individual source and matching command for v24 cross-type number tests. */
+internal fun issueNumberTestIndividual(db: PrototypeDatabase, date: LocalDate): SavedIndividualQuote {
+    val fixture = MeasurementPricingFixture.seed(db)
+    val repository = ImmutableEstimateRepository(db)
+    val identity = repository.saveIndividual(FrozenIndividualEstimateProof.command(db, fixture), date, 600)
+    return assertNotNull(repository.exactIndividual(identity.seriesUuid, identity.initialRevisionUuid))
+}
+
+internal fun numberTestConsolidatedCommand(db: PrototypeDatabase, source: SavedIndividualQuote): ConsolidatedSave {
+    val project = assertNotNull(ProjectRepository(db).find(source.projectId))
+    return ConsolidatedSave(newRecordUuid(), project.id, project.uuid, null, null,
+        ConsolidatedDraft("Numbering proof",
+            ConsolidatedDiscount(com.andreyceilings.shared.livepricing.QuoteDiscountMode.FIXED, 0),
+            listOf(ConsolidatedDocumentRef(source.frozen.source.measurementUuid, source.seriesUuid,
+                source.revisionUuid, source.frozen.consolidatedSourceProof()))))
 }

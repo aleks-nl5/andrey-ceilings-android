@@ -53,12 +53,17 @@ class EstimateNumberSettingsPersistenceTest {
             PriceCatalogSchema.create(driver)
             val db = PrototypeDatabase(driver)
             val repo = ImmutableEstimateRepository(db)
-            val allocator = EstimateNumberAllocator(db)
+            val consolidatedRepository = ConsolidatedEstimateRepository(db)
             fun individual(): Long {
                 val room = MeasurementPricingFixture.seed(db)
                 return repo.saveIndividual(FrozenIndividualEstimateProof.command(db, room), date, 1000).localSequence
             }
-            fun consolidated() = allocator.issue(EstimateType.CONSOLIDATED, date) { it.sequence }
+            fun consolidated(): Long {
+                // Source numbers belong to a different year and cannot alter the tested annual counters.
+                val source = issueNumberTestIndividual(db, LocalDate(2025, 11, 26))
+                val saved = consolidatedRepository.save(numberTestConsolidatedCommand(db, source), date, 1001)
+                return db.estimateIssuanceQueries.selectReservation(saved.seriesUuid).executeAsOne().sequence
+            }
             assertEquals(1L, individual())
             assertEquals(1L, consolidated())
             assertEquals(2L, consolidated())
@@ -71,6 +76,7 @@ class EstimateNumberSettingsPersistenceTest {
             assertEquals(5L, consolidated())
             assertEquals(EstimateNumberPreview("КШ-2027-0001", "ЗК-2027-0001", false),
                 repo.previewNumbers(LocalDate(2027, 1, 1)))
+            verifyFrozenEstimateContents(driver)
         }
     }
 }

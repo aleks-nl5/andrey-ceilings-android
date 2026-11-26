@@ -103,6 +103,7 @@ jobs:
           --tests '*EstimateNumberingTest' --tests '*EstimateNumberSettingsPersistenceTest'
           --tests '*EstimateV22MigrationTest'
           --tests '*FrozenEstimateConcurrencyTest'
+          --tests '*ConsolidatedEstimateRepositoryTest' --tests '*ConsolidatedMigrationTest'
           --stacktrace --warning-mode all
       - name: Verify unsigned release candidate for trusted signing
         shell: bash
