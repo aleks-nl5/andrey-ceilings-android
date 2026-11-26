@@ -107,8 +107,8 @@ class FrozenEstimateDocumentAndroidTest {
                         .performScrollToNode(note)
                     val paragraphs = (1..100).joinToString("\n") { "Узгоджений текст, рядок $it" }
                     compose.onNode(note).performTextInput(paragraphs)
-                    compose.onNodeWithText("До перегляду").performClick()
-                    compose.onNodeWithText("Зберегти PDF").performClick()
+                    compose.onNodeWithContentDescription("До перегляду").performClick()
+                    compose.onNodeWithContentDescription("Зберегти PDF").performClick()
                     val pages = compose.runOnIdle { assertNotNull(captured) }
                     assertTrue(pages.count > 1)
                     assertTrue(pages.fileName.endsWith("-v2.pdf"))

@@ -30,3 +30,7 @@ The starting main revision was `6a5cac216f9bb0a96d7fb1c9e726fcc3ac29d127`. Andro
 - The final targeted JVM run reported 32 tests and zero failures. It covered consolidated persistence and workflow, object financial metadata, the current migration boundary and exact individual PDF sources. Windows-only test methods returned early on Linux.
 - SQLDelight verified the migration against the generated fresh schema. The localization guard passed for the changed presentation files.
 - The Android app and instrumentation sources compiled with `:app:compileDebugAndroidTestKotlin`. The final proof correction was rechecked in the targeted JVM run. Physical Android and native SQLCipher tests remain part of owner acceptance and the agreed FULL runs.
+
+## Owner APK polish (26.11.2026)
+
+Owner requested the compact consolidated create/read-only dialog (approximately half-height, expands for IME/exact source details), empty new title with default on Save, fixed footer with compact discount input and centred amount, copy/PDF/save/trash icons, visually separated version dropdown, swapped deletion actions and icon-based PDF toolbar. Shared ordinary text inputs request sentence capitalization; numeric, technical, phone, email and password inputs are not capitalized. PDF toolbar accessibility descriptions replace text selectors in existing tests. No pricing, workflow, ledger or schema changes. The physical UI appearance and IME behavior require renewed APK acceptance; QUICK first, FULL only after owner acceptance.

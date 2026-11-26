@@ -135,7 +135,7 @@ fun MeasurementElementEditor(
                         Text("Прив'язування збереже UUID, примітку й погодження. Підтвердіть вибрану позицію та кількість.")
                     } else {
                         if (!draft.catalog) {
-                            OutlinedTextField(draft.label, { value -> onChange { it.copy(label = value) } },
+                            OutlinedTextField(draft.label, { value -> onChange { it.copy(keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(capitalization = androidx.compose.ui.text.input.KeyboardCapitalization.Sentences), label = value) } },
                                 enabled = enabled, label = { Text("Назва побажання") }, modifier = Modifier.fillMaxWidth())
                             OutlinedTextField(draft.unit, { value -> onChange { it.copy(unit = value) } },
                                 enabled = enabled, label = { Text("Одиниця (шт., м.п., м² або власна)") }, modifier = Modifier.fillMaxWidth())
@@ -148,7 +148,7 @@ fun MeasurementElementEditor(
                                 Text("Позиція більше недоступна у прайсі. Збережені параметри залишаються чинними.")
                         }
                         OutlinedTextField(draft.note, { value -> onChange { it.copy(note = value) } },
-                            enabled = enabled, label = { Text("Примітка") }, modifier = Modifier.fillMaxWidth())
+                            enabled = enabled, keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(capitalization = androidx.compose.ui.text.input.KeyboardCapitalization.Sentences), label = { Text("Примітка") }, modifier = Modifier.fillMaxWidth())
                         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             ElementApproval.entries.forEach { approval ->
                                 FilterChip(draft.approval == approval, enabled = enabled,
@@ -231,7 +231,7 @@ private fun ElementCatalogPicker(state: ElementCatalogState, selection: ElementC
             TextButton(onClick = onRefresh, enabled = enabled) { Text("Оновити каталог") }
         }
         is ElementCatalogState.Loaded -> {
-            OutlinedTextField(query, { query = it }, enabled = enabled, label = { Text("Пошук за назвою або кодом") },
+            OutlinedTextField(query, { query = it }, enabled = enabled, keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(capitalization = androidx.compose.ui.text.input.KeyboardCapitalization.Sentences), label = { Text("Пошук за назвою або кодом") },
                 modifier = Modifier.fillMaxWidth(), singleLine = true)
             Box {
                 OutlinedButton(onClick = { groupsExpanded = true }, enabled = enabled) {

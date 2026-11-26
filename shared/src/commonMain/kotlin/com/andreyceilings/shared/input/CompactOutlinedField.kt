@@ -21,6 +21,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import com.andreyceilings.shared.theme.CeilingsFieldDefaults
@@ -99,7 +101,9 @@ fun CompactOutlinedStringField(
             field = next
             if (next.text != value) onValueChange(next.text)
         }, label = label, modifier = modifier, enabled = enabled, isError = isError,
-        keyboardOptions = keyboardOptions, keyboardActions = keyboardActions, maxLines = maxLines,
+        keyboardOptions = if (keyboardOptions.keyboardType == KeyboardType.Text)
+            keyboardOptions.copy(capitalization = KeyboardCapitalization.Sentences)
+        else keyboardOptions, keyboardActions = keyboardActions, maxLines = maxLines,
         dense = dense
     )
 }

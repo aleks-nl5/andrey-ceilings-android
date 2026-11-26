@@ -1,6 +1,8 @@
 package com.andreyceilings.shared.estimate
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -10,6 +12,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -87,7 +91,7 @@ internal fun ConsolidatedEstimateScreen(
                             room.revisions.singleOrNull { it.status == EstimateWorkflowStatus.APPROVED }?.ref
                         }.associateBy { it.measurementUuid }
                     val discount = carried?.draft?.discount ?: ConsolidatedDiscount(QuoteDiscountMode.PERCENT, 0)
-                    val initialTitle = carried?.draft?.title ?: defaultTitle
+                    val initialTitle = carried?.draft?.title.orEmpty()
                     val head = store.consolidatedHead(projectId)
                     session.selection.value = selection
                     session.title.value = initialTitle
@@ -120,7 +124,7 @@ internal fun ConsolidatedEstimateScreen(
     val amounts = if (discount != null && cents.size == selected.size) {
         try { consolidatedAmounts(cents, discount) } catch (_: PricingOverflow) { null }
     } else null
-    val normalizedTitle = title?.let(::validEstimateTitle)
+    val normalizedTitle = validEstimateTitle(title.orEmpty().ifBlank { defaultTitle })
     val ready = basis != null && normalizedTitle != null && discount != null && amounts != null
     val dirty = basis?.let {
         selected != it.initialSelection || title != it.initialTitle || discount != it.initialDiscount
@@ -206,156 +210,178 @@ internal fun ConsolidatedEstimateScreen(
     }
 
     Dialog(onDismissRequest = ::exit, properties = DialogProperties(usePlatformDefaultWidth = false, dismissOnClickOutside = false)) {
-        Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surface) {
-            Column(Modifier.fillMaxSize().safeDrawingPadding().imePadding()) {
-                val opened = saved
-                val individualQuote = individual
-                val exact = remember(individualQuote) {
-                    individualQuote?.let { FrozenEstimateDocument.from(it, null, kotlinx.datetime.TimeZone.UTC) }
-                }
-                val keyboardVisible = WindowInsets.ime.getBottom(LocalDensity.current) > 0
-                Surface(color = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f)) {
-                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        IconButton(onClick = ::exit, enabled = !busy && !saving) {
-                            Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(Res.string.p5d_back_quotes))
-                        }
-                        Column(Modifier.weight(1f)) {
-                            Text(exact?.title ?: opened?.frozen?.draft?.title
-                                ?: stringResource(if (revisionUuid == null) Res.string.p6b_new else Res.string.p6a_consolidated),
-                                style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            if (opened != null || exact != null) {
-                                Text(stringResource(Res.string.p5d_revision_heading,
-                                    exact?.publicNumber ?: checkNotNull(opened).frozen.publicNumber,
-                                    exact?.version ?: checkNotNull(opened).frozen.version),
-                                    style = MaterialTheme.typography.labelMedium)
+        BoxWithConstraints(Modifier.fillMaxSize().safeDrawingPadding().imePadding().padding(horizontal = 12.dp),
+            contentAlignment = Alignment.Center) {
+            val keyboardVisible = WindowInsets.ime.getBottom(LocalDensity.current) > 0
+            // Use the available area while the keyboard is open; keep the footer reachable.
+            val dialogHeight = if (keyboardVisible || individual != null) maxHeight
+                else (maxHeight * 0.55f).coerceIn(minOf(300.dp, maxHeight), maxHeight)
+            Surface(Modifier.widthIn(max = 640.dp).fillMaxWidth().height(dialogHeight),
+                shape = RoundedCornerShape(24.dp), color = MaterialTheme.colorScheme.surface,
+                tonalElevation = 2.dp, shadowElevation = 6.dp) {
+                Column(Modifier.fillMaxSize()) {
+                    val opened = saved
+                    val individualQuote = individual
+                    val exact = remember(individualQuote) {
+                        individualQuote?.let { FrozenEstimateDocument.from(it, null, kotlinx.datetime.TimeZone.UTC) }
+                    }
+                    Surface(color = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f)) {
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                            IconButton(onClick = ::exit, enabled = !busy && !saving) {
+                                Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(Res.string.p5d_back_quotes))
                             }
-                        }
-                        if (opened != null && exact == null) {
-                            if (drift.values.any { it != false }) DriftInfo(drift.values.any { it == null })
-                            ConsolidatedStatusControl(opened.status, !busy) { next ->
-                                change {
-                                    val proof = store.consolidatedConfirmation(opened.frozen.revisionUuid, next)
-                                    if (proof == null || proof.statusVersion != opened.statusVersion) false
-                                    else if (next == EstimateWorkflowStatus.APPROVED || opened.status == EstimateWorkflowStatus.APPROVED) {
-                                        confirming = proof
-                                        true
-                                    } else store.setConsolidatedStatus(proof, false)
+                            Column(Modifier.weight(1f)) {
+                                Text(exact?.title ?: opened?.frozen?.draft?.title
+                                    ?: stringResource(if (revisionUuid == null) Res.string.p6b_new else Res.string.p6a_consolidated),
+                                    style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                if (opened != null || exact != null) {
+                                    Text(stringResource(Res.string.p5d_revision_heading,
+                                        exact?.publicNumber ?: checkNotNull(opened).frozen.publicNumber,
+                                        exact?.version ?: checkNotNull(opened).frozen.version),
+                                        style = MaterialTheme.typography.labelMedium)
                                 }
                             }
-                        }
-                    }
-                }
-                if (busy || saving || (opened == null && revisionUuid != null && error == null)) {
-                    LinearProgressIndicator(Modifier.fillMaxWidth())
-                }
-                val errorResource = error
-                if (errorResource != null) {
-                    Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                        val description = stringResource(errorResource)
-                        ContextFeedbackIcon(description, description, ContextFeedbackKind.ERROR)
-                        Text(description, Modifier.weight(1f), color = MaterialTheme.colorScheme.error,
-                            style = MaterialTheme.typography.bodySmall)
-                        TextButton(enabled = !busy && !saving, onClick = {
-                            error = null
-                            rebaseRequested = revisionUuid == null
-                            reload++
-                        }) { Text(stringResource(Res.string.p6b_reload)) }
-                    }
-                }
-                when {
-                    exact != null && individualQuote != null -> ConsolidatedIndividualDetails(exact, individualQuote.frozen.source, Modifier.weight(1f))
-                    opened != null -> {
-                        LazyColumn(Modifier.weight(1f).fillMaxWidth(), state = listState,
-                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
-                            verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            items(opened.frozen.members.zip(opened.individuals), key = { it.first.ref.measurementUuid }) { (member, source) ->
-                                Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable {
-                                    individual = source
-                                }, verticalAlignment = Alignment.CenterVertically) {
-                                    Column(Modifier.weight(1f)) {
-                                        Text(member.room, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                        Text(stringResource(Res.string.p5d_revision_heading, source.frozen.publicNumber, member.individualVersion),
-                                            style = MaterialTheme.typography.labelMedium)
+                            if (opened != null && exact == null) {
+                                if (drift.values.any { it != false }) DriftInfo(drift.values.any { it == null })
+                                ConsolidatedStatusControl(opened.status, !busy) { next ->
+                                    change {
+                                        val proof = store.consolidatedConfirmation(opened.frozen.revisionUuid, next)
+                                        if (proof == null || proof.statusVersion != opened.statusVersion) false
+                                        else if (next == EstimateWorkflowStatus.APPROVED || opened.status == EstimateWorkflowStatus.APPROVED) {
+                                            confirming = proof
+                                            true
+                                        } else store.setConsolidatedStatus(proof, false)
                                     }
-                                    if (member.ref.measurementUuid in drift && drift[member.ref.measurementUuid] != false) {
-                                        DriftInfo(drift[member.ref.measurementUuid] == null)
-                                    }
-                                    Text(measurementMoney(member.finalCents), style = MaterialTheme.typography.labelLarge)
                                 }
-                                HorizontalDivider()
-                            }
-                        }
-                        ConsolidatedBottom(opened.frozen.amounts) {
-                            IconButton(onClick = { session.previewing.value = true }, enabled = !busy) {
-                                Icon(Icons.Default.PictureAsPdf, stringResource(Res.string.p5d_pdf_preview))
-                            }
-                            IconButton(onClick = { onCarry(opened.frozen.revisionUuid) }, enabled = !busy) {
-                                Icon(Icons.Default.Add, stringResource(Res.string.p5d_new_revision))
-                            }
-                            if (opened.status == EstimateWorkflowStatus.APPROVED) {
-                                val reason = stringResource(Res.string.p5d_delete_protected)
-                                ContextFeedbackIcon(reason, reason)
-                            }
-                            WorkspaceTrash(!busy && opened.status != EstimateWorkflowStatus.APPROVED, Res.string.p5d_delete_revision) {
-                                deleting = true
                             }
                         }
                     }
-                    revisionUuid == null && catalog != null && basis != null -> {
-                        val rooms = checkNotNull(catalog).rooms
-                        val roomIds = remember(rooms) { rooms.map { it.uuid }.toSet() }
-                        LazyColumn(Modifier.weight(1f).fillMaxWidth(), state = listState,
-                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
-                            verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            item {
-                                CompactOutlinedStringField(title.orEmpty(), { session.title.value = it },
-                                    stringResource(Res.string.p5d_title), Modifier.fillMaxWidth(),
-                                    enabled = !saving, isError = normalizedTitle == null,
-                                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done), dense = true)
-                            }
-                            item {
-                                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                                    DecimalInputField(discountText, { session.discount.value = it },
-                                        stringResource(Res.string.p6b_discount), Modifier.weight(1f),
-                                        enabled = !saving, isError = discount == null || (cents.isNotEmpty() &&
-                                            cents.size == selected.size && amounts == null), compact = true, dense = true)
-                                    TextButton(enabled = !saving, onClick = {
-                                        session.discountMode.value = if (discountMode == QuoteDiscountMode.PERCENT) QuoteDiscountMode.FIXED
-                                            else QuoteDiscountMode.PERCENT
-                                    }) { Text(stringResource(if (discountMode == QuoteDiscountMode.PERCENT)
-                                        Res.string.p5d_discount_percent else Res.string.p5d_discount_money)) }
-                                    val help = stringResource(Res.string.p6b_discount_help)
-                                    ContextFeedbackIcon(help, stringResource(Res.string.p6b_discount), ContextFeedbackKind.HELP)
+                    if (busy || saving || (opened == null && revisionUuid != null && error == null)) {
+                        LinearProgressIndicator(Modifier.fillMaxWidth())
+                    }
+                    val errorResource = error
+                    if (errorResource != null) {
+                        Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                            val description = stringResource(errorResource)
+                            ContextFeedbackIcon(description, description, ContextFeedbackKind.ERROR)
+                            Text(description, Modifier.weight(1f), color = MaterialTheme.colorScheme.error,
+                                style = MaterialTheme.typography.bodySmall)
+                            TextButton(enabled = !busy && !saving, onClick = {
+                                error = null
+                                rebaseRequested = revisionUuid == null
+                                reload++
+                            }) { Text(stringResource(Res.string.p6b_reload)) }
+                        }
+                    }
+                    when {
+                        exact != null && individualQuote != null -> ConsolidatedIndividualDetails(exact, individualQuote.frozen.source, Modifier.weight(1f))
+                        opened != null -> {
+                            LazyColumn(Modifier.weight(1f).fillMaxWidth(), state = listState,
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+                                verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                items(opened.frozen.members.zip(opened.individuals), key = { it.first.ref.measurementUuid }) { (member, source) ->
+                                    Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable {
+                                        individual = source
+                                    }, verticalAlignment = Alignment.CenterVertically) {
+                                        Column(Modifier.weight(1f)) {
+                                            Text(member.room, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                            Text(stringResource(Res.string.p5d_revision_heading, source.frozen.publicNumber, member.individualVersion),
+                                                style = MaterialTheme.typography.labelMedium)
+                                        }
+                                        if (member.ref.measurementUuid in drift && drift[member.ref.measurementUuid] != false) {
+                                            DriftInfo(drift[member.ref.measurementUuid] == null)
+                                        }
+                                        Text(measurementMoney(member.finalCents), style = MaterialTheme.typography.labelLarge)
+                                    }
+                                    HorizontalDivider()
                                 }
                             }
-                            items(rooms, key = { it.uuid }) { room ->
-                                ConsolidatedRoomRow(room.name, room.revisions, room.uuid in selected, selected[room.uuid],
-                                    !saving, onSelect = { ref -> session.selection.update { it + (room.uuid to ref) } },
-                                    onRemove = { session.selection.update { it - room.uuid } })
-                            }
-                            items(selected.keys.filter { it !in roomIds }, key = { it }) { id ->
-                                ConsolidatedRoomRow(basis?.carriedRooms?.get(id).orEmpty(), emptyList(), true,
-                                    selected[id], !saving, onSelect = {}, onRemove = { session.selection.update { it - id } })
+                            ConsolidatedFooter(opened.frozen.amounts, discountRow = {
+                                val frozenDiscount = opened.frozen.draft.discount
+                                Text(stringResource(Res.string.p5d_discount), style = MaterialTheme.typography.labelMedium)
+                                Text(decimalDiscountText(frozenDiscount.value), style = MaterialTheme.typography.labelLarge)
+                                Text(stringResource(if (frozenDiscount.mode == QuoteDiscountMode.PERCENT)
+                                    Res.string.p5d_discount_percent else Res.string.p5d_discount_money),
+                                    style = MaterialTheme.typography.labelLarge)
+                                Spacer(Modifier.weight(1f))
+                                Text(measurementMoney(opened.frozen.amounts.discountCents), style = MaterialTheme.typography.labelLarge)
+                                val help = stringResource(Res.string.p6b_discount_help)
+                                ContextFeedbackIcon(help, stringResource(Res.string.p6b_discount), ContextFeedbackKind.HELP)
+                            }, leading = {
+                                WorkspaceTrash(!busy && opened.status != EstimateWorkflowStatus.APPROVED, Res.string.p5d_delete_revision) {
+                                    deleting = true
+                                }
+                                if (opened.status == EstimateWorkflowStatus.APPROVED) {
+                                    val reason = stringResource(Res.string.p5d_delete_protected)
+                                    ContextFeedbackIcon(reason, reason)
+                                }
+                            }) {
+                                IconButton(onClick = { session.previewing.value = true }, enabled = !busy, modifier = Modifier.size(44.dp)) {
+                                    Icon(Icons.Default.PictureAsPdf, stringResource(Res.string.p5d_pdf_preview))
+                                }
+                                IconButton(onClick = { onCarry(opened.frozen.revisionUuid) }, enabled = !busy, modifier = Modifier.size(44.dp)) {
+                                    Icon(Icons.Default.ContentCopy, stringResource(Res.string.p5d_new_revision))
+                                }
                             }
                         }
-                        if (!keyboardVisible) {
-                            ConsolidatedBottom(amounts) {
+                        revisionUuid == null && catalog != null && basis != null -> {
+                            val rooms = checkNotNull(catalog).rooms
+                            val roomIds = remember(rooms) { rooms.map { it.uuid }.toSet() }
+                            LazyColumn(Modifier.weight(1f).fillMaxWidth(), state = listState,
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+                                verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                item {
+                                    CompactOutlinedStringField(title.orEmpty(), { session.title.value = it },
+                                        stringResource(Res.string.p5d_title), Modifier.fillMaxWidth(),
+                                        enabled = !saving, isError = normalizedTitle == null,
+                                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done), dense = true)
+                                }
+                                items(rooms, key = { it.uuid }) { room ->
+                                    ConsolidatedRoomRow(room.name, room.revisions, room.uuid in selected, selected[room.uuid],
+                                        !saving, onSelect = { ref -> session.selection.update { it + (room.uuid to ref) } },
+                                        onRemove = { session.selection.update { it - room.uuid } })
+                                }
+                                items(selected.keys.filter { it !in roomIds }, key = { it }) { id ->
+                                    ConsolidatedRoomRow(basis?.carriedRooms?.get(id).orEmpty(), emptyList(), true,
+                                        selected[id], !saving, onSelect = {}, onRemove = { session.selection.update { it - id } })
+                                }
+                            }
+                            ConsolidatedFooter(amounts, discountRow = {
+                                DecimalInputField(discountText, { session.discount.value = it },
+                                    stringResource(Res.string.p5d_discount), Modifier.width(92.dp),
+                                    enabled = !saving, isError = discount == null || (cents.isNotEmpty() &&
+                                        cents.size == selected.size && amounts == null), compact = true, dense = true,
+                                    selectAllOnFocus = true)
+                                OutlinedButton(enabled = !saving, onClick = {
+                                    session.discountMode.value = if (discountMode == QuoteDiscountMode.PERCENT) QuoteDiscountMode.FIXED
+                                        else QuoteDiscountMode.PERCENT
+                                }, contentPadding = PaddingValues(horizontal = 10.dp)) {
+                                    Text(stringResource(if (discountMode == QuoteDiscountMode.PERCENT)
+                                        Res.string.p5d_discount_percent else Res.string.p5d_discount_money))
+                                }
+                                Spacer(Modifier.weight(1f))
+                                amounts?.let { Text(measurementMoney(it.discountCents), style = MaterialTheme.typography.labelLarge) }
+                                val help = stringResource(Res.string.p6b_discount_help)
+                                ContextFeedbackIcon(help, stringResource(Res.string.p6b_discount), ContextFeedbackKind.HELP)
+                            }, leading = {
                                 if (!ready) {
                                     val reason = stringResource(Res.string.p6b_save_blocked)
                                     ContextFeedbackIcon(reason, reason, ContextFeedbackKind.WARNING)
                                 }
-                                IconButton(enabled = ready && !saving, onClick = { session.previewing.value = true }) {
+                            }) {
+                                IconButton(enabled = ready && !saving, onClick = { session.previewing.value = true }, modifier = Modifier.size(44.dp)) {
                                     Icon(Icons.Default.PictureAsPdf, stringResource(Res.string.p5d_pdf_preview))
                                 }
-                                Button(enabled = ready && !saving, onClick = ::save) {
-                                    Text(stringResource(Res.string.p5d_save_quote))
+                                FilledTonalIconButton(enabled = ready && !saving, onClick = ::save,
+                                    modifier = Modifier.size(44.dp)) {
+                                    Icon(Icons.Default.Save, stringResource(Res.string.p5d_save_quote))
                                 }
                             }
                         }
-                    }
-                    else -> {
-                        if (error == null && revisionUuid == null) LinearProgressIndicator(Modifier.fillMaxWidth())
-                        Spacer(Modifier.weight(1f))
+                        else -> {
+                            if (error == null && revisionUuid == null) LinearProgressIndicator(Modifier.fillMaxWidth())
+                            Spacer(Modifier.weight(1f))
+                        }
                     }
                 }
             }
@@ -388,22 +414,30 @@ internal fun ConsolidatedEstimateScreen(
 }
 
 private fun decimalDiscountText(value: Long): String =
-    "${value / 100}.${(value % 100).toString().padStart(2, '0')}"
+    if (value % 100 == 0L) (value / 100).toString()
+    else "${value / 100}.${(value % 100).toString().padStart(2, '0').trimEnd('0')}"
 
 @Composable
-private fun ConsolidatedBottom(amounts: QuoteAmounts?, actions: @Composable RowScope.() -> Unit) {
-    Surface(color = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.94f), tonalElevation = 3.dp) {
-        Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
-            verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                if (amounts != null) {
-                    Text(stringResource(Res.string.p6b_payable, measurementMoney(amounts.finalCents)),
-                        style = MaterialTheme.typography.titleSmall)
-                    if (amounts.discountCents > 0) Text(stringResource(Res.string.p5d_discount_value,
-                        measurementMoney(amounts.discountCents)), style = MaterialTheme.typography.labelMedium)
+private fun ConsolidatedFooter(
+    amounts: QuoteAmounts?,
+    discountRow: @Composable RowScope.() -> Unit = {},
+    leading: @Composable RowScope.() -> Unit = {},
+    actions: @Composable RowScope.() -> Unit
+) {
+    Surface(color = MaterialTheme.colorScheme.surfaceContainer, tonalElevation = 3.dp, shadowElevation = 2.dp) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp)) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp), content = discountRow)
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Row(Modifier.width(92.dp), verticalAlignment = Alignment.CenterVertically, content = leading)
+                Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                    if (amounts != null) Text(measurementMoney(amounts.finalCents),
+                        style = MaterialTheme.typography.titleLarge,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center)
                 }
+                Row(Modifier.width(92.dp), verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.End, content = actions)
             }
-            actions()
         }
     }
 }
@@ -426,7 +460,10 @@ private fun ConsolidatedRoomRow(
                 else Text(stringResource(Res.string.p5d_revision_heading, option.number, option.version),
                     style = MaterialTheme.typography.labelMedium)
             }
-            DropdownMenu(open, onDismissRequest = { open = false }) {
+            DropdownMenu(open, onDismissRequest = { open = false },
+                shape = RoundedCornerShape(16.dp), containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                tonalElevation = 4.dp, shadowElevation = 8.dp,
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)) {
                 choices.forEach { choice ->
                     DropdownMenuItem(text = {
                         Column {
@@ -483,7 +520,7 @@ private fun ConsolidatedIndividualDetails(document: FrozenEstimateDocument, sour
             }
         }
         items(document.omissions) { omission -> Text(omission, style = MaterialTheme.typography.bodySmall) }
-        item { ConsolidatedBottom(document.amounts) {} }
+        item { Text(measurementMoney(document.amounts.finalCents), style = MaterialTheme.typography.titleLarge) }
     }
 }
 
@@ -540,9 +577,9 @@ private fun ConsolidatedApprovalDialog(
 internal fun ConsolidatedDeleteDialog(entireSeries: Boolean, onClose: () -> Unit, onDelete: () -> Unit) {
     AlertDialog(onDismissRequest = onClose,
         title = { Text(stringResource(if (entireSeries) Res.string.p5d_delete_series_title else Res.string.p5d_delete_revision_title)) },
-        confirmButton = { TextButton(onClick = onDelete) {
+        dismissButton = { TextButton(onClick = onDelete) {
             Text(stringResource(if (entireSeries) Res.string.p5d_delete_series else Res.string.p5d_delete_revision),
                 color = MaterialTheme.colorScheme.error)
         } },
-        dismissButton = { TextButton(onClick = onClose) { Text(stringResource(Res.string.p5d_cancel)) } })
+        confirmButton = { TextButton(onClick = onClose) { Text(stringResource(Res.string.p5d_cancel)) } })
 }

@@ -94,7 +94,7 @@ internal fun PriceEditorDialog(
                         groups, { it.name }, { change(draft.selectGroup(it)) }, enabled, fieldFocus("category"))
                     TextButton(enabled = enabled, onClick = onNewCategory) { Text("Нова категорія…") }
                     OutlinedTextField(value = draft.title, onValueChange = { change(draft.copy(title = it)) },
-                        label = { Text("Назва *") }, singleLine = true, enabled = enabled,
+                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(capitalization = androidx.compose.ui.text.input.KeyboardCapitalization.Sentences), label = { Text("Назва *") }, singleLine = true, enabled = enabled,
                         isError = error == "Позиція з такою назвою вже існує" || draft.title.isBlank(),
                         modifier = Modifier.fillMaxWidth().then(fieldFocus("title")))
                     CatalogUnitField(draft.unit, unitOptions, enabled, fieldFocus("unit")) {
@@ -191,7 +191,7 @@ internal fun PriceGroupEditorDialog(
         title = { Text(if (editor.original == null) "Нова категорія" else "Редагувати категорію") },
         text = { Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedTextField(value = draft.name, onValueChange = { change(draft.copy(name = it)) },
-                label = { Text("Назва *") }, singleLine = true, enabled = enabled,
+                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(capitalization = androidx.compose.ui.text.input.KeyboardCapitalization.Sentences), label = { Text("Назва *") }, singleLine = true, enabled = enabled,
                 isError = error == "Категорія з такою назвою вже існує" || draft.name.isBlank(),
                 modifier = Modifier.fillMaxWidth().focusRequester(focusRequester))
             CatalogUnitField(draft.defaultUnit, PriceCatalogRules.standardUnits, enabled,

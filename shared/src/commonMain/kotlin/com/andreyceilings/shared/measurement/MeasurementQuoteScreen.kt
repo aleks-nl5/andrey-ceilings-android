@@ -55,7 +55,7 @@ fun MeasurementQuoteScreen(presenter: TransientQuotePresenter, store: Measuremen
             val actualTitle = saveState.title.orEmpty()
             val canSave = !saveState.saving && saveState.resultSeriesUuid == null && validEstimateTitle(actualTitle) != null && state.amounts != null &&
                 (state.preview?.canFinalizeFull == true || state.preview?.canRequestPartialAcknowledgement == true && state.acknowledged)
-            OutlinedTextField(actualTitle, presenter::editTitle, label = { Text("Назва кошторису") },
+            OutlinedTextField(actualTitle, presenter::editTitle, keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(capitalization = androidx.compose.ui.text.input.KeyboardCapitalization.Sentences), label = { Text("Назва кошторису") },
                 enabled = !saveState.saving, singleLine = true, isError = actualTitle.isNotEmpty() && validEstimateTitle(actualTitle) == null,
                 supportingText = { Text("Від 1 до 160 символів") }, modifier = Modifier.fillMaxWidth())
             if (saveState.saving) Text("Зберігаємо зафіксований кошторис. Дочекайтеся завершення.")

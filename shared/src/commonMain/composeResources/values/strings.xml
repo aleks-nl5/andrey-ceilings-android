@@ -443,4 +443,11 @@
     <string name="p6b_address">Адреса · %1$s</string>
     <string name="p6b_save_to_export">Збережіть кошторис, щоб експортувати, друкувати або поділитися PDF.</string>
     <string name="p6b_reload">Оновити</string>
+    <string name="pdf_back">Назад</string>
+    <string name="pdf_back_to_preview">До перегляду</string>
+    <string name="pdf_zoom_in">Збільшити</string>
+    <string name="pdf_fit_width">За шириною</string>
+    <string name="pdf_save">Зберегти PDF</string>
+    <string name="pdf_share">Поділитися</string>
+    <string name="pdf_print">Друк</string>
 </resources>

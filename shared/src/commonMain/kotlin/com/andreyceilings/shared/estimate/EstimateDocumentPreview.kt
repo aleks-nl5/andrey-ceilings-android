@@ -6,6 +6,16 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.ZoomIn
+import androidx.compose.material.icons.filled.ZoomOut
+import androidx.compose.material.icons.filled.Save
+import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Print
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.contentDescription
@@ -123,12 +133,14 @@ internal fun <T : Any> EstimateDocumentPreviewDialog(
         Surface(Modifier.fillMaxSize()) {
             Column(Modifier.fillMaxSize().safeDrawingPadding().padding(16.dp)) {
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    TextButton(enabled = !exporting, onClick = { if (editor) editor = false else onClose() }) {
-                        Text(if (editor) "До перегляду" else "Назад")
-                    }
+                    PdfActionIcon(Icons.AutoMirrored.Filled.ArrowBack,
+                        stringResource(if (editor) Res.string.pdf_back_to_preview else Res.string.pdf_back),
+                        !exporting) { if (editor) editor = false else onClose() }
                     if (document != null && !editor) {
                         if (allowPresentationEditing) TextButton(enabled = !exporting, onClick = { editor = true }) { Text("Оформлення") }
-                        TextButton(onClick = { zoomed = !zoomed }) { Text(if (zoomed) "За шириною" else "Збільшити") }
+                        PdfActionIcon(if (zoomed) Icons.Default.ZoomOut else Icons.Default.ZoomIn,
+                            stringResource(if (zoomed) Res.string.pdf_fit_width else Res.string.pdf_zoom_in),
+                            !exporting) { zoomed = !zoomed }
                     }
                 }
                 Text(if (editor) "Оформлення PDF" else "Попередній перегляд PDF",
@@ -143,7 +155,17 @@ internal fun <T : Any> EstimateDocumentPreviewDialog(
                     } else if (exporter != null) {
                         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             EstimateDocumentAction.entries.forEach { action ->
-                                OutlinedButton(enabled = !exporting, onClick = {
+                                val icon = when (action) {
+                                    EstimateDocumentAction.SAVE -> Icons.Default.Save
+                                    EstimateDocumentAction.SHARE -> Icons.Default.Share
+                                    EstimateDocumentAction.PRINT -> Icons.Default.Print
+                                }
+                                val description = stringResource(when (action) {
+                                    EstimateDocumentAction.SAVE -> Res.string.pdf_save
+                                    EstimateDocumentAction.SHARE -> Res.string.pdf_share
+                                    EstimateDocumentAction.PRINT -> Res.string.pdf_print
+                                })
+                                PdfActionIcon(icon, description, !exporting, onClick = {
                                     exporting = true
                                     message = null
                                     scope.launch {
@@ -168,7 +190,7 @@ internal fun <T : Any> EstimateDocumentPreviewDialog(
                                             exporting = false
                                         }
                                     }
-                                }) { Text(action.label) }
+                                })
                             }
                         }
                     } else {
@@ -196,6 +218,16 @@ internal fun <T : Any> EstimateDocumentPreviewDialog(
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun PdfActionIcon(icon: ImageVector, description: String, enabled: Boolean, onClick: () -> Unit) {
+    Surface(shape = MaterialTheme.shapes.medium, shadowElevation = if (enabled) 3.dp else 0.dp,
+        tonalElevation = 2.dp, color = MaterialTheme.colorScheme.surfaceContainerHigh) {
+        IconButton(onClick = onClick, enabled = enabled, modifier = Modifier.size(44.dp)) {
+            Icon(icon, description)
         }
     }
 }
@@ -234,7 +266,8 @@ private fun EstimateDocumentEditor(
                     if (section.editable && section !in options.hidden) {
                         OutlinedTextField(options.text[section].orEmpty(),
                             onValueChange = { onChange(options.copy(text = options.text + (section to it))) },
-                            modifier = Modifier.fillMaxWidth(), label = { Text(section.label) }, minLines = 2)
+                            modifier = Modifier.fillMaxWidth(), label = { Text(section.label) }, minLines = 2,
+                            keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences))
                     }
                 }
             }
