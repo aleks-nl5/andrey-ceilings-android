@@ -52,7 +52,6 @@ class FrozenEstimateConcurrencyTest {
             val policy = EstimateIssuancePolicy(mode = EstimateCounterMode.COMMON)
             assertTrue(repo.configureIssuancePolicy(policy))
             val room = MeasurementPricingFixture.seed(db)
-            val command = FrozenIndividualEstimateProof.command(db, room)
             // Build real consolidated provenance at the maximum sequence. A temporary
             // synthetic predecessor makes the boundary reachable without billions of writes.
             // The predecessor must never survive into the valid database fixture.
@@ -82,6 +81,8 @@ class FrozenEstimateConcurrencyTest {
             val before = issuance.selectAllReservations().executeAsList()
             val beforeDocuments = documentCounts()
             val beforeConsolidated = assertNotNull(consolidated.read(exhausted.revisionUuid))
+            // All fixture catalog writes must precede the request's pricing fingerprint.
+            val command = FrozenIndividualEstimateProof.command(db, room)
             val failure = assertFailsWith<IndividualEstimateSaveFailure> {
                 repo.saveIndividual(command, date, 700)
             }
