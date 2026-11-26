@@ -174,6 +174,9 @@ class FrozenEstimateDocumentAndroidTest {
         }
     }
 
+    // Instrumentation is a separate Gradle module; exercise the real internal CMP
+    // writer and renderer without widening the production API for test callers.
+    @Suppress("INVISIBLE_REFERENCE", "INVISIBLE_MEMBER")
     @SdkSuppress(minSdkVersion = 35)
     @Test fun selectedRoomsExportOnePdfWithExactFrozenVersions() {
         val context = ApplicationProvider.getApplicationContext<Context>()
