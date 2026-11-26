@@ -29,6 +29,7 @@ class ProductionDatabaseProcessRestartTest {
             factory=SupportOpenHelperFactory(key.copyOf(),null,true))
         try {
             LegacyWallSeedProof.populate(driver)
+            assertTrue(PriceNameUniquenessProof.scalar(driver, "SELECT count(*) FROM estimate_revisions") > 0L)
             driver.executeQuery(null,"PRAGMA wal_autocheckpoint=0",{c->c.next();app.cash.sqldelight.db.QueryResult.Value(c.getLong(0))},0).value
             driver.executeQuery(null,"PRAGMA wal_checkpoint(TRUNCATE)",{c->c.next();app.cash.sqldelight.db.QueryResult.Value(c.getLong(0))},0).value
             ProjectRepository(PrototypeDatabase(driver)).createReturningId(null,"Process WAL sentinel",createdAt=900)
@@ -49,7 +50,8 @@ class ProductionDatabaseProcessRestartTest {
         assertEquals("wal",db.queryText("PRAGMA journal_mode"))
         assertEquals(PriceCatalogSchema.version,db.queryLong("PRAGMA user_version"))
         assertTrue(ProjectRepository(db.database).all().any{it.title=="Process WAL sentinel"})
-        assertTrue(db.queryLong("SELECT count(*) FROM estimate_revisions")!!>0)
+        assertTrue(EstimateV22MigrationProof.counts(db.driver).values.all { it == 0L },
+            "The v22 upgrade must purge pre-v22 estimate history")
         val point=PointPlacementRepository(db.database).find("v9-point")!!
         assertEquals(1500L,point.xMm);assertEquals(1200L,point.yMm);assertEquals(20L,point.updatedAt)
         assertEquals(com.andreyceilings.shared.measurement.PointPrecision.EXACT,point.precision)

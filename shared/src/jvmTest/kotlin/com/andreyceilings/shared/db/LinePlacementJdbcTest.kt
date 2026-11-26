@@ -17,7 +17,8 @@ class LinePlacementJdbcTest {
                 assertTrue(PriceNameUniquenessProof.scalar(driver,"SELECT count(*) FROM point_placements")>0)
                 assertTrue(PriceNameUniquenessProof.scalar(driver,"SELECT count(*) FROM ceiling_operations")>0)
                 openDesktopPriceCatalog(driver,true)
-                assertEquals(expected,LegacyWallSeedProof.snapshot(driver,true))
+                assertEquals(withoutPreV22Estimates(expected),LegacyWallSeedProof.snapshot(driver,true))
+                assertTrue(EstimateV22MigrationProof.counts(driver).values.all { it == 0L })
                 PriceCatalogSchema.verifyStructure(driver)
             }
         } finally {file.delete()}

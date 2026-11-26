@@ -32,7 +32,9 @@ class CeilingReceiptJdbcTest {
                 assertTrue(PriceNameUniquenessProof.scalar(d,"SELECT count(*) FROM area_features WHERE deletedAt IS NOT NULL")>0)
                 val expected = CeilingReceiptMigrationProof.snapshot(d, expectWallVersionRepair = true)
                 openDesktopPriceCatalog(d,true)
-                assertEquals(expected,CeilingReceiptMigrationProof.snapshot(d));PriceCatalogSchema.verifyStructure(d)
+                assertEquals(withoutPreV22Estimates(expected),CeilingReceiptMigrationProof.snapshot(d))
+                assertTrue(EstimateV22MigrationProof.counts(d).values.all { it == 0L })
+                PriceCatalogSchema.verifyStructure(d)
                 CeilingReceiptMigrationProof.rejectReplace(d)
             }
             JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).use {d ->

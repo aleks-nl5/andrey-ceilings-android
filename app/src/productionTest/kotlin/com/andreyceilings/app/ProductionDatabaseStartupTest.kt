@@ -51,7 +51,9 @@ class ProductionDatabaseStartupTest {
                 val upgraded=CeilingsDatabase.get(context)
                 assertEquals(context.getDatabasePath(CeilingsDatabase.DATABASE_NAME).absolutePath,upgraded.path)
                 assertEquals(PriceCatalogSchema.version,upgraded.queryLong("PRAGMA user_version"))
-                assertEquals(expected,LegacyWallSeedProof.snapshot(upgraded.driver,version>=10L))
+                assertEquals(withoutPreV22Estimates(expected),LegacyWallSeedProof.snapshot(upgraded.driver,version>=10L))
+                assertTrue(EstimateV22MigrationProof.counts(upgraded.driver).values.all { it == 0L },
+                    "The v22 upgrade must purge only pre-v22 estimates")
                 assertEquals(0L,upgraded.queryLong("SELECT count(*) FROM ceiling_walls WHERE measurementUuid LIKE 'legacy-source-%'"))
                 if(version==9L)assertEquals(0L,upgraded.queryLong("SELECT count(*) FROM point_placements WHERE mountingJson!='{}'"))
                 else {
