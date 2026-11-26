@@ -26,7 +26,8 @@ internal fun ImmutableEstimateRepository.saveIndividual(
     val revisions = database.frozenRevisionQueries
     val command = if (target == null) frozenEstimateJson.encodeToString(request)
         else frozenEstimateJson.encodeToString(AppendIndividualRevisionRequest(target, request))
-    if (database.estimateIssuanceQueries.selectIssuanceReceipt(request.operationUuid).executeAsOneOrNull() != null)
+    if (database.estimateIssuanceQueries.selectIssuanceReceipt(request.operationUuid).executeAsOneOrNull() != null ||
+        database.consolidatedQuotesQueries.receipt(request.operationUuid).executeAsOneOrNull() != null)
         fail(IndividualEstimateSaveFailure.Reason.OPERATION_CONFLICT)
     if (target != null && q.selectEstimateSaveReceipt(request.operationUuid).executeAsOneOrNull() != null ||
         target == null && revisions.selectRevisionReceipt(request.operationUuid).executeAsOneOrNull() != null)
@@ -132,6 +133,7 @@ internal fun ImmutableEstimateRepository.saveIndividual(
     ) fail(IndividualEstimateSaveFailure.Reason.SERIES_EXISTS)
     val history = database.estimateHistoryQueries
     fun persist(created: CreatedEstimateSeries, policy: EstimateNumberPolicy, publicNumber: String): CreatedEstimateSeries {
+        require(database.consolidatedQuotesQueries.revision(created.initialRevisionUuid).executeAsOneOrNull() == null)
         val version = if (target == null) 1L else target.parentVersion + 1
         val format = when {
             amounts.discountMode == QuoteDiscountMode.FIXED -> 4

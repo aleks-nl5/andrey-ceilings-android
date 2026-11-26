@@ -27,6 +27,7 @@ fun SavedIndividualQuoteList(store: MeasurementElementsStore?, projectId: Long? 
     var busy by remember { mutableStateOf(false) }
     var deleteSeries by remember { mutableStateOf<List<SavedIndividualQuote>?>(null) }
     val scope = rememberCoroutineScope()
+    val changeLinkedStatus = linkedQuoteStatusChange()
     fun change(action: suspend (MeasurementElementsStore) -> Boolean) {
         if (store == null || busy) return
         busy = true
@@ -71,8 +72,7 @@ fun SavedIndividualQuoteList(store: MeasurementElementsStore?, projectId: Long? 
                 }
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     WorkspaceQuoteStatusIcon(quote, approved, !busy) { target, status, previous ->
-                        change { it.setQuoteStatus(target.revisionUuid, target.statusVersion, status,
-                            previous.associate { old -> old.revisionUuid to old.statusVersion }) }
+                        change { changeLinkedStatus(it, target, status, previous) }
                     }
                     Row(Modifier.weight(1f).defaultMinSize(minHeight = 48.dp).clickable {
                         selectedSeries = quote.seriesUuid
@@ -113,6 +113,7 @@ fun SavedIndividualQuoteDialog(store: MeasurementElementsStore?, seriesUuid: Str
     var busy by remember(session) { mutableStateOf(false) }
     var delete by remember(session) { mutableStateOf<SavedIndividualQuote?>(null) }
     val scope = rememberCoroutineScope()
+    val changeLinkedStatus = linkedQuoteStatusChange()
 
     val shareResult = store?.quoteShareResult?.collectAsState()?.value
     LaunchedEffect(store, selected, session.refresh, shareResult) {
@@ -147,8 +148,7 @@ fun SavedIndividualQuoteDialog(store: MeasurementElementsStore?, seriesUuid: Str
         busy = true
         error = false
         scope.launch {
-            try { error = !store.setQuoteStatus(target.revisionUuid, target.statusVersion, status,
-                previous.associate { it.revisionUuid to it.statusVersion }) }
+            try { error = !changeLinkedStatus(store, target, status, previous) }
             catch (e: CancellationException) { throw e }
             catch (_: Exception) { error = true }
             finally { busy = false; session.refresh++ }

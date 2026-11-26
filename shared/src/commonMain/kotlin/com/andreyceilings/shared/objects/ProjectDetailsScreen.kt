@@ -90,6 +90,7 @@ import org.jetbrains.compose.resources.stringResource
 import com.andreyceilings.shared.domain.ClientListEntry
 import com.andreyceilings.shared.domain.ProjectListEntry
 import com.andreyceilings.shared.estimate.ConsolidatedEstimateScreen
+import com.andreyceilings.shared.estimate.ProjectConsolidatedEstimates
 import com.andreyceilings.shared.domain.ProjectStatusRules
 import com.andreyceilings.shared.domain.ProjectWorkStage
 import com.andreyceilings.shared.domain.ProjectPaymentStatus
@@ -208,8 +209,12 @@ internal fun ProjectDetailsScreen(
     }
     if (active && elements != null && visibleProject != null && composer?.projectId == projectId) {
         key(composer) {
-            ConsolidatedEstimateScreen(elements, composer, onClose = { elements.closeConsolidatedComposer(composer) },
-                onOpenMeasurement = onOpenMeasurement)
+            ConsolidatedEstimateScreen(elements, composer, onClose = {
+                val origin = composer.basedOn
+                if (origin != null && composer.savedRevision.value == null) {
+                    elements.openConsolidatedComposer(projectId, revisionUuid = origin)
+                } else elements.closeConsolidatedComposer(composer)
+            }, onCarry = { elements.openConsolidatedComposer(projectId, basedOn = it) })
         }
     }
     val detailsListState = rememberSaveable(projectId, saver = LazyListState.Saver) {
@@ -612,10 +617,8 @@ internal fun ProjectDetailsScreen(
                                 }
                             }
                         }
-                        if (elements != null) item(key = "consolidated-estimate") {
-                            OutlinedButton(onClick = { elements.openConsolidatedComposer(projectId) }) {
-                                Text(stringResource(Res.string.p6a_consolidated))
-                            }
+                        if (elements != null && store != null) item(key = "consolidated-estimate") {
+                            ProjectConsolidatedEstimates(store, elements, projectId)
                         }
                     }
                 }

@@ -117,7 +117,9 @@ internal fun AndroidEstimateDocumentExport(content: @Composable () -> Unit) {
         onDispose { pendingShare?.dispose() }
     }
     fun exportDocument(pages: EstimateDocumentPages, action: EstimateDocumentAction, complete: (String?) -> Unit, dispatched: () -> Unit) {
-        if (pendingSave != null || pendingShare != null) {
+        if (!pages.exportable) {
+            complete(ExportFailure)
+        } else if (pendingSave != null || pendingShare != null) {
             complete("Спочатку завершіть збереження PDF.")
         } else {
             scope.launch {
@@ -216,6 +218,7 @@ internal suspend fun writeEstimateDocumentPdf(
     isCancelled: () -> Boolean = { false },
     output: () -> OutputStream
 ) = withContext(Dispatchers.Main.immediate) {
+    check(pages.exportable)
     val pdf = PdfDocument()
     try {
         val width = EstimateDocumentPages.WIDTH

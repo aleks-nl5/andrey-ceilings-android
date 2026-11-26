@@ -27,6 +27,24 @@ fun verifyFrozenEstimateContents(driver: SqlDriver, version: Long = PriceCatalog
             WHERE n.estimateType = 'INDIVIDUAL' AND s.seriesUuid IS NULL""")
         rejectRows("""SELECT count(*) FROM estimate_number_reservations n WHERE n.operationUuid IN
             (SELECT operationUuid FROM estimate_save_receipts UNION ALL SELECT operationUuid FROM estimate_revision_receipts)""")
+        if (version >= 24L) {
+            rejectRows("""SELECT count(*) FROM estimate_number_reservations n
+                LEFT JOIN consolidated_series s USING(seriesUuid)
+                WHERE (n.estimateType = 'CONSOLIDATED' AND (s.seriesUuid IS NULL OR n.operationUuid IS NOT NULL))
+                OR (n.estimateType != 'CONSOLIDATED' AND s.seriesUuid IS NOT NULL)""")
+            rejectRows("""SELECT count(*) FROM consolidated_series s
+                WHERE NOT EXISTS (SELECT 1 FROM consolidated_revisions r WHERE r.seriesUuid = s.seriesUuid)""")
+            rejectRows("""SELECT count(*) FROM consolidated_revisions r WHERE r.revisionUuid IN
+                (SELECT revisionUuid FROM estimate_revisions) OR r.operationUuid IN
+                (SELECT operationUuid FROM estimate_save_receipts UNION ALL SELECT operationUuid FROM estimate_revision_receipts
+                UNION ALL SELECT operationUuid FROM estimate_number_reservations)""")
+            val consolidated = ConsolidatedEstimateRepository(database)
+            database.consolidatedQuotesQueries.allRevisions().executeAsList().forEach {
+                checkNotNull(consolidated.read(it, historical = true)).document()
+            }
+        } else {
+            rejectRows("SELECT count(*) FROM estimate_number_reservations WHERE estimateType = 'CONSOLIDATED'")
+        }
         for (reservation in issuance.selectAllReservations().executeAsList()) {
             val date = kotlinx.datetime.LocalDate.parse(reservation.issueDate)
             val policy = frozenEstimateJson.decodeFromString<EstimateNumberPolicy>(reservation.policy)

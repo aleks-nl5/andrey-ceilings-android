@@ -30,7 +30,15 @@ fun openDesktopPriceCatalog(driver: SqlDriver, previouslyExisting: Boolean) {
             "SELECT count(*) FROM sqlite_master WHERE name = 'ceiling_refresh_unchanged_wall_versions'", { cursor ->
                 cursor.next(); QueryResult.Value(cursor.getLong(0) == 1L)
             }, 0).value
+        val consolidatedSchema = driver.executeQuery(null,
+            "SELECT count(*) FROM sqlite_master WHERE name GLOB 'consolidated_*'", { cursor ->
+                cursor.next(); QueryResult.Value(cursor.getLong(0) != 0L)
+            }, 0).value
         val structuralVersion = when {
+            consolidatedSchema -> {
+                verifyFrozenEstimateStructure(driver, 24L)
+                24L
+            }
             columns("estimate_issuance_policy").isNotEmpty() || columns("estimate_number_reservations").isNotEmpty() -> {
                 check(wallVersionSchema && columns("estimate_revision_tombstones").isNotEmpty())
                 if (runCatching { verifyPointPlacementStructure(driver, 23L) }.isSuccess) 23L else 22L

@@ -111,9 +111,9 @@ class MeasurementElementsStore(private val database: PrototypeDatabase, private 
     private val consolidatedComposer = MutableStateFlow<ConsolidatedComposerSession?>(null)
     internal val consolidatedSession = consolidatedComposer.asStateFlow()
 
-    internal fun openConsolidatedComposer(projectId: Long) {
+    internal fun openConsolidatedComposer(projectId: Long, revisionUuid: String? = null, basedOn: String? = null) {
         if (closed) return
-        consolidatedComposer.value = ConsolidatedComposerSession(projectId)
+        consolidatedComposer.value = ConsolidatedComposerSession(projectId, revisionUuid, basedOn)
         if (closed) consolidatedComposer.value = null
     }
 
@@ -124,8 +124,8 @@ class MeasurementElementsStore(private val database: PrototypeDatabase, private 
     internal suspend fun consolidatedRooms(projectId: Long): ConsolidatedRoomCatalog =
         consolidatedRead { request ->
             val projectUuid = checkNotNull(projects.find(projectId)).uuid
-            val revisionsByRoom = estimates.frozenIndividuals()
-                .filter { it.projectId == projectId }.groupBy { it.measurementUuid }
+            val revisionsByRoom = database.consolidatedQuotesQueries.individualOptions(projectId)
+                .executeAsList().groupBy { it.measurementUuid }
             val rooms = orderedConsolidatedRooms(projectId).map { room ->
                 val candidates = revisionsByRoom[room.uuid].orEmpty()
                 val options = candidates.mapNotNull { row ->
@@ -137,12 +137,11 @@ class MeasurementElementsStore(private val database: PrototypeDatabase, private 
                         return@mapNotNull null
                     }
                     ConsolidatedRevisionOption(
-                        ConsolidatedDocumentRef(room.uuid, saved.seriesUuid, saved.revisionUuid, frozen.fingerprint),
-                        frozen.publicNumber, saved.versionNumber, frozen.title, saved.status, frozen.amounts.finalCents,
-                        saved.selectedRevisionUuid == saved.revisionUuid
+                        ConsolidatedDocumentRef(room.uuid, saved.seriesUuid, saved.revisionUuid, frozen.consolidatedSourceProof()),
+                        frozen.publicNumber, saved.versionNumber, frozen.title, saved.status, frozen.amounts.finalCents
                     )
                 }
-                ConsolidatedRoomOption(room.id, room.uuid, room.name, options, candidates.size != options.size)
+                ConsolidatedRoomOption(room.uuid, room.name, options, candidates.size != options.size)
             }
             ConsolidatedRoomCatalog(projectUuid, rooms)
         }
@@ -152,7 +151,8 @@ class MeasurementElementsStore(private val database: PrototypeDatabase, private 
         projectId: Long,
         projectUuid: String,
         selection: List<ConsolidatedDocumentRef>,
-        zone: TimeZone = TimeZone.currentSystemDefault()
+        zone: TimeZone = TimeZone.currentSystemDefault(),
+        preserveSelectionOrder: Boolean = false
     ): ConsolidatedDocumentResult = consolidatedRead { request ->
         fun reject(problem: ConsolidatedDocumentProblem) = ConsolidatedDocumentResult.Rejected(problem)
         if (selection.isEmpty()) return@consolidatedRead reject(ConsolidatedDocumentProblem.EMPTY)
@@ -173,17 +173,21 @@ class MeasurementElementsStore(private val database: PrototypeDatabase, private 
         }
 
         var total = 0L
-        val sections = rooms.map { room ->
+        val orderedRooms = if (preserveSelectionOrder) {
+            val byUuid = rooms.associateBy { it.uuid }
+            selection.map { byUuid.getValue(it.measurementUuid) }
+        } else rooms
+        val sections = orderedRooms.map { room ->
             request.ensureActive()
             val ref = refs.getValue(room.uuid)
-            val (saved, problem) = readConsolidatedRevision(ref.seriesUuid, ref.revisionUuid, historical = true)
+            val (saved, problem) = readConsolidatedRevision(ref.seriesUuid, ref.revisionUuid)
             if (saved == null) return@consolidatedRead reject(problem)
             val frozen = saved.frozen
             if (saved.projectId != projectId || frozen.source.projectUuid != projectUuid ||
                 frozen.source.measurementUuid != room.uuid) {
                 return@consolidatedRead reject(ConsolidatedDocumentProblem.FOREIGN_REVISION)
             }
-            if (frozen.fingerprint != ref.fingerprint) return@consolidatedRead reject(ConsolidatedDocumentProblem.STALE)
+            if (frozen.consolidatedSourceProof() != ref.fingerprint) return@consolidatedRead reject(ConsolidatedDocumentProblem.STALE)
             val document = try {
                 FrozenEstimateDocument.from(saved, currentAddress = null, zone = zone)
             } catch (_: IllegalArgumentException) {
@@ -204,6 +208,81 @@ class MeasurementElementsStore(private val database: PrototypeDatabase, private 
         )
     }
 
+    private val consolidated = ConsolidatedEstimateRepository(database)
+    private val consolidatedChanges = MutableStateFlow(0L)
+    internal val consolidatedRefresh = consolidatedChanges.asStateFlow()
+
+    internal suspend fun consolidatedHead(projectId: Long) = estimateAccess { consolidated.head(projectId) }
+
+    internal suspend fun savedConsolidated(revisionUuid: String) = estimateAccess {
+        consolidated.read(revisionUuid)
+    }
+
+    internal suspend fun consolidatedDrift(saved: SavedConsolidatedEstimate): Map<String, Boolean?> = estimateAccess {
+        if (saved.status != EstimateWorkflowStatus.APPROVED) return@estimateAccess emptyMap()
+        saved.individuals.associate { source ->
+            val uuid = source.frozen.source.measurementUuid
+            val changed = when (val live = pricingReader.readInTransaction(source.projectId, uuid)) {
+                is PricingReadResult.Unavailable -> null
+                is PricingReadResult.Loaded -> source.frozen.hasPricingDrift(live)
+            }
+            uuid to changed
+        }
+    }
+
+    internal suspend fun saveConsolidated(command: ConsolidatedSave): ConsolidatedRevisionIdentity = estimateAccess {
+        val now = nowMillis()
+        consolidated.save(command, EstimateNumbering.issueDate(now, TimeZone.currentSystemDefault()), now)
+    }.also { consolidatedChanges.update { it + 1 } }
+
+    internal suspend fun consolidatedConfirmation(revisionUuid: String, status: EstimateWorkflowStatus) =
+        estimateAccess { consolidated.confirmation(revisionUuid, status) }
+
+    internal suspend fun setConsolidatedStatus(confirmation: ConsolidatedStatusConfirmation, revoke: Boolean) =
+        estimateAccess { consolidated.changeStatus(confirmation, revoke, nowMillis()) }
+            .also { if (it) consolidatedChanges.update { it + 1 } }
+
+    internal suspend fun deleteConsolidated(projectId: Long, expected: Map<String, Long>, entireSeries: Boolean) =
+        estimateAccess { consolidated.delete(projectId, expected, entireSeries, nowMillis()) }
+            .also { if (it) consolidatedChanges.update { it + 1 } }
+
+    internal suspend fun verifyConsolidatedExport(revisionUuid: String) = estimateAccess {
+        val saved = checkNotNull(consolidated.read(revisionUuid))
+        saved.document()
+        if (saved.status == EstimateWorkflowStatus.DRAFT) {
+            checkNotNull(consolidated.confirmation(revisionUuid, EstimateWorkflowStatus.SENT))
+        } else null
+    }
+
+    internal fun markConsolidatedShareDispatched(confirmation: ConsolidatedStatusConfirmation, complete: (Boolean) -> Unit) {
+        val pending = beginWrite()
+        if (pending == null) {
+            complete(false)
+            return
+        }
+        CoroutineScope(SupervisorJob() + modelDispatcher).launch(start = CoroutineStart.UNDISPATCHED) {
+            val changed = withContext(NonCancellable + Dispatchers.Default) {
+                try { consolidated.shareDispatched(confirmation, nowMillis()) }
+                catch (_: Exception) { false }
+                finally { endWrite(pending) }
+            }
+            if (changed) consolidatedChanges.update { it + 1 }
+            complete(changed)
+        }
+    }
+
+    internal suspend fun linkedConsolidatedApproval(
+        target: SavedIndividualQuote, status: EstimateWorkflowStatus, previous: List<SavedIndividualQuote>
+    ): Pair<String, Long>? = estimateAccess {
+        val affected = when {
+            status == EstimateWorkflowStatus.APPROVED -> previous.singleOrNull { it.revisionUuid != target.revisionUuid }
+            target.status == EstimateWorkflowStatus.APPROVED -> target
+            else -> null
+        } ?: return@estimateAccess null
+        database.consolidatedQuotesQueries.coveredApproval(affected.projectId, affected.frozen.source.measurementUuid,
+            affected.revisionUuid).executeAsOneOrNull()?.let { it.revisionUuid to it.version }
+    }
+
     private suspend fun <T> consolidatedRead(block: (CoroutineContext) -> T): T {
         val request = currentCoroutineContext()
         return estimateAccess {
@@ -217,12 +296,11 @@ class MeasurementElementsStore(private val database: PrototypeDatabase, private 
             .thenByDescending { it.id })
 
     private fun readConsolidatedRevision(
-        seriesUuid: String, revisionUuid: String, historical: Boolean = false
+        seriesUuid: String, revisionUuid: String
     ):
         Pair<SavedIndividualQuote?, ConsolidatedDocumentProblem> {
         val saved = try {
-            if (historical) estimates.historicalIndividual(seriesUuid, revisionUuid)
-            else estimates.exactIndividual(seriesUuid, revisionUuid)
+            estimates.exactIndividual(seriesUuid, revisionUuid)
         } catch (_: UnsupportedFrozenEstimateFormat) {
             return null to ConsolidatedDocumentProblem.UNSUPPORTED_FORMAT
         } catch (_: UnsupportedFrozenEstimateCurrency) {
@@ -275,10 +353,11 @@ class MeasurementElementsStore(private val database: PrototypeDatabase, private 
         revisionUuid: String,
         expectedVersion: Long,
         status: EstimateWorkflowStatus,
-        expectedApprovals: Map<String, Long> = emptyMap()
+        expectedApprovals: Map<String, Long> = emptyMap(),
+        expectedConsolidatedApproval: Pair<String, Long>? = null
     ): Boolean = estimateAccess {
-        estimates.setWorkflowStatus(revisionUuid, expectedVersion, status, nowMillis(), expectedApprovals)
-    }
+        estimates.setWorkflowStatus(revisionUuid, expectedVersion, status, nowMillis(), expectedApprovals, expectedConsolidatedApproval)
+    }.also { if (it && expectedConsolidatedApproval != null) consolidatedChanges.update { old -> old + 1 } }
     internal class QuoteShareResult(val revisionUuid: String, val changed: Boolean)
     private val shareResult = MutableStateFlow<QuoteShareResult?>(null)
     internal val quoteShareResult = shareResult.asStateFlow()

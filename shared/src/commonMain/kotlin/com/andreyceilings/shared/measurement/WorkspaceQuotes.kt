@@ -96,6 +96,7 @@ internal fun WorkspaceQuotes(
             error = true
         }
     }
+    val changeLinkedStatus = linkedQuoteStatusChange()
     val presenter = session.presenter
     val opened = session.opened
     val approved = rows.orEmpty().filter { it.status == EstimateWorkflowStatus.APPROVED }
@@ -105,8 +106,7 @@ internal fun WorkspaceQuotes(
         error = false
         scope.launch {
             try {
-                error = !store.setQuoteStatus(target.revisionUuid, target.statusVersion, status,
-                    confirmed.associate { it.revisionUuid to it.statusVersion })
+                error = !changeLinkedStatus(store, target, status, confirmed)
             } catch (e: CancellationException) {
                 throw e
             } catch (_: Exception) {

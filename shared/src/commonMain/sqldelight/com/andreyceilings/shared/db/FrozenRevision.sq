@@ -122,7 +122,7 @@ RETURNING seriesUuid;
 -- Object summary only. Open/export still verifies the exact frozen document.
 selectProjectQuoteMetadata:
 WITH candidates AS (
-    SELECT m.id AS ceilingId, s.seriesUuid, r.revisionUuid, r.versionNumber, r.createdAt,
+    SELECT m.id AS ceilingId, m.uuid AS ceilingUuid, s.seriesUuid, r.revisionUuid, r.versionNumber, r.createdAt,
         r.currency, coalesce(w.status, '') AS workflowStatus,
         CASE
             WHEN trim(m.uuid) = '' OR trim(s.seriesUuid) = '' OR trim(r.revisionUuid) = ''
@@ -152,7 +152,7 @@ WITH candidates AS (
         AND (w.status IS NOT NULL OR f.revisionUuid IS NOT NULL OR n.revisionUuid IS NOT NULL)
         AND NOT EXISTS (SELECT 1 FROM estimate_revision_tombstones d WHERE d.revisionUuid = r.revisionUuid)
 ), ranked AS (
-    SELECT ceilingId, workflowStatus, currency, finalCents,
+    SELECT ceilingId, ceilingUuid, revisionUuid, workflowStatus, currency, finalCents,
         row_number() OVER (
             PARTITION BY ceilingId
             ORDER BY CASE WHEN workflowStatus = 'APPROVED' THEN 0 ELSE 1 END,
@@ -160,5 +160,5 @@ WITH candidates AS (
         ) AS displayRank
     FROM candidates WHERE workflowStatus = 'APPROVED' OR seriesRank = 1
 )
-SELECT ceilingId, workflowStatus, currency, CAST(finalCents AS INTEGER) AS finalCents
+SELECT ceilingId, ceilingUuid, revisionUuid, workflowStatus, currency, CAST(finalCents AS INTEGER) AS finalCents
 FROM ranked WHERE workflowStatus = 'APPROVED' OR displayRank = 1;

@@ -67,14 +67,17 @@ internal fun documentMoneyColumnLabels(): DocumentMoneyColumnLabels = DocumentMo
 
 internal class EstimatePreviewLoadFailure(message: String) : IllegalStateException(message)
 
+internal typealias EstimateShareDispatch = ((Boolean) -> Unit) -> Unit
+
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun <T : Any> EstimateDocumentPreviewDialog(
     load: suspend () -> T,
     layout: (T, DocumentPresentationOptions, TextMeasurer) -> EstimateDocumentPages,
     onClose: () -> Unit,
-    beforeExport: (suspend () -> Unit)? = null,
+    prepareExport: (suspend (EstimateDocumentAction) -> EstimateShareDispatch?)? = null,
     editRoomSections: Boolean = true,
+    allowPresentationEditing: Boolean = true,
     shareDispatched: (((Boolean) -> Unit) -> Unit)? = null
 ) {
     val exporter = LocalEstimateDocumentExporter.current
@@ -124,7 +127,7 @@ internal fun <T : Any> EstimateDocumentPreviewDialog(
                         Text(if (editor) "До перегляду" else "Назад")
                     }
                     if (document != null && !editor) {
-                        TextButton(enabled = !exporting, onClick = { editor = true }) { Text("Оформлення") }
+                        if (allowPresentationEditing) TextButton(enabled = !exporting, onClick = { editor = true }) { Text("Оформлення") }
                         TextButton(onClick = { zoomed = !zoomed }) { Text(if (zoomed) "За шириною" else "Збільшити") }
                     }
                 }
@@ -135,7 +138,9 @@ internal fun <T : Any> EstimateDocumentPreviewDialog(
                 if (editor) {
                     EstimateDocumentEditor(options) { options = it }
                 } else if (pages != null) {
-                    if (exporter != null) {
+                    if (!pages.exportable) {
+                        WorkspacePdfSaveHelp()
+                    } else if (exporter != null) {
                         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             EstimateDocumentAction.entries.forEach { action ->
                                 OutlinedButton(enabled = !exporting, onClick = {
@@ -143,12 +148,13 @@ internal fun <T : Any> EstimateDocumentPreviewDialog(
                                     message = null
                                     scope.launch {
                                         try {
-                                            beforeExport?.invoke()
+                                            check(pages.exportable)
+                                            val dispatch = if (prepareExport != null) prepareExport(action) else shareDispatched
                                             exporter.exportWithShareConfirmation(pages, action, onComplete = { result ->
                                                 if (result != null || message == null) message = result
                                                 exporting = false
                                             }, onShareDispatched = {
-                                                if (action == EstimateDocumentAction.SHARE) shareDispatched?.invoke { changed ->
+                                                if (action == EstimateDocumentAction.SHARE) dispatch?.invoke { changed ->
                                                     if (!changed) message = shareConflict
                                                 }
                                             })
@@ -192,6 +198,12 @@ internal fun <T : Any> EstimateDocumentPreviewDialog(
             }
         }
     }
+}
+
+@Composable
+private fun WorkspacePdfSaveHelp() {
+    val reason = stringResource(Res.string.p6b_save_to_export)
+    com.andreyceilings.shared.ui.ContextFeedbackIcon(reason, reason)
 }
 
 @Composable

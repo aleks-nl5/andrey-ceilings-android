@@ -12,6 +12,8 @@ import com.andreyceilings.shared.domain.ProjectPaymentStatus
 import com.andreyceilings.shared.domain.ProjectStatusRules
 import com.andreyceilings.shared.domain.ProjectWorkStage
 import com.andreyceilings.shared.estimate.ImmutableEstimateRepository
+import com.andreyceilings.shared.estimate.ConsolidatedDiscount
+import com.andreyceilings.shared.livepricing.QuoteDiscountMode
 import com.andreyceilings.shared.measurement.MeasurementDrawingContour
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -134,10 +136,40 @@ class ObjectsClientsStore(
         }
     }
 
-    internal fun observeProjectQuoteSummary(projectId: Long): Flow<ProjectQuoteSummary?> =
-        observeProjectQuery(estimates.projectQuoteMetadata(projectId)) {
-            executeAsList().map { ProjectQuoteCandidate(it.ceilingId, it.workflowStatus, it.currency, it.finalCents) }
-        }.map { candidates -> candidates?.let(::projectQuoteSummary) }.flowOn(Dispatchers.Default)
+    @OptIn(ExperimentalCoroutinesApi::class)
+    internal fun observeProjectQuoteSummary(projectId: Long): Flow<ProjectQuoteSummary?> {
+        val individualQuery = estimates.projectQuoteMetadata(projectId)
+        val consolidatedQuery = database.consolidatedQuotesQueries.approvedFinance(projectId)
+        return sessionClosed.flatMapLatest { closed ->
+            if (closed) flowOf<ProjectQuoteSummary?>(null)
+            else combine(individualQuery.asFlow(), consolidatedQuery.asFlow()) { individuals, consolidated ->
+                projectRead.withLock {
+                    if (sessionClosed.value) null else database.transactionWithResult {
+                        val candidates = individuals.executeAsList().map {
+                            ProjectQuoteCandidate(it.ceilingId, it.workflowStatus, it.currency, it.finalCents,
+                                it.ceilingUuid, it.revisionUuid)
+                        }
+                        val manifest = consolidated.executeAsList()
+                        val approval = manifest.firstOrNull()?.let { first ->
+                            val members = manifest.mapNotNull { row ->
+                                val ceiling = row.measurementUuid ?: return@mapNotNull null
+                                val revision = row.individualRevisionUuid ?: return@mapNotNull null
+                                ceiling to revision
+                            }.toMap()
+                            val discount = QuoteDiscountMode.entries.firstOrNull { it.name == first.discountMode }
+                                ?.let { ConsolidatedDiscount(it, first.discountValue) }
+                            ApprovedConsolidatedFinance(first.finalCents, members, discount,
+                                first.finalCents >= 0 && members.size == manifest.size)
+                        }
+                        projectQuoteSummary(candidates, approval).takeUnless { sessionClosed.value }
+                    }
+                }
+            }
+        }.flowOn(Dispatchers.Default).distinctUntilChanged()
+    }
+
+    internal fun observeConsolidatedVersions(projectId: Long) =
+        observeProjectQuery(database.consolidatedQuotesQueries.activeVersions(projectId)) { executeAsList() }
 
     internal fun observeCeilingContour(projectId: Long, ceilingUuid: String): Flow<MeasurementDrawingContour?> =
         observeProjectQuery(database.businessSchemaQueries.selectProjectCeilingContour(ceilingUuid, projectId)) {

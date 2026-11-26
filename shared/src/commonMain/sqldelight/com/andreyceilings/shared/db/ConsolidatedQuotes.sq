@@ -1,0 +1,151 @@
+CREATE TABLE consolidated_series (
+    seriesUuid TEXT NOT NULL PRIMARY KEY REFERENCES estimate_number_reservations(seriesUuid) ON DELETE RESTRICT,
+    projectId INTEGER NOT NULL UNIQUE REFERENCES projects(id) ON DELETE RESTRICT,
+    UNIQUE (seriesUuid, projectId)
+);
+
+CREATE TABLE consolidated_revisions (
+    revisionUuid TEXT NOT NULL PRIMARY KEY,
+    seriesUuid TEXT NOT NULL,
+    projectId INTEGER NOT NULL,
+    versionNumber INTEGER NOT NULL CHECK (typeof(versionNumber) = 'integer' AND versionNumber > 0),
+    parentRevisionUuid TEXT,
+    createdAt INTEGER NOT NULL CHECK (typeof(createdAt) = 'integer' AND createdAt > 0),
+    title TEXT NOT NULL,
+    finalCents INTEGER NOT NULL CHECK (typeof(finalCents) = 'integer' AND finalCents >= 0),
+    discountMode TEXT NOT NULL CHECK (discountMode IN ('PERCENT','FIXED')),
+    discountValue INTEGER NOT NULL CHECK (typeof(discountValue) = 'integer' AND discountValue >= 0
+        AND (discountMode = 'FIXED' OR discountValue <= 10000)),
+    payload TEXT NOT NULL,
+    proof TEXT NOT NULL,
+    draftProof TEXT NOT NULL,
+    operationUuid TEXT NOT NULL UNIQUE,
+    command TEXT NOT NULL,
+    UNIQUE (seriesUuid, versionNumber),
+    UNIQUE (seriesUuid, draftProof),
+    UNIQUE (revisionUuid, seriesUuid),
+    UNIQUE (revisionUuid, projectId),
+    FOREIGN KEY (seriesUuid, projectId) REFERENCES consolidated_series(seriesUuid, projectId) ON DELETE RESTRICT,
+    FOREIGN KEY (parentRevisionUuid, seriesUuid) REFERENCES consolidated_revisions(revisionUuid, seriesUuid) ON DELETE RESTRICT,
+    CHECK ((versionNumber = 1) = (parentRevisionUuid IS NULL))
+);
+
+CREATE TABLE consolidated_members (
+    consolidatedRevisionUuid TEXT NOT NULL REFERENCES consolidated_revisions(revisionUuid) ON DELETE RESTRICT,
+    position INTEGER NOT NULL CHECK (typeof(position) = 'integer' AND position >= 0),
+    measurementUuid TEXT NOT NULL REFERENCES room_measurements(uuid) ON DELETE RESTRICT,
+    individualRevisionUuid TEXT NOT NULL REFERENCES estimate_revisions(revisionUuid) ON DELETE RESTRICT,
+    PRIMARY KEY (consolidatedRevisionUuid, position),
+    UNIQUE (consolidatedRevisionUuid, measurementUuid),
+    UNIQUE (consolidatedRevisionUuid, individualRevisionUuid)
+);
+
+CREATE TABLE consolidated_workflow (
+    revisionUuid TEXT NOT NULL PRIMARY KEY,
+    projectId INTEGER NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('DRAFT','SENT','APPROVED','REJECTED')),
+    version INTEGER NOT NULL CHECK (typeof(version) = 'integer' AND version > 0),
+    updatedAt INTEGER NOT NULL CHECK (typeof(updatedAt) = 'integer' AND updatedAt > 0),
+    deletedAt INTEGER CHECK (deletedAt IS NULL OR (typeof(deletedAt) = 'integer' AND deletedAt > 0 AND status != 'APPROVED')),
+    FOREIGN KEY (revisionUuid, projectId) REFERENCES consolidated_revisions(revisionUuid, projectId) ON DELETE RESTRICT
+);
+
+CREATE UNIQUE INDEX consolidated_approved_project ON consolidated_workflow(projectId) WHERE status = 'APPROVED';
+
+CREATE TRIGGER consolidated_project_delete_guard BEFORE UPDATE OF deletedAt ON projects
+WHEN old.deletedAt IS NULL AND new.deletedAt IS NOT NULL
+AND EXISTS (SELECT 1 FROM consolidated_workflow WHERE projectId = old.id AND status = 'APPROVED')
+BEGIN SELECT RAISE(ABORT, 'consolidated_approval_requires_active_project'); END;
+
+CREATE TRIGGER consolidated_ceiling_delete_guard BEFORE UPDATE OF deletedAt ON room_measurements
+WHEN old.deletedAt IS NULL AND new.deletedAt IS NOT NULL
+AND EXISTS (SELECT 1 FROM consolidated_workflow w JOIN consolidated_members m ON m.consolidatedRevisionUuid = w.revisionUuid
+WHERE w.projectId = old.projectId AND w.status = 'APPROVED' AND m.measurementUuid = old.uuid)
+BEGIN SELECT RAISE(ABORT, 'consolidated_approval_requires_active_ceiling'); END;
+
+projectIdentity:
+SELECT uuid, deletedAt FROM projects WHERE id = ?;
+
+seriesForProject:
+SELECT seriesUuid FROM consolidated_series WHERE projectId = ?;
+
+insertSeries:
+INSERT INTO consolidated_series VALUES (?, ?);
+
+head:
+SELECT * FROM consolidated_revisions WHERE seriesUuid = ? ORDER BY versionNumber DESC LIMIT 1;
+
+revision:
+SELECT * FROM consolidated_revisions WHERE revisionUuid = ?;
+
+receipt:
+SELECT revisionUuid, command FROM consolidated_revisions WHERE operationUuid = ?;
+
+identicalDraft:
+SELECT revisionUuid FROM consolidated_revisions WHERE seriesUuid = ? AND draftProof = ?;
+
+insertRevision:
+INSERT INTO consolidated_revisions VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+insertMember:
+INSERT INTO consolidated_members VALUES (?, ?, ?, ?);
+
+members:
+SELECT * FROM consolidated_members WHERE consolidatedRevisionUuid = ? ORDER BY position;
+
+insertWorkflow:
+INSERT INTO consolidated_workflow VALUES (?, ?, 'DRAFT', 1, ?, NULL);
+
+workflow:
+SELECT * FROM consolidated_workflow WHERE revisionUuid = ?;
+
+approved:
+SELECT * FROM consolidated_workflow WHERE projectId = ? AND status = 'APPROVED';
+
+activeVersions:
+SELECT r.revisionUuid, r.versionNumber, r.title, r.createdAt, r.finalCents, w.status, w.version, n.publicNumber
+FROM consolidated_series s JOIN consolidated_revisions r USING(seriesUuid)
+JOIN consolidated_workflow w USING(revisionUuid)
+JOIN estimate_number_reservations n USING(seriesUuid)
+JOIN projects p ON p.id = s.projectId
+WHERE s.projectId = :projectId AND p.deletedAt IS NULL AND w.deletedAt IS NULL
+ORDER BY r.versionNumber DESC;
+
+updateWorkflow:
+UPDATE consolidated_workflow SET status = :status, version = version + 1, updatedAt = max(updatedAt + 1, :now)
+WHERE revisionUuid = :revisionUuid AND version = :expectedVersion AND deletedAt IS NULL
+AND version < 9223372036854775807 AND updatedAt < 9223372036854775807
+RETURNING version;
+
+deleteRevision:
+UPDATE consolidated_workflow SET deletedAt = :now, version = version + 1
+WHERE revisionUuid = :revisionUuid AND version = :expectedVersion AND status != 'APPROVED'
+AND deletedAt IS NULL AND version < 9223372036854775807
+RETURNING version;
+
+allRevisions:
+SELECT revisionUuid FROM consolidated_revisions;
+
+-- Active options are scoped to the project. Exact frozen verification takes place at preview/save.
+individualOptions:
+SELECT r.revisionUuid, r.seriesUuid, s.measurementUuid
+FROM estimate_series s JOIN estimate_revisions r USING(seriesUuid)
+JOIN room_measurements m ON m.uuid = s.measurementUuid AND m.projectId = s.projectId
+WHERE s.projectId = :projectId AND s.deletedAt IS NULL AND m.deletedAt IS NULL
+AND NOT EXISTS (SELECT 1 FROM estimate_revision_tombstones t WHERE t.revisionUuid = r.revisionUuid)
+AND (EXISTS (SELECT 1 FROM estimate_v1_frozen v WHERE v.revisionUuid = r.revisionUuid)
+OR EXISTS (SELECT 1 FROM estimate_revision_frozen v WHERE v.revisionUuid = r.revisionUuid))
+ORDER BY r.createdAt DESC, r.versionNumber DESC, r.revisionUuid;
+
+coveredApproval:
+SELECT w.revisionUuid, w.version
+FROM consolidated_workflow w JOIN consolidated_members m ON m.consolidatedRevisionUuid = w.revisionUuid
+WHERE w.projectId = :projectId AND w.status = 'APPROVED' AND m.measurementUuid = :ceilingUuid
+AND m.individualRevisionUuid = :individualRevisionUuid;
+
+approvedFinance:
+SELECT r.finalCents, r.discountMode, r.discountValue, m.measurementUuid, m.individualRevisionUuid
+FROM consolidated_workflow w JOIN consolidated_revisions r USING(revisionUuid)
+LEFT JOIN consolidated_members m ON m.consolidatedRevisionUuid = w.revisionUuid
+WHERE w.projectId = :projectId AND w.status = 'APPROVED'
+ORDER BY m.position;

@@ -45,7 +45,7 @@ object EstimateV22MigrationProof {
     private fun businessSnapshot(driver: SqlDriver) = MeasurementElementMigrationProof.rows(driver,
         "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name", 1)
         .map { checkNotNull(it.single()) }
-        .filterNot { it in preV22EstimateTables || it in setOf("estimate_issuance_policy", "estimate_number_reservations") }
+        .filterNot { it.startsWith("consolidated_") || it in preV22EstimateTables || it in setOf("estimate_issuance_policy", "estimate_number_reservations") }
         .associateWith { table ->
             val columns = MeasurementElementMigrationProof.rows(driver, "PRAGMA table_info($table)", 6)
                 .map { checkNotNull(it[1]) }
