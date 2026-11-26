@@ -795,8 +795,8 @@ internal fun CompactObjectsSearchField(
     onChange: (String) -> Unit,
     onClear: () -> Unit,
     onFocusChange: (Boolean) -> Unit,
-    placeholder: String = "Пошук об'єктів та клієнтів",
-    clearLabel: String = "Очистити пошук",
+    placeholder: String = stringResource(Res.string.p6c_objects_clients_search),
+    clearLabel: String = stringResource(Res.string.p6c_clear_search),
     modifier: Modifier = Modifier
 ) {
     val colors = MaterialTheme.colorScheme
