@@ -1,11 +1,14 @@
 package com.andreyceilings.shared.db
 
+import app.cash.sqldelight.db.QueryResult
 import app.cash.sqldelight.db.use
-import com.andreyceilings.shared.estimate.proveExactEstimateDocuments
+import com.andreyceilings.shared.estimate.*
+import com.andreyceilings.shared.livepricing.QuoteDiscountMode
 import com.yet.sqlcipher.*
 import kotlinx.coroutines.runBlocking
+import kotlinx.datetime.LocalDate
 import kotlin.random.Random
-import kotlin.test.Test
+import kotlin.test.*
 
 class BusinessRoleIosCipherTest {
     @Test fun physicalV22PurgeRollsBackAndReopens(): Unit = runBlocking {
@@ -63,6 +66,49 @@ class BusinessRoleIosCipherTest {
         try { FrozenEstimateMigrationProof.lifecycle(IosPriceCatalogSchema) { factory.create(it, config) } }
         finally { factory.deleteDatabase(name) }
     }
+    @Test fun currentEncryptedConsolidatedSnapshotKeepsTombstonesAndExactAmounts(): Unit = runBlocking {
+        val factory = NativeSqlCipherDriverFactory()
+        val name = "consolidated-v24-${Random.nextLong()}.db"
+        val copy = "$name.copy.db"
+        val key = SqlCipherKey { ByteArray(32) { 24 } }
+        val config = SqlCipherConfig(name = name, key = key, recovery = SqlCipherRecovery.Fail)
+        try {
+            val (revision, payable) = factory.create(IosPriceCatalogSchema, config).use { driver ->
+                val db = PrototypeDatabase(driver)
+                val fixture = MeasurementPricingFixture.seed(db)
+                val project = assertNotNull(ProjectRepository(db).find(fixture.projectId))
+                val individuals = ImmutableEstimateRepository(db)
+                val issued = individuals.saveIndividual(FrozenIndividualEstimateProof.command(db, fixture), 2026, 600)
+                val individual = assertNotNull(individuals.exactIndividual(issued.seriesUuid, issued.initialRevisionUuid))
+                val ref = ConsolidatedDocumentRef(fixture.measurementUuid, individual.seriesUuid,
+                    individual.revisionUuid, individual.frozen.consolidatedSourceProof())
+                val command = ConsolidatedSave(newRecordUuid(), project.id, project.uuid, null, null,
+                    ConsolidatedDraft("Consolidated", ConsolidatedDiscount(QuoteDiscountMode.FIXED, 101), listOf(ref)))
+                val repository = ConsolidatedEstimateRepository(db)
+                val stored = repository.save(command, LocalDate(2026, 11, 26), 601)
+                assertTrue(individuals.deleteIndividualSeries(individual.seriesUuid, mapOf(individual.revisionUuid to 1L), 602))
+                verifyFrozenEstimateContents(driver)
+                val path = driver.executeQuery(null, "PRAGMA database_list", { cursor ->
+                    cursor.next()
+                    QueryResult.Value(checkNotNull(cursor.getString(2)))
+                }, 0).value
+                val destination = "$path.copy.db".replace("'", "''")
+                driver.execute(null, "VACUUM INTO '$destination'", 0)
+                stored.revisionUuid to individual.frozen.amounts.finalCents - 101L
+            }
+            factory.create(IosPriceCatalogSchema, SqlCipherConfig(name = copy, key = key, recovery = SqlCipherRecovery.Fail)).use { restored ->
+                PriceCatalogSchema.verifyStructure(restored)
+                verifyFrozenEstimateContents(restored)
+                val saved = assertNotNull(ConsolidatedEstimateRepository(PrototypeDatabase(restored)).read(revision))
+                assertEquals(payable, saved.document().totalCents)
+                assertEquals(1, saved.document().sections.size)
+            }
+        } finally {
+            factory.deleteDatabase(name)
+            factory.deleteDatabase(copy)
+        }
+    }
+
     @Test fun currentEncryptedRolePortableSnapshot(): Unit = runBlocking { roleSnapshot(false) }
 
     @kotlin.test.Ignore

@@ -224,6 +224,8 @@ internal object PortableBackupManager {
                     "Суми або рядки історичних версій у резервній копії пошкоджені."
                 }
 
+                // The shared v24 audit also validates consolidated manifests, numbering,
+                // workflow, receipts and tombstoned source revisions in this staged image.
                 com.andreyceilings.shared.db.verifyFrozenEstimateStructure(driver, com.andreyceilings.shared.db.PriceCatalogSchema.version)
                 com.andreyceilings.shared.db.verifyFrozenEstimateContents(driver, com.andreyceilings.shared.db.PriceCatalogSchema.version)
                 check(invalidRevisionRows(

@@ -111,6 +111,71 @@ fun verifyFrozenEstimateStructure(driver: SqlDriver, version: Long = PriceCatalo
             { cursor -> cursor.next(); QueryResult.Value(cursor.getLong(0) != 0L) }, 0).value
         check(!hasIssuanceSchema) { "Numbering schema requires version 22" }
     }
+    if (version >= 24L) {
+        expected["consolidated_series"] = """CREATE TABLE consolidated_series (
+    seriesUuid TEXT NOT NULL PRIMARY KEY REFERENCES estimate_number_reservations(seriesUuid) ON DELETE RESTRICT,
+    projectId INTEGER NOT NULL UNIQUE REFERENCES projects(id) ON DELETE RESTRICT,
+    UNIQUE (seriesUuid, projectId)
+);"""
+        expected["consolidated_revisions"] = """CREATE TABLE consolidated_revisions (
+    revisionUuid TEXT NOT NULL PRIMARY KEY,
+    seriesUuid TEXT NOT NULL,
+    projectId INTEGER NOT NULL,
+    versionNumber INTEGER NOT NULL CHECK (typeof(versionNumber) = 'integer' AND versionNumber > 0),
+    parentRevisionUuid TEXT,
+    createdAt INTEGER NOT NULL CHECK (typeof(createdAt) = 'integer' AND createdAt > 0),
+    title TEXT NOT NULL,
+    finalCents INTEGER NOT NULL CHECK (typeof(finalCents) = 'integer' AND finalCents >= 0),
+    discountMode TEXT NOT NULL CHECK (discountMode IN ('PERCENT','FIXED')),
+    discountValue INTEGER NOT NULL CHECK (typeof(discountValue) = 'integer' AND discountValue >= 0
+        AND (discountMode = 'FIXED' OR discountValue <= 10000)),
+    payload TEXT NOT NULL,
+    proof TEXT NOT NULL,
+    draftProof TEXT NOT NULL,
+    operationUuid TEXT NOT NULL UNIQUE,
+    command TEXT NOT NULL,
+    UNIQUE (seriesUuid, versionNumber),
+    UNIQUE (seriesUuid, draftProof),
+    UNIQUE (revisionUuid, seriesUuid),
+    UNIQUE (revisionUuid, projectId),
+    FOREIGN KEY (seriesUuid, projectId) REFERENCES consolidated_series(seriesUuid, projectId) ON DELETE RESTRICT,
+    FOREIGN KEY (parentRevisionUuid, seriesUuid) REFERENCES consolidated_revisions(revisionUuid, seriesUuid) ON DELETE RESTRICT,
+    CHECK ((versionNumber = 1) = (parentRevisionUuid IS NULL))
+);"""
+        expected["consolidated_members"] = """CREATE TABLE consolidated_members (
+    consolidatedRevisionUuid TEXT NOT NULL REFERENCES consolidated_revisions(revisionUuid) ON DELETE RESTRICT,
+    position INTEGER NOT NULL CHECK (typeof(position) = 'integer' AND position >= 0),
+    measurementUuid TEXT NOT NULL REFERENCES room_measurements(uuid) ON DELETE RESTRICT,
+    individualRevisionUuid TEXT NOT NULL REFERENCES estimate_revisions(revisionUuid) ON DELETE RESTRICT,
+    PRIMARY KEY (consolidatedRevisionUuid, position),
+    UNIQUE (consolidatedRevisionUuid, measurementUuid),
+    UNIQUE (consolidatedRevisionUuid, individualRevisionUuid)
+);"""
+        expected["consolidated_workflow"] = """CREATE TABLE consolidated_workflow (
+    revisionUuid TEXT NOT NULL PRIMARY KEY,
+    projectId INTEGER NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('DRAFT','SENT','APPROVED','REJECTED')),
+    version INTEGER NOT NULL CHECK (typeof(version) = 'integer' AND version > 0),
+    updatedAt INTEGER NOT NULL CHECK (typeof(updatedAt) = 'integer' AND updatedAt > 0),
+    deletedAt INTEGER CHECK (deletedAt IS NULL OR (typeof(deletedAt) = 'integer' AND deletedAt > 0 AND status != 'APPROVED')),
+    FOREIGN KEY (revisionUuid, projectId) REFERENCES consolidated_revisions(revisionUuid, projectId) ON DELETE RESTRICT
+);"""
+        expected["consolidated_approved_project"] = """CREATE UNIQUE INDEX consolidated_approved_project ON consolidated_workflow(projectId) WHERE status = 'APPROVED';"""
+        expected["consolidated_project_delete_guard"] = """CREATE TRIGGER consolidated_project_delete_guard BEFORE UPDATE OF deletedAt ON projects
+WHEN old.deletedAt IS NULL AND new.deletedAt IS NOT NULL
+AND EXISTS (SELECT 1 FROM consolidated_workflow WHERE projectId = old.id AND status = 'APPROVED')
+BEGIN SELECT RAISE(ABORT, 'consolidated_approval_requires_active_project'); END;"""
+        expected["consolidated_ceiling_delete_guard"] = """CREATE TRIGGER consolidated_ceiling_delete_guard BEFORE UPDATE OF deletedAt ON room_measurements
+WHEN old.deletedAt IS NULL AND new.deletedAt IS NOT NULL
+AND EXISTS (SELECT 1 FROM consolidated_workflow w JOIN consolidated_members m ON m.consolidatedRevisionUuid = w.revisionUuid
+WHERE w.projectId = old.projectId AND w.status = 'APPROVED' AND m.measurementUuid = old.uuid)
+BEGIN SELECT RAISE(ABORT, 'consolidated_approval_requires_active_ceiling'); END;"""
+    } else {
+        val exists = driver.executeQuery(null,
+            "SELECT count(*) FROM sqlite_master WHERE name GLOB 'consolidated_*'",
+            { cursor -> cursor.next(); QueryResult.Value(cursor.getLong(0) != 0L) }, 0).value
+        check(!exists) { "Consolidated estimate schema requires version 24" }
+    }
     expected.forEach { (name, definition) ->
         val actual = driver.executeQuery(null, "SELECT sql FROM sqlite_master WHERE name = ?", { cursor ->
             QueryResult.Value(if (cursor.next().value) cursor.getString(0) else null)

@@ -3,7 +3,12 @@ package com.andreyceilings.app
 import android.content.Context
 import app.cash.sqldelight.driver.android.AndroidSqliteDriver
 import com.andreyceilings.shared.db.EstimateV22MigrationProof
+import com.andreyceilings.shared.db.FrozenIndividualEstimateProof
+import com.andreyceilings.shared.db.MeasurementPricingFixture
 import com.andreyceilings.shared.db.MeasurementRepository
+import com.andreyceilings.shared.db.PriceCatalogSchema
+import com.andreyceilings.shared.db.PrototypeDatabase
+import com.andreyceilings.shared.db.removeEmptyConsolidatedSchema
 import net.zetetic.database.sqlcipher.SupportOpenHelperFactory
 import android.graphics.pdf.PdfRenderer
 import android.net.Uri
@@ -132,6 +137,37 @@ class EstimateRevisionPortableRestoreTest {
             key.fill(0)
             context.deleteDatabase(sourceName)
             }
+    }
+
+    @Test fun v23EncryptedBackupPassesV24PreflightWithoutChangingSourceBytes() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val name = "consolidated-v23-restore-source.db"
+        val source = context.getDatabasePath(name)
+        val key = ByteArray(32) { 24 }
+        context.deleteDatabase(name)
+        try {
+            System.loadLibrary("sqlcipher")
+            AndroidSqliteDriver(PriceCatalogSchema, context, name,
+                factory = SupportOpenHelperFactory(key.copyOf())).use { driver ->
+                val database = PrototypeDatabase(driver)
+                val fixture = MeasurementPricingFixture.seed(database)
+                ImmutableEstimateRepository(database).saveIndividual(
+                    FrozenIndividualEstimateProof.command(database, fixture), 2026, 600)
+                removeEmptyConsolidatedSchema(driver)
+                driver.execute(null, "PRAGMA user_version = 23", 0)
+                PriceCatalogSchema.verifyStructure(driver, 23)
+            }
+            val original = source.readBytes()
+            try {
+                PortableBackupManager.verifyEncryptedSnapshot(context, source, key)
+                assertArrayEquals(original, source.readBytes())
+            } finally {
+                original.fill(0)
+            }
+        } finally {
+            key.fill(0)
+            context.deleteDatabase(name)
+        }
     }
 
     @Test fun portableRestorePreservesEveryFrozenVersionAndVersionPdfSource() {

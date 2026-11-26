@@ -84,7 +84,7 @@ class ImmutableEstimateRepository(private val database: PrototypeDatabase) {
             verifyFrozenStoredIdentity(f, it.projectId, it.measurementUuid, it.publicNumber,
                 it.subtotalCents, it.discountBasisPoints, it.discountCents, it.totalCents)
             val number = database.estimateIssuanceQueries.selectReservation(it.seriesUuid).executeAsOne()
-            require(number.publicNumber == f.publicNumber &&
+            require(number.estimateType == EstimateType.INDIVIDUAL.name && number.publicNumber == f.publicNumber &&
                 frozenEstimateJson.decodeFromString<EstimateNumberPolicy>(number.policy) == f.numberPolicy)
             verifyFrozenRevisionIdentity(f, it.seriesUuid, it.revisionUuid, it.versionNumber, it.parentRevisionUuid)
             val revision = checkNotNull(revision(it.revisionUuid))
@@ -121,7 +121,8 @@ class ImmutableEstimateRepository(private val database: PrototypeDatabase) {
         expectedVersion: Long,
         status: EstimateWorkflowStatus,
         now: Long,
-        expectedApprovals: Map<String, Long> = emptyMap()
+        expectedApprovals: Map<String, Long> = emptyMap(),
+        expectedConsolidatedApproval: Pair<String, Long>? = null
     ): Boolean {
         require(now > 0 && expectedVersion > 0)
         return try {
@@ -149,11 +150,26 @@ class ImmutableEstimateRepository(private val database: PrototypeDatabase) {
                     if (target.status == status.name && approved == mapOf(revisionUuid to expectedVersion) &&
                         expectedApprovals.isEmpty()
                     ) return@transactionWithResult true
-                    if (approved != expectedApprovals) return@transactionWithResult false
+                    if (approved != expectedApprovals || approved.size > 1) return@transactionWithResult false
                     for ((previousUuid, version) in approved - revisionUuid) {
                         workflow.updateRevisionWorkflow(EstimateWorkflowStatus.SENT.name, now, previousUuid, version)
                             .executeAsOneOrNull() ?: throw WorkflowConflict()
                     }
+                }
+                val priorIndividual = if (status == EstimateWorkflowStatus.APPROVED) {
+                    expectedApprovals.keys.singleOrNull()
+                } else revisionUuid.takeIf { target.status == EstimateWorkflowStatus.APPROVED.name }
+                val linked = if (priorIndividual != null && priorIndividual != revisionUuid.takeIf {
+                        status == EstimateWorkflowStatus.APPROVED
+                    }) {
+                    val measurement = checkNotNull(target.measurementUuid)
+                    database.consolidatedQuotesQueries.coveredApproval(target.projectId, measurement, priorIndividual)
+                        .executeAsOneOrNull()?.let { it.revisionUuid to it.version }
+                } else null
+                if (linked != expectedConsolidatedApproval) throw WorkflowConflict()
+                if (linked != null) {
+                    database.consolidatedQuotesQueries.updateWorkflow(EstimateWorkflowStatus.SENT.name, now,
+                        linked.first, linked.second).executeAsOneOrNull() ?: throw WorkflowConflict()
                 }
                 if (target.status != status.name) {
                     workflow.updateRevisionWorkflow(status.name, now, revisionUuid, expectedVersion)
@@ -246,7 +262,8 @@ class ImmutableEstimateRepository(private val database: PrototypeDatabase) {
         return database.transactionWithResult {
             database.priceGroupsQueries.claimCatalogWrite()
             fun conflict(): Nothing = throw IndividualEstimateSaveFailure(IndividualEstimateSaveFailure.Reason.OPERATION_CONFLICT)
-            if (database.frozenEstimateQueries.selectEstimateSaveReceipt(operationUuid).executeAsOneOrNull() != null ||
+            if (database.consolidatedQuotesQueries.receipt(operationUuid).executeAsOneOrNull() != null ||
+                database.frozenEstimateQueries.selectEstimateSaveReceipt(operationUuid).executeAsOneOrNull() != null ||
                 database.frozenRevisionQueries.selectRevisionReceipt(operationUuid).executeAsOneOrNull() != null) conflict()
             issuance.selectIssuanceReceipt(operationUuid).executeAsOneOrNull()?.let { receipt ->
                 if (receipt.command != command) conflict()
@@ -257,6 +274,7 @@ class ImmutableEstimateRepository(private val database: PrototypeDatabase) {
             }
             issueIndividual(projectId, measurementUuid, issueDate, createdAt, newSeriesUuid) { number ->
                 val revisionUuid = newRevisionUuid().lowercase()
+                require(database.consolidatedQuotesQueries.revision(revisionUuid).executeAsOneOrNull() == null)
                 insertRevision(number.seriesUuid, revisionUuid, null, 1L, createdAt, firstRevision)
                 issuance.recordIssuanceReceipt(operationUuid, command, number.seriesUuid)
                 CreatedEstimateSeries(number.seriesUuid, number.documentNumber, revisionUuid, number.sequence)
@@ -289,6 +307,7 @@ class ImmutableEstimateRepository(private val database: PrototypeDatabase) {
                 "Stale preview: the estimate was already revised"
             }
             val id = newRevisionUuid().lowercase()
+            require(database.consolidatedQuotesQueries.revision(id).executeAsOneOrNull() == null)
             insertRevision(seriesUuid, id, latest.revisionUuid, latest.versionNumber + 1L, createdAt, snapshot)
             id
         }

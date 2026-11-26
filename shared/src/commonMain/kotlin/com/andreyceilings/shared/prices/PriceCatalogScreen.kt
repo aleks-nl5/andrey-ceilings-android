@@ -120,7 +120,7 @@ fun PriceCatalogScreen(
                 item(key = "search") {
                     OutlinedTextField(
                         value = search, onValueChange = { search = it },
-                        label = { Text("Пошук за назвою або кодом") },
+                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(capitalization = androidx.compose.ui.text.input.KeyboardCapitalization.Sentences), label = { Text("Пошук за назвою або кодом") },
                         singleLine = true, modifier = Modifier.fillMaxWidth()
                     )
                 }

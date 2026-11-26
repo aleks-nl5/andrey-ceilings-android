@@ -1,8 +1,10 @@
 package com.andreyceilings.shared.ui
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.HelpOutline
 import androidx.compose.material.icons.filled.Info
@@ -66,8 +68,22 @@ internal fun ContextFeedbackIcon(
                 Icon(icon, accessibleLabel, Modifier.size(21.dp), tint = ink)
             }
         }
-        DropdownMenu(expanded = open, onDismissRequest = { setOpen(false) }) {
+        CeilingsPopupMenu(expanded = open, onDismissRequest = { setOpen(false) }) {
             Text(text, Modifier.widthIn(max = 280.dp).padding(12.dp), style = MaterialTheme.typography.bodySmall)
         }
     }
+}
+
+/** One raised, outlined menu surface for contextual explanations and version pickers. */
+@Composable
+internal fun CeilingsPopupMenu(
+    expanded: Boolean, onDismissRequest: () -> Unit,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    DropdownMenu(expanded = expanded, onDismissRequest = onDismissRequest,
+        shape = RoundedCornerShape(16.dp),
+        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        tonalElevation = 4.dp, shadowElevation = 8.dp,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        content = content)
 }

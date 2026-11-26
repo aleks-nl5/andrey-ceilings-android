@@ -100,9 +100,9 @@ class FrozenEstimatePdfShapeTest {
                         compose.runOnIdle { captured = null }
                         compose.onNodeWithContentDescription("Перегляд PDF").performClick()
                         compose.waitUntil(10_000) {
-                            compose.onAllNodesWithText("Зберегти PDF").fetchSemanticsNodes().isNotEmpty()
+                            compose.onAllNodesWithContentDescription("Зберегти PDF").fetchSemanticsNodes().isNotEmpty()
                         }
-                        compose.onNodeWithText("Зберегти PDF").performClick()
+                        compose.onNodeWithContentDescription("Зберегти PDF").performClick()
                         val pages = compose.runOnIdle { assertNotNull(captured) }
                         assertTrue(pages.fileName.endsWith("-v1.pdf"))
                         runBlocking { writeEstimateDocumentPdf(pages, 0 until pages.count) { file.outputStream() } }
@@ -110,7 +110,7 @@ class FrozenEstimatePdfShapeTest {
                     }
 
                     val firstLetters = exportFirstRevision()
-                    compose.onNode(hasText("Назад") and hasAnyAncestor(
+                    compose.onNode(hasContentDescription("Назад") and hasAnyAncestor(
                         isDialog() and hasAnyDescendant(hasText("Попередній перегляд PDF"))
                     )).performClick()
 

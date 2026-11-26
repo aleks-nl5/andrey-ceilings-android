@@ -9,6 +9,7 @@ object PriceCatalogMigrationProof {
         override val version = 4L
         override fun create(driver: SqlDriver): QueryResult.Value<Unit> {
             PrototypeDatabase.Schema.create(driver)
+            removeEmptyConsolidatedSchema(driver)
             // Freeze the authentic pre-v16 numbering schema; current generated DDL includes P4C1.
             listOf("DROP TABLE estimate_number_reservations", "DROP TABLE estimate_issuance_policy", "DROP TABLE estimate_revision_tombstones", "DROP TABLE estimate_revision_choice", "DROP TABLE estimate_revision_workflow", "DROP TABLE estimate_revision_receipts", "DROP TABLE estimate_revision_frozen", "DROP TABLE estimate_save_receipts", "DROP TABLE estimate_workflow", "DROP TABLE estimate_v1_frozen",
                 "DROP INDEX index_estimate_series_public_number", "ALTER TABLE estimate_series DROP COLUMN publicNumber",
@@ -108,5 +109,17 @@ object PriceCatalogMigrationProof {
             "SELECT count(*) FROM sqlite_master WHERE name = 'price_groups'", { cursor ->
                 cursor.next(); QueryResult.Value(cursor.getLong(0))
             }, 0).value)
+    }
+}
+
+/** Turns a current individual-only fixture into the exact pre-P6B structure. */
+internal fun removeEmptyConsolidatedSchema(driver: SqlDriver) {
+    for (table in listOf("consolidated_workflow", "consolidated_members", "consolidated_revisions", "consolidated_series")) {
+        assertEquals(0L, PriceNameUniquenessProof.scalar(driver, "SELECT count(*) FROM $table"))
+    }
+    driver.execute(null, "DROP TRIGGER consolidated_project_delete_guard", 0)
+    driver.execute(null, "DROP TRIGGER consolidated_ceiling_delete_guard", 0)
+    for (table in listOf("consolidated_workflow", "consolidated_members", "consolidated_revisions", "consolidated_series")) {
+        driver.execute(null, "DROP TABLE $table", 0)
     }
 }

@@ -88,7 +88,7 @@ internal fun SaveEstimateDialog(
                         projects.forEach { project -> DropdownMenuItem(text = { Text(project.title) }, onClick = { selectedProjectId = project.id; expanded = false }) }
                     }
                 }
-                OutlinedTextField(name, { name = it }, label = { Text("Назва кімнати / кошторису") }, singleLine = true)
+                OutlinedTextField(name, { name = it }, keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(capitalization = androidx.compose.ui.text.input.KeyboardCapitalization.Sentences), label = { Text("Назва кімнати / кошторису") }, singleLine = true)
             }
         },
         confirmButton = { Button(onClick = { if (name.isNotBlank()) onSave(selectedProjectId, name) }, enabled = name.isNotBlank()) { Text("Зберегти") } },
@@ -456,7 +456,7 @@ private fun LegacyEstimatesArchiveScreen(database: CeilingsDatabase?, onBack: ()
         AppAlertDialog(
             onDismissRequest = { editingEstimate = null },
             title = { Text("Редагувати кошторис") },
-            text = { OutlinedTextField(value = renameText, onValueChange = { renameText = it }, label = { Text("Назва") }, singleLine = true) },
+            text = { OutlinedTextField(value = renameText, onValueChange = { renameText = it }, keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(capitalization = androidx.compose.ui.text.input.KeyboardCapitalization.Sentences), label = { Text("Назва") }, singleLine = true) },
             confirmButton = {
                 Button(enabled = renameText.isNotBlank(), onClick = {
                     scope.launch {

@@ -36,7 +36,8 @@ import kotlin.math.roundToInt
 /** Resolved A4 pages. The platform draws the same vector content as the preview. */
 class EstimateDocumentPages internal constructor(
     val fileName: String,
-    private val pages: List<List<DocumentMark>>
+    private val pages: List<List<DocumentMark>>,
+    val exportable: Boolean = true
 ) {
     val count: Int get() = pages.size
 
@@ -144,32 +145,48 @@ internal fun layoutEstimateDocument(
     roomSection(document, options, issuerProvider, photoProvider)
 }.finish()
 
+internal data class ConsolidatedPdfLabels(
+    val heading: String,
+    val revision: String,
+    val project: String,
+    val address: String,
+    val subtotal: String,
+    val payable: String,
+    val discount: String
+)
+
 internal fun layoutConsolidatedEstimateDocument(
     document: ConsolidatedEstimateDocument,
     options: DocumentPresentationOptions,
-    measurer: TextMeasurer
+    measurer: TextMeasurer,
+    labels: ConsolidatedPdfLabels
 ): EstimateDocumentPages = DocumentPagination(
-    document.fileName, "Зведений кошторис", measurer, requireNotNull(options.moneyColumnLabels)
+    document.fileName, labels.heading, measurer, requireNotNull(options.moneyColumnLabels),
+    exportable = document.publicNumber != null && document.version != null
 ).apply {
-    paragraph("Об’єкт · ${document.currentProjectTitle}", 21, bold = true)
-    document.currentAddress?.let { paragraph("Актуальна адреса · $it") }
-    val roomOptions = DocumentPresentationOptions(listOf(EstimateDocumentSection.ROOM, EstimateDocumentSection.DRAWING))
+    val number = document.publicNumber
+    val version = document.version
+    if (number != null && version != null) heading(labels.revision.replace("%2\$d", version.toString()).replace("%1\$s", number))
+    document.title?.let { paragraph(it, 20, bold = true) }
+    paragraph(labels.project.replace("%1\$s", document.currentProjectTitle))
+    document.currentAddress?.let { paragraph(labels.address.replace("%1\$s", it)) }
+    val roomOptions = options.copy(order = listOf(EstimateDocumentSection.ROOM, EstimateDocumentSection.DRAWING),
+        hidden = emptySet())
     document.sections.forEach { section ->
-        roomSection(section.document, roomOptions, null, null, section.status?.label ?: "Статус не зафіксовано")
+        roomSection(section.document, roomOptions, null, null, compact = true)
     }
-    flowGroup(listOf(
-        DocumentParagraph("Підсумок об’єкта", 18, bold = true),
-        DocumentParagraph("Загалом до оплати · ${measurementMoney(document.totalCents)}", 16, bold = true)
-    ))
+    val amounts = document.amounts
+    if (amounts != null) {
+        paragraph(labels.subtotal.replace("%1\$s", measurementMoney(amounts.subtotalCents)))
+        val percent = if (amounts.discountMode == com.andreyceilings.shared.livepricing.QuoteDiscountMode.PERCENT) {
+            " · ${formatMeasurementMoneyNumber(amounts.discountBasisPoints.toLong())}%"
+        } else ""
+        paragraph("${labels.discount} · −${measurementMoney(amounts.discountCents)}$percent")
+    }
+    paragraph(labels.payable.replace("%1\$s", measurementMoney(document.totalCents)), 16, bold = true)
     document.sections.forEach {
         val room = it.document
         paragraph("${room.room} · ${room.revisionHeading} · ${measurementMoney(room.amounts.finalCents)}")
-    }
-    options.order.filter { it.editable && it !in options.hidden }.forEach { section ->
-        options.text[section]?.trim()?.takeIf(String::isNotEmpty)?.let {
-            heading(section.label)
-            paragraph(it)
-        }
     }
 }.finish()
 
@@ -180,7 +197,7 @@ private fun DocumentPagination.roomSection(
     options: DocumentPresentationOptions,
     issuerProvider: DocumentIssuerProvider?,
     photoProvider: DocumentPhotoProvider?,
-    status: String? = null
+    compact: Boolean = false
 ) {
     val metadata = buildList {
         add(DocumentParagraph(document.title, 15, bold = true))
@@ -189,14 +206,13 @@ private fun DocumentPagination.roomSection(
         add(DocumentParagraph("Приміщення · ${document.room}"))
         val date = "Дата версії · ${document.createdOn}"
         val completeness = if (document.omissions.isEmpty()) "Повний кошторис" else "Частковий кошторис"
-        if (status == null) {
+        if (compact) add(DocumentParagraph("$date  ·  $completeness"))
+        else {
             add(DocumentParagraph(date))
             add(DocumentParagraph(completeness, bold = true))
-        } else {
-            add(DocumentParagraph("$date  ·  Статус · $status  ·  $completeness"))
         }
     }
-    if (status == null) {
+    if (!compact) {
         metadata.forEach { paragraph(it.text, it.font, it.bold) }
         gap(12)
         table(document.rows, document.measuredArea)
@@ -215,7 +231,7 @@ private fun DocumentPagination.roomSection(
         val value = "−${measurementMoney(amounts.discountCents)}"
         listOfNotNull(options.fixedDiscountLabel, value).joinToString(" · ")
     } else "Знижка $discountText % · ${measurementMoney(amounts.discountCents)}"
-    if (status == null) {
+    if (!compact) {
         paragraph(subtotal)
         paragraph(discountLine)
     } else {
@@ -232,7 +248,7 @@ private fun DocumentPagination.roomSection(
             EstimateDocumentSection.ROOM -> {
                 val area = "Площа заміру · ${document.measuredArea} м²"
                 val perimeter = "Периметр · ${document.perimeter} м"
-                if (status == null) {
+                if (!compact) {
                     heading(section.label)
                     paragraph(area)
                     paragraph(perimeter)
@@ -277,7 +293,8 @@ private class DocumentPagination(
     private val fileName: String,
     private val pageHeading: String,
     private val measurer: TextMeasurer,
-    private val moneyColumns: DocumentMoneyColumnLabels
+    private val moneyColumns: DocumentMoneyColumnLabels,
+    private val exportable: Boolean = true
 ) {
     private val pages = mutableListOf<MutableList<DocumentMark>>()
     private var marks = mutableListOf<DocumentMark>()
@@ -487,6 +504,6 @@ private class DocumentPagination(
             val footer = lines("Сторінка ${index + 1} / ${pages.size}", 130, 10).single()
             page.add(DocumentMark.Text(footer, 555f - footer.size.width, 809f))
         }
-        return EstimateDocumentPages(fileName, pages)
+        return EstimateDocumentPages(fileName, pages, exportable)
     }
 }

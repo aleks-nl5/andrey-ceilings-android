@@ -108,7 +108,7 @@ fun AreaFeatureControls(model: MeasurementEditModel, enabled: Boolean, inWorkspa
                 AreaRole.entries.forEach {role ->FilterChip(properties.role==role,onClick={model.changeAreaProperties {it.copy(role=role)}},label={Text(areaRoleLabel(role))})}
                 OutlinedTextField(properties.note, { text -> model.changeAreaProperties { it.copy(note = text) } },
                     label = { Text("Примітка фігури") }, modifier = measurementFieldFocusModifier(), maxLines = 3,
-                    keyboardOptions = KeyboardOptions(imeAction = if (circle) ImeAction.Next else ImeAction.Default),
+                    keyboardOptions = KeyboardOptions(capitalization = androidx.compose.ui.text.input.KeyboardCapitalization.Sentences, imeAction = if (circle) ImeAction.Next else ImeAction.Default),
                     keyboardActions = KeyboardActions(onNext = if (circle) ({ diameterFocus.requestFocus() }) else null))
                 if(circle)Row {Checkbox(properties.diameterMeasured,onCheckedChange={checked ->model.changeAreaProperties {it.copy(diameterMeasured=checked)}});Text("Діаметр повторно виміряно")}
                 if(circle)DecimalInputField(properties.diameter, { text -> model.changeAreaProperties { it.copy(diameter=text,diameterMeasured=true) } }, "Виміряний діаметр, м (парні мм)", modifier = measurementFieldFocusModifier().focusRequester(diameterFocus), isError = !validDiameter)

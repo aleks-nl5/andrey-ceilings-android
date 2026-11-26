@@ -19,10 +19,8 @@ import com.andreyceilings.app.ui.screens.writeEstimateDocumentPdf
 import com.andreyceilings.shared.db.*
 import com.andreyceilings.shared.estimate.*
 import com.andreyceilings.shared.livepricing.BusinessRole
+import com.andreyceilings.shared.livepricing.QuoteDiscountMode
 import com.andreyceilings.shared.measurement.*
-import com.andreyceilings.shared.objects.ObjectsClientsRows
-import com.andreyceilings.shared.objects.ObjectsClientsScreen
-import com.andreyceilings.shared.objects.ObjectsClientsStore
 import com.andreyceilings.shared.theme.CeilingsTheme
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -109,8 +107,8 @@ class FrozenEstimateDocumentAndroidTest {
                         .performScrollToNode(note)
                     val paragraphs = (1..100).joinToString("\n") { "Узгоджений текст, рядок $it" }
                     compose.onNode(note).performTextInput(paragraphs)
-                    compose.onNodeWithText("До перегляду").performClick()
-                    compose.onNodeWithText("Зберегти PDF").performClick()
+                    compose.onNodeWithContentDescription("До перегляду").performClick()
+                    compose.onNodeWithContentDescription("Зберегти PDF").performClick()
                     val pages = compose.runOnIdle { assertNotNull(captured) }
                     assertTrue(pages.count > 1)
                     assertTrue(pages.fileName.endsWith("-v2.pdf"))
@@ -176,6 +174,7 @@ class FrozenEstimateDocumentAndroidTest {
         }
     }
 
+    // Debug instrumentation uses the shared module's Kotlin friend path.
     @SdkSuppress(minSdkVersion = 35)
     @Test fun selectedRoomsExportOnePdfWithExactFrozenVersions() {
         val context = ApplicationProvider.getApplicationContext<Context>()
@@ -217,128 +216,109 @@ class FrozenEstimateDocumentAndroidTest {
                 projects.update(project.id, project.clientId, "Квартира / Центр", project.address, project.status, project.notes, 630)
                 val before = history.frozenIndividuals()
                 val sequence = nextIndividualSequence(db)
-                val objects = ObjectsClientsStore(db) { 700 }
-                val store = objects.measurementDetails.elements
-                try {
-                    val captured = java.util.concurrent.atomic.AtomicReference<EstimateDocumentPages>()
-                    val mounted = mutableStateOf(true)
-                    compose.setContent {
-                        if (mounted.value) CompositionLocalProvider(LocalEstimateDocumentExporter provides EstimateDocumentExporter { pages, _, done ->
-                            captured.set(pages)
-                            done(null)
-                        }) {
-                            CeilingsTheme(false) {
-                                ObjectsClientsScreen(
-                                    rows = ObjectsClientsRows(emptyList(), emptyList()),
-                                    detailsProjectId = living.projectId, detailsStore = objects,
-                                    onOpenProject = {}, onCloseProject = {}, databaseAvailable = true,
-                                    onSaveClient = { _, _ -> error("Unexpected client write") }, onSaveProject = { _, _ -> },
-                                    onDeleteClient = {}, onDeleteProject = {}, onDial = {},
-                                    onExternalAction = { _, _ -> }
-                                )
-                            }
-                        }
+                val repository = ConsolidatedEstimateRepository(db)
+                val discount = ConsolidatedDiscount(QuoteDiscountMode.FIXED, 101)
+                fun save(selection: List<CreatedEstimateSeries>, head: String? = null): ConsolidatedRevisionIdentity {
+                    val refs = selection.map {
+                        val exact = assertNotNull(history.exactIndividual(it.seriesUuid, it.initialRevisionUuid))
+                        ConsolidatedDocumentRef(exact.frozen.source.measurementUuid, exact.seriesUuid,
+                            exact.revisionUuid, exact.frozen.consolidatedSourceProof())
                     }
-                    // P6A puts the consolidated action after the lazy ceiling list.
-                    // Wait for the project to load, then reveal the offscreen action.
-                    compose.waitUntil(10000) { compose.onAllNodesWithText("Квартира / Центр").fetchSemanticsNodes().isNotEmpty() }
-                    val consolidatedAction = hasText("Зведений кошторис") and hasClickAction()
-                    compose.onNode(SemanticsMatcher.keyIsDefined(SemanticsActions.ScrollToIndex))
-                        .performScrollToNode(consolidatedAction)
-                    compose.onNode(consolidatedAction).performClick()
-                    compose.waitUntil(10000) { compose.onAllNodesWithText("Переглянути зведений PDF").fetchSemanticsNodes().isNotEmpty() }
-                    val preview = compose.onNodeWithText("Переглянути зведений PDF")
-                    val list = compose.onAllNodes(SemanticsMatcher.keyIsDefined(SemanticsActions.ScrollToIndex)).onLast()
-                    fun publicNumber(document: CreatedEstimateSeries) = EstimateNumbering.printable(document.documentNumber)
-                    fun waitForPreview(room: String) {
-                        val enabled = hasText("Переглянути зведений PDF") and isEnabled()
-                        try {
-                            compose.waitUntil(60_000) { compose.onAllNodes(enabled).fetchSemanticsNodes().isNotEmpty() }
-                        } catch (timeout: ComposeTimeoutException) {
-                            val dialog = compose.onAllNodes(isRoot(), useUnmergedTree = true).onLast().printToString()
-                            fail("Preview unavailable after choosing $room\n$dialog", timeout)
-                        }
-                    }
-                    fun choose(room: String, document: CreatedEstimateSeries) {
-                        list.performScrollToNode(hasText(room))
-                        compose.onNode(hasText(room) and isToggleable()).performClick()
-                        val exact = hasText("${publicNumber(document)} · v1", substring = true) and isSelectable()
-                        list.performScrollToNode(exact)
-                        compose.onNode(exact).performClick()
-                        waitForPreview(room)
-                    }
-                    fun exportPages(): Pair<EstimateDocumentPages, List<String>> {
-                        captured.set(null)
-                        preview.performClick()
-                        compose.waitUntil(60_000) { compose.onAllNodesWithText("Зберегти PDF").fetchSemanticsNodes().isNotEmpty() }
-                        compose.onNodeWithText("Зберегти PDF").performClick()
-                        compose.waitUntil(60_000) { captured.get() != null }
-                        val pages = assertNotNull(captured.get())
-                        runBlocking { writeEstimateDocumentPdf(pages, 0 until pages.count) { output.outputStream() } }
-                        val pageText = PdfRenderer(ParcelFileDescriptor.open(output, ParcelFileDescriptor.MODE_READ_ONLY)).use { pdf ->
-                            assertEquals(pages.count, pdf.pageCount)
-                            List(pdf.pageCount) { index ->
-                                pdf.openPage(index).use { page ->
-                                    assertEquals(595, page.width)
-                                    assertEquals(842, page.height)
-                                    page.textContents.joinToString(" ") { it.text }.filterNot(Char::isWhitespace)
-                                }
-                            }
-                        }
-                        assertTrue(pageText.all { "Зведенийкошторис" in it }, pageText.joinToString("\n"))
-                        return pages to pageText
-                    }
-
-                    val shortQuotes = additional.entries.take(2)
-                    for ((name, quote) in shortQuotes) choose(name, quote)
-                    val shortQuote = shortQuotes.last().value
-                    val (_, smallPages) = exportPages()
-                    assertEquals(2, smallPages.size, smallPages.joinToString("\n"))
-                    assertTrue("Квартира/Центр" in smallPages.first() &&
-                        "${publicNumber(shortQuote)}·v1" in smallPages.first() && "Позиція" in smallPages.first())
-                    assertTrue("Підсумокоб’єктаЗагаломдооплати" in smallPages.last())
-                    assertTrue("Збереженекреслення" in smallPages.last() || "Позиція" in smallPages.last())
-                    compose.onNodeWithText("Назад").performClick()
-
-                    choose("Кухня", partial)
-                    choose("Вітальня", first)
-                    for ((name, quote) in additional.entries.drop(2)) choose(name, quote)
-                    val (pages, renderedPages) = exportPages()
-                    assertTrue("Квартира/Центр" in renderedPages.first() &&
-                        "${publicNumber(additional.values.last())}·v1" in renderedPages.first() &&
-                        "Позиція" in renderedPages.first())
-                    val text = renderedPages.joinToString("\n")
-                    val compactText = text.filterNot(Char::isWhitespace)
-                    assertTrue("${publicNumber(first)}·v1" in compactText, text)
-                    assertTrue("${publicNumber(partial)}·v1" in compactText, text)
-                    assertTrue("Частковийкошторис" in compactText, text)
-                    assertTrue("Монтажліхтаря" in compactText, text)
-                    assertTrue("Загаломдооплати" in compactText, text)
-                    assertTrue("Ціна,₴" in compactText, text)
-                    assertTrue("Сума,₴" in compactText, text)
-                    assertTrue(Regex("Кількість").findAll(compactText).count() > 10, text)
-                    assertEquals(10, Regex("Збереженекреслення").findAll(compactText).count(), text)
-                    assertEquals(40, Regex("декоративного").findAll(compactText).count(), text)
-                    val total = (listOf(first, partial) + additional.values).sumOf {
-                        assertNotNull(history.exactIndividual(it.seriesUuid, it.initialRevisionUuid)).frozen.amounts.finalCents
-                    }
-                    val payable = measurementMoney(total).filterNot(Char::isWhitespace)
-                    assertTrue(renderedPages.any { "Підсумокоб’єктаЗагаломдооплати·$payable" in it }, text)
-                    assertEquals("zvedenyi-koshtorys-Квартира-Центр.pdf", pages.fileName)
-                    additional.values.forEach { assertTrue("${publicNumber(it)}·v1" in compactText, text) }
-                    assertFalse("${publicNumber(first)}·v2" in compactText, text)
-                    assertFalse(first.initialRevisionUuid in compactText, text)
-                    assertFalse(first.seriesUuid in compactText, text)
-                    assertFalse("Спальня" in compactText, text)
-                    compose.onNodeWithText("Назад").performClick()
-                    compose.onNodeWithText("Скасувати").performClick()
-                    compose.runOnIdle { mounted.value = false }
-                    compose.waitForIdle()
-                    assertEquals(before, history.frozenIndividuals())
-                    assertEquals(sequence, nextIndividualSequence(db))
-                } finally {
-                    runBlocking { store.closeAndAwaitWrites() }
+                    return repository.save(ConsolidatedSave(newRecordUuid(), project.id, project.uuid, head, head,
+                        ConsolidatedDraft("Зведений документ", discount, refs)),
+                        kotlinx.datetime.LocalDate(2026, 11, 26), if (head == null) 700 else 701)
                 }
+                // Persist both versions with the real v24 writer. Keep PDF verification
+                // independent of project navigation and editor widget labels.
+                val shortQuotes = additional.values.take(2)
+                val fullQuotes = listOf(first, partial) + additional.values
+                val v1 = save(shortQuotes)
+                val v2 = save(fullQuotes, v1.revisionUuid)
+                assertEquals(v1.seriesUuid, v2.seriesUuid)
+                assertEquals(2L, v2.version)
+                val small = assertNotNull(repository.read(v1.revisionUuid))
+                val full = assertNotNull(repository.read(v2.revisionUuid))
+                assertEquals(small.frozen.publicNumber, full.frozen.publicNumber)
+                assertEquals(fullQuotes.map { it.initialRevisionUuid }, full.frozen.members.map { it.ref.revisionUuid })
+                val total = fullQuotes.sumOf {
+                    assertNotNull(history.exactIndividual(it.seriesUuid, it.initialRevisionUuid)).frozen.amounts.finalCents
+                } - 101L
+                assertEquals(total, full.frozen.amounts.finalCents)
+                projects.update(project.id, project.clientId, "Перейменований об'єкт", project.address,
+                    project.status, project.notes, 710)
+                prices.updateSalePrice(assertNotNull(prices.find(living.priceId)), 999.0, 711)
+                val documents = listOf(v1, v2).map {
+                    assertNotNull(repository.read(it.revisionUuid)).document()
+                }
+                val captured = java.util.concurrent.atomic.AtomicReference<List<EstimateDocumentPages>>()
+                compose.setContent {
+                    CeilingsTheme(false) {
+                        val measurer = androidx.compose.ui.text.rememberTextMeasurer()
+                        val columns = documentMoneyColumnLabels()
+                        val labels = ConsolidatedPdfLabels("Зведений кошторис", "%1\$s · v%2\$d",
+                            "Об’єкт · %1\$s", "Адреса · %1\$s", "Сума кошторисів · %1\$s",
+                            "До оплати · %1\$s", "Додаткова знижка")
+                        val options = DocumentPresentationOptions(EstimateDocumentSection.entries.filter { it.editable })
+                            .copy(moneyColumnLabels = columns, fixedDiscountLabel = "Фіксована знижка")
+                        val pages = androidx.compose.runtime.remember(measurer, columns) {
+                            documents.map { layoutConsolidatedEstimateDocument(it, options, measurer, labels) }
+                        }
+                        androidx.compose.runtime.SideEffect { captured.set(pages) }
+                    }
+                }
+                compose.waitUntil(60_000) { captured.get() != null }
+                val rendered = assertNotNull(captured.get())
+                fun exportPages(pages: EstimateDocumentPages): List<String> {
+                    assertTrue(pages.exportable)
+                    runBlocking { writeEstimateDocumentPdf(pages, 0 until pages.count) { output.outputStream() } }
+                    return PdfRenderer(ParcelFileDescriptor.open(output, ParcelFileDescriptor.MODE_READ_ONLY)).use { pdf ->
+                        assertEquals(pages.count, pdf.pageCount)
+                        List(pdf.pageCount) { index ->
+                            pdf.openPage(index).use { page ->
+                                assertEquals(595, page.width)
+                                assertEquals(842, page.height)
+                                page.textContents.joinToString(" ") { it.text }.filterNot(Char::isWhitespace)
+                            }
+                        }
+                    }
+                }
+                fun publicNumber(document: CreatedEstimateSeries) = EstimateNumbering.printable(document.documentNumber)
+                val smallText = exportPages(rendered[0]).joinToString("")
+                assertTrue("Квартира/Центр" in smallText, smallText)
+                assertTrue("Позиція" in smallText, smallText)
+                assertTrue("Дооплати·" in smallText, smallText)
+                assertEquals(2, Regex("Збереженекреслення").findAll(smallText).count(), smallText)
+                shortQuotes.forEach { assertTrue("${publicNumber(it)}·v1" in smallText, smallText) }
+                assertTrue(rendered[0].fileName.endsWith("-v1.pdf"))
+                val pages = rendered[1]
+                val renderedPages = exportPages(pages)
+                val compactText = renderedPages.joinToString("")
+                assertTrue(pages.count > 1)
+                assertTrue(renderedPages.all { "Зведенийкошторис" in it }, compactText)
+                assertTrue("Квартира/Центр" in compactText && "Позиція" in compactText, compactText)
+                assertTrue("${full.frozen.publicNumber}·v2" in compactText, compactText)
+                assertTrue("Частковийкошторис" in compactText, compactText)
+                assertTrue("Монтажліхтаря" in compactText, compactText)
+                assertTrue("Ціна,₴" in compactText, compactText)
+                assertTrue("Сума,₴" in compactText, compactText)
+                assertTrue(Regex("Кількість").findAll(compactText).count() > 10, compactText)
+                assertEquals(10, Regex("Збереженекреслення").findAll(compactText).count(), compactText)
+                assertEquals(40, Regex("декоративного").findAll(compactText).count(), compactText)
+                val payable = measurementMoney(total).filterNot(Char::isWhitespace)
+                assertTrue("Дооплати·$payable" in compactText, compactText)
+                assertTrue("Додатковазнижка" in compactText, compactText)
+                assertTrue(pages.fileName.startsWith("zvedenyi-koshtorys-") && pages.fileName.endsWith("-v2.pdf"))
+                fullQuotes.forEach { assertTrue("${publicNumber(it)}·v1" in compactText, compactText) }
+                assertFalse("${publicNumber(first)}·v2" in compactText, compactText)
+                assertFalse(first.initialRevisionUuid in compactText, compactText)
+                assertFalse(first.seriesUuid in compactText, compactText)
+                assertFalse("Спальня" in compactText, compactText)
+                assertFalse("Перейменованийоб'єкт" in compactText, compactText)
+                assertEquals(before, history.frozenIndividuals())
+                assertEquals(sequence, nextIndividualSequence(db))
+                assertEquals(full.frozen, repository.read(v2.revisionUuid)?.frozen)
+                assertEquals(EstimateWorkflowStatus.DRAFT, repository.read(v2.revisionUuid)?.status)
+                verifyFrozenEstimateContents(driver)
             }
         } finally {
             key.fill(0)

@@ -40,6 +40,7 @@ kotlin {
             implementation("app.cash.sqldelight:coroutines-extensions:2.4.1")
             // Portable, strict JSON handling for the public monobank API/cache.
             implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.9.0")
+            implementation("org.kotlincrypto.hash:sha2:0.8.0")
             // Shared monobank HTTPS request; curated native engine on each target.
             implementation("io.ktor:ktor-client-core:3.6.1")
             implementation("io.ktor:ktor-client-engine-defaults:3.6.1")

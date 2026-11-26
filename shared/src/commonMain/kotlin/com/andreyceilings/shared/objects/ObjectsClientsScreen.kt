@@ -678,31 +678,37 @@ fun ObjectsClientsScreen(
             },
             confirmButton = {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    TextButton(enabled = !busy, onClick = {
-                        if (busy) return@TextButton
-                        busy = true
-                        scope.launch {
-                            try {
-                                when (target) {
-                                    is DeletionTarget.Client -> onDeleteClient(target.item.id)
-                                    is DeletionTarget.Project -> onDeleteProject(target.item.id)
-                                }
-                                message = null
-                                deletionError = null
-                                if (target is DeletionTarget.Client && viewedClientId == target.item.id) viewedClientId = null
-                                deleting = null
-                            } catch (cancelled: CancellationException) {
-                                throw cancelled
-                            } catch (failure: Exception) {
-                                deletionError = failure.message ?: "Не вдалося видалити запис."
-                                // Keep the dialog open so the user sees the reason.
-                            } finally { busy = false }
+                    val cancelAction: @Composable () -> Unit = {
+                        TextButton(onClick = { deleting = null }, enabled = !busy) {
+                            Text(stringResource(Res.string.p5d_cancel))
                         }
-                    }) { Text(stringResource(Res.string.oc_delete), color = MaterialTheme.colorScheme.error) }
-                    Spacer(Modifier.weight(1f))
-                    TextButton(onClick = { deleting = null }, enabled = !busy) {
-                        Text(stringResource(Res.string.p5d_cancel))
                     }
+                    val deleteAction: @Composable () -> Unit = {
+                        TextButton(enabled = !busy, onClick = {
+                            if (busy) return@TextButton
+                            busy = true
+                            scope.launch {
+                                try {
+                                    when (target) {
+                                        is DeletionTarget.Client -> onDeleteClient(target.item.id)
+                                        is DeletionTarget.Project -> onDeleteProject(target.item.id)
+                                    }
+                                    message = null
+                                    deletionError = null
+                                    if (target is DeletionTarget.Client && viewedClientId == target.item.id) viewedClientId = null
+                                    deleting = null
+                                } catch (cancelled: CancellationException) {
+                                    throw cancelled
+                                } catch (failure: Exception) {
+                                    deletionError = failure.message ?: "Не вдалося видалити запис."
+                                    // Keep the dialog open so the user sees the reason.
+                                } finally { busy = false }
+                            }
+                        }) { Text(stringResource(Res.string.oc_delete), color = MaterialTheme.colorScheme.error) }
+                    }
+                    if (isClient) deleteAction() else cancelAction()
+                    Spacer(Modifier.weight(1f))
+                    if (isClient) cancelAction() else deleteAction()
                 }
             }
         )
@@ -788,6 +794,7 @@ private fun CompactObjectsSearchField(
             value = value,
             onValueChange = onChange,
             singleLine = true,
+            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(capitalization = androidx.compose.ui.text.input.KeyboardCapitalization.Sentences),
             textStyle = MaterialTheme.typography.bodyMedium.copy(color = colors.onSurface),
             cursorBrush = androidx.compose.ui.graphics.SolidColor(colors.primary),
             modifier = Modifier.weight(1f)

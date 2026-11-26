@@ -99,7 +99,7 @@ internal fun LinePlacementControls(
                 DecimalInputField(input.width, { model.changeLineProperties(width = it) }, "Ширина, мм (необов'язково)",
                     modifier = measurementFieldFocusModifier(), isError = !input.valid, allowDecimalSeparator = false,
                     onNext = { noteFocus.requestFocus() })
-                OutlinedTextField(input.note, { model.changeLineProperties(note = it) }, label = { Text("Примітка сегмента") },
+                OutlinedTextField(input.note, { model.changeLineProperties(note = it) }, keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(capitalization = androidx.compose.ui.text.input.KeyboardCapitalization.Sentences), label = { Text("Примітка сегмента") },
                     modifier = measurementFieldFocusModifier().focusRequester(noteFocus), maxLines = 3)
                 Text(if (inWorkspace) "Лінія показує монтажну вісь. Ширина довідкова й не змінює площу. Перетягування кінця скидає його прив’язку."
                     else "Ширина є довідковим параметром. Площу не віднімаємо; допустимість отвору чи оболонки не перевірена.")

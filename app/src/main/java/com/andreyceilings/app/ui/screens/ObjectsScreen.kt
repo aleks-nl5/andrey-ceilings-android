@@ -126,7 +126,7 @@ private fun AddClientDialog(onDismiss: () -> Unit, onSave: (String, String, Stri
     var email by remember { mutableStateOf("") }
     AppAlertDialog(onDismissRequest = onDismiss, title = { Text("Новий клієнт") }, text = {
         Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedTextField(name, { name = it }, label = { Text("Ім’я клієнта *") }, singleLine = true)
+            OutlinedTextField(name, { name = it }, keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(capitalization = androidx.compose.ui.text.input.KeyboardCapitalization.Sentences), label = { Text("Ім’я клієнта *") }, singleLine = true)
             OutlinedTextField(phone, { phone = it }, label = { Text("Телефон") }, singleLine = true)
             OutlinedTextField(email, { email = it }, label = { Text("Email") }, singleLine = true)
         }
@@ -140,9 +140,9 @@ private fun AddProjectDialog(onDismiss: () -> Unit, onSave: (String, String, Str
     var clientName by remember { mutableStateOf("") }
     AppAlertDialog(onDismissRequest = onDismiss, title = { Text("Новий об’єкт") }, text = {
         Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedTextField(title, { title = it }, label = { Text("Назва об’єкта *") }, singleLine = true)
-            OutlinedTextField(address, { address = it }, label = { Text("Адреса") })
-            OutlinedTextField(clientName, { clientName = it }, label = { Text("Ім’я клієнта") }, supportingText = { Text("Якщо клієнта ще немає, його буде створено автоматично") })
+            OutlinedTextField(title, { title = it }, keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(capitalization = androidx.compose.ui.text.input.KeyboardCapitalization.Sentences), label = { Text("Назва об’єкта *") }, singleLine = true)
+            OutlinedTextField(address, { address = it }, keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(capitalization = androidx.compose.ui.text.input.KeyboardCapitalization.Sentences), label = { Text("Адреса") })
+            OutlinedTextField(clientName, { clientName = it }, keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(capitalization = androidx.compose.ui.text.input.KeyboardCapitalization.Sentences), label = { Text("Ім’я клієнта") }, supportingText = { Text("Якщо клієнта ще немає, його буде створено автоматично") })
         }
     }, confirmButton = { Button(onClick = { if (title.isNotBlank()) onSave(title, address, clientName) }, enabled = title.isNotBlank()) { Text("Зберегти") } }, dismissButton = { TextButton(onClick = onDismiss) { Text("Скасувати") } })
 }

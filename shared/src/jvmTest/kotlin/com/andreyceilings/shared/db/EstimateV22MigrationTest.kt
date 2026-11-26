@@ -32,6 +32,8 @@ class EstimateV22MigrationTest {
                     EstimateV22MigrationProof.v21Schema.create(driver)
                     EstimateV22MigrationProof.seed(driver)
                     PriceCatalogSchema.migrate(driver, 21L, 22L)
+                    // Seed post-v22 individual data with the current writer using empty P6B tables.
+                    PrototypeDatabase.Schema.migrate(driver, 23L, 24L)
                 } else PriceCatalogSchema.create(driver)
                 val db = PrototypeDatabase(driver)
                 val quoteFixture = MeasurementPricingFixture.seed(db)
@@ -59,9 +61,10 @@ class EstimateV22MigrationTest {
                     assertFails { store.update(first, first.draft.copy(outline = rectangle), now = 40) }
                     assertEquals(first, store.load(fixture.project, fixture.id))
                     assertEquals(retired, retiredWalls())
+                    removeEmptyConsolidatedSchema(driver)
                     driver.execute(null, "PRAGMA user_version = 22", 0)
                     openDesktopPriceCatalog(driver, true)
-                    assertEquals(23L, PriceNameUniquenessProof.scalar(driver, "PRAGMA user_version"))
+                    assertEquals(PriceCatalogSchema.version, PriceNameUniquenessProof.scalar(driver, "PRAGMA user_version"))
                     assertEquals(first, store.load(fixture.project, fixture.id))
                     assertEquals(retired, retiredWalls())
                 }

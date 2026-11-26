@@ -6,7 +6,18 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.ZoomIn
+import androidx.compose.material.icons.filled.ZoomOut
+import androidx.compose.material.icons.filled.Save
+import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Print
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -67,14 +78,17 @@ internal fun documentMoneyColumnLabels(): DocumentMoneyColumnLabels = DocumentMo
 
 internal class EstimatePreviewLoadFailure(message: String) : IllegalStateException(message)
 
+internal typealias EstimateShareDispatch = ((Boolean) -> Unit) -> Unit
+
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun <T : Any> EstimateDocumentPreviewDialog(
     load: suspend () -> T,
     layout: (T, DocumentPresentationOptions, TextMeasurer) -> EstimateDocumentPages,
     onClose: () -> Unit,
-    beforeExport: (suspend () -> Unit)? = null,
+    prepareExport: (suspend (EstimateDocumentAction) -> EstimateShareDispatch?)? = null,
     editRoomSections: Boolean = true,
+    allowPresentationEditing: Boolean = true,
     shareDispatched: (((Boolean) -> Unit) -> Unit)? = null
 ) {
     val exporter = LocalEstimateDocumentExporter.current
@@ -119,53 +133,74 @@ internal fun <T : Any> EstimateDocumentPreviewDialog(
     ) {
         Surface(Modifier.fillMaxSize()) {
             Column(Modifier.fillMaxSize().safeDrawingPadding().padding(16.dp)) {
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    TextButton(enabled = !exporting, onClick = { if (editor) editor = false else onClose() }) {
-                        Text(if (editor) "До перегляду" else "Назад")
-                    }
-                    if (document != null && !editor) {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text(if (editor) "Оформлення PDF" else "Попередній перегляд PDF",
+                        modifier = Modifier.weight(1f), style = MaterialTheme.typography.titleLarge)
+                    if (document != null && !editor && allowPresentationEditing) {
                         TextButton(enabled = !exporting, onClick = { editor = true }) { Text("Оформлення") }
-                        TextButton(onClick = { zoomed = !zoomed }) { Text(if (zoomed) "За шириною" else "Збільшити") }
                     }
                 }
-                Text(if (editor) "Оформлення PDF" else "Попередній перегляд PDF",
-                    style = MaterialTheme.typography.titleLarge)
+                Row(Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    PdfActionIcon(Icons.AutoMirrored.Filled.ArrowBack,
+                        stringResource(if (editor) Res.string.pdf_back_to_preview else Res.string.pdf_back),
+                        !exporting) { if (editor) editor = false else onClose() }
+                    if (document != null && !editor) {
+                        PdfActionIcon(if (zoomed) Icons.Default.ZoomOut else Icons.Default.ZoomIn,
+                            stringResource(if (zoomed) Res.string.pdf_fit_width else Res.string.pdf_zoom_in),
+                            !exporting) { zoomed = !zoomed }
+                    }
+                    Spacer(Modifier.weight(1f))
+                    if (!editor && pages != null && pages.exportable && exporter != null) {
+                        listOf(EstimateDocumentAction.SAVE, EstimateDocumentAction.PRINT, EstimateDocumentAction.SHARE).forEach { action ->
+                            val icon = when (action) {
+                                EstimateDocumentAction.SAVE -> Icons.Default.Save
+                                EstimateDocumentAction.SHARE -> Icons.Default.Share
+                                EstimateDocumentAction.PRINT -> Icons.Default.Print
+                            }
+                            val description = stringResource(when (action) {
+                                EstimateDocumentAction.SAVE -> Res.string.pdf_save
+                                EstimateDocumentAction.SHARE -> Res.string.pdf_share
+                                EstimateDocumentAction.PRINT -> Res.string.pdf_print
+                            })
+                            PdfActionIcon(icon, description, !exporting, onClick = {
+                                exporting = true
+                                message = null
+                                scope.launch {
+                                    try {
+                                        check(pages.exportable)
+                                        val dispatch = if (prepareExport != null) prepareExport(action) else shareDispatched
+                                        exporter.exportWithShareConfirmation(pages, action, onComplete = { result ->
+                                            if (result != null || message == null) message = result
+                                            exporting = false
+                                        }, onShareDispatched = {
+                                            if (action == EstimateDocumentAction.SHARE) dispatch?.invoke { changed ->
+                                                if (!changed) message = shareConflict
+                                            }
+                                        })
+                                    } catch (cancelled: CancellationException) {
+                                        throw cancelled
+                                    } catch (failure: EstimatePreviewLoadFailure) {
+                                        message = failure.message
+                                        exporting = false
+                                    } catch (_: Exception) {
+                                        message = "Не вдалося підготувати PDF до експорту."
+                                        exporting = false
+                                    }
+                                }
+                            })
+                        }
+                    }
+                }
                 if (loading || exporting) LinearProgressIndicator(Modifier.fillMaxWidth().padding(top = 8.dp))
                 message?.let { Text(it, Modifier.padding(vertical = 8.dp), color = MaterialTheme.colorScheme.error) }
                 if (editor) {
                     EstimateDocumentEditor(options) { options = it }
                 } else if (pages != null) {
-                    if (exporter != null) {
-                        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            EstimateDocumentAction.entries.forEach { action ->
-                                OutlinedButton(enabled = !exporting, onClick = {
-                                    exporting = true
-                                    message = null
-                                    scope.launch {
-                                        try {
-                                            beforeExport?.invoke()
-                                            exporter.exportWithShareConfirmation(pages, action, onComplete = { result ->
-                                                if (result != null || message == null) message = result
-                                                exporting = false
-                                            }, onShareDispatched = {
-                                                if (action == EstimateDocumentAction.SHARE) shareDispatched?.invoke { changed ->
-                                                    if (!changed) message = shareConflict
-                                                }
-                                            })
-                                        } catch (cancelled: CancellationException) {
-                                            throw cancelled
-                                        } catch (failure: EstimatePreviewLoadFailure) {
-                                            message = failure.message
-                                            exporting = false
-                                        } catch (_: Exception) {
-                                            message = "Не вдалося підготувати PDF до експорту."
-                                            exporting = false
-                                        }
-                                    }
-                                }) { Text(action.label) }
-                            }
-                        }
-                    } else {
+                    if (!pages.exportable) {
+                        WorkspacePdfSaveHelp()
+                    } else if (exporter == null) {
                         Text("Збереження, надсилання й друк PDF доступні на Android.",
                             Modifier.padding(vertical = 8.dp), style = MaterialTheme.typography.bodySmall)
                     }
@@ -192,6 +227,22 @@ internal fun <T : Any> EstimateDocumentPreviewDialog(
             }
         }
     }
+}
+
+@Composable
+private fun PdfActionIcon(icon: ImageVector, description: String, enabled: Boolean, onClick: () -> Unit) {
+    Surface(shape = MaterialTheme.shapes.medium, shadowElevation = if (enabled) 3.dp else 0.dp,
+        tonalElevation = 2.dp, color = MaterialTheme.colorScheme.surfaceContainerHigh) {
+        IconButton(onClick = onClick, enabled = enabled, modifier = Modifier.size(44.dp)) {
+            Icon(icon, description)
+        }
+    }
+}
+
+@Composable
+private fun WorkspacePdfSaveHelp() {
+    val reason = stringResource(Res.string.p6b_save_to_export)
+    com.andreyceilings.shared.ui.ContextFeedbackIcon(reason, reason)
 }
 
 @Composable
@@ -222,7 +273,8 @@ private fun EstimateDocumentEditor(
                     if (section.editable && section !in options.hidden) {
                         OutlinedTextField(options.text[section].orEmpty(),
                             onValueChange = { onChange(options.copy(text = options.text + (section to it))) },
-                            modifier = Modifier.fillMaxWidth(), label = { Text(section.label) }, minLines = 2)
+                            modifier = Modifier.fillMaxWidth(), label = { Text(section.label) }, minLines = 2,
+                            keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences))
                     }
                 }
             }

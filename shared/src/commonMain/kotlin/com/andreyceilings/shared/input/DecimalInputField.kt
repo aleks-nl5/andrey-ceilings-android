@@ -10,6 +10,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextRange
@@ -26,7 +27,9 @@ fun DecimalInputField(
     signed: Boolean = false, allowDecimalSeparator: Boolean = true,
     onNext: (() -> Unit)? = null,
     compact: Boolean = false,
-    dense: Boolean = false
+    dense: Boolean = false,
+    selectAllOnFocus: Boolean = false,
+    zeroWhenBlankOnBlur: Boolean = false
 ) {
     val requester = remember { FocusRequester() }
     var field by remember { mutableStateOf(TextFieldValue(value, TextRange(value.length))) }
@@ -54,7 +57,16 @@ fun DecimalInputField(
             requester.requestFocus()
         }, modifier = Modifier.semantics { contentDescription = "Змінити знак" }) { Text("±") }
     }) else null
-    val inputModifier = modifier.fillMaxWidth().focusRequester(requester)
+    var focused by remember { mutableStateOf(false) }
+    val inputModifier = modifier.fillMaxWidth().focusRequester(requester).onFocusChanged {
+        if (selectAllOnFocus && it.isFocused && !focused) {
+            field = field.copy(selection = TextRange(0, field.text.length))
+        }
+        if (zeroWhenBlankOnBlur && focused && !it.isFocused && field.text.isEmpty()) {
+            update(TextFieldValue("0", TextRange(1)))
+        }
+        focused = it.isFocused
+    }
     val options = KeyboardOptions(
         keyboardType = if (allowDecimalSeparator) KeyboardType.Decimal else KeyboardType.Number,
         imeAction = if (onNext == null) ImeAction.Default else ImeAction.Next
