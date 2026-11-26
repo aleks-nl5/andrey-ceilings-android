@@ -1,5 +1,7 @@
 package com.andreyceilings.shared.objects
 
+import app.cash.sqldelight.Query
+import app.cash.sqldelight.coroutines.asFlow
 import com.andreyceilings.shared.db.ClientRepository
 import com.andreyceilings.shared.db.MeasurementRepository
 import com.andreyceilings.shared.db.ProjectRepository
@@ -9,7 +11,19 @@ import com.andreyceilings.shared.domain.ProjectListEntry
 import com.andreyceilings.shared.domain.ProjectPaymentStatus
 import com.andreyceilings.shared.domain.ProjectStatusRules
 import com.andreyceilings.shared.domain.ProjectWorkStage
+import com.andreyceilings.shared.estimate.ImmutableEstimateRepository
+import com.andreyceilings.shared.measurement.MeasurementDrawingContour
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.flow.combine
 
 data class ObjectsClientsRows(
@@ -18,7 +32,7 @@ data class ObjectsClientsRows(
 )
 
 data class ProjectMeasurement(
-    val id: Long, val name: String, val shape: String,
+    val id: Long, val uuid: String, val name: String,
     val area: Double, val perimeter: Double
 )
 
@@ -53,6 +67,24 @@ class ObjectsClientsStore(
     private val clients = ClientRepository(database)
     private val projects = ProjectRepository(database)
     private val measurements = MeasurementRepository(database)
+    private val estimates = ImmutableEstimateRepository(database)
+    private val sessionClosed = MutableStateFlow(false)
+    private val projectRead = Mutex()
+    private val contourPreparation = Mutex()
+    private val contours = CeilingContourCache()
+
+    /** Android's production driver drains physical reads under its restore gate. */
+    fun closeProjectReads() {
+        sessionClosed.value = true
+        contours.close()
+    }
+
+    /** Desktop waits for an admitted query before closing its JDBC driver. */
+    suspend fun closeAndAwaitProjectReads() {
+        closeProjectReads()
+        projectRead.withLock { }
+    }
+
     val measurementEdit = com.andreyceilings.shared.measurement.MeasurementEditStore(database, nowMillis)
     val measurementDetails = com.andreyceilings.shared.measurement.MeasurementDetailsStore(database, nowMillis)
 
@@ -89,16 +121,48 @@ class ObjectsClientsStore(
 
     fun observeProjectDetails(projectId: Long): Flow<ProjectDetailsData> {
         require(projectId > 0)
-        return combine(rows, measurements.observeForProject(projectId)) { current, records ->
-            ProjectDetailsData(current.projects.firstOrNull { it.id == projectId },
-                records.map { ProjectMeasurement(it.id, it.name, it.shape, it.areaSquareMeters, it.perimeterMeters) })
+        val cards = observeProjectQuery(database.businessSchemaQueries.selectProjectCeilingCards(projectId)) {
+            executeAsList().map {
+                ProjectMeasurement(it.id, it.uuid, it.name, it.areaSquareMeters, it.perimeterMeters)
+            }
+        }
+        return combine(rows, cards) { current, records ->
+            ProjectDetailsData(
+                current.projects.firstOrNull { it.id == projectId }.takeIf { records != null },
+                records.orEmpty()
+            )
         }
     }
+
+    internal fun observeProjectQuoteSummary(projectId: Long): Flow<ProjectQuoteSummary?> =
+        observeProjectQuery(estimates.projectQuoteMetadata(projectId)) {
+            executeAsList().map { ProjectQuoteCandidate(it.ceilingId, it.workflowStatus, it.currency, it.finalCents) }
+        }.map { candidates -> candidates?.let(::projectQuoteSummary) }.flowOn(Dispatchers.Default)
+
+    internal fun observeCeilingContour(projectId: Long, ceilingUuid: String): Flow<MeasurementDrawingContour?> =
+        observeProjectQuery(database.businessSchemaQueries.selectProjectCeilingContour(ceilingUuid, projectId)) {
+            executeAsOneOrNull()?.let { CeilingContourSource(it.shape, it.drawingJson, it.lengthMeters, it.widthMeters) }
+        }.map { source ->
+            if (source == null) null
+            else contourPreparation.withLock { contours.projection(ceilingUuid, source) }
+        }.flowOn(Dispatchers.Default)
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    private fun <Row : Any, Result> observeProjectQuery(query: Query<Row>, read: Query<Row>.() -> Result): Flow<Result?> =
+        sessionClosed.flatMapLatest { closed ->
+            if (closed) flowOf(null)
+            else query.asFlow().map {
+                projectRead.withLock {
+                    if (sessionClosed.value) null else it.read().takeUnless { sessionClosed.value }
+                }
+            }
+        }.flowOn(Dispatchers.Default).distinctUntilChanged()
 
     fun saveClient(id: Long?, draft: ClientDraft): Long {
         val name = draft.name.trim()
         require(name.isNotBlank()) { "Введіть ім'я клієнта." }
         return if (id == null) {
+            require(draft.phone.any(Char::isDigit))
             clients.createReturningId(name, draft.phone.trim(), draft.email.trim(),
                 draft.notes.trim(), nowMillis())
         } else {
@@ -178,6 +242,11 @@ class ObjectsClientsStore(
             "Спершу перенесіть або видаліть об'єкти цього клієнта."
         }
         clients.delete(id)
+    }
+
+    suspend fun deleteCeiling(projectId: Long, measurementId: Long, expectedUuid: String) {
+        check(!sessionClosed.value)
+        com.andreyceilings.shared.measurement.MeasurementsStore(database).delete(projectId, measurementId, expectedUuid)
     }
 
     fun deleteProject(id: Long) {

@@ -40,10 +40,10 @@ object MeasurementEditPersistenceProof {
             coroutineScope { repeat(8) { launch { model.save() } } }
             assertTrue(model.state.value.saved, model.state.value.error)
             // Regression: while fullscreen consumes Back, successful Save must
-            // deliver to readonly details, NOT go through that Back interceptor.
+            // deliver to the parent, NOT go through that Back interceptor.
             val parent = if (shape == "rectangle") AppNavigationState().selectTab(AppRoute.MEASUREMENTS)
                 else AppNavigationState().selectTab(AppRoute.OBJECTS).openProject(project)
-            val route = parent.openMeasurement(project, id).editMeasurement(project, id)
+            val route = parent.openCeilingWorkspace(project, id)
             val guard = MeasurementCreateNavigationGuard().also {
                 it.bindEdit(model); it.fullscreen.value = true
             }
@@ -55,8 +55,9 @@ object MeasurementEditPersistenceProof {
             assertFalse(guard.deliverEditResult(route, project, id) {}, "Completion is delivered only once")
             assertEquals(route.measurementSaved(project, id), approved)
             assertNull(approved?.measurementEdit)
-            assertEquals(MeasurementDetails(project, id), approved?.measurementDetails)
-            assertTrue(guard.fullscreen.value, "Fullscreen presentation survives into readonly details")
+            assertNull(approved?.measurementDetails)
+            assertEquals(parent, approved)
+            assertFalse(guard.fullscreen.value, "Leaving the workspace clears fullscreen")
             guard.unbindSurface(surfaceBack)
             model.save()
             val after = assertNotNull(rows.find(id))

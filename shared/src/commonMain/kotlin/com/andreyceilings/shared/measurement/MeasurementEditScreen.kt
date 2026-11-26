@@ -122,8 +122,8 @@ fun MeasurementEditScreen(
     // during Activity startup. The unlocked-session store can reattach a pending write.
     if (store == null) {
         Column(Modifier.fillMaxSize().padding(editorPadding)) {
-            Text("Захищена база недоступна або завантажується.", color = MaterialTheme.colorScheme.onSurface)
-            TextButton(onClick = onBack) { Text("До заміру") }
+            Text(stringResource(Res.string.p5c_database_unavailable), color = MaterialTheme.colorScheme.onSurface)
+            TextButton(onClick = onBack) { Text(stringResource(Res.string.p5c_back)) }
         }
         return
     }
@@ -131,7 +131,7 @@ fun MeasurementEditScreen(
         val saver = remember(store) { Saver<MeasurementEditModel?, String>(save = { it?.snapshot() },
             restore = { MeasurementEditModel.restore(store, it, projectId, measurementId) }) }
         var model by rememberSaveable(store, stateSaver = saver) { mutableStateOf<MeasurementEditModel?>(null) }
-        var error by remember(store) { mutableStateOf<String?>(null) }
+        var unavailable by remember(store) { mutableStateOf(false) }
         LaunchedEffect(store) {
             if (model == null) try {
                 val document = withContext(Dispatchers.Default) { checkNotNull(store).load(projectId, measurementId) }
@@ -141,13 +141,19 @@ fun MeasurementEditScreen(
                     navigationGuard?.requestedAreaPlacement?.takeIf {it.first==document.draft.recordUuid}?.let {editor.beginArea(AreaRole.GENERAL_AREA,it.second)}
                     navigationGuard?.requestedAreaPlacement=null
                 }
-            } catch (_: Exception) { error = "Замір недоступний для редагування. Перевірте об'єкт і збережену геометрію." }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                // Incompatible or missing geometry cannot open a live workspace.
+                unavailable = true
+            }
         }
         val editor = model
         if (editor == null) Column(Modifier.fillMaxSize().padding(editorPadding)) {
-            Text(error ?: "Завантаження заміру…", color = MaterialTheme.colorScheme.onSurface)
-            TextButton(onClick = onBack) { Text("До заміру") }
-        } else MeasurementEditScreen(editor, contentPadding, systemTopInset, onBack, navigationGuard, quoteStore = quoteStore)
+            Text(stringResource(if (unavailable) Res.string.p6a_workspace_unavailable else Res.string.p6a_workspace_loading),
+                color = MaterialTheme.colorScheme.onSurface)
+            TextButton(onClick = onBack) { Text(stringResource(Res.string.p5c_back)) }
+        } else MeasurementEditScreen(checkNotNull(editor), contentPadding, systemTopInset, onBack, navigationGuard, quoteStore = quoteStore)
     }
 }
 
@@ -556,7 +562,7 @@ fun MeasurementEditScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     MeasurementEditorFab(
-                        label = if (state.creating) stringResource(Res.string.p5c_back) else "До заміру",
+                        label = stringResource(Res.string.p5c_back),
                         icon = Icons.AutoMirrored.Filled.ArrowBack,
                         enabled = canLeaveSurface,
                         modifier = Modifier.testTag("measurement-edit-back")

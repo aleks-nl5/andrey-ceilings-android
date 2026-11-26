@@ -92,6 +92,15 @@ data class AppNavigationState(
             else copy(measurementDetails = target, measurementQuote = false, measurementCreate = null, measurementEdit = null, measurementProjectPicker = false, pendingQuickCreate = null)
     }
 
+    /** Ordinary ceiling navigation skips the retired intermediate details screen. */
+    fun openCeilingWorkspace(projectId: Long, measurementId: Long): AppNavigationState {
+        if (!hasMeasurementParent(projectId) || measurementId <= 0) return this
+        val target = MeasurementEdit(projectId, measurementId)
+        return if (measurementEdit == target) this else copy(
+            measurementDetails = null, measurementQuote = false, measurementCreate = null,
+            measurementEdit = target, measurementProjectPicker = false, pendingQuickCreate = null)
+    }
+
     fun createMeasurement(projectId: Long): AppNavigationState {
         if (!hasMeasurementParent(projectId) || measurementDetails != null || measurementEdit != null) return this
         val target = MeasurementCreate(projectId)
@@ -109,7 +118,7 @@ data class AppNavigationState(
         if (measurementDetails == null || measurementEdit != null) this else copy(measurementQuote = true)
 
     fun measurementSaved(projectId: Long, measurementId: Long): AppNavigationState =
-        if (projectId > 0 && measurementId > 0 && measurementEdit == MeasurementEdit(projectId, measurementId)) openMeasurement(projectId, measurementId) else this
+        if (projectId > 0 && measurementId > 0 && measurementEdit == MeasurementEdit(projectId, measurementId)) back() else this
 
     /** Replace the editor, so Back from the new readonly record returns to its parent. */
     fun measurementCreated(projectId: Long, measurementId: Long): AppNavigationState =
@@ -126,7 +135,7 @@ data class AppNavigationState(
     fun back(available: Set<AppRoute> = allRoutes): AppNavigationState {
         if (current !in available) return restore(snapshot(), available)
         if (measurementQuote) return copy(measurementQuote = false)
-        if (measurementEdit != null) return copy(measurementDetails = MeasurementDetails(measurementEdit.projectId, measurementEdit.measurementId),
+        if (measurementEdit != null) return copy(measurementDetails = null, measurementQuote = false,
             measurementEdit = null, measurementProjectPicker = false, pendingQuickCreate = null)
         if (measurementCreate != null) return copy(measurementCreate = null, measurementEdit = null, measurementProjectPicker = false, pendingQuickCreate = null)
         if (measurementDetails != null) return copy(measurementDetails = null, measurementQuote = false, pendingQuickCreate = null)

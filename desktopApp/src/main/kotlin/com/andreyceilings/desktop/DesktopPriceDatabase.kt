@@ -32,6 +32,7 @@ internal class DesktopPriceDatabase private constructor(
         // complete write before releasing the encrypted JDBC connection.
         runBlocking { objects.measurementDetails.elements.closeAndAwaitWrites() }
         runBlocking { objects.measurementEdit.closeAndAwaitPointReads() }
+        runBlocking { objects.closeAndAwaitProjectReads() }
         driver.close()
     }
 

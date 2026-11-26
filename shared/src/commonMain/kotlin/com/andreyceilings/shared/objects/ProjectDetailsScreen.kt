@@ -20,10 +20,13 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material.icons.filled.Email
+import androidx.compose.material.icons.filled.Payments
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.layout.onSizeChanged
@@ -41,10 +44,11 @@ import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.andreyceilings.shared.ui.CeilingsScreenScaffold
@@ -54,11 +58,34 @@ import com.andreyceilings.shared.ui.CeilingsFabProfile
 import com.andreyceilings.shared.ui.ceilingsFloatingOutlineAlpha
 import com.andreyceilings.shared.theme.CeilingsEdge
 import com.andreyceilings.shared.theme.CeilingsEdgeGradient
-import com.andreyceilings.shared.calculation.CeilingShapeTemplates
 import com.andreyceilings.shared.measurement.formatMeasurementAreaCompact
 import com.andreyceilings.shared.measurement.formatMeasurementLengthCompact
-import com.andreyceilings.shared.resources.Res
-import com.andreyceilings.shared.resources.p5c_measurement_card_metrics
+import com.andreyceilings.shared.resources.*
+import com.andreyceilings.shared.resources.p5d_retry
+import com.andreyceilings.shared.resources.p5d_unknown
+import com.andreyceilings.shared.resources.p6a_add_ceiling
+import com.andreyceilings.shared.resources.p6a_delete_swipe
+import com.andreyceilings.shared.resources.p6a_delete_ceiling
+import com.andreyceilings.shared.resources.p6a_delete_ceiling_confirm
+import com.andreyceilings.shared.resources.p6a_delete_ceiling_approved
+import com.andreyceilings.shared.resources.p6a_delete_ceiling_failed
+import com.andreyceilings.shared.resources.p5d_cancel
+import com.andreyceilings.shared.measurement.CeilingHasApprovedQuote
+import com.andreyceilings.shared.resources.p6a_approved_total
+import com.andreyceilings.shared.resources.p6a_call_client
+import com.andreyceilings.shared.resources.p6a_call_unavailable
+import com.andreyceilings.shared.resources.p6a_ceilings_count
+import com.andreyceilings.shared.resources.p6a_client
+import com.andreyceilings.shared.resources.p6a_consolidated
+import com.andreyceilings.shared.resources.p6a_email_client
+import com.andreyceilings.shared.resources.p6a_email_unavailable
+import com.andreyceilings.shared.resources.p6a_finance_loading
+import com.andreyceilings.shared.resources.p6a_finance_unavailable
+import com.andreyceilings.shared.resources.p6a_metrics_unavailable
+import com.andreyceilings.shared.resources.p6a_no_approved_quotes
+import com.andreyceilings.shared.resources.p6a_no_ceilings
+import com.andreyceilings.shared.resources.p6a_no_client
+import com.andreyceilings.shared.resources.p6a_open_client
 import org.jetbrains.compose.resources.stringResource
 import com.andreyceilings.shared.domain.ClientListEntry
 import com.andreyceilings.shared.domain.ProjectListEntry
@@ -74,7 +101,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.retryWhen
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.collect
 
 private enum class InlineStatusKind { WORK, PAYMENT }
@@ -134,6 +163,12 @@ private sealed interface DetailsState {
     data class Loaded(val data: ProjectDetailsData) : DetailsState
 }
 
+private sealed interface ProjectFinanceState {
+    data object Loading : ProjectFinanceState
+    data object Unavailable : ProjectFinanceState
+    data class Loaded(val summary: ProjectQuoteSummary) : ProjectFinanceState
+}
+
 @Composable
 internal fun ProjectDetailsScreen(
     projectId: Long,
@@ -145,16 +180,19 @@ internal fun ProjectDetailsScreen(
     onBack: () -> Unit,
     onEdit: (ProjectListEntry) -> Unit,
     onDial: (String) -> Unit,
+    onOpenClient: (ClientListEntry) -> Unit,
     active: Boolean = true,
     onOpenMeasurement: (Long) -> Unit = {},
-    onCreateMeasurement: () -> Unit = {}
+    onCreateMeasurement: () -> Unit = {},
+    swipeState: CardSwipeState = remember { CardSwipeState() }
 ) {
     val flow = remember(store, projectId) {
         store?.observeProjectDetails(projectId)?.map<ProjectDetailsData, DetailsState> { DetailsState.Loaded(it) }
             ?.catch { emit(DetailsState.Unavailable) }
     }
-    val state = if (flow == null) DetailsState.Unavailable
-        else flow.collectAsState(initial = DetailsState.Loading).value
+    val state = key(store, projectId) {
+        flow?.collectAsState(initial = DetailsState.Loading)?.value ?: DetailsState.Unavailable
+    }
     val uriHandler = LocalUriHandler.current
     val visibleProject = (state as? DetailsState.Loaded)?.data?.project
     val elements = store?.measurementDetails?.elements
@@ -176,6 +214,44 @@ internal fun ProjectDetailsScreen(
     }
     val detailsListState = rememberSaveable(projectId, saver = LazyListState.Saver) {
         LazyListState()
+    }
+    var openCeilingSwipe by swipeState.opened
+    var deletingCeiling by remember(store, projectId) { mutableStateOf<ProjectMeasurement?>(null) }
+    var deletingBusy by remember(store, projectId) { mutableStateOf(false) }
+    var deleteError by remember(store, projectId) { mutableStateOf<String?>(null) }
+    LaunchedEffect(detailsListState, active, composer) {
+        openCeilingSwipe = null
+        snapshotFlow { detailsListState.isScrollInProgress }.collect { scrolling ->
+            if (scrolling) openCeilingSwipe = null
+        }
+    }
+    var financeRetry by remember(store, projectId) { mutableIntStateOf(0) }
+    val finance = if (visibleProject == null) ProjectFinanceState.Loading else key(store, projectId, active, financeRetry) {
+        val financeFlow = remember(store, projectId, active, financeRetry) {
+            store?.observeProjectQuoteSummary(projectId)
+                ?.map<ProjectQuoteSummary?, ProjectFinanceState> {
+                    if (it == null) ProjectFinanceState.Unavailable else ProjectFinanceState.Loaded(it)
+                }?.retryWhen { cause, attempt ->
+                    if (cause is CancellationException) throw cause
+                    if (attempt >= 2) false else {
+                        emit(ProjectFinanceState.Unavailable)
+                        delay(500L * (attempt + 1))
+                        true
+                    }
+                }?.catch { emit(ProjectFinanceState.Unavailable) }
+                ?: flowOf(ProjectFinanceState.Unavailable)
+        }
+        financeFlow.collectAsState(initial = ProjectFinanceState.Loading).value
+    }
+    val visibleCeilings by remember(detailsListState) {
+        derivedStateOf {
+            val layout = detailsListState.layoutInfo
+            layout.visibleItemsInfo.asSequence()
+                .filter { it.size > 0 && it.offset < layout.viewportEndOffset &&
+                    it.offset + it.size > layout.viewportStartOffset }
+                .mapNotNull { it.key as? Long }
+                .toSet()
+        }
     }
     val density = LocalDensity.current
     val layoutDirection = LocalLayoutDirection.current
@@ -234,10 +310,48 @@ internal fun ProjectDetailsScreen(
     DisposableEffect(projectId) {
         onDispose { progressCallback(0f) }
     }
-    var contactError by remember(projectId) { mutableStateOf<String?>(null) }
     var statusError by remember(projectId) { mutableStateOf<String?>(null) }
     var updatingStatus by remember(projectId) { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+    val approvedDeleteError = stringResource(Res.string.p6a_delete_ceiling_approved)
+    val generalDeleteError = stringResource(Res.string.p6a_delete_ceiling_failed)
+    deletingCeiling?.let { target ->
+        AlertDialog(
+            onDismissRequest = { if (!deletingBusy) deletingCeiling = null },
+            title = { Text(stringResource(Res.string.p6a_delete_ceiling)) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(stringResource(Res.string.p6a_delete_ceiling_confirm, target.name))
+                    deleteError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                }
+            },
+            dismissButton = {
+                TextButton(enabled = !deletingBusy, onClick = {
+                    deletingBusy = true
+                    deleteError = null
+                    scope.launch {
+                        try {
+                            checkNotNull(store).deleteCeiling(projectId, target.id, target.uuid)
+                            deletingCeiling = null
+                        } catch (cancelled: CancellationException) {
+                            throw cancelled
+                        } catch (_: CeilingHasApprovedQuote) {
+                            deleteError = approvedDeleteError
+                        } catch (_: Exception) {
+                            deleteError = generalDeleteError
+                        } finally {
+                            deletingBusy = false
+                        }
+                    }
+                }) { Text(stringResource(Res.string.p6a_delete_ceiling), color = MaterialTheme.colorScheme.error) }
+            },
+            confirmButton = {
+                TextButton(enabled = !deletingBusy, onClick = { deletingCeiling = null }) {
+                    Text(stringResource(Res.string.p5d_cancel))
+                }
+            }
+        )
+    }
 
     // Update only the selected field; never rebuild an entire object draft from
     // possibly stale UI values. One operation at a time and no optimistic fake status.
@@ -391,13 +505,8 @@ internal fun ProjectDetailsScreen(
                     val project = state.data.project
                     if (project == null) item { Text("Об'єкт не знайдено або його видалено.") }
                     else {
-                        if (elements != null) item(key = "consolidated-estimate") {
-                            OutlinedButton(onClick = { elements.openConsolidatedComposer(projectId) }) {
-                                Text("Зведений кошторис")
-                            }
-                        }
-                        item(key = "saved-estimates") {
-                            com.andreyceilings.shared.estimate.SavedIndividualQuoteList(elements, projectId)
+                        item(key = "project-summary") {
+                            ProjectDetailsSummary(state.data.measurements, finance) { financeRetry++ }
                         }
                         item(key = "status") {
                             DetailsCard {
@@ -430,110 +539,82 @@ internal fun ProjectDetailsScreen(
                                 }
                             }
                         }
+                        item(key = "client") {
+                            val client = clients.firstOrNull { it.id == project.clientId }
+                            ProjectDetailsClient(client, project.clientName, onOpenClient, onDial) {
+                                uriHandler.openUri("mailto:${it.trim()}")
+                            }
+                        }
                         if (project.notes.isNotBlank()) item(key = "notes") {
                             DetailsCard("Примітки") { Text(project.notes, style = MaterialTheme.typography.bodyMedium) }
                         }
-                        item(key = "client") {
-                            val client = clients.firstOrNull { it.id == project.clientId }
-                            val phone = client?.phone?.takeIf { it.isNotBlank() }
-                            val email = client?.email?.takeIf { it.isNotBlank() }
-                            DetailsCard("Клієнт") {
-                                Text(
-                                    client?.name ?: project.clientName.ifBlank { "Не вказано" },
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.Bold
-                                )
-                                if (phone != null || email != null) {
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.spacedBy(10.dp),
-                                        verticalAlignment = Alignment.Top
-                                    ) {
-                                        phone?.let { number ->
-                                            ContactLink(
-                                                number, "Зателефонувати", Icons.Default.Phone,
-                                                modifier = Modifier.weight(1f)
-                                            ) {
-                                                contactError = if (runCatching { onDial(number) }.isFailure)
-                                                    "Не вдалося відкрити телефонний застосунок." else null
-                                            }
-                                        }
-                                        email?.let { address ->
-                                            ContactLink(
-                                                address, "Написати листа", Icons.Default.Email,
-                                                modifier = Modifier.weight(1f)
-                                            ) {
-                                                contactError = if (runCatching {
-                                                    uriHandler.openUri("mailto:${address.trim()}")
-                                                }.isFailure) "Не вдалося відкрити поштовий застосунок." else null
-                                            }
-                                        }
-                                    }
-                                }
-                                client?.notes?.takeIf { it.isNotBlank() }?.let { clientNotes ->
-                                    Surface(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        shape = MaterialTheme.shapes.medium,
-                                        color = if (MaterialTheme.colorScheme.background.luminance() < 0.5f)
-                                            MaterialTheme.colorScheme.surfaceDim
-                                        else MaterialTheme.colorScheme.surfaceContainerHigh,
-                                        contentColor = MaterialTheme.colorScheme.onSurface
-                                    ) {
-                                        Column(
-                                            Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
-                                            verticalArrangement = Arrangement.spacedBy(3.dp)
-                                        ) {
-                                            Text(
-                                                "Примітки",
-                                                style = MaterialTheme.typography.labelSmall,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                                            )
-                                            Text(
-                                                clientNotes.trim(),
-                                                style = MaterialTheme.typography.bodyMedium
-                                            )
-                                        }
-                                    }
-                                }
-                                contactError?.let { error ->
-                                    Text(
-                                        error,
-                                        color = MaterialTheme.colorScheme.error,
-                                        style = MaterialTheme.typography.bodySmall
-                                    )
-                                }
-                            }
-                        }
                         item(key = "measurements-heading") {
                             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                                Text("Заміри (${state.data.measurements.size})",
+                                Text(stringResource(Res.string.p6a_ceilings_count, state.data.measurements.size),
                                     modifier = Modifier.weight(1f).padding(top = 4.dp, bottom = 2.dp),
                                     style = MaterialTheme.typography.titleMedium)
                                 IconButton(onClick = onCreateMeasurement, enabled = active) {
-                                    Icon(Icons.Default.Add, contentDescription = "Створити замір для об'єкта")
+                                    Icon(Icons.Default.Add, stringResource(Res.string.p6a_add_ceiling))
                                 }
                             }
                         }
-                        if (state.data.measurements.isEmpty()) item { Text("Замірів ще немає.",
-                            color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                        if (state.data.measurements.isEmpty()) item {
+                            Text(stringResource(Res.string.p6a_no_ceilings),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
                         items(state.data.measurements, key = { it.id }) { measurement ->
-                            Card(onClick = {
-                                settleJob?.cancel()
-                                settleJob = null
-                                onOpenMeasurement(measurement.id)
-                            }, modifier = Modifier.fillMaxWidth(), colors = detailsCardColors()) {
-                                Column(Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
-                                    verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                                    Text(measurement.name, style = MaterialTheme.typography.titleSmall)
-                                    Text("Форма: ${CeilingShapeTemplates.template(measurement.shape)?.title ?: if (measurement.shape == "polygon") "Багатокутник" else measurement.shape}",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                    Text(stringResource(Res.string.p5c_measurement_card_metrics,
-                                        formatMeasurementAreaCompact(measurement.area),
-                                        formatMeasurementLengthCompact(measurement.perimeter)),
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            val visible = active && composer == null && measurement.id in visibleCeilings
+                            val contour = if (visible && store != null) key(store, projectId, measurement.uuid) {
+                                val contourFlow = remember {
+                                    store.observeCeilingContour(projectId, measurement.uuid).catch { emit(null) }
                                 }
+                                contourFlow.collectAsState(initial = null).value
+                            } else null
+                            val quotes = (finance as? ProjectFinanceState.Loaded)?.summary
+                            val swipeId = "ceiling-${measurement.uuid}"
+                            val rowWasOpen = openCeilingSwipe?.id == swipeId
+                            val deleteLabel = stringResource(Res.string.p6a_delete_swipe)
+                            val requestDelete = {
+                                openCeilingSwipe = null
+                                deleteError = null
+                                deletingCeiling = measurement
+                            }
+                            SwipeActionsSurface(
+                                id = swipeId,
+                                actions = emptyList(),
+                                openSwipe = openCeilingSwipe,
+                                onSwipeOpen = { openCeilingSwipe = it },
+                                onSwipeClose = { openCeilingSwipe = null },
+                                onDelete = requestDelete,
+                                onAction = {},
+                                modifier = Modifier.clipToBounds().semantics {
+                                    customActions = listOf(CustomAccessibilityAction(deleteLabel) {
+                                        requestDelete()
+                                        true
+                                    })
+                                },
+                                deleteTrayHeight = 70.dp
+                            ) {
+                                CompactCeilingCard(
+                                    measurement, contour, quotes?.ceilings?.get(measurement.id),
+                                    quoteUnavailable = finance == ProjectFinanceState.Unavailable ||
+                                        measurement.id in quotes?.unavailableCeilings.orEmpty(),
+                                    quoteLoading = finance == ProjectFinanceState.Loading
+                                ) {
+                                    if (rowWasOpen) {
+                                        openCeilingSwipe = null
+                                    } else {
+                                        openCeilingSwipe = null
+                                        settleJob?.cancel()
+                                        settleJob = null
+                                        onOpenMeasurement(measurement.id)
+                                    }
+                                }
+                            }
+                        }
+                        if (elements != null) item(key = "consolidated-estimate") {
+                            OutlinedButton(onClick = { elements.openConsolidatedComposer(projectId) }) {
+                                Text(stringResource(Res.string.p6a_consolidated))
                             }
                         }
                     }
@@ -710,13 +791,15 @@ private fun DetailsCard(
  * application Material theme and its status colors, not platform default tints.
  */
 @Composable
-private fun WorkStagePicker(
+internal fun WorkStagePicker(
     projectId: Long,
     status: String,
     enabled: Boolean,
     onSelect: (String) -> Unit
 ) {
     var expanded by remember(projectId) { mutableStateOf(false) }
+    val label = localizedWorkStage(status)
+    val description = stringResource(Res.string.oc_change_work, label)
     Box {
         Surface(
             onClick = { expanded = true },
@@ -730,14 +813,14 @@ private fun WorkStagePicker(
             Row(
                 Modifier.fillMaxHeight().padding(horizontal = 9.dp)
                     .semantics {
-                        contentDescription = "Змінити етап робіт: ${ProjectStatusRules.workLabel(status)}"
+                        contentDescription = description
                     },
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(5.dp)
             ) {
                 WorkStatusMark(status)
                 Text(
-                    ProjectStatusRules.workLabel(status),
+                    label,
                     modifier = Modifier.weight(1f, fill = false),
                     style = MaterialTheme.typography.labelMedium,
                     maxLines = 1,
@@ -758,12 +841,12 @@ private fun WorkStagePicker(
         ) {
             ProjectWorkStage.entries.forEach { stage ->
                 DropdownMenuItem(
-                    text = { Text(stage.label, style = MaterialTheme.typography.bodyMedium) },
+                    text = { Text(localizedWorkStage(stage.wireId), style = MaterialTheme.typography.bodyMedium) },
                     leadingIcon = { WorkStatusMark(stage.wireId) },
                     trailingIcon = {
                         if (stage.wireId == status) {
                             Icon(
-                                Icons.Default.Check, contentDescription = "Поточний етап",
+                                Icons.Default.Check, contentDescription = stringResource(Res.string.oc_current_work),
                                 tint = MaterialTheme.colorScheme.primary
                             )
                         }
@@ -779,7 +862,7 @@ private fun WorkStagePicker(
 }
 
 @Composable
-private fun PaymentStatusPicker(
+internal fun PaymentStatusPicker(
     projectId: Long,
     status: String,
     enabled: Boolean,
@@ -787,6 +870,8 @@ private fun PaymentStatusPicker(
 ) {
     var expanded by remember(projectId) { mutableStateOf(false) }
     val tint = paymentStateTint(status)
+    val label = localizedPayment(status, compact = true)
+    val description = stringResource(Res.string.oc_change_payment, label)
     Box {
         Surface(
             onClick = { expanded = true },
@@ -800,17 +885,13 @@ private fun PaymentStatusPicker(
             Row(
                 Modifier.fillMaxHeight().padding(horizontal = 11.dp)
                     .semantics {
-                        contentDescription = "Змінити оплату: ${ProjectStatusRules.paymentLabel(status)}"
+                        contentDescription = description
                     },
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(5.dp)
             ) {
                 Text(
-                    when (status) {
-                        "unknown" -> "Невизначено"
-                        "partial" -> "Часткова"
-                        else -> ProjectStatusRules.paymentLabel(status)
-                    },
+                    label,
                     style = MaterialTheme.typography.labelMedium,
                     maxLines = 1
                 )
@@ -828,7 +909,7 @@ private fun PaymentStatusPicker(
         ) {
             ProjectPaymentStatus.entries.forEach { payment ->
                 DropdownMenuItem(
-                    text = { Text(payment.label, style = MaterialTheme.typography.bodyMedium) },
+                    text = { Text(localizedPayment(payment.wireId), style = MaterialTheme.typography.bodyMedium) },
                     leadingIcon = {
                         Box(
                             Modifier.size(11.dp).background(
@@ -840,7 +921,7 @@ private fun PaymentStatusPicker(
                     trailingIcon = {
                         if (payment.wireId == status) {
                             Icon(
-                                Icons.Default.Check, contentDescription = "Поточна оплата",
+                                Icons.Default.Check, contentDescription = stringResource(Res.string.oc_current_payment),
                                 tint = MaterialTheme.colorScheme.primary
                             )
                         }
@@ -856,33 +937,74 @@ private fun PaymentStatusPicker(
 }
 
 @Composable
-private fun ContactLink(
-    value: String,
-    actionLabel: String,
-    icon: ImageVector,
-    modifier: Modifier = Modifier,
-    onClick: () -> Unit
+private fun ProjectDetailsSummary(ceilings: List<ProjectMeasurement>, finance: ProjectFinanceState, onRetry: () -> Unit) {
+    val metrics = remember(ceilings) {
+        if (ceilings.any { !it.area.isFinite() || !it.perimeter.isFinite() || it.area < 0 || it.perimeter < 0 }) null
+        else (ceilings.sumOf { it.area } to ceilings.sumOf { it.perimeter })
+            .takeIf { it.first.isFinite() && it.second.isFinite() }
+    }
+    val cents = (finance as? ProjectFinanceState.Loaded)?.summary?.approvedCents
+    val amount = if (cents != null) compactQuoteAmount(cents) else stringResource(Res.string.p5d_unknown)
+    val label = when (finance) {
+        ProjectFinanceState.Loading -> stringResource(Res.string.p6a_finance_loading)
+        ProjectFinanceState.Unavailable -> stringResource(Res.string.p6a_finance_unavailable)
+        is ProjectFinanceState.Loaded -> when {
+            finance.summary.approvedUnavailable -> stringResource(Res.string.p6a_finance_unavailable)
+            finance.summary.approvedCents == null -> stringResource(Res.string.p6a_no_approved_quotes)
+            else -> stringResource(Res.string.p6a_approved_total, amount)
+        }
+    }
+    val summaryStyle = MaterialTheme.typography.bodyLarge
+    val summaryIconSize = 18.dp
+    CompactMetricsRow(metrics?.first, metrics?.second, textStyle = summaryStyle, iconSize = summaryIconSize) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            CompactMetric(Icons.Default.Payments, amount, label, summaryStyle, summaryIconSize)
+            if (finance == ProjectFinanceState.Unavailable) {
+                IconButton(onClick = onRetry) {
+                    Icon(Icons.Default.Refresh, stringResource(Res.string.p5d_retry), Modifier.size(16.dp))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ProjectDetailsClient(
+    client: ClientListEntry?,
+    clientName: String,
+    onOpenClient: (ClientListEntry) -> Unit,
+    onDial: (String) -> Unit,
+    onEmail: (String) -> Unit
 ) {
-    Row(
-        modifier = modifier
-            .heightIn(min = 48.dp)
-            .clickable(role = Role.Button, onClickLabel = actionLabel, onClick = onClick),
-        horizontalArrangement = Arrangement.spacedBy(7.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Icon(
-            icon,
-            contentDescription = null,
-            modifier = Modifier.size(18.dp),
-            tint = MaterialTheme.colorScheme.primary
-        )
-        Text(
-            value,
-            modifier = Modifier.weight(1f),
-            color = MaterialTheme.colorScheme.primary,
-            style = MaterialTheme.typography.bodySmall,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis
-        )
+    var error by remember(client) { mutableStateOf<String?>(null) }
+    val openClientLabel = stringResource(Res.string.p6a_open_client)
+    val nameModifier = if (client == null) Modifier else Modifier
+        .heightIn(min = 48.dp)
+        .clickable(role = Role.Button, onClickLabel = openClientLabel) { onOpenClient(client) }
+    DetailsCard(stringResource(Res.string.p6a_client)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.weight(1f).then(nameModifier), contentAlignment = Alignment.CenterStart) {
+                Text(
+                    client?.name ?: clientName.ifBlank { stringResource(Res.string.p6a_no_client) },
+                    style = MaterialTheme.typography.titleMedium
+                )
+            }
+            client?.phone?.takeIf { it.isNotBlank() }?.let { number ->
+                val failure = stringResource(Res.string.p6a_call_unavailable)
+                IconButton(onClick = { error = if (runCatching { onDial(number) }.isFailure) failure else null }) {
+                    Icon(Icons.Default.Phone, stringResource(Res.string.p6a_call_client))
+                }
+            }
+            client?.email?.takeIf { it.isNotBlank() }?.let { address ->
+                val failure = stringResource(Res.string.p6a_email_unavailable)
+                IconButton(onClick = { error = if (runCatching { onEmail(address) }.isFailure) failure else null }) {
+                    Icon(Icons.Default.Email, stringResource(Res.string.p6a_email_client))
+                }
+            }
+        }
+        client?.notes?.takeIf { it.isNotBlank() }?.let {
+            Text(it, style = MaterialTheme.typography.bodyMedium)
+        }
+        error?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
     }
 }

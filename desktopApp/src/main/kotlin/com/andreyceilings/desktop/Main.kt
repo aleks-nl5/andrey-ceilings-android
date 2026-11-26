@@ -74,6 +74,8 @@ import com.andreyceilings.shared.navigation.FloatingBarHeight
 import com.andreyceilings.shared.dashboard.DashboardScreen
 import com.andreyceilings.shared.dashboard.DashboardSummary
 import kotlinx.coroutines.flow.Flow
+import com.andreyceilings.shared.objects.CardSwipeState
+import com.andreyceilings.shared.objects.dismissCardSwipeOnInteraction
 import com.andreyceilings.shared.objects.ObjectsClientsScreen
 import com.andreyceilings.shared.objects.ObjectsClientsRows
 import com.andreyceilings.shared.objects.ContactAction
@@ -162,6 +164,8 @@ private fun DesktopPriceHost(
 
     // Close the exact previous session, never a newly assigned replacement.
     val database = session
+    val cardSwipes = remember(database) { CardSwipeState() }
+    LaunchedEffect(navigation, cardSwipes) { cardSwipes.dismiss() }
     DisposableEffect(database) {
         onDispose { database?.close() }
     }
@@ -226,7 +230,9 @@ private fun DesktopPriceHost(
             projectTitleProgress = 0f
             if (navigation.projectDetails != null) topScrollBehavior.state.heightOffset = 0f
         }
-        Box(Modifier.fillMaxSize().nestedScroll(
+        Box(Modifier.fillMaxSize()
+            .then(if (selectedTab == AppRoute.OBJECTS) Modifier.dismissCardSwipeOnInteraction(cardSwipes) else Modifier)
+            .nestedScroll(
             if (isProjectDetailsOpen) passiveDetailsScroll
             else topScrollBehavior.nestedScrollConnection
         )) {
@@ -269,6 +275,7 @@ private fun DesktopPriceHost(
                 }
                 AppRoute.OBJECTS -> ObjectsClientsScreen(
                     rows = objectRows,
+                    swipeState = cardSwipes,
                     detailsProjectId = navigation.projectDetails?.projectId,
                     measurementDetails = navigation.measurementDetails,
                     measurementQuote = navigation.measurementQuote,
@@ -278,7 +285,7 @@ private fun DesktopPriceHost(
                     measurementCreateNavigationGuard = measurementCreateNavigationGuard,
                     onCreateMeasurement = { onNavigate(navigation.createMeasurement(it)) },
                     onMeasurementCreated = { projectId, measurementId -> onNavigate(navigation.measurementCreatedInEditor(projectId, measurementId)) },
-                    onOpenMeasurement = { projectId, measurementId -> onNavigate(navigation.openMeasurement(projectId, measurementId)) },
+                    onOpenMeasurement = { projectId, measurementId -> onNavigate(navigation.openCeilingWorkspace(projectId, measurementId)) },
                     detailsStore = objectsStore,
                     onOpenProject = { onNavigate(navigation.openProject(it)) },
                     onCloseProject = { onNavigate(navigation.back(availableRoutes)) },
@@ -310,6 +317,10 @@ private fun DesktopPriceHost(
                     },
                     onDial = { phone ->
                         openExternal("tel:" + phone.filter { it.isDigit() || it == '+' })
+                    },
+                    onProjectDial = { phone ->
+                        check(Desktop.isDesktopSupported() && Desktop.getDesktop().isSupported(Desktop.Action.BROWSE))
+                        Desktop.getDesktop().browse(URI("tel:" + phone.filter { it.isDigit() || it == '+' }))
                     },
                     onExternalAction = { action, raw ->
                         val encoded = URLEncoder.encode(raw, "UTF-8")

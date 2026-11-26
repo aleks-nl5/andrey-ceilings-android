@@ -14,9 +14,6 @@ sealed interface MeasurementPricingState {
         val elementVersions: Map<String, Long>? = null) : MeasurementPricingState
 }
 
-/** Integer cents only; no locale-sensitive conversion through floating point. */
-fun measurementMoney(cents: Long): String = "${cents / 100},${(cents % 100).toString().padStart(2, '0')} грн"
-
 @Composable
 fun MeasurementPricingSection(state: MeasurementPricingState, elements: List<MeasurementElement> = emptyList(),
     editing: Boolean = false, compact: Boolean = false, measurementUpdatedAt: Long? = null, onRefresh: () -> Unit = {}) {

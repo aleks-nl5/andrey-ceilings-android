@@ -232,15 +232,20 @@ class FrozenEstimateDocumentAndroidTest {
                                     rows = ObjectsClientsRows(emptyList(), emptyList()),
                                     detailsProjectId = living.projectId, detailsStore = objects,
                                     onOpenProject = {}, onCloseProject = {}, databaseAvailable = true,
-                                    onSaveClient = { _, _ -> }, onSaveProject = { _, _ -> },
+                                    onSaveClient = { _, _ -> error("Unexpected client write") }, onSaveProject = { _, _ -> },
                                     onDeleteClient = {}, onDeleteProject = {}, onDial = {},
                                     onExternalAction = { _, _ -> }
                                 )
                             }
                         }
                     }
-                    compose.waitUntil(10000) { compose.onAllNodesWithText("Зведений кошторис").fetchSemanticsNodes().isNotEmpty() }
-                    compose.onNodeWithText("Зведений кошторис").performClick()
+                    // P6A puts the consolidated action after the lazy ceiling list.
+                    // Wait for the project to load, then reveal the offscreen action.
+                    compose.waitUntil(10000) { compose.onAllNodesWithText("Квартира / Центр").fetchSemanticsNodes().isNotEmpty() }
+                    val consolidatedAction = hasText("Зведений кошторис") and hasClickAction()
+                    compose.onNode(SemanticsMatcher.keyIsDefined(SemanticsActions.ScrollToIndex))
+                        .performScrollToNode(consolidatedAction)
+                    compose.onNode(consolidatedAction).performClick()
                     compose.waitUntil(10000) { compose.onAllNodesWithText("Переглянути зведений PDF").fetchSemanticsNodes().isNotEmpty() }
                     val preview = compose.onNodeWithText("Переглянути зведений PDF")
                     val list = compose.onAllNodes(SemanticsMatcher.keyIsDefined(SemanticsActions.ScrollToIndex)).onLast()
@@ -309,6 +314,8 @@ class FrozenEstimateDocumentAndroidTest {
                     assertTrue("Частковийкошторис" in compactText, text)
                     assertTrue("Монтажліхтаря" in compactText, text)
                     assertTrue("Загаломдооплати" in compactText, text)
+                    assertTrue("Ціна,₴" in compactText, text)
+                    assertTrue("Сума,₴" in compactText, text)
                     assertTrue(Regex("Кількість").findAll(compactText).count() > 10, text)
                     assertEquals(10, Regex("Збереженекреслення").findAll(compactText).count(), text)
                     assertEquals(40, Regex("декоративного").findAll(compactText).count(), text)

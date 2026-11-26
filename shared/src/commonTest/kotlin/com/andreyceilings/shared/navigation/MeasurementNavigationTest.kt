@@ -15,6 +15,19 @@ class MeasurementNavigationTest {
         assertNull(measurement.selectTab(AppRoute.MEASUREMENTS).measurementDetails)
     }
 
+    @Test fun workspaceSkipsDetailsAndRestoresParentAfterBackAndCreate() {
+        val project = AppNavigationState().selectTab(AppRoute.OBJECTS).openProject(7)
+        val workspace = project.openCeilingWorkspace(7, 12)
+        assertEquals(MeasurementEdit(7, 12), workspace.measurementEdit)
+        assertNull(workspace.measurementDetails)
+        assertSame(workspace, workspace.openCeilingWorkspace(7, 12))
+        assertEquals(workspace, AppNavigationState.restore(workspace.snapshot()))
+        assertEquals(project, workspace.back())
+        assertEquals(project, workspace.measurementSaved(7, 12))
+        assertEquals(workspace, project.createMeasurement(7).measurementCreatedInEditor(7, 12))
+        assertSame(project, project.openCeilingWorkspace(8, 12))
+    }
+
     @Test fun snapshotRestoresOnlyCanonicalIdsAndNeverReplaysCommands() {
         val state = AppNavigationState().selectTab(AppRoute.OBJECTS).openProject(7).openMeasurement(7, 12)
         assertEquals(listOf("OBJECTS", "DASHBOARD", "PROJECT_DETAILS:7", "MEASUREMENT_DETAILS:7:12"), state.snapshot())

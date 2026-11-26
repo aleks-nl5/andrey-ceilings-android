@@ -59,6 +59,12 @@ internal fun EstimateDocumentPreview(
     )
 }
 
+@Composable
+internal fun documentMoneyColumnLabels(): DocumentMoneyColumnLabels = DocumentMoneyColumnLabels(
+    stringResource(Res.string.document_money_unit_price),
+    stringResource(Res.string.document_money_total)
+)
+
 internal class EstimatePreviewLoadFailure(message: String) : IllegalStateException(message)
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -75,6 +81,7 @@ internal fun <T : Any> EstimateDocumentPreviewDialog(
     val measurer = rememberTextMeasurer()
     val shareConflict = stringResource(Res.string.p5d_share_status_conflict)
     val fixedDiscountLabel = stringResource(Res.string.p5d_pdf_fixed_discount_label)
+    val moneyColumns = documentMoneyColumnLabels()
     val scope = rememberCoroutineScope()
     var document by remember { mutableStateOf<T?>(null) }
     var loading by remember { mutableStateOf(true) }
@@ -103,8 +110,8 @@ internal fun <T : Any> EstimateDocumentPreviewDialog(
         }
     }
     // Resolve the page snapshot only while previewing. Keystrokes in the editor do not repaginate.
-    val pages = if (editor) null else remember(document, options, measurer, fixedDiscountLabel) {
-        document?.let { layout(it, options.copy(fixedDiscountLabel = fixedDiscountLabel), measurer) }
+    val pages = if (editor) null else remember(document, options, measurer, fixedDiscountLabel, moneyColumns) {
+        document?.let { layout(it, options.copy(fixedDiscountLabel = fixedDiscountLabel, moneyColumnLabels = moneyColumns), measurer) }
     }
     Dialog(
         onDismissRequest = { if (!exporting) { if (editor) editor = false else onClose() } },

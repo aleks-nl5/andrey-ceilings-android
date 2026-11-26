@@ -101,6 +101,25 @@ class ObjectsClientsStoreTest {
     }
 
     @Test
+    fun newClientRequiresPhoneAndCanBeLinkedByReturnedId() {
+        JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).use { driver ->
+            PrototypeDatabase.Schema.create(driver)
+            val db = PrototypeDatabase(driver)
+            val store = ObjectsClientsStore(db) { 100L }
+            val clients = ClientRepository(db)
+            for (phone in listOf("", "  ", "abc")) {
+                assertFailsWith<IllegalArgumentException> { store.saveClient(null, ClientDraft("Test", phone)) }
+            }
+            val client = store.saveClient(null, ClientDraft("New client", " +380501112233 "))
+            assertEquals("+380501112233", clients.find(client)?.phone)
+            val project = store.saveProject(null, ProjectDraft("Address", clientId = client))
+            assertEquals(client, ProjectRepository(db).find(project)?.clientId)
+            // Existing historical clients remain editable without requiring invented contact details.
+            assertEquals(client, store.saveClient(client, ClientDraft("Renamed")))
+        }
+    }
+
+    @Test
     fun rejectsInvalidWritesAndPreservesRecords() {
         JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).use { driver ->
             PrototypeDatabase.Schema.create(driver)
@@ -205,7 +224,7 @@ class ObjectsClientsStoreTest {
             val store = ObjectsClientsStore(db) { 100L }
             val clients = ClientRepository(db)
             val projects = ProjectRepository(db)
-            val client = store.saveClient(null, ClientDraft("Андрій"))
+            val client = store.saveClient(null, ClientDraft("Андрій", "+380501112233"))
             val project = store.saveProject(null, ProjectDraft("Чернівці, Головна 12", clientId = client))
             assertFailsWith<IllegalStateException> { store.deleteClient(client) }
             assertNotNull(clients.find(client))
