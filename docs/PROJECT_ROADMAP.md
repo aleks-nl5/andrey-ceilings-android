@@ -12,19 +12,19 @@ P5B #156/#157 and P5C #161/#162 merged. [P5D #164](https://github.com/aleks-nl5/
 
 # DEFERRED — Libellaro: Firebase App Distribution та Crashlytics (26.11.2026)
 
-**21 продуктове рішення погоджено; реалізацію відкладено до завершення основних функціональних етапів Android-first roadmap.** [Канонічний контракт](FIREBASE_DISTRIBUTION_PLAN.md), [Issue #174](https://github.com/aleks-nl5/andrey-ceilings-android/issues/174). Не змінює порядок P6, календаря, налаштувань, калькулятора, локалізації чи інших основних функціональних етапів. Перед стартом — окреме погодження власника.
+**30 рішень погоджено (№22–30 уточнюють попередній контракт); підготовчий аудит F0 дозволено паралельно з #143.** [Канонічний контракт](FIREBASE_DISTRIBUTION_PLAN.md), [Issue #174](https://github.com/aleks-nl5/andrey-ceilings-android/issues/174). Не змінює порядок P6, календаря, налаштувань, калькулятора, локалізації. Ізольований runtime-прототип, інфраструктура та production F1–F6 потребують окремого погодження.
 
 | Етап | Результат |
 |---|---|
-| F0 | Ізольований прототип: documented API/SDK, auth, download/install, network policy, Android verification, privacy; погодити компроміси до коду. |
-| F1 | Spark, закрита група, персональні запрошення/посилання, перший ручний signed APK. |
-| F2 | Manual-only GitHub Actions; exact main SHA Android + CMP FULL success; versionName вручну, спільний монотонний versionCode, редагований changelog, приватні GitHub Releases. |
-| F3 | Окремий екран оновлень; добровільна авторизація, 24h/manual check, компактне повідомлення/індикатор, 3 режими download (Wi-Fi default), explicit install. |
-| F4 | Тимчасовий захищений backup до інсталяції, warning/override при помилці, cleanup після startup + DB integrity, міграції з усіх stable. |
-| F5 | Crashlytics opt-in, можливість вимкнути, privacy/redaction; без Analytics/Performance Monitoring. |
+| F0 | Підготовчий аудит + ізольований прототип стандартного SDK: auth, прогрес/інсталятор, process death, бар'єр записів/backup, expiry, Android verification/privacy. |
+| F1 | Spark, закрита група, персональні запрошення/посилання, перший ручний signed APK, окремий приватний архів. |
+| F2 | Manual-only GitHub Actions; exact main SHA Android + CMP FULL success; ручний versionName, монотонний versionCode, changelog, приватний `libellaro-releases`; нагадування за 15 днів до expiry, ручна повторна доставка ідентичного APK. |
+| F3 | Окремий екран, добровільна авторизація, 24h/manual check, компактний індикатор, ручне оновлення через SDK, попередження про мобільну мережу, прогрес без unsupported cancel, ручний retry. |
+| F4 | Бар'єр записів і захищений backup до download, warning/override, cleanup лише після доведеного здорового завершення або скасування без install, recovery і stable migrations. |
+| F5 | Crashlytics opt-in, відкликання згоди, privacy/redaction; без Analytics/Performance Monitoring. |
 | F6 | Scoped CI, незалежний review, фізичний Android APK, recovery/upgrade acceptance. |
 
-Firebase — лише доставка/оновлення Android та погоджена діагностика; не cloud database/sync, не обов'язковий account, не Windows/iOS release. Offline-first, чинний package/signing key, існуючі резервні копії та процес тестування PR зберігаються. F0 — обов'язковий gate, не обіцянка реалізовності Beta SDK; за обмежень повернутися до власника. Документація не є доказом реалізації чи успішних тестів.
+Firebase — лише Android delivery/updates та діагностика; не cloud database/sync, не обов'язковий account, не Windows/iOS release. Стандартний SDK без Cloudflare/custom backend. Offline-first, чинний package/signing key, звичайний backup та PR CI зберігаються. F0 не завершено; документ не є runtime evidence. За обмежень повернутися до власника.
 
 ---
 
