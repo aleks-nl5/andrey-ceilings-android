@@ -450,4 +450,6 @@
     <string name="pdf_save">Зберегти PDF</string>
     <string name="pdf_share">Поділитися</string>
     <string name="pdf_print">Друк</string>
+    <string name="p5d_previous_discount_summary">Було: %1$s · знижка %2$s %3$s</string>
+    <string name="p5d_carry_discount_confirmation">Перенести знижку %1$s %2$s — потім підтвердити</string>
 </resources>

@@ -35,6 +35,8 @@ import com.andreyceilings.shared.measurement.*
 import com.andreyceilings.shared.resources.*
 import com.andreyceilings.shared.ui.ContextFeedbackIcon
 import com.andreyceilings.shared.ui.ContextFeedbackKind
+import com.andreyceilings.shared.ui.CeilingsPopupMenu
+import com.andreyceilings.shared.ui.QuoteDiscountModeButton
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.update
@@ -355,13 +357,7 @@ internal fun ConsolidatedEstimateScreen(
                                     enabled = !saving, isError = discount == null || (cents.isNotEmpty() &&
                                         cents.size == selected.size && amounts == null), compact = true, dense = true,
                                     selectAllOnFocus = true, zeroWhenBlankOnBlur = true)
-                                OutlinedButton(enabled = !saving, onClick = {
-                                    session.discountMode.value = if (discountMode == QuoteDiscountMode.PERCENT) QuoteDiscountMode.FIXED
-                                        else QuoteDiscountMode.PERCENT
-                                }, contentPadding = PaddingValues(horizontal = 10.dp)) {
-                                    Text(stringResource(if (discountMode == QuoteDiscountMode.PERCENT)
-                                        Res.string.p5d_discount_percent else Res.string.p5d_discount_money))
-                                }
+                                QuoteDiscountModeButton(discountMode, !saving) { session.discountMode.value = it }
                                 Spacer(Modifier.weight(1f))
                                 amounts?.let { Text(measurementMoney(it.discountCents), style = MaterialTheme.typography.labelLarge) }
                                 val help = stringResource(Res.string.p6b_discount_help)
@@ -463,10 +459,7 @@ private fun ConsolidatedRoomRow(
                 else Text(stringResource(Res.string.p5d_revision_heading, option.number, option.version),
                     style = MaterialTheme.typography.labelMedium)
             }
-            DropdownMenu(open, onDismissRequest = { open = false },
-                shape = RoundedCornerShape(16.dp), containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                tonalElevation = 4.dp, shadowElevation = 8.dp,
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)) {
+            CeilingsPopupMenu(open, onDismissRequest = { open = false }) {
                 choices.forEach { choice ->
                     DropdownMenuItem(text = {
                         Column {

@@ -70,6 +70,22 @@ class TransientQuoteTest {
         assertEquals(QuoteAmounts(7, 0, 7, 0, fixed), QuoteDiscount.calculate(7, QuoteDiscountValue.Fixed(7)))
         assertNull(QuoteDiscount.calculate(7, QuoteDiscountValue.Fixed(8)))
         assertEquals(0L, QuoteDiscount.calculate(Long.MAX_VALUE, QuoteDiscountValue.Fixed(Long.MAX_VALUE))?.finalCents)
+        for (mode in QuoteDiscountMode.entries) {
+            val p = TransientQuoteFixture.presenter()
+            p.editDiscount("13", mode, confirmed = true)
+            assertNotNull(p.state.value.amounts)
+            p.editDiscount("", mode, confirmed = true)
+            assertEquals("", p.state.value.discountText)
+            assertEquals(2800L, p.state.value.amounts?.finalCents)
+            val blank = assertNotNull(p.saveRequest(1, "Zero discount"))
+            assertEquals("0", blank.discountText)
+            p.editDiscount("0", mode, confirmed = true)
+            val normalized = assertNotNull(p.saveRequest(1, "Zero discount"))
+            assertEquals(blank, normalized.copy(operationUuid = blank.operationUuid))
+            p.editDiscount("0.", mode, confirmed = true)
+            assertNull(p.state.value.amounts)
+            assertNull(p.saveRequest(1, "Invalid discount"))
+        }
         assertFailsWith<IllegalArgumentException> { QuoteDiscount.calculate(-1, 0) }
         assertFailsWith<IllegalArgumentException> { QuoteDiscount.calculate(1, 10001) }
     }

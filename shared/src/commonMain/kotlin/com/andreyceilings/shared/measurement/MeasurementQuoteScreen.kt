@@ -23,6 +23,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import com.andreyceilings.shared.input.DecimalInputField
 import com.andreyceilings.shared.livepricing.*
 import com.andreyceilings.shared.estimate.*
+import com.andreyceilings.shared.resources.*
+import com.andreyceilings.shared.ui.QuoteDiscountModeButton
 import androidx.compose.runtime.saveable.rememberSaveable
 import org.jetbrains.compose.resources.stringResource
 import kotlinx.coroutines.launch
@@ -45,9 +47,10 @@ fun MeasurementQuoteScreen(presenter: TransientQuotePresenter, store: Measuremen
     val state by presenter.state.collectAsState()
     MeasurementQuoteContent(state, { if (!presenter.saveState.value.saving) onBack() },
         { if (!presenter.saveState.value.saving) retry++ }, presenter::select, presenter::editQuantity,
-        presenter::confirmQuantity, presenter::resetQuantity, { presenter.editDiscount(it) },
+        presenter::confirmQuantity, presenter::resetQuantity, { presenter.editDiscount(it, confirmed = it.isBlank() || it == "0") },
         presenter::confirmDiscount, presenter::acknowledge, contentPadding, systemTopInset,
         editingEnabled = !saveState.saving && saveState.resultSeriesUuid == null,
+        onDiscountMode = { presenter.editDiscount("0", it, confirmed = true) },
         backLabel = if (presenter.revisionBase == null) "До заміру" else "До кошторису",
         heading = presenter.revisionBase?.let { "Нова версія v${it.versionNumber + 1}" } ?: "Попередній кошторис",
         comparisonContent = presenter.revisionBase?.let { { RevisionComparison(presenter, state, !saveState.saving && saveState.resultSeriesUuid == null) } },
@@ -94,7 +97,8 @@ fun MeasurementQuoteContent(state: TransientQuoteState, onBack: () -> Unit, onRe
     contentPadding: PaddingValues = PaddingValues(16.dp), systemTopInset: Dp = 0.dp,
     saveFooter: (@Composable () -> Unit)? = null, editingEnabled: Boolean = true,
     comparisonContent: (@Composable () -> Unit)? = null,
-    backLabel: String = "До заміру", heading: String = "Попередній кошторис") {
+    backLabel: String = "До заміру", heading: String = "Попередній кошторис",
+    onDiscountMode: ((QuoteDiscountMode) -> Unit)? = null) {
     val list = rememberLazyListState()
     // Hosts reserve bottom space for their floating navigation/system bars. It is not
     // unobscured viewport, even while a lazy item is temporarily laid out behind it.
@@ -198,12 +202,20 @@ fun MeasurementQuoteContent(state: TransientQuoteState, onBack: () -> Unit, onRe
                 }
             }
             item {
-                DecimalInputField(state.discountText, onDiscount, "Загальна знижка, %",
-                    enabled = editingEnabled && source != null, isError = QuoteDiscount.parseBasisPoints(state.discountText) == null)
-                Text("Від 0 до 100%, до двох знаків після коми")
+                val discountValid = QuoteDiscount.parse(state.effectiveDiscountText, state.discountMode) != null
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    DecimalInputField(state.discountText, onDiscount, stringResource(Res.string.p5d_discount),
+                        modifier = Modifier.width(92.dp), enabled = editingEnabled && source != null,
+                        isError = !discountValid, compact = true, dense = true,
+                        selectAllOnFocus = true, zeroWhenBlankOnBlur = true)
+                    if (onDiscountMode != null) QuoteDiscountModeButton(state.discountMode,
+                        editingEnabled && source != null, onDiscountMode)
+                }
+                if (!discountValid) Text(stringResource(Res.string.p5d_discount_invalid),
+                    color = MaterialTheme.colorScheme.error)
                 if (!state.discountConfirmed) {
                     Text("Підтвердьте знижку для нового підсумку")
-                    OutlinedButton(onClick = onConfirmDiscount, enabled = editingEnabled && QuoteDiscount.parseBasisPoints(state.discountText) != null) {
+                    OutlinedButton(onClick = onConfirmDiscount, enabled = editingEnabled && discountValid) {
                         Text("Застосувати знижку")
                     }
                 }
@@ -216,7 +228,10 @@ fun MeasurementQuoteContent(state: TransientQuoteState, onBack: () -> Unit, onRe
                         Text("Підсумок", style = MaterialTheme.typography.titleMedium)
                         state.amounts?.let {
                             Text("До знижки: ${measurementMoney(it.subtotalCents)}")
-                            Text("Знижка ${state.discountText}%: ${measurementMoney(it.discountCents)}")
+                            Text(stringResource(Res.string.p5d_discount) + ": " +
+                                if (state.discountMode == QuoteDiscountMode.PERCENT)
+                                    stringResource(Res.string.p5d_discount_percent_value, measurementMoney(it.discountCents), state.effectiveDiscountText)
+                                else stringResource(Res.string.p5d_discount_value, measurementMoney(it.discountCents)))
                         }
                         Text(amount, style = MaterialTheme.typography.headlineSmall, modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
                         if (partial) Text(if (state.acknowledged) "Частковий · перелік підтверджено" else "Частковий · перевірте невраховані роботи")
@@ -320,13 +335,15 @@ private fun RevisionComparison(presenter: TransientQuotePresenter, state: Transi
                     }
                 }
             }
-            Text("Було: ${measurementMoney(old.amounts.finalCents)} · знижка ${old.discountText}%")
+            val oldUnit = stringResource(if (old.amounts.discountMode == QuoteDiscountMode.PERCENT)
+                Res.string.p5d_discount_percent else Res.string.p5d_discount_money)
+            Text(stringResource(Res.string.p5d_previous_discount_summary, measurementMoney(old.amounts.finalCents), old.discountText, oldUnit))
             state.amounts?.let {
                 Text("Зараз: ${measurementMoney(it.finalCents)} · зміна: ${if (it.finalCents >= old.amounts.finalCents) "+" else "−"}${measurementMoney(kotlin.math.abs(it.finalCents - old.amounts.finalCents))}")
             }
             Text("Попередні ручні рішення не застосовуються автоматично.")
             TextButton(enabled = enabled && state.source != null, onClick = { carryError = !presenter.carryDiscount() }) {
-                Text("Перенести знижку ${old.discountText}% — потім підтвердити")
+                Text(stringResource(Res.string.p5d_carry_discount_confirmation, old.discountText, oldUnit))
             }
             TextButton(enabled = enabled && state.source != null, onClick = { confirmSelection = true }) { Text("Переглянути перенесення вибору робіт") }
             if (carryError) Text("Перенесення недоступне: склад, одиниця, роль або відповідність позицій змінилися, чи немає підтримуваних ручних рішень.", color = MaterialTheme.colorScheme.error)

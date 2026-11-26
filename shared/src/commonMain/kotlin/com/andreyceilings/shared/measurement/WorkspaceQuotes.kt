@@ -28,6 +28,7 @@ import com.andreyceilings.shared.livepricing.*
 import com.andreyceilings.shared.resources.*
 import com.andreyceilings.shared.ui.ContextFeedbackIcon
 import com.andreyceilings.shared.ui.ContextFeedbackKind
+import com.andreyceilings.shared.ui.QuoteDiscountModeButton
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.stringResource
@@ -305,18 +306,14 @@ internal fun ColumnScope.WorkspaceQuoteComposer(
                             style = MaterialTheme.typography.titleLarge)
                     }
                     WorkspaceExpand(session)
-                    TextButton(enabled = enabled, onClick = {
-                        val mode = if (state.discountMode == QuoteDiscountMode.PERCENT) QuoteDiscountMode.FIXED else QuoteDiscountMode.PERCENT
+                    QuoteDiscountModeButton(state.discountMode, enabled) { mode ->
                         presenter.editDiscount("0", mode, confirmed = true)
-                    }) {
-                        Text(stringResource(if (state.discountMode == QuoteDiscountMode.PERCENT)
-                            Res.string.p5d_discount_percent else Res.string.p5d_discount_money))
                     }
                     Box(Modifier.widthIn(max = 88.dp).padding(top = 8.dp, bottom = 4.dp)) {
                         DecimalInputField(state.discountText, { presenter.editDiscount(it, confirmed = true) },
                             stringResource(Res.string.p5d_discount), enabled = enabled,
-                            compact = true, dense = true,
-                            isError = QuoteDiscount.parse(state.discountText, state.discountMode) == null ||
+                            compact = true, dense = true, selectAllOnFocus = true, zeroWhenBlankOnBlur = true,
+                            isError = QuoteDiscount.parse(state.effectiveDiscountText, state.discountMode) == null ||
                                 (!state.discountConfirmed && state.discountText.isNotEmpty()))
                     }
                     if (!state.discountConfirmed) IconButton(enabled = enabled, onClick = presenter::confirmDiscount) {

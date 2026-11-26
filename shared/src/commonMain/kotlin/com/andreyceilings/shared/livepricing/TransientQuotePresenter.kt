@@ -23,6 +23,8 @@ data class TransientQuoteState(
     val amounts: QuoteAmounts? = null, val fingerprint: String? = null,
     val acknowledgedFingerprint: String? = null
 ) {
+    // A blank editor is a presentation-only zero. Keep persisted text and fingerprints canonical.
+    internal val effectiveDiscountText get() = discountText.ifBlank { "0" }
     val acknowledged get() = fingerprint != null && acknowledgedFingerprint == fingerprint
     val canAcknowledge get() = amounts != null && preview?.canRequestPartialAcknowledgement == true
 }
@@ -187,12 +189,17 @@ class TransientQuotePresenter(val measurementUuid: String, val sessionId: String
     }
     fun editDiscount(text: String, mode: QuoteDiscountMode = mutable.value.discountMode, confirmed: Boolean = false) {
         if (!editable) return
-        mutable.value = mutable.value.copy(discountText = text, discountMode = mode, discountConfirmed = confirmed)
+        val current = mutable.value
+        val next = current.copy(discountText = text, discountMode = mode, discountConfirmed = confirmed)
+        mutable.value = next
+        // Blur normalizing empty -> "0" must not invalidate an identical save or acknowledgement.
+        if (current.effectiveDiscountText == next.effectiveDiscountText &&
+            current.discountMode == next.discountMode && current.discountConfirmed == next.discountConfirmed) return
         changed(); rebuild()
     }
     fun confirmDiscount() {
         val current = mutable.value
-        if (!editable || QuoteDiscount.parse(current.discountText, current.discountMode) == null) return
+        if (!editable || QuoteDiscount.parse(current.effectiveDiscountText, current.discountMode) == null) return
         mutable.value = mutable.value.copy(discountConfirmed = true)
         changed(); rebuild()
     }
@@ -212,7 +219,7 @@ class TransientQuotePresenter(val measurementUuid: String, val sessionId: String
         if (closed || s.loading || s.unavailable != null ||
             !(s.preview?.canFinalizeFull == true || s.preview?.canRequestPartialAcknowledgement == true && s.acknowledged)) return null
         return IndividualEstimateSaveRequest(newRecordUuid(), projectId, validEstimateTitle(title) ?: return null,
-            sessionId, selection, saveOverrides.toList(), s.discountText, amounts, fingerprint,
+            sessionId, selection, saveOverrides.toList(), s.effectiveDiscountText, amounts, fingerprint,
             s.acknowledgedFingerprint, s.preview.excluded.filter { it.bucket == PricingBucket.CONFIRMED })
     }
 
@@ -315,10 +322,10 @@ class TransientQuotePresenter(val measurementUuid: String, val sessionId: String
         saveSelection = selection
         saveOverrides = overrides.toList()
         val preview = IndividualEstimatePricing.previewSelection(selection, live)
-        val discount = QuoteDiscount.parse(s.discountText, s.discountMode)
+        val discount = QuoteDiscount.parse(s.effectiveDiscountText, s.discountMode)
         val amounts = if (inputValid && discount != null && (preview.canFinalizeFull || preview.canRequestPartialAcknowledgement))
             QuoteDiscount.calculate(preview.selectedIncludedTotalCents, discount) else null
-        val fingerprint = amounts?.let { quoteSaveFingerprint(sessionId, preview.signature, s.discountText, it) }
+        val fingerprint = amounts?.let { quoteSaveFingerprint(sessionId, preview.signature, s.effectiveDiscountText, it) }
         mutable.update { if (closed) it else s.copy(source = source, lines = live.priceableLines, unresolved = live.unresolvedItems, selected = keys,
             unavailableSelectedDiscussing = unavailableSelected, preview = preview, amounts = amounts, fingerprint = fingerprint) }
     }

@@ -38,3 +38,7 @@ Owner requested the compact consolidated create/read-only dialog (approximately 
 ### Second physical APK feedback
 
 Empty consolidated discount is zero in either mode, editable as blank and normalized to `0` on blur. Exact individual review uses an inset 78%-height scrollable dialog with compact bordered positions, muted secondary text and right-aligned fixed total. PDF actions share a single toolbar beneath the title, preserving accessibility labels. Compact ordinary text explicitly requests Text keyboard type and sentence capitalization for both Text and Unspecified defaults; phone/email/numeric options remain unchanged. IME and visual acceptance still require the physical APK.
+
+### Shared discount and contextual popup polish
+
+Individual quote editing now uses the same select-all and blank-to-zero-on-blur behavior and outlined discount-mode button as consolidated editing. Blank input is normalized to `0` for calculation, save commands and fingerprints; strict committed numeric parsing stays unchanged. Blank-to-zero display normalization does not invalidate an identical acknowledgement or pending intent. Individual mode switches retain the existing safe reset to zero; consolidated mode switching retains its existing typed value. Shared `CeilingsPopupMenu` defines the same rounded, elevated, outlined surface for version selection and all `ContextFeedbackIcon` explanations across the app. Existing transient quote test covers both discount modes, canonical saved text and invalid nonempty input.
