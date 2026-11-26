@@ -8,6 +8,15 @@ import kotlin.random.Random
 import kotlin.test.Test
 
 class BusinessRoleIosCipherTest {
+    @Test fun physicalV22PurgeRollsBackAndReopens(): Unit = runBlocking {
+        val factory = NativeSqlCipherDriverFactory()
+        val name = "estimate-v22-${Random.nextLong()}.db"
+        val config = SqlCipherConfig(name = name, key = SqlCipherKey { ByteArray(32) { 22 } },
+            recovery = SqlCipherRecovery.Fail)
+        try { EstimateV22MigrationProof.lifecycle(IosPriceCatalogSchema) { factory.create(it, config) } }
+        finally { factory.deleteDatabase(name) }
+    }
+
     @Test fun physicalV19ToV20RollbackAndWallRepair(): Unit = runBlocking {
         val factory = NativeSqlCipherDriverFactory()
         val name = "walls-v19-${Random.nextLong()}.db"
@@ -54,13 +63,18 @@ class BusinessRoleIosCipherTest {
         try { FrozenEstimateMigrationProof.lifecycle(IosPriceCatalogSchema) { factory.create(it, config) } }
         finally { factory.deleteDatabase(name) }
     }
-    @Test fun physicalV14ToV15RollbackReopenRolesAndPricing(): Unit = runBlocking {
+    @Test fun currentEncryptedRolePortableSnapshot(): Unit = runBlocking { roleSnapshot(false) }
+
+    @kotlin.test.Ignore
+    @Test fun physicalV14ToV15RollbackReopenRolesAndPricing(): Unit = runBlocking { roleSnapshot(true) }
+
+    private suspend fun roleSnapshot(historical: Boolean) {
         val factory = NativeSqlCipherDriverFactory()
         val name = "business-roles-v15-${Random.nextLong()}.db"
         val config = SqlCipherConfig(name = name, key = SqlCipherKey { ByteArray(32) { 42 } }, recovery = SqlCipherRecovery.Fail)
         val copy = "$name.copy.db"
         try {
-            BusinessRoleMigrationProof.lifecycle(IosPriceCatalogSchema) { factory.create(it, config) }
+            if (historical) BusinessRoleMigrationProof.lifecycle(IosPriceCatalogSchema) { factory.create(it, config) }
             val evidence = factory.create(IosPriceCatalogSchema, config).use { driver ->
                 val path = driver.executeQuery(null, "PRAGMA database_list", { cursor ->
                     cursor.next(); app.cash.sqldelight.db.QueryResult.Value(checkNotNull(cursor.getString(2)))

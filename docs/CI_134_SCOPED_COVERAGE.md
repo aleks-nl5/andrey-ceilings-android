@@ -33,3 +33,7 @@ The classifier’s risk label `FULL` does not schedule native runs from a PR. Se
 - Follow-up review: check a real PR workflow Ready event (only quick jobs) and the subsequent main-push runs (all FULL) before treating the new policy as fully proven.
 
 Historical investigation and prior milestone handoff remain in `docs/CI_134_CODEX_HANDOFF.md` and GitHub issue #134 (closed).
+
+## Owner decision: historical database coverage (26.11.2026)
+
+During single-owner pre-release development, the regular CI baseline is v21→current (through #143A acceptance), v22→v23/current and fresh current-schema databases. Pre-v21 fixture-only migration tests are archival, not regular QUICK/FULL gates. Archive source and fixtures rather than delete migrations or disable production backup compatibility. Archived Kotlin methods are explicitly annotated `@Ignore` (with a policy comment); to investigate a historical upgrade, remove the annotation on a temporary branch and run the precise test, without changing regular gates. Separate current checks from historical setups. Current-schema backup/restore, key replacement recovery, ENOSPC, process death, integrity, exact estimates, geometry, SQL constraints, concurrency and fail-closed behavior remain mandatory. Retain SQLDelight schema verification. No failure masking, no change to dispatch/merge gates. Re-evaluate the supported upgrade matrix before distributing stable APKs externally.

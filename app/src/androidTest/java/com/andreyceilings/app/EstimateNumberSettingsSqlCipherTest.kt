@@ -50,7 +50,7 @@ class EstimateNumberSettingsSqlCipherTest {
         val key = ByteArray(32) { 75 }
         val password = "test-password-only".toCharArray()
         val custom = EstimateNumberPolicy(
-            template = "{prefix}_{year}_{sequence}_{uuid}",
+            template = "{prefix}_{year}_{sequence}",
             prefix = "STEL",
             sequenceWidth = 3
         )
@@ -66,14 +66,14 @@ class EstimateNumberSettingsSqlCipherTest {
                 originalNumber = requireNotNull(
                     db.estimates().observeAll().first().first { it.id == firstId }.documentNumber
                 )
-                assertTrue(originalNumber.startsWith("AC-2026-00001-"))
-                assertTrue(Regex("AC-2026-00001-[A-F0-9]{10}").matches(requireNotNull(db.estimates().observeAll().first().first { it.id == firstId }.printableNumber)))
+                assertTrue(originalNumber.startsWith("КШ-2026-0001-"))
+                assertTrue(Regex("КШ-2026-0001").matches(requireNotNull(db.estimates().observeAll().first().first { it.id == firstId }.printableNumber)))
                 assertEquals(EstimateNumberPolicy(), db.estimateNumberSettings().load())
 
                 assertEquals(custom, db.estimateNumberSettings().save(custom))
                 assertEquals(custom, db.estimateNumberSettings().load())
 
-                val invalid = custom.copy(template = "{year}") // missing sequence and UUID
+                val invalid = custom.copy(template = "{year}")
                 val error = runCatching { db.estimateNumberSettings().save(invalid) }.exceptionOrNull()
                 assertTrue(error is IllegalArgumentException)
                 assertEquals(custom, db.estimateNumberSettings().load())
@@ -81,7 +81,7 @@ class EstimateNumberSettingsSqlCipherTest {
                 val secondId = db.estimates().insert(estimate(projectId, now + 1000L))
                 val estimates = db.estimates().observeAll().first()
                 changedNumber = requireNotNull(estimates.first { it.id == secondId }.documentNumber)
-                assertTrue(changedNumber.startsWith("STEL_2026_002_"))
+                assertTrue(changedNumber.startsWith("STEL_2026_002-"))
                 assertEquals("STEL_2026_002",
                     estimates.first { it.id == secondId }.printableNumber)
                 assertNotEquals(originalNumber, changedNumber)
@@ -98,7 +98,7 @@ class EstimateNumberSettingsSqlCipherTest {
                 assertTrue(active.all { it.printableNumber?.contains("12345678-") != true })
                 assertTrue(active.all { (it.printableNumber?.length ?: 0) < (it.documentNumber?.length ?: 0) })
                 val history = ImmutableEstimateRepository(db.database)
-                assertEquals("AC", history.seriesByNumber(originalNumber)?.policyPrefix)
+                assertEquals("КШ", history.seriesByNumber(originalNumber)?.policyPrefix)
                 assertEquals("STEL", history.seriesByNumber(changedNumber)?.policyPrefix)
             }
 

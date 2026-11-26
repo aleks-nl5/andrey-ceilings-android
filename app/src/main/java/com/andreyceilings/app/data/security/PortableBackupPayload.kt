@@ -16,7 +16,12 @@ internal object PortableBackupPayload {
     private const val MAX_DATABASE_BYTES = 512 * 1024 * 1024
     private const val PASSPHRASE_BYTES = 32
 
-    data class Contents(val database: ByteArray, val passphrase: ByteArray)
+    data class Contents(
+        val database: ByteArray,
+        val passphrase: ByteArray,
+        // Derived by validation. The portable envelope itself is unchanged.
+        val clearsPreV22Estimates: Boolean = false
+    )
 
     fun encode(database: ByteArray, passphrase: ByteArray): ByteArray {
         require(database.isNotEmpty() && database.size <= MAX_DATABASE_BYTES) {

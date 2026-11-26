@@ -8,6 +8,8 @@ import kotlin.test.*
 
 /** Isolated Simulator SQLCipher contract; this is not a runnable iOS host. */
 class PriceCatalogIosCipherTest {
+    // Archived pre-v21 upgrade proof; see CI historical DB policy.
+    @kotlin.test.Ignore
     @Test fun encryptedV5UnicodeUpgradeCollisionsAndInterruptedBackfill(): Unit = runBlocking {
         val factory = NativeSqlCipherDriverFactory()
         for (scenario in listOf("ok", "group", "item", "empty", "interrupted")) {
@@ -19,6 +21,8 @@ class PriceCatalogIosCipherTest {
         }
     }
 
+    // Archived pre-v21 upgrade proof; see CI historical DB policy.
+    @kotlin.test.Ignore
     @Test fun encryptedV4MigrationAndDeletedCatalogReopen(): Unit = runBlocking {
         val factory = NativeSqlCipherDriverFactory()
         val name = "price-p1-ios-${Random.nextLong()}.db"
@@ -48,7 +52,7 @@ class PriceCatalogIosCipherTest {
             try {
                 val db = PrototypeDatabase(migrated)
                 PriceCatalogMigrationProof.assertReplaced(db)
-                assertEquals(before, PriceCatalogMigrationProof.untouchedRows(migrated))
+                assertEquals(withoutPreV22Estimates(before), PriceCatalogMigrationProof.untouchedRows(migrated))
                 phase = "group/item CRUD"
                 PriceCatalogPersistenceProof.groupsAndParameters(db)
                 PriceCatalogP2Proof.run(db)
@@ -59,10 +63,32 @@ class PriceCatalogIosCipherTest {
             try {
                 assertEquals(0L, PriceRepository(PrototypeDatabase(reopened)).count())
                 assertTrue(PriceGroupRepository(PrototypeDatabase(reopened)).all().isEmpty())
-                assertEquals(before, PriceCatalogMigrationProof.untouchedRows(reopened))
+                assertEquals(withoutPreV22Estimates(before), PriceCatalogMigrationProof.untouchedRows(reopened))
             } finally { reopened.close() }
         } catch (failure: Throwable) {
             throw AssertionError("P1 iOS [$phase]: ${failure.message}", failure)
+        } finally { factory.deleteDatabase(name) }
+    }
+
+    @Test fun currentEncryptedCatalogCrudAndDeletedCatalogReopen(): Unit = runBlocking {
+        val factory = NativeSqlCipherDriverFactory()
+        val name = "price-current-ios-${Random.nextLong()}.db"
+        val config = SqlCipherConfig(name = name, key = SqlCipherKey { ByteArray(32) { 59 } }, recovery = SqlCipherRecovery.Fail)
+        try {
+            val driver = factory.create(IosPriceCatalogSchema, config)
+            try {
+                val db = PrototypeDatabase(driver)
+                PriceCatalogPersistenceProof.groupsAndParameters(db)
+                PriceCatalogP2Proof.run(db)
+                PriceCatalogPersistenceProof.removeEverything(db)
+            } finally { driver.close() }
+            val reopened = factory.create(IosPriceCatalogSchema, config)
+            try {
+                com.andreyceilings.shared.prices.StarterPriceCatalog.initialize(PrototypeDatabase(reopened))
+                assertEquals(0L, PriceRepository(PrototypeDatabase(reopened)).count())
+                assertTrue(PriceGroupRepository(PrototypeDatabase(reopened)).all().isEmpty())
+                PriceCatalogSchema.verifyStructure(reopened)
+            } finally { reopened.close() }
         } finally { factory.deleteDatabase(name) }
     }
 

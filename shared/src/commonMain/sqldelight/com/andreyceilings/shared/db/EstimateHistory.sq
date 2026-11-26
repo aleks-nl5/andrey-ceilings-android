@@ -55,28 +55,11 @@ CREATE TABLE estimate_revision_lines (
     PRIMARY KEY (revisionUuid, sortIndex)
 );
 
--- Settings are shared across KMP targets and allocated transactionally.
-insertDefaultEstimateNumberSettings:
-INSERT INTO estimate_number_settings(id, template, prefix, sequenceWidth, nextSequence)
-VALUES (1, '{prefix}-{year}-{sequence}-{suffix}', 'AC', 5, 1)
-ON CONFLICT(id) DO NOTHING;
-
-selectEstimateNumberSettings:
-SELECT * FROM estimate_number_settings WHERE id = 1;
-
-updateEstimateNumberSettings:
-UPDATE estimate_number_settings SET template = ?, prefix = ?, sequenceWidth = ?, suffixLabel = ? WHERE id = 1;
-
-allocateEstimateSequence:
-UPDATE estimate_number_settings SET nextSequence = nextSequence + 1 WHERE id = 1 AND typeof(nextSequence) = 'integer' AND nextSequence < 9223372036854775807
-RETURNING nextSequence;
-
--- Only a first insert may allocate a document number. Conflicting UUID/number
--- returns no row; caller retries with another UUID, never overwrites a document.
+-- The writer holds the reservation lock and supplies the exact public number.
 insertEstimateSeriesIfFree:
 INSERT INTO estimate_series(seriesUuid, documentNumber, projectId, measurementUuid,
-    policyTemplate, policyPrefix, policySequenceWidth, localSequence, createdAt)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    policyTemplate, policyPrefix, policySequenceWidth, localSequence, createdAt, publicNumber)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT DO NOTHING
 RETURNING seriesUuid;
 

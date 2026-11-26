@@ -1,0 +1,35 @@
+-- Authorized one-time reset of pre-v22 estimate data, including deleted history.
+DELETE FROM estimates;
+DELETE FROM estimate_revision_choice;
+DELETE FROM estimate_revision_workflow;
+DELETE FROM estimate_revision_tombstones;
+DELETE FROM estimate_revision_receipts;
+DELETE FROM estimate_save_receipts;
+DELETE FROM estimate_workflow;
+DELETE FROM estimate_revision_frozen;
+DELETE FROM estimate_v1_frozen;
+DELETE FROM estimate_revision_lines;
+-- RESTRICT on the self-reference is immediate even during a whole-table delete.
+UPDATE estimate_revisions SET parentRevisionUuid = NULL;
+DELETE FROM estimate_revisions;
+DELETE FROM estimate_series;
+DELETE FROM estimate_number_settings;
+
+CREATE TABLE estimate_issuance_policy (
+    id INTEGER NOT NULL PRIMARY KEY CHECK (id = 1),
+    policy TEXT NOT NULL
+);
+
+CREATE TABLE estimate_number_reservations (
+    seriesUuid TEXT NOT NULL PRIMARY KEY,
+    publicNumber TEXT NOT NULL UNIQUE,
+    estimateType TEXT NOT NULL CHECK (estimateType IN ('INDIVIDUAL', 'CONSOLIDATED')),
+    issueDate TEXT NOT NULL,
+    issueYear INTEGER NOT NULL CHECK (typeof(issueYear) = 'integer' AND issueYear BETWEEN 1000 AND 9999),
+    sequence INTEGER NOT NULL CHECK (typeof(sequence) = 'integer' AND sequence > 0),
+    policy TEXT NOT NULL,
+    counterMode TEXT NOT NULL CHECK (counterMode IN ('INDEPENDENT', 'COMMON')),
+    operationUuid TEXT UNIQUE,
+    command TEXT CHECK ((operationUuid IS NULL) = (command IS NULL)),
+    UNIQUE (issueYear, estimateType, sequence)
+);

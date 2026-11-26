@@ -71,7 +71,7 @@ object MeasurementElementMigrationProof {
         val parent: String
         try {
             assertEquals(PriceCatalogSchema.version, PriceNameUniquenessProof.scalar(migrated, "PRAGMA user_version"))
-            assertEquals(before, snapshot(migrated), "All old rows, types, UUIDs, keys, precision, history and sequences survive")
+            assertEquals(withoutPreV22Estimates(before), snapshot(migrated), "Business data outside estimate history survives")
             assertStructure(migrated)
             val db = PrototypeDatabase(migrated)
             parent = MeasurementRepository(db).all().single().uuid
@@ -79,7 +79,7 @@ object MeasurementElementMigrationProof {
         } finally { migrated.close() }
         val reopened = open(production)
         try {
-            assertEquals(before, snapshot(reopened))
+            assertEquals(withoutPreV22Estimates(before), snapshot(reopened))
             assertStructure(reopened)
             assertEquals("Persisted", MeasurementElementRepository(PrototypeDatabase(reopened)).find("persisted")?.label)
             assertEquals(parent, MeasurementElementRepository(PrototypeDatabase(reopened)).find("persisted")?.measurementUuid)

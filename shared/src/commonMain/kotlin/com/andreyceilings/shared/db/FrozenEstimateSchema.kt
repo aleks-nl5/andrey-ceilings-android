@@ -87,6 +87,30 @@ fun verifyFrozenEstimateStructure(driver: SqlDriver, version: Long = PriceCatalo
     revisionUuid TEXT NOT NULL PRIMARY KEY REFERENCES estimate_revisions(revisionUuid) ON DELETE RESTRICT,
     deletedAt INTEGER NOT NULL CHECK (typeof(deletedAt) = 'integer' AND deletedAt > 0)
 );"""
+    if (version >= 22) {
+        expected["estimate_issuance_policy"] = """CREATE TABLE estimate_issuance_policy (
+    id INTEGER NOT NULL PRIMARY KEY CHECK (id = 1),
+    policy TEXT NOT NULL
+);"""
+        expected["estimate_number_reservations"] = """CREATE TABLE estimate_number_reservations (
+    seriesUuid TEXT NOT NULL PRIMARY KEY,
+    publicNumber TEXT NOT NULL UNIQUE,
+    estimateType TEXT NOT NULL CHECK (estimateType IN ('INDIVIDUAL', 'CONSOLIDATED')),
+    issueDate TEXT NOT NULL,
+    issueYear INTEGER NOT NULL CHECK (typeof(issueYear) = 'integer' AND issueYear BETWEEN 1000 AND 9999),
+    sequence INTEGER NOT NULL CHECK (typeof(sequence) = 'integer' AND sequence > 0),
+    policy TEXT NOT NULL,
+    counterMode TEXT NOT NULL CHECK (counterMode IN ('INDEPENDENT', 'COMMON')),
+    operationUuid TEXT UNIQUE,
+    command TEXT CHECK ((operationUuid IS NULL) = (command IS NULL)),
+    UNIQUE (issueYear, estimateType, sequence)
+);"""
+    } else {
+        val hasIssuanceSchema = driver.executeQuery(null,
+            "SELECT count(*) FROM sqlite_master WHERE name IN ('estimate_issuance_policy', 'estimate_number_reservations')",
+            { cursor -> cursor.next(); QueryResult.Value(cursor.getLong(0) != 0L) }, 0).value
+        check(!hasIssuanceSchema) { "Numbering schema requires version 22" }
+    }
     expected.forEach { (name, definition) ->
         val actual = driver.executeQuery(null, "SELECT sql FROM sqlite_master WHERE name = ?", { cursor ->
             QueryResult.Value(if (cursor.next().value) cursor.getString(0) else null)

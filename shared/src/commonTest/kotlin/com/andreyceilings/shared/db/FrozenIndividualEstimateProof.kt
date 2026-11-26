@@ -27,12 +27,12 @@ object FrozenIndividualEstimateProof {
         val db = PrototypeDatabase(driver)
         val fixture = MeasurementPricingFixture.seed(db)
         val history = ImmutableEstimateRepository(db)
-        history.configureNumberPolicy(EstimateNumberPolicy("{prefix}-{year}-{sequence}-{suffix}", "КШ", 5, "ІП"))
+        history.configureNumberPolicy(EstimateNumberPolicy("{prefix}--{year}-{sequence}", "КШ", 5))
         val original = command(db, fixture)
-        val before = db.estimateHistoryQueries.selectEstimateNumberSettings().executeAsOne() .nextSequence
+        val before = nextIndividualSequence(db)
         val saved = history.saveIndividual(original, 2026, 300)
         assertEquals(saved, history.saveIndividual(original, 2027, 900))
-        assertEquals(before + 1, db.estimateHistoryQueries.selectEstimateNumberSettings().executeAsOne().nextSequence)
+        assertEquals(before + 1, nextIndividualSequence(db))
         val record = assertNotNull(history.frozenIndividual(saved.seriesUuid))
         val frozen = decodeFrozenIndividualEstimate(record.payload)
         assertEquals("Kitchen v1", frozen.title)
@@ -42,8 +42,7 @@ object FrozenIndividualEstimateProof {
         assertEquals(12007, frozen.amounts.subtotalCents)
         assertEquals(QuoteDiscount.calculate(12007, 1234), frozen.amounts)
         assertEquals("DRAFT", record.status)
-        assertTrue(frozen.publicNumber.startsWith("КШ-2026-"))
-        assertTrue(frozen.publicNumber.contains("-ІП-"))
+        assertEquals("КШ--2026-" + before.toString().padStart(5, '0'), frozen.publicNumber)
         assertFalse(frozen.publicNumber.contains(saved.seriesUuid))
         val revisionRows = history.revisions(saved.seriesUuid)
         var statusVersion = 1L
@@ -61,7 +60,7 @@ object FrozenIndividualEstimateProof {
             }.reason)
         val another = history.saveIndividual(command(db, MeasurementPricingFixture.seed(db)), 2026, 301)
         assertNotEquals(saved.seriesUuid, another.seriesUuid)
-        assertEquals(before + 2, db.estimateHistoryQueries.selectEstimateNumberSettings().executeAsOne().nextSequence)
+        assertEquals(before + 2, nextIndividualSequence(db))
         // Failure after number/v1/status insertion must roll back every row and the counter.
         val rollbackCommand = command(db, MeasurementPricingFixture.seed(db))
         val failing = object : SqlDriver by driver {
@@ -74,7 +73,7 @@ object FrozenIndividualEstimateProof {
         assertFails { ImmutableEstimateRepository(PrototypeDatabase(failing)).saveIndividual(rollbackCommand, 2026, 302) }
         assertEquals(countBefore, history.frozenIndividuals().size)
         assertNull(db.frozenEstimateQueries.selectEstimateSaveReceipt(rollbackCommand.operationUuid).executeAsOneOrNull())
-        assertEquals(before + 2, db.estimateHistoryQueries.selectEstimateNumberSettings().executeAsOne().nextSequence)
+        assertEquals(before + 2, nextIndividualSequence(db))
         // Valid-looking field corruption must fail explicitly, even when amounts still reconcile.
         val envelope = Json.parseToJsonElement(record.payload).jsonObject
         val document = envelope.getValue("document").jsonObject
@@ -94,7 +93,7 @@ object FrozenIndividualEstimateProof {
         assertEquals(IndividualEstimateSaveFailure.Reason.STALE_CATALOG,
             assertFailsWith<IndividualEstimateSaveFailure> { history.saveIndividual(original.copy(operationUuid = newRecordUuid()), 2026, 401) }.reason)
         assertEquals(saved, history.saveIndividual(original, 2026, 402))
-        assertEquals(before + 2, db.estimateHistoryQueries.selectEstimateNumberSettings().executeAsOne().nextSequence)
+        assertEquals(before + 2, nextIndividualSequence(db))
         val elements = MeasurementElementRepository(db)
         val element = elements.find(fixture.elementUuid)!!
         elements.edit(element.version, "changed source", element.approval, element.quantity, 405, businessRole = element.businessRole)
@@ -102,23 +101,31 @@ object FrozenIndividualEstimateProof {
             assertFailsWith<IndividualEstimateSaveFailure> { history.saveIndividual(original.copy(operationUuid = newRecordUuid()), 2026, 406) }.reason)
         val measurement = MeasurementRepository(db).findByUuid(fixture.measurementUuid)!!
         MeasurementRepository(db).delete(measurement.id)
-        history.configureNumberPolicy(EstimateNumberPolicy("{year}/{sequence}/{suffix}", "NEW", 3, "NEW"))
+        history.configureNumberPolicy(EstimateNumberPolicy("{year}/{prefix}/{sequence}", "NEW", 3))
         assertEquals(record.payload, history.frozenIndividual(saved.seriesUuid)!!.payload)
         assertEquals(frozen, decodeFrozenIndividualEstimate(history.frozenIndividual(saved.seriesUuid)!!.payload))
         // Partial documents require the exact omission set and current acknowledgement.
         val partial = MeasurementPricingFixture.seed(db)
         MeasurementElementRepository(db).createWish(partial.measurementUuid, "Optional unresolved", 500, approval = ElementApproval.APPROVED)
         val partialCommand = command(db, partial, partial = true)
-        val next = db.estimateHistoryQueries.selectEstimateNumberSettings().executeAsOne().nextSequence
+        val next = nextIndividualSequence(db)
         assertFailsWith<IndividualEstimateSaveFailure> { history.saveIndividual(partialCommand.copy(acknowledgedFingerprint = null), 2026, 501) }
         assertFailsWith<IndividualEstimateSaveFailure> { history.saveIndividual(partialCommand.copy(expectedOmissions = emptyList()), 2026, 501) }
-        assertEquals(next, db.estimateHistoryQueries.selectEstimateNumberSettings().executeAsOne().nextSequence)
+        assertEquals(next, nextIndividualSequence(db))
         val partialSaved = history.saveIndividual(partialCommand, 2026, 501)
         assertTrue(decodeFrozenIndividualEstimate(history.frozenIndividual(partialSaved.seriesUuid)!!.payload).partial)
-        // SQLite must not promote an exhausted counter to REAL.
-        driver.execute(null, "UPDATE estimate_number_settings SET nextSequence = 9223372036854775807", 0)
-        assertFails { history.saveIndividual(command(db, MeasurementPricingFixture.seed(db)), 2026, 502) }
-        assertEquals(Long.MAX_VALUE, db.estimateHistoryQueries.selectEstimateNumberSettings().executeAsOne().nextSequence)
-        driver.execute(null, "UPDATE estimate_number_settings SET nextSequence = ${next + 1}", 0)
+        // An exhausted reservation blocks a new save without changing existing history.
+        driver.execute(null, "UPDATE estimate_number_reservations SET sequence = 9223372036854775807 WHERE seriesUuid = ?", 1) {
+            bindString(0, partialSaved.seriesUuid)
+        }
+        assertEquals(IndividualEstimateSaveFailure.Reason.SEQUENCE_EXHAUSTED,
+            assertFailsWith<IndividualEstimateSaveFailure> {
+                history.saveIndividual(command(db, MeasurementPricingFixture.seed(db)), 2026, 502)
+            }.reason)
+        assertEquals(Long.MAX_VALUE, db.estimateIssuanceQueries.selectReservation(partialSaved.seriesUuid).executeAsOne().sequence)
+        driver.execute(null, "UPDATE estimate_number_reservations SET sequence = ? WHERE seriesUuid = ?", 2) {
+            bindLong(0, partialSaved.localSequence)
+            bindString(1, partialSaved.seriesUuid)
+        }
     }
 }

@@ -2,6 +2,7 @@ package com.andreyceilings.app.data.security
 
 import android.content.Context
 import app.cash.sqldelight.db.QueryResult
+import app.cash.sqldelight.db.SqlDriver
 import com.andreyceilings.app.data.db.CeilingsDatabase
 import com.andreyceilings.app.data.db.LegacyRoomDatabaseImporter
 import com.andreyceilings.shared.db.createEncryptedPrototypeDriver
@@ -77,7 +78,7 @@ internal object PortableBackupManager {
                 legacy.parentFile?.mkdirs()
                 legacy.writeBytes(contents.database)
                 val verification = runCatching {
-                    verifyEncryptedSnapshot(context, legacy, contents.passphrase)
+                    checkedSnapshotSourceVersion(context, legacy, contents.passphrase)
                 }
                 // A recognized SQLDelight v5 name conflict is a controlled
                 // migration refusal, not a candidate for the Room importer.
@@ -86,9 +87,9 @@ internal object PortableBackupManager {
                     if (cause is CatalogNameMigrationConflict) throw cause
                     cause = cause.cause
                 }
-                val alreadySqlDelight = verification.isSuccess
-
-                if (alreadySqlDelight) return contents
+                verification.getOrNull()?.let { sourceVersion ->
+                    return contents.copy(clearsPreV22Estimates = sourceVersion < 22L)
+                }
 
                 // Only a valid encrypted legacy Room-v2 schema is accepted here.
                 LegacyRoomDatabaseImporter.migrateToNewDatabase(
@@ -97,7 +98,7 @@ internal object PortableBackupManager {
                 verifyEncryptedSnapshot(context, converted, contents.passphrase)
                 val bytes = converted.readBytes()
                 contents.database.fill(0)
-                return PortableBackupPayload.Contents(bytes, contents.passphrase)
+                return PortableBackupPayload.Contents(bytes, contents.passphrase, clearsPreV22Estimates = true)
             } catch (failure: Throwable) {
                 contents.database.fill(0)
                 contents.passphrase.fill(0)
@@ -116,6 +117,11 @@ internal object PortableBackupManager {
      * the real SQLDelight schema and supplied key. Does not touch the live DB.
      */
     fun verifyEncryptedSnapshot(context: Context, source: File, key: ByteArray) {
+        checkedSnapshotSourceVersion(context, source, key)
+    }
+
+    private fun checkedSnapshotSourceVersion(context: Context, source: File, key: ByteArray): Long {
+        var sourceVersion = com.andreyceilings.shared.db.PriceCatalogSchema.version
         check(source.isFile && source.length() > 16L) { "Резервна копія відсутня або порожня." }
         val header = ByteArray(16)
         java.io.DataInputStream(source.inputStream()).use { it.readFully(header) }
@@ -127,13 +133,12 @@ internal object PortableBackupManager {
         try {
             staged.parentFile?.mkdirs()
             source.copyTo(staged, overwrite = false)
-            createEncryptedPrototypeDriver(context, key, testName, initializePriceCatalog = true).use { driver ->
-                val integrity = driver.executeQuery(null, "PRAGMA integrity_check",
-                    { cursor -> QueryResult.Value(if (cursor.next().value) cursor.getString(0) else null) },
-                    0).value
-                check(integrity.equals("ok", ignoreCase = true)) {
-                    "Перевірка цілісності SQLCipher не пройдена."
-                }
+            createEncryptedPrototypeDriver(context, key, testName, initializePriceCatalog = true,
+                requireExistingSchema = true, beforeMigration = { driver, version ->
+                    sourceVersion = version
+                    verifyIntegrity(driver)
+                }).use { driver ->
+                verifyIntegrity(driver)
                 val count = driver.executeQuery(null,
                     "SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name IN ('clients','projects','room_measurements','price_items','estimates','measurement_elements','point_placements','point_position_operations','ceiling_operations','ceiling_walls','ceiling_operation_results','line_placements','area_features')",
                     { cursor -> QueryResult.Value(if (cursor.next().value) cursor.getLong(0) else null) },
@@ -189,13 +194,6 @@ internal object PortableBackupManager {
 
                 // integrity_check does not validate SQLite foreign keys or
                 // semantic invariants across immutable revision rows.
-                val brokenForeignKey = driver.executeQuery(null,
-                    "PRAGMA foreign_key_check",
-                    { cursor -> QueryResult.Value(cursor.next().value) }, 0
-                ).value
-                check(!brokenForeignKey) {
-                    "У резервній копії є порушені зв'язки між записами."
-                }
                 fun invalidRevisionRows(query: String): Long =
                     driver.executeQuery(null, query, { cursor ->
                         QueryResult.Value(
@@ -226,9 +224,6 @@ internal object PortableBackupManager {
                     "Суми або рядки історичних версій у резервній копії пошкоджені."
                 }
 
-                check(invalidRevisionRows("SELECT count(*) FROM estimate_number_settings WHERE typeof(nextSequence) != 'integer' OR nextSequence <= 0 OR typeof(sequenceWidth) != 'integer'") == 0L) {
-                    "Пошкоджені числові налаштування нумерації кошторисів."
-                }
                 com.andreyceilings.shared.db.verifyFrozenEstimateStructure(driver, com.andreyceilings.shared.db.PriceCatalogSchema.version)
                 com.andreyceilings.shared.db.verifyFrozenEstimateContents(driver, com.andreyceilings.shared.db.PriceCatalogSchema.version)
                 check(invalidRevisionRows(
@@ -276,5 +271,15 @@ internal object PortableBackupManager {
         } finally {
             context.deleteDatabase(testName)
         }
+        return sourceVersion
+    }
+
+    private fun verifyIntegrity(driver: SqlDriver) {
+        val integrity = driver.executeQuery(null, "PRAGMA integrity_check",
+            { cursor -> QueryResult.Value(if (cursor.next().value) cursor.getString(0) else null) }, 0).value
+        check(integrity.equals("ok", ignoreCase = true)) { "Перевірка цілісності SQLCipher не пройдена." }
+        val brokenForeignKey = driver.executeQuery(null, "PRAGMA foreign_key_check",
+            { cursor -> QueryResult.Value(cursor.next().value) }, 0).value
+        check(!brokenForeignKey) { "У резервній копії є порушені зв'язки між записами." }
     }
 }

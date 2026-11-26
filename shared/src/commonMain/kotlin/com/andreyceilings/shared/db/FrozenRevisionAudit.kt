@@ -11,6 +11,32 @@ fun verifyFrozenEstimateContents(driver: SqlDriver, version: Long = PriceCatalog
         check(invalid == 0L) { "Invalid exact revision provenance" }
     }
     check(!driver.executeQuery(null, "PRAGMA foreign_key_check", { c -> QueryResult.Value(c.next().value) }, 0).value) { "Broken frozen revision foreign key" }
+    val rootPolicies = mutableMapOf<String, EstimateNumberPolicy>()
+    if (version >= 22) {
+        val database = PrototypeDatabase(driver)
+        val issuance = database.estimateIssuanceQueries
+        check(EstimateNumbering.validate(EstimateNumberAllocator(database).policy()).isEmpty())
+        rejectRows("SELECT count(*) FROM estimate_number_settings")
+        rejectRows("""SELECT count(*) FROM estimate_series s
+            LEFT JOIN estimate_number_reservations n USING(seriesUuid)
+            WHERE n.seriesUuid IS NULL OR n.estimateType != 'INDIVIDUAL'
+            OR s.publicNumber IS NOT n.publicNumber OR s.localSequence IS NOT n.sequence
+            OR s.documentNumber != n.publicNumber || '-' || s.seriesUuid""")
+        rejectRows("""SELECT count(*) FROM estimate_number_reservations n
+            LEFT JOIN estimate_series s USING(seriesUuid)
+            WHERE n.estimateType = 'INDIVIDUAL' AND s.seriesUuid IS NULL""")
+        rejectRows("""SELECT count(*) FROM estimate_number_reservations n WHERE n.operationUuid IN
+            (SELECT operationUuid FROM estimate_save_receipts UNION ALL SELECT operationUuid FROM estimate_revision_receipts)""")
+        for (reservation in issuance.selectAllReservations().executeAsList()) {
+            val date = kotlinx.datetime.LocalDate.parse(reservation.issueDate)
+            val policy = frozenEstimateJson.decodeFromString<EstimateNumberPolicy>(reservation.policy)
+            rootPolicies[reservation.seriesUuid] = policy
+            reservation.operationUuid?.let { check(isEstimateUuid(it) && !reservation.command.isNullOrBlank()) }
+            check(isEstimateUuid(reservation.seriesUuid) && date.year.toLong() == reservation.issueYear &&
+                date.toString() == reservation.issueDate &&
+                EstimateNumbering.render(policy, date, reservation.sequence) == reservation.publicNumber)
+        }
+    }
     if (version >= 21) {
         rejectRows("""SELECT count(*) FROM estimate_revision_tombstones d
             LEFT JOIN estimate_revision_workflow w USING(revisionUuid)
@@ -71,6 +97,7 @@ fun verifyFrozenEstimateContents(driver: SqlDriver, version: Long = PriceCatalog
                 verifyFrozenStoredIdentity(frozen, checkNotNull(c.getLong(6)), c.getString(7), c.getString(5),
                     checkNotNull(c.getLong(1)), checkNotNull(c.getLong(2)), checkNotNull(c.getLong(3)), checkNotNull(c.getLong(4)))
                 verifyFrozenRevisionIdentity(frozen, checkNotNull(c.getString(8)), checkNotNull(c.getString(9)), checkNotNull(c.getLong(10)), c.getString(11))
+                if (version >= 22) check(rootPolicies[c.getString(8)] == frozen.numberPolicy)
                 check(c.getString(12) == payload && c.getString(13) == frozen.source.drawingJson)
                 if (followUp) verifyFrozenRevisionReceipt(checkNotNull(c.getString(14)), checkNotNull(c.getString(15)), frozen)
                 else verifyFrozenSaveReceipt(checkNotNull(c.getString(14)), checkNotNull(c.getString(15)), frozen)

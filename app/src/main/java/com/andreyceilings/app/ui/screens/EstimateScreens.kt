@@ -262,7 +262,7 @@ private fun LegacyEstimatesArchiveScreen(database: CeilingsDatabase?, onBack: ()
                             IconButton(onClick = {
                                 pendingPdfEstimate = estimate
                                 val safeName = estimate.name.replace(Regex("[^A-Za-zА-Яа-яІіЇїЄєҐґ0-9_-]"), "_").take(40).ifBlank { "koshtorys" }
-                                val numberPart = estimate.printableNumber?.replace(Regex("[^A-Za-zА-Яа-яІіЇїЄєҐґ0-9_-]"), "_")
+                                val numberPart = estimate.printableNumber?.replace(Regex("[^A-Za-zА-Яа-яІіЇїЄєҐґ0-9_-]"), "_")?.take(64)
                                 val filename = listOfNotNull(safeName, numberPart, if (numberPart != null) "v1" else null)
                                     .joinToString("_") + ".pdf"
                                 pdfLauncher.launch(filename)

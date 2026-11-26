@@ -78,7 +78,7 @@ internal class FrozenEstimateDocument private constructor(
         val areas: List<AreaShape>
     )
 
-    val fileName: String get() = "${sanitizeEstimateFileStem(publicNumber, "_").trim('.', '_').ifEmpty { "koshtorys" }}-v$version.pdf"
+    val fileName: String get() = "${sanitizeEstimateFileStem(publicNumber, "_").take(64).trim('.', '_').ifEmpty { "koshtorys" }}-v$version.pdf"
 
     companion object {
         /** Receives an exact repository projection after the stored proof and receipts were checked. */

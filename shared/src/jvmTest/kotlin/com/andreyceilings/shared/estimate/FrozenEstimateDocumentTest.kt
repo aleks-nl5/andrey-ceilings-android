@@ -51,13 +51,13 @@ class FrozenEstimateDocumentTest {
             MeasurementElementRepository(db).createWish(fixture.measurementUuid, "Необов’язкове освітлення", 500,
                 approval = ElementApproval.APPROVED)
             val history = ImmutableEstimateRepository(db)
-            history.configureNumberPolicy(EstimateNumberPolicy("{year}/{sequence}/{suffix}", "КШ", 5, "ІП"))
+            history.configureNumberPolicy(EstimateNumberPolicy("{year}//{prefix}/{sequence}", "КШ", 5))
             val saved = history.saveIndividual(FrozenIndividualEstimateProof.command(db, fixture, partial = true), 2026, 501)
             val store = MeasurementElementsStore(db, { 510 })
             try {
                 val document = assertNotNull(store.estimateDocument(saved.seriesUuid, saved.initialRevisionUuid))
-                assertTrue(document.publicNumber.contains('/'))
-                assertTrue(document.fileName.endsWith("-v1.pdf"))
+                assertEquals("2026//КШ/00001", document.publicNumber)
+                assertEquals("2026__КШ_00001-v1.pdf", document.fileName)
                 assertFalse(document.fileName.contains('/'))
                 assertFalse(document.fileName.contains(saved.initialRevisionUuid))
                 assertTrue(document.omissions.single().startsWith("Необов’язкове освітлення · "))

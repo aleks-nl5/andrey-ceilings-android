@@ -2,7 +2,6 @@ package com.andreyceilings.shared.db
 
 import app.cash.sqldelight.db.QueryResult
 import app.cash.sqldelight.db.SqlDriver
-import com.andreyceilings.shared.prices.StarterPriceCatalog
 
 /** Narrow v3–v7 Windows probe for installations that did not persist user_version. */
 fun openDesktopPriceCatalog(driver: SqlDriver, previouslyExisting: Boolean) {
@@ -32,6 +31,10 @@ fun openDesktopPriceCatalog(driver: SqlDriver, previouslyExisting: Boolean) {
                 cursor.next(); QueryResult.Value(cursor.getLong(0) == 1L)
             }, 0).value
         val structuralVersion = when {
+            columns("estimate_issuance_policy").isNotEmpty() || columns("estimate_number_reservations").isNotEmpty() -> {
+                check(wallVersionSchema && columns("estimate_revision_tombstones").isNotEmpty())
+                if (runCatching { verifyPointPlacementStructure(driver, 23L) }.isSuccess) 23L else 22L
+            }
             columns("estimate_revision_tombstones").isNotEmpty() -> {
                 check(wallVersionSchema) { "Revision tombstones require the wall-version schema" }
                 21L
@@ -109,7 +112,6 @@ fun openDesktopPriceCatalog(driver: SqlDriver, previouslyExisting: Boolean) {
             PriceCatalogSchema.migrate(driver, oldVersion, PriceCatalogSchema.version)
         PriceCatalogSchema.verifyStructure(driver)
         verifyFrozenEstimateContents(driver, PriceCatalogSchema.version)
-        StarterPriceCatalog.initialize(database)
         driver.execute(null, "PRAGMA user_version = ${PriceCatalogSchema.version}", 0)
     }
 }

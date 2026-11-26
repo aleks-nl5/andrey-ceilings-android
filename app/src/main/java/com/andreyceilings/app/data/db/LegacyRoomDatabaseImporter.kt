@@ -132,7 +132,7 @@ internal object LegacyRoomDatabaseImporter {
         try {
             createEncryptedPrototypeDriver(context, key, tempName).use { driver ->
                 val stage = SqlDelightDatabaseSession(driver)
-                RoomToSqlDelightStagingImporter.importIntoEmptyStage(source, stage)
+                RoomToSqlDelightStagingImporter.importIntoEmptyStage(source.copy(estimates = emptyList()), stage)
                 val integrity = driver.executeQuery(null, "PRAGMA integrity_check",
                     { cursor -> QueryResult.Value(if (cursor.next().value) cursor.getString(0) else null) }, 0).value
                 check(integrity.equals("ok", ignoreCase = true)) { "Imported SQLDelight database failed integrity check" }

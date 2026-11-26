@@ -14,16 +14,22 @@ class BusinessRoleJdbcTest {
     @Test fun productionRolesReadWriteAndReprice(): Unit = runBlocking {
         JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).use { d -> PriceCatalogSchema.create(d); BusinessRoleProof.run(d) }
     }
-    @Test fun v14RollbackReopenAndFullSchema(): Unit = runBlocking { fileProof(false) }
-    @Test fun windowsPhysicalCipherV14RollbackReopen(): Unit = runBlocking {
-        if (System.getProperty("os.name").startsWith("Windows", true)) fileProof(true)
+    @Test fun currentRolePortableSnapshot(): Unit = runBlocking { fileProof(false, false) }
+    @kotlin.test.Ignore
+    @Test fun v14RollbackReopenAndFullSchema(): Unit = runBlocking { fileProof(false, true) }
+    @Test fun windowsCurrentRolePortableSnapshot(): Unit = runBlocking {
+        if (System.getProperty("os.name").startsWith("Windows", true)) fileProof(true, false)
     }
-    private suspend fun fileProof(cipher: Boolean) {
+    @kotlin.test.Ignore
+    @Test fun windowsPhysicalCipherV14RollbackReopen(): Unit = runBlocking {
+        if (System.getProperty("os.name").startsWith("Windows", true)) fileProof(true, true)
+    }
+    private suspend fun fileProof(cipher: Boolean, historical: Boolean) {
         val dir = Files.createTempDirectory("business-roles-").toFile()
         val file = dir.resolve("roles.db")
         val key = ByteArray(32) { 42 }
         try {
-            BusinessRoleMigrationProof.lifecycle(PriceCatalogSchema) { schema ->
+            if (historical) BusinessRoleMigrationProof.lifecycle(PriceCatalogSchema) { schema ->
                 val d = if (cipher) SqlCipherWindowsDriverFactory.open(file, key) else JdbcSqliteDriver("jdbc:sqlite:${file.absolutePath}")
                 try {
                     if (schema === PriceCatalogSchema) openDesktopPriceCatalog(d, file.length() > 0)
@@ -38,10 +44,22 @@ class BusinessRoleJdbcTest {
             val copy = dir.resolve("portable.db")
             fun openFile(file: java.io.File): SqlDriver = if (cipher) SqlCipherWindowsDriverFactory.open(file, key)
                 else JdbcSqliteDriver("jdbc:sqlite:${file.absolutePath}")
-            val evidence = openFile(file).use { d -> BusinessRolePortableProof.snapshot(d, copy.absolutePath) }
+            val evidence = openFile(file).use { d ->
+                if (!historical) openDesktopPriceCatalog(d, false)
+                BusinessRolePortableProof.snapshot(d, copy.absolutePath)
+            }
             openFile(copy).use { d -> BusinessRolePortableProof.verify(d, evidence) }
         } finally { key.fill(0); dir.deleteRecursively() }
     }
+    @Test fun currentMissingRoleIndexFailsAudit() {
+        JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).use { d ->
+            PriceCatalogSchema.create(d)
+            d.execute(null, "DROP INDEX index_measurement_elements_canvas", 0)
+            assertFails { PriceCatalogSchema.verifyStructure(d) }
+        }
+    }
+
+    @kotlin.test.Ignore
     @Test fun malformedRoleSchemaFailsBeforeMigrationAndMissingIndexFailsAudit() {
         JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).use { d ->
             BusinessRoleMigrationProof.v14Schema.create(d)

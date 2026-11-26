@@ -13,7 +13,6 @@ import com.andreyceilings.shared.estimate.VerifiedCeilingGeometry
 import com.andreyceilings.shared.estimate.ImmutableEstimateDraft
 import com.andreyceilings.shared.estimate.ImmutableEstimateLine
 import org.json.JSONObject
-import java.util.Calendar
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -171,11 +170,10 @@ internal class EstimateDao(private val repo: EstimateRepository) {
     suspend fun count() = withContext(Dispatchers.IO) { repo.count().toInt() }
     suspend fun insert(item: EstimateEntity) = withContext(Dispatchers.IO) {
         val snapshot = snapshotForNumberedEstimate(item)
-        val year = Calendar.getInstance().apply { timeInMillis = item.createdAt }.get(Calendar.YEAR)
         repo.createNumberedReturningId(item.projectId, item.name, item.material, item.profileType,
             item.complexity, item.lengthMeters, item.widthMeters, item.areaSquareMeters,
             item.perimeterMeters, item.canvasCost, item.profileCost, item.complexityCost,
-            item.optionsCost, item.totalCost, item.detailsJson, item.createdAt, year, snapshot)
+            item.optionsCost, item.totalCost, item.detailsJson, item.createdAt, snapshot = snapshot)
     }
     suspend fun update(item: EstimateEntity) = withContext(Dispatchers.IO) {
         repo.update(item.id, item.name, item.material, item.profileType,

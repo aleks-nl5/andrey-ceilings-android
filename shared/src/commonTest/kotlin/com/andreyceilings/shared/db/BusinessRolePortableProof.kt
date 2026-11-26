@@ -18,7 +18,7 @@ object BusinessRolePortableProof {
         val source = assertIs<PricingReadResult.Loaded>(reader.read(fixture.projectId, fixture.measurementUuid))
         assertTrue(source.buildPreview().canFinalizeFull)
         val history = com.andreyceilings.shared.estimate.ImmutableEstimateRepository(db)
-        history.configureNumberPolicy(com.andreyceilings.shared.estimate.EstimateNumberPolicy("{prefix}-{sequence}-{suffix}"))
+        history.configureNumberPolicy(com.andreyceilings.shared.estimate.EstimateNumberPolicy("{prefix}/{yearShort}/{sequence}"))
         val saved = history.saveIndividual(FrozenIndividualEstimateProof.command(db, fixture), 2026, 600)
         assertTrue(history.setWorkflowStatus(saved.initialRevisionUuid, 1, com.andreyceilings.shared.estimate.EstimateWorkflowStatus.SENT, 601))
         val measurement = MeasurementRepository(db).findByUuid(fixture.measurementUuid)!!
@@ -61,7 +61,7 @@ object BusinessRolePortableProof {
         reader.closeReads()
         assertEquals(expected.frozenRows, frozenRows(restored))
     }
-    private fun frozenRows(driver: SqlDriver) = listOf("estimate_revision_tombstones", "estimate_series", "estimate_revision_workflow", "estimate_revision_choice", "estimate_revision_frozen", "estimate_revision_receipts", "estimate_revisions", "estimate_v1_frozen", "estimate_workflow", "estimate_save_receipts").flatMap { table ->
+    private fun frozenRows(driver: SqlDriver) = listOf("estimate_issuance_policy", "estimate_number_reservations", "estimate_revision_tombstones", "estimate_series", "estimate_revision_workflow", "estimate_revision_choice", "estimate_revision_frozen", "estimate_revision_receipts", "estimate_revisions", "estimate_v1_frozen", "estimate_workflow", "estimate_save_receipts").flatMap { table ->
         val columns = MeasurementElementMigrationProof.rows(driver, "PRAGMA table_info($table)", 6).map { it[1]!! }
         MeasurementElementMigrationProof.rows(driver, "SELECT " + columns.joinToString { "quote($it)" } + " FROM $table ORDER BY 1", columns.size).map { listOf(table) + it }
     }

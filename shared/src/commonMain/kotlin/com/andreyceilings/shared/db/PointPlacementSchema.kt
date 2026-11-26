@@ -26,7 +26,7 @@ internal fun verifyPointPlacementStructure(driver: SqlDriver, version: Long = Pr
             while (cursor.next().value) found.add(checkNotNull(cursor.getString(0)))
             QueryResult.Value(found)
         }, 0).value
-    val definitions = when(version) { 8L -> pointV8SchemaDefinitions; 9L -> pointV9SchemaDefinitions; 10L -> pointV10SchemaDefinitions; 11L -> pointV11SchemaDefinitions; 12L -> pointV12SchemaDefinitions; 13L -> pointV13SchemaDefinitions; in 14L..19L -> pointSchemaDefinitions; else -> pointV20SchemaDefinitions }
+    val definitions = when(version) { 8L -> pointV8SchemaDefinitions; 9L -> pointV9SchemaDefinitions; 10L -> pointV10SchemaDefinitions; 11L -> pointV11SchemaDefinitions; 12L -> pointV12SchemaDefinitions; 13L -> pointV13SchemaDefinitions; in 14L..19L -> pointSchemaDefinitions; in 20L..22L -> pointV20SchemaDefinitions; else -> pointV23SchemaDefinitions }
     if(names!=definitions.keys)throw SchemaFingerprintMismatch("point_objects")
     val actual = definitions.mapValues { (name, _) ->
         val actual = driver.executeQuery(null, "SELECT sql FROM sqlite_master WHERE name = '$name'", { cursor ->
@@ -407,3 +407,12 @@ BEGIN
  );
 END;
 """.trimIndent())
+
+// v23 changes only the active-wall selection in the journal writer. Keep the
+// deployed v20-v22 fingerprint unchanged for pre-migration verification.
+private val pointV23SchemaDefinitions = pointV20SchemaDefinitions + (
+    "ceiling_operation_validate" to pointV20SchemaDefinitions.getValue("ceiling_operation_validate").replace(
+        "UPDATE ceiling_walls SET active=0 WHERE measurementUuid=new.measurementUuid AND",
+        "UPDATE ceiling_walls SET active=0 WHERE measurementUuid=new.measurementUuid AND active=1 AND"
+    )
+)

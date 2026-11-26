@@ -16,24 +16,9 @@ object RevisionWorkflowMigrationProof {
         override fun migrate(driver: SqlDriver, oldVersion: Long, newVersion: Long, vararg callbacks: AfterVersion): QueryResult.Value<Unit> = error("v17 fixture")
     }
     suspend fun lifecycle(production: SqlSchema<QueryResult.Value<Unit>>, open: suspend (SqlSchema<QueryResult.Value<Unit>>) -> SqlDriver) {
-        var series = ""; var firstId = ""; var latestId = ""
-        var payloads = emptyList<String>()
-        val schema = open(v17Schema).use { d ->
-            PrototypeDatabase.Schema.migrate(d, 17, 18)
-            PrototypeDatabase.Schema.migrate(d, 20, 21)
-            val db = PrototypeDatabase(d); val fixture = MeasurementPricingFixture.seed(db)
-            val repo = ImmutableEstimateRepository(db)
-            val first = repo.saveIndividual(FrozenIndividualEstimateProof.command(db, fixture), 2026, 600)
-            val second = repo.appendIndividual(FrozenRevisionProof.request(db, fixture, first.seriesUuid), 601)
-            series = first.seriesUuid; firstId = first.initialRevisionUuid; latestId = second.initialRevisionUuid
-            payloads = db.frozenRevisionQueries.selectExactHistory(series).executeAsList().map { it.payload }
-            // This is the only status persisted by the original v17 application.
-            db.frozenEstimateQueries.updateEstimateWorkflow("APPROVED", 602, series, 1).executeAsOne()
-            d.execute(null, "DROP TABLE estimate_revision_tombstones", 0)
-            d.execute(null, "DROP TABLE estimate_revision_choice", 0)
-            d.execute(null, "DROP TABLE estimate_revision_workflow", 0)
-            verifyFrozenEstimateStructure(d, 17)
-            PriceNameMigrationProof.schema(d)
+        val (historical, schema) = open(v17Schema).use { d ->
+            val fixture = MeasurementPricingFixture.seed(PrototypeDatabase(d))
+            seedHistoricalEstimate(d, fixture.projectId, fixture.measurementUuid, 17) to PriceNameMigrationProof.schema(d)
         }
         val failing = object : SqlSchema<QueryResult.Value<Unit>> by production {
             override fun migrate(driver: SqlDriver, oldVersion: Long, newVersion: Long, vararg callbacks: AfterVersion): QueryResult.Value<Unit> {
@@ -49,25 +34,24 @@ object RevisionWorkflowMigrationProof {
         }
         assertFails { open(failing).close() }
         open(v17Schema).use { assertEquals(schema, PriceNameMigrationProof.schema(it)) }
-        open(production).use { d ->
-            val repo = ImmutableEstimateRepository(PrototypeDatabase(d))
-            val old = assertNotNull(repo.exactIndividual(series, firstId))
-            val latest = assertNotNull(repo.exactIndividual(series, latestId))
-            assertNull(old.status); assertEquals(1, old.statusVersion)
-            assertEquals(EstimateWorkflowStatus.APPROVED, latest.status)
-            assertNull(latest.selectedRevisionUuid)
-            assertEquals(payloads, PrototypeDatabase(d).frozenRevisionQueries.selectExactHistory(series).executeAsList().map { it.payload })
-            assertTrue(repo.setWorkflowStatus(firstId, 1, EstimateWorkflowStatus.SENT, 603))
-            assertTrue(repo.selectRevision(series, firstId, 1, 604))
-            assertFalse(repo.selectRevision(series, latestId, 1, 605))
-            verifyFrozenEstimateContents(d)
+        val inspecting = object : SqlSchema<QueryResult.Value<Unit>> by production {
+            override fun migrate(driver: SqlDriver, oldVersion: Long, newVersion: Long, vararg callbacks: AfterVersion) =
+                production.migrate(driver, oldVersion, newVersion, *callbacks, AfterVersion(17) { migrated ->
+                    val statuses = MeasurementElementMigrationProof.rows(migrated,
+                        "SELECT revisionUuid,status,version FROM estimate_revision_workflow", 3).associateBy { it.first() }
+                    assertEquals(listOf(historical.first, null, "1"), statuses[historical.first])
+                    assertEquals(listOf(historical.latest, "APPROVED", "1"), statuses[historical.latest])
+                    val choice = MeasurementElementMigrationProof.rows(migrated,
+                        "SELECT seriesUuid,selectedRevisionUuid FROM estimate_revision_choice", 2)
+                    assertEquals(listOf(listOf(historical.series, null)), choice)
+                })
         }
-        open(production).use { d ->
-            val repo = ImmutableEstimateRepository(PrototypeDatabase(d))
-            assertEquals(EstimateWorkflowStatus.SENT, repo.exactIndividual(series, firstId)!!.status)
-            assertEquals(EstimateWorkflowStatus.APPROVED, repo.exactIndividual(series, latestId)!!.status)
-            assertEquals(firstId, repo.exactIndividual(series, latestId)!!.selectedRevisionUuid)
-            verifyFrozenEstimateContents(d)
+        repeat(2) { attempt ->
+            open(if (attempt == 0) inspecting else production).use { d ->
+                val repo = ImmutableEstimateRepository(PrototypeDatabase(d))
+                assertNull(repo.series(historical.series))
+                verifyFrozenEstimateContents(d)
+            }
         }
     }
 }

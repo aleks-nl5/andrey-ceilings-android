@@ -53,6 +53,7 @@ object PriceCatalogSchema : SqlSchema<QueryResult.Value<Unit>> {
             verifyPointPlacementStructure(driver,oldVersion)
         }
         if (oldVersion in 16L..19L && newVersion >= 20L) verifyPointPlacementStructure(driver, oldVersion)
+        if (oldVersion in 20L..22L && newVersion >= 23L) verifyPointPlacementStructure(driver, oldVersion)
         if (oldVersion >= 16) verifyFrozenEstimateStructure(driver, oldVersion)
         var statement=0
         val observed=object:SqlDriver by driver {
@@ -64,7 +65,8 @@ object PriceCatalogSchema : SqlSchema<QueryResult.Value<Unit>> {
         }
         PrototypeDatabase.Schema.migrate(observed, oldVersion, newVersion, *callbacks)
         if (oldVersion < 6L && newVersion >= 6L) backfillPriceNameKeys(driver)
-        if (newVersion >= 6L) StarterPriceCatalog.initializeInTransaction(PrototypeDatabase(driver))
+        // The v22 estimate-only boundary must not initialize or touch the existing catalog.
+        if (oldVersion < 21L && newVersion >= 6L) StarterPriceCatalog.initializeInTransaction(PrototypeDatabase(driver))
         if (newVersion >= 8L) verifyStructure(driver, newVersion)
         if (newVersion >= 17L) verifyFrozenEstimateContents(driver, newVersion)
         return QueryResult.Unit

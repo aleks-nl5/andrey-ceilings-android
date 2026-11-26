@@ -63,7 +63,7 @@ object WallAnchorMigrationProof {
         var saved:PointPlacement?=null
         open(production).use { upgraded ->
             assertEquals(PriceCatalogSchema.version,PriceNameUniquenessProof.scalar(upgraded,"PRAGMA user_version"))
-            assertEquals(before,PointPlacementMigrationProof.snapshot(upgraded));assertEquals(points,oldPoints(upgraded));assertEquals(ops,receipts(upgraded))
+            assertEquals(withoutPreV22Estimates(before),PointPlacementMigrationProof.snapshot(upgraded));assertEquals(points,oldPoints(upgraded));assertEquals(ops,receipts(upgraded))
             if(populated) {
                 val db=PrototypeDatabase(upgraded);val point=PointPlacementRepository(db).find("v9-point")!!
                 assertEquals(PointMounting(),point.mounting);assertEquals(PointPrecision.EXACT,point.precision)

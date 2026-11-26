@@ -71,32 +71,19 @@ object RoundedAreaPolicyProof {
         override fun migrate(driver: SqlDriver, oldVersion: Long, newVersion: Long, vararg callbacks: AfterVersion): QueryResult.Value<Unit> = error("v18 fixture")
     }
     suspend fun lifecycle(production: SqlSchema<QueryResult.Value<Unit>>, open: suspend (SqlSchema<QueryResult.Value<Unit>>) -> SqlDriver) {
-        var series = ""; var revision = ""; var payload = ""
-        open(v18Schema).use { d ->
-            val db = PrototypeDatabase(d); val f = MeasurementPricingFixture.seed(db)
-            val repo = ImmutableEstimateRepository(db)
-            val saved = repo.saveIndividual(FrozenIndividualEstimateProof.command(db, f), 2026, 600)
-            series = saved.seriesUuid; revision = saved.initialRevisionUuid
-            d.execute(null, "UPDATE estimate_revision_workflow SET status = 'APPROVED', version = 2, updatedAt = 601 WHERE revisionUuid = ?", 1) {
-                bindString(0, revision)
-            }
-            d.execute(null, "UPDATE estimate_revision_choice SET selectedRevisionUuid = ?, version = 2, updatedAt = 602 WHERE seriesUuid = ?", 2) {
-                bindString(0, revision)
-                bindString(1, series)
-            }
-            payload = readPreV21FrozenV1Payload(d, series)
+        val historical = open(v18Schema).use { d ->
+            val fixture = MeasurementPricingFixture.seed(PrototypeDatabase(d))
+            seedHistoricalEstimate(d, fixture.projectId, fixture.measurementUuid, 18)
         }
         open(production).use { d ->
             val repo = ImmutableEstimateRepository(PrototypeDatabase(d))
-            assertEquals(payload, repo.frozenIndividual(series)!!.payload)
-            assertEquals(EstimateWorkflowStatus.APPROVED, repo.exactIndividual(series, revision)!!.status)
-            assertEquals(revision, repo.exactIndividual(series, revision)!!.selectedRevisionUuid)
+            assertNull(repo.series(historical.series))
             run(d)
         }
         open(production).use { d ->
             verifyFrozenEstimateContents(d)
             val repo = ImmutableEstimateRepository(PrototypeDatabase(d))
-            assertEquals(payload, repo.frozenIndividual(series)!!.payload)
+            assertNull(repo.series(historical.series))
             assertTrue(repo.frozenIndividuals().any { decodeFrozenIndividualEstimate(it.payload).formatVersion == 3 })
             repo.frozenIndividuals().forEach { repo.exactIndividual(it.seriesUuid, it.revisionUuid) }
         }

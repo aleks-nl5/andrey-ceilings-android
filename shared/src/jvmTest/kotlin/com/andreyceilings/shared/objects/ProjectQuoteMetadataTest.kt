@@ -9,6 +9,7 @@ import com.andreyceilings.shared.estimate.ImmutableEstimateRepository
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
@@ -37,7 +38,12 @@ class ProjectQuoteMetadataTest {
             val otherCeiling = measurements.createReturningId(other, "Other ceiling", createdAt = 1)
             val otherUuid = assertNotNull(measurements.find(otherCeiling)).uuid
             val updates = Channel<ProjectQuoteSummary?>(Channel.UNLIMITED)
-            val collector = launch { store.observeProjectQuoteSummary(project).collect { updates.send(it) } }
+            // Raw SQL invalidations may yield identical projected summaries, especially
+            // when unrelated projects are modified. Observe semantic changes rather
+            // than assuming exactly one emission for each write.
+            val collector = launch {
+                store.observeProjectQuoteSummary(project).distinctUntilChanged().collect { updates.send(it) }
+            }
 
             suspend fun next(): ProjectQuoteSummary = assertNotNull(withTimeout(5_000) { updates.receive() })
             assertTrue(next().ceilings.isEmpty())
@@ -64,9 +70,16 @@ class ProjectQuoteMetadataTest {
             db.frozenRevisionQueries.insertRevisionTombstone(25, "series-1", "series", 3).executeAsOne()
             assertTrue(next().ceilings.isEmpty())
 
-            db.saveFixtureQuote(other, otherUuid, "other", 1, 700)
-            db.saveFixtureQuote(project, otherUuid, "wrong-owner", 1, 800)
-            db.saveFixtureQuote(project, ceilingUuid, "legacy", 1, null)
+            db.transaction {
+                db.saveFixtureQuote(other, otherUuid, "other", 1, 700)
+                db.saveFixtureQuote(project, otherUuid, "wrong-owner", 1, 800)
+                db.saveFixtureQuote(project, ceilingUuid, "legacy", 1, null)
+            }
+            // Check the excluded fixtures independently before introducing the valid
+            // quote; a duplicate empty emission cannot satisfy the next assertion.
+            assertTrue(assertNotNull(withTimeout(5_000) {
+                store.observeProjectQuoteSummary(project).first()
+            }).ceilings.isEmpty())
             db.saveFixtureQuote(project, ceilingUuid, "deleted-series", 1, 900)
             assertEquals(900L, next().ceilings[ceiling]?.finalCents)
             db.estimateHistoryQueries.softDeleteEstimateSeries(26, "deleted-series").executeAsOne()
@@ -158,7 +171,7 @@ class ProjectQuoteMetadataTest {
     ) = transaction {
         if (version == 1L) {
             estimateHistoryQueries.insertEstimateSeriesIfFree(
-                series, "number-$series", project, ceilingUuid, "", "", 1, 1, 10
+                series, "number-$series", project, ceilingUuid, "", "", 1, 1, 10, null
             ).executeAsOne()
         }
         val revision = "$series-$version"

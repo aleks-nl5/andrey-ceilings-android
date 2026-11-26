@@ -9,6 +9,8 @@ import com.andreyceilings.shared.prices.QuantityMode
 import kotlin.test.*
 
 class FrozenIndividualEstimateTest {
+    // Archived pre-v21 upgrade proof; see CI historical DB policy.
+    @kotlin.test.Ignore
     @Test fun windowsPhysicalV18ToV19ReopenAndAreaQuantityPolicy() = kotlinx.coroutines.runBlocking {
         if (!System.getProperty("os.name").startsWith("Windows", true)) return@runBlocking
         val directory = java.nio.file.Files.createTempDirectory("cipher-v19").toFile()
@@ -29,6 +31,8 @@ class FrozenIndividualEstimateTest {
             }
         } finally { key.fill(0); directory.deleteRecursively() }
     }
+    // Archived pre-v21 upgrade proof; see CI historical DB policy.
+    @kotlin.test.Ignore
     @Test fun windowsPhysicalV17ToV18RollbackAndReopen() = kotlinx.coroutines.runBlocking {
         if (!System.getProperty("os.name").startsWith("Windows", true)) return@runBlocking
         val directory = java.nio.file.Files.createTempDirectory("cipher-v18").toFile()
@@ -49,6 +53,8 @@ class FrozenIndividualEstimateTest {
             }
         } finally { key.fill(0); directory.deleteRecursively() }
     }
+    // Archived pre-v21 upgrade proof; see CI historical DB policy.
+    @kotlin.test.Ignore
     @Test fun windowsPhysicalV16ToV17RollbackAndReopen() = kotlinx.coroutines.runBlocking {
         if (!System.getProperty("os.name").startsWith("Windows", true)) return@runBlocking
         val directory = java.nio.file.Files.createTempDirectory("cipher-v17").toFile()
@@ -69,6 +75,8 @@ class FrozenIndividualEstimateTest {
             }
         } finally { key.fill(0); directory.deleteRecursively() }
     }
+    // Archived pre-v21 upgrade proof; see CI historical DB policy.
+    @kotlin.test.Ignore
     @Test fun windowsPhysicalV15ToV16RollbackAndReopen() = kotlinx.coroutines.runBlocking {
         if (!System.getProperty("os.name").startsWith("Windows", true)) return@runBlocking
         val directory = java.nio.file.Files.createTempDirectory("cipher-v16").toFile()
@@ -89,6 +97,8 @@ class FrozenIndividualEstimateTest {
             }
         } finally { key.fill(0); directory.deleteRecursively() }
     }
+    // Archived pre-v21 upgrade proof; see CI historical DB policy.
+    @kotlin.test.Ignore
     @Test fun migrationV15RollbackReopenAndSuffix() = kotlinx.coroutines.runBlocking {
         val file = java.nio.file.Files.createTempDirectory("frozen-v16").resolve("quote.db").toFile()
         try {

@@ -6,9 +6,15 @@ import kotlin.random.Random
 import kotlin.test.Test
 
 class MeasurementElementIosCipherTest {
-    @Test fun encryptedV6UpgradeRollbackRestartAndFreshContracts(): Unit = runBlocking {
+    @Test fun encryptedFreshElementContracts(): Unit = runBlocking { elementScenarios(listOf("fresh")) }
+
+    // Archived pre-v21 upgrade proof; current-schema assertions run separately.
+    @kotlin.test.Ignore
+    @Test fun encryptedV6UpgradeRollbackRestartAndFreshContracts(): Unit = runBlocking { elementScenarios(listOf("migration")) }
+
+    private suspend fun elementScenarios(scenarios: List<String>) {
         val factory = NativeSqlCipherDriverFactory()
-        for (scenario in listOf("migration", "fresh")) {
+        for (scenario in scenarios) {
             val name = "elements-$scenario-${Random.nextLong()}.db"
             val config = SqlCipherConfig(name = name, key = SqlCipherKey { ByteArray(32) { 63 } }, recovery = SqlCipherRecovery.Fail)
             try {

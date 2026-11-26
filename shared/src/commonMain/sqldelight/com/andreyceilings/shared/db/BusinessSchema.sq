@@ -873,7 +873,7 @@ SELECT CASE WHEN EXISTS(SELECT 1 FROM ceiling_area_circle_distances WHERE operat
  lengthMeters=CASE WHEN json_extract(new.payload,'$.drawingJson')=json_extract(new.payload,'$.oldDrawingJson') THEN lengthMeters ELSE json_extract(new.payload,'$.length') END,widthMeters=CASE WHEN json_extract(new.payload,'$.drawingJson')=json_extract(new.payload,'$.oldDrawingJson') THEN widthMeters ELSE json_extract(new.payload,'$.width') END,
  areaSquareMeters=CASE WHEN json_extract(new.payload,'$.drawingJson')=json_extract(new.payload,'$.oldDrawingJson') THEN areaSquareMeters ELSE json_extract(new.payload,'$.area') END,perimeterMeters=CASE WHEN json_extract(new.payload,'$.drawingJson')=json_extract(new.payload,'$.oldDrawingJson') THEN perimeterMeters ELSE json_extract(new.payload,'$.perimeter') END,
  updatedAt=max(updatedAt+1,new.createdAt) WHERE uuid=new.measurementUuid;
- UPDATE ceiling_walls SET active=0 WHERE measurementUuid=new.measurementUuid AND
+ UPDATE ceiling_walls SET active=0 WHERE measurementUuid=new.measurementUuid AND active=1 AND
  json_extract(new.payload,'$.drawingJson') IS NOT json_extract(new.payload,'$.oldDrawingJson');
  INSERT INTO ceiling_walls(uuid,measurementUuid,ordinal,ax,ay,bx,by,geometryVersion,active)
  SELECT wallUuid,new.measurementUuid,ordinal,ax,ay,bx,by,max(new.expectedUpdatedAt+1,new.createdAt),1 FROM ceiling_operation_edges
@@ -1457,7 +1457,7 @@ LIMIT 1;
 -- Display-only number is derived from the immutable canonical identity and
 -- frozen sequence/prefix. Never use this as the sync/database primary key.
 selectPrintableNumberIdentityForEstimateId:
-SELECT s.documentNumber, s.localSequence, s.policyPrefix, s.policySequenceWidth
+SELECT s.publicNumber
 FROM estimates e JOIN estimate_series s ON e.seriesUuid = s.seriesUuid
 WHERE e.id = ? AND e.deletedAt IS NULL;
 

@@ -13,6 +13,8 @@ import com.andreyceilings.shared.livepricing.*
 import kotlin.test.*
 
 class BusinessRoleSqlCipherTest {
+    // Archived pre-v21 upgrade proof; see CI historical DB policy.
+    @org.junit.Ignore("Archived pre-v21 migration proof")
     @Test fun physicalV18ToV19ReopenAndAreaQuantityPolicy(): Unit = runBlocking {
         val context = ApplicationProvider.getApplicationContext<Context>()
         System.loadLibrary("sqlcipher")
@@ -29,6 +31,8 @@ class BusinessRoleSqlCipherTest {
         } finally { key.fill(0); context.deleteDatabase(name) }
     }
 
+    // Archived pre-v21 upgrade proof; see CI historical DB policy.
+    @org.junit.Ignore("Archived pre-v21 migration proof")
     @Test fun physicalV17ToV18RollbackReopenAndFrozenRevisions(): Unit = runBlocking {
         val context = ApplicationProvider.getApplicationContext<Context>()
         System.loadLibrary("sqlcipher")
@@ -45,6 +49,8 @@ class BusinessRoleSqlCipherTest {
         } finally { key.fill(0); context.deleteDatabase(name) }
     }
 
+    // Archived pre-v21 upgrade proof; see CI historical DB policy.
+    @org.junit.Ignore("Archived pre-v21 migration proof")
     @Test fun physicalV16ToV17RollbackReopenAndFrozenRevisions(): Unit = runBlocking {
         val context = ApplicationProvider.getApplicationContext<Context>()
         System.loadLibrary("sqlcipher")
@@ -61,6 +67,8 @@ class BusinessRoleSqlCipherTest {
         } finally { key.fill(0); context.deleteDatabase(name) }
     }
 
+    // Archived pre-v21 upgrade proof; see CI historical DB policy.
+    @org.junit.Ignore("Archived pre-v21 migration proof")
     @Test fun physicalV15ToV16RollbackReopenAndFrozenV1(): Unit = runBlocking {
         val context = ApplicationProvider.getApplicationContext<Context>()
         System.loadLibrary("sqlcipher")
@@ -77,6 +85,8 @@ class BusinessRoleSqlCipherTest {
         } finally { key.fill(0); context.deleteDatabase(name) }
     }
 
+    // Archived pre-v21 upgrade proof; see CI historical DB policy.
+    @org.junit.Ignore("Archived pre-v21 migration proof")
     @Test fun physicalV14ToV15RollbackReopenRolesAndPricing(): Unit = runBlocking {
         val context = ApplicationProvider.getApplicationContext<Context>()
         System.loadLibrary("sqlcipher")

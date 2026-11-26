@@ -46,7 +46,7 @@ class EstimateNumberingSqlCipherInstrumentedTest {
                     projectId, 2026, 101L, snapshot,
                     newSeriesUuid = { firstUuid }, newRevisionUuid = { firstRevisionUuid }
                 )
-                history.configureNumberPolicy(EstimateNumberPolicy("{year}-{prefix}-{uuid}", "CEIL"))
+                history.configureNumberPolicy(EstimateNumberPolicy("{year}-{prefix}-{sequence}", "CEIL"))
                 history.appendRevision(
                     root.seriesUuid, root.initialRevisionUuid, 102L,
                     snapshot.copy(totalCost = 700.0, lines = listOf(
@@ -65,8 +65,8 @@ class EstimateNumberingSqlCipherInstrumentedTest {
                 val db = PrototypeDatabase(driver)
                 val history = ImmutableEstimateRepository(db)
                 val root = requireNotNull(history.series(firstUuid))
-                assertTrue(Regex("AC-2026-00001-[A-F0-9]{10}-" + firstUuid).matches(root.documentNumber))
-                assertEquals("{prefix}-{year}-{sequence}-{suffix}", root.policyTemplate)
+                assertTrue(Regex("КШ-2026-0001-" + firstUuid).matches(root.documentNumber))
+                assertEquals("{prefix}-{year}-{sequence}", root.policyTemplate)
                 assertEquals(listOf(1L, 2L), history.revisions(firstUuid).map { it.versionNumber })
                 assertEquals(500.0, history.revision(firstRevisionUuid)?.totalCost ?: -1.0, 0.0)
                 assertEquals(700.0, history.revision(secondRevisionUuid)?.totalCost ?: -1.0, 0.0)

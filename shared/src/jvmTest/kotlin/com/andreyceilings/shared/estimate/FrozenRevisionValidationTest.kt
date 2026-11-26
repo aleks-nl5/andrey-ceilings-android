@@ -31,7 +31,7 @@ class FrozenRevisionValidationTest {
             assertEquals(1, repo.revisions(first.seriesUuid).size)
             val next = repo.appendIndividual(command, 603)
             assertTrue(repo.exactIndividual(first.seriesUuid, next.initialRevisionUuid)!!.frozen.partial)
-            assertEquals(2, db.estimateHistoryQueries.selectEstimateNumberSettings().executeAsOne().nextSequence)
+            assertEquals(2, nextIndividualSequence(db))
             verifyFrozenEstimateContents(driver)
         }
     }

@@ -139,7 +139,7 @@ class FrozenRevisionConcurrencyTest {
                     assertEquals(if (latest.versionNumber == 1L) 2L else 1L, latest.statusVersion)
                     assertEquals(if ("stale" in results && scenario == "status-race") 1 else 2, history.revisions(first.seriesUuid).size)
                     assertEquals(history.revisions(first.seriesUuid).size - if (resuming) 1 else 0, history.frozenIndividuals().size)
-                    assertEquals(2, db.estimateHistoryQueries.selectEstimateNumberSettings().executeAsOne().nextSequence)
+                    assertEquals(2, nextIndividualSequence(db))
                     verifyFrozenEstimateContents(driver)
                 }
             } finally { pool.shutdownNow(); directory.deleteRecursively() }
