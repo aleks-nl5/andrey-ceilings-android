@@ -1,3 +1,7 @@
+## P6C technical planning complete (26.11.2026)
+
+All 35 product + 15 technical decisions approved. [P6C technical plan and Codex handoff](P6C_CODEX_HANDOFF.md): one production Draft PR after separate owner authorization, #141 across all five registries, #140/#77, bounded reactive metadata, reuse P6B finances, local dashboard personalization. Static audit complete for planning; query plans and runtime performance still require verification. P6B completion docs #181 merged; verify post-merge FULL before next production merge.
+
 # CURRENT — P6B complete; P6C next (26.11.2026)
 
 Owner merged [PR #180](https://github.com/aleks-nl5/andrey-ceilings-android/pull/180) on 26.11.2026 at `f96e8e4875e57032bafe8071a0d7f78c532b0b17`. P6B is accepted and integrated, schema v24. Owner physical APK acceptance 10/10; static review found no blocking production defect. [QUICK #245](https://github.com/aleks-nl5/andrey-ceilings-android/actions/runs/45877641887), [Android FULL #1385](https://github.com/aleks-nl5/andrey-ceilings-android/actions/runs/45881830423) and [CMP FULL #1122](https://github.com/aleks-nl5/andrey-ceilings-android/actions/runs/45881859607) all SUCCESS on exact pre-merge SHA `6788d89b95026fff6b901d22b511fa1c8ada0be4` (FULL attempt 1). Android instrumentation and signed-release open/recovery, Windows SQLCipher/JVM, macOS Desktop/JVM and iOS Simulator SQLCipher jobs succeeded. #143A baseline Android #1383 and CMP #1120 (attempt 2) succeeded; #143 is closed.
