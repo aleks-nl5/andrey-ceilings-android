@@ -1457,7 +1457,7 @@ LIMIT 1;
 -- Display-only number is derived from the immutable canonical identity and
 -- frozen sequence/prefix. Never use this as the sync/database primary key.
 selectPrintableNumberIdentityForEstimateId:
-SELECT s.documentNumber, s.localSequence, s.policyPrefix, s.policySequenceWidth
+SELECT s.publicNumber
 FROM estimates e JOIN estimate_series s ON e.seriesUuid = s.seriesUuid
 WHERE e.id = ? AND e.deletedAt IS NULL;
 

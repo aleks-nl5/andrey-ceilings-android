@@ -156,7 +156,7 @@ internal fun WorkspaceQuotes(
                         Row(Modifier.fillMaxWidth().padding(start = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                             Column(Modifier.weight(1f)) {
                                 Text(head.frozen.title, style = MaterialTheme.typography.titleSmall)
-                                Text(EstimateNumbering.displayNumber(head.frozen.publicNumber, head.frozen.numberPolicy), style = MaterialTheme.typography.labelSmall)
+                                Text(head.frozen.publicNumber, style = MaterialTheme.typography.labelSmall)
                             }
                             val eligible = versions.all { it.canDeleteQuote }
                             if (!eligible) WorkspaceCostHelp(stringResource(Res.string.p5d_delete_protected))
@@ -539,7 +539,7 @@ internal fun ColumnScope.WorkspaceFrozenQuote(
         }
         Column(Modifier.weight(1f)) {
             Text(frozen.title, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
-            Text(stringResource(Res.string.p5d_revision_heading, EstimateNumbering.displayNumber(frozen.publicNumber, frozen.numberPolicy), quote.versionNumber),
+            Text(stringResource(Res.string.p5d_revision_heading, frozen.publicNumber, quote.versionNumber),
                 style = MaterialTheme.typography.labelSmall)
         }
         if (drift != false) WorkspaceCostHelp(stringResource(if (drift == null) Res.string.p5d_drift_unavailable else Res.string.p5d_drift))
@@ -661,7 +661,7 @@ internal fun WorkspaceQuoteStatusIcon(
 private fun WorkspaceQuoteIdentity(quote: SavedIndividualQuote) {
     Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
         Text(quote.frozen.title, style = MaterialTheme.typography.titleSmall)
-        Text(stringResource(Res.string.p5d_revision_heading, EstimateNumbering.displayNumber(quote.frozen.publicNumber, quote.frozen.numberPolicy), quote.versionNumber))
+        Text(stringResource(Res.string.p5d_revision_heading, quote.frozen.publicNumber, quote.versionNumber))
         Text(measurementMoney(quote.frozen.amounts.finalCents))
     }
 }

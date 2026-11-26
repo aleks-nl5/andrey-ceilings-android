@@ -102,7 +102,7 @@ class PriceCatalogWindowsCipherTest {
             SqlCipherWindowsDriverFactory.openProfiled(file, key, nativeMetrics).use { driver ->
                 openDesktopPriceCatalog(driver, true)
                 PriceCatalogMigrationProof.assertReplaced(PrototypeDatabase(driver))
-                assertEquals(before, PriceCatalogMigrationProof.untouchedRows(driver))
+                assertEquals(withoutPreV22Estimates(before), PriceCatalogMigrationProof.untouchedRows(driver))
                 PriceNameUniquenessProof.assertKeys(driver)
             }
             SqlCipherWindowsDriverFactory.openProfiled(file, key, nativeMetrics).use { driver ->
@@ -149,7 +149,7 @@ class PriceCatalogWindowsCipherTest {
                 openDesktopPriceCatalog(driver, true)
                 val db = PrototypeDatabase(driver)
                 PriceCatalogMigrationProof.assertReplaced(db)
-                assertEquals(before, PriceCatalogMigrationProof.untouchedRows(driver))
+                assertEquals(withoutPreV22Estimates(before), PriceCatalogMigrationProof.untouchedRows(driver))
                 PriceCatalogPersistenceProof.groupsAndParameters(db)
                 PriceCatalogP2Proof.run(db)
                 PriceCatalogPersistenceProof.removeEverything(db)
@@ -158,7 +158,7 @@ class PriceCatalogWindowsCipherTest {
                 openDesktopPriceCatalog(driver, true)
                 assertEquals(0L, PriceRepository(PrototypeDatabase(driver)).count())
                 assertTrue(PriceGroupRepository(PrototypeDatabase(driver)).all().isEmpty())
-                assertEquals(before, PriceCatalogMigrationProof.untouchedRows(driver))
+                assertEquals(withoutPreV22Estimates(before), PriceCatalogMigrationProof.untouchedRows(driver))
             }
         } finally { key.fill(0); file.delete() }
     }

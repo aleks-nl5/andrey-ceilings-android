@@ -28,7 +28,9 @@ fun createEncryptedPrototypeDriver(
     passphrase: ByteArray,
     databaseName: String = "andrey_ceilings_sqldelight_prototype.db",
     enableWalForTesting: Boolean = false,
-    initializePriceCatalog: Boolean = false
+    initializePriceCatalog: Boolean = false,
+    requireExistingSchema: Boolean = false,
+    beforeMigration: ((SqlDriver, Long) -> Unit)? = null
 ): SqlDriver {
     require(passphrase.size == 32) { "Expected a 256-bit database passphrase" }
     require(databaseName.isNotBlank() && '/' !in databaseName && '\\' !in databaseName) {
@@ -37,9 +39,13 @@ fun createEncryptedPrototypeDriver(
     System.loadLibrary("sqlcipher")
     val schema = if (initializePriceCatalog) PriceCatalogSchema else PrototypeDatabase.Schema
     val observedSchema = object : SqlSchema<QueryResult.Value<Unit>> by schema {
-        override fun create(driver: SqlDriver) = openStep(EncryptedDatabaseOpenStage.CREATE) { schema.create(driver) }
+        override fun create(driver: SqlDriver) = openStep(EncryptedDatabaseOpenStage.CREATE) {
+            check(!requireExistingSchema) { "Snapshot does not contain a supported database schema" }
+            schema.create(driver)
+        }
         override fun migrate(driver: SqlDriver, oldVersion: Long, newVersion: Long, vararg callbacks: AfterVersion): QueryResult.Value<Unit> =
             try {
+                beforeMigration?.invoke(driver, oldVersion)
                 if(oldVersion in 8L..10L)verifyPointPlacementStructure(driver,oldVersion)
                 schema.migrate(driver,oldVersion,newVersion,*callbacks)
             }
@@ -48,6 +54,11 @@ fun createEncryptedPrototypeDriver(
     val driver = AndroidSqliteDriver(
         schema = observedSchema,
         callback = object : AndroidSqliteDriver.Callback(observedSchema) {
+            override fun onConfigure(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                super.onConfigure(db)
+                db.setForeignKeyConstraintsEnabled(true)
+            }
+
             override fun onCorruption(db: androidx.sqlite.db.SupportSQLiteDatabase) {
                 // Android's default handler deletes corrupt DB/WAL files. Preserve them for
                 // explicit, staged recovery; an open failure must never become an auto-reset.

@@ -101,7 +101,7 @@ object MeasurementElementFileProof {
                 upgrades.forEach { it.get(30, TimeUnit.SECONDS) }
                 val row = open(file).use { driver ->
                     assertEquals(PriceCatalogSchema.version, PriceNameUniquenessProof.scalar(driver, "PRAGMA user_version"))
-                    assertEquals(before, MeasurementElementMigrationProof.snapshot(driver))
+                    assertEquals(withoutPreV22Estimates(before), MeasurementElementMigrationProof.snapshot(driver))
                     verifyMeasurementElementStructure(driver)
                     val db = PrototypeDatabase(driver)
                     val parent = MeasurementRepository(db).all().single().uuid
@@ -147,7 +147,7 @@ object MeasurementElementFileProof {
                     val schema = PriceNameMigrationProof.schema(driver)
                     openDesktopPriceCatalog(driver, true)
                     assertEquals(schema, PriceNameMigrationProof.schema(driver))
-                    assertEquals(before, MeasurementElementMigrationProof.snapshot(driver))
+                    assertEquals(withoutPreV22Estimates(before), MeasurementElementMigrationProof.snapshot(driver))
                     assertEquals(3, MeasurementElementRepository(PrototypeDatabase(driver)).all().size)
                 }
             } finally { pool.shutdownNow(); pool.awaitTermination(30, TimeUnit.SECONDS) }

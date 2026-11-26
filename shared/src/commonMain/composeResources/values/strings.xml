@@ -411,4 +411,11 @@
     <string name="oc_no_matching_clients">Клієнтів не знайдено</string>
     <string name="oc_returning_client">Постійний клієнт</string>
     <string name="oc_many_projects_client">Клієнт з багатьма об’єктами</string>
+    <string name="estimate_numbering_title">Нумерація кошторисів</string>
+    <string name="estimate_numbering_defaults">Окремі річні лічильники. Індивідуальні — %1$s, зведені — %2$s.</string>
+    <string name="estimate_numbering_editor_deferred">Редактор формату з’явиться в наступному оновленні налаштувань.</string>
+    <string name="estimate_pre_v22_restore_warning">Ця копія створена до оновлення нумерації. Під час відновлення її старі тестові кошториси буде видалено, а файл копії залишиться цілим.</string>
+    <string name="estimate_number_policy_error">Не вдалося застосувати формат номера кошторису.</string>
+    <string name="estimate_number_collision_error">Не вдалося зарезервувати унікальний номер кошторису.</string>
+    <string name="estimate_number_exhausted_error">Вичерпано річний лічильник номерів кошторисів.</string>
 </resources>

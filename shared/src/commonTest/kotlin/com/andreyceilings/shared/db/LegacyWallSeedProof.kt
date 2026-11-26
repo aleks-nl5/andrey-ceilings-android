@@ -83,7 +83,7 @@ object LegacyWallSeedProof {
         }
         open(production).use { driver ->
             assertEquals(production.version,PriceNameUniquenessProof.scalar(driver,"PRAGMA user_version"))
-            assertEquals(expected,snapshot(driver,version==10L))
+            assertEquals(withoutPreV22Estimates(expected),snapshot(driver,version==10L))
             if(version==10L)assertEquals(expectedWalls,MeasurementElementMigrationProof.rows(driver,"SELECT * FROM ceiling_walls ORDER BY uuid",9))
             assertEquals(0L,PriceNameUniquenessProof.scalar(driver,"SELECT count(*) FROM ceiling_walls WHERE measurementUuid LIKE 'legacy-source-%'"))
             if(version==9L)assertEquals(0L,PriceNameUniquenessProof.scalar(driver,"SELECT count(*) FROM point_placements WHERE mountingJson!='{}'"))

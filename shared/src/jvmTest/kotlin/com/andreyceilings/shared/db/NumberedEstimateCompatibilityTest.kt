@@ -46,7 +46,7 @@ class NumberedEstimateCompatibilityTest {
             )
             val firstId = create(1)
             val firstNumber = assertNotNull(estimates.documentNumberForId(firstId))
-            kotlin.test.assertTrue(Regex("AC-2026-00001-[A-F0-9]{10}-" + uuid(1)).matches(firstNumber))
+            kotlin.test.assertTrue(Regex("КШ-2026-0001-" + uuid(1)).matches(firstNumber))
             assertEquals(uuid(1), estimates.find(firstId)?.seriesUuid)
             assertEquals(-1.0, history.lines(uuid(101)).last().lineTotalSnapshot)
             val copyId = create(2)
@@ -93,8 +93,11 @@ class NumberedEstimateCompatibilityTest {
             assertEquals(2L, estimates.count())
             assertEquals(2, history.seriesForProject(projectId).size)
 
-            assertEquals(3L, history.createSeries(projectId, 2026, 5L, snapshot(),
-                newSeriesUuid = { uuid(3) }, newRevisionUuid = { uuid(103) }).localSequence)
+            val created = history.createSeries(projectId, 2026, 5L, snapshot(),
+                newSeriesUuid = { uuid(3) }, newRevisionUuid = { uuid(103) }, operationUuid = uuid(203))
+            assertEquals(3L, created.localSequence)
+            assertEquals(created, history.createSeries(projectId, 2027, 6L, snapshot(), operationUuid = uuid(203)))
+            assertEquals(4L, nextIndividualSequence(db))
 
             estimates.delete(firstId)
             assertNull(estimates.find(firstId))

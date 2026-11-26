@@ -74,7 +74,7 @@ class MeasurementElementSqlCipherTest {
                 try {
                     val restored = SqlCipherRestoreManager.restore(context, PortableBackupPayload.Contents(image, key))
                     assertEquals(PriceCatalogSchema.version, restored.queryLong("PRAGMA user_version"))
-                    assertEquals(before, MeasurementElementMigrationProof.snapshot(restored.driver))
+                    assertEquals(withoutPreV22Estimates(before), MeasurementElementMigrationProof.snapshot(restored.driver))
                     assertEquals(element, MeasurementElementRepository(restored.database).find("restored-wish"))
                     val storedKey = DatabaseKeyManager.getOrCreatePassphrase(context)
                     try { assertContentEquals(key, storedKey) } finally { storedKey.fill(0) }
@@ -130,7 +130,7 @@ class MeasurementElementSqlCipherTest {
                         createEncryptedPrototypeDriver(context, contents.passphrase, copyName,
                             enableWalForTesting = true, initializePriceCatalog = true).use { restored ->
                             assertEquals(PriceCatalogSchema.version, PriceNameUniquenessProof.scalar(restored, "PRAGMA user_version"))
-                            assertEquals(oldRows, MeasurementElementMigrationProof.snapshot(restored))
+                            assertEquals(withoutPreV22Estimates(oldRows), MeasurementElementMigrationProof.snapshot(restored))
                             assertEquals(element, MeasurementElementRepository(PrototypeDatabase(restored)).find("backup-wish"))
                         }
                     } finally { contents.database.fill(0); contents.passphrase.fill(0); before.fill(0) }

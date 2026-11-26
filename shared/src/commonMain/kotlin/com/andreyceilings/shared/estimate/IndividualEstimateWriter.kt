@@ -4,6 +4,7 @@ import com.andreyceilings.shared.db.*
 import com.andreyceilings.shared.livepricing.*
 import com.andreyceilings.shared.measurement.*
 import kotlinx.serialization.encodeToString
+import kotlinx.datetime.LocalDate
 
 /** Typed expected failures stay in the preview; unexpected SQL errors roll back the outer transaction. */
 class IndividualEstimateSaveFailure(val reason: Reason) : IllegalStateException(reason.name) {
@@ -12,19 +13,21 @@ class IndividualEstimateSaveFailure(val reason: Reason) : IllegalStateException(
 
 /** Extension of the existing canonical series repository, using its counter and immutable history. */
 internal fun ImmutableEstimateRepository.saveIndividual(
-    database: PrototypeDatabase, request: IndividualEstimateSaveRequest, year: Int, now: Long, publicToken: () -> String, target: IndividualRevisionTarget? = null
+    database: PrototypeDatabase, request: IndividualEstimateSaveRequest, issueDate: LocalDate?, now: Long, target: IndividualRevisionTarget? = null
 ): CreatedEstimateSeries = database.transactionWithResult {
     fun fail(reason: IndividualEstimateSaveFailure.Reason): Nothing = throw IndividualEstimateSaveFailure(reason)
     // SQLite writer lock is claimed before receipt/source/settings reads. The host has already
     // registered this operation; Android's outer transaction owns the physical restore lease.
     database.priceGroupsQueries.claimCatalogWrite()
     if (!isEstimateUuid(request.operationUuid) || !isEstimateUuid(request.sessionId) || request.projectId <= 0 ||
-        validEstimateTitle(request.title) != request.title || now <= 0 || year !in 1000..9999)
+        validEstimateTitle(request.title) != request.title || now <= 0 || target == null && (issueDate == null || issueDate.year !in 1000..9999))
         fail(IndividualEstimateSaveFailure.Reason.INVALID_COMMAND)
     val q = database.frozenEstimateQueries
     val revisions = database.frozenRevisionQueries
     val command = if (target == null) frozenEstimateJson.encodeToString(request)
         else frozenEstimateJson.encodeToString(AppendIndividualRevisionRequest(target, request))
+    if (database.estimateIssuanceQueries.selectIssuanceReceipt(request.operationUuid).executeAsOneOrNull() != null)
+        fail(IndividualEstimateSaveFailure.Reason.OPERATION_CONFLICT)
     if (target != null && q.selectEstimateSaveReceipt(request.operationUuid).executeAsOneOrNull() != null ||
         target == null && revisions.selectRevisionReceipt(request.operationUuid).executeAsOneOrNull() != null)
         fail(IndividualEstimateSaveFailure.Reason.OPERATION_CONFLICT)
@@ -111,8 +114,6 @@ internal fun ImmutableEstimateRepository.saveIndividual(
         original.rows.map { it.line }.toSet() == included.toSet() &&
         !original.hasMeasurementDrift(read.source)
     ) fail(IndividualEstimateSaveFailure.Reason.DUPLICATE_CONTENT)
-    val policy = previous?.frozen?.numberPolicy ?: numberPolicy()
-    if (EstimateNumbering.validatePublic(policy).isNotEmpty()) fail(IndividualEstimateSaveFailure.Reason.NUMBER_POLICY)
     val source = FrozenIndividualSource(project.uuid, project.title, m.uuid, m.name, m.drawingJson,
         mapOf("shape" to m.shape, "lengthMeters" to m.lengthMeters.toString(), "widthMeters" to m.widthMeters.toString(),
             "areaSquareMeters" to m.areaSquareMeters.toString(), "perimeterMeters" to m.perimeterMeters.toString(),
@@ -130,71 +131,59 @@ internal fun ImmutableEstimateRepository.saveIndividual(
             request.projectId, request.selection.measurementUuid).executeAsList().isNotEmpty()
     ) fail(IndividualEstimateSaveFailure.Reason.SERIES_EXISTS)
     val history = database.estimateHistoryQueries
-    val created = if (target != null) {
-        val root = checkNotNull(series(target.seriesUuid))
-        CreatedEstimateSeries(root.seriesUuid, root.documentNumber, newRecordUuid(), root.localSequence)
-    } else {
-        // Reserve only after every source/composition validation; any later error rolls back this counter.
-        history.insertDefaultEstimateNumberSettings()
-        val sequence = (history.allocateEstimateSequence().executeAsOneOrNull()
-            ?: fail(IndividualEstimateSaveFailure.Reason.SEQUENCE_EXHAUSTED)) - 1L
-        var identity: CreatedEstimateSeries? = null
-        repeat(5) {
-            if (identity == null) {
-                val seriesId = newRecordUuid()
-                val number = EstimateNumbering.render(policy, EstimateNumberContext(seriesId, year, sequence,
-                    publicToken()))
-                val publicNumber = EstimateNumbering.printable(number)
-                if (q.selectEstimatePublicNumber(publicNumber).executeAsOneOrNull() == null &&
-                    history.insertEstimateSeriesIfFree(seriesId, number, request.projectId, m.uuid, policy.template,
-                        policy.prefix, policy.sequenceWidth.toLong(), sequence, now).executeAsOneOrNull() != null) {
-                    q.setEstimatePublicNumber(publicNumber, seriesId)
-                    identity = CreatedEstimateSeries(seriesId, number, newRecordUuid(), sequence)
-                }
-            }
+    fun persist(created: CreatedEstimateSeries, policy: EstimateNumberPolicy, publicNumber: String): CreatedEstimateSeries {
+        val version = if (target == null) 1L else target.parentVersion + 1
+        val format = when {
+            amounts.discountMode == QuoteDiscountMode.FIXED -> 4
+            included.any { it.quantityRoundingPolicy != null } -> 3
+            target == null -> 1
+            else -> 2
         }
-        identity ?: fail(IndividualEstimateSaveFailure.Reason.NUMBER_COLLISION)
+        val rule = when (format) {
+            4 -> "individual-quote-v4-fixed-discount"
+            3 -> "individual-quote-v3-area-milli-half-up"
+            else -> "individual-quote-v$format"
+        }
+        val frozen = FrozenIndividualEstimate(formatVersion = format,
+            revisionIdentity = target?.let { FrozenRevisionIdentity(it.seriesUuid, created.initialRevisionUuid, version, it.parentUuid) }, title = request.title, source = source, sourceSignature = read.source.signature,
+            catalogSignature = read.catalog.signature, scopeSignature = selection.scopeSignature, compositionUuid = selection.compositionUuid,
+            sessionId = request.sessionId, discountText = request.discountText, previewSignature = preview.signature,
+            fingerprint = fingerprint, acknowledgedFingerprint = request.acknowledgedFingerprint, partial = preview.isPartial,
+            omissions = omissions, rows = included.map { FrozenIndividualLine(newRecordUuid(), it) }, amounts = amounts,
+            numberPolicy = policy, publicNumber = publicNumber)
+        val payload = frozen.encode()
+        // These REAL values support legacy history tools only. All P4C1 reads use the exact frozen table.
+        if (resuming != null) {
+            // Whole-series deletion in older builds only marked the series. Preserve every
+            // old version’s invisibility before lifting that marker.
+            revisions.preserveDeletedSeriesRevisions(resuming, created.seriesUuid)
+            if (revisions.resumeDeletedIndividualSeries(created.seriesUuid, resuming).executeAsOneOrNull() == null)
+                fail(IndividualEstimateSaveFailure.Reason.STALE_STATUS)
+        }
+        history.insertImmutableEstimateRevision(created.initialRevisionUuid, created.seriesUuid, target?.parentUuid, version, now,
+            m.drawingJson, payload, read.source.geometry.precisionStepMeters, rule, "UAH",
+            frozen.rounding, amounts.finalCents.toDouble() / 100)
+        if (target == null) {
+            q.insertFrozenV1(created.initialRevisionUuid, payload, amounts.subtotalCents, amounts.discountBasisPoints.toLong(), amounts.discountCents, amounts.finalCents)
+            q.insertEstimateWorkflow(created.seriesUuid, now) // Legacy archive; never used for active revision status.
+            database.revisionWorkflowQueries.insertRevisionChoice(created.seriesUuid)
+            q.insertEstimateSaveReceipt(request.operationUuid, command, created.seriesUuid, created.initialRevisionUuid)
+        } else {
+            revisions.insertFrozenRevision(created.initialRevisionUuid, payload, amounts.subtotalCents, amounts.discountBasisPoints.toLong(), amounts.discountCents, amounts.finalCents)
+            revisions.insertRevisionReceipt(request.operationUuid, command, created.seriesUuid, created.initialRevisionUuid)
+        }
+        database.revisionWorkflowQueries.insertRevisionWorkflow(created.initialRevisionUuid, now)
+        return created
     }
-    val version = if (target == null) 1L else target.parentVersion + 1
-    val format = when {
-        amounts.discountMode == QuoteDiscountMode.FIXED -> 4
-        included.any { it.quantityRoundingPolicy != null } -> 3
-        target == null -> 1
-        else -> 2
-    }
-    val rule = when (format) {
-        4 -> "individual-quote-v4-fixed-discount"
-        3 -> "individual-quote-v3-area-milli-half-up"
-        else -> "individual-quote-v$format"
-    }
-    val frozen = FrozenIndividualEstimate(formatVersion = format,
-        revisionIdentity = target?.let { FrozenRevisionIdentity(it.seriesUuid, created.initialRevisionUuid, version, it.parentUuid) }, title = request.title, source = source, sourceSignature = read.source.signature,
-        catalogSignature = read.catalog.signature, scopeSignature = selection.scopeSignature, compositionUuid = selection.compositionUuid,
-        sessionId = request.sessionId, discountText = request.discountText, previewSignature = preview.signature,
-        fingerprint = fingerprint, acknowledgedFingerprint = request.acknowledgedFingerprint, partial = preview.isPartial,
-        omissions = omissions, rows = included.map { FrozenIndividualLine(newRecordUuid(), it) }, amounts = amounts,
-        numberPolicy = policy, publicNumber = EstimateNumbering.printable(created.documentNumber))
-    val payload = frozen.encode()
-    // These REAL values support legacy history tools only. All P4C1 reads use the exact frozen table.
-    if (resuming != null) {
-        // Whole-series deletion in older builds only marked the series. Preserve every
-        // old version’s invisibility before lifting that marker.
-        revisions.preserveDeletedSeriesRevisions(resuming, created.seriesUuid)
-        if (revisions.resumeDeletedIndividualSeries(created.seriesUuid, resuming).executeAsOneOrNull() == null)
-            fail(IndividualEstimateSaveFailure.Reason.STALE_STATUS)
-    }
-    history.insertImmutableEstimateRevision(created.initialRevisionUuid, created.seriesUuid, target?.parentUuid, version, now,
-        m.drawingJson, payload, read.source.geometry.precisionStepMeters, rule, "UAH",
-        frozen.rounding, amounts.finalCents.toDouble() / 100)
     if (target == null) {
-        q.insertFrozenV1(created.initialRevisionUuid, payload, amounts.subtotalCents, amounts.discountBasisPoints.toLong(), amounts.discountCents, amounts.finalCents)
-        q.insertEstimateWorkflow(created.seriesUuid, now) // Legacy archive; never used for active revision status.
-        database.revisionWorkflowQueries.insertRevisionChoice(created.seriesUuid)
-        q.insertEstimateSaveReceipt(request.operationUuid, command, created.seriesUuid, created.initialRevisionUuid)
+        issueIndividual(request.projectId, m.uuid, checkNotNull(issueDate), now) { number ->
+            persist(CreatedEstimateSeries(number.seriesUuid, number.documentNumber, newRecordUuid(), number.sequence),
+                number.policy, number.publicNumber)
+        }
     } else {
-        revisions.insertFrozenRevision(created.initialRevisionUuid, payload, amounts.subtotalCents, amounts.discountBasisPoints.toLong(), amounts.discountCents, amounts.finalCents)
-        revisions.insertRevisionReceipt(request.operationUuid, command, created.seriesUuid, created.initialRevisionUuid)
+        val root = checkNotNull(series(target.seriesUuid))
+        val frozenRoot = checkNotNull(previous).frozen
+        persist(CreatedEstimateSeries(root.seriesUuid, root.documentNumber, newRecordUuid(), root.localSequence),
+            frozenRoot.numberPolicy, frozenRoot.publicNumber)
     }
-    database.revisionWorkflowQueries.insertRevisionWorkflow(created.initialRevisionUuid, now)
-    created
 }

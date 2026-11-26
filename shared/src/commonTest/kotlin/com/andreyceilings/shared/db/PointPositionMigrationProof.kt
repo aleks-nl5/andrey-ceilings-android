@@ -54,7 +54,7 @@ object PointPositionMigrationProof {
         val moved: PointPlacement?
         try {
             assertEquals(PriceCatalogSchema.version, PriceNameUniquenessProof.scalar(upgraded, "PRAGMA user_version"))
-            assertEquals(before, PointPlacementMigrationProof.snapshot(upgraded))
+            assertEquals(withoutPreV22Estimates(before), PointPlacementMigrationProof.snapshot(upgraded))
             assertEquals(beforePoints, oldPoints(upgraded))
             val db = PrototypeDatabase(upgraded)
             moved = fixture?.let { f ->

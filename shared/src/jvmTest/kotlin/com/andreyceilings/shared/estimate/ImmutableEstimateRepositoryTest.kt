@@ -43,10 +43,10 @@ class ImmutableEstimateRepositoryTest {
             projectId, 2026, 200L, draft(),
             newSeriesUuid = { uniqueUuid(1) }, newRevisionUuid = { uniqueUuid(2) }
         )
-        assertTrue(Regex("AC-2026-00001-[A-F0-9]{10}-" + uniqueUuid(1)).matches(first.documentNumber))
+        assertTrue(Regex("КШ-2026-0001-" + uniqueUuid(1)).matches(first.documentNumber))
         val root = assertNotNull(repo.series(first.seriesUuid))
         assertEquals(first.documentNumber, root.documentNumber)
-        assertEquals("{prefix}-{year}-{sequence}-{suffix}", root.policyTemplate)
+        assertEquals("{prefix}-{year}-{sequence}", root.policyTemplate)
         assertEquals(1L, root.localSequence)
         val v1 = repo.revisions(first.seriesUuid).single()
         assertEquals(1L, v1.versionNumber)
@@ -63,7 +63,7 @@ class ImmutableEstimateRepositoryTest {
             projectId, 2026, 300L, draft(),
             newSeriesUuid = { uniqueUuid(3) }, newRevisionUuid = { uniqueUuid(4) }
         )
-        repo.configureNumberPolicy(EstimateNumberPolicy("{year}-{prefix}-{uuid}", "NEW"))
+        repo.configureNumberPolicy(EstimateNumberPolicy("{year}-{prefix}-{sequence}", "NEW"))
         val v2uuid = repo.appendRevision(
             root.seriesUuid, root.initialRevisionUuid, 400L, draft(240.0, "New canvas"),
             newRevisionUuid = { uniqueUuid(5) }
@@ -85,7 +85,7 @@ class ImmutableEstimateRepositoryTest {
             projectId, 2026, 500L, draft(),
             newSeriesUuid = { uniqueUuid(6) }, newRevisionUuid = { uniqueUuid(7) }
         )
-        assertEquals("2026-NEW-${uniqueUuid(6)}", next.documentNumber)
+        assertEquals("2026-NEW-0002-${uniqueUuid(6)}", next.documentNumber)
     }
 
     @Test

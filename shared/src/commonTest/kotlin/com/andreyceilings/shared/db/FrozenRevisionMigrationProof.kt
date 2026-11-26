@@ -1,7 +1,6 @@
 package com.andreyceilings.shared.db
 
 import app.cash.sqldelight.db.*
-import com.andreyceilings.shared.estimate.*
 import kotlin.test.*
 
 object FrozenRevisionMigrationProof {
@@ -17,19 +16,9 @@ object FrozenRevisionMigrationProof {
     suspend fun lifecycle(production: SqlSchema<QueryResult.Value<Unit>>, open: suspend (SqlSchema<QueryResult.Value<Unit>>) -> SqlDriver) {
         val (beforeSchema, beforePayload) = open(v16Schema).use { old ->
             val db = PrototypeDatabase(old)
-            // The current v1 writer also checks the cross-version operation namespace.
-            // Create its empty lookup tables only while producing the historical v1 fixture,
-            // then remove them. The on-disk database below is exactly v16 with real v1 data.
-            PrototypeDatabase.Schema.migrate(old, 16, 18)
             val fixture = MeasurementPricingFixture.seed(db)
-            val history = ImmutableEstimateRepository(db)
-            val first = history.saveIndividual(FrozenIndividualEstimateProof.command(db, fixture), 2026, 600)
-            db.frozenEstimateQueries.updateEstimateWorkflow(EstimateWorkflowStatus.APPROVED.name, 601, first.seriesUuid, 1).executeAsOne()
-            val payload = readPreV21FrozenV1Payload(old, first.seriesUuid)
-            old.execute(null, "DROP TABLE estimate_revision_choice", 0)
-            old.execute(null, "DROP TABLE estimate_revision_workflow", 0)
-            old.execute(null, "DROP TABLE estimate_revision_receipts", 0)
-            old.execute(null, "DROP TABLE estimate_revision_frozen", 0)
+            val first = seedHistoricalEstimate(old, fixture.projectId, fixture.measurementUuid, 16)
+            val payload = readPreV21FrozenV1Payload(old, first.series)
             verifyFrozenEstimateStructure(old, 16)
             PriceNameMigrationProof.schema(old) to payload
         }
@@ -54,7 +43,7 @@ object FrozenRevisionMigrationProof {
         open(production).use { current ->
             PriceCatalogSchema.verifyStructure(current)
             verifyFrozenEstimateContents(current)
-            assertEquals(beforePayload, PrototypeDatabase(current).frozenEstimateQueries.selectFrozenV1List().executeAsList().single().payload)
+            assertTrue(PrototypeDatabase(current).frozenEstimateQueries.selectFrozenV1List().executeAsList().isEmpty())
             FrozenRevisionProof.run(current)
             saved = PrototypeDatabase(current).frozenRevisionQueries.selectExactList().executeAsList().map { it.revisionUuid to it.payload }
         }
@@ -62,7 +51,7 @@ object FrozenRevisionMigrationProof {
             PriceCatalogSchema.verifyStructure(current)
             verifyFrozenEstimateContents(current)
             assertEquals(saved, PrototypeDatabase(current).frozenRevisionQueries.selectExactList().executeAsList().map { it.revisionUuid to it.payload })
-            assertTrue(PrototypeDatabase(current).frozenEstimateQueries.selectFrozenV1List().executeAsList().any { it.payload == beforePayload })
+            assertTrue(PrototypeDatabase(current).frozenEstimateQueries.selectFrozenV1List().executeAsList().none { it.payload == beforePayload })
         }
     }
 }

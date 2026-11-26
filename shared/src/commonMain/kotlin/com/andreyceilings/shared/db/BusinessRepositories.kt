@@ -315,7 +315,7 @@ class EstimateRepository(private val database: PrototypeDatabase) {
         projectId: Long, name: String, material: String, profileType: String, complexity: String,
         lengthMeters: Double, widthMeters: Double, areaSquareMeters: Double, perimeterMeters: Double,
         canvasCost: Double, profileCost: Double, complexityCost: Double, optionsCost: Double,
-        totalCost: Double, detailsJson: String, createdAt: Long, year: Int,
+        totalCost: Double, detailsJson: String, createdAt: Long, year: Int? = null,
         snapshot: ImmutableEstimateDraft,
         newSeriesUuid: () -> String = ::newRecordUuid,
         newRevisionUuid: () -> String = ::newRecordUuid
@@ -326,8 +326,10 @@ class EstimateRepository(private val database: PrototypeDatabase) {
         val id = createReturningId(projectId, name, material, profileType, complexity,
             lengthMeters, widthMeters, areaSquareMeters, perimeterMeters, canvasCost,
             profileCost, complexityCost, optionsCost, totalCost, detailsJson, createdAt)
+        val issueDate = year?.let { kotlinx.datetime.LocalDate(it, 1, 1) }
+            ?: com.andreyceilings.shared.estimate.EstimateNumbering.issueDate(createdAt, kotlinx.datetime.TimeZone.currentSystemDefault())
         val result = ImmutableEstimateRepository(database).createSeries(
-            projectId, year, createdAt, snapshot,
+            projectId, issueDate, createdAt, snapshot,
             newSeriesUuid = newSeriesUuid, newRevisionUuid = newRevisionUuid
         )
         queries.linkLegacyEstimateToSeries(result.seriesUuid, id)
@@ -338,11 +340,7 @@ class EstimateRepository(private val database: PrototypeDatabase) {
     fun documentNumberForId(id: Long): String? =
         queries.selectDocumentNumberForEstimateId(id).executeAsOneOrNull()
     fun printableNumberForId(id: Long): String? =
-        queries.selectPrintableNumberIdentityForEstimateId(id).executeAsOneOrNull()?.let {
-            com.andreyceilings.shared.estimate.EstimateNumbering.printable(
-                it.documentNumber, it.localSequence, it.policyPrefix, it.policySequenceWidth.toInt()
-            )
-        }
+        queries.selectPrintableNumberIdentityForEstimateId(id).executeAsOneOrNull()?.publicNumber
 
     fun originalRevisionInputForId(id: Long): String? =
         queries.selectFirstRevisionInputForEstimateId(id).executeAsOneOrNull()

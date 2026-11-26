@@ -48,7 +48,7 @@ class PriceCatalogIosCipherTest {
             try {
                 val db = PrototypeDatabase(migrated)
                 PriceCatalogMigrationProof.assertReplaced(db)
-                assertEquals(before, PriceCatalogMigrationProof.untouchedRows(migrated))
+                assertEquals(withoutPreV22Estimates(before), PriceCatalogMigrationProof.untouchedRows(migrated))
                 phase = "group/item CRUD"
                 PriceCatalogPersistenceProof.groupsAndParameters(db)
                 PriceCatalogP2Proof.run(db)
@@ -59,7 +59,7 @@ class PriceCatalogIosCipherTest {
             try {
                 assertEquals(0L, PriceRepository(PrototypeDatabase(reopened)).count())
                 assertTrue(PriceGroupRepository(PrototypeDatabase(reopened)).all().isEmpty())
-                assertEquals(before, PriceCatalogMigrationProof.untouchedRows(reopened))
+                assertEquals(withoutPreV22Estimates(before), PriceCatalogMigrationProof.untouchedRows(reopened))
             } finally { reopened.close() }
         } catch (failure: Throwable) {
             throw AssertionError("P1 iOS [$phase]: ${failure.message}", failure)

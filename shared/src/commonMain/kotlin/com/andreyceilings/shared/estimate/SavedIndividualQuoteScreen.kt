@@ -58,7 +58,7 @@ fun SavedIndividualQuoteList(store: MeasurementElementsStore?, projectId: Long? 
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text(head.frozen.title, style = MaterialTheme.typography.titleSmall)
-                    Text(EstimateNumbering.displayNumber(head.frozen.publicNumber, head.frozen.numberPolicy), style = MaterialTheme.typography.labelSmall)
+                    Text(head.frozen.publicNumber, style = MaterialTheme.typography.labelSmall)
                 }
                 val allowed = series.all { it.canDeleteQuote }
                 if (!allowed) WorkspaceCostHelp(stringResource(Res.string.p5d_delete_protected))

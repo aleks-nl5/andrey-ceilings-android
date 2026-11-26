@@ -1,195 +1,124 @@
 package com.andreyceilings.shared.estimate
 
-/**
- * Formatting of the human-facing number (e.g. KSH-2026-00001).
- *
- * The entire UUID v4 is ALWAYS persisted in the internal documentNumber,
- * even when the printable template does not contain {uuid}. The UUID is
- * never part of the printable number or a customer-facing PDF.
- */
-@kotlinx.serialization.Serializable
+import kotlinx.datetime.LocalDate
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.toLocalDateTime
+import kotlinx.serialization.Serializable
+import kotlin.time.Instant
+
+enum class EstimateType { INDIVIDUAL, CONSOLIDATED }
+
+@Serializable
+enum class EstimateCounterMode { INDEPENDENT, COMMON }
+
+/** Resolved format frozen with each issued root. */
+@Serializable
 data class EstimateNumberPolicy(
-    val template: String = "{prefix}-{year}-{sequence}-{suffix}",
-    val prefix: String = "AC",
-    val sequenceWidth: Int = 5,
-    val suffixLabel: String = ""
+    val template: String = STANDARD_ESTIMATE_TEMPLATE,
+    val prefix: String = "КШ",
+    val sequenceWidth: Int = 4
 )
 
-data class EstimateNumberContext(
-    val seriesUuid: String,
-    val year: Int,
-    val localSequence: Long,
-    val publicToken: String = ""
+const val STANDARD_ESTIMATE_TEMPLATE = "{prefix}-{year}-{sequence}"
+
+@Serializable
+data class EstimateIssuancePolicy(
+    val mode: EstimateCounterMode = EstimateCounterMode.INDEPENDENT,
+    val individualPrefix: String = "КШ",
+    val consolidatedPrefix: String = "ЗК",
+    val template: String = STANDARD_ESTIMATE_TEMPLATE,
+    val consolidatedTemplate: String? = null,
+    val sequenceWidth: Int = 4
+) {
+    fun resolve(type: EstimateType): EstimateNumberPolicy = when (type) {
+        EstimateType.INDIVIDUAL -> EstimateNumberPolicy(template, individualPrefix, sequenceWidth)
+        EstimateType.CONSOLIDATED -> EstimateNumberPolicy(consolidatedTemplate ?: template, consolidatedPrefix, sequenceWidth)
+    }
+}
+
+data class EstimateNumberPreview(
+    val individual: String,
+    val consolidated: String,
+    val alternatives: Boolean
 )
 
-/** Pure shared KMP numbering on Android, Windows and iOS. */
 object EstimateNumbering {
-    private val placeholders = setOf("prefix", "year", "sequence", "uuid", "suffix")
-    private val uuidV4 = Regex("^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
-    private val uuidPart = Regex("[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}")
-    private val templateToken = Regex("\\{([a-z]+)\\}")
-    private val safePrefix = Regex("^[A-Za-zА-Яа-яІіЇїЄєҐґ0-9_-]{1,20}$")
-    private val safeTemplate = Regex("^[A-Za-zА-Яа-яІіЇїЄєҐґ0-9._{}/-]+$")
+    private val token = Regex("\\{([a-zA-Z]+)\\}")
+    private val known = setOf("prefix", "year", "yearShort", "month", "day", "sequence")
+    private val uuid = Regex("[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}", RegexOption.IGNORE_CASE)
+    private const val MAX_PUBLIC_LENGTH = 91
 
-    const val MAX_NUMBER_LENGTH = 128
+    // Accept BMP letters and decimal digits and this explicitly permitted punctuation.
+    // Compare prefixes using Kotlin's locale-independent lowercase and exact code points.
+    // Formatting preserves all accepted characters, including repeated separators.
+    private fun safePrefixChar(char: Char) = char.isLetterOrDigit() || char in "-_"
 
-    /**
-     * Existing stored templates with {uuid} are supported without a migration.
-     * New user-facing templates need {sequence}, but no visible UUID.
-     */
-    fun validate(policy: EstimateNumberPolicy): List<String> = buildList {
-        if (policy.template.isEmpty() || policy.template.length > 96) {
-            add("Template must contain 1–96 characters")
+    fun validatePublic(policy: EstimateNumberPolicy): List<String> = buildList {
+        val matches = token.findAll(policy.template).toList()
+        val names = matches.map { it.groupValues[1] }
+        val literal = token.replace(policy.template, "")
+        if (policy.template.length !in 1..96 || literal.any { !safePrefixChar(it) && it !in " ./·+№()" }) {
+            add("Template contains unsupported characters or exceeds 96 characters")
         }
-        if (!safeTemplate.matches(policy.template)) {
-            add("Template contains unsupported characters")
+        if (names.any { it !in known } || names.distinct().size != names.size) {
+            add("Template contains an unknown or repeated token")
         }
-        val tokens = templateToken.findAll(policy.template).toList()
-        val names = tokens.map { it.groupValues[1] }
-        if (names.any { it !in placeholders }) {
-            add("Template contains an unknown placeholder")
+        if ("prefix" !in names || "sequence" !in names || names.count { it == "year" || it == "yearShort" } != 1) {
+            add("Template requires prefix, one year and sequence")
         }
-        if (names.groupingBy { it }.eachCount().any { it.value > 1 }) {
-            add("Template may not repeat placeholders")
+        if (policy.prefix.length !in 1..20 || !policy.prefix.all(::safePrefixChar) ||
+            policy.prefix.none(Char::isLetterOrDigit)) {
+            add("Prefix must contain 1–20 letters, digits, hyphens or underscores")
         }
-        if (templateToken.replace(policy.template, "").any { it == '{' || it == '}' }) {
-            add("Template contains an invalid placeholder")
-        }
-        // Legacy UUID-only format is still readable but new numbers must
-        // always contain a local sequence to avoid accidental local duplicates.
-        if ("sequence" !in names && "uuid" !in names) {
-            add("Template must contain {sequence}")
-        }
-        if ("prefix" in names && !safePrefix.matches(policy.prefix)) {
-            add("Prefix must contain 1–20 letters, digits, - or _")
-        }
-        if (policy.suffixLabel.isNotEmpty() && !safePrefix.matches(policy.suffixLabel)) {
-            add("Suffix label must contain at most 20 letters, digits, - or _")
-        }
-        if (policy.sequenceWidth !in 1..12) {
-            add("Sequence width must be between 1 and 12")
-        }
-        val maxRenderedLength = policy.template.length - tokens.sumOf { it.value.length } +
-            tokens.sumOf {
-                when (it.groupValues[1]) {
-                    "suffix" -> policy.suffixLabel.length + 11
-                    "uuid" -> 36
-                    "prefix" -> policy.prefix.length
-                    "year" -> 4
-                    "sequence" -> 19
-                    else -> 0
-                }
-            } + (if ("uuid" in names) 0 else 37)
-        if (maxRenderedLength > MAX_NUMBER_LENGTH) {
-            add("Document number could exceed $MAX_NUMBER_LENGTH characters")
-        }
-    }
-
-    /** Internal immutable identity: the full RFC-4122 v4 UUID is always present. */
-    fun render(policy: EstimateNumberPolicy, context: EstimateNumberContext): String {
-        require(validate(policy).isEmpty()) { validate(policy).joinToString("; ") }
-        val uuid = context.seriesUuid.lowercase()
-        require(uuidV4.matches(uuid)) { "Series UUID must be a complete RFC 4122 version-4 UUID" }
-        require(context.year in 1000..9999) { "Year must contain four digits" }
-        require(context.localSequence > 0) { "Local sequence must be positive" }
-        val formatted = substitute(policy, context)
-        val canonical = if ("{uuid}" in policy.template) formatted else "$formatted-$uuid"
-        require(canonical.length <= MAX_NUMBER_LENGTH) { "Document number is too long" }
-        return canonical
-    }
-
-    /** Public preview only; it never shows or reserves an actual UUID. */
-    fun preview(policy: EstimateNumberPolicy): String = printable(
-        render(policy, EstimateNumberContext("12345678-1234-4abc-8def-0123456789ab", 2026, 1, "K7Q2M8TR92"))
-    )
-
-    /**
-     * An already-issued canonical identifier yields the same public label
-     * even if the user's template changes. No DB writes or clock required.
-     * Legacy UUID-only documents get a stable local-sequence fallback.
-     */
-    fun printable(canonicalNumber: String, localSequence: Long = 0L, prefix: String = "AC",
-                  sequenceWidth: Int = 5): String {
-        val withoutUuid = uuidPart.replace(canonicalNumber, "").trim('-', '_', '.', '/')
-        // Collapse separators surrounding a UUID in legacy templates such as
-        // {prefix}-{uuid}-{sequence}, while preserving intentional single separators.
-        val cleaned = withoutUuid.replace(Regex("--+"), "-")
-            .replace(Regex("__+"), "_")
-            .replace(Regex("//+"), "/")
-            .trim('-', '_', '.', '/')
-        return cleaned.ifBlank {
-            if (localSequence > 0) "$prefix-${localSequence.toString().padStart(sequenceWidth, '0')}"
-            else "Кошторис"
-        }
-    }
-
-    /**
-     * Compact workspace label only. The full issued public number remains immutable
-     * in storage and PDF; never use this abbreviated label as an identity.
-     * Match the stored template, rather than guessing from a trailing hex string.
-     */
-    fun displayNumber(publicNumber: String, policy: EstimateNumberPolicy): String {
-        if ("{suffix}" !in policy.template) return publicNumber
-        val pattern = buildString {
-            append("^(")
-            var offset = 0
-            for (match in templateToken.findAll(policy.template)) {
-                append(Regex.escape(policy.template.substring(offset, match.range.first)))
-                append(when (match.groupValues[1]) {
-                    "prefix" -> Regex.escape(policy.prefix)
-                    "year" -> "[0-9]{4}"
-                    "sequence" -> "[0-9]+"
-                    "suffix" -> (if (policy.suffixLabel.isEmpty()) "" else Regex.escape(policy.suffixLabel) + "-") + ")([A-Z0-9]{8,10})("
-                    else -> return publicNumber
-                })
-                offset = match.range.last + 1
+        if (policy.sequenceWidth !in 1..12) add("Sequence width must be between 1 and 12")
+        val longest = literal.length + names.sumOf { name ->
+            when (name) {
+                "prefix" -> policy.prefix.length
+                "year" -> 4
+                "sequence" -> 19
+                else -> 2
             }
-            append(Regex.escape(policy.template.substring(offset)))
-            append(")$")
         }
-        val match = Regex(pattern).matchEntire(publicNumber) ?: return publicNumber
-        // Capture the prefix as well as the token: MatchGroup.range is not common Kotlin API.
-        val start = match.groupValues[1].length
-        val end = start + match.groupValues[2].length
-        val separators = "-_./"
-        val removeStart = if (start > 0 && publicNumber[start - 1] in separators) start - 1 else start
-        val removeEnd = if (removeStart == start && end < publicNumber.length &&
-            publicNumber[end] in separators) end + 1 else end
-        return publicNumber.removeRange(removeStart, removeEnd).ifBlank { publicNumber }
+        if (uuid.containsMatchIn(policy.template)) add("Template must not contain a UUID")
+        if (longest > MAX_PUBLIC_LENGTH) add("Public number could exceed $MAX_PUBLIC_LENGTH characters")
     }
 
-    /** UI editor only: strip the private UUID placeholder from legacy formats. */
-    fun printableTemplate(internalTemplate: String): String {
-        val cleaned = internalTemplate.replace("{uuid}", "")
-            .replace(Regex("--+"), "-").replace(Regex("__+"), "_")
-            .replace(Regex("//+"), "/").trim('-', '_', '.', '/')
-        return cleaned
+    fun validate(policy: EstimateIssuancePolicy): List<String> = buildList {
+        for (type in EstimateType.entries) addAll(validatePublic(policy.resolve(type)))
+        if (policy.individualPrefix.lowercase() == policy.consolidatedPrefix.lowercase()) {
+            add("Prefixes must differ")
+        }
     }
 
-    /** A separate random UUID, never the private series identity. 40 random bits. */
-    @OptIn(kotlin.uuid.ExperimentalUuidApi::class)
-    fun newPublicToken(): String = publicToken(kotlin.uuid.Uuid.random().toString())
+    fun issueDate(epochMillis: Long, zone: TimeZone): LocalDate =
+        Instant.fromEpochMilliseconds(epochMillis).toLocalDateTime(zone).date
 
-    fun publicToken(randomUuid: String): String {
-        require(uuidV4.matches(randomUuid.lowercase()))
-        return randomUuid.replace("-", "").take(10).uppercase()
-    }
-
-    fun validatePublic(policy: EstimateNumberPolicy): List<String> = validate(policy) + buildList {
-        if ("{suffix}" !in policy.template) add("Public template must contain {suffix}")
-        if ("{sequence}" !in policy.template) add("Public template must contain {sequence}")
-        if ("{uuid}" in policy.template) add("Public template must not contain UUID")
-    }
-
-    private fun substitute(policy: EstimateNumberPolicy, context: EstimateNumberContext): String {
-        if ("{suffix}" in policy.template) require(Regex("^[A-Z0-9]{8,10}$").matches(context.publicToken))
+    fun render(policy: EstimateNumberPolicy, date: LocalDate, sequence: Long): String {
+        require(validatePublic(policy).isEmpty())
+        require(date.year in 1000..9999 && sequence > 0)
+        val isoDate = date.toString()
         val values = mapOf(
-            "suffix" to listOf(policy.suffixLabel, context.publicToken).filter { it.isNotEmpty() }.joinToString("-"),
             "prefix" to policy.prefix,
-            "year" to context.year.toString(),
-            "sequence" to context.localSequence.toString().padStart(policy.sequenceWidth, '0'),
-            "uuid" to context.seriesUuid.lowercase()
+            "year" to isoDate.substring(0, 4),
+            "yearShort" to isoDate.substring(2, 4),
+            "month" to isoDate.substring(5, 7),
+            "day" to isoDate.substring(8, 10),
+            "sequence" to sequence.toString().padStart(policy.sequenceWidth, '0')
         )
-        return templateToken.replace(policy.template) { match -> values.getValue(match.groupValues[1]) }
+        return token.replace(policy.template) { values.getValue(it.groupValues[1]) }.also {
+            require(!uuid.containsMatchIn(it)) { "Public number must not contain a UUID" }
+        }
+    }
+
+    internal fun canonical(publicNumber: String, seriesUuid: String): String {
+        require(isEstimateUuid(seriesUuid))
+        return "$publicNumber-$seriesUuid"
+    }
+
+    /** Canonical v22 IDs end with exactly one private UUID; preserve the full public part. */
+    fun printable(canonicalNumber: String): String {
+        val privateId = canonicalNumber.takeLast(36)
+        return if (canonicalNumber.length > 37 && canonicalNumber[canonicalNumber.length - 37] == '-' &&
+            isEstimateUuid(privateId)) canonicalNumber.dropLast(37) else canonicalNumber
     }
 }

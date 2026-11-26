@@ -124,7 +124,7 @@ class PriceCatalogSqlCipherTest {
                 }, 0).value)
                 val db = PrototypeDatabase(driver)
                 PriceCatalogMigrationProof.assertReplaced(db)
-                assertEquals(before, PriceCatalogMigrationProof.untouchedRows(driver))
+                assertEquals(withoutPreV22Estimates(before), PriceCatalogMigrationProof.untouchedRows(driver))
                 PriceCatalogPersistenceProof.groupsAndParameters(db)
                 PriceCatalogP2Proof.run(db)
                 PriceCatalogPersistenceProof.removeEverything(db)
@@ -137,13 +137,13 @@ class PriceCatalogSqlCipherTest {
                 assertEquals(1L, PrototypeDatabase(driver).priceGroupsQueries.selectSeedVersion().executeAsOne())
                 assertEquals(0L, PriceRepository(PrototypeDatabase(driver)).count())
                 assertTrue(PriceGroupRepository(PrototypeDatabase(driver)).all().isEmpty())
-                assertEquals(before, PriceCatalogMigrationProof.untouchedRows(driver))
+                assertEquals(withoutPreV22Estimates(before), PriceCatalogMigrationProof.untouchedRows(driver))
             }
             openProduction().use { driver ->
                 val db = PrototypeDatabase(driver)
                 assertEquals(0L, PriceRepository(db).count())
                 assertTrue(PriceGroupRepository(db).all().isEmpty())
-                assertEquals(before, PriceCatalogMigrationProof.untouchedRows(driver))
+                assertEquals(withoutPreV22Estimates(before), PriceCatalogMigrationProof.untouchedRows(driver))
             }
         } finally { context.deleteDatabase(name); context.deleteDatabase(restoredName); key.fill(0) }
     }

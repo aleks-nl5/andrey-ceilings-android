@@ -100,6 +100,9 @@ jobs:
           gradle --no-daemon :shared:jvmTest
           --tests '*LineCreationSnapTest' --tests '*MeasurementFormattingTest' --tests '*ProjectQuoteMetadataTest'
           --tests '*MeasurementEditModelTest' --tests '*MeasurementNavigationTest'
+          --tests '*EstimateNumberingTest' --tests '*EstimateNumberSettingsPersistenceTest'
+          --tests '*EstimateV22MigrationTest'
+          --tests '*FrozenEstimateConcurrencyTest'
           --stacktrace --warning-mode all
       - name: Verify unsigned release candidate for trusted signing
         shell: bash

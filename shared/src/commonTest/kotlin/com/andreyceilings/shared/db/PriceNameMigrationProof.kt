@@ -58,7 +58,7 @@ object PriceNameMigrationProof {
         }, 0).value
 
     fun assertMigrated(driver: SqlDriver, before: List<List<String?>>) {
-        assertEquals(before, snapshot(driver), "Every preexisting business value and sequence must survive")
+        assertEquals(withoutPreV22Estimates(before), snapshot(driver), "Business data outside estimate history must survive")
         PriceNameUniquenessProof.assertKeys(driver)
         assertEquals(1L, PrototypeDatabase(driver).priceGroupsQueries.selectSeedVersion().executeAsOne())
         assertEquals(2L, PriceRepository(PrototypeDatabase(driver)).count())

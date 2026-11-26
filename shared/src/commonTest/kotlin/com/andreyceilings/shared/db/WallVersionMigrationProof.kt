@@ -69,14 +69,10 @@ object WallVersionMigrationProof {
         val loaded = assertIs<PricingReadResult.Loaded>(LivePricingReader(db).read(row.projectId, row.uuid))
         val preview = loaded.buildPreview()
         assertTrue(preview.canFinalizeFull, "The legacy fixture must start with a complete quote")
-        val presenter = TransientQuotePresenter(row.uuid)
-        presenter.acceptRead(presenter.beginRead(), loaded)
-        val repo = ImmutableEstimateRepository(db)
-        val quote = repo.saveIndividual(assertNotNull(presenter.saveRequest(row.projectId, "Before migration")), 2026, 160)
-        presenter.close()
+        val quote = seedHistoricalEstimate(driver, row.projectId, row.uuid, 19, followUp = false)
         val staleFixture = MeasurementPricingFixture.seed(db)
         val stale = assertNotNull(measurements.findByUuid(staleFixture.measurementUuid))
-        return Seed(row.projectId, document, stale, quote.seriesUuid, readPreV21FrozenV1Payload(driver, quote.seriesUuid),
+        return Seed(row.projectId, document, stale, quote.series, readPreV21FrozenV1Payload(driver, quote.series),
             preview)
     }
 
@@ -113,9 +109,8 @@ object WallVersionMigrationProof {
             assertEquals(moved, MeasurementEditStore(db) { 0 }.load(seed.projectId, moved.measurementId))
             assertEquals(expectedWalls(evidence, migrated), db.livePricingQueries.selectPricingWalls(uuid).executeAsList())
             assertEquals(receipts, db.livePricingQueries.selectPricingReceipts(uuid).executeAsList())
-            val payload = if (migrated) db.frozenEstimateQueries.selectFrozenV1(seed.seriesUuid).executeAsOne().payload
-                else readPreV21FrozenV1Payload(driver, seed.seriesUuid)
-            assertEquals(seed.frozenPayload, payload)
+            if (migrated) assertNull(ImmutableEstimateRepository(db).series(seed.seriesUuid))
+            else assertEquals(seed.frozenPayload, readPreV21FrozenV1Payload(driver, seed.seriesUuid))
             assertEquals(staleWalls, db.livePricingQueries.selectPricingWalls(seed.stale.uuid).executeAsList())
             assertEquals(seed.stale.copy(updatedAt = seed.stale.updatedAt + 1), MeasurementRepository(db).find(seed.stale.id))
             val reader = LivePricingReader(db)

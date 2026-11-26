@@ -1,6 +1,10 @@
 package com.andreyceilings.app
 
 import android.content.Context
+import app.cash.sqldelight.driver.android.AndroidSqliteDriver
+import com.andreyceilings.shared.db.EstimateV22MigrationProof
+import com.andreyceilings.shared.db.MeasurementRepository
+import net.zetetic.database.sqlcipher.SupportOpenHelperFactory
 import android.graphics.pdf.PdfRenderer
 import android.net.Uri
 import android.os.ParcelFileDescriptor
@@ -8,6 +12,7 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.andreyceilings.app.data.db.CeilingsDatabase
 import com.andreyceilings.app.data.security.DatabaseKeyManager
+import com.andreyceilings.app.data.security.PortableBackupEnvelope
 import com.andreyceilings.app.data.security.PortableBackupManager
 import com.andreyceilings.app.data.security.PortableBackupPayload
 import com.andreyceilings.app.data.security.SqlCipherRestoreManager
@@ -83,6 +88,52 @@ class EstimateRevisionPortableRestoreTest {
         )
     }
 
+    @Test fun preV22PortableRestorePurgesOnlyEstimatesAndPreservesSourceBytes() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val sourceName = "legacy-estimate-v21-source.db"
+        val source = context.getDatabasePath(sourceName)
+        val key = ByteArray(32) { 21 }
+        val password = "Test pre-v22 estimate backup".toCharArray()
+        context.deleteDatabase(sourceName)
+        try {
+            System.loadLibrary("sqlcipher")
+            val fixture = AndroidSqliteDriver(EstimateV22MigrationProof.v21Schema, context, sourceName,
+                factory = SupportOpenHelperFactory(key.copyOf())).use { driver ->
+                EstimateV22MigrationProof.seed(driver)
+            }
+            val sourceBytes = source.readBytes()
+            val payload = PortableBackupPayload.encode(sourceBytes, key)
+            val envelope = try { PortableBackupEnvelope.seal(payload, password) } finally { payload.fill(0) }
+            val baselineKey = DatabaseKeyManager.getOrCreatePassphrase(context)
+            val baseline = PortableBackupManager.createVerifiedSnapshot(context, CeilingsDatabase.get(context))
+            val baselineBytes = baseline.readBytes()
+            try {
+                val validated = PortableBackupManager.validate(context, envelope, password)
+                try {
+                    assertTrue(validated.clearsPreV22Estimates)
+                    assertArrayEquals(sourceBytes, validated.database)
+                    val restored = SqlCipherRestoreManager.restore(context, validated)
+                    assertTrue(restored.checkIntegrity())
+                    assertTrue(EstimateV22MigrationProof.counts(restored.driver).values.all { it == 0L })
+                    assertEquals("in_progress", ProjectRepository(restored.database).find(fixture.projectId)?.status)
+                    assertEquals("paid", ProjectRepository(restored.database).find(fixture.projectId)?.paymentStatus)
+                    assertEquals(fixture.measurementUuid, MeasurementRepository(restored.database).findByUuid(fixture.measurementUuid)?.uuid)
+                    assertArrayEquals(sourceBytes, source.readBytes())
+                } finally {
+                    validated.database.fill(0)
+                    validated.passphrase.fill(0)
+                }
+            } finally {
+                try { SqlCipherRestoreManager.restore(context, PortableBackupPayload.Contents(baselineBytes, baselineKey)) }
+                finally { baseline.delete(); baselineBytes.fill(0); baselineKey.fill(0); sourceBytes.fill(0) }
+            }
+        } finally {
+            password.fill(Char.MIN_VALUE)
+            key.fill(0)
+            context.deleteDatabase(sourceName)
+            }
+    }
+
     @Test fun portableRestorePreservesEveryFrozenVersionAndVersionPdfSource() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val original = CeilingsDatabase.get(context)
@@ -152,6 +203,7 @@ class EstimateRevisionPortableRestoreTest {
 
             val decoded = PortableBackupManager.validate(context, exported, password)
             validatedContents = decoded
+            assertFalse(decoded.clearsPreV22Estimates)
             language.select(AppLanguagePreference.System)
             val replaced = SqlCipherRestoreManager.restore(context, decoded)
             assertEquals(AppLanguagePreference.System, AppLanguageState(AndroidAppLanguageStorage(preferences)).preference)

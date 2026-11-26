@@ -61,7 +61,7 @@ object PointPlacementMigrationProof {
         val fixture: PointPlacementProof.Fixture; val point: PointPlacement
         try {
             assertEquals(PriceCatalogSchema.version, PriceNameUniquenessProof.scalar(upgraded, "PRAGMA user_version"))
-            assertEquals(before, snapshot(upgraded))
+            assertEquals(withoutPreV22Estimates(before), snapshot(upgraded))
             val db = PrototypeDatabase(upgraded)
             if (populated) {
                 val oldElement = MeasurementElementRepository(db).find("old-none-snapshot")!!

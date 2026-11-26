@@ -1,0 +1,49 @@
+CREATE TABLE estimate_issuance_policy (
+    id INTEGER NOT NULL PRIMARY KEY CHECK (id = 1),
+    policy TEXT NOT NULL
+);
+
+CREATE TABLE estimate_number_reservations (
+    seriesUuid TEXT NOT NULL PRIMARY KEY,
+    publicNumber TEXT NOT NULL UNIQUE,
+    estimateType TEXT NOT NULL CHECK (estimateType IN ('INDIVIDUAL', 'CONSOLIDATED')),
+    issueDate TEXT NOT NULL,
+    issueYear INTEGER NOT NULL CHECK (typeof(issueYear) = 'integer' AND issueYear BETWEEN 1000 AND 9999),
+    sequence INTEGER NOT NULL CHECK (typeof(sequence) = 'integer' AND sequence > 0),
+    policy TEXT NOT NULL,
+    counterMode TEXT NOT NULL CHECK (counterMode IN ('INDEPENDENT', 'COMMON')),
+    operationUuid TEXT UNIQUE,
+    command TEXT CHECK ((operationUuid IS NULL) = (command IS NULL)),
+    UNIQUE (issueYear, estimateType, sequence)
+);
+
+selectIssuancePolicy:
+SELECT policy FROM estimate_issuance_policy WHERE id = 1;
+
+upsertIssuancePolicy:
+INSERT INTO estimate_issuance_policy VALUES (1, ?)
+ON CONFLICT(id) DO UPDATE SET policy = excluded.policy;
+
+selectReservation:
+SELECT * FROM estimate_number_reservations WHERE seriesUuid = ?;
+
+selectAllReservations:
+SELECT * FROM estimate_number_reservations;
+
+selectPublicReservation:
+SELECT seriesUuid FROM estimate_number_reservations WHERE publicNumber = ?;
+
+selectHighWater:
+SELECT sequence FROM estimate_number_reservations WHERE issueYear = ? AND estimateType = ?
+ORDER BY sequence DESC LIMIT 1;
+
+insertReservation:
+INSERT INTO estimate_number_reservations
+    (seriesUuid, publicNumber, estimateType, issueDate, issueYear, sequence, policy, counterMode)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+
+selectIssuanceReceipt:
+SELECT seriesUuid, command FROM estimate_number_reservations WHERE operationUuid = ?;
+
+recordIssuanceReceipt:
+UPDATE estimate_number_reservations SET operationUuid = ?, command = ? WHERE seriesUuid = ?;

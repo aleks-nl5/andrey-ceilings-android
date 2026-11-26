@@ -5,7 +5,6 @@ import com.andreyceilings.app.data.db.frozenLShapedGeometryFromSource
 import com.andreyceilings.app.data.db.FrozenPolygonGeometryJson
 import com.andreyceilings.shared.db.ProjectRepository
 import com.andreyceilings.shared.db.PrototypeDatabase
-import com.andreyceilings.shared.estimate.EstimateNumbering
 import com.andreyceilings.shared.estimate.ImmutableEstimateRepository
 import org.json.JSONArray
 import org.json.JSONObject
@@ -132,10 +131,7 @@ internal fun loadImmutableEstimatePdfSnapshot(
     val project = checkNotNull(ProjectRepository(database).find(series.projectId)) {
         "Об’єкт кошторису недоступний."
     }
-    val publicNumber = EstimateNumbering.printable(
-        series.documentNumber, series.localSequence,
-        series.policyPrefix, series.policySequenceWidth.toInt()
-    )
+    val publicNumber = checkNotNull(series.publicNumber)
     val canvasCost = rows.filter { it.stableCode.startsWith("canvas.") ||
         it.stableCode == "legacy.canvas" }.sumOf { it.lineTotalSnapshot }
     val profileCost = rows.filter { it.stableCode.startsWith("profile.") ||

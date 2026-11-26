@@ -3,8 +3,12 @@ package com.andreyceilings.shared.estimate
 import com.andreyceilings.shared.db.PrototypeDatabase
 import com.andreyceilings.shared.db.newRecordUuid
 import kotlin.math.abs
+import kotlinx.datetime.LocalDate
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.encodeToString
 
 /** The complete immutable calculation inputs and saved outputs for one revision. */
+@Serializable
 data class ImmutableEstimateDraft(
     val sourceMeasurementJson: String,
     val detailsJson: String,
@@ -16,6 +20,7 @@ data class ImmutableEstimateDraft(
     val moneyRoundingPolicy: String = "HALF_AWAY_FROM_ZERO"
 )
 
+@Serializable
 data class ImmutableEstimateLine(
     val stableCode: String,
     val title: String,
@@ -33,6 +38,13 @@ data class CreatedEstimateSeries(
     val localSequence: Long
 )
 
+@Serializable
+private data class ImmutableSeriesCommand(
+    val projectId: Long,
+    val measurementUuid: String?,
+    val firstRevision: ImmutableEstimateDraft
+)
+
 /**
  * KMP SQLDelight contract. A sequence and both immutable identity rows are saved
  * in one transaction, so failure of ANY line/constraint cannot leave a partial
@@ -41,12 +53,16 @@ data class CreatedEstimateSeries(
 class ImmutableEstimateRepository(private val database: PrototypeDatabase) {
     private val queries = database.estimateHistoryQueries
 
-    fun saveIndividual(request: IndividualEstimateSaveRequest, year: Int, now: Long,
-        publicToken: () -> String = EstimateNumbering::newPublicToken): CreatedEstimateSeries =
-        saveIndividual(database, request, year, now, publicToken)
+    private val numbering = EstimateNumberAllocator(database)
+
+    fun saveIndividual(request: IndividualEstimateSaveRequest, issueDate: LocalDate, now: Long): CreatedEstimateSeries =
+        saveIndividual(database, request, issueDate, now)
+
+    fun saveIndividual(request: IndividualEstimateSaveRequest, year: Int, now: Long): CreatedEstimateSeries =
+        saveIndividual(request, LocalDate(year, 1, 1), now)
 
     fun appendIndividual(request: AppendIndividualRevisionRequest, now: Long): CreatedEstimateSeries =
-        saveIndividual(database, request.calculation, 2000, now, EstimateNumbering::newPublicToken, request.target)
+        saveIndividual(database, request.calculation, null, now, request.target)
 
     fun frozenIndividual(seriesUuid: String) = database.frozenRevisionQueries.selectExactLatest(seriesUuid).executeAsOneOrNull()
 
@@ -67,6 +83,9 @@ class ImmutableEstimateRepository(private val database: PrototypeDatabase) {
             val f = decodeFrozenIndividualEstimate(it.payload)
             verifyFrozenStoredIdentity(f, it.projectId, it.measurementUuid, it.publicNumber,
                 it.subtotalCents, it.discountBasisPoints, it.discountCents, it.totalCents)
+            val number = database.estimateIssuanceQueries.selectReservation(it.seriesUuid).executeAsOne()
+            require(number.publicNumber == f.publicNumber &&
+                frozenEstimateJson.decodeFromString<EstimateNumberPolicy>(number.policy) == f.numberPolicy)
             verifyFrozenRevisionIdentity(f, it.seriesUuid, it.revisionUuid, it.versionNumber, it.parentRevisionUuid)
             val revision = checkNotNull(revision(it.revisionUuid))
             require(revision.detailsJson == it.payload && revision.sourceMeasurementJson == f.source.drawingJson)
@@ -158,19 +177,36 @@ class ImmutableEstimateRepository(private val database: PrototypeDatabase) {
         }
     }
 
-    fun numberPolicy(): EstimateNumberPolicy {
-        val row = queries.selectEstimateNumberSettings().executeAsOneOrNull()
-            ?: return EstimateNumberPolicy(template = "{prefix}-{year}-{sequence}-{suffix}")
-        return EstimateNumberPolicy(row.template, row.prefix, row.sequenceWidth.toInt(), row.suffixLabel)
+    fun issuancePolicy(): EstimateIssuancePolicy = numbering.policy()
+
+    fun configureIssuancePolicy(policy: EstimateIssuancePolicy, expected: EstimateIssuancePolicy? = null): Boolean =
+        numbering.configure(policy, expected)
+
+    fun previewNumbers(issueDate: LocalDate, policy: EstimateIssuancePolicy? = null): EstimateNumberPreview =
+        numbering.preview(issueDate, policy)
+
+    fun numberPolicy(): EstimateNumberPolicy = issuancePolicy().resolve(EstimateType.INDIVIDUAL)
+
+    fun configureNumberPolicy(policy: EstimateNumberPolicy) {
+        val current = issuancePolicy()
+        check(configureIssuancePolicy(current.copy(
+            individualPrefix = policy.prefix, template = policy.template, sequenceWidth = policy.sequenceWidth
+        ), current)) { "Numbering policy changed" }
     }
 
-    /** A setting applies only to future series, never to existing stored numbers. */
-    fun configureNumberPolicy(policy: EstimateNumberPolicy) {
-        require(EstimateNumbering.validate(policy).isEmpty()) { "Invalid document number policy" }
-        database.transaction {
-            queries.insertDefaultEstimateNumberSettings()
-            queries.updateEstimateNumberSettings(policy.template, policy.prefix, policy.sequenceWidth.toLong(), policy.suffixLabel)
-        }
+    internal fun issueIndividual(
+        projectId: Long,
+        measurementUuid: String?,
+        issueDate: LocalDate,
+        now: Long,
+        newSeriesUuid: () -> String = ::newRecordUuid,
+        write: (EstimateReservation) -> CreatedEstimateSeries
+    ): CreatedEstimateSeries = numbering.issue(EstimateType.INDIVIDUAL, issueDate, newSeriesUuid) { number ->
+        val policy = number.policy
+        checkNotNull(queries.insertEstimateSeriesIfFree(number.seriesUuid, number.documentNumber, projectId, measurementUuid,
+            policy.template, policy.prefix, policy.sequenceWidth.toLong(), number.sequence, now, number.publicNumber)
+            .executeAsOneOrNull())
+        write(number)
     }
 
     fun series(seriesUuid: String) = queries.selectEstimateSeries(seriesUuid).executeAsOneOrNull()
@@ -188,44 +224,43 @@ class ImmutableEstimateRepository(private val database: PrototypeDatabase) {
         firstRevision: ImmutableEstimateDraft,
         measurementUuid: String? = null,
         newSeriesUuid: () -> String = ::newRecordUuid,
-        newRevisionUuid: () -> String = ::newRecordUuid
+        newRevisionUuid: () -> String = ::newRecordUuid,
+        operationUuid: String = newRecordUuid()
+    ): CreatedEstimateSeries = createSeries(projectId, LocalDate(year, 1, 1), createdAt, firstRevision,
+        measurementUuid, newSeriesUuid, newRevisionUuid, operationUuid)
+
+    fun createSeries(
+        projectId: Long,
+        issueDate: LocalDate,
+        createdAt: Long,
+        firstRevision: ImmutableEstimateDraft,
+        measurementUuid: String? = null,
+        newSeriesUuid: () -> String = ::newRecordUuid,
+        newRevisionUuid: () -> String = ::newRecordUuid,
+        operationUuid: String = newRecordUuid()
     ): CreatedEstimateSeries {
-        require(projectId > 0) { "A series requires a project" }
+        require(projectId > 0 && isEstimateUuid(operationUuid))
         validateDraft(firstRevision)
+        val command = frozenEstimateJson.encodeToString(ImmutableSeriesCommand(projectId, measurementUuid, firstRevision))
+        val issuance = database.estimateIssuanceQueries
         return database.transactionWithResult {
-            queries.insertDefaultEstimateNumberSettings()
-            val policy = numberPolicy()
-            check(EstimateNumbering.validate(policy).isEmpty()) { "Stored numbering configuration is invalid" }
-            val sequence = queries.allocateEstimateSequence().executeAsOne() - 1L
-            var seriesUuid: String? = null
-            var documentNumber: String? = null
-            // A real collision is expected to be extremely rare. A deliberately
-            // repeated UUID fails explicitly after bounded retries, with rollback.
-            repeat(5) {
-                if (seriesUuid == null) {
-                    val candidate = newSeriesUuid().lowercase()
-                    val number = EstimateNumbering.render(
-                        policy, EstimateNumberContext(candidate, year, sequence, EstimateNumbering.newPublicToken())
-                    )
-                    val publicNumber = EstimateNumbering.printable(number)
-                    val publicAvailable = "{suffix}" !in policy.template || database.frozenEstimateQueries.selectEstimatePublicNumber(publicNumber).executeAsOneOrNull() == null
-                    val inserted = if (publicAvailable) queries.insertEstimateSeriesIfFree(
-                        candidate, number, projectId, measurementUuid,
-                        policy.template, policy.prefix, policy.sequenceWidth.toLong(),
-                        sequence, createdAt
-                    ).executeAsOneOrNull() else null
-                    if (inserted != null) {
-                        if ("{suffix}" in policy.template) database.frozenEstimateQueries.setEstimatePublicNumber(publicNumber, candidate)
-                        seriesUuid = candidate
-                        documentNumber = number
-                    }
-                }
+            database.priceGroupsQueries.claimCatalogWrite()
+            fun conflict(): Nothing = throw IndividualEstimateSaveFailure(IndividualEstimateSaveFailure.Reason.OPERATION_CONFLICT)
+            if (database.frozenEstimateQueries.selectEstimateSaveReceipt(operationUuid).executeAsOneOrNull() != null ||
+                database.frozenRevisionQueries.selectRevisionReceipt(operationUuid).executeAsOneOrNull() != null) conflict()
+            issuance.selectIssuanceReceipt(operationUuid).executeAsOneOrNull()?.let { receipt ->
+                if (receipt.command != command) conflict()
+                val series = checkNotNull(series(receipt.seriesUuid))
+                val first = revisions(series.seriesUuid).first()
+                return@transactionWithResult CreatedEstimateSeries(series.seriesUuid, series.documentNumber,
+                    first.revisionUuid, series.localSequence)
             }
-            val id = checkNotNull(seriesUuid) { "Could not allocate a unique estimate series UUID" }
-            val number = checkNotNull(documentNumber)
-            val revisionUuid = newRevisionUuid().lowercase()
-            insertRevision(id, revisionUuid, null, 1L, createdAt, firstRevision)
-            CreatedEstimateSeries(id, number, revisionUuid, sequence)
+            issueIndividual(projectId, measurementUuid, issueDate, createdAt, newSeriesUuid) { number ->
+                val revisionUuid = newRevisionUuid().lowercase()
+                insertRevision(number.seriesUuid, revisionUuid, null, 1L, createdAt, firstRevision)
+                issuance.recordIssuanceReceipt(operationUuid, command, number.seriesUuid)
+                CreatedEstimateSeries(number.seriesUuid, number.documentNumber, revisionUuid, number.sequence)
+            }
         }
     }
 

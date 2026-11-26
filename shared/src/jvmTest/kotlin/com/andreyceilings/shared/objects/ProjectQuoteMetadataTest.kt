@@ -158,7 +158,7 @@ class ProjectQuoteMetadataTest {
     ) = transaction {
         if (version == 1L) {
             estimateHistoryQueries.insertEstimateSeriesIfFree(
-                series, "number-$series", project, ceilingUuid, "", "", 1, 1, 10
+                series, "number-$series", project, ceilingUuid, "", "", 1, 1, 10, null
             ).executeAsOne()
         }
         val revision = "$series-$version"

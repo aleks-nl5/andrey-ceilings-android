@@ -7,7 +7,11 @@ import app.cash.sqldelight.coroutines.asFlow
 import com.andreyceilings.shared.prices.*
 import kotlinx.coroutines.*
 import kotlinx.datetime.TimeZone
-import kotlinx.datetime.toLocalDateTime
+import com.andreyceilings.shared.resources.Res
+import com.andreyceilings.shared.resources.estimate_number_collision_error
+import com.andreyceilings.shared.resources.estimate_number_exhausted_error
+import com.andreyceilings.shared.resources.estimate_number_policy_error
+import org.jetbrains.compose.resources.getString
 import kotlinx.coroutines.flow.*
 import kotlin.coroutines.CoroutineContext
 
@@ -336,8 +340,9 @@ class MeasurementElementsStore(private val database: PrototypeDatabase, private 
                     try {
                         database.transactionWithResult {
                             if (closed) throw IndividualEstimateSaveFailure(IndividualEstimateSaveFailure.Reason.UNAVAILABLE)
-                            presenter.revisionTarget?.let { estimates.appendIndividual(AppendIndividualRevisionRequest(it, command), nowMillis()) }
-                                ?: estimates.saveIndividual(command, kotlin.time.Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()).year, nowMillis())
+                            val now = nowMillis()
+                            presenter.revisionTarget?.let { estimates.appendIndividual(AppendIndividualRevisionRequest(it, command), now) }
+                                ?: estimates.saveIndividual(command, EstimateNumbering.issueDate(now, TimeZone.currentSystemDefault()), now)
                         }
                     } finally { endWrite(completion) }
                 }
@@ -347,8 +352,9 @@ class MeasurementElementsStore(private val database: PrototypeDatabase, private 
                     IndividualEstimateSaveFailure.Reason.STALE_SOURCE, IndividualEstimateSaveFailure.Reason.STALE_CATALOG -> "Замір або прайс змінився. Перевірте оновлений розрахунок."
                     IndividualEstimateSaveFailure.Reason.STALE_REVISION, IndividualEstimateSaveFailure.Reason.STALE_STATUS -> "Версію або статус уже змінено. Відкрийте новий розрахунок із поточної версії."
                     IndividualEstimateSaveFailure.Reason.VERSION_EXHAUSTED -> "Ліміт версій вичерпано."
-                    IndividualEstimateSaveFailure.Reason.NUMBER_POLICY -> "Перевірте формат номера та суфікс у налаштуваннях."
-                    IndividualEstimateSaveFailure.Reason.SEQUENCE_EXHAUSTED -> "Лічильник номерів вичерпано або пошкоджено. Перевірте налаштування нумерації."
+                    IndividualEstimateSaveFailure.Reason.NUMBER_POLICY -> getString(Res.string.estimate_number_policy_error)
+                    IndividualEstimateSaveFailure.Reason.NUMBER_COLLISION -> getString(Res.string.estimate_number_collision_error)
+                    IndividualEstimateSaveFailure.Reason.SEQUENCE_EXHAUSTED -> getString(Res.string.estimate_number_exhausted_error)
                     else -> "Кошторис не збережено. Перевірте склад і доступність бази."
                 }, failure.reason)
             } catch (_: Exception) { presenter.saveFailed("Не вдалося підтвердити збереження. Повторіть ту саму дію або перевірте список кошторисів.") }

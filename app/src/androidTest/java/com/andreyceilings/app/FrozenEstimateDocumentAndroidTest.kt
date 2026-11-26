@@ -216,7 +216,7 @@ class FrozenEstimateDocumentAndroidTest {
                 val project = assertNotNull(projects.find(living.projectId))
                 projects.update(project.id, project.clientId, "Квартира / Центр", project.address, project.status, project.notes, 630)
                 val before = history.frozenIndividuals()
-                val sequence = db.estimateHistoryQueries.selectEstimateNumberSettings().executeAsOne().nextSequence
+                val sequence = nextIndividualSequence(db)
                 val objects = ObjectsClientsStore(db) { 700 }
                 val store = objects.measurementDetails.elements
                 try {
@@ -335,7 +335,7 @@ class FrozenEstimateDocumentAndroidTest {
                     compose.runOnIdle { mounted.value = false }
                     compose.waitForIdle()
                     assertEquals(before, history.frozenIndividuals())
-                    assertEquals(sequence, db.estimateHistoryQueries.selectEstimateNumberSettings().executeAsOne().nextSequence)
+                    assertEquals(sequence, nextIndividualSequence(db))
                 } finally {
                     runBlocking { store.closeAndAwaitWrites() }
                 }

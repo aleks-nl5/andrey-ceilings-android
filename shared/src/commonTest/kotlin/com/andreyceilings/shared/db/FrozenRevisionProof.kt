@@ -40,7 +40,7 @@ object FrozenRevisionProof {
         val first = history.saveIndividual(FrozenIndividualEstimateProof.command(db, fixture), 2026, 600)
         val v1 = checkNotNull(history.frozenIndividual(first.seriesUuid))
         assertFalse(v1.payload.contains("revisionIdentity")) // Preserve the exact v1 codec/canonical proof.
-        val sequence = db.estimateHistoryQueries.selectEstimateNumberSettings().executeAsOne().nextSequence
+        val sequence = nextIndividualSequence(db)
         assertTrue(history.setWorkflowStatus(first.initialRevisionUuid, 1, EstimateWorkflowStatus.APPROVED, 601))
         assertTrue(history.selectRevision(first.seriesUuid, first.initialRevisionUuid, 1, 601))
         val staleStatus = request(db, fixture, first.seriesUuid)
@@ -78,7 +78,7 @@ object FrozenRevisionProof {
         val v2 = history.appendIndividual(secondCommand, 610)
         assertEquals(first.seriesUuid, v2.seriesUuid)
         assertEquals(first.documentNumber, v2.documentNumber)
-        assertEquals(sequence, db.estimateHistoryQueries.selectEstimateNumberSettings().executeAsOne().nextSequence)
+        assertEquals(sequence, nextIndividualSequence(db))
         val second = checkNotNull(history.exactIndividual(first.seriesUuid, v2.initialRevisionUuid))
         assertEquals(2, second.versionNumber)
         assertEquals(first.initialRevisionUuid, second.parentRevisionUuid)
@@ -154,7 +154,7 @@ object FrozenRevisionProof {
         assertEquals(EstimateWorkflowStatus.DRAFT, history.exactIndividual(first.seriesUuid, v3.initialRevisionUuid)!!.status)
         assertTrue(history.setWorkflowStatus(alternativeId, 2, EstimateWorkflowStatus.APPROVED, 622))
         assertEquals(2, history.exactIndividual(alternative.seriesUuid, alternativeId)!!.statusVersion)
-        assertEquals(sequence + 1, db.estimateHistoryQueries.selectEstimateNumberSettings().executeAsOne().nextSequence)
+        assertEquals(sequence + 1, nextIndividualSequence(db))
         verifyFrozenEstimateContents(driver)
         // Protected versions survive both repository delete routes. Deleting siblings preserves their receipts.
         history.softDeleteSeries(alternative.seriesUuid, 623)
@@ -210,7 +210,7 @@ object FrozenRevisionProof {
         assertEquals(v3, history.appendIndividual(thirdCommand, 622))
         assertEquals(old.frozen, decodeFrozenIndividualEstimate(db.frozenRevisionQueries
             .selectHistoricalExactRevision(first.seriesUuid, first.initialRevisionUuid).executeAsOne().payload))
-        assertEquals(sequence + 1, db.estimateHistoryQueries.selectEstimateNumberSettings().executeAsOne().nextSequence)
+        assertEquals(sequence + 1, nextIndividualSequence(db))
         verifyFrozenEstimateContents(driver)
         proveDeletedSeriesContinuation(driver, db)
     }

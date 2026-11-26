@@ -1,7 +1,6 @@
 package com.andreyceilings.shared.db
 
 import app.cash.sqldelight.db.*
-import com.andreyceilings.shared.estimate.*
 import kotlin.test.*
 
 /** Builds an isolated v4 fixture, including immutable history with old price references. */
@@ -11,7 +10,7 @@ object PriceCatalogMigrationProof {
         override fun create(driver: SqlDriver): QueryResult.Value<Unit> {
             PrototypeDatabase.Schema.create(driver)
             // Freeze the authentic pre-v16 numbering schema; current generated DDL includes P4C1.
-            listOf("DROP TABLE estimate_revision_tombstones", "DROP TABLE estimate_revision_choice", "DROP TABLE estimate_revision_workflow", "DROP TABLE estimate_revision_receipts", "DROP TABLE estimate_revision_frozen", "DROP TABLE estimate_save_receipts", "DROP TABLE estimate_workflow", "DROP TABLE estimate_v1_frozen",
+            listOf("DROP TABLE estimate_number_reservations", "DROP TABLE estimate_issuance_policy", "DROP TABLE estimate_revision_tombstones", "DROP TABLE estimate_revision_choice", "DROP TABLE estimate_revision_workflow", "DROP TABLE estimate_revision_receipts", "DROP TABLE estimate_revision_frozen", "DROP TABLE estimate_save_receipts", "DROP TABLE estimate_workflow", "DROP TABLE estimate_v1_frozen",
                 "DROP INDEX index_estimate_series_public_number", "ALTER TABLE estimate_series DROP COLUMN publicNumber",
                 "ALTER TABLE estimate_number_settings DROP COLUMN suffixLabel").forEach { driver.execute(null, it, 0) }
 
@@ -57,9 +56,9 @@ object PriceCatalogMigrationProof {
         EstimateRepository(db).create(project, "Preserve estimate", "PVC", "standard", "simple",
             2.0, 3.0, 6.0, 10.0, 50.0, 10.0, 0.0, 0.0, 60.0,
             detailsJson = "{\"oldPriceUuid\":\"old-uuid\",\"pdf\":\"unchanged\"}", createdAt = 13)
-        ImmutableEstimateRepository(historicalNumberDatabase(driver)).createSeries(project, 2026, 13,
-            ImmutableEstimateDraft("{\"priceUuid\":\"old-uuid\"}", "{\"frozen\":true}", 0.01, "kmp-1", 9999.0,
-                listOf(ImmutableEstimateLine("canvas.pvc_matte", "OLD TEST PRICE", "м²", 1.0, 9999.0, 9999.0, priceItemUuid = "old-uuid"))))
+        seedHistoricalEstimate(driver, project, null, 15)
+        driver.execute(null, "INSERT INTO estimate_number_settings (id,template,prefix,sequenceWidth,nextSequence) VALUES (1,'{prefix}-{year}-{sequence}-{uuid}','AC',5,2)", 0)
+
     }
 
     /** SQLite quote() preserves NULL/type/blob bytes; compare every non-price column. */
@@ -85,14 +84,9 @@ object PriceCatalogMigrationProof {
         val prices = PriceRepository(database)
         assertTrue(prices.all().none { it.id == 900L || it.uuid == "old-uuid" })
         assertTrue(prices.tombstones().isEmpty())
-        val series = ImmutableEstimateRepository(database).seriesForProject(ProjectRepository(database).all().single().id).single()
-        val preview = EstimateRecalculationRepository(database).previewLatest(series.seriesUuid)
-        assertFalse(preview.canConfirm)
-        assertEquals(setOf(RecalculationProblem.MISSING_PRICE), preview.problems)
         assertEquals("Preserve client", ClientRepository(database).all().single().name)
         assertEquals("Preserve project", ProjectRepository(database).all().single().title)
         assertEquals("{\"frozen\":true}", MeasurementRepository(database).all().single().drawingJson)
-        assertEquals("{\"oldPriceUuid\":\"old-uuid\",\"pdf\":\"unchanged\"}", EstimateRepository(database).all().single().detailsJson)
     }
 
     /** Failure after several seed inserts proves rollback of DDL and partial seed together. */

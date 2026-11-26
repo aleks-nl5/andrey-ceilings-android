@@ -290,7 +290,7 @@ internal fun SettingsScreen(
                 ) { Text("Очистити журнал") }
             }
             HorizontalDivider()
-            EstimateNumberSettingsSection(database)
+            com.andreyceilings.shared.estimate.EstimateNumberSettingsSection()
             HorizontalDivider()
             ListItem(
                 modifier = Modifier.clickable(onClick = onOpenPriceList),
@@ -416,9 +416,16 @@ internal fun SettingsScreen(
                 AppAlertDialog(
                     onDismissRequest = { showRestoreConfirmation = false; pendingRestoreContents?.let { it.database.fill(0); it.passphrase.fill(0) }; pendingRestoreContents = null },
                     title = { Text("Відновити переносну копію?") },
-                    text = { Text(if(database == null)
-                        "Робоча БД недоступна. Її початкові зашифровані файли, WAL/SHM і захищений ключ буде збережено в приватному сховищі відкату. Лише після цього їх замінить перевірена .stpb. За помилки початковий стан буде повернуто. Продовжити?"
-                        else "Дані поточної бази буде замінено вмістом .stpb. Продовжити?") },
+                    text = {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text(if (database == null)
+                                "Робоча БД недоступна. Її початкові зашифровані файли, WAL/SHM і захищений ключ буде збережено в приватному сховищі відкату. Лише після цього їх замінить перевірена .stpb. За помилки початковий стан буде повернуто. Продовжити?"
+                                else "Дані поточної бази буде замінено вмістом .stpb. Продовжити?")
+                            if (pendingRestoreContents?.clearsPreV22Estimates == true) {
+                                Text(com.andreyceilings.shared.estimate.preV22EstimateRestoreWarning())
+                            }
+                        }
+                    },
                     confirmButton = { TextButton(onClick = {
                         showRestoreConfirmation = false
                         val payload = pendingRestoreContents

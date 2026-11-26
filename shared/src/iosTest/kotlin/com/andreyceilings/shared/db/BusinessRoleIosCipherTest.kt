@@ -8,6 +8,15 @@ import kotlin.random.Random
 import kotlin.test.Test
 
 class BusinessRoleIosCipherTest {
+    @Test fun physicalV22PurgeRollsBackAndReopens(): Unit = runBlocking {
+        val factory = NativeSqlCipherDriverFactory()
+        val name = "estimate-v22-${Random.nextLong()}.db"
+        val config = SqlCipherConfig(name = name, key = SqlCipherKey { ByteArray(32) { 22 } },
+            recovery = SqlCipherRecovery.Fail)
+        try { EstimateV22MigrationProof.lifecycle(IosPriceCatalogSchema) { factory.create(it, config) } }
+        finally { factory.deleteDatabase(name) }
+    }
+
     @Test fun physicalV19ToV20RollbackAndWallRepair(): Unit = runBlocking {
         val factory = NativeSqlCipherDriverFactory()
         val name = "walls-v19-${Random.nextLong()}.db"

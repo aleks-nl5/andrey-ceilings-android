@@ -40,15 +40,12 @@ object FrozenEstimateMigrationProof {
         }
         var createdId: String? = null
         var payload: String? = null
-        var legacyNumber: String? = null
         open(production).use { current ->
             PriceCatalogSchema.verifyStructure(current)
             val db = PrototypeDatabase(current)
             val history = ImmutableEstimateRepository(db)
-            assertEquals("ІП", history.numberPolicy().prefix)
-            assertEquals(7, history.numberPolicy().sequenceWidth)
-            assertTrue(EstimateNumbering.validatePublic(history.numberPolicy()).isEmpty())
-            legacyNumber = history.seriesForProject(ProjectRepository(db).all().single().id).single().documentNumber
+            assertEquals(EstimateNumberPolicy(), history.numberPolicy())
+            assertTrue(history.seriesForProject(ProjectRepository(db).all().single().id).isEmpty())
             val fixture = MeasurementPricingFixture.seed(db)
             val request = FrozenIndividualEstimateProof.command(db, fixture)
             val saved = history.saveIndividual(request, 2026, 600)
@@ -58,8 +55,7 @@ object FrozenEstimateMigrationProof {
         open(production).use { reopened ->
             val history = ImmutableEstimateRepository(PrototypeDatabase(reopened))
             assertEquals(payload, history.frozenIndividual(checkNotNull(createdId))!!.payload)
-            assertNotNull(history.seriesByNumber(checkNotNull(legacyNumber)))
-            assertEquals(2, history.revisions(checkNotNull(createdId)).single().let { history.series(it.seriesUuid)!!.localSequence })
+            assertEquals(1, history.revisions(checkNotNull(createdId)).single().let { history.series(it.seriesUuid)!!.localSequence })
         }
     }
     private fun settings(driver: SqlDriver) = MeasurementElementMigrationProof.rows(driver,
