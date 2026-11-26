@@ -135,8 +135,8 @@ fun MeasurementElementEditor(
                         Text("Прив'язування збереже UUID, примітку й погодження. Підтвердіть вибрану позицію та кількість.")
                     } else {
                         if (!draft.catalog) {
-                            OutlinedTextField(draft.label, { value -> onChange { it.copy(keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(capitalization = androidx.compose.ui.text.input.KeyboardCapitalization.Sentences), label = value) } },
-                                enabled = enabled, label = { Text("Назва побажання") }, modifier = Modifier.fillMaxWidth())
+                            OutlinedTextField(draft.label, { value -> onChange { it.copy(label = value) } },
+                                enabled = enabled, keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(capitalization = androidx.compose.ui.text.input.KeyboardCapitalization.Sentences), label = { Text("Назва побажання") }, modifier = Modifier.fillMaxWidth())
                             OutlinedTextField(draft.unit, { value -> onChange { it.copy(unit = value) } },
                                 enabled = enabled, label = { Text("Одиниця (шт., м.п., м² або власна)") }, modifier = Modifier.fillMaxWidth())
                             if (draft.unit.isNotBlank() && draft.input.kind == ElementQuantityKind.UNKNOWN)
