@@ -63,7 +63,7 @@ internal fun ObjectsClientsHost(
     val flow = remember(store) {
         store?.rows ?: flowOf(ObjectsClientsRows(emptyList(), emptyList()))
     }
-    val loadedRows by flow.collectAsState(initial = null as ObjectsClientsRows?)
+    val loadedRows by flow.collectAsState(initial = store?.cachedRows)
     val rows = loadedRows ?: ObjectsClientsRows(emptyList(), emptyList())
 
     fun openIntent(uri: Uri, dial: Boolean = false) {

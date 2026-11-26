@@ -459,6 +459,7 @@
     <string name="p6c_search">Пошук</string>
     <string name="p6c_objects_clients_search">Пошук об’єктів та клієнтів</string>
     <string name="p6c_clear_search">Очистити пошук</string>
+    <string name="p6c_period">Період</string>
     <string name="p6c_period_custom">Власний період</string>
     <string name="p6c_date_from_short">Від</string>
     <string name="p6c_date_through_short">До</string>

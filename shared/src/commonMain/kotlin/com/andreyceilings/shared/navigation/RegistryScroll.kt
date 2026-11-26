@@ -5,6 +5,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.Saver
@@ -34,9 +35,11 @@ private val scrollSaver = Saver<ScrollAnchor, ArrayList<String>>(
 internal fun rememberRegistryScroll(
     keys: List<String>?,
     scopeId: String = "",
-    visible: Boolean = true
+    visible: Boolean = true,
+    resetKey: String? = null
 ): LazyListState {
     val anchor = rememberSaveable(scopeId, saver = scrollSaver) { ScrollAnchor() }
+    var appliedReset by rememberSaveable(scopeId) { androidx.compose.runtime.mutableStateOf(resetKey) }
     val list = remember(scopeId) {
         LazyListState(keys?.let { registryAnchor(anchor.order, anchor.index, it) } ?: 0,
             if (keys != null) anchor.offset else 0)
@@ -52,8 +55,17 @@ internal fun rememberRegistryScroll(
         }
     }
 
-    LaunchedEffect(list, visible, keys) {
-        if (!visible || keys.isNullOrEmpty()) return@LaunchedEffect
+    LaunchedEffect(list, visible, keys, resetKey) {
+        if (!visible || keys == null) return@LaunchedEffect
+        if (appliedReset != resetKey) {
+            appliedReset = resetKey
+            anchor.index = 0
+            anchor.offset = 0
+            anchor.order = keys
+            restored.done = true
+            if (keys.isNotEmpty()) list.scrollToItem(0)
+        }
+        if (keys.isEmpty()) return@LaunchedEffect
         if (!restored.done) {
             if (anchor.order.isNotEmpty()) list.scrollToItem(registryAnchor(anchor.order, anchor.index, keys), anchor.offset)
             restored.done = true

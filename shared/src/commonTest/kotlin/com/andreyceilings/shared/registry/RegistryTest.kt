@@ -14,6 +14,22 @@ import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class RegistryTest {
+    @Test fun sessionSnapshotPreservesLastReadAndCannotRepopulateAfterClose() {
+        val cache = SessionReadCache<Long>()
+        assertEquals(RegistryRead.Loading, cache.read)
+        cache.record(0L)
+        assertEquals(RegistryRead.Ready(0L), cache.read)
+        cache.record(12L)
+        assertEquals(12L, cache.value)
+        cache.record(null)
+        assertEquals(RegistryRead.Unavailable, cache.read)
+        cache.record(4L)
+        cache.close()
+        cache.record(99L)
+        assertEquals(RegistryRead.Unavailable, cache.read)
+        assertEquals(null, cache.value)
+    }
+
     @Test fun titleDateAndStatusMustMatchTheSameRevision() {
         val row = series("1", 1, listOf(
             version("early", 1, 1000, "Bedroom", EstimateWorkflowStatus.APPROVED),

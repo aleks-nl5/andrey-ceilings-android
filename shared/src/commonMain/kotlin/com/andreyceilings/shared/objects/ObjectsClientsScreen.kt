@@ -256,7 +256,7 @@ fun ObjectsClientsScreen(
             if (message != null) add("message")
         }
     }
-    val listState = rememberRegistryScroll(rowKeys, selectedTab.name, detailsProjectId == null)
+    val listState = rememberRegistryScroll(rowKeys, selectedTab.name, detailsProjectId == null, resetKey = search)
     LaunchedEffect(deleting) { deletionError = null }
 
     // Keep the on-scroll focus action fresh inside the remembered connection.
@@ -317,7 +317,6 @@ fun ObjectsClientsScreen(
                 fabVisible = false
                 fabScrollEvents.trySend(Unit)
                 openSwipe = null
-                dismissSearchOnScroll.value()
             }
         }
     }
@@ -481,12 +480,7 @@ fun ObjectsClientsScreen(
                 contentPadding = listPadding,
                 verticalArrangement = Arrangement.spacedBy(7.dp)
             ) {
-            if (!databaseAvailable) {
-                item(key = "unavailable") {
-                    Text("Захищена база ще відкривається або недоступна.",
-                        color = MaterialTheme.colorScheme.error)
-                }
-            } else {
+            if (databaseAvailable && rowsReady) {
                 if (selectedTab == ObjectsClientsTab.PROJECTS) {
                     item(key = "filters") {
                         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {

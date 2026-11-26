@@ -19,8 +19,8 @@ class DashboardStore private constructor(
         database.registryQueries.dashboardSummary().asFlow().mapToOne(Dispatchers.Default), null, null
     )
 
-    constructor(session: ObjectsClientsStore) : this(session.observeDashboardSummary(),
-        session.observeDashboardQuoteCount(), session::observeDashboardFinance)
+    constructor(session: ObjectsClientsStore) : this(session.uiDashboardSummary(),
+        session.uiDashboardQuoteCount(), session::uiDashboardFinance)
 
     val summary: Flow<DashboardSummary> = rows.filterNotNull().map {
         DashboardSummary(checkNotNull(it.projectCount).toInt(), it.ceilingCount.toInt(), it.area)

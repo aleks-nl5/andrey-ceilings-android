@@ -35,6 +35,12 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.onEach
+import com.andreyceilings.shared.db.ActiveCeilings
+import com.andreyceilings.shared.db.DashboardSummary
+import com.andreyceilings.shared.registry.RegistrySeries
+import com.andreyceilings.shared.registry.RegistryFilter
+import com.andreyceilings.shared.registry.SessionReadCache
 
 data class ObjectsClientsRows(
     val projects: List<ProjectListEntry>,
@@ -88,7 +94,29 @@ class ObjectsClientsStore(
     private val sessionClosed = MutableStateFlow(false)
     private val projectRead = Mutex()
     private val contourPreparation = Mutex()
-    private val contours = CeilingContourCache()
+    private val contours = CeilingContourCache(capacity = 160)
+    private val objectsCache = SessionReadCache<ObjectsClientsRows>()
+    private val projectDetailsCache = SessionReadCache<Pair<Long, ProjectDetailsData>>()
+    private val projectFinanceCache = SessionReadCache<Pair<Long, ProjectQuoteSummary?>>()
+    private val ceilingCache = SessionReadCache<List<ActiveCeilings>>()
+    private val ceilingFinanceCache = SessionReadCache<Map<Long, CeilingFinance>>()
+    private val quoteCache = SessionReadCache<List<RegistrySeries>>()
+    private val dashboardCache = SessionReadCache<DashboardSummary>()
+    private val quoteCountCache = SessionReadCache<Long>()
+    private val dashboardFinanceCache = SessionReadCache<Long>()
+    internal val filteredCeilingCache = SessionReadCache<Pair<RegistryFilter, List<ActiveCeilings>>>()
+    internal val filteredQuoteCache = SessionReadCache<Pair<RegistryFilter, List<RegistrySeries>>>()
+
+    val cachedRows: ObjectsClientsRows? get() = objectsCache.value
+    internal fun cachedProjectDetails(projectId: Long) = projectDetailsCache.value?.takeIf { it.first == projectId }?.second
+    internal fun cachedProjectFinance(projectId: Long) = projectFinanceCache.value?.takeIf { it.first == projectId }
+    internal fun cachedContours(): Map<String, MeasurementDrawingContour?> = contours.snapshot()
+    internal fun uiRegistryCeilings() = ceilingCache.observe(observeRegistryCeilings())
+    internal fun uiRegistryCeilingFinance() = ceilingFinanceCache.observe(observeRegistryCeilingFinance())
+    internal fun uiRegistryQuotes() = quoteCache.observe(observeRegistryQuotes())
+    internal fun uiDashboardSummary() = dashboardCache.observe(observeDashboardSummary())
+    internal fun uiDashboardQuoteCount() = quoteCountCache.observe(observeDashboardQuoteCount())
+    internal fun uiDashboardFinance() = dashboardFinanceCache.observe(observeDashboardFinance())
     private val pickerSave = MutableStateFlow<PickerProjectSave>(PickerProjectSave.Idle)
     internal val pickerProjectSave: Flow<PickerProjectSave> = pickerSave
 
@@ -123,6 +151,17 @@ class ObjectsClientsStore(
         sessionClosed.value = true
         pickerSave.value = PickerProjectSave.Idle
         contours.close()
+        objectsCache.close()
+        projectDetailsCache.close()
+        projectFinanceCache.close()
+        ceilingCache.close()
+        ceilingFinanceCache.close()
+        quoteCache.close()
+        dashboardCache.close()
+        quoteCountCache.close()
+        dashboardFinanceCache.close()
+        filteredCeilingCache.close()
+        filteredQuoteCache.close()
     }
 
     /** Desktop waits for an admitted query before closing its JDBC driver. */
@@ -163,7 +202,7 @@ class ObjectsClientsStore(
                 )
             }
         )
-    }
+    }.onEach { objectsCache.record(it) }.distinctUntilChanged()
 
     fun observeProjectDetails(projectId: Long): Flow<ProjectDetailsData> {
         require(projectId > 0)
@@ -177,7 +216,7 @@ class ObjectsClientsStore(
                 current.projects.firstOrNull { it.id == projectId }.takeIf { records != null },
                 records.orEmpty()
             )
-        }
+        }.onEach { projectDetailsCache.record(projectId to it) }
     }
 
     @OptIn(ExperimentalCoroutinesApi::class)
@@ -199,6 +238,7 @@ class ObjectsClientsStore(
                 }
             }
         }.flowOn(Dispatchers.Default).distinctUntilChanged()
+            .onEach { projectFinanceCache.record(projectId to it) }
     }
 
     private fun approvedManifest(manifest: List<ApprovedFinance>): ApprovedConsolidatedFinance? {

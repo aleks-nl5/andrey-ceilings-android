@@ -45,6 +45,9 @@ internal class CeilingContourCache(
 
     fun close() { entries.value = null }
 
+    fun snapshot(): Map<String, MeasurementDrawingContour?> =
+        entries.value.orEmpty().associate { it.first to it.second.contour }
+
     /** The store serializes preparation. Closing may occur on another thread. */
     suspend fun projection(ceilingUuid: String, source: CeilingContourSource): MeasurementDrawingContour? {
         currentCoroutineContext().ensureActive()

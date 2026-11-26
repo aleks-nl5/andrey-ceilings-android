@@ -178,7 +178,7 @@ private fun DesktopPriceHost(
         val priceGroups by store.groups.collectAsState(initial = null as List<com.andreyceilings.shared.prices.PriceCatalogGroup>?)
         val objectsStore = remember(database) { database.objects }
         SideEffect { measurementCreateNavigationGuard.bindQuotes(objectsStore.measurementDetails.elements) }
-        val objectRows by objectsStore.rows.collectAsState(initial = null as ObjectsClientsRows?)
+        val objectRows by objectsStore.rows.collectAsState(initial = objectsStore.cachedRows)
         var externalError by remember { mutableStateOf<String?>(null) }
         fun openExternal(url: String) {
             runCatching {

@@ -109,7 +109,7 @@ fun PriceCatalogScreen(
                 }
             }
         }
-        val listState = rememberRegistryScroll(rowKeys)
+        val listState = rememberRegistryScroll(rowKeys, resetKey = search)
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             state = listState,

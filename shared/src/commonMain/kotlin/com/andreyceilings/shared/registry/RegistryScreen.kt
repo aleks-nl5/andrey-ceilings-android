@@ -1,6 +1,18 @@
 package com.andreyceilings.shared.registry
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.DragInteraction
+import androidx.compose.material.icons.filled.Sort
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.semantics
+import com.andreyceilings.shared.objects.CardSwipeState
+import com.andreyceilings.shared.objects.SwipeActionsSurface
+import com.andreyceilings.shared.objects.dismissCardSwipeOnInteraction
+import com.andreyceilings.shared.measurement.CeilingHasApprovedQuote
+import com.andreyceilings.shared.db.ActiveCeilings
+import kotlinx.coroutines.launch
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.CalendarMonth
@@ -54,16 +66,9 @@ import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.stringResource
 
 
-internal sealed interface RegistryRead<out T> {
-    data object Loading : RegistryRead<Nothing>
-    data object Unavailable : RegistryRead<Nothing>
-    data class Ready<T>(val data: T) : RegistryRead<T>
-}
-
 @Composable
 internal fun <T : Any> registryRead(flow: Flow<T?>?, retry: Int = 0): RegistryRead<T> =
-    key(flow) { produceState<RegistryRead<T>>(RegistryRead.Loading, retry) {
-        value = RegistryRead.Loading
+    key(flow) { produceState<RegistryRead<T>>((flow as? CachedRegistryFlow<T>)?.initial ?: RegistryRead.Loading, retry) {
         if (flow == null) {
             value = RegistryRead.Unavailable
         } else try {
@@ -86,21 +91,35 @@ fun CeilingRegistryScreen(
 ) {
     val controls = rememberRegistryControls(RegistrySort.CREATED, initialSearch, searchRequest)
     var retry by remember { mutableIntStateOf(0) }
-    val baseFlow = remember(store) { store?.observeRegistryCeilings() }
-    val financeFlow = remember(store) { store?.observeRegistryCeilingFinance() }
+    val baseFlow = remember(store) { store?.uiRegistryCeilings() }
+    val financeFlow = remember(store) { store?.uiRegistryCeilingFinance() }
     val base = registryRead(baseFlow, retry)
     val finance = registryRead(financeFlow, retry)
     val rows = (base as? RegistryRead.Ready)?.data
     val finances = (finance as? RegistryRead.Ready)?.data
-    val filtered by produceState(rows?.takeIf { it.isEmpty() }, rows, finances, controls.filter) {
-        value = rows?.let { withContext(Dispatchers.Default) { filterCeilingRegistry(it, finances, controls.filter) } }
+    val filter = controls.filter
+    val cached = store?.filteredCeilingCache?.value?.takeIf { it.first == filter }
+    val filtered by produceState(cached, rows, finances, filter) {
+        val result = rows?.let { withContext(Dispatchers.Default) { filter to filterCeilingRegistry(it, finances, filter) } }
+        if (result != null) store?.filteredCeilingCache?.record(result)
+        value = result
     }
     val waitingForFinance = finance is RegistryRead.Loading &&
         (controls.filter.query.isNotBlank() || controls.filter.statuses.isNotEmpty() ||
             controls.filter.sort == RegistrySort.COST)
-    val visible = filtered.takeIf { rows != null && !waitingForFinance }
+    val visible = filtered?.second.takeIf { rows != null && !waitingForFinance }
     val keys = remember(visible) { visible?.map { row -> row.uuid } }
-    val list = rememberRegistryScroll(keys)
+    val list = rememberRegistryScroll(keys, resetKey = filtered?.first?.query)
+    val swipeState = remember(store) { CardSwipeState() }
+    var openSwipe by swipeState.opened
+    var deleting by remember(store) { mutableStateOf<ActiveCeilings?>(null) }
+    var deletingBusy by remember(store) { mutableStateOf(false) }
+    var deleteError by remember(store) { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
+    LaunchedEffect(list, filter) {
+        swipeState.dismiss()
+        snapshotFlow { list.isScrollInProgress }.collect { scrolling -> if (scrolling) swipeState.dismiss() }
+    }
     var contourKeys by remember(store) { mutableStateOf(emptyList<String>()) }
     val eligibleKeys = remember(visible) { visible.orEmpty().mapTo(hashSetOf()) { it.uuid } }
     LaunchedEffect(store, list, eligibleKeys) {
@@ -110,7 +129,7 @@ fun CeilingRegistryScreen(
             }
     }
     // Keep already-rendered thumbnails while the next visible batch is read.
-    var contours by remember(store) { mutableStateOf<Map<String, MeasurementDrawingContour?>>(emptyMap()) }
+    var contours by remember(store) { mutableStateOf<Map<String, MeasurementDrawingContour?>>(store?.cachedContours().orEmpty()) }
     LaunchedEffect(store, contourKeys, retry) {
         if (store != null && contourKeys.isNotEmpty()) {
             try {
@@ -127,6 +146,7 @@ fun CeilingRegistryScreen(
             catch (_: Exception) { contours = contours - contourKeys.toSet() }
         }
     }
+    Box(Modifier.fillMaxSize().dismissCardSwipeOnInteraction(swipeState)) {
     RegistryScaffold(contentPadding, headerVisibleFraction, Res.string.p6c_ceilings, controls, list) { padding ->
     LazyColumn(Modifier.fillMaxSize().imePadding(), state = list, contentPadding = padding,
         verticalArrangement = Arrangement.spacedBy(7.dp)) {
@@ -137,14 +157,70 @@ fun CeilingRegistryScreen(
         }
         items(visible.orEmpty(), key = { it.uuid }) { row ->
             val amount = finances?.get(row.id)
-            CompactCeilingCard(ProjectMeasurement(row.id, row.uuid, row.name, row.areaSquareMeters, row.perimeterMeters),
-                contours[row.uuid], amount?.quote,
-                quoteUnavailable = finance is RegistryRead.Unavailable || amount?.kind == CeilingQuoteKind.UNAVAILABLE,
-                quoteLoading = finance is RegistryRead.Loading,
-                address = row.address.ifBlank { row.projectTitle },
-                onOpen = { onOpen(row.projectId, row.id) })
+            val swipeId = "ceiling-${row.uuid}"
+            val rowWasOpen = openSwipe?.id == swipeId
+            val deleteLabel = stringResource(Res.string.p6a_delete_swipe)
+            val requestDelete = {
+                swipeState.dismiss()
+                deleteError = null
+                deleting = row
+            }
+            SwipeActionsSurface(
+                id = swipeId, actions = emptyList(), openSwipe = openSwipe,
+                onSwipeOpen = { openSwipe = it }, onSwipeClose = { swipeState.dismiss() },
+                onDelete = requestDelete, onAction = {},
+                modifier = Modifier.clipToBounds().semantics {
+                    customActions = listOf(CustomAccessibilityAction(deleteLabel) { requestDelete(); true })
+                }, deleteTrayHeight = 70.dp
+            ) {
+                CompactCeilingCard(ProjectMeasurement(row.id, row.uuid, row.name, row.areaSquareMeters, row.perimeterMeters),
+                    contours[row.uuid], amount?.quote,
+                    quoteUnavailable = finance is RegistryRead.Unavailable || amount?.kind == CeilingQuoteKind.UNAVAILABLE,
+                    quoteLoading = finance is RegistryRead.Loading,
+                    address = row.address.ifBlank { row.projectTitle },
+                    onOpen = {
+                        swipeState.dismiss()
+                        if (!rowWasOpen) onOpen(row.projectId, row.id)
+                    })
+            }
         }
     }
+    }
+    }
+    deleting?.let { target ->
+        val approvedError = stringResource(Res.string.p6a_delete_ceiling_approved)
+        val generalError = stringResource(Res.string.p6a_delete_ceiling_failed)
+        AlertDialog(
+            onDismissRequest = { if (!deletingBusy) deleting = null },
+            containerColor = MaterialTheme.colorScheme.surface,
+            title = { Text(stringResource(Res.string.p6a_delete_ceiling)) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(stringResource(Res.string.p6a_delete_ceiling_confirm, target.name))
+                    deleteError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                }
+            },
+            dismissButton = {
+                TextButton(enabled = !deletingBusy, onClick = {
+                    deletingBusy = true
+                    deleteError = null
+                    scope.launch {
+                        try {
+                            checkNotNull(store).deleteCeiling(target.projectId, target.id, target.uuid)
+                            deleting = null
+                        } catch (cancelled: CancellationException) { throw cancelled }
+                        catch (_: CeilingHasApprovedQuote) { deleteError = approvedError }
+                        catch (_: Exception) { deleteError = generalError }
+                        finally { deletingBusy = false }
+                    }
+                }) { Text(stringResource(Res.string.p6a_delete_ceiling), color = MaterialTheme.colorScheme.error) }
+            },
+            confirmButton = {
+                TextButton(enabled = !deletingBusy, onClick = { deleting = null }) {
+                    Text(stringResource(Res.string.p5d_cancel))
+                }
+            }
+        )
     }
     if (controls.open) {
         val projects = remember(rows) { rows.orEmpty().associate { it.projectId to it.address.ifBlank { it.projectTitle } } }
@@ -159,13 +235,17 @@ fun QuoteRegistryScreen(store: ObjectsClientsStore?, contentPadding: PaddingValu
 ) {
     val controls = rememberRegistryControls(RegistrySort.LATEST, initialSearch, searchRequest)
     var retry by remember { mutableIntStateOf(0) }
-    val flow = remember(store) { store?.observeRegistryQuotes() }
+    val flow = remember(store) { store?.uiRegistryQuotes() }
     val result = registryRead(flow, retry)
     val series = (result as? RegistryRead.Ready)?.data
-    val filtered by produceState(series?.takeIf { it.isEmpty() }, series, controls.filter) {
-        value = series?.let { withContext(Dispatchers.Default) { filterQuoteRegistry(it, controls.filter) } }
+    val filter = controls.filter
+    val cached = store?.filteredQuoteCache?.value?.takeIf { it.first == filter }
+    val filtered by produceState(cached, series, filter) {
+        val result = series?.let { withContext(Dispatchers.Default) { filter to filterQuoteRegistry(it, filter) } }
+        if (result != null) store?.filteredQuoteCache?.record(result)
+        value = result
     }
-    val visible = filtered.takeIf { series != null }
+    val visible = filtered?.second.takeIf { series != null }
     var document by rememberSaveable { mutableStateOf(arrayListOf<String>()) }
     val revision = document.getOrNull(0)
     val seriesId = document.getOrNull(1)
@@ -173,7 +253,7 @@ fun QuoteRegistryScreen(store: ObjectsClientsStore?, contentPadding: PaddingValu
     val consolidated = document.getOrNull(3) == "consolidated"
     val editor = store?.measurementDetails?.elements
     val keys = remember(visible) { visible?.map { row -> row.id } }
-    val list = rememberRegistryScroll(keys, visible = !consolidated)
+    val list = rememberRegistryScroll(keys, visible = !consolidated, resetKey = filtered?.first?.query)
     if (consolidated && revision != null && seriesId != null && projectId != null && editor != null) {
         var carriedFrom by remember(revision) { mutableStateOf<String?>(null) }
         val session = remember(editor, revision, carriedFrom) {
@@ -312,8 +392,8 @@ private fun RegistryScaffold(
     val keyboard = LocalSoftwareKeyboardController.current
     var searchFocused by remember { mutableStateOf(false) }
     LaunchedEffect(list) {
-        snapshotFlow { list.isScrollInProgress }.collect { scrolling ->
-            if (scrolling && searchFocused) { focus.clearFocus(); keyboard?.hide() }
+        list.interactionSource.interactions.collect { interaction ->
+            if (interaction is DragInteraction.Start && searchFocused) { focus.clearFocus(); keyboard?.hide() }
         }
     }
     CeilingsScreenScaffold(
@@ -355,8 +435,8 @@ private fun <T> RegistryDropdown(
         OutlinedButton(onClick = { expanded = true }, modifier = Modifier.fillMaxWidth(),
             contentPadding = PaddingValues(horizontal = 9.dp, vertical = 3.dp)) {
             Column(Modifier.weight(1f)) {
-                Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text(selected, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyMedium)
+                if (label.isNotEmpty()) Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(selected, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyLarge)
             }
             Icon(Icons.Default.ArrowDropDown, null, Modifier.size(18.dp))
         }
@@ -393,44 +473,46 @@ private fun RegistryOptions(controls: RegistryControls, projects: Map<Long, Stri
         title = { Text(stringResource(Res.string.p6c_filters)) },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                    RegistryDropdown(stringResource(Res.string.p6c_sort), stringResource(draft.sort.label()), sorts,
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(5.dp), verticalAlignment = Alignment.CenterVertically) {
+                    RegistryDropdown("", stringResource(draft.sort.label()), sorts,
                         { stringResource(it.label()) }, { draft = draft.copy(sort = it) }, Modifier.weight(1f))
-                    RegistryDropdown(stringResource(Res.string.p6c_sort),
+                    Icon(Icons.Default.Sort, stringResource(Res.string.p6c_sort), Modifier.size(20.dp))
+                    RegistryDropdown("",
                         stringResource(if (draft.ascending) Res.string.p6c_ascending else Res.string.p6c_descending),
                         listOf(false, true),
                         { stringResource(if (it) Res.string.p6c_ascending else Res.string.p6c_descending) },
                         { draft = draft.copy(ascending = it) }, Modifier.weight(1f))
                 }
+                if (!quotes && projects.size > 12) {
+                    OutlinedTextField(projectSearch, { projectSearch = it }, singleLine = true,
+                        modifier = Modifier.fillMaxWidth(), label = { Text(stringResource(Res.string.p6c_search)) })
+                }
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(5.dp), verticalAlignment = Alignment.CenterVertically) {
                 if (quotes) {
                     val typeLabel: @Composable (Boolean?) -> String = {
                         if (it == null) all else stringResource(if (it) Res.string.p6c_consolidated else Res.string.p6c_individual)
                     }
                     RegistryDropdown(stringResource(Res.string.p6c_type), typeLabel(draft.consolidated),
-                        listOf(null, false, true), typeLabel, { draft = draft.copy(consolidated = it) })
+                        listOf(null, false, true), typeLabel, { draft = draft.copy(consolidated = it) }, Modifier.weight(1f))
                 } else if (projects.isNotEmpty() || draft.projectId != null) {
-                    if (projects.size > 12) {
-                        OutlinedTextField(projectSearch, { projectSearch = it }, singleLine = true,
-                            modifier = Modifier.fillMaxWidth(), label = { Text(stringResource(Res.string.p6c_search)) })
-                    }
                     val matches = remember(projects, projectSearch, draft.projectId) {
                         projects.entries.filter { it.key == draft.projectId || it.value.contains(projectSearch.trim(), ignoreCase = true) }
                             .sortedBy { it.value.lowercase() }.map { it.key }
                     }
                     RegistryDropdown(stringResource(Res.string.p6c_project), projects[draft.projectId] ?: all,
-                        listOf<Long?>(null) + matches, { id -> projects[id] ?: all }, { draft = draft.copy(projectId = it) })
+                        listOf<Long?>(null) + matches, { id -> projects[id] ?: all }, { draft = draft.copy(projectId = it) }, Modifier.weight(1f))
                 }
-                Box {
+                Box(Modifier.weight(1f)) {
                     val selected = kinds.filter { it.name in draft.statuses }
                     OutlinedButton(onClick = { statusExpanded = true }, modifier = Modifier.fillMaxWidth(),
                         contentPadding = PaddingValues(horizontal = 9.dp, vertical = 3.dp)) {
                         Column(Modifier.weight(1f)) {
-                            Text(stringResource(Res.string.p6c_status), style = MaterialTheme.typography.labelSmall,
+                            Text(stringResource(Res.string.p6c_status), style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant)
                             val names = mutableListOf<String>()
                             for (kind in selected) names.add(registryStatusLabel(kind, quotes))
                             Text(if (names.isEmpty()) all else names.joinToString(", "), maxLines = 1,
-                                overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyMedium)
+                                overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyLarge)
                         }
                         Icon(Icons.Default.ArrowDropDown, null)
                     }
@@ -445,6 +527,7 @@ private fun RegistryOptions(controls: RegistryControls, projects: Map<Long, Stri
                         }
                     }
                 }
+                }
                 val periodLabel: @Composable (RegistryPeriod?) -> String = { value ->
                     stringResource(when (value) {
                         null -> Res.string.p6c_period_custom
@@ -455,7 +538,7 @@ private fun RegistryOptions(controls: RegistryControls, projects: Map<Long, Stri
                         RegistryPeriod.YEAR -> Res.string.p6c_period_year
                     })
                 }
-                RegistryDropdown(stringResource(Res.string.p6c_date_from_short) + " – " + stringResource(Res.string.p6c_date_through_short),
+                RegistryDropdown(stringResource(Res.string.p6c_period),
                     periodLabel(period), RegistryPeriod.entries + listOf<RegistryPeriod?>(null),
                     periodLabel, {
                         period = it
@@ -471,9 +554,9 @@ private fun RegistryOptions(controls: RegistryControls, projects: Map<Long, Stri
                             Icon(Icons.Default.CalendarMonth, null, Modifier.size(17.dp))
                             Column(Modifier.padding(start = 4.dp).weight(1f)) {
                                 Text(stringResource(if (from) Res.string.p6c_date_from_short else Res.string.p6c_date_through_short),
-                                    style = MaterialTheme.typography.labelSmall)
+                                    style = MaterialTheme.typography.labelMedium)
                                 Text((if (from) draft.from else draft.through)?.toString() ?: "—",
-                                    maxLines = 1, style = MaterialTheme.typography.bodySmall)
+                                    maxLines = 1, style = MaterialTheme.typography.bodyMedium)
                             }
                         }
                     }

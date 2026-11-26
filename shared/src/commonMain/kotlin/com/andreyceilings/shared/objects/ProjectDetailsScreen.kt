@@ -195,7 +195,8 @@ internal fun ProjectDetailsScreen(
             ?.catch { emit(DetailsState.Unavailable) }
     }
     val state = key(store, projectId) {
-        flow?.collectAsState(initial = DetailsState.Loading)?.value ?: DetailsState.Unavailable
+        flow?.collectAsState(initial = store?.cachedProjectDetails(projectId)?.let { DetailsState.Loaded(it) }
+            ?: DetailsState.Loading)?.value ?: DetailsState.Unavailable
     }
     val uriHandler = LocalUriHandler.current
     val visibleProject = (state as? DetailsState.Loaded)?.data?.project
@@ -249,7 +250,9 @@ internal fun ProjectDetailsScreen(
                 }?.catch { emit(ProjectFinanceState.Unavailable) }
                 ?: flowOf(ProjectFinanceState.Unavailable)
         }
-        financeFlow.collectAsState(initial = ProjectFinanceState.Loading).value
+        val cached = store?.cachedProjectFinance(projectId)
+        financeFlow.collectAsState(initial = if (cached == null) ProjectFinanceState.Loading
+            else cached.second?.let { ProjectFinanceState.Loaded(it) } ?: ProjectFinanceState.Unavailable).value
     }
     val visibleCeilings by remember(detailsListState) {
         derivedStateOf {
@@ -269,7 +272,14 @@ internal fun ProjectDetailsScreen(
     val contourFlow = remember(store, projectId, visibleContours) {
         store?.observeVisibleCeilingContours(visibleContours, projectId)?.catch { emit(null) }
     }
-    val contours = contourFlow?.collectAsState(initial = null)?.value.orEmpty()
+    var contours by remember(store, projectId) { mutableStateOf(store?.cachedContours().orEmpty()) }
+    LaunchedEffect(contourFlow, visibleContours) {
+        if (visibleContours.isNotEmpty()) contourFlow?.collect { next ->
+            if (next != null) {
+                contours = (contours - visibleContours.toSet() + next).entries.toList().takeLast(160).associate { it.key to it.value }
+            } else contours = emptyMap()
+        }
+    }
     val density = LocalDensity.current
     val layoutDirection = LocalLayoutDirection.current
     val startPadding = contentPadding.calculateLeftPadding(layoutDirection)
