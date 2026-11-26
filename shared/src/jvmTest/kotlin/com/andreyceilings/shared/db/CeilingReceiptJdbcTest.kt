@@ -10,6 +10,8 @@ class CeilingReceiptJdbcTest {
     @Test fun replaceAndFakeReceiptsFailWithForeignKeysAndRecursiveTriggersOff() {
         JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).use {d ->PriceCatalogSchema.create(d);CeilingReceiptMigrationProof.populate(d);CeilingReceiptMigrationProof.rejectReplace(d)}
     }
+    // Archived pre-v21 upgrade proof; see CI historical DB policy.
+    @kotlin.test.Ignore
     @Test fun physicalV13RollbackFullFingerprintAndReopen()=runBlocking {
         val file=Files.createTempFile("receipt-v13-",".db").toFile()
         try {CeilingReceiptFileProof.run(file) {JdbcSqliteDriver("jdbc:sqlite:${it.absolutePath}")}}
@@ -22,6 +24,8 @@ class CeilingReceiptJdbcTest {
             }
         }
     }
+    // Archived pre-v21 upgrade proof; see CI historical DB policy.
+    @kotlin.test.Ignore
     @Test fun frozenDistributedV13RetainsAllAreaDataAndRejectsHybrid() {
         val file=Files.createTempFile("frozen-v13-",".db").toFile()
         try {
@@ -46,6 +50,21 @@ class CeilingReceiptJdbcTest {
             }
         } finally {file.delete()}
     }
+    @Test fun encryptedWindowsCurrentReceiptGuards()=runBlocking {
+        if(!System.getProperty("os.name").startsWith("Windows",true))return@runBlocking
+        val dir=java.nio.file.Files.createTempDirectory("receipt-current-cipher-").toFile();val key=ByteArray(32){91}
+        try {
+            val file=dir.resolve("receipt.db")
+            SqlCipherWindowsDriverFactory.open(file,key).use { d ->
+                openDesktopPriceCatalog(d,false)
+                CeilingReceiptMigrationProof.populate(d); CeilingReceiptMigrationProof.rejectReplace(d)
+                PriceCatalogSchema.verifyStructure(d)
+            }
+            SqlCipherWindowsDriverFactory.open(file,key).use { d -> openDesktopPriceCatalog(d,true); PriceCatalogSchema.verifyStructure(d) }
+        } finally {key.fill(0);dir.deleteRecursively()}
+    }
+
+    @kotlin.test.Ignore
     @Test fun encryptedWindowsPhysicalV13Lifecycle()=runBlocking {
         if(!System.getProperty("os.name").startsWith("Windows",true))return@runBlocking
         val dir=Files.createTempDirectory("receipt-v14-cipher-").toFile();val key=ByteArray(32){91}

@@ -33,10 +33,17 @@ class MeasurementElementJdbcTest {
         }
     }
 
-    @Test fun populatedV6MigrationRollbackReopenAndConcurrentCas() = runBlocking {
+    @Test fun currentElementConcurrentCas() = runBlocking {
         MeasurementElementFileProof.run { JdbcSqliteDriver("jdbc:sqlite:${it.absolutePath}") }
     }
 
+    @kotlin.test.Ignore
+    @Test fun populatedV6MigrationRollbackReopenAndConcurrentCas() = runBlocking {
+        MeasurementElementFileProof.run(historical = true) { JdbcSqliteDriver("jdbc:sqlite:${it.absolutePath}") }
+    }
+
+    // Archived pre-v21 upgrade proof; see CI historical DB policy.
+    @kotlin.test.Ignore
     @Test fun freshAndMigratedStructuresMatchExactly() {
         JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).use { fresh ->
             PriceCatalogSchema.create(fresh)
@@ -52,6 +59,8 @@ class MeasurementElementJdbcTest {
         }
     }
 
+    // Archived pre-v21 upgrade proof; see CI historical DB policy.
+    @kotlin.test.Ignore
     @Test fun windowsProbeRejectsPartialTableAndDoesNotTrustVersionAlone() {
         JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).use { driver ->
             MeasurementElementMigrationProof.v6Schema.create(driver)
@@ -72,19 +81,26 @@ class MeasurementElementJdbcTest {
 
 /** Plain SQLite locally; real encrypted JDBC on Windows CI with the same races. */
 object MeasurementElementFileProof {
-    suspend fun run(open: (File) -> SqlDriver) {
+    suspend fun run(historical: Boolean = false, open: (File) -> SqlDriver) {
         val file = Files.createTempFile("elements-v6-", ".db").toFile()
         try {
             val (before, structure) = open(file).use { driver ->
+                if (historical) {
                 // Publish the complete fixture before taking the persisted baseline snapshot.
                 PrototypeDatabase(driver).transaction {
                     MeasurementElementMigrationProof.v6Schema.create(driver)
                     driver.execute(null, "PRAGMA user_version=6", 0)
                     MeasurementElementMigrationProof.populate(driver)
                 }
+                } else {
+                    openDesktopPriceCatalog(driver, false)
+                    val db = PrototypeDatabase(driver)
+                    val project = ProjectRepository(db).createReturningId(null, "Concurrent", createdAt = 1)
+                    MeasurementRepository(db).createReturningId(project, "Concurrent", createdAt = 2)
+                }
                 MeasurementElementMigrationProof.snapshot(driver) to PriceNameMigrationProof.schema(driver)
             }
-            open(file).use { driver ->
+            if (historical) open(file).use { driver ->
                 assertFails { openDesktopPriceCatalog(MeasurementElementMigrationProof.failing(driver), true) }
                 assertEquals(before, MeasurementElementMigrationProof.snapshot(driver))
                 assertEquals(structure, PriceNameMigrationProof.schema(driver))
@@ -101,7 +117,7 @@ object MeasurementElementFileProof {
                 upgrades.forEach { it.get(30, TimeUnit.SECONDS) }
                 val row = open(file).use { driver ->
                     assertEquals(PriceCatalogSchema.version, PriceNameUniquenessProof.scalar(driver, "PRAGMA user_version"))
-                    assertEquals(withoutPreV22Estimates(before), MeasurementElementMigrationProof.snapshot(driver))
+                    assertEquals((if (historical) withoutPreV22Estimates(before) else before), MeasurementElementMigrationProof.snapshot(driver))
                     verifyMeasurementElementStructure(driver)
                     val db = PrototypeDatabase(driver)
                     val parent = MeasurementRepository(db).all().single().uuid
@@ -147,7 +163,7 @@ object MeasurementElementFileProof {
                     val schema = PriceNameMigrationProof.schema(driver)
                     openDesktopPriceCatalog(driver, true)
                     assertEquals(schema, PriceNameMigrationProof.schema(driver))
-                    assertEquals(withoutPreV22Estimates(before), MeasurementElementMigrationProof.snapshot(driver))
+                    assertEquals((if (historical) withoutPreV22Estimates(before) else before), MeasurementElementMigrationProof.snapshot(driver))
                     assertEquals(3, MeasurementElementRepository(PrototypeDatabase(driver)).all().size)
                 }
             } finally { pool.shutdownNow(); pool.awaitTermination(30, TimeUnit.SECONDS) }

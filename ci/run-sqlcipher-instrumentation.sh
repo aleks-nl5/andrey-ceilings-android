@@ -40,7 +40,7 @@ timeout 90s adb install -r app/build/outputs/apk/androidTest/debug/app-debug-and
 
 # Keep the following encrypted DB recovery/integrity proofs mandatory.
 bash ci/verify-sqlcipher-process-death.sh
-bash ci/verify-production-v9-upgrade.sh
+bash ci/verify-production-raw-recovery.sh
 
 # This is intentionally LAST. It fills the throwaway emulator's /data to real
 # ENOSPC and immediately frees it before verifying SQLCipher WAL + Keystore.

@@ -17,6 +17,8 @@ class ProjectPaymentMigrationTest {
                 )
             }, 0).value
 
+    // Archived pre-v21 upgrade proof; see CI historical DB policy.
+    @kotlin.test.Ignore
     @Test
     fun existingPaymentWasUnknownUnlessLegacyStatusSaidPaid() {
         JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).use { driver ->

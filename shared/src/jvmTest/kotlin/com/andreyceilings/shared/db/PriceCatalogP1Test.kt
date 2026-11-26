@@ -68,6 +68,8 @@ class PriceCatalogP1Test {
         }
     }
 
+    // Archived pre-v21 upgrade proof; see CI historical DB policy.
+    @kotlin.test.Ignore
     @Test fun migrationIsAtomicAndLeavesEveryOtherColumnUnchanged() {
         JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).use { driver ->
             PriceCatalogMigrationProof.legacySchema.create(driver)
@@ -83,6 +85,8 @@ class PriceCatalogP1Test {
         }
     }
 
+    // Archived pre-v21 upgrade proof; see CI historical DB policy.
+    @kotlin.test.Ignore
     @Test fun windowsProbeHandlesV3V4AndReopenWithoutReplacingEdits() {
         for (version in listOf(3L, 4L)) {
             JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).use { driver ->

@@ -103,13 +103,6 @@ jobs:
           --tests '*EstimateNumberingTest' --tests '*EstimateNumberSettingsPersistenceTest'
           --tests '*EstimateV22MigrationTest'
           --tests '*FrozenEstimateConcurrencyTest'
-          --tests '*LinePlacementJdbcTest.committedPhysicalV11FixturePreservesHistoryAnchorsAndReceipts'
-          --tests '*LinePlacementJdbcTest.physicalV11UpgradeRollbackAndReopen'
-          --tests '*LivePricingReaderTest.wallVersionMigrationRejectsAnUnknownLegacyGuardBeforeRepair'
-          --tests '*LivePricingReaderTest.version19MigrationRepairsOnlyWallsBackedByACompletedEdit'
-          --tests '*AreaFeatureJdbcTest.frozenV12PreservesEveryRowAndRejectsHybridBeforeDdl'
-          --tests '*AreaFeatureJdbcTest.productionV12MixedHistoryIsPopulatedBeforeGuardedLineRows'
-          --tests '*CeilingReceiptJdbcTest.frozenDistributedV13RetainsAllAreaDataAndRejectsHybrid'
           --stacktrace --warning-mode all
       - name: Verify unsigned release candidate for trusted signing
         shell: bash

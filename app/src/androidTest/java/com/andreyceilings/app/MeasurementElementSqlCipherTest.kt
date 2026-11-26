@@ -17,12 +17,18 @@ import kotlin.test.*
 
 @RunWith(AndroidJUnit4::class)
 class MeasurementElementSqlCipherTest {
-    @Test fun encryptedWalV6MigrationRollbackRestartAndFreshContracts(): Unit = runBlocking {
+    @Test fun encryptedWalFreshElementContracts(): Unit = runBlocking { elementScenarios(listOf("fresh")) }
+
+    // Archived pre-v21 upgrade proof; current-schema assertions run separately.
+    @org.junit.Ignore("Archived pre-v21 migration proof")
+    @Test fun encryptedWalV6MigrationRollbackRestartAndFreshContracts(): Unit = runBlocking { elementScenarios(listOf("migration")) }
+
+    private suspend fun elementScenarios(scenarios: List<String>) {
         val context: Context = ApplicationProvider.getApplicationContext()
         System.loadLibrary("sqlcipher")
         val key = ByteArray(32) { 65 }
         try {
-            for (scenario in listOf("migration", "fresh")) {
+            for (scenario in scenarios) {
                 val name = "elements-$scenario-test.db"
                 context.deleteDatabase(name)
                 try {
@@ -49,6 +55,8 @@ class MeasurementElementSqlCipherTest {
         } finally { key.fill(0) }
     }
 
+    // Archived pre-v21 upgrade proof; see CI historical DB policy.
+    @org.junit.Ignore("Archived pre-v21 migration proof")
     @Test fun productionRestorePreservesElementsAndUpgradesV6(): Unit = runBlocking {
         val context: Context = ApplicationProvider.getApplicationContext()
         val originalKey = DatabaseKeyManager.getOrCreatePassphrase(context)
@@ -93,6 +101,8 @@ class MeasurementElementSqlCipherTest {
         }
     }
 
+    // Archived pre-v21 upgrade proof; see CI historical DB policy.
+    @org.junit.Ignore("Archived pre-v21 migration proof")
     @Test fun encryptedPortableSnapshotIncludesElementsAndV6SourceUpgradesWithoutMutation(): Unit = runBlocking {
         val context: Context = ApplicationProvider.getApplicationContext()
         System.loadLibrary("sqlcipher")

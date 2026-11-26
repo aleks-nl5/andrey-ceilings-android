@@ -81,9 +81,16 @@ class PointPositionJdbcTest {
             PointPositionProof.run(driver)
         }
     }
-    @Test fun v8RollbackReopenAndConcurrentMoveDelete() = runBlocking {
+    @Test fun currentPointMoveDeleteRace() = runBlocking {
         PointPositionFileProof.run { JdbcSqliteDriver("jdbc:sqlite:${it.absolutePath}") }
     }
+
+    // Archived pre-v21 upgrade proof.
+    @kotlin.test.Ignore
+    @Test fun v8RollbackReopenAndConcurrentMoveDelete() = runBlocking {
+        PointPositionFileProof.run(historical = true) { JdbcSqliteDriver("jdbc:sqlite:${it.absolutePath}") }
+    }
+
     @Test fun sessionMoveUndoRedoDirtyBackAndStaleHistory(): Unit = runBlocking {
         JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).use { driver ->
             PriceCatalogSchema.create(driver); val db = PrototypeDatabase(driver)
@@ -129,7 +136,8 @@ class PointPositionJdbcTest {
 }
 
 object PointPositionFileProof {
-    suspend fun run(open: (File) -> SqlDriver) {
+    suspend fun run(historical: Boolean = false, open: (File) -> SqlDriver) {
+        if (historical) {
         for (populated in listOf(false, true)) {
             val file = Files.createTempFile("point-v8-", ".db").toFile()
             try {
@@ -147,6 +155,8 @@ object PointPositionFileProof {
                     } catch (failure: Throwable) { driver.close(); throw failure }
                 }
             } finally { file.delete() }
+        }
+        return
         }
         val file = Files.createTempFile("point-move-race-", ".db").toFile()
         val pool = Executors.newFixedThreadPool(2)

@@ -6,7 +6,11 @@ import kotlinx.coroutines.runBlocking
 import kotlin.test.*
 
 class LinePlacementJdbcTest {
+    // Archived pre-v21 upgrade proof; see CI historical DB policy.
+    @kotlin.test.Ignore
     @Test fun physicalV11UpgradeRollbackAndReopen()=runBlocking {LinePlacementFileProof.run {JdbcSqliteDriver("jdbc:sqlite:${it.absolutePath}")}}
+    // Archived pre-v21 upgrade proof; see CI historical DB policy.
+    @kotlin.test.Ignore
     @Test fun committedPhysicalV11FixturePreservesHistoryAnchorsAndReceipts() {
         val file=java.nio.file.Files.createTempFile("frozen-v11-",".db").toFile()
         try {

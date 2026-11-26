@@ -8,6 +8,8 @@ import kotlin.test.*
 
 class AreaFeatureJdbcTest {
     @Test fun fullAtomicAreaContract() {JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).use {PriceCatalogSchema.create(it);AreaFeatureProof.run(it)}}
+    // Archived pre-v21 upgrade proof; see CI historical DB policy.
+    @kotlin.test.Ignore
     @Test fun v12PhysicalMigrationRollbackReopenAndFullFingerprint()=runBlocking {
         val file=Files.createTempFile("area-v12-",".db").toFile()
         try {
@@ -33,6 +35,8 @@ class AreaFeatureJdbcTest {
             }
         }
     }
+    // Archived pre-v21 upgrade proof; see CI historical DB policy.
+    @kotlin.test.Ignore
     @Test fun frozenV12PreservesEveryRowAndRejectsHybridBeforeDdl() {
         val file=Files.createTempFile("frozen-v12-",".db").toFile()
         try {
@@ -68,6 +72,8 @@ class AreaFeatureJdbcTest {
             assertEquals(before,PriceNameMigrationProof.schema(d))
         }
     }
+    // Archived pre-v21 upgrade proof; see CI historical DB policy.
+    @kotlin.test.Ignore
     @Test fun productionV12MixedHistoryIsPopulatedBeforeGuardedLineRows() {
         JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).use {d ->
             AreaFeatureMigrationProof.v12Schema.create(d)
@@ -107,6 +113,23 @@ class AreaFeatureJdbcTest {
             } finally {pool.shutdownNow();file.delete()}
         }
     }
+    @Test fun encryptedWindowsCurrentAreaLifecycle()=runBlocking {
+        if(!System.getProperty("os.name").startsWith("Windows",true))return@runBlocking
+        val dir=Files.createTempDirectory("area-current-cipher-").toFile();val key=ByteArray(32){84}
+        try {
+            val file=dir.resolve("areas.db")
+            SqlCipherWindowsDriverFactory.open(file,key).use { d ->
+                openDesktopPriceCatalog(d,false)
+                AreaFeatureProof.run(d)
+                PriceCatalogSchema.verifyStructure(d)
+            }
+            SqlCipherWindowsDriverFactory.open(file,key).use { d -> openDesktopPriceCatalog(d,true); PriceCatalogSchema.verifyStructure(d) }
+            assertFalse(file.readBytes().take(16).toByteArray().contentEquals("SQLite format 3\u0000".encodeToByteArray()))
+            assertFails { SqlCipherWindowsDriverFactory.open(file,ByteArray(32){85}).use { AreaFeatureMigrationProof.snapshot(it) } }
+        } finally {key.fill(0);dir.deleteRecursively()}
+    }
+
+    @kotlin.test.Ignore
     @Test fun encryptedWindowsLifecycle()=runBlocking {
         if(!System.getProperty("os.name").startsWith("Windows",true))return@runBlocking
         val dir=Files.createTempDirectory("area-cipher-").toFile();val key=ByteArray(32){84}

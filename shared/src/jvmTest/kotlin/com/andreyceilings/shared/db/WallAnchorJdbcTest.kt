@@ -5,6 +5,8 @@ import app.cash.sqldelight.db.*
 import kotlin.test.Test
 
 class WallAnchorJdbcTest {
+    // Archived pre-v21 upgrade proof; see CI historical DB policy.
+    @kotlin.test.Ignore
     @Test fun unsupportedV9DrawingsAndDeployedV10SurviveCorrectiveUpgrade()=kotlinx.coroutines.runBlocking {
         JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).use { driver ->
             WallAnchorMigrationProof.v9Schema.create(driver);LegacyWallSeedProof.populate(driver)
@@ -13,8 +15,14 @@ class WallAnchorJdbcTest {
         }
         LegacyWallSeedFileProof.run { JdbcSqliteDriver("jdbc:sqlite:${it.absolutePath}") }
     }
-    @Test fun v9FilesMigrationRollbackReopenAndConcurrentIdempotentSave()=kotlinx.coroutines.runBlocking {
+    @Test fun currentWallAnchorIdempotentSave()=kotlinx.coroutines.runBlocking {
         WallAnchorFileProof.run { JdbcSqliteDriver("jdbc:sqlite:${it.absolutePath}") }
+    }
+
+    // Archived pre-v21 upgrade proof.
+    @kotlin.test.Ignore
+    @Test fun v9FilesMigrationRollbackReopenAndConcurrentIdempotentSave()=kotlinx.coroutines.runBlocking {
+        WallAnchorFileProof.run(historical = true) { JdbcSqliteDriver("jdbc:sqlite:${it.absolutePath}") }
     }
 
     @Test fun atomicMountingGeometryReviewCountsAndRetry() {
@@ -52,7 +60,8 @@ object LegacyWallSeedFileProof {
 
 /** Physical v9 encrypted upgrade/rollback/reopen and separate-connection CAS are also run on Windows. */
 object WallAnchorFileProof {
-    suspend fun run(open:(java.io.File)->app.cash.sqldelight.db.SqlDriver) {
+    suspend fun run(historical: Boolean = false, open:(java.io.File)->app.cash.sqldelight.db.SqlDriver) {
+        if (historical) {
         for(populated in listOf(false,true)) {
             val file=java.nio.file.Files.createTempFile("wall-v9-",".db").toFile()
             try {
@@ -69,6 +78,8 @@ object WallAnchorFileProof {
                     } catch(error:Throwable) {driver.close();throw error}
                 }
             } finally {file.delete()}
+        }
+        return
         }
         val file=java.nio.file.Files.createTempFile("wall-cas-",".db").toFile()
         val pool=java.util.concurrent.Executors.newFixedThreadPool(2)

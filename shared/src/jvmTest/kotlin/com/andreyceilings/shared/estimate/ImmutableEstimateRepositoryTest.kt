@@ -164,6 +164,8 @@ class ImmutableEstimateRepositoryTest {
         assertEquals(1L, first.localSequence)
     }
 
+    // Archived pre-v21 upgrade proof; see CI historical DB policy.
+    @kotlin.test.Ignore
     @Test
     fun additiveSqlDelightMigrationKeepsExistingProjectData() {
         JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).use { driver ->

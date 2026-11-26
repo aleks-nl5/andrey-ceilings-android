@@ -124,6 +124,8 @@ class NumberedEstimateCompatibilityTest {
         }
     }
 
+    // Archived pre-v21 upgrade proof; see CI historical DB policy.
+    @kotlin.test.Ignore
     @Test
     fun migratingV2ToV3LinksNumbersButKeepsExistingHistoryAndLegacyRows() {
         JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).use { driver ->

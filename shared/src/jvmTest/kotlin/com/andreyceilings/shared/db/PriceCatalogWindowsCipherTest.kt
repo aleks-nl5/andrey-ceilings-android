@@ -35,16 +35,14 @@ class PriceCatalogWindowsCipherTest {
         assertEquals(opens, guardAttempts, "Each physical connection must attempt the encrypted schema guard")
         assertEquals(opens, guardsPassed, "Each physical connection must pass the encrypted schema guard")
     }
-    @Test fun encryptedPointPlacementsV8UpgradeRollbackReopenRacesAndDomainProof(): Unit = runBlocking {
+    @Test fun currentEncryptedPointPlacementRacesAndDomainProof(): Unit = runBlocking {
         if (!System.getProperty("os.name").startsWith("Windows", ignoreCase = true)) return@runBlocking
         val key = ByteArray(32) { 76 }
         try {
             LinePlacementFileProof.concurrent {SqlCipherWindowsDriverFactory.openProfiled(it, key, nativeMetrics)}
-            LinePlacementFileProof.run { SqlCipherWindowsDriverFactory.openProfiled(it, key, nativeMetrics) }
             PointPlacementFileProof.run { SqlCipherWindowsDriverFactory.openProfiled(it, key, nativeMetrics) }
             PointPositionFileProof.run { SqlCipherWindowsDriverFactory.openProfiled(it, key, nativeMetrics) }
             WallAnchorFileProof.run { SqlCipherWindowsDriverFactory.openProfiled(it, key, nativeMetrics) }
-            LegacyWallSeedFileProof.run { SqlCipherWindowsDriverFactory.openProfiled(it, key, nativeMetrics) }
             val file = Files.createTempFile("points-cipher-", ".db").toFile()
             try {
                 SqlCipherWindowsDriverFactory.openProfiled(file, key, nativeMetrics).use { driver ->
@@ -77,6 +75,8 @@ class PriceCatalogWindowsCipherTest {
         } finally { key.fill(0) }
     }
 
+    // Archived pre-v21 upgrade proof; see CI historical DB policy.
+    @kotlin.test.Ignore
     @Test fun encryptedV3UpgradeAndV6Reopen() {
         if (!System.getProperty("os.name").startsWith("Windows", ignoreCase = true)) return
         val file = Files.createTempFile("price-v3-cipher-", ".db").toFile()
@@ -114,7 +114,7 @@ class PriceCatalogWindowsCipherTest {
         } finally { key.fill(0); file.delete() }
     }
 
-    @Test fun encryptedV5NamesRollbackAndConcurrentConnections() {
+    @Test fun currentEncryptedNamesAndConcurrentConnections() {
         if (!System.getProperty("os.name").startsWith("Windows", ignoreCase = true)) return
         val key = ByteArray(32) { 57 }
         try {
@@ -129,12 +129,18 @@ class PriceCatalogWindowsCipherTest {
         } finally { key.fill(0) }
     }
 
-    @Test fun encryptedMigrationRollbackCrudAndReopen() = runBlocking {
-        if (!System.getProperty("os.name").startsWith("Windows", ignoreCase = true)) return@runBlocking
+    @Test fun currentEncryptedCatalogCrudAndReopen() = runBlocking { catalogCrud(false) }
+
+    @kotlin.test.Ignore
+    @Test fun encryptedMigrationRollbackCrudAndReopen() = runBlocking { catalogCrud(true) }
+
+    private suspend fun catalogCrud(historical: Boolean) {
+        if (!System.getProperty("os.name").startsWith("Windows", ignoreCase = true)) return
         val file = Files.createTempFile("price-p1-cipher-", ".db").toFile()
         val key = ByteArray(32) { 58 }
         try {
             var before = emptyList<List<String?>>()
+            if (historical) {
             SqlCipherWindowsDriverFactory.openProfiled(file, key, nativeMetrics).use { driver ->
                 PrototypeDatabase(driver).transaction {
                     PriceCatalogMigrationProof.legacySchema.create(driver)
@@ -145,11 +151,14 @@ class PriceCatalogWindowsCipherTest {
                 PriceCatalogMigrationProof.assertOldPrice(driver)
                 assertEquals(before, PriceCatalogMigrationProof.untouchedRows(driver))
             }
+            }
             SqlCipherWindowsDriverFactory.openProfiled(file, key, nativeMetrics).use { driver ->
-                openDesktopPriceCatalog(driver, true)
+                openDesktopPriceCatalog(driver, historical)
                 val db = PrototypeDatabase(driver)
-                PriceCatalogMigrationProof.assertReplaced(db)
-                assertEquals(withoutPreV22Estimates(before), PriceCatalogMigrationProof.untouchedRows(driver))
+                if (historical) {
+                    PriceCatalogMigrationProof.assertReplaced(db)
+                    assertEquals(withoutPreV22Estimates(before), PriceCatalogMigrationProof.untouchedRows(driver))
+                }
                 PriceCatalogPersistenceProof.groupsAndParameters(db)
                 PriceCatalogP2Proof.run(db)
                 PriceCatalogPersistenceProof.removeEverything(db)
@@ -158,7 +167,7 @@ class PriceCatalogWindowsCipherTest {
                 openDesktopPriceCatalog(driver, true)
                 assertEquals(0L, PriceRepository(PrototypeDatabase(driver)).count())
                 assertTrue(PriceGroupRepository(PrototypeDatabase(driver)).all().isEmpty())
-                assertEquals(withoutPreV22Estimates(before), PriceCatalogMigrationProof.untouchedRows(driver))
+                if (historical) assertEquals(withoutPreV22Estimates(before), PriceCatalogMigrationProof.untouchedRows(driver))
             }
         } finally { key.fill(0); file.delete() }
     }

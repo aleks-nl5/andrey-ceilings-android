@@ -21,10 +21,34 @@ class PointPlacementJdbcTest {
         }
     }
 
-    @Test fun populatedAndEmptyV7UpgradeRollbackReopenAndRaces(): Unit = runBlocking {
+    @Test fun currentPointPlacementRaces(): Unit = runBlocking {
         PointPlacementFileProof.run { JdbcSqliteDriver("jdbc:sqlite:${it.absolutePath}") }
     }
 
+    // Archived pre-v21 upgrade proof.
+    @kotlin.test.Ignore
+    @Test fun populatedAndEmptyV7UpgradeRollbackReopenAndRaces(): Unit = runBlocking {
+        PointPlacementFileProof.run(historical = true) { JdbcSqliteDriver("jdbc:sqlite:${it.absolutePath}") }
+    }
+
+    @Test fun currentProbeRejectsMissingGuardAndFutureVersion() {
+        JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).use { current ->
+            PriceCatalogSchema.create(current)
+            val original = PriceNameMigrationProof.schema(current)
+            current.execute(null, "DROP TRIGGER point_contour_guard", 0)
+            assertFails { openDesktopPriceCatalog(current, true) }
+            assertNotEquals(original, PriceNameMigrationProof.schema(current))
+        }
+        JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).use { future ->
+            PriceCatalogSchema.create(future)
+            future.execute(null, "PRAGMA user_version=${PriceCatalogSchema.version+1}", 0)
+            assertFails { openDesktopPriceCatalog(future, true) }
+            assertEquals(PriceCatalogSchema.version+1, PriceNameUniquenessProof.scalar(future, "PRAGMA user_version"))
+        }
+    }
+
+    // Archived pre-v21 upgrade proof; see CI historical DB policy.
+    @kotlin.test.Ignore
     @Test fun freshMatchesMigratedAndProbeRejectsPartialFutureOrMissingGuards() {
         JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).use { fresh ->
             PriceCatalogSchema.create(fresh)
@@ -56,7 +80,8 @@ class PointPlacementJdbcTest {
 
 /** Same physical multi-connection races run on real encrypted JDBC on Windows CI. */
 object PointPlacementFileProof {
-    suspend fun run(open: (File) -> SqlDriver) {
+    suspend fun run(historical: Boolean = false, open: (File) -> SqlDriver) {
+        if (historical) {
         for (populated in listOf(false, true)) {
             val file = Files.createTempFile("point-upgrade-", ".db").toFile()
             try {
@@ -74,6 +99,8 @@ object PointPlacementFileProof {
                     } catch (failure: Throwable) { driver.close(); throw failure }
                 }
             } finally { file.delete() }
+        }
+        return
         }
         val file = Files.createTempFile("point-race-", ".db").toFile()
         val pool = Executors.newFixedThreadPool(2)

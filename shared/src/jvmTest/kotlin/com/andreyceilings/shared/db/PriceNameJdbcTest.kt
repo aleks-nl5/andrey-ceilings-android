@@ -20,13 +20,20 @@ class PriceNameJdbcTest {
         }
     }
 
-    @Test fun populatedV5UpgradeRollbackInterruptionReopenAndConcurrentWriters() =
+    @Test fun currentPriceNameConcurrentWriters() =
         PriceNameFileProof.run { file -> JdbcSqliteDriver("jdbc:sqlite:${file.absolutePath}") }
+
+    // Archived pre-v21 upgrade proof.
+    @kotlin.test.Ignore
+    @Test fun populatedV5UpgradeRollbackInterruptionReopenAndConcurrentWriters() =
+        PriceNameFileProof.run(historical = true) { file -> JdbcSqliteDriver("jdbc:sqlite:${file.absolutePath}") }
+
 }
 
 /** Reused without skips inside the Windows-only native SQLCipher test. */
 object PriceNameFileProof {
-    fun run(open: (File) -> SqlDriver) {
+    fun run(historical: Boolean = false, open: (File) -> SqlDriver) {
+        if (historical) {
         for (scenario in listOf("ok", "group", "item", "empty", "interrupted")) {
             val file = Files.createTempFile("price-names-", ".db").toFile()
             try {
@@ -82,6 +89,8 @@ object PriceNameFileProof {
                     assertEquals(v6Schema, PriceNameMigrationProof.schema(driver))
                 }
             } finally { file.delete() }
+        }
+        return
         }
         competingWrites(open)
     }

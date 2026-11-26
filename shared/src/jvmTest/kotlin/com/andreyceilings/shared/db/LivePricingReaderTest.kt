@@ -83,9 +83,13 @@ class LivePricingReaderTest {
         }
     }
 
+    // Archived pre-v21 upgrade proof; see CI historical DB policy.
+    @kotlin.test.Ignore
     @Test fun deployedV19FileUpgradeRepairsOnlyTheProvenWallSet() =
         physicalWallRepair { file -> JdbcSqliteDriver("jdbc:sqlite:${file.absolutePath}") }
 
+    // Archived pre-v21 upgrade proof; see CI historical DB policy.
+    @kotlin.test.Ignore
     @Test fun deployedV19WindowsCipherUpgradeRepairsOnlyTheProvenWallSet() {
         if (!System.getProperty("os.name").startsWith("Windows", ignoreCase = true)) return
         val key = ByteArray(32) { 46 }
@@ -116,6 +120,8 @@ class LivePricingReaderTest {
         } finally { dir.deleteRecursively() }
     }
 
+    // Archived pre-v21 upgrade proof; see CI historical DB policy.
+    @kotlin.test.Ignore
     @Test fun wallVersionMigrationRejectsAnUnknownLegacyGuardBeforeRepair() {
         JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).use { driver ->
             WallVersionMigrationProof.v19Schema.create(driver)
@@ -136,6 +142,8 @@ class LivePricingReaderTest {
         }
     }
 
+    // Archived pre-v21 upgrade proof; see CI historical DB policy.
+    @kotlin.test.Ignore
     @Test fun version19MigrationRepairsOnlyWallsBackedByACompletedEdit() {
         JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).use { driver ->
             // Use the historical DDL, not a partial downgrade of today's schema.

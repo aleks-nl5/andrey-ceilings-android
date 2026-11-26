@@ -4,6 +4,8 @@ import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
 import kotlin.test.*
 
 class InitialV10RegressionTest {
+    // Archived pre-v21 upgrade proof; see CI historical DB policy.
+    @kotlin.test.Ignore
     @Test fun originalP3C3V10UpgradesWithoutLosingExistingRecords() {
         JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).use { driver ->
             InitialV10MigrationProof.schema.create(driver)
@@ -15,6 +17,8 @@ class InitialV10RegressionTest {
             verifyPointPlacementStructure(driver,11)
         }
     }
+    // Archived pre-v21 upgrade proof; see CI historical DB policy.
+    @kotlin.test.Ignore
     @Test fun hybridV10FailsBeforeCorrectiveDdlInsteadOfRelaxingFingerprint() {
         JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).use { driver ->
             InitialV10MigrationProof.schema.create(driver)

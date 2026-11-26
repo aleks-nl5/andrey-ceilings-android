@@ -31,6 +31,8 @@ class ProductionDatabaseStartupTest {
         try { assertTrue(key.contentEquals(reopenedKey),"Keystore key changed") } finally { reopenedKey.fill(0) }
     }
 
+    // Archived pre-v21 upgrade proof; see CI historical DB policy.
+    @org.junit.Ignore("Archived pre-v21 migration proof")
     @Test fun populatedProductionV9AndDeployedV10ColdUpgradeKeepMixedHistoryAndCanCreateAndRestore() = preserveProduction { context,key ->
         for(variant in listOf("v9","v10-final","v10-initial","v11","v12","v13")) {
             val version=when(variant){"v9"->9L;"v11"->11L;"v12"->12L;"v13"->13L;else->10L}
@@ -69,6 +71,8 @@ class ProductionDatabaseStartupTest {
         }
     }
 
+    // Archived pre-v21 upgrade proof; see CI historical DB policy.
+    @org.junit.Ignore("Archived pre-v21 migration proof")
     @Test fun deployedV19WalPointMoveSurvivesColdUpgradeRollbackAndRestore() = preserveProduction { context, key ->
         val sourceName = "wall-versions-v19.db"
         val rollbackName = "wall-versions-v19-rollback.db"

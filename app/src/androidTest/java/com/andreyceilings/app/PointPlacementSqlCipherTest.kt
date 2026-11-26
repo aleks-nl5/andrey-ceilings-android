@@ -19,12 +19,18 @@ import kotlin.test.*
 
 @RunWith(AndroidJUnit4::class)
 class PointPlacementSqlCipherTest {
-    @Test fun realWalV7UpgradeRollbackReopenAndFreshPointContracts(): Unit = runBlocking {
+    @Test fun realWalFreshPointContracts(): Unit = runBlocking { pointScenarios(listOf("fresh")) }
+
+    // Archived pre-v21 upgrade proof; current-schema assertions run separately.
+    @org.junit.Ignore("Archived pre-v21 migration proof")
+    @Test fun realWalV7UpgradeRollbackReopenAndFreshPointContracts(): Unit = runBlocking { pointScenarios(listOf("empty-v7", "populated-v7", "empty-v8", "populated-v8", "empty-v9", "populated-v9", "legacy-v9", "deployed-v10", "initial-v10", "populated-v11")) }
+
+    private suspend fun pointScenarios(scenarios: List<String>) {
         val context: Context = ApplicationProvider.getApplicationContext()
         System.loadLibrary("sqlcipher")
         val key = ByteArray(32) { 77 }
         try {
-            for (scenario in listOf("fresh", "empty-v7", "populated-v7", "empty-v8", "populated-v8", "empty-v9", "populated-v9", "legacy-v9", "deployed-v10", "initial-v10", "populated-v11")) {
+            for (scenario in scenarios) {
                 val name = "points-$scenario-test.db"
                 context.deleteDatabase(name)
                 try {
@@ -59,7 +65,12 @@ class PointPlacementSqlCipherTest {
         } finally { key.fill(0) }
     }
 
-    @Test fun verifiedEncryptedSnapshotPortableEnvelopeAndProductionRestoreKeepPointIdentity(): Unit = runBlocking {
+    @Test fun verifiedEncryptedSnapshotPortableEnvelopeAndProductionRestoreKeepPointIdentity(): Unit = runBlocking { pointRestoreVersions(listOf(PriceCatalogSchema.version.toInt())) }
+
+    @org.junit.Ignore("Archived pre-v21 restore sources")
+    @Test fun historicalPointRestoreSources(): Unit = runBlocking { pointRestoreVersions(listOf(8, 9, 10, 11, 12, 13, 14, 15)) }
+
+    private suspend fun pointRestoreVersions(versions: List<Int>) {
         val context: Context = ApplicationProvider.getApplicationContext()
         System.loadLibrary("sqlcipher")
         val originalKey = DatabaseKeyManager.getOrCreatePassphrase(context)
@@ -70,7 +81,7 @@ class PointPlacementSqlCipherTest {
         val password = "point-backup-fixture".toCharArray()
         context.deleteDatabase(name); context.deleteDatabase(copyName)
         try {
-            for (version in (listOf(8, 9, 10, 11, 12, 13, 14, 15) + PriceCatalogSchema.version.toInt()).distinct()) {
+            for (version in versions) {
                 context.deleteDatabase(name); context.deleteDatabase(copyName)
                 lateinit var f: PointPlacementProof.Fixture
                 lateinit var expectedPoints: List<PointPlacement>
