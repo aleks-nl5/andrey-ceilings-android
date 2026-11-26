@@ -40,7 +40,8 @@ object LinePlacementMigrationProof {
         }
         open(production).use {driver ->
             PriceCatalogSchema.verifyStructure(driver)
-            assertEquals(expected,LegacyWallSeedProof.snapshot(driver,true))
+            assertEquals(withoutPreV22Estimates(expected),LegacyWallSeedProof.snapshot(driver,true))
+            assertTrue(EstimateV22MigrationProof.counts(driver).values.all { it == 0L })
             assertEquals(production.version,PriceNameUniquenessProof.scalar(driver,"PRAGMA user_version"))
             assertEquals(0,PriceNameUniquenessProof.scalar(driver,"SELECT count(*) FROM line_placements"))
             LinePlacementProof.run(driver)
