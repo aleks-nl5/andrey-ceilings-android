@@ -51,13 +51,19 @@ class MeasurementEditModelTest {
         assertEquals(route.back(), target)
         assertFalse(model.state.value.dirty)
     }
-    @Test fun typedEditRoundTripBackReturnsToSameMeasurementAndParent() {
-        val details = AppNavigationState().selectTab(AppRoute.OBJECTS).openProject(10).openMeasurement(10, 20)
+    @Test fun typedEditRoundTripBackReturnsDirectlyToProject() {
+        val list = AppNavigationState().selectTab(AppRoute.OBJECTS)
+        val project = list.openProject(10)
+        val details = project.openMeasurement(10, 20)
         val edit = details.editMeasurement(10, 20)
-        assertEquals(edit, AppNavigationState.restore(edit.snapshot()))
-        assertEquals(details, edit.back())
-        assertEquals(details, edit.measurementSaved(10, 20))
-        assertEquals(10L, edit.back().back().projectDetails?.projectId)
+        assertEquals(project.openCeilingWorkspace(10, 20), edit)
+        assertEquals(MeasurementEdit(10, 20), edit.measurementEdit)
+        assertNull(edit.measurementDetails)
+        val restored = AppNavigationState.restore(edit.snapshot())
+        assertEquals(edit, restored)
+        assertEquals(project, restored.back())
+        assertEquals(project, edit.measurementSaved(10, 20))
+        assertEquals(list, edit.back().back())
         assertNull(AppNavigationState.restore(listOf("OBJECTS", "PROJECT_DETAILS:10", "MEASUREMENT_EDIT:11:20")).measurementEdit)
         assertNull(AppNavigationState.restore(listOf("OBJECTS", "PROJECT_DETAILS:10", "MEASUREMENT_EDIT:10:020")).measurementEdit)
     }

@@ -99,6 +99,7 @@ jobs:
         run: >-
           gradle --no-daemon :shared:jvmTest
           --tests '*LineCreationSnapTest' --tests '*MeasurementFormattingTest' --tests '*ProjectQuoteMetadataTest'
+          --tests '*MeasurementEditModelTest' --tests '*MeasurementNavigationTest'
           --stacktrace --warning-mode all
       - name: Verify unsigned release candidate for trusted signing
         shell: bash
