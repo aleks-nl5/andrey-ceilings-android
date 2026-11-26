@@ -1,6 +1,6 @@
 # P6B implementation
 
-P6B lives in Draft PR #180 for issue #136. The feature uses the #143A reservation ledger and the existing CMP document and SQLCipher infrastructure.
+P6B was implemented and owner-merged in PR #180 for issue #136. The feature uses the #143A reservation ledger and the existing CMP document and SQLCipher infrastructure.
 
 ## Storage and workflow
 
@@ -17,11 +17,11 @@ P6B lives in Draft PR #180 for issue #136. The feature uses the #143A reservatio
 - Preview a draft, then save before PDF export, print or Share. After saving, change the live project and ceiling data and reopen the PDF. Cancel a chooser and verify workflow is unchanged. Select a share target and verify only draft documents become sent. Exercise replacement and deapproval with both checkbox settings.
 - Check a current encrypted backup with versions and an individual tombstone, and an upgraded v23 backup. Confirm the restored version can still regenerate its detailed PDF. The PDF host actions use the existing Android exporter.
 
-The owner will review the physical APK and refine UI/UX. Final independent review and manually agreed FULL runs are separate from this implementation.
+The checklist above describes the implementation acceptance scenarios; see the final owner and CI evidence below.
 
 ## Integration baseline
 
-The starting main revision was `6a5cac216f9bb0a96d7fb1c9e726fcc3ac29d127`. Android FULL #1383 succeeded. CMP FULL #1120 completed with a failed receipt because its iOS/Desktop job was cancelled before any steps ran. Its Windows job succeeded. The Apple baseline still needs a successful result before integration.
+The starting main revision was `6a5cac216f9bb0a96d7fb1c9e726fcc3ac29d127`. Android FULL #1383 succeeded. CMP FULL #1120 initially failed its receipt after cancellation of the iOS/Desktop job; attempt 2 completed successfully. Both baseline workflows passed; #143 was closed before integration.
 
 [Android FULL #1383](https://github.com/aleks-nl5/andrey-ceilings-android/actions/runs/45824544513) · [CMP FULL #1120](https://github.com/aleks-nl5/andrey-ceilings-android/actions/runs/45824544572)
 
@@ -42,3 +42,13 @@ Empty consolidated discount is zero in either mode, editable as blank and normal
 ### Shared discount and contextual popup polish
 
 Individual quote editing now uses the same select-all and blank-to-zero-on-blur behavior and outlined discount-mode button as consolidated editing. Blank input is normalized to `0` for calculation, save commands and fingerprints; strict committed numeric parsing stays unchanged. Blank-to-zero display normalization does not invalidate an identical acknowledgement or pending intent. Individual mode switches retain the existing safe reset to zero; consolidated mode switching retains its existing typed value. Shared `CeilingsPopupMenu` defines the same rounded, elevated, outlined surface for version selection and all `ContextFeedbackIcon` explanations across the app. Existing transient quote test covers both discount modes, canonical saved text and invalid nonempty input.
+
+## Final acceptance and integration (26.11.2026)
+
+Owner merged [PR #180](https://github.com/aleks-nl5/andrey-ceilings-android/pull/180) on 26.11.2026 at `f96e8e4875e57032bafe8071a0d7f78c532b0b17`. P6B is accepted and integrated, schema v24. Owner physical APK acceptance 10/10; static review found no blocking production defect. [QUICK #245](https://github.com/aleks-nl5/andrey-ceilings-android/actions/runs/45877641887), [Android FULL #1385](https://github.com/aleks-nl5/andrey-ceilings-android/actions/runs/45881830423) and [CMP FULL #1122](https://github.com/aleks-nl5/andrey-ceilings-android/actions/runs/45881859607) all SUCCESS on exact pre-merge SHA `6788d89b95026fff6b901d22b511fa1c8ada0be4` (FULL attempt 1). Android instrumentation and signed-release open/recovery, Windows SQLCipher/JVM, macOS Desktop/JVM and iOS Simulator SQLCipher jobs succeeded. #143A baseline Android #1383 and CMP #1120 (attempt 2) succeeded; #143 is closed.
+
+Owner explicitly directs closing P6B and proceeding without waiting for automatic main FULL. [Android FULL #1386](https://github.com/aleks-nl5/andrey-ceilings-android/actions/runs/45887037327) and [CMP FULL #1123](https://github.com/aleks-nl5/andrey-ceilings-android/actions/runs/45887037334) were IN PROGRESS on merge SHA at this checkpoint, not reported as passed. Verify their actual results before the next production merge; investigate/fix or revert any real regression. This is a one-time sequencing decision, not a change to CI/merge policy. #136 stays OPEN through P6C.
+
+The preceding physical APK polish sections are historical feedback, superseded by final owner acceptance. No separate quantitative performance benchmark is asserted; successful workflow jobs are not a per-test report audit.
+
+Next: P6C [#140](https://github.com/aleks-nl5/andrey-ceilings-android/issues/140), 35 approved product decisions: global Ceilings/Quotes registries, dashboard and personalization, central + and navigation (#141/#77 coordination). Technical audit on merged main and a bounded owner-approved implementation handoff are still required; no production implementation authorization in this record. P7 calendar #49, P8/#177, Firebase #174 and branding remain separate. Keep current CI scope: no routine pre-v21 historical-only tests, retain real migrations/restore, current DB/SQLCipher and transactional/domain/PDF proofs; no broad UI suite. Owner-only Ready/merge.
