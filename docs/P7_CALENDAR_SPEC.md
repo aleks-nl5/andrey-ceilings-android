@@ -1,6 +1,10 @@
 # P7 — робочий календар Libellaro: погоджений продуктовий контракт
 27.11.2026. Issue #49. 46 рішень власника; planning/audit only. Не починати production до окремого погодження технічного handoff. Цей документ має пріоритет над суперечливими старими пунктами #49.
 
+## Technical planning update (27.11.2026)
+
+All 26 P7A technical decisions approved by owner. [P7A technical contract and bounded Codex handoff](P7A_CODEX_HANDOFF.md) supersedes preliminary technical proposals below. The 46 product decisions remain unchanged. Production starts only after documentation merge and explicit owner authorization.
+
 ## Етапи
 - P7A: SQLDelight/SQLCipher модель, CRUD, повторення і багатоденні роботи, CMP календар (тиждень/місяць/список), форма, внутрішні конфлікти, dashboard, об'єкт, пошук, налаштування core.
 - P7B: нагадування, snooze, контекстні дії, системна зайнятість, експорт, одностороння синхронізація, налаштування інтеграцій. Android-first; shared contracts/tests, native iOS/Windows integration після #138/#42. Не розширювати до P8, Firebase або командної синхронізації.
