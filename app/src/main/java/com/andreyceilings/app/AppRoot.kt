@@ -131,15 +131,19 @@ internal val navigationStateSaver = Saver<AppNavigationState, ArrayList<String>>
 internal fun CeilingsApp(
     databaseStatus: String, database: CeilingsDatabase?, onDatabaseReplaced: (CeilingsDatabase) -> Unit,
     themeMode: ThemeMode, onThemeModeChange: (ThemeMode) -> Unit,
-    initialNavigation: AppNavigationState = AppNavigationState()
+    initialNavigation: AppNavigationState = AppNavigationState(),
+    notificationWork: WorkOccurrenceKey? = null,
+    onNotificationOpened: () -> Unit = {},
 ) {
     val context = LocalContext.current.applicationContext
     val appLanguage = remember(context) { AppLanguageState(AndroidAppLanguageStorage(context)) }
     AndroidAppLanguageResources(appLanguage) {
-        CeilingsAppContent(
-            databaseStatus, database, onDatabaseReplaced, themeMode, onThemeModeChange,
-            initialNavigation, appLanguage
-        )
+        com.andreyceilings.app.calendar.AndroidCalendarIntegrationHost(database?.objectsClientsStore?.calendar) {
+            CeilingsAppContent(
+                databaseStatus, database, onDatabaseReplaced, themeMode, onThemeModeChange,
+                initialNavigation, appLanguage, notificationWork, onNotificationOpened,
+            )
+        }
     }
 }
 
@@ -152,7 +156,9 @@ private fun CeilingsAppContent(
     themeMode: ThemeMode,
     onThemeModeChange: (ThemeMode) -> Unit,
     initialNavigation: AppNavigationState,
-    appLanguage: AppLanguageState
+    appLanguage: AppLanguageState,
+    notificationWork: WorkOccurrenceKey?,
+    onNotificationOpened: () -> Unit,
 ) {
     var navigation by rememberSaveable(stateSaver = navigationStateSaver) {
         mutableStateOf(initialNavigation.restoreCeilingWorkspace())
@@ -215,6 +221,14 @@ private fun CeilingsAppContent(
     val firstWeekday = kotlinx.datetime.DayOfWeek.entries[(java.util.Calendar.getInstance().firstDayOfWeek + 5) % 7]
     LaunchedEffect(calendarStore, calendarMode, firstWeekday) { calendarStore?.warmCurrentPeriod(calendarMode, firstWeekday) }
     var calendarEditor by remember(database) { mutableStateOf<CalendarEditorRoute?>(null) }
+    LaunchedEffect(notificationWork, calendarStore, calendarEditor == null) {
+        if (notificationWork != null && calendarStore != null) {
+            if (calendarEditor == null) {
+                calendarEditor = CalendarEditorRoute.Open(notificationWork)
+                onNotificationOpened()
+            }
+        }
+    }
     var projectCalendar by remember(database) { mutableStateOf<String?>(null) }
     val projectCalendarStates = key(database) { rememberSaveableStateHolder() }
     var calendarReturnOverlay by remember(database) { mutableStateOf<Triple<List<String>, CalendarEditorRoute, String?>?>(null) }
