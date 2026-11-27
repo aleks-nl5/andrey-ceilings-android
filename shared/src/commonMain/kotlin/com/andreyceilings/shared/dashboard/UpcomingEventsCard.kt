@@ -147,17 +147,29 @@ fun UpcomingEventsCard(
                 Row(Modifier.fillMaxWidth().clickable(enabled = open != null) { open?.invoke() }
                     .padding(start = 12.dp, end = 5.dp, top = if (closest) 7.dp else 3.dp, bottom = if (closest) 7.dp else 3.dp),
                     verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Column(Modifier.width(96.dp), verticalArrangement = Arrangement.spacedBy(if (closest) 2.dp else 0.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(event.dateLabel, Modifier.fillMaxWidth(), style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center)
-                        Text(event.timeLabel, Modifier.fillMaxWidth(), style = if (closest) MaterialTheme.typography.titleMedium else MaterialTheme.typography.bodyMedium, textAlign = TextAlign.Center)
-                    }
-                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                        Text(event.description, style = if (closest) MaterialTheme.typography.titleMedium else MaterialTheme.typography.bodyMedium,
-                            fontWeight = if (closest) FontWeight.SemiBold else FontWeight.Normal, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                        if (closest) {
+                    if (closest) {
+                        Column(Modifier.width(96.dp), verticalArrangement = Arrangement.spacedBy(2.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(event.dateLabel, Modifier.fillMaxWidth(), style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center)
+                            Text(event.timeLabel, Modifier.fillMaxWidth(), style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center)
+                        }
+                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            Text(event.description, style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
                             if (event.projectName.isNotBlank()) Text(event.projectName, style = MaterialTheme.typography.bodyMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
                             event.clientName?.takeIf { it.isNotBlank() }?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
                         }
+                    } else {
+                        // The three secondary cards keep their existing type sizes.
+                        // Reserve space for the title; never wrap or shrink the typography.
+                        Row(Modifier.weight(1f, fill = false), horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically) {
+                            Text(event.dateLabel, style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis, softWrap = false)
+                            Text(event.timeLabel, style = MaterialTheme.typography.bodyMedium,
+                                maxLines = 1, overflow = TextOverflow.Ellipsis, softWrap = false)
+                        }
+                        Text(event.description, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium,
+                            maxLines = 1, overflow = TextOverflow.Ellipsis, softWrap = false)
                     }
                     if (closest && onAddWork != null) IconButton(onClick = onAddWork) {
                         Icon(Icons.Default.Add, stringResource(Res.string.work_add), tint = foreground)
