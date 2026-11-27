@@ -1,6 +1,13 @@
 package com.andreyceilings.app
 
 import android.content.Context
+import com.andreyceilings.shared.calendar.*
+import com.andreyceilings.shared.db.removeEmptyCalendarSchema
+import com.andreyceilings.shared.db.createEncryptedPrototypeDriver
+import com.andreyceilings.shared.db.PriceNameUniquenessProof
+import com.andreyceilings.shared.db.verifyCalendarContents
+import kotlinx.datetime.LocalDate
+import kotlinx.datetime.TimeZone
 import app.cash.sqldelight.driver.android.AndroidSqliteDriver
 import com.andreyceilings.shared.db.EstimateV22MigrationProof
 import com.andreyceilings.shared.db.FrozenIndividualEstimateProof
@@ -139,7 +146,72 @@ class EstimateRevisionPortableRestoreTest {
             }
     }
 
-    @Test fun v23EncryptedBackupPassesV24PreflightWithoutChangingSourceBytes() {
+    @Test fun v24EncryptedBackupPassesCalendarPreflightAndPreservesSourceBytes() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val name = "calendar-v24-restore-source.db"
+        val migratedName = "calendar-v24-migrated-copy.db"
+        val source = context.getDatabasePath(name)
+        val passphrase = ByteArray(32) { 24 }
+        context.deleteDatabase(name)
+        context.deleteDatabase(migratedName)
+        try {
+            System.loadLibrary("sqlcipher")
+            val (projectId, revisionUuid, expectedDetails) = AndroidSqliteDriver(PriceCatalogSchema, context, name,
+                factory = SupportOpenHelperFactory(passphrase.copyOf())).use { driver ->
+                val db = PrototypeDatabase(driver)
+                val fixture = MeasurementPricingFixture.seed(db)
+                val quotes = ImmutableEstimateRepository(db)
+                val saved = quotes.saveIndividual(
+                    FrozenIndividualEstimateProof.command(db, fixture), 2026, 600)
+                val details = checkNotNull(quotes.revision(saved.initialRevisionUuid)).detailsJson
+                removeEmptyCalendarSchema(driver)
+                driver.execute(null, "PRAGMA user_version = 24", 0)
+                PriceCatalogSchema.verifyStructure(driver, 24)
+                Triple(fixture.projectId, saved.initialRevisionUuid, details)
+            }
+            val before = source.readBytes()
+            try {
+                PortableBackupManager.verifyEncryptedSnapshot(context, source, passphrase)
+                assertArrayEquals(before, source.readBytes())
+
+                // Open a separate encrypted copy through the production Android driver.
+                // Keep the original v24 backup immutable, including on migration failure.
+                source.copyTo(context.getDatabasePath(migratedName))
+                val day = LocalDate(2026, 12, 1)
+                val draft = CalendarWorkDraft(day, WorkSchedule(WorkTimeMode.DATE_ONLY, TimeZone.UTC,
+                    listOf(WorkDay(0))), "Migrated calendar work", "MEASURE")
+                val workKey = createEncryptedPrototypeDriver(context, passphrase, migratedName,
+                    enableWalForTesting = true, initializePriceCatalog = true, requireExistingSchema = true).use { driver ->
+                    assertEquals(25L, PriceNameUniquenessProof.scalar(driver, "PRAGMA user_version"))
+                    PriceCatalogSchema.verifyStructure(driver, 25)
+                    verifyCalendarContents(driver)
+                    val db = PrototypeDatabase(driver)
+                    val project = checkNotNull(ProjectRepository(db).find(projectId))
+                    assertEquals(expectedDetails, ImmutableEstimateRepository(db).revision(revisionUuid)?.detailsJson)
+                    val calendar = CalendarRepository(db)
+                    assertEquals(4, calendar.types().size)
+                    assertTrue(calendar.period(WorkDateRange(day, day), TimeZone.UTC).isEmpty())
+                    val result = calendar.save(CalendarSave(draft.copy(projectUuid = project.uuid)))
+                    assertTrue(result is CalendarSaveResult.Saved)
+                    (result as CalendarSaveResult.Saved).key
+                }
+                createEncryptedPrototypeDriver(context, passphrase, migratedName,
+                    enableWalForTesting = true, initializePriceCatalog = true, requireExistingSchema = true).use { driver ->
+                    val db = PrototypeDatabase(driver)
+                    val project = checkNotNull(ProjectRepository(db).find(projectId))
+                    assertEquals(expectedDetails, ImmutableEstimateRepository(db).revision(revisionUuid)?.detailsJson)
+                    assertEquals(draft.copy(projectUuid = project.uuid), CalendarRepository(db).exact(workKey)?.draft)
+                }
+                assertArrayEquals(before, source.readBytes())
+            } finally { before.fill(0) }
+        } finally {
+            passphrase.fill(0)
+            context.deleteDatabase(migratedName)
+            context.deleteDatabase(name)
+        }
+    }
+
+    @Test fun v23EncryptedBackupPassesPreflightWithoutChangingSourceBytes() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val name = "consolidated-v23-restore-source.db"
         val source = context.getDatabasePath(name)
@@ -215,6 +287,20 @@ class EstimateRevisionPortableRestoreTest {
             assertEquals(catalogBefore, prices.all())
             assertEquals(groupsBefore, PriceGroupRepository(original.database).all())
             assertEquals(revisionsBefore, repo.revisions(first.seriesUuid))
+            val work = CalendarRepository(original.database)
+            val zone = TimeZone.of("Europe/Kyiv")
+            work.saveSettings(CalendarSettings(zone, null, emptySet()))
+            val day = LocalDate(2026, 12, 15)
+            val customType = CalendarWorkType("portable-test-type", "Portable custom", 0x123456, "other", 45, false)
+            work.saveType(customType)
+            val workKey = (work.save(CalendarSave(CalendarWorkDraft(day,
+                WorkSchedule(WorkTimeMode.DATE_ONLY, zone, listOf(WorkDay(0))), "Portable calendar work", customType.code,
+                recurrence = WorkRecurrence(day, WorkFrequency.DAILY, count = 3))))
+                as CalendarSaveResult.Saved).key
+            val changedKey = WorkOccurrenceKey(workKey.rootUuid, LocalDate(2026, 12, 16))
+            val changed = checkNotNull(work.exact(changedKey))
+            assertTrue(work.save(CalendarSave(changed.draft.copy(title = "Portable exception"), changedKey, changed.version)) is CalendarSaveResult.Saved)
+            work.saveType(customType.copy(archived = true))
             val exported = PortableBackupManager.create(context, original, password)
 
             // A bad password must reject before changing the live database.
@@ -236,6 +322,9 @@ class EstimateRevisionPortableRestoreTest {
                 draft(99.0, 9.0, "Should not survive portable restore")
             )
             assertEquals(4, repo.revisions(first.seriesUuid).size)
+            val event = checkNotNull(work.exact(workKey))
+            assertTrue(work.delete(workKey, event.version, CalendarEditScope.OCCURRENCE))
+            work.saveSettings(CalendarSettings(TimeZone.UTC, null, emptySet()))
 
             val decoded = PortableBackupManager.validate(context, exported, password)
             validatedContents = decoded
@@ -247,6 +336,13 @@ class EstimateRevisionPortableRestoreTest {
             assertTrue(replaced.checkIntegrity())
 
             fun verifyAll(db: CeilingsDatabase) {
+                val restoredCalendar = CalendarRepository(db.database)
+                assertEquals("Portable calendar work", restoredCalendar.exact(workKey)?.draft?.title)
+                assertEquals(zone, restoredCalendar.settings().zone)
+                assertEquals(emptySet<kotlinx.datetime.DayOfWeek>(), restoredCalendar.settings().workingDays)
+                assertEquals("Portable exception", restoredCalendar.exact(changedKey)?.draft?.title)
+                assertEquals("Portable calendar work", restoredCalendar.exact(WorkOccurrenceKey(workKey.rootUuid, LocalDate(2026, 12, 17)))?.draft?.title)
+                assertEquals(customType.copy(archived = true), restoredCalendar.types().single { it.code == customType.code })
                 val history = ImmutableEstimateRepository(db.database)
                 val actual = history.revisions(first.seriesUuid)
                 assertEquals(revisionsBefore, actual)

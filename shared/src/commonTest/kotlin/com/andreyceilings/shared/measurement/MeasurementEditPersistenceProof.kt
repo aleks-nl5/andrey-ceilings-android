@@ -100,7 +100,7 @@ object MeasurementEditPersistenceProof {
         }
         val id = create.create(MeasurementCreateFixtures.draft(project, "rectangle", MeasurementPrecision.ONE_CENTIMETER))
         val orphan = MeasurementEditModel(store, store.load(project, id))
-        orphan.accept(MeasurementCreateIntent.Name("orphan")); projects.delete(project); orphan.save()
+        orphan.accept(MeasurementCreateIntent.Name("orphan")); db.businessSchemaQueries.deleteProject(project); orphan.save()
         assertTrue(orphan.state.value.conflict)
         assertFails { store.load(project, id) }
         project

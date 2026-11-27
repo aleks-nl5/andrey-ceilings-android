@@ -90,7 +90,7 @@ class ProjectQuoteMetadataTest {
             assertEquals(407L, next().ceilings[ceiling]?.finalCents)
             measurements.delete(ceiling)
             assertTrue(next().ceilings.isEmpty())
-            ProjectRepository(db).delete(other)
+            db.businessSchemaQueries.deleteProject(other) // Reproduce a historical orphan.
             assertTrue(assertNotNull(store.observeProjectQuoteSummary(other).first()).ceilings.isEmpty())
 
             store.closeAndAwaitProjectReads()
@@ -147,6 +147,7 @@ class ProjectQuoteMetadataTest {
             ProjectQuoteCandidate(3, "SENT", "UAH", 22)))
         assertEquals(Long.MAX_VALUE, exact.approvedCents)
         assertFalse(exact.approvedUnavailable)
+        assertTrue(exact.hasApprovedQuote)
         assertEquals(22L, exact.ceilings[3]?.finalCents)
 
         for (candidates in listOf(
@@ -162,6 +163,9 @@ class ProjectQuoteMetadataTest {
         }
 
         assertNull(projectQuoteSummary(emptyList()).approvedCents)
+        assertFalse(projectQuoteSummary(emptyList()).hasApprovedQuote)
+        assertTrue(projectQuoteSummary(listOf(approved(1, -1))).hasApprovedQuote)
+        assertFalse(projectQuoteSummary(listOf(ProjectQuoteCandidate(1, "SENT", "UAH", 22))).hasApprovedQuote)
         assertEquals(0L, projectQuoteSummary(listOf(approved(1, 0))).approvedCents)
         assertEquals(setOf(1L), projectQuoteSummary(listOf(approved(1, 1), approved(1, 2))).unavailableCeilings)
     }

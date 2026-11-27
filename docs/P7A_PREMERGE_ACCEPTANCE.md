@@ -1,8 +1,8 @@
-# P7A — final pre-merge acceptance record
+# P7A — final acceptance and integration record
 
 27.11.2026 · Libellaro · #49 · [PR #185](https://github.com/aleks-nl5/andrey-ceilings-android/pull/185)
 
-Exact accepted pre-merge CI head `5045acf8c1cb3aab903f5dd456e33f2ac6f94e91` on `feat/p7a-work-calendar`; Android version 0.6.3, SQLDelight/SQLCipher v25 (additive v24→25). At this record's creation PR #185 is still open, Draft, mergeable; merge not claimed. Keep production head unchanged to retain exact-SHA evidence.
+Exact accepted pre-merge CI head `5045acf8c1cb3aab903f5dd456e33f2ac6f94e91` on `feat/p7a-work-calendar`; Android version 0.6.3, SQLDelight/SQLCipher v25 (additive v24→25). The owner merged PR #185 at `cb3632b3639793012d473ba28ece9d0f705549d9` without changing the tested production head.
 
 ## Verified CI
 
@@ -23,6 +23,6 @@ Android FULL #1392 failed at the stale active-measurement assertion after deleti
 
 ## Owner merge and follow-up
 
-1. Owner marks #185 Ready and merges. Record actual merge SHA and verify automatic post-merge Android/CMP FULL, do not report pending jobs as success. CI policy unchanged.
-2. Merge docs-only #186 after #185, verify actual branch base and no conflicts. Update AGENTS.md current state after actual merge (do not overwrite existing P7A history).
-3. Keep issue #49 open. Next stage is [P7B technical contract](P7B_CODEX_HANDOFF.md), 36 approved decisions, one production Draft PR, strict reuse of accepted CMP UI practices. Start only after merged P7A, required verification, merged documentation and explicit owner authorization. No autonomous Codex run, Ready or merge.
+Owner explicitly directs completing P7A and preparing/merging documentation #186 without waiting for automatic post-merge FULL. [Android FULL #1394](https://github.com/aleks-nl5/andrey-ceilings-android/actions/runs/46067956751) and [CMP FULL #1131](https://github.com/aleks-nl5/andrey-ceilings-android/actions/runs/46067956960) on merge SHA were IN PROGRESS at verification, not passed. Do not cancel them; verify actual outcomes before the next production merge and investigate/fix or revert any real regression. This is a sequencing decision, not a change to CI/merge policy.
+
+Keep issue #49 open. Merge docs-only #186 at owner's discretion. Next stage is [P7B technical contract](P7B_CODEX_HANDOFF.md), 36 approved decisions, one production Draft PR, strict reuse of accepted CMP UI practices. Start from latest main after documentation merge and separate owner authorization. No autonomous Codex run, Ready or merge.

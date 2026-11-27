@@ -1,5 +1,6 @@
 package com.andreyceilings.shared.prices
 
+import com.andreyceilings.shared.ui.CeilingsPopupMenu
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -7,6 +8,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -222,8 +225,8 @@ private fun CatalogUnitField(
     Box(Modifier.fillMaxWidth()) {
         OutlinedTextField(value = value, onValueChange = onChange, label = { Text(label) },
             singleLine = true, enabled = enabled, modifier = Modifier.fillMaxWidth().then(modifier),
-            trailingIcon = { TextButton(enabled = enabled, onClick = { expanded = true }) { Text("▾") } })
-        DropdownMenu(expanded = expanded && enabled, onDismissRequest = { expanded = false }) {
+            trailingIcon = { OutlinedIconButton(enabled = enabled, onClick = { expanded = true }) { Icon(Icons.Default.ArrowDropDown, label) } })
+        CeilingsPopupMenu(expanded = expanded && enabled, onDismissRequest = { expanded = false }) {
             options.forEach { option -> DropdownMenuItem(text = { Text(option) },
                 onClick = { expanded = false; onChange(option) }) }
         }
@@ -241,9 +244,9 @@ private fun <T> CatalogChoice(
         Box(Modifier.fillMaxWidth()) {
             OutlinedButton(enabled = enabled, onClick = { expanded = true }, modifier = Modifier.fillMaxWidth().then(modifier)) {
                 Text(value, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text("▾")
+                Icon(Icons.Default.ArrowDropDown, null, Modifier.size(18.dp))
             }
-            DropdownMenu(expanded = expanded && enabled, onDismissRequest = { expanded = false }) {
+            CeilingsPopupMenu(expanded = expanded && enabled, onDismissRequest = { expanded = false }) {
                 options.forEach { option -> DropdownMenuItem(text = { Text(name(option)) },
                     onClick = { expanded = false; onSelect(option) }) }
             }

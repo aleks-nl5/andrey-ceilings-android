@@ -33,6 +33,7 @@ internal class DesktopPriceDatabase private constructor(
         runBlocking { objects.measurementDetails.elements.closeAndAwaitWrites() }
         runBlocking { objects.measurementEdit.closeAndAwaitPointReads() }
         runBlocking { objects.closeAndAwaitProjectReads() }
+        runBlocking { objects.closeAndAwaitCalendar() }
         driver.close()
     }
 

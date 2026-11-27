@@ -4,6 +4,7 @@ import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFails
+import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 
 class BusinessRepositoriesTest {
@@ -48,9 +49,11 @@ class BusinessRepositoriesTest {
                 3.0, 4.0, 12.0, 14.0, 100.0, 20.0, 0.0, 0.0, 120.0, "{}")
             assertEquals("Updated quote", estimates.find(estimateId)?.name)
 
-            projects.delete(projectId)
-            assertNull(estimates.find(estimateId)) // Room's ON DELETE CASCADE contract
+            kotlin.test.assertFailsWith<IllegalStateException> { projects.delete(projectId) }
+            assertNotNull(estimates.find(estimateId))
             measurements.delete(measurementId)
+            projects.delete(projectId)
+            assertNull(estimates.find(estimateId))
             prices.delete(priceId)
             clients.delete(clientId)
             assertEquals(0, clients.all().size)

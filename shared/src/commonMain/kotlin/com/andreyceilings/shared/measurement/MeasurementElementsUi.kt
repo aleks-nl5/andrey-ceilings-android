@@ -1,5 +1,6 @@
 package com.andreyceilings.shared.measurement
 
+import com.andreyceilings.shared.ui.CeilingsPopupMenu
 import com.andreyceilings.shared.input.DecimalInputField
 
 import androidx.compose.foundation.layout.*
@@ -237,7 +238,7 @@ private fun ElementCatalogPicker(state: ElementCatalogState, selection: ElementC
                 OutlinedButton(onClick = { groupsExpanded = true }, enabled = enabled) {
                     Text(state.groups.find { it.uuid == groupUuid }?.name ?: if (groupUuid == null) "Усі категорії" else "Категорія недоступна")
                 }
-                DropdownMenu(groupsExpanded, onDismissRequest = { groupsExpanded = false }) {
+                CeilingsPopupMenu(groupsExpanded, onDismissRequest = { groupsExpanded = false }) {
                     DropdownMenuItem(text = { Text("Усі категорії") }, onClick = { groupUuid = null; groupsExpanded = false })
                     state.groups.forEach { group -> DropdownMenuItem(text = { Text(group.name) },
                         onClick = { groupUuid = group.uuid; groupsExpanded = false }) }

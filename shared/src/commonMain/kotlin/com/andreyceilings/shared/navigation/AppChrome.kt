@@ -174,12 +174,12 @@ private fun AppFloatingItem(
 
     if (destination.actionOnly) {
         Box(modifier.fillMaxHeight(), contentAlignment = Alignment.Center) {
-            Box(Modifier.size(46.dp).clip(CircleShape).background(indicatorColor)
+            Box(Modifier.size(54.dp).clip(CircleShape).background(indicatorColor)
                 .combinedClickable(interactionSource = interactions, indication = ripple(bounded = true),
                     enabled = destination.enabled, role = Role.Button, onClickLabel = destination.title,
                     onClick = onSelect),
                 contentAlignment = Alignment.Center) {
-                Icon(destination.icon, contentDescription = null, tint = contentColor, modifier = Modifier.size(26.dp))
+                Icon(destination.icon, contentDescription = null, tint = contentColor, modifier = Modifier.size(32.dp))
             }
         }
         return

@@ -1,5 +1,6 @@
 package com.andreyceilings.shared.registry
 
+import com.andreyceilings.shared.ui.CeilingsPopupMenu
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.DragInteraction
 import androidx.compose.material.icons.filled.Sort
@@ -11,6 +12,8 @@ import com.andreyceilings.shared.objects.CardSwipeState
 import com.andreyceilings.shared.objects.SwipeActionsSurface
 import com.andreyceilings.shared.objects.dismissCardSwipeOnInteraction
 import com.andreyceilings.shared.measurement.CeilingHasApprovedQuote
+import com.andreyceilings.shared.calendar.CalendarDeletionImpact
+import com.andreyceilings.shared.calendar.CalendarDeletionConfirmationRequired
 import com.andreyceilings.shared.db.ActiveCeilings
 import kotlinx.coroutines.launch
 import androidx.compose.foundation.lazy.LazyListState
@@ -189,6 +192,7 @@ fun CeilingRegistryScreen(
     }
     }
     deleting?.let { target ->
+        var calendarImpact by remember(target) { mutableStateOf<CalendarDeletionImpact?>(null) }
         val approvedError = stringResource(Res.string.p6a_delete_ceiling_approved)
         val generalError = stringResource(Res.string.p6a_delete_ceiling_failed)
         AlertDialog(
@@ -198,6 +202,7 @@ fun CeilingRegistryScreen(
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(stringResource(Res.string.p6a_delete_ceiling_confirm, target.name))
+                    if (calendarImpact != null) Text(stringResource(Res.string.work_deletion_ceiling))
                     deleteError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                 }
             },
@@ -207,9 +212,10 @@ fun CeilingRegistryScreen(
                     deleteError = null
                     scope.launch {
                         try {
-                            checkNotNull(store).deleteCeiling(target.projectId, target.id, target.uuid)
+                            checkNotNull(store).deleteCeiling(target.projectId, target.id, target.uuid, calendarImpact)
                             deleting = null
                         } catch (cancelled: CancellationException) { throw cancelled }
+                        catch (confirmation: CalendarDeletionConfirmationRequired) { calendarImpact = confirmation.impact }
                         catch (_: CeilingHasApprovedQuote) { deleteError = approvedError }
                         catch (_: Exception) { deleteError = generalError }
                         finally { deletingBusy = false }
@@ -450,8 +456,7 @@ private fun <T> RegistryDropdown(
             }
             Icon(Icons.Default.ArrowDropDown, null, Modifier.size(18.dp))
         }
-        DropdownMenu(expanded, onDismissRequest = { expanded = false }, modifier = Modifier.heightIn(max = 320.dp),
-            containerColor = MaterialTheme.colorScheme.surface) {
+        CeilingsPopupMenu(expanded, onDismissRequest = { expanded = false }, modifier = Modifier.heightIn(max = 320.dp)) {
             options.forEach { option ->
                 DropdownMenuItem(text = { Text(optionLabel(option)) }, onClick = { expanded = false; onSelect(option) })
             }
@@ -529,8 +534,7 @@ private fun RegistryOptions(controls: RegistryControls, projects: Map<Long, Stri
                         }
                         Icon(Icons.Default.ArrowDropDown, null)
                     }
-                    DropdownMenu(statusExpanded, onDismissRequest = { statusExpanded = false },
-                        containerColor = MaterialTheme.colorScheme.surface) {
+                    CeilingsPopupMenu(statusExpanded, onDismissRequest = { statusExpanded = false }) {
                         DropdownMenuItem(text = { Text(all) }, onClick = { draft = draft.copy(statuses = emptySet()) })
                         kinds.forEach { kind ->
                             val checked = kind.name in draft.statuses

@@ -1,5 +1,7 @@
 package com.andreyceilings.app
 
+import com.andreyceilings.shared.calendar.*
+
 import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
@@ -61,6 +63,7 @@ import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
@@ -194,6 +197,31 @@ private fun CeilingsAppContent(
     var dashboardPreferences by remember(dashboardStorage) {
         mutableStateOf(DashboardPreferences.decode(dashboardStorage.getString("layout", null)))
     }
+    val calendarStore = remember(database) { database?.objectsClientsStore?.calendar }
+    val calendarStorage = remember(context) { context.getSharedPreferences("calendar_display", 0) }
+    var calendarMode by remember(calendarStorage) {
+        mutableStateOf(runCatching { CalendarDisplayMode.valueOf(calendarStorage.getString("mode", null).orEmpty()) }
+            .getOrDefault(CalendarDisplayMode.WEEK))
+    }
+    var showWeekNumbers by remember(calendarStorage) { mutableStateOf(calendarStorage.getBoolean("showWeekNumbers", true)) }
+    fun setShowWeekNumbers(value: Boolean) {
+        showWeekNumbers = value
+        calendarStorage.edit().putBoolean("showWeekNumbers", value).apply()
+    }
+    fun setCalendarMode(mode: CalendarDisplayMode) {
+        calendarMode = mode
+        calendarStorage.edit().putString("mode", mode.name).apply()
+    }
+    val firstWeekday = kotlinx.datetime.DayOfWeek.entries[(java.util.Calendar.getInstance().firstDayOfWeek + 5) % 7]
+    LaunchedEffect(calendarStore, calendarMode, firstWeekday) { calendarStore?.warmCurrentPeriod(calendarMode, firstWeekday) }
+    var calendarEditor by remember(database) { mutableStateOf<CalendarEditorRoute?>(null) }
+    var projectCalendar by remember(database) { mutableStateOf<String?>(null) }
+    val projectCalendarStates = key(database) { rememberSaveableStateHolder() }
+    var calendarReturnOverlay by remember(database) { mutableStateOf<Triple<List<String>, CalendarEditorRoute, String?>?>(null) }
+    var completionProject by remember(database) { mutableStateOf<Pair<String, WorkOccurrenceKey>?>(null) }
+    var detachedCalendarWorks by remember(database) { mutableIntStateOf(0) }
+    val calendarWindow = DialogProperties(usePlatformDefaultWidth = false, dismissOnClickOutside = false,
+        decorFitsSystemWindows = false)
     val systemDarkTheme = isSystemInDarkTheme()
     val useDarkTheme = themeMode.usesDarkColors(systemDarkTheme)
 
@@ -214,6 +242,25 @@ private fun CeilingsAppContent(
     // Let the shared title own details scrolling rather than enterAlways showing
     // the original toolbar during a reverse swipe.
     val passiveDetailsScroll = remember { object : NestedScrollConnection {} }
+    // Collapse only after a child actually scrolls. A short list cannot hide the header.
+    val contentOnlyHeaderScroll = remember(topAppBarScrollBehavior) {
+        object : NestedScrollConnection {
+            override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset {
+                val state = topAppBarScrollBehavior.state
+                val delta = if (consumed.y != 0f) consumed.y else available.y.coerceAtLeast(0f)
+                if (delta != 0f) state.heightOffset = (state.heightOffset + delta).coerceIn(state.heightOffsetLimit, 0f)
+                state.contentOffset += consumed.y
+                return Offset.Zero
+            }
+            override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity {
+                // Snap an actually moved toolbar; never let an unconsumed short-page fling collapse it.
+                val state = topAppBarScrollBehavior.state
+                return if (state.collapsedFraction > 0f && state.collapsedFraction < 1f)
+                    topAppBarScrollBehavior.nestedScrollConnection.onPostFling(consumed, Velocity.Zero)
+                else Velocity.Zero
+            }
+        }
+    }
     LaunchedEffect(navigation.projectDetails?.projectId) {
         projectTitleProgress = 0f
         if (navigation.projectDetails != null) {
@@ -249,6 +296,18 @@ private fun CeilingsAppContent(
     fun applyNavigation(next: AppNavigationState) {
         measurementCreateNavigationGuard.quoteSession.navigate(next)
         if (next.current != navigation.current) tabChangedAt = SystemClock.elapsedRealtime()
+        val pending = calendarReturnOverlay
+        if (pending != null && next != navigation && navigation.calendarLinkReturn != null && next.calendarLinkReturn == null &&
+            next.snapshot() == pending.first && next == navigation.back()) {
+            calendarEditor = pending.second
+            projectCalendar = pending.third
+            calendarReturnOverlay = null
+        } else if (pending != null && next != navigation && next.calendarLinkReturn == null) {
+            calendarReturnOverlay = null
+        } else if (pending != null && next != navigation && next.calendarLinkReturn != null && calendarEditor == pending.second) {
+            calendarEditor = null
+            projectCalendar = null
+        }
         navigation = next
     }
     fun updateNavigation(proposed: AppNavigationState) {
@@ -272,6 +331,7 @@ private fun CeilingsAppContent(
     val searchRequest = if (tab == repeatedSearchRoute) searchGeneration else 0
     fun navigateTo(target: AppTab, clients: Boolean = false, query: String = "") {
         if (target == tab) return
+        calendarReturnOverlay = null
         if (target == AppTab.OBJECTS) {
             objectsStartInClients = clients
             clientsBackToObjects = false
@@ -654,7 +714,7 @@ private fun CeilingsAppContent(
                 .background(MaterialTheme.colorScheme.background)
                 .then(if (tab == AppTab.OBJECTS) Modifier.dismissCardSwipeOnInteraction(cardSwipes) else Modifier)
                 .nestedScroll(if (isProjectDetailsOpen || isMeasurementDetailsOpen) passiveDetailsScroll
-                    else topAppBarScrollBehavior.nestedScrollConnection)
+                    else contentOnlyHeaderScroll)
         ) {
         val useCeilingInCalculator: (com.andreyceilings.shared.estimate.FrozenPolygonGeometry) -> Unit = { source ->
             capturedCalculatorPrecision = checkNotNull(MeasurementPrecision.fromStep(source.precisionStepMeters))
@@ -714,6 +774,8 @@ private fun CeilingsAppContent(
                             returnToProjectsRequest = returnToProjectsRequest,
                             requestedClientId = requestedClientId,
                             onClientRequestConsumed = { requestedClientId = null },
+                            onCalendarEdit = { calendarEditor = it },
+                            onProjectCalendar = { projectCalendarStates.removeState(it); projectCalendar = it },
                              onListTabChanged = { selected ->
                                  clientsBackToObjects = selected == com.andreyceilings.shared.objects.ObjectsClientsTab.CLIENTS
                                  objectsStartInClients = clientsBackToObjects
@@ -738,7 +800,9 @@ private fun CeilingsAppContent(
                             headerVisibleFraction = 1f - topAppBarScrollBehavior.state.collapsedFraction,
                             requestedQuote = requestedQuote, onQuoteRequestConsumed = { requestedQuote = null })
                         AppTab.PRICES -> PriceListScreen(database, darkTheme = useDarkTheme)
-                        AppTab.CALENDAR -> CalendarScreen(database)
+                        AppTab.CALENDAR -> WorkCalendarScreen(calendarStore, calendarMode, ::setCalendarMode,
+                            onEdit = { calendarEditor = it }, contentPadding = PaddingValues(top = topContentPadding, bottom = bottomContentPadding),
+                            systemFirstDay = firstWeekday, showWeekNumbers = showWeekNumbers)
                         else -> Unit
                     }
                 }
@@ -763,7 +827,8 @@ private fun CeilingsAppContent(
                             onObjects = { navigateTo(AppTab.OBJECTS) },
                             onClients = { navigateTo(AppTab.OBJECTS, clients = true) },
                             onEstimates = { openNested(AppTab.ESTIMATES) },
-                            onCalendar = { navigateTo(AppTab.CALENDAR) }
+                            onCalendar = { openNested(AppTab.CALENDAR) },
+                            onCalendarEdit = { calendarEditor = it }
                         )
                         AppTab.CALCULATOR -> CalculatorScreen(
                             database = database,
@@ -830,6 +895,7 @@ private fun CeilingsAppContent(
                                 saved
                             },
                             appLanguage = appLanguage,
+                            showWeekNumbers = showWeekNumbers, onShowWeekNumbersChange = ::setShowWeekNumbers,
                             measurementPrecision = measurementPrecision,
                             onMeasurementPrecision = { selected ->
                                 capturedCalculatorPrecision = null
@@ -875,14 +941,11 @@ private fun CeilingsAppContent(
                 .height(navigationBarInset + systemPanelGradientHeight)
         )
 
-        if (showGlobalSearch && openSearch) RegistrySearchDialog(
-            database?.objectsClientsStore, onClose = { openSearch = false },
-            // Android Dialog has its own window; opt into edge-to-edge so its
-            // content receives the IME insets instead of being panned behind it.
-            properties = DialogProperties(usePlatformDefaultWidth = false,
-                dismissOnClickOutside = false, decorFitsSystemWindows = false)
-        ) { hit ->
-            openSearch = false
+        fun openCalendarRegistryTarget(hit: GlobalRegistryTarget) {
+            if (hit is GlobalRegistryTarget.Ceiling && tab == AppTab.OBJECTS && navigation.projectDetails?.projectId == hit.projectId) {
+                updateNavigation(navigation.openLinkedCeiling(hit.projectId, hit.id))
+                return
+            }
             val target = when (hit) {
                 is GlobalRegistryTarget.Project, is GlobalRegistryTarget.Client -> AppTab.OBJECTS
                 is GlobalRegistryTarget.Ceiling -> AppTab.MEASUREMENTS
@@ -900,7 +963,7 @@ private fun CeilingsAppContent(
             val destination = navigation.navigate(target)
             when (hit) {
                 is GlobalRegistryTarget.Project -> updateNavigation(destination.openProject(hit.id))
-                is GlobalRegistryTarget.Ceiling -> updateNavigation(destination.openCeilingWorkspace(hit.projectId, hit.id))
+                is GlobalRegistryTarget.Ceiling -> updateNavigation(navigation.openLinkedCeiling(hit.projectId, hit.id))
                 is GlobalRegistryTarget.Client -> {
                     requestedClientId = hit.id
                     updateNavigation(destination)
@@ -910,6 +973,84 @@ private fun CeilingsAppContent(
                     updateNavigation(destination)
                 }
             }
+        }
+
+        if (showGlobalSearch && openSearch) RegistrySearchDialog(
+            database?.objectsClientsStore, onClose = { openSearch = false },
+            // Android Dialog has its own window; opt into edge-to-edge so its
+            // content receives the IME insets instead of being panned behind it.
+            properties = DialogProperties(usePlatformDefaultWidth = false,
+                dismissOnClickOutside = false, decorFitsSystemWindows = false),
+            calendar = calendarStore,
+            onWork = { openSearch = false; calendarEditor = CalendarEditorRoute.Open(it) },
+        ) { hit ->
+            openSearch = false
+            openCalendarRegistryTarget(hit)
+        }
+
+        if (calendarStore != null) {
+            projectCalendar?.let { projectUuid ->
+                fun closeProjectCalendar() { projectCalendarStates.removeState(projectUuid); projectCalendar = null }
+                projectCalendarStates.SaveableStateProvider(projectUuid) {
+                androidx.compose.ui.window.Dialog(onDismissRequest = ::closeProjectCalendar, properties = calendarWindow) {
+                    Box(Modifier.fillMaxSize().safeDrawingPadding().imePadding().padding(horizontal = 12.dp), contentAlignment = Alignment.Center) {
+                        Surface(Modifier.fillMaxWidth().fillMaxHeight(.66f), shape = MaterialTheme.shapes.extraLarge) {
+                            WorkCalendarScreen(calendarStore, CalendarDisplayMode.LIST, {}, onEdit = { calendarEditor = it },
+                                contentPadding = PaddingValues(8.dp), systemFirstDay = firstWeekday, projectFilter = projectUuid,
+                                onClose = ::closeProjectCalendar)
+                        }
+                    }
+                }
+                }
+            }
+            calendarEditor?.let { route ->
+                WorkEditor(calendarStore, route, onClose = { calendarEditor = null }, properties = calendarWindow,
+                    registry = database?.objectsClientsStore,
+                    openExternalUri = { url ->
+                        val action = if (url.startsWith("tel:")) android.content.Intent.ACTION_DIAL else android.content.Intent.ACTION_VIEW
+                        context.startActivity(android.content.Intent(action, Uri.parse(url)))
+                    },
+                    onRegistryTarget = { hit ->
+                        val destination = when (hit) {
+                            is GlobalRegistryTarget.Project -> navigation.openCalendarProject(hit.id)
+                            is GlobalRegistryTarget.Ceiling -> navigation.openCalendarCeiling(hit.projectId, hit.id)
+                            else -> navigation
+                        }
+                        if (destination != navigation && destination.calendarLinkReturn != null) {
+                            calendarReturnOverlay = Triple(checkNotNull(destination.calendarLinkReturn).origin, route, projectCalendar)
+                            openSearch = false
+                            if (destination.current != tab) {
+                                initialSearch = ""
+                                repeatedSearchRoute = null
+                                if (destination.current == AppTab.OBJECTS) {
+                                    objectsStartInClients = false
+                                    clientsBackToObjects = false
+                                }
+                            }
+                            updateNavigation(destination)
+                        } else if (hit is GlobalRegistryTarget.Project && navigation.projectDetails?.projectId == hit.id) {
+                            calendarEditor = null
+                            projectCalendar = null
+                        } else if (hit !is GlobalRegistryTarget.Project && hit !is GlobalRegistryTarget.Ceiling) {
+                            calendarEditor = null; projectCalendar = null; openSearch = false; openCalendarRegistryTarget(hit)
+                        }
+                    },
+                    onSaved = { result, draft ->
+                        calendarEditor = null
+                        detachedCalendarWorks = result.detached
+                        if (result.installationCompleted) completionProject = draft.projectUuid?.let { it to result.key }
+                    })
+            }
+            CalendarSaveFeedback(detachedCalendarWorks, completionProject != null,
+                onDismiss = { completionProject = null; detachedCalendarWorks = 0 },
+                onComplete = {
+                    val project = completionProject
+                    completionProject = null
+                    detachedCalendarWorks = 0
+                    if (project != null) scope.launch {
+                        runCatching { database?.objectsClientsStore?.completeCalendarProject(project.first, project.second) }
+                    }
+                })
         }
 
         if (!isMeasurementEditOpen && !measurementFullscreen && !navigation.measurementProjectPicker) FloatingNavigationBar(

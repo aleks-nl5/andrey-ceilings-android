@@ -71,10 +71,21 @@ class SqlDelightBusinessRepositoriesInstrumentedTest {
                 assertTrue(estimateId > 0L)
                 assertEquals(1L, estimates.count())
                 assertEquals(1L, clients.count())
+                kotlin.test.assertFailsWith<IllegalStateException> { projects.delete(projectId) }
+                assertEquals(1L, measurements.count())
+                assertEquals(1L, estimates.count())
+                measurements.delete(measurementId)
                 projects.delete(projectId)
                 assertNull(estimates.find(estimateId))
-                // Room parity: measurements have an index, not an FK/cascade.
-                assertEquals(1L, measurements.count())
+                assertNull(measurements.find(measurementId))
+                assertEquals(0L, measurements.count())
+                val deletedMeasurement = measurements.tombstones().single()
+                assertEquals(measurementId, deletedMeasurement.id)
+                assertEquals("Kitchen", deletedMeasurement.name)
+
+                // Also retain a live measurement to prove positive persistence on reopen.
+                val retainedProject = projects.createReturningId(clientId, "Retained project", createdAt = 107)
+                measurements.createReturningId(retainedProject, "Living room", createdAt = 108)
             }
 
             val bytes = file.readBytes()
@@ -95,7 +106,10 @@ class SqlDelightBusinessRepositoriesInstrumentedTest {
             createEncryptedPrototypeDriver(context, key, name).use { driver ->
                 val db = PrototypeDatabase(driver)
                 assertEquals("Olena", ClientRepository(db).all().single().name)
-                assertEquals("Kitchen", MeasurementRepository(db).all().single().name)
+                val measurements = MeasurementRepository(db)
+                assertEquals("Living room", measurements.all().single().name)
+                assertEquals("Kitchen", measurements.tombstones().single().name)
+                assertTrue(measurements.tombstones().single().deletedAt != null)
                 assertEquals("New Film", PriceRepository(db).all().single().title)
             }
         } finally {

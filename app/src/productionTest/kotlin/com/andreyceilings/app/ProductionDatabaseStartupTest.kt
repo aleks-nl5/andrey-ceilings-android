@@ -9,6 +9,9 @@ import app.cash.sqldelight.driver.android.AndroidSqliteDriver
 import com.andreyceilings.app.data.db.*
 import com.andreyceilings.app.data.security.*
 import com.andreyceilings.shared.db.*
+import com.andreyceilings.shared.calendar.*
+import kotlinx.datetime.LocalDate
+import kotlinx.datetime.TimeZone
 import com.andreyceilings.shared.measurement.MeasurementEditStore
 import net.zetetic.database.sqlcipher.SupportOpenHelperFactory
 import org.junit.Test
@@ -281,13 +284,22 @@ class ProductionDatabaseStartupTest {
         LinePlacementProof.run(db.driver)
         val expectedLines=LinePlacementRepository(db.database).all()
         val expected=db.clients().count()
+        val calendar = CalendarRepository(db.database)
+        val workDraft = CalendarWorkDraft(LocalDate(2026, 12, 1),
+            WorkSchedule(WorkTimeMode.DATE_ONLY, TimeZone.UTC, listOf(WorkDay(0))),
+            "Production calendar round trip", "MEASURE")
+        val workKey = assertIs<CalendarSaveResult.Saved>(calendar.save(CalendarSave(workDraft))).key
         val envelope=PortableBackupManager.create(context,db,"production-round-trip".toCharArray())
         try {
             val contents=PortableBackupManager.validate(context,envelope,"production-round-trip".toCharArray())
             try {
+                val work = assertNotNull(calendar.exact(workKey))
+                assertTrue(calendar.delete(workKey, work.version, CalendarEditScope.OCCURRENCE))
+                assertNull(calendar.exact(workKey))
                 val restored=SqlCipherRestoreManager.restore(context,contents)
                 assertEquals(expected,restored.clients().count())
                 assertEquals(expectedLines,LinePlacementRepository(restored.database).all())
+                assertEquals(workDraft, CalendarRepository(restored.database).exact(workKey)?.draft)
             }
             finally{contents.database.fill(0);contents.passphrase.fill(0)}
         } finally {envelope.fill(0)}

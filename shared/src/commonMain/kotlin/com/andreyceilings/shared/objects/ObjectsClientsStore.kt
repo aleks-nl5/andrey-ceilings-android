@@ -85,10 +85,46 @@ internal sealed interface PickerProjectSave {
  */
 class ObjectsClientsStore(
     private val database: PrototypeDatabase,
-    private val nowMillis: () -> Long
+    private val nowMillis: () -> Long,
+    calendarLease: ((() -> Unit) -> Unit)?,
 ) {
+    constructor(database: PrototypeDatabase, nowMillis: () -> Long) : this(database, nowMillis, null)
+    private val clock = object : kotlin.time.Clock {
+        override fun now() = kotlin.time.Instant.fromEpochMilliseconds(nowMillis())
+    }
+    private val calendarSession = lazy { com.andreyceilings.shared.calendar.CalendarStore(database, clock, calendarLease) }
+    val calendar get() = calendarSession.value
+
+    fun closeCalendar() {
+        if (calendarSession.isInitialized()) calendar.close()
+    }
+
+    suspend fun closeAndAwaitCalendar() {
+        if (calendarSession.isInitialized()) calendar.closeAndAwait()
+    }
+
+    suspend fun calendarProjectUuid(projectId: Long): String? = withContext(Dispatchers.Default) {
+        if (sessionClosed.value) null else projects.find(projectId)?.uuid
+    }
+
+    suspend fun completeCalendarProject(uuid: String, key: com.andreyceilings.shared.calendar.WorkOccurrenceKey): Boolean =
+        withContext(Dispatchers.Default) {
+            database.transactionWithResult {
+                if (sessionClosed.value) return@transactionWithResult false
+                database.workCalendarQueries.claimCalendarWrite()
+                val work = com.andreyceilings.shared.calendar.CalendarRepository(database, clock).exact(key)
+                    ?: return@transactionWithResult false
+                if (work.draft.projectUuid != uuid || work.draft.typeCode != "INSTALL" ||
+                    work.draft.status != com.andreyceilings.shared.calendar.WorkStatus.COMPLETED) return@transactionWithResult false
+                val project = database.workCalendarQueries.selectCalendarDirectProject(uuid).executeAsOneOrNull()
+                    ?: return@transactionWithResult false
+                projects.updateStatus(project.id, ProjectWorkStage.COMPLETED.wireId, nowMillis())
+                true
+            }
+        }
+
     private val clients = ClientRepository(database)
-    private val projects = ProjectRepository(database)
+    private val projects = ProjectRepository(database, clock)
     private val measurements = MeasurementRepository(database)
     private val estimates = ImmutableEstimateRepository(database)
     private val sessionClosed = MutableStateFlow(false)
@@ -442,27 +478,21 @@ class ObjectsClientsStore(
         }
     }
 
-    fun deleteClient(id: Long) {
+    fun deleteClient(id: Long, confirmation: com.andreyceilings.shared.calendar.CalendarDeletionImpact? = null) = database.transaction {
+        database.workCalendarQueries.claimCalendarWrite()
         checkNotNull(clients.find(id)) { "Клієнта вже немає." }
-        check(projects.byClient(id).isEmpty()) {
-            "Спершу перенесіть або видаліть об'єкти цього клієнта."
-        }
-        clients.delete(id)
+        clients.delete(id, confirmation)
     }
 
-    suspend fun deleteCeiling(projectId: Long, measurementId: Long, expectedUuid: String) {
+    suspend fun deleteCeiling(projectId: Long, measurementId: Long, expectedUuid: String,
+        confirmation: com.andreyceilings.shared.calendar.CalendarDeletionImpact? = null) {
         check(!sessionClosed.value)
-        com.andreyceilings.shared.measurement.MeasurementsStore(database).delete(projectId, measurementId, expectedUuid)
+        com.andreyceilings.shared.measurement.MeasurementsStore(database).delete(projectId, measurementId, expectedUuid, confirmation)
     }
 
-    fun deleteProject(id: Long) {
+    fun deleteProject(id: Long, confirmation: com.andreyceilings.shared.calendar.CalendarDeletionImpact? = null) = database.transaction {
+        database.workCalendarQueries.claimCalendarWrite()
         checkNotNull(projects.find(id)) { "Об'єкт уже видалено." }
-        // Removing a project currently hides estimates, but does NOT cascade
-        // room measurements. Reject the operation rather than leaving orphan
-        // measurements behind; explicit reassignment is planned in #60.
-        check(measurements.forProject(id).isEmpty()) {
-            "Спочатку перенесіть або видаліть заміри цього об'єкта."
-        }
-        projects.delete(id)
+        projects.delete(id, confirmation)
     }
 }

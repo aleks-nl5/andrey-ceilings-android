@@ -152,7 +152,11 @@ internal suspend fun proveExactEstimateDocuments(driver: SqlDriver) {
         projects.update(project.id, project.clientId, "Renamed project", "Changed address",
             project.status, project.notes, 608)
         prices.updateSalePrice(assertNotNull(prices.find(fixture.priceId)), 150.0, 609)
-        MeasurementRepository(db).delete(measurement.id)
+        assertFailsWith<com.andreyceilings.shared.measurement.CeilingHasApprovedQuote> {
+            MeasurementRepository(db).delete(measurement.id)
+        }
+        // Historical data can contain a removed source from an older client.
+        db.businessSchemaQueries.deleteMeasurement(measurement.id)
         checkRejected(ConsolidatedDocumentProblem.ROOM_MISSING, old)
         val printedAgain = ids.map { assertNotNull(store.estimateDocument(series, it)) }
         assertEquals(documents.map { it.rows }, printedAgain.map { it.rows })

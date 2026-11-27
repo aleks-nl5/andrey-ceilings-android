@@ -18,6 +18,7 @@ object PriceCatalogSchema : SqlSchema<QueryResult.Value<Unit>> {
         verifyMeasurementElementStructure(driver, version)
         verifyPointPlacementStructure(driver, version)
         if (version >= 16) verifyFrozenEstimateStructure(driver, version)
+        verifyCalendarStructure(driver, version)
     }
 
     override val version: Long get() = PrototypeDatabase.Schema.version
@@ -39,7 +40,10 @@ object PriceCatalogSchema : SqlSchema<QueryResult.Value<Unit>> {
 
     internal fun createInTransaction(driver: SqlDriver): QueryResult.Value<Unit> {
         PrototypeDatabase.Schema.create(driver)
-        StarterPriceCatalog.initializeInTransaction(PrototypeDatabase(driver))
+        val database = PrototypeDatabase(driver)
+        StarterPriceCatalog.initializeInTransaction(database)
+        database.workCalendarQueries.seedCalendarTypes()
+        database.workCalendarQueries.seedCalendarSettings()
         verifyStructure(driver)
         return QueryResult.Unit
     }
@@ -55,6 +59,7 @@ object PriceCatalogSchema : SqlSchema<QueryResult.Value<Unit>> {
         if (oldVersion in 16L..19L && newVersion >= 20L) verifyPointPlacementStructure(driver, oldVersion)
         if (oldVersion in 20L..23L && newVersion >= 23L) verifyPointPlacementStructure(driver, oldVersion)
         if (oldVersion >= 16) verifyFrozenEstimateStructure(driver, oldVersion)
+        verifyCalendarStructure(driver, oldVersion)
         var statement=0
         val observed=object:SqlDriver by driver {
             override fun execute(identifier:Int?,sql:String,parameters:Int,binders:(app.cash.sqldelight.db.SqlPreparedStatement.()->Unit)?):QueryResult<Long> {
@@ -69,6 +74,7 @@ object PriceCatalogSchema : SqlSchema<QueryResult.Value<Unit>> {
         if (oldVersion < 21L && newVersion >= 6L) StarterPriceCatalog.initializeInTransaction(PrototypeDatabase(driver))
         if (newVersion >= 8L) verifyStructure(driver, newVersion)
         if (newVersion >= 17L) verifyFrozenEstimateContents(driver, newVersion)
+        if (newVersion >= 25L) verifyCalendarContents(driver)
         return QueryResult.Unit
     }
 }

@@ -12,6 +12,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import com.andreyceilings.shared.objects.compactQuoteAmount
+import com.andreyceilings.shared.calendar.*
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.atStartOfDayIn
+import kotlinx.datetime.toLocalDateTime
+import kotlin.time.Instant
 import com.andreyceilings.shared.registry.RegistryRead
 import com.andreyceilings.shared.registry.registryRead
 import com.andreyceilings.shared.resources.*
@@ -36,8 +41,31 @@ fun DashboardScreen(
     onCurrencyMessageDismiss: ((Long) -> Unit)? = null,
     onMonobank: (() -> Unit)? = null,
     formatCurrencyDate: ((Long) -> String)? = null,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    calendar: CalendarStore? = null,
+    onCalendarEdit: ((CalendarEditorRoute) -> Unit)? = null,
 ) {
+    val now = Instant.fromEpochMilliseconds(nowMillis)
+    val optionsRead = calendarOptionsState(calendar)
+    val calendarOptions = optionsRead.data()
+    val zone = calendarOptions?.settings?.zone ?: TimeZone.currentSystemDefault()
+    val today = now.toLocalDateTime(zone).date
+    val workRead = if (calendar != null && calendarOptions == null && optionsRead is CalendarRead.Loading)
+        calendar.cachedUpcoming(today, limit = 12)?.let { CalendarRead.Ready(it) } ?: CalendarRead.Loading
+    else upcomingCalendarState(calendar, today, null, 12, now)
+    val scheduled = workRead.data().orEmpty().filter { it.upcoming(now) }.mapNotNull { work ->
+        val eventZone = work.draft.schedule.zone
+        val next = work.days.firstOrNull { day ->
+            day.interval?.let { it.endExclusive > now } ?: (day.date >= now.toLocalDateTime(eventZone).date)
+        } ?: return@mapNotNull null
+        val start = next.interval?.start ?: next.date.atStartOfDayIn(eventZone)
+        val end = next.interval?.endExclusive ?: next.date.shift(1).atStartOfDayIn(eventZone)
+        UpcomingWorkEvent("${work.key.rootUuid}/${work.key.originalDate}", start.toEpochMilliseconds(),
+            dashboardWorkDate(next.date), if (work.draft.schedule.mode == WorkTimeMode.TIMED)
+                start.toLocalDateTime(eventZone).time.shortTime() else stringResource(work.draft.schedule.mode.label()),
+            work.draft.title, work.projectLabel ?: work.contact.address.orEmpty(), work.contact.name,
+            endsAtMillis = end.toEpochMilliseconds(), key = work.key)
+    }
     val summary = registryRead(store?.rows)
     val stats = (summary as? RegistryRead.Ready)?.data
     val count = registryRead(store?.quoteCount)
@@ -49,8 +77,12 @@ fun DashboardScreen(
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         preferences.rows().forEach { blocks ->
             when (blocks.singleOrNull()) {
-                DashboardBlock.WORK -> UpcomingEventsCard(upcomingEvents, todayLabel, nowMillis,
-                    store != null, onCalendar, onOpenProject)
+                DashboardBlock.WORK -> UpcomingEventsCard(if (calendar == null) upcomingEvents else scheduled,
+                    if (calendar == null) todayLabel else dashboardWorkDate(today), nowMillis,
+                    store != null && (calendar == null || workRead !is CalendarRead.Unavailable), onCalendar, onOpenProject,
+                    onOpenWork = onCalendarEdit?.let { open -> { open(CalendarEditorRoute.Open(it)) } },
+                    onAddWork = onCalendarEdit?.takeIf { calendar != null }?.let { open -> { open(CalendarEditorRoute.Create()) } },
+                    loading = workRead is CalendarRead.Loading)
                 DashboardBlock.RATES -> if (currencyRates != null && formatCurrencyDate != null) {
                     CurrencyRatesCard(state = currencyRates, onRefresh = onCurrencyRefresh,
                         onMonobank = onMonobank, onMessageTimeout = onCurrencyMessageDismiss, formatDate = formatCurrencyDate)
@@ -129,3 +161,7 @@ internal fun DashboardBlock.label() = when (this) {
     DashboardBlock.CLIENTS -> Res.string.p6c_clients
     DashboardBlock.RATES -> Res.string.p6c_rates
 }
+
+@Composable
+private fun dashboardWorkDate(date: kotlinx.datetime.LocalDate): String =
+    stringResource(date.dayOfWeek.label()) + " " + date.day.toString().padStart(2, '0') + "." + date.monthNumber.toString().padStart(2, '0')

@@ -116,7 +116,7 @@ object MeasurementElementProof {
             geometry.lengthMeters, geometry.widthMeters, geometry.areaSquareMeters, geometry.perimeterMeters,
             geometry.drawingJson, geometry.notes, 110))
         repo.edit(wish.version, "Independent", wish.approval, wish.quantity, 110)
-        projects.delete(otherProject)
+        db.businessSchemaQueries.deleteProject(otherProject) // Reproduce a historical orphan.
         assertTrue(repo.observeForMeasurement(other).firstValue().isEmpty())
         assertFailsWith<MeasurementElementFailure.ParentUnavailable> { repo.createWish(other, "Blocked", 111) }
         val hidden = checkNotNull(repo.find("other"))
@@ -206,7 +206,7 @@ object MeasurementElementProof {
             PriceRepository(db).delete(catalogItem.id)
             await { rows -> rows.any { e -> e.uuid == selected.uuid &&
                 (e.source as? ElementSource.CatalogSelection)?.availability == CatalogAvailability.DELETED_OR_MISSING } }
-            ProjectRepository(db).delete(project)
+            db.businessSchemaQueries.deleteProject(project) // Reproduce a historical orphan.
             assertTrue(await { it.isEmpty() }.isEmpty())
         } finally { job.cancelAndJoin(); events.close() }
     }

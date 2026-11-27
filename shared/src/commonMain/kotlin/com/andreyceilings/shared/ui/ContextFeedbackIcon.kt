@@ -78,9 +78,10 @@ internal fun ContextFeedbackIcon(
 @Composable
 internal fun CeilingsPopupMenu(
     expanded: Boolean, onDismissRequest: () -> Unit,
+    modifier: Modifier = Modifier,
     content: @Composable ColumnScope.() -> Unit
 ) {
-    DropdownMenu(expanded = expanded, onDismissRequest = onDismissRequest,
+    DropdownMenu(expanded = expanded, onDismissRequest = onDismissRequest, modifier = modifier,
         shape = RoundedCornerShape(16.dp),
         containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
         tonalElevation = 4.dp, shadowElevation = 8.dp,
