@@ -51,7 +51,8 @@ fun DashboardScreen(
     val zone = calendarOptions?.settings?.zone ?: TimeZone.currentSystemDefault()
     val today = now.toLocalDateTime(zone).date
     val workRead = if (calendar != null && calendarOptions == null && optionsRead is CalendarRead.Loading)
-        CalendarRead.Loading else upcomingCalendarState(calendar, today, null, 12, now)
+        calendar.cachedUpcoming(today, limit = 12)?.let { CalendarRead.Ready(it) } ?: CalendarRead.Loading
+    else upcomingCalendarState(calendar, today, null, 12, now)
     val scheduled = workRead.data().orEmpty().filter { it.upcoming(now) }.mapNotNull { work ->
         val eventZone = work.draft.schedule.zone
         val next = work.days.firstOrNull { day ->

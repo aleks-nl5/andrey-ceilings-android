@@ -77,6 +77,7 @@ class CalendarStore(
                 access {
                     val settings = repository.settings()
                     val today = clock.now().toLocalDateTime(settings.zone).date
+                    fillUpcoming(UpcomingKey(today, null, 12, null))
                     fill(PeriodKey(periodOf(today, mode, settings.firstWeekday ?: systemFirstDay), settings.zone), changes.value)
                 }
             } catch (cancelled: CancellationException) { throw cancelled }
@@ -122,19 +123,23 @@ class CalendarStore(
         val key = UpcomingKey(since, projectUuid, limit, typeCode)
         return observe(cachedUpcoming(since, projectUuid, limit, typeCode),
             combine(changes, upcomingRefresh) { revision, refresh -> revision to refresh }) {
-            val revision = changes.value
-            val refresh = upcomingRefresh.value
-            val now = clock.now()
-            upcomingCache.value[key]?.takeIf {
-                it.revision == revision && it.refresh == refresh &&
-                    it.works.all { work -> work.upcoming(now) } &&
-                    it.validUntil?.let { end -> end > now } != false
-            }?.works ?: repository.upcoming(since, projectUuid, limit, typeCode).also { works ->
-                val validUntil = works.mapNotNull { it.nextBoundary(now) }.minOrNull()
-                upcomingCache.update { current ->
-                    (current.toList().filter { it.first != key }.takeLast(15) +
-                        (key to CachedUpcoming(revision, refresh, works, validUntil))).toMap()
-                }
+            fillUpcoming(key)
+        }
+    }
+
+    private fun fillUpcoming(key: UpcomingKey): List<CalendarWork> {
+        val revision = changes.value
+        val refresh = upcomingRefresh.value
+        val now = clock.now()
+        return upcomingCache.value[key]?.takeIf {
+            it.revision == revision && it.refresh == refresh &&
+                it.works.all { work -> work.upcoming(now) } &&
+                it.validUntil?.let { end -> end > now } != false
+        }?.works ?: repository.upcoming(key.since, key.projectUuid, key.limit, key.typeCode).also { works ->
+            val validUntil = works.mapNotNull { it.nextBoundary(now) }.minOrNull()
+            upcomingCache.update { current ->
+                (current.toList().filter { it.first != key }.takeLast(15) +
+                    (key to CachedUpcoming(revision, refresh, works, validUntil))).toMap()
             }
         }
     }

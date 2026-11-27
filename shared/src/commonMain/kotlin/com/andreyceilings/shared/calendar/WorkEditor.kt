@@ -16,6 +16,10 @@ import com.andreyceilings.shared.ui.ContextFeedbackIcon
 import com.andreyceilings.shared.ui.ContextFeedbackKind
 import com.andreyceilings.shared.objects.ClientReadCard
 import com.andreyceilings.shared.objects.ContactAction
+import com.andreyceilings.shared.objects.internationalMessengerDigits
+import com.andreyceilings.shared.measurement.LocalMeasurementInputFocus
+import com.andreyceilings.shared.measurement.MeasurementInputFocus
+import com.andreyceilings.shared.measurement.measurementFieldFocusModifier
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.graphics.Color
@@ -181,7 +185,6 @@ fun WorkEditor(
             error = false
             invalidDay = null
             loadFailed = false
-            if (deleteOnly) deleting = true
         } catch (cancelled: CancellationException) { throw cancelled }
         catch (_: Exception) { loadFailed = true }
     }
@@ -281,19 +284,7 @@ fun WorkEditor(
         }
     }
     if (deleteOnly) {
-        // Do not compose the fullscreen work viewer at all for a list deletion.
-        if (!deleting) AlertDialog(onDismissRequest = ::cancelDelete,
-            title = { Text(stringResource(Res.string.work_delete_title)) },
-            text = {
-                if (loadFailed || stale || error || optionsRead is CalendarRead.Unavailable)
-                    CalendarFeedback(if (stale) Res.string.work_stale else if (error) Res.string.work_save_failed else Res.string.work_unavailable)
-                else LinearProgressIndicator(Modifier.fillMaxWidth())
-            },
-            dismissButton = {
-                if (loadFailed || stale || error || optionsRead is CalendarRead.Unavailable)
-                    TextButton(onClick = ::requestReload, enabled = !busy) { Text(stringResource(Res.string.work_reload)) }
-            },
-            confirmButton = { TextButton(onClick = ::cancelDelete, enabled = !busy) { Text(stringResource(Res.string.p5d_cancel)) } })
+        // A single confirmation below owns loading, ready, error and deletion states.
     } else if (move && data != null) {
         AlertDialog(onDismissRequest = ::requestClose,
             title = { Text(stringResource(title)) },
@@ -334,7 +325,11 @@ fun WorkEditor(
             val dark = scheme.background.luminance() < 0.4f
             val fabColor = if (dark) scheme.surfaceContainerHigh else Color.White
             val fabOutline = ceilingsFloatingOutlineAlpha(dark)
+            // Shrink the actual scroll viewport above the keyboard, rather than only adding
+            // bottom item padding. The shared focus helper reads this dialog's own IME insets.
             CeilingsScreenScaffold(
+                modifier = Modifier.imePadding(),
+                windowInsets = WindowInsets.safeDrawing.exclude(WindowInsets.ime),
                 header = {
                     Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                         CeilingsFab(::requestClose, stringResource(Res.string.oc_close), profile = CeilingsFabProfile.COMPACT,
@@ -377,6 +372,7 @@ fun WorkEditor(
                     }
                 }
             ) { padding ->
+                CompositionLocalProvider(LocalMeasurementInputFocus provides remember { MeasurementInputFocus(null) }) {
                 LazyColumn(Modifier.fillMaxSize().padding(horizontal = 14.dp), contentPadding = padding,
                     verticalArrangement = Arrangement.spacedBy(5.dp)) {
                     if (loadFailed || (optionsRead is CalendarRead.Unavailable && options == null)) {
@@ -546,6 +542,7 @@ fun WorkEditor(
                         }
                     }
                 }
+                }
             }
         }
     }
@@ -556,17 +553,18 @@ fun WorkEditor(
             onEdit = null, onDelete = null,
             onDial = { phone -> openUri("tel:" + phone.filter { it.isDigit() || it == '+' }) },
             onExternalAction = { action, raw ->
-                val phone = raw.filter(Char::isDigit)
-                val international = raw.trim().startsWith("+") && phone.length in 8..15
-                val url = when (action) {
-                    ContactAction.GOOGLE_MAPS -> "https://www.google.com/maps/search/?api=1&query=" + calendarUriComponent(raw)
-                    ContactAction.WAZE -> "https://waze.com/ul?q=" + calendarUriComponent(raw) + "&navigate=yes"
-                    ContactAction.WHATSAPP -> if (international) "https://wa.me/$phone" else null
-                    ContactAction.TELEGRAM -> if (international) "tg://resolve?phone=$phone" else null
-                    ContactAction.VIBER -> if (international) "viber://chat?number=" + calendarUriComponent(raw.trim()) else null
+                val phone = internationalMessengerDigits(raw)
+                val (uri, fallback) = when (action) {
+                    ContactAction.GOOGLE_MAPS -> ("https://www.google.com/maps/search/?api=1&query=" + calendarUriComponent(raw)) to null
+                    ContactAction.WAZE -> ("https://waze.com/ul?q=" + calendarUriComponent(raw) + "&navigate=yes") to null
+                    ContactAction.WHATSAPP -> "whatsapp://send?phone=${requireNotNull(phone)}" to "https://wa.me/$phone"
+                    ContactAction.TELEGRAM -> "tg://resolve?phone=${requireNotNull(phone)}" to "https://t.me/+$phone"
+                    ContactAction.VIBER -> ("viber://chat?number=" + calendarUriComponent("+" + requireNotNull(phone))) to null
                 }
-                requireNotNull(url)
-                openUri(url)
+                try { openUri(uri) } catch (failure: Exception) {
+                    if (fallback == null) throw failure
+                    openUri(fallback)
+                }
             })
     } else if (clientCardId != null) {
         AlertDialog(onDismissRequest = { clientCardId = null },
@@ -625,23 +623,43 @@ fun WorkEditor(
         title = { Text(stringResource(Res.string.work_exit_title)) },
         confirmButton = { TextButton(onClick = { discarding = false }) { Text(stringResource(Res.string.p5d_cancel)) } },
         dismissButton = { TextButton(onClick = onClose) { Text(stringResource(Res.string.work_discard), color = MaterialTheme.colorScheme.error) } })
-    if (deleting && original != null) AlertDialog(onDismissRequest = ::cancelDelete,
-        title = { Text(stringResource(Res.string.work_delete_title)) },
-        text = { if (recurring) ScopeSelection(scope) { scope = it } },
-        dismissButton = {
-            TextButton(enabled = !busy, onClick = {
-                val source = original ?: return@TextButton
-                busy = true
-                lifecycleScope.launch {
-                    try {
-                        if (store.delete(source.key, source.version, scope)) onClose()
-                        else { stale = true; deleting = false }
-                    } catch (cancelled: CancellationException) { throw cancelled }
-                    catch (_: Exception) { error = true; deleting = false }
-                    finally { busy = false }
+    if (deleteOnly || deleting && original != null) {
+        val deleteProblem = when {
+            stale -> Res.string.work_stale
+            error -> Res.string.work_save_failed
+            loadFailed || optionsRead is CalendarRead.Unavailable -> Res.string.work_unavailable
+            else -> null
+        }
+        val deleteReady = original != null && loadedRevision == reload && deleteProblem == null
+        AlertDialog(onDismissRequest = ::cancelDelete,
+            title = { Text(stringResource(Res.string.work_delete_title)) },
+            text = {
+                Column(Modifier.fillMaxWidth().heightIn(min = 40.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    original?.let { Text(it.draft.title, style = MaterialTheme.typography.bodyMedium) }
+                    if (deleteProblem != null) CalendarFeedback(deleteProblem)
+                    else if (!deleteReady) LinearProgressIndicator(Modifier.fillMaxWidth())
+                    else if (recurring) ScopeSelection(scope) { scope = it }
                 }
-            }) { Text(stringResource(Res.string.oc_delete), color = MaterialTheme.colorScheme.error) }
-        }, confirmButton = { TextButton(enabled = !busy, onClick = ::cancelDelete) { Text(stringResource(Res.string.p5d_cancel)) } })
+            },
+            dismissButton = {
+                if (deleteOnly && deleteProblem != null) {
+                    TextButton(onClick = ::requestReload, enabled = !busy) { Text(stringResource(Res.string.work_reload)) }
+                } else TextButton(enabled = deleteReady && !busy, onClick = {
+                    val source = original ?: return@TextButton
+                    busy = true
+                    lifecycleScope.launch {
+                        try {
+                            if (store.delete(source.key, source.version, scope)) onClose()
+                            else { stale = true; deleting = false }
+                        } catch (cancelled: CancellationException) { throw cancelled }
+                        catch (_: Exception) { error = true; deleting = false }
+                        finally { busy = false }
+                    }
+                }) { Text(stringResource(Res.string.oc_delete), color = MaterialTheme.colorScheme.error) }
+            },
+            confirmButton = { TextButton(enabled = !busy, onClick = ::cancelDelete) { Text(stringResource(Res.string.p5d_cancel)) } })
+    }
     conflict?.let { found ->
         AlertDialog(onDismissRequest = { if (!busy) conflict = null },
             title = { Text(stringResource(Res.string.work_conflicts)) },
@@ -810,7 +828,7 @@ internal fun WorkField(value: String, label: StringResource, error: Boolean = fa
     onChange: (String) -> Unit) {
     val caption = stringResource(label)
     CompactOutlinedStringField(value, onChange, if (placeholder.isNullOrBlank()) caption else "$caption · $placeholder",
-        modifier = modifier, isError = error, maxLines = if (singleLine) 1 else 4,
+        modifier = modifier.then(measurementFieldFocusModifier()), isError = error, maxLines = if (singleLine) 1 else 4,
         keyboardOptions = KeyboardOptions(keyboardType = keyboard), dense = singleLine)
 }
 

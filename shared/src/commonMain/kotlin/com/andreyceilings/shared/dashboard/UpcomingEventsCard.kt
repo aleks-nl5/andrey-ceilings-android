@@ -36,6 +36,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.style.TextAlign
@@ -105,6 +106,7 @@ fun UpcomingEventsCard(
 ) {
     val upcoming = upcomingWorkEvents(events, nowMillis)
     val theme = MaterialTheme.colorScheme
+    val dark = theme.background.luminance() < 0.4f
 
     Card(modifier = modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp),
         colors = CardDefaults.cardColors(containerColor = theme.surfaceContainerLow),
@@ -114,7 +116,7 @@ fun UpcomingEventsCard(
             Card(shape = RoundedCornerShape(18.dp), colors = CardDefaults.cardColors(containerColor = theme.primaryContainer)) {
                 Row(Modifier.fillMaxWidth().padding(start = 12.dp, end = 6.dp),
                     verticalAlignment = Alignment.CenterVertically) {
-                    Text(if (databaseAvailable) todayLabel else "", Modifier.weight(1f)
+                    Text(todayLabel, Modifier.weight(1f)
                         .clickable(enabled = databaseAvailable && onCalendar != null) { onCalendar?.invoke() }.padding(vertical = 12.dp),
                         style = MaterialTheme.typography.titleMedium, color = theme.onPrimaryContainer)
                     if (onAddWork != null) IconButton(onClick = onAddWork) {
@@ -125,7 +127,7 @@ fun UpcomingEventsCard(
         } else upcoming.forEachIndexed { index, event ->
             val closest = index == 0
             val urgency = workUrgency(nowMillis, event.startsAtMillis)
-            val background = if (!closest) theme.surface else when (urgency) {
+            val background = if (!closest) (if (dark) theme.surface else theme.surfaceContainerHigh) else when (urgency) {
                 WorkUrgency.DISTANT -> theme.surfaceVariant
                 WorkUrgency.APPROACHING -> theme.primaryContainer
                 WorkUrgency.SOON -> theme.tertiaryContainer
@@ -140,11 +142,12 @@ fun UpcomingEventsCard(
             val open = event.key?.let { key -> onOpenWork?.let { action -> { action(key) } } }
                 ?: event.projectId?.let { id -> onOpenProject?.let { action -> { action(id) } } }
             Card(shape = RoundedCornerShape(18.dp),
-                colors = CardDefaults.cardColors(containerColor = background, contentColor = foreground)) {
+                colors = CardDefaults.cardColors(containerColor = background, contentColor = foreground),
+                border = if (!closest && !dark) BorderStroke(1.dp, theme.outlineVariant) else null) {
                 Row(Modifier.fillMaxWidth().clickable(enabled = open != null) { open?.invoke() }
-                    .padding(start = 12.dp, end = 5.dp, top = 7.dp, bottom = 7.dp),
+                    .padding(start = 12.dp, end = 5.dp, top = if (closest) 7.dp else 3.dp, bottom = if (closest) 7.dp else 3.dp),
                     verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Column(Modifier.width(96.dp), verticalArrangement = Arrangement.spacedBy(2.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                    Column(Modifier.width(96.dp), verticalArrangement = Arrangement.spacedBy(if (closest) 2.dp else 0.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                         Text(event.dateLabel, Modifier.fillMaxWidth(), style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center)
                         Text(event.timeLabel, Modifier.fillMaxWidth(), style = if (closest) MaterialTheme.typography.titleMedium else MaterialTheme.typography.bodyMedium, textAlign = TextAlign.Center)
                     }

@@ -36,6 +36,17 @@ import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.pluralStringResource
 import org.jetbrains.compose.resources.stringResource
 
+/** A country code must be explicit; never guess one from the device locale. */
+internal fun internationalMessengerDigits(raw: String): String? {
+    val trimmed = raw.trim()
+    val number = when {
+        trimmed.startsWith("+") -> trimmed.drop(1)
+        trimmed.startsWith("00") -> trimmed.drop(2)
+        else -> return null
+    }
+    return number.filter { it in '0'..'9' }.takeIf { it.length in 8..15 && it.first() != '0' }
+}
+
 @Composable
 internal fun ClientReadCard(
     item: ClientListEntry,
@@ -48,6 +59,8 @@ internal fun ClientReadCard(
     var error by remember(item.id) { mutableStateOf<String?>(null) }
     val callError = stringResource(Res.string.p6a_call_unavailable)
     val mailError = stringResource(Res.string.p6a_email_unavailable)
+    val messengerError = stringResource(Res.string.oc_messenger_unavailable)
+    val internationalError = stringResource(Res.string.oc_messenger_international_number)
     val uri = LocalUriHandler.current
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -99,8 +112,8 @@ internal fun ClientReadCard(
                                 listOf("WhatsApp" to ContactAction.WHATSAPP, "Telegram" to ContactAction.TELEGRAM,
                                     "Viber" to ContactAction.VIBER).forEach { (name, action) ->
                                     IconButton(onClick = {
-                                        error = if (runCatching { onExternalAction(action, item.phone) }.isFailure)
-                                            callError else null
+                                        error = if (internationalMessengerDigits(item.phone) == null) internationalError
+                                        else if (runCatching { onExternalAction(action, item.phone) }.isFailure) messengerError else null
                                     },
                                         modifier = Modifier.semantics { contentDescription = name }) {
                                         Box(Modifier.size(40.dp).background(MaterialTheme.colorScheme.primaryContainer, CircleShape),
