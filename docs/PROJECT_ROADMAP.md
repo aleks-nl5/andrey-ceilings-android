@@ -1,3 +1,7 @@
+## CURRENT — P7A pre-merge verification complete; P7B planning approved (27.11.2026)
+
+[Final P7A pre-merge record](P7A_PREMERGE_ACCEPTANCE.md): #185 tested head `5045acf8c1cb3aab903f5dd456e33f2ac6f94e91`, Android 0.6.3, schema v25. QUICK #298, Android FULL #1393 and CMP FULL #1130 all SUCCESS on exact head; owner UI acceptance on preceding APK, physical backup/restore deferred to P8. At recording time owner merge pending; verify actual main SHA and automatic post-merge FULL before continuing. #49 remains open. [P7B handoff](P7B_CODEX_HANDOFF.md): 36 approved technical decisions, one production Draft PR, mandatory reuse of established CMP UI components and patterns; implementation awaits merged P7A, merged documentation and explicit owner authorization. No CI policy changes.
+
 ## CURRENT — P7A technical plan approved (27.11.2026)
 
 46 product + 26 technical owner decisions: [P7 specification](P7_CALENDAR_SPEC.md), [P7A technical contract and Codex handoff](P7A_CODEX_HANDOFF.md). One Draft implementation PR after #184 merge and separate owner authorization. P7A: additive v24->25, bounded recurrence, shared calendar, dashboard/object/search/settings, focused tests; P7B separate. #49 open. No production or CI changes in planning.
