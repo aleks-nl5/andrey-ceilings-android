@@ -64,7 +64,8 @@ fun WorkCalendarScreen(
     projectFilter: String? = null,
     onClose: (() -> Unit)? = null,
 ) {
-    val optionsRead = calendarOptionsState(store)
+    var retry by remember { mutableIntStateOf(0) }
+    val optionsRead = key(retry) { calendarOptionsState(store) }
     val options = optionsRead.data()
     val zone = options?.settings?.zone ?: TimeZone.currentSystemDefault()
     val now = calendarNow()
@@ -78,18 +79,18 @@ fun WorkCalendarScreen(
     var project by rememberSaveable(projectFilter) { mutableStateOf(projectFilter) }
     val firstDay = options?.settings?.firstWeekday ?: systemFirstDay
     val range = periodOf(date, mode, firstDay)
-    val currentPeriod = remember(store, range, zone) { store?.period(range, zone) }
-    val period = key(store, range, zone) {
+    val currentPeriod = remember(store, range, zone, retry) { store?.period(range, zone) }
+    val period = key(store, range, zone, retry) {
         if (store != null && options == null && optionsRead is CalendarRead.Loading) CalendarRead.Loading
         else calendarState(currentPeriod, store?.cached(range, zone))
     }
     val fallbackRead = upcomingCalendarState(store, today, project, 12, now, type)
     val upcoming = fallbackRead.data().orEmpty().filter { it.upcoming(now) }
     var searchHorizon by rememberSaveable { mutableIntStateOf(90) }
-    val searchFlow = remember(store, query, searchHorizon) {
+    val searchFlow = remember(store, query, searchHorizon, retry) {
         if (query.isBlank()) null else store?.search(query, searchHorizon)
     }
-    val search = key(store, query, searchHorizon) { if (query.isBlank()) CalendarRead.Loading else calendarState(searchFlow) }
+    val search = key(store, query, searchHorizon, retry) { if (query.isBlank()) CalendarRead.Loading else calendarState(searchFlow) }
     val list = rememberLazyListState()
     val scope = rememberCoroutineScope()
     val types = options?.types.orEmpty().associateBy { it.code }
@@ -111,7 +112,7 @@ fun WorkCalendarScreen(
     val days = filtered.flatMap { work -> work.displayDates(zone).map { it to work } }.groupBy({ it.first }, { it.second })
     val exact = days[date].orEmpty()
     val dayMode = query.isBlank() && mode != CalendarDisplayMode.LIST
-    val fallbackNeeded = dayMode && exact.isEmpty()
+    val fallbackNeeded = dayMode && exact.isEmpty() && period is CalendarRead.Ready
     val displayed = when {
         query.isNotBlank() -> filtered
         mode == CalendarDisplayMode.LIST -> filtered
@@ -161,20 +162,20 @@ fun WorkCalendarScreen(
                         OutlinedTextField(query, { query = it }, Modifier.fillMaxWidth(),
                             label = { Text(stringResource(Res.string.work_search)) }, singleLine = true)
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                            CalendarMenu(modifier = Modifier.weight(1f), label = type?.let { calendarTypeLabel(types[it]) } ?: stringResource(Res.string.work_type)) {
+                            CalendarMenu(modifier = Modifier.weight(1f), fillWidth = true, menuModifier = Modifier.height(240.dp), label = type?.let { calendarTypeLabel(types[it]) } ?: stringResource(Res.string.work_type)) {
                                 CalendarMenuItem(text = { Text(stringResource(Res.string.work_all)) }, onClick = { type = null })
                                 types.values.forEach { item ->
                                     CalendarMenuItem(text = { Text(calendarTypeLabel(item)) }, onClick = { type = item.code })
                                 }
                             }
-                            CalendarMenu(modifier = Modifier.weight(1f), label = status?.let { stringResource(WorkStatus.valueOf(it).label()) }
+                            CalendarMenu(modifier = Modifier.weight(1f), fillWidth = true, menuModifier = Modifier.height(240.dp), label = status?.let { stringResource(WorkStatus.valueOf(it).label()) }
                                 ?: stringResource(Res.string.work_status)) {
                                 CalendarMenuItem(text = { Text(stringResource(Res.string.work_all)) }, onClick = { status = null })
                                 WorkStatus.entries.forEach { item ->
                                     CalendarMenuItem(text = { Text(stringResource(item.label())) }, onClick = { status = item.name })
                                 }
                             }
-                            if (projectFilter == null) CalendarMenu(modifier = Modifier.weight(1f), label = options?.projects?.firstOrNull { it.uuid == project }?.name
+                            if (projectFilter == null) CalendarMenu(modifier = Modifier.weight(1f), fillWidth = true, menuModifier = Modifier.height(240.dp), label = options?.projects?.firstOrNull { it.uuid == project }?.name
                                 ?: stringResource(Res.string.work_object)) {
                                 CalendarMenuItem(text = { Text(stringResource(Res.string.work_all)) }, onClick = { project = null })
                                 options?.projects.orEmpty().forEach { item ->
@@ -218,7 +219,7 @@ fun WorkCalendarScreen(
                         IconButton(onClick = { movePeriod(-1) }) {
                             Icon(Icons.Default.ChevronLeft, stringResource(Res.string.work_previous))
                         }
-                        Text(if (mode == CalendarDisplayMode.MONTH) visualRange.from.shift(7).toString().take(7)
+                        Text(if (mode == CalendarDisplayMode.MONTH) visualRange.from.shift(7).let { it.monthNumber.toString().padStart(2, '0') + "." + it.year }
                             else "${visualRange.from.shortDate()} – ${visualRange.through.shortDate()}",
                             style = MaterialTheme.typography.titleSmall)
                         IconButton(onClick = { movePeriod(1) }) {
@@ -264,9 +265,12 @@ fun WorkCalendarScreen(
             }
             }
             if (read is CalendarRead.Unavailable || store == null || optionsRead is CalendarRead.Unavailable) item("calendar-error") {
-                CalendarFeedback(Res.string.work_unavailable)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.weight(1f)) { CalendarFeedback(Res.string.work_unavailable) }
+                    if (store != null) IconButton(onClick = { retry++ }) { Icon(Icons.Default.Refresh, stringResource(Res.string.work_reload)) }
+                }
             } else if (read is CalendarRead.Loading) item("calendar-loading") {
-                LinearProgressIndicator(Modifier.fillMaxWidth())
+                Box(Modifier.fillMaxWidth().height(48.dp), contentAlignment = Alignment.Center) { LinearProgressIndicator(Modifier.fillMaxWidth()) }
             } else if (fallbackNeeded || displayed.isEmpty()) {
                 item("calendar-empty") { CalendarFeedback(Res.string.work_none, ContextFeedbackKind.INFO) }
                 if (fallbackNeeded && fallbackRead is CalendarRead.Loading) item("calendar-fallback-loading") {
@@ -408,16 +412,18 @@ internal fun CalendarFeedback(message: StringResource, kind: ContextFeedbackKind
 
 @Composable
 internal fun CalendarMenu(label: String, modifier: Modifier = Modifier,
-    leading: (@Composable () -> Unit)? = null, options: @Composable ColumnScope.() -> Unit) {
+    leading: (@Composable () -> Unit)? = null, fillWidth: Boolean = false, menuModifier: Modifier = Modifier,
+    options: @Composable ColumnScope.() -> Unit) {
     var expanded by remember { mutableStateOf(false) }
     LaunchedEffect(label) { expanded = false }
     Box(modifier) {
-        OutlinedButton(onClick = { expanded = !expanded }, contentPadding = PaddingValues(horizontal = 9.dp, vertical = 2.dp)) {
+        OutlinedButton(onClick = { expanded = !expanded }, modifier = if (fillWidth) Modifier.fillMaxWidth() else Modifier,
+            contentPadding = PaddingValues(horizontal = 9.dp, vertical = 2.dp)) {
             leading?.invoke()
             Text(label, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
             Icon(Icons.Default.ArrowDropDown, null, Modifier.size(18.dp))
         }
-        CeilingsPopupMenu(expanded, { expanded = false }) {
+        CeilingsPopupMenu(expanded, { expanded = false }, modifier = menuModifier) {
             CompositionLocalProvider(LocalCalendarMenuClose provides { expanded = false }) { options() }
         }
     }
@@ -512,6 +518,19 @@ internal fun WorkStatus.label() = when (this) {
     WorkStatus.COMPLETED -> Res.string.work_completed
     WorkStatus.CANCELLED -> Res.string.work_cancelled
 }
+internal fun WorkStatus.workIcon() = when (this) {
+    WorkStatus.PLANNED -> Icons.Default.Schedule
+    WorkStatus.CONFIRMED -> Icons.Default.EventAvailable
+    WorkStatus.COMPLETED -> Icons.Default.CheckCircle
+    WorkStatus.CANCELLED -> Icons.Default.Cancel
+}
+@Composable
+internal fun WorkStatus.workTint() = when (this) {
+    WorkStatus.PLANNED -> MaterialTheme.colorScheme.onSurfaceVariant
+    WorkStatus.CONFIRMED -> MaterialTheme.colorScheme.primary
+    WorkStatus.COMPLETED -> MaterialTheme.colorScheme.primary
+    WorkStatus.CANCELLED -> MaterialTheme.colorScheme.error
+}
 internal fun WorkTimeMode.label() = when (this) {
     WorkTimeMode.TIMED -> Res.string.work_timed
     WorkTimeMode.ALL_DAY -> Res.string.work_all_day
@@ -531,5 +550,5 @@ internal fun typeIcon(type: CalendarWorkType?) = when (type?.icon) {
     "deliver" -> Icons.Default.LocalShipping
     else -> Icons.Default.Event
 }
-internal fun LocalDate.shortDate() = "${day.toString().padStart(2, '0')}.${monthNumber.toString().padStart(2, '0')}"
+internal fun LocalDate.shortDate() = "${day.toString().padStart(2, '0')}.${monthNumber.toString().padStart(2, '0')}.${year.toString().padStart(4, '0')}"
 internal fun kotlinx.datetime.LocalTime?.shortTime() = this?.toString()?.take(5).orEmpty()

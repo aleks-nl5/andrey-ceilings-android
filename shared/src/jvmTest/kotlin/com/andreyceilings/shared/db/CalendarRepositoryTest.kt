@@ -337,6 +337,21 @@ class CalendarRepositoryTest {
         }
     }
 
+    @Test fun archivedCustomTypeRetainsHistoryAndRejectsNewAssignments() = fixture { _, calendar ->
+        val type = CalendarWorkType("custom-test", "Custom work", 0x123456, "other", 45, false)
+        calendar.saveType(type)
+        val key = saved(calendar.save(CalendarSave(draft().copy(typeCode = type.code))))
+        calendar.saveType(type.copy(archived = true))
+        assertTrue(calendar.types().single { it.code == type.code }.archived)
+        val historical = assertNotNull(calendar.exact(key))
+        assertEquals(type.code, historical.draft.typeCode)
+        assertFailsWith<IllegalArgumentException> { calendar.save(CalendarSave(draft().copy(typeCode = type.code))) }
+        saved(calendar.save(CalendarSave(historical.draft.copy(notes = "Updated"), key, historical.version)))
+        calendar.saveType(type.copy(archived = false))
+        assertFalse(calendar.types().single { it.code == type.code }.archived)
+        saved(calendar.save(CalendarSave(draft().copy(typeCode = type.code, date = today.shift(1)))))
+    }
+
     private fun fixture(assertions: (PrototypeDatabase, CalendarRepository) -> Unit) {
         JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).use { driver ->
             driver.execute(null, "PRAGMA foreign_keys = ON", 0)

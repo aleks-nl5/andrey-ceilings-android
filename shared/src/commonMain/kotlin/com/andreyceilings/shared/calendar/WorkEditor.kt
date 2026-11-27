@@ -1,6 +1,8 @@
 package com.andreyceilings.shared.calendar
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.focus.FocusRequester
@@ -101,7 +103,7 @@ fun WorkEditor(
     val options = optionsRead.data()
     val lifecycleScope = rememberCoroutineScope()
     var editing by remember { mutableStateOf(route is CalendarEditorRoute.Create || (route as? CalendarEditorRoute.Open)?.edit == true || (route as? CalendarEditorRoute.Open)?.move == true) }
-    var dateError by remember { mutableStateOf(false) }
+    var invalidDay by remember { mutableStateOf<Int?>(null) }
     var showDetails by remember { mutableStateOf(false) }
     var createLink by remember { mutableStateOf<String?>(null) }
     var linkBusy by remember { mutableStateOf(false) }
@@ -138,10 +140,11 @@ fun WorkEditor(
                     work.draft
                 }
                 is CalendarEditorRoute.Create -> {
-                    val date = route.date ?: Clock.System.now().toLocalDateTime(options.settings.zone).date
+                    val deviceZone = TimeZone.currentSystemDefault()
+                    val date = route.date ?: Clock.System.now().toLocalDateTime(deviceZone).date
                     val code = if (route.installation) "INSTALL" else "OTHER"
                     val end = 9 * 3600 + minOf(options.types.firstOrNull { it.code == code }?.durationMinutes ?: 60, 899) * 60
-                    CalendarWorkDraft(date, WorkSchedule(WorkTimeMode.TIMED, options.settings.zone,
+                    CalendarWorkDraft(date, WorkSchedule(WorkTimeMode.TIMED, deviceZone,
                         listOf(WorkDay(0, LocalTime(9, 0), LocalTime.fromSecondOfDay(end)))),
                         "", code, projectUuid = route.projectUuid)
                 }
@@ -198,7 +201,7 @@ fun WorkEditor(
 
     fun save(confirmation: CalendarConflictConfirmation? = null) {
         val valid = draft ?: return
-        if (busy || dateError) return
+        if (busy || invalidDay != null) return
         busy = true
         error = false
         lifecycleScope.launch {
@@ -243,12 +246,13 @@ fun WorkEditor(
                         }
                     }
                     if (recurring) ScopeSelection(scope) { scope = it }
-                    if (invalidTime || error || stale || clockChange || (draft == null && data != initial)) Text(stringResource(when {
+                    if (invalidTime || error || stale || clockChange || (draft == null && data != initial)) CalendarFeedback(when {
                         stale -> Res.string.work_stale
                         clockChange -> Res.string.work_zone_change
                         error -> Res.string.work_save_failed
                         else -> Res.string.work_invalid
-                    }), color = MaterialTheme.colorScheme.error)
+                    })
+                    if (stale) TextButton(onClick = { reload++ }) { Text(stringResource(Res.string.work_reload)) }
                 }
             },
             confirmButton = {
@@ -267,7 +271,7 @@ fun WorkEditor(
                         }
                         Text(stringResource(title), Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
                         if (editing) CeilingsFab({ save() }, stringResource(Res.string.oc_save),
-                            profile = CeilingsFabProfile.COMPACT, enabled = !stale && !busy && draft != null && !invalidTime && !dateError) {
+                            profile = CeilingsFabProfile.COMPACT, enabled = !stale && !busy && draft != null && !invalidTime && invalidDay == null) {
                             Icon(Icons.Default.Check, null)
                         } else CeilingsFab({ editing = true }, stringResource(Res.string.work_edit), profile = CeilingsFabProfile.COMPACT) {
                             Icon(Icons.Default.Edit, null)
@@ -284,13 +288,15 @@ fun WorkEditor(
                         item("work-view") {
                             WorkReadOnly(checkNotNull(original), options, store, onRegistryTarget, onDelete = { deleting = true })
                         }
-                        if (stale || error) item { CalendarFeedback(if (stale) Res.string.work_stale else Res.string.work_save_failed) }
+                        if (stale || error) item { CalendarFeedback(if (stale) Res.string.work_stale else Res.string.work_save_failed)
+                            if (stale) TextButton(onClick = { reload++ }) { Text(stringResource(Res.string.work_reload)) }
+                        }
                     } else {
-                        if (stale || error || invalidTime || clockChange || dateError || (draft == null && data != initial)) item {
+                        if (stale || error || invalidTime || clockChange || invalidDay != null || (draft == null && data != initial)) item {
                             CalendarFeedback(when {
                                 stale -> Res.string.work_stale
                                 error -> Res.string.work_save_failed
-                                dateError -> Res.string.work_invalid_day
+                                invalidDay != null -> Res.string.work_invalid_day
                                 invalidTime || draft == null -> Res.string.work_invalid
                                 else -> Res.string.work_zone_change
                             })
@@ -313,7 +319,7 @@ fun WorkEditor(
                         }
                         item("work-type-status") {
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                CalendarMenu(calendarTypeLabel(options.types.firstOrNull { it.code == data.type }), modifier = Modifier.weight(1f), leading = {
+                                CalendarMenu(calendarTypeLabel(options.types.firstOrNull { it.code == data.type }), modifier = Modifier.weight(1f), fillWidth = true, leading = {
                                     val selected = options.types.firstOrNull { it.code == data.type }
                                     Icon(typeIcon(selected), null, Modifier.size(18.dp), tint = typeColor(selected))
                                 }) {
@@ -331,9 +337,13 @@ fun WorkEditor(
                                             })
                                     }
                                 }
-                                CalendarMenu(stringResource(data.status.label()), modifier = Modifier.weight(1f)) {
+                                CalendarMenu(stringResource(data.status.label()), modifier = Modifier.weight(1f), fillWidth = true, leading = {
+                                    Icon(data.status.workIcon(), null, Modifier.size(18.dp), tint = data.status.workTint())
+                                }) {
                                     WorkStatus.entries.forEach { state ->
-                                        CalendarMenuItem(text = { Text(stringResource(state.label())) }, onClick = {
+                                        CalendarMenuItem(text = { Text(stringResource(state.label())) }, leadingIcon = {
+                                            Icon(state.workIcon(), null, tint = state.workTint())
+                                        }, onClick = {
                                             input = data.copy(status = state)
                                         })
                                     }
@@ -346,12 +356,11 @@ fun WorkEditor(
                                 Text(stringResource(Res.string.work_all_day), Modifier.weight(1f))
                                 Switch(data.mode == WorkTimeMode.ALL_DAY, { input = data.copy(mode = if (it) WorkTimeMode.ALL_DAY else WorkTimeMode.TIMED) })
                             }
-                            if (data.mode != WorkTimeMode.ALL_DAY) CalendarMenu(stringResource(data.mode.label())) {
-                                WorkTimeMode.entries.forEach { mode ->
-                                    CalendarMenuItem(text = { Text(stringResource(mode.label())) }, onClick = {
-                                        input = data.copy(mode = mode)
-                                    })
-                                }
+                            if (data.mode != WorkTimeMode.ALL_DAY) Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(stringResource(Res.string.work_date_only), Modifier.weight(1f))
+                                Switch(data.mode == WorkTimeMode.DATE_ONLY, {
+                                    input = data.copy(mode = if (it) WorkTimeMode.DATE_ONLY else WorkTimeMode.TIMED)
+                                })
                             }
                         }
                         items(data.days.size, key = { "day-$it" }) { index ->
@@ -361,32 +370,31 @@ fun WorkEditor(
                                 verticalAlignment = Alignment.CenterVertically) {
                                 val actualDate = runCatching { LocalDate.parse(data.date).shift(day.offset.toInt()) }.getOrNull()
                                 Box(Modifier.weight(1.4f)) {
-                                    DiskDateField(actualDate?.toString().orEmpty()) { chosen ->
-                                        if (index == 0) { dateError = false; input = data.copy(date = chosen) }
+                                    DiskDateField(actualDate?.toString().orEmpty(), error = invalidDay == index) { chosen ->
+                                        if (index == 0) { invalidDay = null; input = data.copy(date = chosen) }
                                         else {
                                             val offset = LocalDate.parse(chosen).dayNumber() - LocalDate.parse(data.date).dayNumber()
                                             if (offset in 1L..365L && data.days.withIndex().none { it.index != index && it.value.offset.toLongOrNull() == offset }) {
-                                                dateError = false; set(day.copy(offset = offset.toString()))
-                                            } else dateError = true
+                                                invalidDay = null; set(day.copy(offset = offset.toString()))
+                                            } else invalidDay = index
                                         }
                                     }
                                 }
                                 if (data.mode == WorkTimeMode.TIMED) {
                                     val badTime = runCatching { LocalTime.parse(day.start) >= LocalTime.parse(day.end) }.getOrDefault(true)
                                     WorkTimeField(day.start, Res.string.work_start, Modifier.weight(1f), badTime) { start ->
-                                        val duration = runCatching { LocalTime.parse(day.end).toSecondOfDay() - LocalTime.parse(day.start).toSecondOfDay() }.getOrDefault(0)
-                                        val end = LocalTime.parse(start).toSecondOfDay() + duration
-                                        set(day.copy(start = start, end = if (duration > 0 && end < 86400) LocalTime.fromSecondOfDay(end).shortTime() else day.end))
+                                        set(day.copy(start = start))
                                     }
                                     WorkTimeField(day.end, Res.string.work_end, Modifier.weight(1f), badTime) { set(day.copy(end = it)) }
                                 }
                                 if (index != 0) IconButton(onClick = {
+                                    invalidDay = invalidDay?.let { bad -> when { bad == index -> null; bad > index -> bad - 1; else -> bad } }
                                     input = data.copy(days = data.days.filterIndexed { i, _ -> i != index })
                                 }) { Icon(Icons.Default.RemoveCircleOutline, stringResource(Res.string.work_day_remove)) }
                             }
                         }
                         item("work-more-days") {
-                            OutlinedButton(onClick = {
+                            OutlinedButton(enabled = data.days.maxOfOrNull { it.offset.toIntOrNull() ?: 0 } != 365, onClick = {
                                 val next = (data.days.mapNotNull { it.offset.toIntOrNull() }.maxOrNull() ?: 0) + 1
                                 if (next <= 365) input = data.copy(days = data.days + data.days.last().copy(offset = next.toString()))
                             }) { Icon(Icons.Default.Add, null); Text(stringResource(Res.string.work_day_add)) }
@@ -402,13 +410,15 @@ fun WorkEditor(
                         item("work-links") {
                             val projects = (options.projects + listOfNotNull(createdProject)).distinctBy { it.uuid }
                             val clients = (options.clients + listOfNotNull(createdClient)).distinctBy { it.uuid }
-                            CalendarLinkMenu(Res.string.work_object, data.project, projects, error = data.type == "INSTALL" && data.project == null,
+                            CalendarLinkMenu(Res.string.work_object, data.project, projects, error = (data.type == "INSTALL" && data.project == null) ||
+                                (data.project != null && projects.none { it.uuid == data.project } && original?.draft?.projectUuid != data.project),
                                 onCreate = registry?.let { { createLink = "project"; linkError = false } }) {
                                 input = data.copy(project = it, client = if (it == data.project || it == null) data.client else null,
                                     ceilings = if (it == data.project) data.ceilings else emptyList(), explicit = it == data.project && data.explicit)
                             }
                             val inheritedClient = projects.firstOrNull { it.uuid == data.project }?.clientUuid
                             CalendarLinkMenu(Res.string.work_client, data.client ?: inheritedClient, clients,
+                                error = data.client != null && clients.none { it.uuid == data.client } && original?.draft?.clientUuid != data.client,
                                 emptyLabel = if (inheritedClient != null) Res.string.work_inherit_client else Res.string.work_empty_link,
                                 onCreate = registry?.let { { createLink = "client"; linkError = false } }) {
                                 input = data.copy(client = it)
@@ -507,12 +517,12 @@ fun WorkEditor(
 
     if (discarding) AlertDialog(onDismissRequest = { discarding = false },
         title = { Text(stringResource(Res.string.work_exit_title)) },
-        confirmButton = { TextButton(onClick = onClose) { Text(stringResource(Res.string.work_discard)) } },
-        dismissButton = { TextButton(onClick = { discarding = false }) { Text(stringResource(Res.string.p5d_cancel)) } })
+        confirmButton = { TextButton(onClick = { discarding = false }) { Text(stringResource(Res.string.p5d_cancel)) } },
+        dismissButton = { TextButton(onClick = onClose) { Text(stringResource(Res.string.work_discard), color = MaterialTheme.colorScheme.error) } })
     if (deleting) AlertDialog(onDismissRequest = { deleting = false },
         title = { Text(stringResource(Res.string.work_delete_title)) },
         text = { if (recurring) ScopeSelection(scope) { scope = it } },
-        confirmButton = {
+        dismissButton = {
             TextButton(enabled = !busy, onClick = {
                 val source = original ?: return@TextButton
                 busy = true
@@ -525,14 +535,14 @@ fun WorkEditor(
                     finally { busy = false }
                 }
             }) { Text(stringResource(Res.string.oc_delete), color = MaterialTheme.colorScheme.error) }
-        }, dismissButton = { TextButton(onClick = { deleting = false }) { Text(stringResource(Res.string.p5d_cancel)) } })
+        }, confirmButton = { TextButton(enabled = !busy, onClick = { deleting = false }) { Text(stringResource(Res.string.p5d_cancel)) } })
     conflict?.let { found ->
         AlertDialog(onDismissRequest = { if (!busy) conflict = null },
             title = { Text(stringResource(Res.string.work_conflicts)) },
             text = {
                 Column {
                     Text(stringResource(Res.string.work_conflict_count, found.confirmation.conflicts.size))
-                    found.checkedThrough?.let { Text(stringResource(Res.string.work_checked_through, it.toString())) }
+                    found.checkedThrough?.let { Text(stringResource(Res.string.work_checked_through, it.shortDate())) }
                     val zone = draft?.schedule?.zone
                     if (zone != null) found.confirmation.conflicts.take(4).forEach {
                         val start = it.otherInterval.start.toLocalDateTime(zone)
@@ -580,15 +590,19 @@ private fun RepeatSettings(input: WorkInput, onChange: (WorkInput) -> Unit) {
         }
     }
     if (input.frequency != null) {
-        if (input.frequency == WorkFrequency.CUSTOM) DaySelection(input.repeatsOn) { onChange(input.copy(repeatsOn = it)) }
+        if (input.frequency == WorkFrequency.CUSTOM) {
+            val bad = runCatching { LocalDate.parse(input.date).dayOfWeek !in input.repeatsOn }.getOrDefault(true)
+            if (bad) CalendarFeedback(Res.string.work_repeat_anchor)
+            DaySelection(input.repeatsOn) { onChange(input.copy(repeatsOn = it)) }
+        }
         val ends = listOf(Res.string.work_unlimited, Res.string.work_until, Res.string.work_count)
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             CalendarMenu(stringResource(ends[input.endMode]), modifier = Modifier.weight(1f)) {
                 ends.forEachIndexed { i, label ->
-                    CalendarMenuItem(text = { Text(stringResource(label)) }, onClick = { onChange(input.copy(endMode = i, endValue = "")) })
+                    CalendarMenuItem(text = { Text(stringResource(label)) }, onClick = { onChange(if (i == input.endMode) input else input.copy(endMode = i, endValue = when (i) { 1 -> input.date; 2 -> "1"; else -> "" })) })
                 }
             }
-            if (input.endMode == 1) DiskDateField(input.endValue, Res.string.work_until) { onChange(input.copy(endValue = it)) }
+            if (input.endMode == 1) DiskDateField(input.endValue, Res.string.work_until, error = runCatching { LocalDate.parse(input.endValue) < LocalDate.parse(input.date) }.getOrDefault(true)) { onChange(input.copy(endValue = it)) }
             if (input.endMode == 2) WorkField(input.endValue, Res.string.work_count, keyboard = KeyboardType.Number,
                 modifier = Modifier.weight(1f), error = input.endValue.toIntOrNull()?.let { it > 0 } != true) {
                 onChange(input.copy(endValue = it))
@@ -615,7 +629,8 @@ private fun CalendarLinkMenu(label: StringResource, selected: String?, entries: 
     Text(stringResource(label), style = MaterialTheme.typography.labelMedium,
         color = if (error) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
     Box {
-        OutlinedButton(onClick = { query = ""; open = true }, modifier = Modifier.fillMaxWidth()) {
+        OutlinedButton(onClick = { query = ""; open = true }, modifier = Modifier.fillMaxWidth(),
+            border = BorderStroke(1.dp, if (error) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.outline)) {
             Text(entries.firstOrNull { it.uuid == selected }?.name ?: stringResource(Res.string.work_empty_link), Modifier.weight(1f), maxLines = 1)
             Icon(Icons.Default.ArrowDropDown, null)
         }
@@ -633,12 +648,12 @@ private fun CalendarLinkMenu(label: StringResource, selected: String?, entries: 
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun DiskDateField(value: String, label: StringResource = Res.string.work_date, onChange: (String) -> Unit) {
+private fun DiskDateField(value: String, label: StringResource = Res.string.work_date, error: Boolean = false, onChange: (String) -> Unit) {
     var picker by remember { mutableStateOf(false) }
-    TextButton(onClick = { picker = true }) {
-        Icon(Icons.Default.CalendarMonth, stringResource(label), Modifier.size(18.dp))
-        val formatted = runCatching { LocalDate.parse(value).let { it.shortDate() + "." + it.year } }.getOrDefault(value)
-        Text(formatted.ifBlank { stringResource(label) }, modifier = Modifier.padding(start = 4.dp), maxLines = 1)
+    TextButton(onClick = { picker = true }, contentPadding = PaddingValues(horizontal = 2.dp, vertical = 4.dp)) {
+        val formatted = runCatching { LocalDate.parse(value).shortDate() }.getOrDefault(value)
+        Text(formatted.ifBlank { stringResource(label) }, color = if (error) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
+            style = MaterialTheme.typography.labelMedium, maxLines = 1)
     }
     if (picker) {
         val current = runCatching { LocalDate.parse(value) }.getOrNull()
@@ -649,7 +664,9 @@ private fun DiskDateField(value: String, label: StringResource = Res.string.work
                 picker = false
             }) { Text(stringResource(Res.string.oc_save)) } },
             dismissButton = { TextButton(onClick = { picker = false }) { Text(stringResource(Res.string.p5d_cancel)) } }) {
-            DatePicker(state)
+            DatePicker(state, title = { Text(stringResource(label), Modifier.padding(horizontal = 24.dp, vertical = 8.dp)) },
+                headline = { Text(state.selectedDateMillis?.let { (it / 86_400_000L).localDate().shortDate() } ?: stringResource(label),
+                    Modifier.padding(horizontal = 24.dp), style = MaterialTheme.typography.headlineSmall) }, showModeToggle = false)
         }
     }
 }
@@ -668,7 +685,7 @@ internal fun WorkField(value: String, label: StringResource, error: Boolean = fa
 @Composable
 private fun WorkTimeField(value: String, label: StringResource, modifier: Modifier = Modifier, error: Boolean = false, onChange: (String) -> Unit) {
     var open by remember { mutableStateOf(false) }
-    TextButton(onClick = { open = true }, modifier = modifier) {
+    TextButton(onClick = { open = true }, modifier = modifier, contentPadding = PaddingValues(horizontal = 2.dp, vertical = 4.dp)) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text(stringResource(label), style = MaterialTheme.typography.labelSmall)
             Text(value, style = MaterialTheme.typography.titleSmall,
@@ -681,8 +698,8 @@ private fun WorkTimeField(value: String, label: StringResource, modifier: Modifi
         var dial by remember { mutableStateOf(true) }
         Dialog(onDismissRequest = { open = false }, properties = DialogProperties(usePlatformDefaultWidth = false)) {
             Surface(shape = MaterialTheme.shapes.extraLarge, color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                modifier = Modifier.widthIn(max = 350.dp).padding(10.dp)) {
-                Column(Modifier.verticalScroll(rememberScrollState()).padding(14.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                modifier = Modifier.widthIn(max = 360.dp).padding(6.dp).imePadding()) {
+                Column(Modifier.verticalScroll(rememberScrollState()).padding(10.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(stringResource(label), Modifier.align(Alignment.Start), style = MaterialTheme.typography.titleSmall)
                     Spacer(Modifier.height(10.dp))
                     if (dial) TimePicker(time) else TimeInput(time)
@@ -756,19 +773,37 @@ private fun WorkReadOnly(work: CalendarWork, options: CalendarFormOptions, store
             val type = options.types.firstOrNull { it.code == data.typeCode }
             Icon(typeIcon(type), null, tint = typeColor(type))
             Text(calendarTypeLabel(type))
+            Icon(data.status.workIcon(), null, Modifier.size(18.dp), tint = data.status.workTint())
             Text(stringResource(data.status.label()), style = MaterialTheme.typography.labelMedium)
         }
         work.days.forEach { day ->
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Text(day.date.toString(), Modifier.weight(1f))
-                Text(day.interval?.let { interval ->
+                Text(day.date.shortDate(), Modifier.weight(1f))
+                Text(if (data.schedule.mode == WorkTimeMode.TIMED) day.interval?.let { interval ->
                     interval.start.toLocalDateTime(data.schedule.zone).time.shortTime() + "–" +
                         interval.endExclusive.toLocalDateTime(data.schedule.zone).time.shortTime()
-                } ?: stringResource(data.schedule.mode.label()))
+                } ?: stringResource(Res.string.work_invalid) else stringResource(data.schedule.mode.label()))
             }
         }
         Text(data.schedule.zone.id, style = MaterialTheme.typography.labelMedium)
-        data.recurrence?.let { Text(stringResource(it.frequency.label()) + " · " + it.step) }
+        data.recurrence?.let { rule ->
+            Text(stringResource(rule.frequency.label()) + " · " + stringResource(Res.string.work_every) + " " + rule.step + " " +
+                stringResource(when (rule.frequency) {
+                    WorkFrequency.DAILY -> Res.string.work_unit_days
+                    WorkFrequency.MONTHLY -> Res.string.work_unit_months
+                    else -> Res.string.work_unit_weeks
+                }))
+            if (rule.weekdays.isNotEmpty()) {
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    rule.weekdays.sortedBy { it.ordinal }.forEach { Text(stringResource(it.label()), style = MaterialTheme.typography.labelSmall) }
+                }
+            }
+            Text(when {
+                rule.until != null -> stringResource(Res.string.work_until) + " " + rule.until.shortDate()
+                rule.count != null -> stringResource(Res.string.work_count) + ": " + rule.count
+                else -> stringResource(Res.string.work_unlimited)
+            }, style = MaterialTheme.typography.bodySmall)
+        }
         work.projectLabel?.let { label ->
             val uuid = data.projectUuid
             if (uuid != null && onRegistryTarget != null) TextButton(onClick = { navigate { store.projectTarget(uuid) } }) {

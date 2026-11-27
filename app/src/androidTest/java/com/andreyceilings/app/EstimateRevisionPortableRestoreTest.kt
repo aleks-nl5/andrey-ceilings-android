@@ -252,9 +252,16 @@ class EstimateRevisionPortableRestoreTest {
             val zone = TimeZone.of("Europe/Kyiv")
             work.saveSettings(CalendarSettings(zone, null, emptySet()))
             val day = LocalDate(2026, 12, 15)
+            val customType = CalendarWorkType("portable-test-type", "Portable custom", 0x123456, "other", 45, false)
+            work.saveType(customType)
             val workKey = (work.save(CalendarSave(CalendarWorkDraft(day,
-                WorkSchedule(WorkTimeMode.DATE_ONLY, zone, listOf(WorkDay(0))), "Portable calendar work", "MEASURE")))
+                WorkSchedule(WorkTimeMode.DATE_ONLY, zone, listOf(WorkDay(0))), "Portable calendar work", customType.code,
+                recurrence = WorkRecurrence(day, WorkFrequency.DAILY, count = 3))))
                 as CalendarSaveResult.Saved).key
+            val changedKey = WorkOccurrenceKey(workKey.rootUuid, LocalDate(2026, 12, 16))
+            val changed = checkNotNull(work.exact(changedKey))
+            assertTrue(work.save(CalendarSave(changed.draft.copy(title = "Portable exception"), changedKey, changed.version)) is CalendarSaveResult.Saved)
+            work.saveType(customType.copy(archived = true))
             val exported = PortableBackupManager.create(context, original, password)
 
             // A bad password must reject before changing the live database.
@@ -293,6 +300,10 @@ class EstimateRevisionPortableRestoreTest {
                 val restoredCalendar = CalendarRepository(db.database)
                 assertEquals("Portable calendar work", restoredCalendar.exact(workKey)?.draft?.title)
                 assertEquals(zone, restoredCalendar.settings().zone)
+                assertEquals(emptySet<kotlinx.datetime.DayOfWeek>(), restoredCalendar.settings().workingDays)
+                assertEquals("Portable exception", restoredCalendar.exact(changedKey)?.draft?.title)
+                assertEquals("Portable calendar work", restoredCalendar.exact(WorkOccurrenceKey(workKey.rootUuid, LocalDate(2026, 12, 17)))?.draft?.title)
+                assertEquals(customType.copy(archived = true), restoredCalendar.types().single { it.code == customType.code })
                 val history = ImmutableEstimateRepository(db.database)
                 val actual = history.revisions(first.seriesUuid)
                 assertEquals(revisionsBefore, actual)

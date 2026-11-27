@@ -135,11 +135,11 @@ fun UpcomingEventsCard(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
+                if (onCalendar != null) IconButton(onClick = onCalendar, modifier = Modifier.size(44.dp)) {
+                    Icon(Icons.Default.CalendarMonth, stringResource(Res.string.work_calendar))
+                }
                 if (onAddWork != null) IconButton(onClick = onAddWork, modifier = Modifier.size(44.dp)) {
                     Icon(Icons.Default.Add, stringResource(Res.string.work_add))
-                }
-                if (onCalendar != null) IconButton(onClick = onCalendar, modifier = Modifier.size(44.dp)) {
-                    Icon(Icons.Default.ChevronRight, stringResource(Res.string.work_calendar))
                 }
             }
         } else {
@@ -179,8 +179,13 @@ fun UpcomingEventsCard(
                             ) { Text("До об’єкта") }
                         }
                     }
-                    if (onAddWork != null) IconButton(onClick = onAddWork, modifier = Modifier.size(42.dp)) {
-                        Icon(Icons.Default.Add, stringResource(Res.string.work_add))
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        if (onAddWork != null) IconButton(onClick = onAddWork, modifier = Modifier.size(42.dp)) {
+                            Icon(Icons.Default.Add, stringResource(Res.string.work_add))
+                        }
+                        if (onCalendar != null) IconButton(onClick = onCalendar, modifier = Modifier.size(42.dp)) {
+                            Icon(Icons.Default.CalendarMonth, stringResource(Res.string.work_calendar))
+                        }
                     }
                 }
 
@@ -200,7 +205,7 @@ fun UpcomingEventsCard(
                             "${event.dateLabel} · ${event.timeLabel}",
                             style = MaterialTheme.typography.labelMedium,
                             color = theme.onSurfaceVariant,
-                            modifier = Modifier.width(106.dp),
+                            modifier = Modifier.width(112.dp),
                             maxLines = 2
                         )
                         Text(
@@ -251,7 +256,7 @@ private fun EventDateBadge(dateLabel: String, timeLabel: String, urgency: WorkUr
     } else 1f
 
     Column(
-        modifier = Modifier.width(98.dp)
+        modifier = Modifier.width(110.dp)
             .background(background.copy(alpha = pulseAlpha), RoundedCornerShape(14.dp))
             .padding(horizontal = 10.dp, vertical = 9.dp),
         horizontalAlignment = Alignment.CenterHorizontally

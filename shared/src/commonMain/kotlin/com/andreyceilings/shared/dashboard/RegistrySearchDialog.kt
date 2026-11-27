@@ -122,7 +122,7 @@ fun RegistrySearchDialog(store: ObjectsClientsStore?, onClose: () -> Unit,
                                 }
                                 items(matchingWorks, key = { "work/${it.key.rootUuid}/${it.key.originalDate}" }) { work ->
                                     SearchResultRow(Icons.Default.CalendarMonth, work.draft.title,
-                                        listOfNotNull(work.draft.date.toString(), work.projectLabel, work.contact.address)
+                                        listOfNotNull(work.draft.date.shortDate(), work.projectLabel, work.contact.address)
                                             .joinToString(" · "), { onWork?.invoke(work.key) })
                                 }
                                 if (current != null) {

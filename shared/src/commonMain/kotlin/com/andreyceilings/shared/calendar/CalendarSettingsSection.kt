@@ -6,6 +6,9 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -168,7 +171,11 @@ private fun CalendarColorPicker(initial: String, onClose: () -> Unit, onSelect: 
                 palette.chunked(5).forEach { row ->
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
                         row.forEach { hex ->
-                            IconButton(onClick = { value = hex }, modifier = Modifier.size(42.dp)) {
+                            val description = stringResource(Res.string.work_color_accessible, hex)
+                            IconButton(onClick = { value = hex }, modifier = Modifier.size(42.dp).semantics {
+                                contentDescription = description
+                                selected = value.equals(hex, true)
+                            }) {
                                 Box(Modifier.size(30.dp).clip(CircleShape).background(Color(0xff000000 or hex.toLong(16))),
                                     contentAlignment = Alignment.Center) {
                                     if (value.equals(hex, true)) Icon(Icons.Default.Check, null, tint = Color.White)

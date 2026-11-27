@@ -18,7 +18,7 @@
     <string name="work_phone">Телефон</string>
     <string name="work_email">Електронна пошта</string>
     <string name="work_notes">Примітки</string>
-    <string name="work_date_format">YYYY-MM-DD</string>
+    <string name="work_date_format">дд.мм.рррр</string>
     <string name="work_date">Дата</string>
     <string name="work_start">Початок</string>
     <string name="work_end">Кінець</string>
@@ -112,4 +112,6 @@
     <string name="work_invalid_day">Оберіть окрему дату наступного дня в межах року.</string>
     <string name="work_inherit_client">Клієнт об’єкта</string>
     <string name="work_interval_short">Крок</string>
+    <string name="work_color_accessible">Колір #%1$s</string>
+    <string name="work_repeat_anchor">Виберіть день тижня, на який припадає початкова дата.</string>
 </resources>
