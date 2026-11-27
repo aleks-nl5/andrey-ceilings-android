@@ -92,7 +92,10 @@ internal fun ClientReadCard(
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
                                 listOf("WhatsApp" to ContactAction.WHATSAPP, "Telegram" to ContactAction.TELEGRAM,
                                     "Viber" to ContactAction.VIBER).forEach { (name, action) ->
-                                    IconButton(onClick = { onExternalAction(action, item.phone) },
+                                    IconButton(onClick = {
+                                        error = if (runCatching { onExternalAction(action, item.phone) }.isFailure)
+                                            callError else null
+                                    },
                                         modifier = Modifier.semantics { contentDescription = name }) {
                                         Box(Modifier.size(40.dp).background(MaterialTheme.colorScheme.primaryContainer, CircleShape),
                                             contentAlignment = Alignment.Center) {

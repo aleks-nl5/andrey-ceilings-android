@@ -108,6 +108,15 @@ data class AppNavigationState(
     }
 
     /** Ordinary ceiling navigation skips the retired intermediate details screen. */
+    fun openLinkedCeiling(projectId: Long, measurementId: Long, available: Set<AppRoute> = allRoutes): AppNavigationState {
+        if (projectId <= 0 || measurementId <= 0) return this
+        // Calendar/project/global links must not detach a ceiling from its already-open parent.
+        if (current == AppRoute.OBJECTS && projectDetails?.projectId == projectId)
+            return openCeilingWorkspace(projectId, measurementId)
+        if (AppRoute.MEASUREMENTS !in available) return this
+        return navigate(AppRoute.MEASUREMENTS, available).openCeilingWorkspace(projectId, measurementId)
+    }
+
     fun openCeilingWorkspace(projectId: Long, measurementId: Long): AppNavigationState {
         if (!hasMeasurementParent(projectId) || measurementId <= 0) return this
         val target = MeasurementEdit(projectId, measurementId)

@@ -430,7 +430,7 @@ private fun DesktopPriceHost(
                         when (hit) {
                             is com.andreyceilings.shared.registry.GlobalRegistryTarget.Project -> onNavigate(navigation.navigate(AppRoute.OBJECTS, availableRoutes).openProject(hit.id))
                             is com.andreyceilings.shared.registry.GlobalRegistryTarget.Client -> { calendarClientRequest = hit.id; onNavigate(navigation.navigate(AppRoute.OBJECTS, availableRoutes)) }
-                            is com.andreyceilings.shared.registry.GlobalRegistryTarget.Ceiling -> onNavigate(navigation.navigate(AppRoute.MEASUREMENTS, availableRoutes).openCeilingWorkspace(hit.projectId, hit.id))
+                            is com.andreyceilings.shared.registry.GlobalRegistryTarget.Ceiling -> onNavigate(navigation.openLinkedCeiling(hit.projectId, hit.id, availableRoutes))
                             is com.andreyceilings.shared.registry.GlobalRegistryTarget.Quote -> Unit
                         }
                     }, onSaved = { result, draft ->

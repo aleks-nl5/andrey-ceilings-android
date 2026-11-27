@@ -12,7 +12,8 @@ import com.andreyceilings.shared.ui.ContextFeedbackIcon
 import com.andreyceilings.shared.ui.ContextFeedbackKind
 import com.andreyceilings.shared.objects.ClientReadCard
 import com.andreyceilings.shared.objects.ContactAction
-import com.andreyceilings.shared.domain.ClientListEntry
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -141,6 +142,7 @@ fun WorkEditor(
     var error by remember { mutableStateOf(false) }
     var scope by remember { mutableStateOf(CalendarEditScope.OCCURRENCE) }
     var conflict by remember { mutableStateOf<CalendarSaveResult.Conflicts?>(null) }
+    val deleteOnly = (route as? CalendarEditorRoute.Open)?.delete == true
     val move = (route as? CalendarEditorRoute.Open)?.move == true &&
         (input?.days?.size ?: 1) == 1
 
@@ -175,7 +177,7 @@ fun WorkEditor(
             error = false
             invalidDay = null
             loadFailed = false
-            if ((route as? CalendarEditorRoute.Open)?.delete == true && reload == 0) deleting = true
+            if (deleteOnly) deleting = true
         } catch (cancelled: CancellationException) { throw cancelled }
         catch (_: Exception) { loadFailed = true }
     }
@@ -268,7 +270,26 @@ fun WorkEditor(
         route is CalendarEditorRoute.Create -> Res.string.work_add
         else -> if (editing) Res.string.work_edit else Res.string.work_view
     }
-    if (move && data != null) {
+    fun cancelDelete() {
+        if (!busy) {
+            deleting = false
+            if (deleteOnly) onClose()
+        }
+    }
+    if (deleteOnly) {
+        if (!deleting) AlertDialog(onDismissRequest = ::cancelDelete,
+            title = { Text(stringResource(Res.string.work_delete_title)) },
+            text = {
+                if (loadFailed || stale || error || optionsRead is CalendarRead.Unavailable)
+                    CalendarFeedback(if (stale) Res.string.work_stale else if (error) Res.string.work_save_failed else Res.string.work_unavailable)
+                else LinearProgressIndicator(Modifier.fillMaxWidth())
+            },
+            dismissButton = {
+                if (loadFailed || stale || error || optionsRead is CalendarRead.Unavailable)
+                    TextButton(onClick = ::requestReload, enabled = !busy) { Text(stringResource(Res.string.work_reload)) }
+            },
+            confirmButton = { TextButton(onClick = ::cancelDelete, enabled = !busy) { Text(stringResource(Res.string.p5d_cancel)) } })
+    } else if (move && data != null) {
         AlertDialog(onDismissRequest = ::requestClose,
             title = { Text(stringResource(title)) },
             text = {
@@ -539,11 +560,14 @@ fun WorkEditor(
                     ContactAction.TELEGRAM -> if (international) "tg://resolve?phone=$phone" else null
                     ContactAction.VIBER -> if (international) "viber://chat?number=" + calendarUriComponent(raw.trim()) else null
                 }
-                if (url != null) runCatching { openUri(url) }
+                requireNotNull(url)
+                openUri(url)
             })
-    } else if (clientCardId != null && registryRows != null) {
+    } else if (clientCardId != null) {
         AlertDialog(onDismissRequest = { clientCardId = null },
-            title = { Text(stringResource(Res.string.work_unavailable)) },
+            title = { Text(stringResource(Res.string.work_client)) },
+            text = { if (registry != null && registryRows == null) LinearProgressIndicator(Modifier.fillMaxWidth())
+                else CalendarFeedback(Res.string.work_unavailable) },
             confirmButton = { TextButton(onClick = { clientCardId = null }) { Text(stringResource(Res.string.oc_close)) } })
     }
 
@@ -596,7 +620,7 @@ fun WorkEditor(
         title = { Text(stringResource(Res.string.work_exit_title)) },
         confirmButton = { TextButton(onClick = { discarding = false }) { Text(stringResource(Res.string.p5d_cancel)) } },
         dismissButton = { TextButton(onClick = onClose) { Text(stringResource(Res.string.work_discard), color = MaterialTheme.colorScheme.error) } })
-    if (deleting) AlertDialog(onDismissRequest = { deleting = false },
+    if (deleting) AlertDialog(onDismissRequest = ::cancelDelete,
         title = { Text(stringResource(Res.string.work_delete_title)) },
         text = { if (recurring) ScopeSelection(scope) { scope = it } },
         dismissButton = {
@@ -612,7 +636,7 @@ fun WorkEditor(
                     finally { busy = false }
                 }
             }) { Text(stringResource(Res.string.oc_delete), color = MaterialTheme.colorScheme.error) }
-        }, confirmButton = { TextButton(enabled = !busy, onClick = { deleting = false }) { Text(stringResource(Res.string.p5d_cancel)) } })
+        }, confirmButton = { TextButton(enabled = !busy, onClick = ::cancelDelete) { Text(stringResource(Res.string.p5d_cancel)) } })
     conflict?.let { found ->
         AlertDialog(onDismissRequest = { if (!busy) conflict = null },
             title = { Text(stringResource(Res.string.work_conflicts)) },
@@ -697,7 +721,7 @@ internal fun DaySelection(days: Set<DayOfWeek>, onChange: (Set<DayOfWeek>) -> Un
         DayOfWeek.entries.forEach { day ->
             val selected = day in days
             Surface(onClick = { onChange(if (selected) days - day else days + day) },
-                modifier = Modifier.weight(1f).heightIn(min = 48.dp),
+                modifier = Modifier.weight(1f).heightIn(min = 48.dp).semantics { this.selected = selected },
                 shape = MaterialTheme.shapes.small,
                 color = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
                 contentColor = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
@@ -740,7 +764,7 @@ private fun CalendarLinkMenu(label: StringResource, selected: String?, entries: 
                     items(matches.size, key = { matches[it].uuid }) { i ->
                         val entry = matches[i]
                         DropdownMenuItem(text = { Text(entry.name) },
-                            trailingIcon = if (entry.uuid == selected) { { Icon(Icons.Default.Check, null) } } else null,
+                            trailingIcon = { if (entry.uuid == selected) Icon(Icons.Default.Check, null) },
                             onClick = { open = false; onSelect(entry.uuid) })
                     }
                 }

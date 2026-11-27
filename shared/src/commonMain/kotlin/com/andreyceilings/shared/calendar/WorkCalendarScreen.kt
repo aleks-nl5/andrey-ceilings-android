@@ -16,6 +16,7 @@ import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.unit.Velocity
 import com.andreyceilings.shared.objects.CardSwipeState
 import com.andreyceilings.shared.objects.SwipeActionsSurface
 import com.andreyceilings.shared.objects.dismissCardSwipeOnInteraction
@@ -111,9 +112,20 @@ fun WorkCalendarScreen(
     var fabVisible by remember { mutableStateOf(true) }
     val scrollEvents = remember { Channel<Unit>(Channel.CONFLATED) }
     val fabScroll = remember { object : NestedScrollConnection {
+        override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+            val canMove = if (available.y < 0f) list.canScrollForward else list.canScrollBackward
+            if (source == NestedScrollSource.UserInput && abs(available.y) > 0.5f && canMove) {
+                fabVisible = false; swipes.dismiss(); scrollEvents.trySend(Unit)
+            }
+            return Offset.Zero
+        }
         override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset {
             if (abs(consumed.y) > 0.5f) { fabVisible = false; swipes.dismiss(); scrollEvents.trySend(Unit) }
             return Offset.Zero
+        }
+        override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity {
+            scrollEvents.trySend(Unit)
+            return Velocity.Zero
         }
     } }
     LaunchedEffect(list) {

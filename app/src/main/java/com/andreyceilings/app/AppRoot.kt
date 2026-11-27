@@ -63,6 +63,7 @@ import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
@@ -243,6 +244,13 @@ private fun CeilingsAppContent(
                 if (delta != 0f) state.heightOffset = (state.heightOffset + delta).coerceIn(state.heightOffsetLimit, 0f)
                 state.contentOffset += consumed.y
                 return Offset.Zero
+            }
+            override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity {
+                // Snap an actually moved toolbar; never let an unconsumed short-page fling collapse it.
+                val state = topAppBarScrollBehavior.state
+                return if (state.collapsedFraction > 0f && state.collapsedFraction < 1f)
+                    topAppBarScrollBehavior.nestedScrollConnection.onPostFling(consumed, Velocity.Zero)
+                else Velocity.Zero
             }
         }
     }
@@ -913,6 +921,10 @@ private fun CeilingsAppContent(
         )
 
         fun openCalendarRegistryTarget(hit: GlobalRegistryTarget) {
+            if (hit is GlobalRegistryTarget.Ceiling && tab == AppTab.OBJECTS && navigation.projectDetails?.projectId == hit.projectId) {
+                updateNavigation(navigation.openLinkedCeiling(hit.projectId, hit.id))
+                return
+            }
             val target = when (hit) {
                 is GlobalRegistryTarget.Project, is GlobalRegistryTarget.Client -> AppTab.OBJECTS
                 is GlobalRegistryTarget.Ceiling -> AppTab.MEASUREMENTS
@@ -930,7 +942,7 @@ private fun CeilingsAppContent(
             val destination = navigation.navigate(target)
             when (hit) {
                 is GlobalRegistryTarget.Project -> updateNavigation(destination.openProject(hit.id))
-                is GlobalRegistryTarget.Ceiling -> updateNavigation(destination.openCeilingWorkspace(hit.projectId, hit.id))
+                is GlobalRegistryTarget.Ceiling -> updateNavigation(navigation.openLinkedCeiling(hit.projectId, hit.id))
                 is GlobalRegistryTarget.Client -> {
                     requestedClientId = hit.id
                     updateNavigation(destination)
