@@ -30,6 +30,13 @@ data class MeasurementEdit(val projectId: Long, val measurementId: Long) {
 /** One bounded return context, with no business fields or recursive history. */
 data class CalendarLinkReturn(val projectId: Long, val measurementId: Long?, val origin: List<String>)
 
+private fun CalendarLinkReturn.matches(state: AppNavigationState): Boolean =
+    if (measurementId == null) state.current == AppRoute.OBJECTS &&
+        state.projectDetails?.projectId == projectId && state.measurementEdit == null &&
+        state.measurementCreate == null && state.measurementDetails == null && !state.quickMeasurement
+    else !state.quickMeasurement && state.measurementEdit == MeasurementEdit(projectId, measurementId) &&
+        (state.current == AppRoute.MEASUREMENTS || state.current == AppRoute.OBJECTS && state.projectDetails?.projectId == projectId)
+
 enum class AppQuickCreate(val destination: AppRoute) {
     OBJECT(AppRoute.OBJECTS), MEASUREMENT(AppRoute.MEASUREMENTS)
 }
@@ -128,13 +135,6 @@ data class AppNavigationState(
 
     private fun calendarReturnSnapshot(): List<String> =
         copy(calendarLinkReturn = null, calculatorOrigin = emptyList(), pendingQuickCreate = null).snapshot()
-
-    private fun CalendarLinkReturn.matches(state: AppNavigationState): Boolean =
-        if (measurementId == null) state.current == AppRoute.OBJECTS &&
-            state.projectDetails?.projectId == projectId && state.measurementEdit == null &&
-            state.measurementCreate == null && state.measurementDetails == null && !state.quickMeasurement
-        else !state.quickMeasurement && state.measurementEdit == MeasurementEdit(projectId, measurementId) &&
-            (state.current == AppRoute.MEASUREMENTS || state.current == AppRoute.OBJECTS && state.projectDetails?.projectId == projectId)
 
     fun openLinkedCeiling(projectId: Long, measurementId: Long, available: Set<AppRoute> = allRoutes): AppNavigationState {
         if (projectId <= 0 || measurementId <= 0) return this
