@@ -4,6 +4,7 @@ import app.cash.sqldelight.db.AfterVersion
 import app.cash.sqldelight.db.QueryResult
 import app.cash.sqldelight.db.SqlDriver
 import app.cash.sqldelight.db.SqlSchema
+import app.cash.sqldelight.db.use
 import com.andreyceilings.shared.calendar.*
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.TimeZone
