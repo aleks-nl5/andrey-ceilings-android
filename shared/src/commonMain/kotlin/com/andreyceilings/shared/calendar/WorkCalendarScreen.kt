@@ -424,7 +424,7 @@ internal fun CalendarWorkRow(
         SwipeTrayAction(stringResource(Res.string.work_edit), Icons.Default.Edit, onClick = { onEdit(context.copy(edit = true)) })
     )
     SwipeActionsSurface(id, emptyList(), opened, { opened = it }, { swipeState.dismiss() },
-        onDelete = delete, onAction = {}, deleteTrayHeight = 58.dp, trayActions = tray) {
+        onDelete = delete, onAction = {}, deleteTrayHeight = 58.dp, trayActions = tray.filterNot { it.destructive }) {
         Surface(color = MaterialTheme.colorScheme.surface, contentColor = color, shape = MaterialTheme.shapes.medium) {
         Row(Modifier.fillMaxWidth().clickable {
             if (opened?.id == id) swipeState.dismiss() else onEdit(context)
