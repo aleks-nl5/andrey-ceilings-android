@@ -1,5 +1,6 @@
 package com.andreyceilings.desktop
 
+import com.andreyceilings.shared.calendar.*
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.WindowInsets
@@ -180,6 +181,13 @@ private fun DesktopPriceHost(
         SideEffect { measurementCreateNavigationGuard.bindQuotes(objectsStore.measurementDetails.elements) }
         val objectRows by objectsStore.rows.collectAsState(initial = objectsStore.cachedRows)
         var externalError by remember { mutableStateOf<String?>(null) }
+        val calendar = remember(database) { objectsStore.calendar }
+        var calendarOpen by remember(database) { mutableStateOf(false) }
+        var calendarProject by remember(database) { mutableStateOf<String?>(null) }
+        var calendarMode by remember { mutableStateOf(CalendarDisplayMode.WEEK) }
+        var calendarEditor by remember(database) { mutableStateOf<CalendarEditorRoute?>(null) }
+        var completedProject by remember(database) { mutableStateOf<String?>(null) }
+        var detachedWork by remember(database) { mutableStateOf(0) }
         fun openExternal(url: String) {
             runCatching {
                 check(Desktop.isDesktopSupported() &&
@@ -261,7 +269,9 @@ private fun DesktopPriceHost(
                                 routeState.removeState(AppRoute.ESTIMATES.name)
                                 onNavigate(navigation.navigate(AppRoute.ESTIMATES, availableRoutes))
                             },
-                            onCalendar = null,
+                            onCalendar = { calendarProject = null; calendarOpen = true },
+                            calendar = calendar,
+                            onCalendarEdit = { calendarEditor = it },
                             todayLabel = dashboardTodayLabel(currencyState.nowMillis),
                             nowMillis = currencyState.nowMillis,
                             currencyRates = currencyState,
@@ -292,6 +302,8 @@ private fun DesktopPriceHost(
                     onMeasurementCreated = { projectId, measurementId -> onNavigate(navigation.measurementCreatedInEditor(projectId, measurementId)) },
                     onOpenMeasurement = { projectId, measurementId -> onNavigate(navigation.openCeilingWorkspace(projectId, measurementId)) },
                     detailsStore = objectsStore,
+                    onCalendarEdit = { calendarEditor = it },
+                    onProjectCalendar = { calendarProject = it; calendarOpen = true },
                     onOpenProject = { onNavigate(navigation.openProject(it)) },
                     onOpenCeilingRegistry = {
                         routeState.removeState(AppRoute.MEASUREMENTS.name)
@@ -390,6 +402,30 @@ private fun DesktopPriceHost(
                 )
                 else -> Unit // Only actually implemented desktop routes are exposed.
             }
+            if (calendarOpen) androidx.compose.ui.window.Dialog(
+                onDismissRequest = { calendarOpen = false },
+                properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false),
+            ) {
+                WorkCalendarScreen(calendar, calendarMode, { calendarMode = it }, { calendarEditor = it },
+                    contentPadding = PaddingValues(16.dp), projectFilter = calendarProject,
+                    onClose = { calendarOpen = false })
+            }
+            calendarEditor?.let { route ->
+                WorkEditor(calendar, route, onClose = { calendarEditor = null }, onSaved = { result, draft ->
+                    calendarEditor = null
+                    detachedWork = result.detached
+                    if (result.installationCompleted) completedProject = draft.projectUuid
+                })
+            }
+            CalendarSaveFeedback(detachedWork, completedProject != null,
+                onDismiss = { completedProject = null; detachedWork = 0 },
+                onComplete = {
+                    completedProject?.let { project ->
+                        scope.launch { objectsStore.completeCalendarProject(project) }
+                    }
+                    completedProject = null
+                    detachedWork = 0
+                })
             if (externalError != null) {
                 TextButton(onClick = { externalError = null },
                     modifier = Modifier.align(Alignment.TopEnd).padding(top = AppHeaderHeight)) {

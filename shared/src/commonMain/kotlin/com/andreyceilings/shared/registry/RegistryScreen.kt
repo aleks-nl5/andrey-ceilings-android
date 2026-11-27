@@ -11,6 +11,8 @@ import com.andreyceilings.shared.objects.CardSwipeState
 import com.andreyceilings.shared.objects.SwipeActionsSurface
 import com.andreyceilings.shared.objects.dismissCardSwipeOnInteraction
 import com.andreyceilings.shared.measurement.CeilingHasApprovedQuote
+import com.andreyceilings.shared.calendar.CalendarDeletionImpact
+import com.andreyceilings.shared.calendar.CalendarDeletionConfirmationRequired
 import com.andreyceilings.shared.db.ActiveCeilings
 import kotlinx.coroutines.launch
 import androidx.compose.foundation.lazy.LazyListState
@@ -189,6 +191,7 @@ fun CeilingRegistryScreen(
     }
     }
     deleting?.let { target ->
+        var calendarImpact by remember(target) { mutableStateOf<CalendarDeletionImpact?>(null) }
         val approvedError = stringResource(Res.string.p6a_delete_ceiling_approved)
         val generalError = stringResource(Res.string.p6a_delete_ceiling_failed)
         AlertDialog(
@@ -198,6 +201,7 @@ fun CeilingRegistryScreen(
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(stringResource(Res.string.p6a_delete_ceiling_confirm, target.name))
+                    if (calendarImpact != null) Text(stringResource(Res.string.work_deletion_ceiling))
                     deleteError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                 }
             },
@@ -207,9 +211,10 @@ fun CeilingRegistryScreen(
                     deleteError = null
                     scope.launch {
                         try {
-                            checkNotNull(store).deleteCeiling(target.projectId, target.id, target.uuid)
+                            checkNotNull(store).deleteCeiling(target.projectId, target.id, target.uuid, calendarImpact)
                             deleting = null
                         } catch (cancelled: CancellationException) { throw cancelled }
+                        catch (confirmation: CalendarDeletionConfirmationRequired) { calendarImpact = confirmation.impact }
                         catch (_: CeilingHasApprovedQuote) { deleteError = approvedError }
                         catch (_: Exception) { deleteError = generalError }
                         finally { deletingBusy = false }

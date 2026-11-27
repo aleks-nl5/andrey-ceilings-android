@@ -20,11 +20,13 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CalendarMonth
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Event
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -36,6 +38,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.andreyceilings.shared.calendar.WorkOccurrenceKey
+import com.andreyceilings.shared.resources.*
+import org.jetbrains.compose.resources.stringResource
 
 /**
  * UI-only CMP contract. Only scheduled occurrences (NOT record createdAt) belong here.
@@ -50,7 +55,9 @@ data class UpcomingWorkEvent(
     val description: String,
     val projectName: String,
     val clientName: String? = null,
-    val projectId: String? = null
+    val projectId: String? = null,
+    val endsAtMillis: Long? = null,
+    val key: WorkOccurrenceKey? = null
 )
 
 enum class WorkUrgency { DISTANT, APPROACHING, SOON, IMMINENT }
@@ -67,7 +74,7 @@ fun workUrgency(nowMillis: Long, startsAtMillis: Long): WorkUrgency {
 
 fun upcomingWorkEvents(events: List<UpcomingWorkEvent>, nowMillis: Long): List<UpcomingWorkEvent> =
     events.asSequence()
-        .filter { it.startsAtMillis >= nowMillis }
+        .filter { it.endsAtMillis?.let { end -> end > nowMillis } ?: (it.startsAtMillis >= nowMillis) }
         .sortedWith(compareBy<UpcomingWorkEvent> { it.startsAtMillis }.thenBy { it.id })
         .take(4)
         .toList()
@@ -88,7 +95,10 @@ fun UpcomingEventsCard(
     databaseAvailable: Boolean,
     onCalendar: (() -> Unit)?,
     onOpenProject: ((String) -> Unit)? = null,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onOpenWork: ((WorkOccurrenceKey) -> Unit)? = null,
+    onAddWork: (() -> Unit)? = null,
+    loading: Boolean = false,
 ) {
     val upcoming = upcomingWorkEvents(events, nowMillis)
     val theme = MaterialTheme.colorScheme
@@ -111,9 +121,8 @@ fun UpcomingEventsCard(
             ) {
                 Icon(
                     Icons.Default.CalendarMonth,
-                    contentDescription = if (!databaseAvailable)
-                        "База даних недоступна: заплановані події не завантажені"
-                    else "Запланованих майбутніх подій немає",
+                    contentDescription = if (!databaseAvailable) stringResource(Res.string.work_unavailable)
+                    else if (loading) null else stringResource(Res.string.work_none),
                     tint = theme.primary
                 )
                 Text(
@@ -125,6 +134,9 @@ fun UpcomingEventsCard(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
+                if (onAddWork != null) IconButton(onClick = onAddWork, modifier = Modifier.size(44.dp)) {
+                    Icon(Icons.Default.Add, stringResource(Res.string.work_add))
+                }
                 Row(
                     modifier = Modifier
                         .height(44.dp)
@@ -135,7 +147,7 @@ fun UpcomingEventsCard(
                 ) {
                     val linkColor = if (onCalendar != null) theme.primary else theme.onSurfaceVariant
                     Text(
-                        "Календар",
+                        stringResource(Res.string.work_calendar),
                         style = MaterialTheme.typography.labelLarge,
                         color = linkColor,
                         maxLines = 1
@@ -154,7 +166,9 @@ fun UpcomingEventsCard(
                 Modifier.fillMaxWidth().padding(14.dp),
                 verticalArrangement = Arrangement.spacedBy(9.dp)
             ) {
-                Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                val open = closest.key?.let { key -> onOpenWork?.let { { it(key) } } }
+                Row(Modifier.clickable(enabled = open != null) { open?.invoke() },
+                    verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     EventDateBadge(
                         dateLabel = closest.dateLabel,
                         timeLabel = closest.timeLabel,
@@ -186,7 +200,7 @@ fun UpcomingEventsCard(
                 }
 
                 upcoming.drop(1).forEach { event ->
-                    val openProject = event.projectId?.let { id ->
+                    val openProject = event.key?.let { key -> onOpenWork?.let { { it(key) } } } ?: event.projectId?.let { id ->
                         onOpenProject?.let { open -> { open(id) } }
                     }
                     Row(
@@ -211,16 +225,16 @@ fun UpcomingEventsCard(
                             overflow = TextOverflow.Ellipsis
                         )
                         if (openProject != null) {
-                            Icon(Icons.Default.ChevronRight, contentDescription = "До об’єкта")
+                            Icon(Icons.Default.ChevronRight, contentDescription = null)
                         }
                     }
                 }
-                if (onCalendar != null) {
-                    TextButton(
-                        onClick = onCalendar,
-                        modifier = Modifier.align(Alignment.End)
-                    ) {
-                        Text("Усі події в календарі")
+                Row(Modifier.align(Alignment.End), verticalAlignment = Alignment.CenterVertically) {
+                    if (onAddWork != null) IconButton(onClick = onAddWork) {
+                        Icon(Icons.Default.Add, stringResource(Res.string.work_add))
+                    }
+                    if (onCalendar != null) TextButton(onClick = onCalendar) {
+                        Text(stringResource(Res.string.work_calendar))
                         Icon(Icons.Default.ChevronRight, contentDescription = null)
                     }
                 }

@@ -202,6 +202,7 @@ internal fun SettingsScreen(
         }
     }
     SectionTitle("Налаштування", "Персоналізація та резервне копіювання")
+    com.andreyceilings.shared.calendar.CalendarSettingsSection(database?.objectsClientsStore?.calendar)
     Card(
         shape = MaterialTheme.shapes.large,
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),

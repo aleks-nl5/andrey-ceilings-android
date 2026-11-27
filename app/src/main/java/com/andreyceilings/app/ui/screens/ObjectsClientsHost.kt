@@ -55,7 +55,9 @@ internal fun ObjectsClientsHost(
     searchRequest: Int = 0,
     returnToProjectsRequest: Int = 0,
     requestedClientId: Long? = null,
-    onClientRequestConsumed: () -> Unit = {}
+    onClientRequestConsumed: () -> Unit = {},
+    onCalendarEdit: ((com.andreyceilings.shared.calendar.CalendarEditorRoute) -> Unit)? = null,
+    onProjectCalendar: ((String) -> Unit)? = null,
 ) {
     val context = LocalContext.current
     val fullscreen = measurementCreateNavigationGuard?.fullscreen?.collectAsState()?.value == true
@@ -86,6 +88,8 @@ internal fun ObjectsClientsHost(
         returnToProjectsRequest = returnToProjectsRequest,
         requestedClientId = requestedClientId,
         onClientRequestConsumed = onClientRequestConsumed,
+        onCalendarEdit = onCalendarEdit,
+        onProjectCalendar = onProjectCalendar,
         onOpenCeilingRegistry = onOpenCeilingRegistry,
         swipeState = swipeState,
         detailsProjectId = detailsProjectId,

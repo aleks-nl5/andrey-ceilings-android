@@ -1,5 +1,7 @@
 package com.andreyceilings.app
 
+import com.andreyceilings.shared.calendar.*
+
 import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
@@ -194,6 +196,23 @@ private fun CeilingsAppContent(
     var dashboardPreferences by remember(dashboardStorage) {
         mutableStateOf(DashboardPreferences.decode(dashboardStorage.getString("layout", null)))
     }
+    val calendarStore = remember(database) { database?.objectsClientsStore?.calendar }
+    val calendarStorage = remember(context) { context.getSharedPreferences("calendar_display", 0) }
+    var calendarMode by remember(calendarStorage) {
+        mutableStateOf(runCatching { CalendarDisplayMode.valueOf(calendarStorage.getString("mode", null).orEmpty()) }
+            .getOrDefault(CalendarDisplayMode.WEEK))
+    }
+    fun setCalendarMode(mode: CalendarDisplayMode) {
+        calendarMode = mode
+        calendarStorage.edit().putString("mode", mode.name).apply()
+    }
+    val firstWeekday = kotlinx.datetime.DayOfWeek.entries[(java.util.Calendar.getInstance().firstDayOfWeek + 5) % 7]
+    var calendarEditor by remember(database) { mutableStateOf<CalendarEditorRoute?>(null) }
+    var projectCalendar by remember(database) { mutableStateOf<String?>(null) }
+    var completionProject by remember(database) { mutableStateOf<String?>(null) }
+    var detachedCalendarWorks by remember(database) { mutableIntStateOf(0) }
+    val calendarWindow = DialogProperties(usePlatformDefaultWidth = false, dismissOnClickOutside = false,
+        decorFitsSystemWindows = false)
     val systemDarkTheme = isSystemInDarkTheme()
     val useDarkTheme = themeMode.usesDarkColors(systemDarkTheme)
 
@@ -714,6 +733,8 @@ private fun CeilingsAppContent(
                             returnToProjectsRequest = returnToProjectsRequest,
                             requestedClientId = requestedClientId,
                             onClientRequestConsumed = { requestedClientId = null },
+                            onCalendarEdit = { calendarEditor = it },
+                            onProjectCalendar = { projectCalendar = it },
                              onListTabChanged = { selected ->
                                  clientsBackToObjects = selected == com.andreyceilings.shared.objects.ObjectsClientsTab.CLIENTS
                                  objectsStartInClients = clientsBackToObjects
@@ -738,7 +759,9 @@ private fun CeilingsAppContent(
                             headerVisibleFraction = 1f - topAppBarScrollBehavior.state.collapsedFraction,
                             requestedQuote = requestedQuote, onQuoteRequestConsumed = { requestedQuote = null })
                         AppTab.PRICES -> PriceListScreen(database, darkTheme = useDarkTheme)
-                        AppTab.CALENDAR -> CalendarScreen(database)
+                        AppTab.CALENDAR -> WorkCalendarScreen(calendarStore, calendarMode, ::setCalendarMode,
+                            onEdit = { calendarEditor = it }, contentPadding = PaddingValues(top = topContentPadding, bottom = bottomContentPadding),
+                            systemFirstDay = firstWeekday)
                         else -> Unit
                     }
                 }
@@ -763,7 +786,8 @@ private fun CeilingsAppContent(
                             onObjects = { navigateTo(AppTab.OBJECTS) },
                             onClients = { navigateTo(AppTab.OBJECTS, clients = true) },
                             onEstimates = { openNested(AppTab.ESTIMATES) },
-                            onCalendar = { navigateTo(AppTab.CALENDAR) }
+                            onCalendar = { openNested(AppTab.CALENDAR) },
+                            onCalendarEdit = { calendarEditor = it }
                         )
                         AppTab.CALCULATOR -> CalculatorScreen(
                             database = database,
@@ -880,7 +904,9 @@ private fun CeilingsAppContent(
             // Android Dialog has its own window; opt into edge-to-edge so its
             // content receives the IME insets instead of being panned behind it.
             properties = DialogProperties(usePlatformDefaultWidth = false,
-                dismissOnClickOutside = false, decorFitsSystemWindows = false)
+                dismissOnClickOutside = false, decorFitsSystemWindows = false),
+            calendar = calendarStore,
+            onWork = { calendarEditor = CalendarEditorRoute.Open(it) },
         ) { hit ->
             openSearch = false
             val target = when (hit) {
@@ -910,6 +936,34 @@ private fun CeilingsAppContent(
                     updateNavigation(destination)
                 }
             }
+        }
+
+        if (calendarStore != null) {
+            projectCalendar?.let { projectUuid ->
+                androidx.compose.ui.window.Dialog(onDismissRequest = { projectCalendar = null }, properties = calendarWindow) {
+                    Box(Modifier.fillMaxSize().safeDrawingPadding().imePadding().padding(horizontal = 12.dp)) {
+                        WorkCalendarScreen(calendarStore, CalendarDisplayMode.LIST, {}, onEdit = { calendarEditor = it },
+                            contentPadding = PaddingValues(), systemFirstDay = firstWeekday, projectFilter = projectUuid,
+                            onClose = { projectCalendar = null })
+                    }
+                }
+            }
+            calendarEditor?.let { route ->
+                WorkEditor(calendarStore, route, onClose = { calendarEditor = null }, properties = calendarWindow,
+                    onSaved = { result, draft ->
+                        calendarEditor = null
+                        detachedCalendarWorks = result.detached
+                        if (result.installationCompleted) completionProject = draft.projectUuid
+                    })
+            }
+            CalendarSaveFeedback(detachedCalendarWorks, completionProject != null,
+                onDismiss = { completionProject = null; detachedCalendarWorks = 0 },
+                onComplete = {
+                    val project = completionProject
+                    completionProject = null
+                    detachedCalendarWorks = 0
+                    if (project != null) scope.launch { database?.objectsClientsStore?.completeCalendarProject(project) }
+                })
         }
 
         if (!isMeasurementEditOpen && !measurementFullscreen && !navigation.measurementProjectPicker) FloatingNavigationBar(

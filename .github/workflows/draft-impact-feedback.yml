@@ -106,6 +106,7 @@ jobs:
           --tests '*EstimateV22MigrationTest'
           --tests '*FrozenEstimateConcurrencyTest'
           --tests '*ConsolidatedEstimateRepositoryTest' --tests '*ConsolidatedMigrationTest'
+          --tests '*WorkRecurrenceTest' --tests '*CalendarRepositoryTest' --tests '*CalendarMigrationTest'
           --stacktrace --warning-mode all
       - name: Verify unsigned release candidate for trusted signing
         shell: bash

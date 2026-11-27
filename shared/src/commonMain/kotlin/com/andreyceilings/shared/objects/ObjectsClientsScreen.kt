@@ -107,6 +107,7 @@ import com.andreyceilings.shared.theme.ceilingsStatusColors
 import com.andreyceilings.shared.navigation.AppHeaderHeight
 import com.andreyceilings.shared.domain.ClientListEntry
 import com.andreyceilings.shared.domain.GlobalSearchResults
+import com.andreyceilings.shared.calendar.*
 import com.andreyceilings.shared.domain.ObjectsClientsSearch
 import com.andreyceilings.shared.domain.ProjectListEntry
 import com.andreyceilings.shared.domain.ProjectPaymentStatus
@@ -187,7 +188,9 @@ fun ObjectsClientsScreen(
     onOpenCeilingRegistry: (() -> Unit)? = null,
     returnToProjectsRequest: Int = 0,
     requestedClientId: Long? = null,
-    onClientRequestConsumed: () -> Unit = {}
+    onClientRequestConsumed: () -> Unit = {},
+    onCalendarEdit: ((CalendarEditorRoute) -> Unit)? = null,
+    onProjectCalendar: ((String) -> Unit)? = null,
 ) {
     val scope = rememberCoroutineScope()
     val focusManager = LocalFocusManager.current
@@ -588,6 +591,8 @@ fun ObjectsClientsScreen(
             onOpenMeasurement = { onOpenMeasurement(detailsProjectId, it) },
             onCreateMeasurement = { onCreateMeasurement(detailsProjectId) },
             onOpenCeilingRegistry = onOpenCeilingRegistry,
+            onCalendarEdit = onCalendarEdit,
+            onProjectCalendar = onProjectCalendar,
             onDial = onProjectDial,
             onOpenClient = { client -> message = null; viewedClientId = client.id },
             onBack = onCloseProject,
@@ -678,6 +683,7 @@ fun ObjectsClientsScreen(
         null -> Unit
     }
     deleting?.let { target ->
+        var calendarImpact by remember(target) { mutableStateOf<CalendarDeletionImpact?>(null) }
         val isClient = target is DeletionTarget.Client
         val name = when (target) {
             is DeletionTarget.Client -> target.item.name
@@ -695,6 +701,8 @@ fun ObjectsClientsScreen(
                         else Res.string.oc_delete_project_confirm, name))
                     // A failed delete must be visible here; a list-bottom
                     // message could be far offscreen after a long scroll.
+                    if (calendarImpact != null) Text(stringResource(if (isClient) Res.string.work_deletion_client
+                        else Res.string.work_deletion_project))
                     deletionError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                 }
             },
@@ -712,8 +720,20 @@ fun ObjectsClientsScreen(
                             scope.launch {
                                 try {
                                     when (target) {
-                                        is DeletionTarget.Client -> onDeleteClient(target.item.id)
-                                        is DeletionTarget.Project -> onDeleteProject(target.item.id)
+                                        is DeletionTarget.Client -> {
+                                            val confirmation = calendarImpact
+                                            if (confirmation == null) onDeleteClient(target.item.id)
+                                            else kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+                                                checkNotNull(detailsStore).deleteClient(target.item.id, confirmation)
+                                            }
+                                        }
+                                        is DeletionTarget.Project -> {
+                                            val confirmation = calendarImpact
+                                            if (confirmation == null) onDeleteProject(target.item.id)
+                                            else kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+                                                checkNotNull(detailsStore).deleteProject(target.item.id, confirmation)
+                                            }
+                                        }
                                     }
                                     message = null
                                     deletionError = null
@@ -721,6 +741,8 @@ fun ObjectsClientsScreen(
                                     deleting = null
                                 } catch (cancelled: CancellationException) {
                                     throw cancelled
+                                } catch (confirmation: CalendarDeletionConfirmationRequired) {
+                                    calendarImpact = confirmation.impact
                                 } catch (failure: Exception) {
                                     deletionError = failure.message ?: "Не вдалося видалити запис."
                                     // Keep the dialog open so the user sees the reason.

@@ -1,5 +1,7 @@
 package com.andreyceilings.shared.objects
 
+import com.andreyceilings.shared.calendar.*
+
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.gestures.awaitEachGesture
@@ -188,7 +190,9 @@ internal fun ProjectDetailsScreen(
     onOpenMeasurement: (Long) -> Unit = {},
     onCreateMeasurement: () -> Unit = {},
     onOpenCeilingRegistry: (() -> Unit)? = null,
-    swipeState: CardSwipeState = remember { CardSwipeState() }
+    swipeState: CardSwipeState = remember { CardSwipeState() },
+    onCalendarEdit: ((CalendarEditorRoute) -> Unit)? = null,
+    onProjectCalendar: ((String) -> Unit)? = null,
 ) {
     val flow = remember(store, projectId) {
         store?.observeProjectDetails(projectId)?.map<ProjectDetailsData, DetailsState> { DetailsState.Loaded(it) }
@@ -343,12 +347,14 @@ internal fun ProjectDetailsScreen(
     val approvedDeleteError = stringResource(Res.string.p6a_delete_ceiling_approved)
     val generalDeleteError = stringResource(Res.string.p6a_delete_ceiling_failed)
     deletingCeiling?.let { target ->
+        var calendarImpact by remember(target) { mutableStateOf<CalendarDeletionImpact?>(null) }
         AlertDialog(
             onDismissRequest = { if (!deletingBusy) deletingCeiling = null },
             title = { Text(stringResource(Res.string.p6a_delete_ceiling)) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(stringResource(Res.string.p6a_delete_ceiling_confirm, target.name))
+                    if (calendarImpact != null) Text(stringResource(Res.string.work_deletion_ceiling))
                     deleteError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                 }
             },
@@ -358,11 +364,12 @@ internal fun ProjectDetailsScreen(
                     deleteError = null
                     scope.launch {
                         try {
-                            checkNotNull(store).deleteCeiling(projectId, target.id, target.uuid)
+                            checkNotNull(store).deleteCeiling(projectId, target.id, target.uuid, calendarImpact)
                             deletingCeiling = null
                         } catch (cancelled: CancellationException) {
                             throw cancelled
-                        } catch (_: CeilingHasApprovedQuote) {
+                        } catch (confirmation: CalendarDeletionConfirmationRequired) { calendarImpact = confirmation.impact }
+                        catch (_: CeilingHasApprovedQuote) {
                             deleteError = approvedDeleteError
                         } catch (_: Exception) {
                             deleteError = generalDeleteError
@@ -574,6 +581,16 @@ internal fun ProjectDetailsScreen(
                         }
                         if (project.notes.isNotBlank()) item(key = "notes") {
                             DetailsCard("Примітки") { Text(project.notes, style = MaterialTheme.typography.bodyMedium) }
+                        }
+                        if (store != null && onCalendarEdit != null && onProjectCalendar != null) item(key = "calendar-works") {
+                            val uuid by produceState<String?>(null, store, projectId) {
+                                value = store.calendarProjectUuid(projectId)
+                            }
+                            uuid?.let { projectUuid ->
+                                ProjectCalendarWorks(store.calendar, projectUuid,
+                                    (finance as? ProjectFinanceState.Loaded)?.summary?.approvedCents != null,
+                                    onCalendarEdit, onProjectCalendar)
+                            }
                         }
                         item(key = "measurements-heading") {
                             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
