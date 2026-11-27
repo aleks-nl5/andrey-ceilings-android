@@ -126,6 +126,10 @@ class EncryptedBusinessRepositoriesIosTest {
                     assertEquals("Room", MeasurementRepository(db).forProject(projectId).single().name)
                     assertEquals(20.0, PriceRepository(db).all().single().price)
                     val estimateId = EstimateRepository(db).forProject(projectId).single().id
+                    assertFails { ProjectRepository(db).delete(projectId) }
+                    assertEquals(estimateId, EstimateRepository(db).find(estimateId)?.id)
+                    val measurements = MeasurementRepository(db)
+                    measurements.delete(measurements.forProject(projectId).single().id)
                     ProjectRepository(db).delete(projectId)
                     assertNull(EstimateRepository(db).find(estimateId))
                 } finally {

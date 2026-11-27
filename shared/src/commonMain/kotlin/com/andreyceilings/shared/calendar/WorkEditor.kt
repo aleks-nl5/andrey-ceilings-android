@@ -94,7 +94,8 @@ fun WorkEditor(
     var error by remember { mutableStateOf(false) }
     var scope by remember { mutableStateOf(CalendarEditScope.OCCURRENCE) }
     var conflict by remember { mutableStateOf<CalendarSaveResult.Conflicts?>(null) }
-    val move = (route as? CalendarEditorRoute.Open)?.move == true
+    val move = (route as? CalendarEditorRoute.Open)?.move == true &&
+        (input?.days?.size ?: 1) == 1
 
     LaunchedEffect(options != null, reload) {
         if (options == null) return@LaunchedEffect

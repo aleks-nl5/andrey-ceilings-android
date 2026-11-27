@@ -206,7 +206,7 @@ object MeasurementElementProof {
             PriceRepository(db).delete(catalogItem.id)
             await { rows -> rows.any { e -> e.uuid == selected.uuid &&
                 (e.source as? ElementSource.CatalogSelection)?.availability == CatalogAvailability.DELETED_OR_MISSING } }
-            ProjectRepository(db).delete(project)
+            db.businessSchemaQueries.deleteProject(project) // Reproduce a historical orphan.
             assertTrue(await { it.isEmpty() }.isEmpty())
         } finally { job.cancelAndJoin(); events.close() }
     }

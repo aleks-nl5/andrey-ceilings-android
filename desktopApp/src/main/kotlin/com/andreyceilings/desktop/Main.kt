@@ -184,9 +184,13 @@ private fun DesktopPriceHost(
         val calendar = remember(database) { objectsStore.calendar }
         var calendarOpen by remember(database) { mutableStateOf(false) }
         var calendarProject by remember(database) { mutableStateOf<String?>(null) }
-        var calendarMode by remember { mutableStateOf(CalendarDisplayMode.WEEK) }
+        val calendarPreferences = remember { java.util.prefs.Preferences.userNodeForPackage(DesktopPriceDatabase::class.java) }
+        var calendarMode by remember(calendarPreferences) {
+            mutableStateOf(runCatching { CalendarDisplayMode.valueOf(calendarPreferences.get("calendarDisplayMode", "WEEK")) }
+                .getOrDefault(CalendarDisplayMode.WEEK))
+        }
         var calendarEditor by remember(database) { mutableStateOf<CalendarEditorRoute?>(null) }
-        var completedProject by remember(database) { mutableStateOf<String?>(null) }
+        var completedProject by remember(database) { mutableStateOf<Pair<String, WorkOccurrenceKey>?>(null) }
         var detachedWork by remember(database) { mutableStateOf(0) }
         fun openExternal(url: String) {
             runCatching {
@@ -406,22 +410,23 @@ private fun DesktopPriceHost(
                 onDismissRequest = { calendarOpen = false },
                 properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false),
             ) {
-                WorkCalendarScreen(calendar, calendarMode, { calendarMode = it }, { calendarEditor = it },
-                    contentPadding = PaddingValues(16.dp), projectFilter = calendarProject,
+                WorkCalendarScreen(calendar, if (calendarProject == null) calendarMode else CalendarDisplayMode.LIST,
+                    onMode = { mode -> calendarMode = mode; calendarPreferences.put("calendarDisplayMode", mode.name) },
+                    onEdit = { calendarEditor = it }, contentPadding = PaddingValues(16.dp), projectFilter = calendarProject,
                     onClose = { calendarOpen = false })
             }
             calendarEditor?.let { route ->
                 WorkEditor(calendar, route, onClose = { calendarEditor = null }, onSaved = { result, draft ->
                     calendarEditor = null
                     detachedWork = result.detached
-                    if (result.installationCompleted) completedProject = draft.projectUuid
+                    if (result.installationCompleted) completedProject = draft.projectUuid?.let { it to result.key }
                 })
             }
             CalendarSaveFeedback(detachedWork, completedProject != null,
                 onDismiss = { completedProject = null; detachedWork = 0 },
                 onComplete = {
                     completedProject?.let { project ->
-                        scope.launch { objectsStore.completeCalendarProject(project) }
+                        scope.launch { runCatching { objectsStore.completeCalendarProject(project.first, project.second) } }
                     }
                     completedProject = null
                     detachedWork = 0

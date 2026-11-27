@@ -107,13 +107,21 @@ class ObjectsClientsStore(
         if (sessionClosed.value) null else projects.find(projectId)?.uuid
     }
 
-    suspend fun completeCalendarProject(uuid: String) = withContext(Dispatchers.Default) {
-        database.transaction {
-            database.workCalendarQueries.claimCalendarWrite()
-            val project = database.workCalendarQueries.selectCalendarDirectProject(uuid).executeAsOneOrNull()
-            if (project != null) projects.updateStatus(project.id, ProjectWorkStage.COMPLETED.wireId, nowMillis())
+    suspend fun completeCalendarProject(uuid: String, key: com.andreyceilings.shared.calendar.WorkOccurrenceKey): Boolean =
+        withContext(Dispatchers.Default) {
+            database.transactionWithResult {
+                if (sessionClosed.value) return@transactionWithResult false
+                database.workCalendarQueries.claimCalendarWrite()
+                val work = com.andreyceilings.shared.calendar.CalendarRepository(database, clock).exact(key)
+                    ?: return@transactionWithResult false
+                if (work.draft.projectUuid != uuid || work.draft.typeCode != "INSTALL" ||
+                    work.draft.status != com.andreyceilings.shared.calendar.WorkStatus.COMPLETED) return@transactionWithResult false
+                val project = database.workCalendarQueries.selectCalendarDirectProject(uuid).executeAsOneOrNull()
+                    ?: return@transactionWithResult false
+                projects.updateStatus(project.id, ProjectWorkStage.COMPLETED.wireId, nowMillis())
+                true
+            }
         }
-    }
 
     private val clients = ClientRepository(database)
     private val projects = ProjectRepository(database, clock)

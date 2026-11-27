@@ -58,6 +58,7 @@ CREATE TABLE calendar_rules (
     untilDay INTEGER,
     occurrenceCount INTEGER CHECK (occurrenceCount > 0),
     stopBeforeDay INTEGER,
+    identityShift INTEGER NOT NULL DEFAULT 0 CHECK (identityShift BETWEEN -3660000 AND 3660000),
     CHECK (untilDay IS NULL OR occurrenceCount IS NULL)
 );
 
@@ -198,8 +199,8 @@ deleteCalendarWork:
 UPDATE calendar_works SET deleted = 1 WHERE uuid = ? AND deleted = 0;
 
 setCalendarRule:
-INSERT INTO calendar_rules(workUuid,frequency,step,weekdays,monthDay,untilDay,occurrenceCount)
-VALUES (?, ?, ?, ?, ?, ?, ?);
+INSERT INTO calendar_rules(workUuid,frequency,step,weekdays,monthDay,untilDay,occurrenceCount,identityShift)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?);
 
 stopCalendarRule:
 UPDATE calendar_rules SET stopBeforeDay = ? WHERE workUuid = ?;

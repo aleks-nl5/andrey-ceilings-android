@@ -52,6 +52,38 @@ class CalendarRepositoryTest {
         assertNull(calendar.exact(key(5)))
     }
 
+    @Test fun earlierSeriesMoveKeepsBothSlotsAndTheirExactRoutes() = fixture { _, calendar ->
+        val first = saved(calendar.save(CalendarSave(draft(recurrence = WorkRecurrence(today, WorkFrequency.DAILY)))))
+        val future = WorkOccurrenceKey(first.rootUuid, today.shift(2))
+        val before = assertNotNull(calendar.exact(future))
+        val move = CalendarSave(before.draft.copy(date = today, recurrence = null, title = "Shifted series"),
+            future, before.version, CalendarEditScope.THIS_AND_FOLLOWING)
+        assertEquals(future, saved(calendar.save(move)))
+        val sameDay = calendar.period(WorkDateRange(today, today), zone)
+        assertEquals(setOf(first, future), sameDay.map { it.key }.toSet())
+        assertEquals("Service visit", calendar.exact(first)?.draft?.title)
+        assertEquals("Shifted series", calendar.exact(future)?.draft?.title)
+        assertEquals(today.shift(1), calendar.exact(WorkOccurrenceKey(first.rootUuid, today.shift(3)))?.draft?.date)
+    }
+
+    @Test fun incompatibleForwardRuleRetainsChangedWorkAndNeverRevivesATombstone() = fixture { _, calendar ->
+        val first = saved(calendar.save(CalendarSave(draft(recurrence = WorkRecurrence(today, WorkFrequency.DAILY)))))
+        fun key(offset: Int) = WorkOccurrenceKey(first.rootUuid, today.shift(offset))
+        val original = assertNotNull(calendar.exact(key(3)))
+        saved(calendar.save(CalendarSave(original.draft.copy(title = "Exception retained"), original.key, original.version)))
+        val deleted = assertNotNull(calendar.exact(key(4)))
+        assertTrue(calendar.delete(deleted.key, deleted.version, CalendarEditScope.OCCURRENCE))
+        val changed = assertNotNull(calendar.exact(key(1)))
+        val weekly = WorkRecurrence(changed.draft.date, WorkFrequency.WEEKLY)
+        val result = assertIs<CalendarSaveResult.Saved>(calendar.save(CalendarSave(
+            changed.draft.copy(recurrence = weekly), changed.key, changed.version, CalendarEditScope.THIS_AND_FOLLOWING)))
+        assertEquals(1, result.detached)
+        assertEquals("Exception retained", calendar.exact(original.key)?.draft?.title)
+        assertNull(calendar.exact(original.key)?.draft?.recurrence)
+        assertNull(calendar.exact(deleted.key))
+        assertEquals(original.key, calendar.search("Exception retained").single().key)
+    }
+
     @Test fun conflictsAreTimeBoundAndConfirmationRechecksFreshIntervals() = fixture { _, calendar ->
         val original = draft(timed = true)
         val key = saved(calendar.save(CalendarSave(original)))
@@ -85,7 +117,12 @@ class CalendarRepositoryTest {
         val objects = ObjectsClientsStore(db) { clock.now().toEpochMilliseconds() }
         assertFailsWith<IllegalStateException> { objects.deleteProject(projectId) }
         val ceiling = assertFailsWith<CalendarDeletionConfirmationRequired> { measurements.delete(ceilingId) }.impact
-        measurements.delete(ceilingId, ceiling)
+        val beforeRemoval = assertNotNull(calendar.exact(installation))
+        saved(calendar.save(CalendarSave(beforeRemoval.draft.copy(title = "Updated installation"), installation, beforeRemoval.version)))
+        val refreshed = assertFailsWith<CalendarDeletionConfirmationRequired> { measurements.delete(ceilingId, ceiling) }.impact
+        assertNotEquals(ceiling, refreshed)
+        assertNotNull(measurements.find(ceilingId))
+        measurements.delete(ceilingId, refreshed)
         val linked = assertNotNull(calendar.exact(installation))
         assertTrue(linked.draft.ceilings.single().removed)
         assertTrue(linked.draft.explicitCeilings)
@@ -99,6 +136,27 @@ class CalendarRepositoryTest {
         assertEquals("Site", cancelled.projectLabel)
         assertEquals(WorkStatus.CANCELLED, cancelled.draft.status)
         assertNull(calendar.exact(WorkOccurrenceKey(installation.rootUuid, today.shift(20))))
+    }
+
+    @Test fun confirmingAnExactCompletedInstallationUpdatesOnlyProjectWorkStage() = fixture { db, calendar ->
+        val projects = ProjectRepository(db, clock)
+        val projectId = projects.createReturningId(null, "Install location", createdAt = 33)
+        projects.updatePaymentStatus(projectId, "partial", updatedAt = 34)
+        val uuid = assertNotNull(projects.find(projectId)).uuid
+        val command = CalendarSave(draft().copy(projectUuid = uuid, typeCode = "INSTALL"))
+        val key = saved(calendar.save(command))
+        val objects = ObjectsClientsStore(db) { clock.now().toEpochMilliseconds() }
+        runBlocking {
+            assertFalse(objects.completeCalendarProject(uuid, key))
+            val fresh = assertNotNull(calendar.exact(key))
+            val result = assertIs<CalendarSaveResult.Saved>(calendar.save(CalendarSave(
+                fresh.draft.copy(status = WorkStatus.COMPLETED), key, fresh.version)))
+            assertTrue(result.installationCompleted)
+            assertEquals("measurement", projects.find(projectId)?.status)
+            assertTrue(objects.completeCalendarProject(uuid, key))
+            assertEquals("completed", projects.find(projectId)?.status)
+            assertEquals("partial", projects.find(projectId)?.paymentStatus)
+        }
     }
 
     @Test fun sessionCacheClearsWhenClosedAndFindsDistantWork() = fixture { db, calendar ->

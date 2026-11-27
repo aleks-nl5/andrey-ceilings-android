@@ -209,7 +209,7 @@ private fun CeilingsAppContent(
     val firstWeekday = kotlinx.datetime.DayOfWeek.entries[(java.util.Calendar.getInstance().firstDayOfWeek + 5) % 7]
     var calendarEditor by remember(database) { mutableStateOf<CalendarEditorRoute?>(null) }
     var projectCalendar by remember(database) { mutableStateOf<String?>(null) }
-    var completionProject by remember(database) { mutableStateOf<String?>(null) }
+    var completionProject by remember(database) { mutableStateOf<Pair<String, WorkOccurrenceKey>?>(null) }
     var detachedCalendarWorks by remember(database) { mutableIntStateOf(0) }
     val calendarWindow = DialogProperties(usePlatformDefaultWidth = false, dismissOnClickOutside = false,
         decorFitsSystemWindows = false)
@@ -953,7 +953,7 @@ private fun CeilingsAppContent(
                     onSaved = { result, draft ->
                         calendarEditor = null
                         detachedCalendarWorks = result.detached
-                        if (result.installationCompleted) completionProject = draft.projectUuid
+                        if (result.installationCompleted) completionProject = draft.projectUuid?.let { it to result.key }
                     })
             }
             CalendarSaveFeedback(detachedCalendarWorks, completionProject != null,
@@ -962,7 +962,9 @@ private fun CeilingsAppContent(
                     val project = completionProject
                     completionProject = null
                     detachedCalendarWorks = 0
-                    if (project != null) scope.launch { database?.objectsClientsStore?.completeCalendarProject(project) }
+                    if (project != null) scope.launch {
+                        runCatching { database?.objectsClientsStore?.completeCalendarProject(project.first, project.second) }
+                    }
                 })
         }
 

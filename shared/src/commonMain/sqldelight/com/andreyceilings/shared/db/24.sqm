@@ -58,6 +58,7 @@ CREATE TABLE calendar_rules (
     untilDay INTEGER,
     occurrenceCount INTEGER CHECK (occurrenceCount > 0),
     stopBeforeDay INTEGER,
+    identityShift INTEGER NOT NULL DEFAULT 0 CHECK (identityShift BETWEEN -3660000 AND 3660000),
     CHECK (untilDay IS NULL OR occurrenceCount IS NULL)
 );
 

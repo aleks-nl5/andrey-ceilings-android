@@ -87,7 +87,8 @@ class CalendarRepository(
             val start = since.shift(-2 - (record.row.lastDay - record.row.dateDay).toInt())
             val far = LocalDate(9999, 12, 31)
             val dynamic = if (record.draft.status.active) record.dates(WorkDateRange(start, far))
-                .filter { it.dayNumber() !in suppressed && it.dayNumber() !in reserved[record.row.rootUuid].orEmpty() }
+                .filter { it.dayNumber() !in suppressed &&
+                    record.identityDate(it).dayNumber() !in reserved[record.row.rootUuid].orEmpty() }
                 .map(record::toWork).filter { it.upcoming(now) }.take(limit).toList() else emptyList()
             dynamic + overrides.mapNotNull { hydrate(record, it, complete) }.filter { it.upcoming(now) }
         }
@@ -268,15 +269,13 @@ class CalendarRepository(
 
     private fun terminate(target: Located, cancelled: Boolean) {
         val segment = target.record.row.uuid
-        val affected = load(queries.selectCalendarWorksForRoot(target.work.key.rootUuid).executeAsList()
-            .filter { it.kind == "SEGMENT" && (it.uuid == segment || it.dateDay > target.scheduled.dayNumber()) }
-            .map { it.uuid })
+        val affected = followingSegments(target)
         for (item in affected.values) {
             val boundary = if (item.row.uuid == segment) target.scheduled else item.draft.date
             if (item.stop == null || item.stop > boundary) queries.stopCalendarRule(boundary.dayNumber(), item.row.uuid)
         }
         val records = queries.selectCalendarExceptionsForRoot(target.work.key.rootUuid).executeAsList()
-            .filter { !it.deleted.bool() && it.segmentUuid in affected && it.scheduledDay > target.scheduled.dayNumber() }
+            .filter { !it.deleted.bool() && it.segmentUuid in affected && it.originalDay > target.work.key.originalDate.dayNumber() }
         val loaded = load(records.mapNotNull { it.overrideUuid })
         for (record in records) {
             if (record.overrideUuid?.let(loaded::get)?.row?.kind == "SINGLE") continue
@@ -320,13 +319,11 @@ class CalendarRepository(
         val recurrence = draft.recurrence
         // A moved first occurrence keeps its old key. Later generated dates
         // occupy their own dates; an existing original key takes precedence.
+        val identityShift = (key.originalDate.dayNumber() - draft.date.dayNumber()).toInt()
+        val oldSegments = followingSegments(target)
         val next = if (recurrence != null) newRecordUuid().also {
-            persist(it, key.rootUuid, "SEGMENT", draft, null)
+            persist(it, key.rootUuid, "SEGMENT", draft, null, identityShift = identityShift)
         } else null
-        val oldSegments = load(queries.selectCalendarWorksForRoot(key.rootUuid).executeAsList()
-            .filter { it.kind == "SEGMENT" && it.uuid != next &&
-                (it.uuid == base.row.uuid || it.dateDay > target.scheduled.dayNumber()) }
-            .map { it.uuid })
         oldSegments.values.forEach {
             val boundary = if (it.row.uuid == base.row.uuid) target.scheduled else it.draft.date
             if (it.stop == null || it.stop > boundary) queries.stopCalendarRule(boundary.dayNumber(), it.row.uuid)
@@ -336,7 +333,7 @@ class CalendarRepository(
         val records = load(existing.mapNotNull { it.overrideUuid })
         val reserved = existing.mapTo(mutableSetOf()) { it.originalDay }
         var detached = 0
-        for (exception in existing.filter { it.segmentUuid in oldSegments && it.scheduledDay >= target.scheduled.dayNumber() }) {
+        for (exception in existing.filter { it.segmentUuid in oldSegments && it.originalDay >= key.originalDate.dayNumber() }) {
             if (exception.overrideUuid?.let(records::get)?.row?.kind == "SINGLE") continue
             val previousSegment = oldSegments.getValue(exception.segmentUuid)
             val prior = hydrate(previousSegment, exception, records)
@@ -348,12 +345,14 @@ class CalendarRepository(
                 continue
             }
             val scheduled = exception.scheduledDay.localDate()
-            val canMap = next != null && scheduled > draft.date && checkNotNull(recurrence).contains(scheduled)
+            val remapped = exception.originalDay.localDate().shift(-identityShift)
+            val canMap = next != null && remapped > draft.date && checkNotNull(recurrence).contains(remapped)
             if (canMap) {
-                queries.setCalendarException(key.rootUuid, exception.originalDay, exception.scheduledDay,
-                    checkNotNull(next), exception.overrideUuid, exception.fields, exception.deleted)
+                val moved = exception.copy(segmentUuid = checkNotNull(next), scheduledDay = remapped.dayNumber())
+                queries.setCalendarException(key.rootUuid, moved.originalDay, moved.scheduledDay,
+                    moved.segmentUuid, moved.overrideUuid, moved.fields, moved.deleted)
                 if (exception.overrideUuid != null && !exception.deleted.bool()) {
-                    val inherited = checkNotNull(hydrate(checkNotNull(nextRecord), exception, records))
+                    val inherited = checkNotNull(hydrate(checkNotNull(nextRecord), moved, records))
                     persist(exception.overrideUuid, key.rootUuid, "OVERRIDE", inherited.draft.copy(recurrence = null),
                         inherited, update = true)
                 }
@@ -369,6 +368,12 @@ class CalendarRepository(
         }
         return CalendarSaveResult.Saved(key, detached)
     }
+
+    private fun followingSegments(target: Located): Map<String, WorkRecord> =
+        load(queries.selectCalendarWorksForRoot(target.work.key.rootUuid).executeAsList()
+            .filter { it.kind == "SEGMENT" }.map { it.uuid }).filterValues {
+            it.row.uuid == target.record.row.uuid || it.identityDate(it.draft.date) > target.work.key.originalDate
+        }
 
     private fun makeStandalone(target: Located, draft: CalendarWorkDraft) {
         val key = target.work.key
@@ -402,12 +407,15 @@ class CalendarRepository(
             val detached = exception.overrideUuid?.let(records::get)?.takeIf { it.row.kind == "SINGLE" }
             return Located(detached ?: segment, exception.scheduledDay.localDate(), exception, work)
         }
-        val record = ids.asSequence().map(records::getValue).firstOrNull {
-            (if (it.rule == null) it.row.uuid == it.row.rootUuid && it.row.originalDay.localDate() == key.originalDate else it.includes(key.originalDate)) && exceptions.none { ex ->
-                ex.segmentUuid == it.row.uuid && ex.scheduledDay == key.originalDate.dayNumber()
-            }
+        val match = ids.asSequence().map(records::getValue).map { record ->
+            record to record.scheduledDate(key.originalDate)
+        }.firstOrNull { (record, scheduled) ->
+            val matches = if (record.rule == null) record.row.uuid == record.row.rootUuid &&
+                record.row.originalDay.localDate() == key.originalDate else record.includes(scheduled)
+            matches && exceptions.none { it.segmentUuid == record.row.uuid && it.scheduledDay == scheduled.dayNumber() }
         } ?: return null
-        return Located(record, key.originalDate, null, record.toWork(if (record.rule == null) record.draft.date else key.originalDate))
+        val (record, scheduled) = match
+        return Located(record, scheduled, null, record.toWork(if (record.rule == null) record.draft.date else scheduled))
     }
 
     private fun readPeriod(range: WorkDateRange, zone: TimeZone): List<CalendarWork> {
@@ -420,15 +428,18 @@ class CalendarRepository(
         }
         val records = base + load(exceptions.mapNotNull { it.overrideUuid })
         val bySegment = exceptions.groupBy { it.segmentUuid }
+        val reservedFrom = base.values.minOfOrNull { it.identityDate(from.shift(-365)) } ?: from
+        val reservedThrough = base.values.maxOfOrNull { it.identityDate(through) } ?: through
         val reserved = base.values.map { it.row.rootUuid }.distinct().chunked(250).flatMap {
-            queries.selectCalendarReservedKeys(it, from.shift(-365).dayNumber(), through.dayNumber()).executeAsList()
+            queries.selectCalendarReservedKeys(it, reservedFrom.dayNumber(), reservedThrough.dayNumber()).executeAsList()
         }.groupBy { it.rootUuid }.mapValues { (_, rows) -> rows.mapTo(mutableSetOf()) { it.originalDay } }
         return (ids.flatMap { id ->
             val row = base.getValue(id)
             val overrides = bySegment[id].orEmpty()
             val suppressed = overrides.mapTo(mutableSetOf()) { it.scheduledDay }
             val dates = row.dates(WorkDateRange(from.shift(-(row.row.lastDay - row.row.dateDay).toInt()), through))
-            dates.filter { it.dayNumber() !in suppressed && it.dayNumber() !in reserved[row.row.rootUuid].orEmpty() }
+            dates.filter { it.dayNumber() !in suppressed &&
+                row.identityDate(it).dayNumber() !in reserved[row.row.rootUuid].orEmpty() }
                 .map(row::toWork).toList() + overrides.mapNotNull { hydrate(row, it, records) }
         }).filter { work -> work.displayDates(zone).any { it in range } }.distinctBy { it.key }.sortedWith(workOrder)
     }
@@ -492,7 +503,8 @@ class CalendarRepository(
                 ceilings[row.uuid].orEmpty().map { WorkCeiling(it.ceilingUuid, it.label, it.removed.bool()) },
                 row.explicitCeilings.bool(), rule,
             )
-            row.uuid to WorkRecord(row, draft, rule, persistedRule?.stopBeforeDay?.localDate())
+            row.uuid to WorkRecord(row, draft, rule, persistedRule?.stopBeforeDay?.localDate(),
+                persistedRule?.identityShift?.toInt() ?: 0)
         }
     }.toMap()
 
@@ -534,7 +546,7 @@ class CalendarRepository(
 
     private fun persist(
         uuid: String, root: String, kind: String, draft: CalendarWorkDraft,
-        prior: CalendarWork?, update: Boolean = false,
+        prior: CalendarWork?, update: Boolean = false, identityShift: Int = 0,
     ) {
         val project = draft.projectUuid?.let { queries.selectCalendarDirectProject(it).executeAsOneOrNull() }
         val client = if (draft.clientUuid != null) queries.selectCalendarDirectClient(draft.clientUuid).executeAsOneOrNull()
@@ -565,7 +577,7 @@ class CalendarRepository(
         draft.recurrence?.let { rule ->
             require(rule.anchor == draft.date)
             queries.setCalendarRule(uuid, rule.frequency.name, rule.step.toLong(), rule.weekdays.mask(),
-                rule.monthDay.toLong(), rule.until?.dayNumber(), rule.count?.toLong())
+                rule.monthDay.toLong(), rule.until?.dayNumber(), rule.count?.toLong(), identityShift.toLong())
         }
     }
 
@@ -588,7 +600,10 @@ class CalendarRepository(
             lastProposed else end
         val root = target?.work?.key?.rootUuid ?: ""
         val proposed = proposedDates.flatMap { date ->
-            val key = if (date == draft.date && target != null) target.work.key else WorkOccurrenceKey(root, date)
+            val key = if (target == null) WorkOccurrenceKey(root, date) else {
+                val shift = (target.work.key.originalDate.dayNumber() - draft.date.dayNumber()).toInt()
+                WorkOccurrenceKey(root, date.shift(shift))
+            }
             draft.schedule.on(date).mapNotNull { it.interval?.let { interval -> key to interval } }
         }
         if (proposed.isEmpty()) return emptySet<CalendarConflict>() to checkedThrough
@@ -600,7 +615,7 @@ class CalendarRepository(
         val others = readPeriod(WorkDateRange(first.shift(-2), last.shift(2)), zone).filter { work ->
             if (!work.draft.status.active || work.key == target?.work?.key) false
             else if (target == null || target.record.rule == null || command.scope != CalendarEditScope.THIS_AND_FOLLOWING ||
-                work.key.rootUuid != root || work.key.originalDate < target.scheduled) true
+                work.key.rootUuid != root || work.key.originalDate < target.work.key.originalDate) true
             else exceptions[work.key.originalDate.dayNumber()]?.overrideUuid != null
         }.flatMap { work -> work.days.mapNotNull { day -> day.interval?.let { work.key to it } } }
         val entries = (proposed.map { (key, interval) -> ConflictInterval(key, interval, true) } +
@@ -628,11 +643,14 @@ private data class Located(val record: WorkRecord, val scheduled: LocalDate, val
 
 private data class WorkRecord(
     val row: SelectCalendarDetails, val draft: CalendarWorkDraft, val rule: WorkRecurrence?, val stop: LocalDate?,
+    val identityShift: Int,
 ) {
     val liveContact get() = if (row.frozen.bool()) WorkContact()
         else WorkContact(row.liveAddress, row.liveName, row.livePhone, row.liveEmail)
 
-    fun toWork(date: LocalDate): CalendarWork = toWork(date, if (rule == null) row.originalDay.localDate() else date)
+    fun identityDate(scheduled: LocalDate): LocalDate = scheduled.shift(identityShift)
+    fun scheduledDate(identity: LocalDate): LocalDate = identity.shift(-identityShift)
+    fun toWork(date: LocalDate): CalendarWork = toWork(date, if (rule == null) row.originalDay.localDate() else identityDate(date))
     fun toWork(date: LocalDate, identity: LocalDate): CalendarWork = CalendarWork(
         WorkOccurrenceKey(row.rootUuid, identity), row.version, draft.copy(date = date),
         if (row.frozen.bool()) row.projectLabel else row.liveProjectLabel, draft.contactOverrides.over(liveContact)

@@ -64,4 +64,4 @@ fun verifyCalendarContents(driver: SqlDriver) {
     }, 0).value
 }
 
-private const val CALENDAR_V25_SIGNATURE = "03d3865ae625e40c612785930a94761517a8cc1d4489cfa16390d2a995ce0983"
+private const val CALENDAR_V25_SIGNATURE = "d247505222fc6bc01855b1c9c9e1924be9c20efeac1d2b88ee1e7ab3b6702750"

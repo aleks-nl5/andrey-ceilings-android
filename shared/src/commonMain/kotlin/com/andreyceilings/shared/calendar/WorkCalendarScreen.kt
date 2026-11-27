@@ -131,7 +131,7 @@ fun WorkCalendarScreen(
                             Icon(Icons.Default.Add, stringResource(Res.string.work_add))
                         }
                     }
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    if (projectFilter == null) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         CalendarDisplayMode.entries.forEach {
                             FilterChip(selected = mode == it, onClick = { onMode(it) },
                                 label = { Text(stringResource(it.label())) })
