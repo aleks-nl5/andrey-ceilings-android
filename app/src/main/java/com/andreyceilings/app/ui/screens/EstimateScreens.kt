@@ -1,13 +1,7 @@
 package com.andreyceilings.app.ui.screens
 
 import com.andreyceilings.app.ui.theme.AppAlertDialog
-import com.andreyceilings.shared.ui.CeilingsPopupMenu
-import com.andreyceilings.shared.resources.Res
-import com.andreyceilings.shared.resources.p6c_project
-import com.andreyceilings.shared.resources.p6c_choose_project
-import org.jetbrains.compose.resources.stringResource
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowDropDown
+import com.andreyceilings.shared.ui.CeilingsProjectPicker
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -49,23 +43,12 @@ internal fun SaveEstimateDialog(
 ) {
     var selectedProjectId by remember(projects) { mutableLongStateOf(projects.first().id) }
     var name by remember(defaultName) { mutableStateOf(defaultName) }
-    var expanded by remember { mutableStateOf(false) }
     AppAlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Зберегти кошторис") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text(stringResource(Res.string.p6c_project), style = MaterialTheme.typography.labelMedium)
-                Box(Modifier.fillMaxWidth()) {
-                    OutlinedButton(onClick = { expanded = true }, modifier = Modifier.fillMaxWidth()) {
-                        Text(projects.firstOrNull { it.id == selectedProjectId }?.title ?: stringResource(Res.string.p6c_choose_project),
-                            Modifier.weight(1f), maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
-                        Icon(Icons.Default.ArrowDropDown, null, Modifier.size(18.dp))
-                    }
-                    CeilingsPopupMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-                        projects.forEach { project -> DropdownMenuItem(text = { Text(project.title) }, onClick = { selectedProjectId = project.id; expanded = false }) }
-                    }
-                }
+                CeilingsProjectPicker(projects.map { it.id to it.title }, selectedProjectId) { selectedProjectId = it }
                 OutlinedTextField(name, { name = it }, keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(capitalization = androidx.compose.ui.text.input.KeyboardCapitalization.Sentences), label = { Text("Назва кімнати / кошторису") }, singleLine = true)
             }
         },

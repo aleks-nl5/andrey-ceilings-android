@@ -117,4 +117,5 @@
     <string name="work_invalid_title">Введіть назву роботи.</string>
     <string name="work_invalid_project">Оберіть об’єкт для монтажу.</string>
     <string name="work_invalid_time">Час завершення має бути пізніше початку.</string>
+    <string name="work_reload_discard">Перезавантажити роботу й відкинути незбережені зміни?</string>
 </resources>

@@ -100,7 +100,10 @@ fun WorkEditor(
     onRegistryTarget: ((GlobalRegistryTarget) -> Unit)? = null,
 ) = key(store, route) {
     var reload by remember { mutableIntStateOf(0) }
-    val optionsRead = key(reload) { calendarOptionsState(store) }
+    var optionsRetry by remember { mutableIntStateOf(0) }
+    var loadedRevision by remember { mutableIntStateOf(-1) }
+    var confirmReload by remember { mutableStateOf(false) }
+    val optionsRead = key(optionsRetry) { calendarOptionsState(store) }
     val options = optionsRead.data()
     val lifecycleScope = rememberCoroutineScope()
     var editing by remember { mutableStateOf(route is CalendarEditorRoute.Create || (route as? CalendarEditorRoute.Open)?.edit == true || (route as? CalendarEditorRoute.Open)?.move == true) }
@@ -127,7 +130,7 @@ fun WorkEditor(
         (input?.days?.size ?: 1) == 1
 
     LaunchedEffect(options != null, reload) {
-        if (options == null) return@LaunchedEffect
+        if (options == null || loadedRevision == reload) return@LaunchedEffect
         try {
             val draft = when (route) {
                 is CalendarEditorRoute.Open -> {
@@ -152,6 +155,7 @@ fun WorkEditor(
             val data = WorkInput.from(draft, options.types.firstOrNull { it.code == draft.typeCode }?.durationMinutes ?: 60)
             initial = data
             input = data
+            loadedRevision = reload
             stale = false
             error = false
             invalidDay = null
@@ -162,9 +166,14 @@ fun WorkEditor(
     }
 
     fun requestClose() {
-        if (!busy) {
+        if (!busy && !linkBusy) {
             if (input != initial) discarding = true else onClose()
         }
+    }
+    fun requestReload() {
+        if (optionsRead is CalendarRead.Unavailable) optionsRetry++
+        else if (stale && input != initial) confirmReload = true
+        else reload++
     }
     val recurring = original?.let { work ->
         val now = Clock.System.now()
@@ -203,7 +212,7 @@ fun WorkEditor(
 
     fun save(confirmation: CalendarConflictConfirmation? = null) {
         val valid = draft ?: return
-        if (busy || invalidDay != null) return
+        if (busy || linkBusy || invalidDay != null || optionsRead is CalendarRead.Unavailable) return
         busy = true
         error = false
         lifecycleScope.launch {
@@ -270,11 +279,11 @@ fun WorkEditor(
                         error -> Res.string.work_save_failed
                         else -> Res.string.work_invalid
                     })
-                    if (stale) TextButton(onClick = { reload++ }) { Text(stringResource(Res.string.work_reload)) }
+                    if (stale || optionsRead is CalendarRead.Unavailable) TextButton(onClick = ::requestReload) { Text(stringResource(Res.string.work_reload)) }
                 }
             },
             confirmButton = {
-                TextButton(onClick = { save() }, enabled = !stale && draft != null && !invalidTime && !busy) {
+                TextButton(onClick = { save() }, enabled = !stale && draft != null && !invalidTime && !busy && optionsRead !is CalendarRead.Unavailable) {
                     Text(stringResource(Res.string.oc_save))
                 }
             },
@@ -304,7 +313,7 @@ fun WorkEditor(
                                     com.andreyceilings.shared.ui.ContextFeedbackKind.WARNING
                                 else com.andreyceilings.shared.ui.ContextFeedbackKind.ERROR)
                             }
-                            if (stale || loadFailed || optionsRead is CalendarRead.Unavailable) IconButton(onClick = { reload++ }) {
+                            if (stale || loadFailed || optionsRead is CalendarRead.Unavailable) IconButton(onClick = ::requestReload, enabled = !busy && !linkBusy) {
                                 Icon(Icons.Default.Refresh, stringResource(Res.string.work_reload))
                             }
                         }
@@ -534,6 +543,11 @@ fun WorkEditor(
             }, onCreateClient = { value -> withContext(Dispatchers.Default) { registry.saveClient(null, value) } })
     }
 
+    if (confirmReload) AlertDialog(onDismissRequest = { confirmReload = false },
+        title = { Text(stringResource(Res.string.work_reload_discard)) },
+        dismissButton = { TextButton(onClick = { confirmReload = false; reload++ }) {
+            Text(stringResource(Res.string.work_discard), color = MaterialTheme.colorScheme.error)
+        } }, confirmButton = { TextButton(onClick = { confirmReload = false }) { Text(stringResource(Res.string.p5d_cancel)) } })
     if (discarding) AlertDialog(onDismissRequest = { discarding = false },
         title = { Text(stringResource(Res.string.work_exit_title)) },
         confirmButton = { TextButton(onClick = { discarding = false }) { Text(stringResource(Res.string.p5d_cancel)) } },
