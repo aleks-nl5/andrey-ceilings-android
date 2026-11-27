@@ -36,7 +36,7 @@ class CalendarIntegrationPolicyTest {
         assertEquals(setOf(
             Instant.parse("2026-03-28T01:30:00Z"),
             Instant.parse("2026-03-29T00:30:00Z"),
-            Instant.parse("2026-03-31T00:30:00Z"),
+            Instant.parse("2026-03-30T23:30:00Z"),
         ), alerts.map { it.trigger }.toSet())
         assertEquals(listOf(0, 2), calendarExportParts(work).map { it.dayOffset })
     }

@@ -167,6 +167,8 @@ internal class AndroidSystemCalendar(
                 }.build()
                 val projection = arrayOf(Instances.BEGIN, Instances.END, Instances.ALL_DAY, Instances.EVENT_ID,
                     Instances.AVAILABILITY, Instances.STATUS, Instances.CALENDAR_ID)
+                val owned = mappings().filter { it.mode == "managed" && it.encoded !in state.leaving }
+                    .associateBy { it.eventId to it.calendarId }
                 val rows = checkNotNull(resolver.query(uri, projection,
                     "${Instances.CALENDAR_ID} IN (${ids.joinToString(",") { "?" }})",
                     ids.map(Long::toString).toTypedArray(), null)).use { cursor ->
@@ -175,7 +177,7 @@ internal class AndroidSystemCalendar(
                             if (cursor.isNull(4)) return@withContext CalendarAvailability.Unknown
                             if (cursor.getInt(4) == Events.AVAILABILITY_FREE || cursor.getInt(5) == Events.STATUS_CANCELED) continue
                             val eventId = cursor.getLong(3)
-                            if (isOwnedManagedRow(eventId, cursor.getLong(6))) continue
+                            if (owned[eventId to cursor.getLong(6)]?.let(::isOwnedManagedRow) == true) continue
                             val allDay = cursor.getInt(2) == 1
                             val start = Instant.fromEpochMilliseconds(cursor.getLong(0))
                             val finish = Instant.fromEpochMilliseconds(cursor.getLong(1))
@@ -452,11 +454,10 @@ internal class AndroidSystemCalendar(
             }
         }
 
-    private fun isOwnedManagedRow(id: Long, calendar: Long): Boolean {
-        val mapping = mappings().firstOrNull { it.eventId == id && it.calendarId == calendar &&
-            it.mode == "managed" && it.encoded !in state.leaving } ?: return false
-        val row = row(id) ?: return false
-        return !row.deleted && row.marker == mapping.marker && mapping.marker.endsWith("/${state.calendarOwner}")
+    private fun isOwnedManagedRow(mapping: Mapping): Boolean {
+        val row = row(mapping.eventId) ?: return false
+        return !row.deleted && row.calendarId == mapping.calendarId && row.marker == mapping.marker &&
+            mapping.marker.endsWith("/${state.calendarOwner}")
     }
 
     private data class Mapping(val identity: String, val eventId: Long, val key: WorkOccurrenceKey,

@@ -15,6 +15,8 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.andreyceilings.shared.calendar.*
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.datetime.TimeZone
 import kotlin.time.Instant
 
@@ -92,7 +94,7 @@ internal fun AndroidCalendarIntegrationHost(store: CalendarStore?, content: @Com
 
             override fun retry() = refresh()
             override suspend fun remindersChanged() {
-                CalendarReminderRuntime.reconcile(app)
+                withContext(Dispatchers.IO) { CalendarReminderRuntime.reconcile(app) }
                 refresh()
             }
             override suspend fun choices() = system.choices().map { CalendarDestinationChoice(it.identity, it.label, it.writable) }

@@ -30,7 +30,7 @@ import org.jetbrains.compose.resources.stringResource
 
 @Composable
 fun CalendarAndNotificationSettings(
-    store: CalendarStore?, showWeekNumbers: Boolean, onShowWeekNumbersChange: (Boolean) -> Unit,
+    store: CalendarStore?, showWeekNumbers: Boolean, onShowWeekNumbersChange: ((Boolean) -> Unit)?,
 ) {
     var open by remember(store) { mutableStateOf(false) }
     OutlinedButton(onClick = { open = !open }, enabled = store != null, modifier = Modifier.fillMaxWidth()) {

@@ -1,6 +1,6 @@
 package com.andreyceilings.shared.calendar
 
-import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.runtime.compositionLocalOf
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
 import kotlin.time.Duration.Companion.nanoseconds
@@ -36,7 +36,7 @@ interface CalendarIntegrationPlatform {
     suspend fun availability(range: WorkDateRange, zone: TimeZone): CalendarAvailability
 }
 
-val LocalCalendarIntegrationPlatform = staticCompositionLocalOf<CalendarIntegrationPlatform?> { null }
+val LocalCalendarIntegrationPlatform = compositionLocalOf<CalendarIntegrationPlatform?> { null }
 
 internal suspend fun externalConflictSnapshot(
     platform: CalendarIntegrationPlatform?, store: CalendarStore, command: CalendarSave,

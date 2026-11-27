@@ -177,7 +177,7 @@ internal object CalendarReminderRuntime {
         val snapshot = store.integrationSnapshot()
         if (!work.draft.status.active || !snapshot.settings.remindersEnabled ||
             fromAlert != null && (fromAlert !in state.visible || !isAlertCurrent(fromAlert, work, snapshot))) return@withLock false
-        val id = "${key.deviceKey()}/-1/${at.toEpochMilliseconds()}/${work.version}"
+        val id = "${key.deviceKey()}/-1/${at.toEpochMilliseconds()}/${snoozeFingerprint(work)}"
         ProductionDatabaseGate.read {
             if (state.paused || state.generation != generation) return@read false
             val previous = state.snoozes.filter { decode(it)?.key == key }.toSet()
@@ -309,23 +309,30 @@ internal object CalendarReminderRuntime {
         isSnoozeFor(id, work) || calendarReminders(work, policy.rules(work)).any { encode(it, work) == id }
 
     private fun isSnoozeFor(id: String, work: CalendarWork) =
-        decode(id)?.let { it.offset == -1 && it.version == work.version } == true
+        decode(id)?.let { it.offset == -1 && it.signature == snoozeFingerprint(work) } == true
 
-    private data class Alarm(val key: WorkOccurrenceKey, val offset: Int, val whenAt: Instant, val version: Long?)
+    private data class Alarm(val key: WorkOccurrenceKey, val offset: Int, val whenAt: Instant, val signature: String?)
 
     private fun encode(alert: PlannedReminder, work: CalendarWork): String {
         val schedule = "${work.draft.date}|${work.draft.schedule}|${work.draft.typeCode}"
-        val fingerprint = MessageDigest.getInstance("SHA-256").digest(schedule.toByteArray())
-            .take(16).joinToString("") { "%02x".format(it) }
-        return "${alert.key.deviceKey()}/${alert.dayOffset}/${alert.trigger.toEpochMilliseconds()}/$fingerprint"
+        return "${alert.key.deviceKey()}/${alert.dayOffset}/${alert.trigger.toEpochMilliseconds()}/${fingerprint(schedule)}"
     }
+
+    private fun snoozeFingerprint(work: CalendarWork) = fingerprint(
+        // A different occurrence may advance the shared root revision. Preserve a snooze
+        // when the effective occurrence is still identical.
+        "${work.key.deviceKey()}|${work.draft}",
+    )
+
+    private fun fingerprint(value: String) = MessageDigest.getInstance("SHA-256").digest(value.toByteArray())
+        .take(16).joinToString("") { "%02x".format(it) }
 
     private fun encodeMaintenance(at: Instant) = "$MAINTENANCE/${at.toEpochMilliseconds()}"
 
     private fun decode(id: String): Alarm? = runCatching {
         val parts = id.split('/')
         val key = checkNotNull(parseWorkDeviceKey(parts.take(2).joinToString("/")))
-        Alarm(key, parts[2].toInt(), Instant.fromEpochMilliseconds(parts[3].toLong()), parts.getOrNull(4)?.toLongOrNull())
+        Alarm(key, parts[2].toInt(), Instant.fromEpochMilliseconds(parts[3].toLong()), parts.getOrNull(4))
     }.getOrNull()
 
     private fun payload(id: String, generation: String, action: String) =
