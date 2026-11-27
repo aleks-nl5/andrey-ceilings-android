@@ -1,6 +1,12 @@
 package com.andreyceilings.app.data.db
 
 import android.content.Context
+import com.andreyceilings.app.calendar.AndroidSystemCalendar
+import com.andreyceilings.app.calendar.CalendarDeviceState
+import com.andreyceilings.app.calendar.CalendarReminderRuntime
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import app.cash.sqldelight.Query
 import app.cash.sqldelight.db.QueryResult
 import app.cash.sqldelight.db.SqlDriver
@@ -42,6 +48,27 @@ internal class CeilingsDatabase private constructor(
     fun estimateNumberSettings() = numberingSettingsDao
 
     val changeTracker = SqlDelightChangeTracker(database)
+
+    private fun watchCalendarIntegrations(context: Context) {
+        // This subscription follows the encrypted session, including background writers.
+        objectsClientsStore.calendar.observeIntegrationChanges {
+            withContext(Dispatchers.IO) {
+                val state = CalendarDeviceState(context)
+                if (state.remindersRequested || state.visible.isNotEmpty()) {
+                    // Schedule independently before refreshing sensitive notifications immediately.
+                    runCatching { CalendarReminderRuntime.enqueue(context) }
+                    try {
+                        CalendarReminderRuntime.reconcile(context)
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (_: Exception) {
+                        // The runtime already redacted the failing projection; WorkManager retries.
+                    }
+                }
+                if (state.destination != null) runCatching { AndroidSystemCalendar.enqueue(context) }
+            }
+        }
+    }
 
     override fun close() {
         // The production restore gate has drained every outer pricing transaction before this call.
@@ -162,7 +189,10 @@ internal class CeilingsDatabase private constructor(
 
         fun get(context: Context): CeilingsDatabase = ProductionDatabaseGate.read {
             synchronized(this) {
-                INSTANCE ?: build(context.applicationContext).also { INSTANCE = it }
+                INSTANCE ?: build(context.applicationContext).also {
+                    INSTANCE = it
+                    it.watchCalendarIntegrations(context.applicationContext)
+                }
             }
         }
 

@@ -7,6 +7,9 @@ internal data class ProviderCalendarEvent(
     val deleted: Boolean,
 )
 
+internal fun matchesOwnedRow(row: ProviderCalendarEvent, calendarId: Long, marker: String): Boolean =
+    row.calendarId == calendarId && row.marker == marker
+
 /** A missing row may be repaired, whereas an occupied or ambiguous ID must fail closed. */
 internal fun verifiedExportEvent(
     calendarId: Long,

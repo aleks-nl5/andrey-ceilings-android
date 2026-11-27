@@ -24,8 +24,6 @@ import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import com.andreyceilings.app.R
-import com.andreyceilings.app.data.db.CeilingsDatabase
-import com.andreyceilings.app.data.db.ProductionDatabaseGate
 import com.andreyceilings.shared.calendar.*
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -99,9 +97,12 @@ internal class AndroidSystemCalendar(
 
     suspend fun selectDestination(identity: String, move: Boolean) = operations.withLock {
         withContext(Dispatchers.IO) {
-            requireDestination(identity)
-            check(!move || state.previousDestination == null)
-            state.changeDestination(identity, move)
+            withCalendarEffects(context, isolatedStore) {
+                requireDestination(identity)
+                check(!move || !state.paused && state.previousDestination == null)
+                if (move) recoverPendingInserts()
+                state.changeDestination(identity, move)
+            }
             invalidate()
             enqueueLiveStore()
         }
@@ -203,95 +204,166 @@ internal class AndroidSystemCalendar(
 
     suspend fun confirmRestore() = operations.withLock {
         withContext(Dispatchers.IO) {
-            val known = state.busyCalendars + listOfNotNull(state.destination, state.previousDestination)
-            if (known.isNotEmpty()) {
-                check(canRead && calendars().map { it.identity }.containsAll(known))
-                state.destination?.let { requireDestination(it) }
-                state.previousDestination?.let { requireDestination(it) }
-                for (mapping in mappings().filter { it.mode == "managed" && it.encoded !in state.leaving }) {
-                    val row = row(mapping.eventId)
-                    check(row == null || row.calendarId == mapping.calendarId && row.marker == mapping.marker)
+            withCalendarEffects(context, isolatedStore) {
+                val known = state.busyCalendars + listOfNotNull(state.destination, state.previousDestination)
+                if (known.isNotEmpty()) {
+                    check(canRead && calendars().map { it.identity }.containsAll(known))
+                    state.destination?.let { requireDestination(it) }
+                    state.previousDestination?.let { requireDestination(it) }
                 }
+                recoverPendingInserts()
+                for (mapping in mappings().filter { it.mode == "managed" && it.encoded !in state.leaving }) {
+                    val event = row(mapping.eventId)
+                    check(event == null || event.calendarId == mapping.calendarId && event.marker == mapping.marker)
+                }
+                state.resumeAfterRestore()
             }
-            state.resumeAfterRestore()
             invalidate()
-            CalendarReminderRuntime.enqueue(context)
-            enqueue(context)
+            if (isolatedStore == null) CalendarReminderRuntime.enqueue(context)
+            enqueueLiveStore()
         }
     }
 
-    suspend fun manualExport(key: WorkOccurrenceKey, version: Long, managed: Boolean) = operations.withLock {
+    suspend fun manualExport(key: WorkOccurrenceKey, version: Long, managed: Boolean,
+        confirmation: CalendarExportConfirmation? = null): CalendarManualExportResult = operations.withLock {
         withContext(Dispatchers.IO) {
-            val generation = state.generation
-            check(!state.paused)
-            val destination = requireDestination(state.destination)
-            val store = store()
-            val work = checkNotNull(store.exact(key))
-            check(work.version == version && work.draft.status.active)
-            val plan = store.integrationPlan(work.draft.date, work.draft.date, work.draft.schedule.zone, false)
-            if (managed) {
-                check(store.setManagedExport(key, version))
-                state.save("manual_after_disable", state.values("manual_after_disable") + key.deviceKey())
-            }
-            ProductionDatabaseGate.read {
-                check(generation == state.generation && !state.paused)
-                export(work, plan, destination, if (managed) "managed" else "once")
+            var changed = false
+            try {
+                withCalendarEffects(context, isolatedStore) {
+                    check(!state.paused)
+                    val destination = requireDestination(state.destination)
+                    val work = checkNotNull(exact(key))
+                    check(work.version == version && work.draft.status.active)
+                    recoverPendingInserts()
+                    if (managed) {
+                        val oneShots = ownedOneShots(destination, key)
+                        if (oneShots.isNotEmpty()) {
+                            val pending = CalendarExportConfirmation(destination.identity, oneShots.mapTo(mutableSetOf()) { it.eventId })
+                            if (confirmation != pending) return@withCalendarEffects CalendarManualExportResult.ConfirmAdoption(pending)
+                            changed = true
+                            promoteOneShots(oneShots, version)
+                        } else {
+                            check(confirmation == null)
+                            changed = true
+                            activateManaged(key, version)
+                        }
+                    } else changed = true
+                    val selected = snapshot()
+                    export(work, selected.settings, types(), destination, if (managed) "managed" else "once")
+                    CalendarManualExportResult.Exported
+                }
+            } finally {
+                if (changed) enqueueLiveStore()
             }
         }
+    }
+
+    private fun ownedOneShots(destination: Destination, key: WorkOccurrenceKey): List<Mapping> =
+        mappings().filter { it.identity == destination.identity && it.key == key && it.mode == "once" }.filter { mapping ->
+            val existing = row(mapping.eventId) ?: return@filter false
+            check(matchesOwnedRow(existing, mapping.calendarId, mapping.marker))
+            if (existing.deleted) return@filter false
+            check(find(destination.id, mapping.marker.substringBeforeLast("/once/") + "/").singleOrNull() == existing)
+            true
+        }
+
+    private fun CalendarStore.IntegrationAccess.activateManaged(key: WorkOccurrenceKey, version: Long) {
+        val suspended = suspendedRules(snapshot())
+        check(setManagedExport(key, version))
+        state.replaceSuspendedRules(suspended - CalendarSyncRule(key, false, CalendarSyncMode.ON).deviceToken())
+    }
+
+    private fun CalendarStore.IntegrationAccess.promoteOneShots(oneShots: List<Mapping>, version: Long) {
+        val promoted = oneShots.map { old ->
+            val marker = old.marker.substringBeforeLast("/once/") + "/managed/${state.calendarOwner}"
+            old.copy(mode = "managed", marker = marker)
+        }
+        val tokens = promoted.map { "${it.identity}|${it.marker}|${it.eventId}|$version|${state.generation}" }
+        state.save("pending_inserts", state.pendingInserts + tokens)
+        val updates = arrayListOf<ContentProviderOperation>()
+        for ((old, current) in oneShots.zip(promoted)) {
+            updates += ContentProviderOperation.newUpdate(Events.CONTENT_URI)
+                .withValue(Events.CUSTOM_APP_URI, current.marker)
+                .withSelection(OWNED, ownership(old)).withExpectedCount(1).build()
+            updates += ContentProviderOperation.newAssertQuery(Events.CONTENT_URI)
+                .withSelection(OWNED, ownership(current)).withExpectedCount(1).build()
+        }
+        resolver.applyBatch(CalendarContract.AUTHORITY, updates)
+        activateManaged(oneShots.first().key, version)
+        for (index in tokens.indices) state.finishInsert(tokens[index], promoted[index].encoded, oneShots[index].encoded)
     }
 
     suspend fun disableSync(remove: Boolean) = operations.withLock {
         withContext(Dispatchers.IO) {
-            val store = store()
-            val settings = store.integrationSnapshot().settings
-            val managed = mappings().filter { it.mode == "managed" && it.encoded !in state.leaving }
-            state.suspendSync(managed.mapTo(mutableSetOf()) { it.encoded }, remove)
-            store.saveIntegrationSettings(settings.copy(syncEnabled = false))
+            withCalendarEffects(context, isolatedStore) {
+                val current = snapshot()
+                val managed = mappings().filter { it.mode == "managed" && it.encoded !in state.leaving }
+                // Record the choice for mapped rows and interrupted inserts even if provider access is currently revoked.
+                state.suspendSync(managed.mapTo(mutableSetOf()) { it.encoded },
+                    current.enabledSyncRules().mapTo(mutableSetOf()) { it.deviceToken() }, remove)
+                saveSettings(current.settings.copy(syncEnabled = false))
+            }
             enqueueLiveStore()
         }
     }
 
     suspend fun enableSync() = operations.withLock {
         withContext(Dispatchers.IO) {
-            check(!state.paused)
-            requireDestination(state.destination)
-            val store = store()
-            store.saveIntegrationSettings(store.integrationSnapshot().settings.copy(syncEnabled = true))
-            state.save("sync_suspended", emptySet())
-            enqueue(context)
+            withCalendarEffects(context, isolatedStore) {
+                check(!state.paused)
+                requireDestination(state.destination)
+                saveSettings(snapshot().settings.copy(syncEnabled = true))
+                state.replaceSuspendedRules(emptySet())
+            }
+            enqueueLiveStore()
         }
+    }
+
+    private fun suspendedRules(snapshot: CalendarIntegrationSnapshot): Set<String> {
+        if (state.values("sync_suspended").isEmpty()) return state.suspendedRules
+        val manual = state.values("manual_after_disable")
+        val activated = state.values("activated_legacy_rules")
+        return snapshot.enabledSyncRules().filterNot {
+            it.deviceToken() in activated || !it.following && it.key.deviceKey() in manual
+        }
+            .mapTo(mutableSetOf()) { it.deviceToken() }.also(state::replaceSuspendedRules)
     }
 
     suspend fun reconcile() = operations.withLock {
         withContext(Dispatchers.IO) {
             if (state.paused || state.destination == null) return@withContext
-            val generation = state.generation
-            val store = store()
-            val zone = TimeZone.currentSystemDefault()
-            val now = Clock.System.now()
-            val today = now.toLocalDateTime(zone).date
-            val plan = store.integrationPlan(today, today.shiftBy(89), zone, false)
-            val allMappings = mappings()
-            val leftKeys = allMappings.filter { it.mode == "managed" && it.encoded in state.leaving }.mapTo(mutableSetOf()) { it.key }
-            val activeKeys = allMappings.filter { it.mode == "managed" && it.encoded !in state.leaving }.mapTo(mutableSetOf()) { it.key }
-            val managed = plan.works.filter { (work, standalone) ->
-                work.draft.status.active && (standalone || work.upcoming(now)) && plan.snapshot.managed(work) &&
-                    (work.key !in leftKeys || work.key in activeKeys)
-            }.associate { it.work.key to it.work }
-            val known = allMappings.filter { it.mode == "managed" && it.encoded !in state.leaving }
-            val exact = known.map { it.key }.distinct().associateWith { managed[it] ?: store.exact(it) }
-            ProductionDatabaseGate.read {
-                if (state.paused || generation != state.generation) return@read
+            withCalendarEffects(context, isolatedStore) {
+                if (state.paused || state.destination == null) return@withCalendarEffects
+                val zone = TimeZone.currentSystemDefault()
+                val now = Clock.System.now()
+                val today = now.toLocalDateTime(zone).date
+                var plan = plan(today, today.shiftBy(89), zone, false)
                 val destination: Destination
                 val previous: Destination?
                 try {
                     destination = requireDestination(state.destination)
                     previous = state.previousDestination?.let { requireDestination(it) }
+                    if (state.pendingInserts.isNotEmpty()) {
+                        recoverPendingInserts()
+                        // A recovered confirmed promotion can commit an explicit sync rule.
+                        plan = plan(today, today.shiftBy(89), zone, false)
+                    }
                 } catch (failure: Exception) {
-                    _problems.value = managed.keys + known.map { it.key }
+                    _problems.value = plan.works.filter { syncAllowed(plan.snapshot, it.work, state.suspendedRules) }
+                        .map { it.work.key }.toSet() + mappings().filter { it.mode == "managed" }.map { it.key }
                     throw failure
                 }
+                val suspended = suspendedRules(plan.snapshot)
+                val allMappings = mappings()
+                val leftKeys = allMappings.filter { it.mode == "managed" && it.encoded in state.leaving }.mapTo(mutableSetOf()) { it.key }
+                val known = allMappings.filter { it.mode == "managed" && it.encoded !in state.leaving }
                 val remove = state.values("remove_queue")
+                val activeKeys = known.filterNot { it.encoded in remove }.mapTo(mutableSetOf()) { it.key }
+                val eligible = plan.works.filter { (work, standalone) ->
+                    work.draft.status.active && (standalone || work.upcoming(now)) &&
+                        reconcileSyncCandidate(syncAllowed(plan.snapshot, work, suspended), work.key in leftKeys, work.key in activeKeys)
+                }.associate { it.work.key to it.work }
+                val exact = known.map { it.key }.distinct().associateWith { eligible[it] ?: exact(it) }
                 for (mapping in known.filter { it.encoded in remove }) {
                     if (exact[mapping.key]?.draft?.status == WorkStatus.COMPLETED) {
                         state.save("left_events", state.leaving + mapping.encoded)
@@ -301,23 +373,20 @@ internal class AndroidSystemCalendar(
                     }
                     state.save("remove_queue", state.values("remove_queue") - mapping.encoded)
                 }
-                val manual = state.values("manual_after_disable")
-                val suspended = state.values("sync_suspended").isNotEmpty()
-                val eligible = if (suspended) managed.filterKeys { it.deviceKey() in manual } else managed
+                state.save("remove_queue", state.values("remove_queue").intersect(state.exports))
                 val failures = mutableSetOf<WorkOccurrenceKey>()
                 for (work in eligible.values) {
                     try {
-                        export(work, plan, destination, "managed")
+                        export(work, plan.snapshot.settings, plan.types, destination, "managed")
                     } catch (_: Exception) {
                         failures += work.key
                     }
                 }
-                for (mapping in known.filter { it.encoded !in remove && it.key !in failures &&
-                    (!suspended || it.key.deviceKey() in manual) }) {
+                for (mapping in known.filter { it.encoded !in remove && it.key !in failures }) {
                     val work = exact[mapping.key]
                     when {
                         work?.draft?.status == WorkStatus.COMPLETED ||
-                            work?.draft?.status?.active == true && !plan.snapshot.managed(work) ->
+                            work?.draft?.status?.active == true && !syncAllowed(plan.snapshot, work, suspended) ->
                             state.save("left_events", state.leaving + mapping.encoded)
                         work == null || work.draft.status == WorkStatus.CANCELLED ||
                             mapping.key !in eligible && work.upcoming(now) ||
@@ -341,8 +410,61 @@ internal class AndroidSystemCalendar(
         }
     }
 
-    private fun export(work: CalendarWork, plan: CalendarIntegrationPlan, destination: Destination, mode: String) {
-        val type = plan.types.firstOrNull { it.code == work.draft.typeCode }?.label ?: context.getString(when (work.draft.typeCode) {
+    private fun CalendarStore.IntegrationAccess.recoverPendingInserts() {
+        for (token in state.pendingInserts) {
+            val fields = token.split('|')
+            check(fields.size == 2 || fields.size == 5)
+            val (identity, marker) = fields
+            // A journal entry the user chose to leave never authorizes effects on an unavailable calendar.
+            val destination = if (token in state.leftPending) {
+                if (!canRead) continue
+                calendars().singleOrNull { it.identity == identity } ?: continue
+            } else requireDestination(identity)
+            val prefix = marker.substringBeforeLast('/').substringBeforeLast('/') + "/"
+            val parts = marker.removePrefix("libellaro://work/").split('/')
+            check(marker.startsWith("libellaro://work/") && parts.size == 5 &&
+                parts[3] in setOf("managed", "once") && parts[4] == state.calendarOwner)
+            val key = checkNotNull(parseWorkDeviceKey(parts.take(2).joinToString("/")))
+            val offset = parts[2].toInt()
+            if (fields.size == 5) {
+                val eventId = fields[2].toLong()
+                val expectedVersion = fields[3].toLong()
+                val old = mappings().single {
+                    it.identity == identity && it.key == key && it.offset == offset && it.eventId == eventId &&
+                        it.mode == "once"
+                }
+                val event = row(eventId)
+                if (event == null || event.deleted || matchesOwnedRow(event, destination.id, old.marker)) {
+                    if (event != null) {
+                        check(matchesOwnedRow(event, destination.id, old.marker) ||
+                            matchesOwnedRow(event, destination.id, marker))
+                    }
+                    state.finishInsert(token, null)
+                    continue
+                }
+                check(matchesOwnedRow(event, destination.id, marker) &&
+                    find(destination.id, prefix).singleOrNull() == event)
+                if (fields[4] == state.generation && !state.paused &&
+                    token !in state.leftPending && token !in state.values("remove_pending")) {
+                    val current = exact(key)
+                    if (current?.version == expectedVersion && current.draft.status.active) activateManaged(key, expectedVersion)
+                }
+                state.finishInsert(token, old.copy(mode = "managed", marker = marker).encoded, old.encoded)
+                continue
+            }
+            val prior = mappings().singleOrNull {
+                it.identity == identity && it.key == key && it.offset == offset && it.marker == marker
+            }
+            val proven = verifiedExportEvent(destination.id, marker, prior?.let { row(it.eventId) },
+                find(destination.id, prefix), pendingInsert = true)
+            val mapping = proven?.let { Mapping(identity, it.id, key, offset, parts[3], marker) }
+            state.finishInsert(token, mapping?.encoded, prior?.encoded)
+        }
+    }
+
+    private fun export(work: CalendarWork, settings: CalendarIntegrationSettings, types: List<CalendarWorkType>,
+        destination: Destination, mode: String) {
+        val type = types.firstOrNull { it.code == work.draft.typeCode }?.label ?: context.getString(when (work.draft.typeCode) {
             "MEASURE" -> R.string.p7b_measure
             "INSTALL" -> R.string.p7b_install
             "DELIVER" -> R.string.p7b_deliver
@@ -355,10 +477,10 @@ internal class AndroidSystemCalendar(
                 it.key == work.key && it.offset == part.dayOffset && it.mode == mode && it.encoded !in state.leaving }
             val oldRow = old?.let { row(it.eventId) }
             val pending = "${destination.identity}|$marker"
-            val pendingInserts = state.values("pending_inserts")
+            val pendingInserts = state.pendingInserts
             val owned = verifiedExportEvent(destination.id, marker, oldRow, find(destination.id, prefix),
                 pending in pendingInserts)
-            val values = eventValues(work, part, plan.snapshot.settings.exportFields, type)
+            val values = eventValues(work, part, settings.exportFields, type)
             val id = if (owned != null) {
                 val known = Mapping(destination.identity, owned.id, work.key, part.dayOffset, mode, marker)
                 check(known.encoded !in state.leaving)
@@ -385,11 +507,7 @@ internal class AndroidSystemCalendar(
                 ContentUris.parseId(checkNotNull(results[0].uri))
             }
             val mapping = Mapping(destination.identity, id, work.key, part.dayOffset, mode, marker)
-            if (old != null && old.eventId != id) forget(old)
-            state.save("exports", state.exports + mapping.encoded)
-            if (pending in state.values("pending_inserts")) {
-                state.save("pending_inserts", state.values("pending_inserts") - pending)
-            }
+            state.finishInsert(pending, mapping.encoded, old?.encoded)
         }
     }
 
@@ -478,8 +596,6 @@ internal class AndroidSystemCalendar(
         check(canWrite)
         return calendars().single { it.identity == identity && it.writable }
     }
-
-    private fun store() = isolatedStore ?: CeilingsDatabase.get(context).objectsClientsStore.calendar
 
     private fun enqueueLiveStore() {
         if (isolatedStore == null) enqueue(context)

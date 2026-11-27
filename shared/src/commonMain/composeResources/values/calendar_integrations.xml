@@ -51,4 +51,6 @@
     <string name="p7b_busy">Зайнято</string>
     <string name="p7b_busy_conflicts">Зайнятість у системному календарі</string>
     <string name="p7b_clear_busy">Очистити вибір календарів</string>
+    <string name="p7b_adopt_once_title">Синхронізувати наявний запис?</string>
+    <string name="p7b_adopt_once_text">Libellaro оновлюватиме цей запис і видалить його, якщо роботу буде скасовано або видалено.</string>
 </resources>

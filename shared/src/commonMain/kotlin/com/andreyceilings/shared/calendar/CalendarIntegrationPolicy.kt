@@ -42,6 +42,8 @@ data class CalendarWorkIntegration(
     init { require(reminders.isEmpty() || reminderMode == ReminderMode.ADD || reminderMode == ReminderMode.REPLACE) }
 }
 
+data class CalendarSyncRule(val key: WorkOccurrenceKey, val following: Boolean, val mode: CalendarSyncMode)
+
 data class CalendarIntegrationSnapshot(
     val settings: CalendarIntegrationSettings,
     val types: Map<String, CalendarTypeIntegration>,
@@ -69,7 +71,24 @@ data class CalendarIntegrationSnapshot(
         }
     }
 
-    fun managed(work: CalendarWork): Boolean = when (overrides(work.key).syncMode) {
+    fun syncRule(key: WorkOccurrenceKey): CalendarSyncRule? {
+        occurrences[key]?.syncMode?.let { return CalendarSyncRule(key, false, it) }
+        val rule = series.entries.filter {
+            it.key.rootUuid == key.rootUuid && it.key.originalDate <= key.originalDate && it.value.syncMode != null
+        }.maxByOrNull { it.key.originalDate } ?: return null
+        return CalendarSyncRule(rule.key, true, checkNotNull(rule.value.syncMode))
+    }
+
+    fun enabledSyncRules(): Set<CalendarSyncRule> = buildSet {
+        for ((key, rule) in occurrences) if (rule.syncMode == CalendarSyncMode.ON) {
+            add(CalendarSyncRule(key, false, CalendarSyncMode.ON))
+        }
+        for ((key, rule) in series) if (rule.syncMode == CalendarSyncMode.ON) {
+            add(CalendarSyncRule(key, true, CalendarSyncMode.ON))
+        }
+    }
+
+    fun managed(work: CalendarWork): Boolean = when (syncRule(work.key)?.mode) {
         CalendarSyncMode.ON -> true
         CalendarSyncMode.OFF -> false
         CalendarSyncMode.INHERIT, null -> settings.syncEnabled && types[work.draft.typeCode]?.syncEnabled == true

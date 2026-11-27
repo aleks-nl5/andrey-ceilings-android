@@ -70,24 +70,54 @@ class CalendarStore(
         database.calendarIntegrationsQueries.observeIntegrations().asFlow().map { Unit },
     )
 
-    suspend fun integrationSnapshot() = access { integrations.snapshot() }
-
-    suspend fun integrationPlan(from: LocalDate, through: LocalDate, zone: TimeZone, includeLead: Boolean) = access {
-        database.transactionWithResult {
-            val snapshot = integrations.snapshot()
-            val range = WorkDateRange(from, if (includeLead) through.shift(snapshot.maximumLeadDays) else through)
-            CalendarIntegrationPlan(snapshot, repository.integrationWorks(range, zone), repository.types())
-        }
+    fun observeIntegrationChanges(onChange: suspend () -> Unit) {
+        scope.launch { integrationChanges.collect { onChange() } }
     }
 
+    suspend fun integrationSnapshot() = access { IntegrationAccess().snapshot() }
+
+    suspend fun integrationPlan(from: LocalDate, through: LocalDate, zone: TimeZone, includeLead: Boolean) =
+        access { IntegrationAccess().plan(from, through, zone, includeLead) }
+
     suspend fun saveIntegrationSettings(settings: CalendarIntegrationSettings) = access { integrations.save(settings) }
+
+    suspend fun updateIntegrationSettings(update: (CalendarIntegrationSettings) -> CalendarIntegrationSettings) = access {
+        database.transaction {
+            database.workCalendarQueries.claimCalendarWrite()
+            integrations.save(update(integrations.snapshot().settings))
+        }
+    }
 
     suspend fun saveTypeIntegration(code: String, defaults: CalendarTypeIntegration) = access {
         integrations.saveType(code, defaults)
     }
 
-    suspend fun setManagedExport(key: WorkOccurrenceKey, version: Long) = access {
-        database.transactionWithResult {
+    suspend fun setManagedExport(key: WorkOccurrenceKey, version: Long) =
+        access { IntegrationAccess().setManagedExport(key, version) }
+
+    /**
+     * The platform must already hold its exclusive database fence for this synchronous block.
+     * Taking the coroutine admission mutex here would invert the lock order with ordinary saves.
+     */
+    fun <T> atIntegrationBoundary(block: IntegrationAccess.() -> T): T {
+        check(!closed.value)
+        return IntegrationAccess().block()
+    }
+
+    inner class IntegrationAccess internal constructor() {
+        fun snapshot() = integrations.snapshot()
+        fun exact(key: WorkOccurrenceKey) = repository.exact(key)
+        fun types() = repository.types()
+        fun saveSettings(settings: CalendarIntegrationSettings) = integrations.save(settings)
+
+        fun plan(from: LocalDate, through: LocalDate, zone: TimeZone, includeLead: Boolean) =
+            database.transactionWithResult {
+                val snapshot = integrations.snapshot()
+                val range = WorkDateRange(from, if (includeLead) through.shift(snapshot.maximumLeadDays) else through)
+                CalendarIntegrationPlan(snapshot, repository.integrationWorks(range, zone), repository.types())
+            }
+
+        fun setManagedExport(key: WorkOccurrenceKey, version: Long) = database.transactionWithResult {
             database.workCalendarQueries.claimCalendarWrite()
             val current = repository.exact(key)
             if (current?.version != version || !current.draft.status.active) return@transactionWithResult false
@@ -247,8 +277,17 @@ class CalendarStore(
     suspend fun externalProposal(command: CalendarSave) = access { repository.externalProposal(command) }
     suspend fun previewConflicts(command: CalendarSave) = access { repository.previewConflicts(command) }
     suspend fun exact(key: WorkOccurrenceKey) = access { repository.exact(key) }
-    suspend fun save(command: CalendarSave, confirmation: CalendarConflictConfirmation? = null) =
-        access { repository.save(command, confirmation) }
+    suspend fun save(command: CalendarSave, confirmation: CalendarConflictConfirmation? = null,
+        onSyncActivation: ((CalendarSyncRule) -> Unit)? = null): CalendarSaveResult = access {
+        val result = repository.save(command, confirmation)
+        if (result is CalendarSaveResult.Saved && command.integration?.syncMode == CalendarSyncMode.ON) {
+            val following = command.target == null || command.scope == CalendarEditScope.THIS_AND_FOLLOWING
+            // The business transaction has committed. Its physical lease still orders the device choice
+            // against global disable. Device failures must not turn a committed work into a failed Save.
+            runCatching { onSyncActivation?.invoke(CalendarSyncRule(result.key, following, CalendarSyncMode.ON)) }
+        }
+        result
+    }
     suspend fun delete(key: WorkOccurrenceKey, version: Long, scope: CalendarEditScope) =
         access { repository.delete(key, version, scope) }
     suspend fun cancelFollowing(key: WorkOccurrenceKey, version: Long) = access { repository.cancelFollowing(key, version) }

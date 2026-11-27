@@ -285,7 +285,7 @@ fun WorkEditor(
                     valid.status == WorkStatus.CANCELLED) {
                     if (store.cancelFollowing(source.key, source.version)) onSaved(CalendarSaveResult.Saved(source.key), valid)
                     else stale = true
-                } else when (val result = store.save(saving, confirmation)) {
+                } else when (val result = store.save(saving, confirmation, integrationPlatform?.let { it::reactivateSyncRule })) {
                     is CalendarSaveResult.Saved -> { conflict = null; onSaved(result, valid) }
                     is CalendarSaveResult.Conflicts -> conflict = result
                     CalendarSaveResult.Stale -> { conflict = null; stale = true }

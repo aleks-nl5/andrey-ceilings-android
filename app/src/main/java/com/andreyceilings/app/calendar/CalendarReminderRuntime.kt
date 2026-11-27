@@ -20,7 +20,6 @@ import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import com.andreyceilings.app.MainActivity
 import com.andreyceilings.app.R
-import com.andreyceilings.app.data.db.CeilingsDatabase
 import com.andreyceilings.app.data.db.ProductionDatabaseGate
 import com.andreyceilings.shared.calendar.*
 import kotlinx.coroutines.CancellationException
@@ -41,7 +40,12 @@ import kotlin.time.Instant
 private const val GROUP = "libellaro_work"
 private const val GROUP_SUMMARY = "libellaro_work_summary"
 private const val MAINTENANCE = "replenish"
-private const val MAX_PENDING_WORK_ALARMS = 128
+private const val MAX_PENDING_WAKEUPS = 128
+private const val MAX_ACTIVE_BEFORE_SUMMARY = 49
+private const val WAKEUP = "wake"
+private const val DISMISS = "com.andreyceilings.app.calendar.DISMISS"
+private const val ALERT_EXTRA = "libellaro_alert"
+private const val PAYLOAD_EXTRA = "libellaro_payload"
 private const val ALARM = "com.andreyceilings.app.calendar.ALARM"
 private const val SNOOZE = "com.andreyceilings.app.calendar.SNOOZE"
 
@@ -56,140 +60,178 @@ internal object CalendarReminderRuntime {
             PeriodicWorkRequestBuilder<CalendarReminderWorker>(12, TimeUnit.HOURS).build())
     }
 
-    suspend fun reconcile(context: Context) = operations.withLock {
+    suspend fun reconcile(context: Context, expectedGeneration: String? = null) = operations.withLock {
         val state = CalendarDeviceState(context)
-        val generation = state.generation
-        if (state.paused || !state.remindersRequested || !canScheduleCalendarAlarms(context) ||
-            !canPostCalendarNotifications(context)) {
-            ProductionDatabaseGate.read { if (state.generation == generation) clear(context, state) }
-            return@withLock
-        }
-        val now = Clock.System.now()
-        val end = now + 7.days
-        val zone = TimeZone.currentSystemDefault()
-        val store = store(context)
-        val plan = store.integrationPlan(now.toLocalDateTime(zone).date.shiftBackOne(),
-            end.toLocalDateTime(zone).date, zone, includeLead = true)
-        if (!plan.snapshot.settings.remindersEnabled) {
-            ProductionDatabaseGate.read { if (state.generation == generation) clear(context, state) }
-            return@withLock
-        }
-        val delivered = state.delivered
-        val seenWorks = plan.works.associate { it.work.key to it.work }
-        val desired = mutableSetOf<String>()
-        val retainedDelivered = mutableSetOf<String>()
-        val visibleOrSnoozed = (state.visible + state.snoozes).filter { id ->
-            val key = decode(id)?.key ?: return@filter false
-            val work = seenWorks[key] ?: store.exact(key)
-            work?.draft?.status?.active == true && (id in state.snoozes && isSnoozeFor(id, work) ||
-                id in state.visible && isAlertCurrent(id, work, plan.snapshot))
-        }.toSet()
-        val retainedSnoozes = state.snoozes.intersect(visibleOrSnoozed)
-        desired += retainedSnoozes.filter { decode(it)!!.whenAt > now }
-        val missed = mutableMapOf<WorkOccurrenceKey, Pair<String, CalendarWork>>()
-        val missedIds = mutableSetOf<String>()
-        for ((work, standalone) in plan.works) {
-            for (alert in calendarReminders(work, plan.snapshot.rules(work))) {
-                if (!standalone && alert.trigger > end) continue
-                val id = encode(alert, work)
-                if (id in delivered) {
-                    if (work.upcoming(now)) retainedDelivered += id
-                    continue
+        try {
+            withCalendarEffects(context) {
+                if (expectedGeneration != null && state.generation != expectedGeneration) return@withCalendarEffects
+                if (!allowed(context, state)) {
+                    clear(context, state)
+                    return@withCalendarEffects
                 }
-                if (alert.trigger > now) desired += id
-                else if (!work.hasStarted(now)) {
-                    val previous = missed[work.key]
-                    if (previous == null || decode(previous.first)!!.whenAt < alert.trigger) missed[work.key] = id to work
-                    missedIds += id
+                val now = Clock.System.now()
+                val end = now + 7.days
+                val zone = TimeZone.currentSystemDefault()
+                val plan = plan(now.toLocalDateTime(zone).date.shiftBackOne(),
+                    end.toLocalDateTime(zone).date, zone, includeLead = true)
+                if (!plan.snapshot.settings.remindersEnabled) {
+                    clear(context, state)
+                    return@withCalendarEffects
                 }
-            }
-        }
-        for (id in retainedSnoozes) {
-            val alarm = decode(id)!!
-            if (alarm.whenAt <= now) {
-                val work = seenWorks[alarm.key] ?: store.exact(alarm.key)
-                if (work != null && !work.hasStarted(now)) {
-                    missed[work.key] = id to work
-                    missedIds += id
+                val seen = plan.works.associate { it.work.key to it.work }
+                val delivered = state.delivered
+                val scheduled = state.alarmKeys
+                val desired = mutableMapOf<String, Long>()
+                val retained = mutableSetOf<String>()
+                val retainedSnoozes = mutableSetOf<String>()
+                val due = mutableMapOf<WorkOccurrenceKey, Pair<String, CalendarWork>>()
+                val dueIds = mutableMapOf<WorkOccurrenceKey, MutableSet<String>>()
+                fun consider(id: String, alarm: Alarm, work: CalendarWork, wasScheduled: Boolean) {
+                    if (id in delivered) {
+                        if (work.upcoming(now)) retained += id
+                        return
+                    }
+                    if (alarm.whenAt > now) {
+                        desired[id] = alarm.whenAt.toEpochMilliseconds()
+                    } else if (reminderIsDue(now.toEpochMilliseconds(), alarm.whenAt.toEpochMilliseconds(),
+                            wasScheduled, relevant(alarm, work, now), work.hasStarted(now))) {
+                        val prior = due[work.key]
+                        if (prior == null || decode(prior.first)!!.whenAt <= alarm.whenAt) due[work.key] = id to work
+                        dueIds.getOrPut(work.key) { mutableSetOf() } += id
+                    }
                 }
-            }
-        }
-        val armed = desired.sortedBy { decode(it)!!.whenAt }.take(MAX_PENDING_WORK_ALARMS).toSet() +
-            encodeMaintenance(now + 1.days)
-        ProductionDatabaseGate.read {
-            if (!state.paused && state.generation == generation) {
-                val notifications = context.getSystemService(NotificationManager::class.java)
-                for (id in state.visible - visibleOrSnoozed) decode(id)?.let { notifications.cancel(it.key.deviceKey(), 1) }
-                // Record the union before scheduling, so a failed or interrupted operation can be retried.
-                state.save("alarms", state.alarmKeys + armed)
-                (state.alarmKeys - armed).forEach { cancel(context, it, generation) }
-                armed.forEach { schedule(context, it, generation) }
-                state.save("alarms", armed)
-                state.save("snoozes", retainedSnoozes.intersect(desired))
-                val visible = visibleOrSnoozed.intersect(state.visible).toMutableSet()
-                for ((id, work) in missed.values) {
+                for ((work, standalone) in plan.works) {
+                    for (alert in calendarReminders(work, plan.snapshot.rules(work))) {
+                        if (!standalone && alert.trigger > end) continue
+                        val id = encode(alert, work)
+                        consider(id, checkNotNull(decode(id)), work, id in scheduled)
+                    }
+                }
+                for (id in state.snoozes) {
+                    val alarm = decode(id) ?: continue
+                    val work = seen[alarm.key] ?: exact(alarm.key) ?: continue
+                    if (!work.draft.status.active || !isSnoozeFor(id, work)) continue
+                    consider(id, alarm, work, wasScheduled = true)
+                    if (id in desired) retainedSnoozes += id
+                }
+
+                val manager = context.getSystemService(NotificationManager::class.java)
+                val active = activeNotifications(manager)
+                val visible = mutableSetOf<String>()
+                for (id in state.visible) {
+                    val alarm = decode(id) ?: continue
+                    val tag = alarm.key.deviceKey()
+                    val notification = active[tag]
+                    val osAlert = notification?.extras?.getString(ALERT_EXTRA)
+                    val work = seen[alarm.key] ?: exact(alarm.key)
+                    val current = work != null && work.draft.status.active && isAlertCurrent(id, work, plan.snapshot)
+                    val payload = if (current) contentSignature(state, checkNotNull(work), plan.snapshot.settings, plan.types) else null
+                    when (visibleReminderChange(notification != null && (osAlert == id || osAlert == null),
+                        current, osAlert == id && notification?.extras?.getString(PAYLOAD_EXTRA) == payload)) {
+                        VisibleReminderChange.DISMISSED -> Unit
+                        VisibleReminderChange.CANCEL -> manager.cancel(tag, 1)
+                        VisibleReminderChange.KEEP -> visible += id
+                        VisibleReminderChange.REPLACE -> {
+                            // Recheck immediately before the replacement. A failed rebuild leaves no old public payload.
+                            if (tag in activeNotifications(manager)) {
+                                try {
+                                    post(context, state, checkNotNull(work), id, plan.snapshot.settings, plan.types, quiet = true)
+                                    visible += id
+                                } catch (failure: Exception) {
+                                    manager.cancel(tag, 1)
+                                    throw failure
+                                }
+                            }
+                        }
+                    }
+                }
+                for ((tag, notification) in active) {
+                    val osAlert = notification.extras.getString(ALERT_EXTRA)
+                    if (osAlert != null && osAlert !in state.visible) manager.cancel(tag, 1)
+                }
+                val osNotifications = manager.activeNotifications
+                var available = (MAX_ACTIVE_BEFORE_SUMMARY - osNotifications.count { it.tag != GROUP_SUMMARY }).coerceAtLeast(0)
+                val activeTags = osNotifications.filter { it.id == 1 && it.notification.group == GROUP }
+                    .mapTo(mutableSetOf()) { it.tag }
+                val sent = mutableSetOf<String>()
+                for ((id, work) in due.values) {
+                    val tag = work.key.deviceKey()
+                    if (tag !in activeTags && available == 0) {
+                        // Android limits simultaneously visible notifications. Keep exact due work
+                        // pending so dismissal can free a slot without treating this alert as missed.
+                        for (pending in dueIds.getValue(work.key)) {
+                            desired[pending] = checkNotNull(decode(pending)).whenAt.toEpochMilliseconds()
+                            if (pending in state.snoozes) retainedSnoozes += pending
+                        }
+                        continue
+                    }
                     post(context, state, work, id, plan.snapshot.settings, plan.types)
+                    if (activeTags.add(tag)) available--
                     visible.removeAll { decode(it)?.key == work.key }
                     visible += id
+                    sent += dueIds.getValue(work.key)
+                    state.recordDelivery(visible, state.delivered + dueIds.getValue(work.key))
                 }
+                state.recordDelivery(visible, retained + delivered.intersect(visible) + sent)
+                state.save("snoozes", retainedSnoozes)
+                arm(context, state, desired, now)
                 updateSummary(context)
-                state.save("visible", visible)
-                state.save("delivered", retainedDelivered + state.visible.intersect(delivered) + missedIds)
             }
+        } catch (failure: Exception) {
+            // Missing/stale encrypted data must not leave older client details visible.
+            ProductionDatabaseGate.calendarEffects { cancelVisible(context, state) }
+            throw failure
         }
     }
 
-    suspend fun fired(context: Context, id: String, generation: String) = operations.withLock {
-        val state = CalendarDeviceState(context)
-        if (state.paused || state.generation != generation || id !in state.alarmKeys ||
-            id in state.delivered || !canPostCalendarNotifications(context) || !canScheduleCalendarAlarms(context)) return@withLock
-        val alarm = decode(id) ?: return@withLock
-        val now = Clock.System.now()
-        if (alarm.whenAt > now) return@withLock
-        val store = store(context)
-        val work = store.exact(alarm.key) ?: return@withLock
-        val snapshot = store.integrationSnapshot()
-        if (!snapshot.settings.remindersEnabled || !work.draft.status.active) return@withLock
-        if (!isAlertCurrent(id, work, snapshot)) return@withLock
-        if (work.days.none { it.interval?.endExclusive?.let { end -> now < end }
-                ?: (it.date >= now.toLocalDateTime(work.draft.schedule.zone).date) }) return@withLock
-        val types = store.integrationPlan(work.draft.date, work.draft.date, work.draft.schedule.zone, false).types
-        ProductionDatabaseGate.read {
-            if (!state.paused && state.generation == generation) {
-                post(context, state, work, id, snapshot.settings, types)
-                state.save("visible", state.visible.filterNot { decode(it)?.key == work.key }.toSet() + id)
-                state.save("delivered", state.delivered + id)
-                state.save("alarms", state.alarmKeys - id)
-                state.save("snoozes", state.snoozes - id)
-                updateSummary(context)
-            }
-        }
+    private fun allowed(context: Context, state: CalendarDeviceState) =
+        !state.paused && state.remindersRequested && canPostCalendarNotifications(context) &&
+            canScheduleCalendarAlarms(context)
+
+    private fun relevant(alarm: Alarm, work: CalendarWork, now: Instant): Boolean {
+        if (alarm.offset == -1) return work.upcoming(now)
+        val index = work.draft.schedule.days.indexOfFirst { it.offset == alarm.offset }
+        val day = work.days.getOrNull(index) ?: return false
+        return day.interval?.let { now < it.endExclusive }
+            ?: (day.date >= now.toLocalDateTime(work.draft.schedule.zone).date)
+    }
+
+    private fun arm(context: Context, state: CalendarDeviceState, desired: Map<String, Long>, now: Instant) {
+        val generation = state.generation
+        val old = physicalWakeups(state)
+        val maintenance = old.firstOrNull { it.startsWith("$MAINTENANCE/") &&
+            triggerMillis(it) > now.toEpochMilliseconds() } ?: encodeMaintenance(now + 1.days)
+        val wakeups = exactReminderWakeups(desired.values.filter { it > now.toEpochMilliseconds() }, MAX_PENDING_WAKEUPS).mapTo(mutableSetOf()) { "$WAKEUP/$it" }
+        wakeups += maintenance
+        state.recordSchedule(desired.keys, old + wakeups)
+        (old - wakeups).forEach { cancel(context, it, generation) }
+        // Reinstall after boot even if the recorded wake-up did not change.
+        wakeups.forEach { schedule(context, it, generation) }
+        state.recordSchedule(desired.keys, wakeups)
     }
 
     suspend fun snooze(context: Context, key: WorkOccurrenceKey, at: Instant, fromAlert: String? = null,
         generation: String = CalendarDeviceState(context).generation): Boolean = operations.withLock {
-        val state = CalendarDeviceState(context)
-        val now = Clock.System.now()
-        if (at <= now || state.paused || !state.remindersRequested || state.generation != generation ||
-            !canPostCalendarNotifications(context) || !canScheduleCalendarAlarms(context)) return@withLock false
-        val store = store(context)
-        val work = store.exact(key) ?: return@withLock false
-        val snapshot = store.integrationSnapshot()
-        if (!work.draft.status.active || !snapshot.settings.remindersEnabled ||
-            fromAlert != null && (fromAlert !in state.visible || !isAlertCurrent(fromAlert, work, snapshot))) return@withLock false
-        val id = "${key.deviceKey()}/-1/${at.toEpochMilliseconds()}/${snoozeFingerprint(work)}"
-        ProductionDatabaseGate.read {
-            if (state.paused || state.generation != generation) return@read false
+        withCalendarEffects(context) {
+            val state = CalendarDeviceState(context)
+            val now = Clock.System.now()
+            if (at <= now || generation != state.generation || !allowed(context, state)) return@withCalendarEffects false
+            val work = exact(key) ?: return@withCalendarEffects false
+            val snapshot = snapshot()
+            if (!work.draft.status.active || !snapshot.settings.remindersEnabled) return@withCalendarEffects false
+            if (fromAlert != null && !canAct(context, state, fromAlert, work, snapshot, types())) {
+                return@withCalendarEffects false
+            }
+            val id = "${key.deviceKey()}/-1/${at.toEpochMilliseconds()}/${snoozeFingerprint(work)}"
             val previous = state.snoozes.filter { decode(it)?.key == key }.toSet()
-            state.save("snoozes", state.snoozes + id)
-            state.save("alarms", state.alarmKeys + id)
-            schedule(context, id, generation)
-            previous.forEach { cancel(context, it, generation) }
-            state.save("snoozes", state.snoozes - previous)
-            state.save("alarms", state.alarmKeys - previous)
+            state.save("snoozes", state.snoozes - previous + id)
+            val pending = (state.alarmKeys - previous + id).mapNotNull { token ->
+                decode(token)?.let { token to it.whenAt.toEpochMilliseconds() }
+            }.toMap()
+            arm(context, state, pending, now)
             context.getSystemService(NotificationManager::class.java).cancel(key.deviceKey(), 1)
-            updateSummary(context)
             state.save("visible", state.visible.filterNot { decode(it)?.key == key }.toSet())
+            updateSummary(context)
             true
         }
     }
@@ -201,21 +243,33 @@ internal object CalendarReminderRuntime {
         clear(context, state, previous)
     }
 
-    private fun clear(context: Context, state: CalendarDeviceState, generation: String = state.generation) {
+    private fun physicalWakeups(state: CalendarDeviceState) =
+        if (state.hasBatchedSchedule) state.values("exact_wakeups") else state.alarmKeys
+
+    private fun activeNotifications(manager: NotificationManager) = manager.activeNotifications
+        .filter { it.id == 1 && it.tag != GROUP_SUMMARY && it.notification.group == GROUP && it.tag != null }
+        .associate { it.tag!! to it.notification }
+
+    private fun cancelVisible(context: Context, state: CalendarDeviceState) {
         val notifications = context.getSystemService(NotificationManager::class.java)
-        state.alarmKeys.forEach { cancel(context, it, generation) }
-        state.visible.forEach { id -> decode(id)?.let { notifications.cancel(it.key.deviceKey(), 1) } }
+        (activeNotifications(notifications).keys + state.visible.mapNotNull { decode(it)?.key?.deviceKey() })
+            .forEach { notifications.cancel(it, 1) }
         notifications.cancel(GROUP_SUMMARY, 1)
-        state.save("alarms", emptySet())
         state.save("visible", emptySet())
-        state.save("snoozes", emptySet())
     }
 
+    private fun clear(context: Context, state: CalendarDeviceState, generation: String = state.generation) {
+        physicalWakeups(state).forEach { cancel(context, it, generation) }
+        state.recordSchedule(emptySet(), emptySet())
+        state.save("snoozes", emptySet())
+        cancelVisible(context, state)
+    }
+
+    private fun triggerMillis(id: String) = id.substringAfter('/').toLong()
+
     private fun schedule(context: Context, id: String, generation: String) {
-        val trigger = if (id.startsWith("$MAINTENANCE/")) id.substringAfter('/').toLong()
-            else checkNotNull(decode(id)).whenAt.toEpochMilliseconds()
-        context.getSystemService(AlarmManager::class.java).setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, trigger,
-            checkNotNull(broadcast(context, ALARM, id, generation, PendingIntent.FLAG_UPDATE_CURRENT)))
+        context.getSystemService(AlarmManager::class.java).setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP,
+            triggerMillis(id), checkNotNull(broadcast(context, ALARM, id, generation, PendingIntent.FLAG_UPDATE_CURRENT)))
     }
 
     private fun cancel(context: Context, id: String, generation: String) {
@@ -226,7 +280,7 @@ internal object CalendarReminderRuntime {
     }
 
     private fun post(context: Context, state: CalendarDeviceState, work: CalendarWork, id: String,
-        settings: CalendarIntegrationSettings, types: List<CalendarWorkType>) {
+        settings: CalendarIntegrationSettings, types: List<CalendarWorkType>, quiet: Boolean = false) {
         val manager = context.getSystemService(NotificationManager::class.java)
         manager.createNotificationChannel(NotificationChannel(CALENDAR_REMINDER_CHANNEL, context.getString(R.string.p7b_notification_channel),
             NotificationManager.IMPORTANCE_DEFAULT).apply { enableVibration(true) })
@@ -253,6 +307,12 @@ internal object CalendarReminderRuntime {
             ).joinToString("\n")))
             .setVisibility(if (settings.privateLockscreen) NotificationCompat.VISIBILITY_PRIVATE else NotificationCompat.VISIBILITY_PUBLIC)
             .setPublicVersion(public)
+            .setOnlyAlertOnce(quiet)
+            .setExtras(android.os.Bundle().apply {
+                putString(ALERT_EXTRA, id)
+                putString(PAYLOAD_EXTRA, contentSignature(state, work, settings, types))
+            })
+            .setDeleteIntent(broadcast(context, DISMISS, id, state.generation, PendingIntent.FLAG_UPDATE_CURRENT))
             .setContentIntent(activity(context, id, state.generation, "open"))
             .addAction(action(context, R.string.p7b_snooze, broadcast(context, SNOOZE, id, state.generation, PendingIntent.FLAG_UPDATE_CURRENT)))
         if (!work.contact.address.isNullOrBlank()) notification.addAction(
@@ -288,26 +348,56 @@ internal object CalendarReminderRuntime {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
     }
 
-    suspend fun open(context: Context, intent: Intent): WorkOccurrenceKey? {
-        if (intent.action != "com.andreyceilings.app.calendar.OPEN") return null
-        val (id, generation, action) = intent.data?.pathSegments?.takeIf { it.size == 3 } ?: return null
-        val state = CalendarDeviceState(context)
-        if (state.paused || generation != state.generation || id !in state.visible) return null
-        val key = decode(id)?.key ?: return null
-        val store = store(context)
-        val work = store.exact(key)?.takeIf { it.draft.status.active } ?: return null
-        val snapshot = store.integrationSnapshot()
-        if (!snapshot.settings.remindersEnabled || !isAlertCurrent(id, work, snapshot)) return null
-        if (action == "open") return key
-        if (context.getSystemService(KeyguardManager::class.java).isDeviceLocked) return null
-        val external = when (action) {
-            "navigate" -> work.contact.address?.let { Intent(Intent.ACTION_VIEW, Uri.parse("geo:0,0?q=${Uri.encode(it)}")) }
-            "dial" -> work.contact.phone?.let { Intent(Intent.ACTION_DIAL, Uri.fromParts("tel", it, null)) }
-            "message" -> work.contact.phone?.let { Intent(Intent.ACTION_SENDTO, Uri.fromParts("smsto", it, null)) }
-            else -> null
+    private fun contentSignature(state: CalendarDeviceState, work: CalendarWork,
+        settings: CalendarIntegrationSettings, types: List<CalendarWorkType>): String =
+        fingerprint(listOf(state.generation, settings.privateLockscreen, work.draft.title,
+            work.projectLabel, work.contact.address, work.contact.name, work.contact.phone, work.draft.typeCode,
+            types.firstOrNull { it.code == work.draft.typeCode }?.label).joinToString("") {
+            val value = it?.toString()
+            if (value == null) "-1:" else "${value.length}:$value"
+        })
+
+    private fun canAct(context: Context, state: CalendarDeviceState, id: String, work: CalendarWork,
+        snapshot: CalendarIntegrationSnapshot, types: List<CalendarWorkType>): Boolean {
+        val active = activeNotifications(context.getSystemService(NotificationManager::class.java))[work.key.deviceKey()]
+        return activeReminderAction(allowed(context, state), id.takeIf { it in state.visible },
+            active?.extras?.getString(ALERT_EXTRA), id) && snapshot.settings.remindersEnabled &&
+            work.draft.status.active && isAlertCurrent(id, work, snapshot) &&
+            active?.extras?.getString(PAYLOAD_EXTRA) == contentSignature(state, work, snapshot.settings, types)
+    }
+
+    suspend fun open(context: Context, intent: Intent): WorkOccurrenceKey? = operations.withLock {
+        if (intent.action != "com.andreyceilings.app.calendar.OPEN") return@withLock null
+        val (id, generation, action) = intent.data?.pathSegments?.takeIf { it.size == 3 } ?: return@withLock null
+        withCalendarEffects(context) {
+            val state = CalendarDeviceState(context)
+            if (generation != state.generation || !allowed(context, state)) return@withCalendarEffects null
+            val key = decode(id)?.key ?: return@withCalendarEffects null
+            val work = exact(key) ?: return@withCalendarEffects null
+            if (!canAct(context, state, id, work, snapshot(), types())) return@withCalendarEffects null
+            if (action == "open") return@withCalendarEffects key
+            if (context.getSystemService(KeyguardManager::class.java).isDeviceLocked) return@withCalendarEffects null
+            val external = when (action) {
+                "navigate" -> work.contact.address?.let { Intent(Intent.ACTION_VIEW, Uri.parse("geo:0,0?q=${Uri.encode(it)}")) }
+                "dial" -> work.contact.phone?.let { Intent(Intent.ACTION_DIAL, Uri.fromParts("tel", it, null)) }
+                "message" -> work.contact.phone?.let { Intent(Intent.ACTION_SENDTO, Uri.fromParts("smsto", it, null)) }
+                else -> null
+            }
+            if (external != null) runCatching { context.startActivity(external.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+            null
         }
-        if (external != null) runCatching { context.startActivity(external.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
-        return null
+    }
+
+    private suspend fun dismiss(context: Context, id: String, generation: String) = operations.withLock {
+        ProductionDatabaseGate.calendarEffects {
+            val state = CalendarDeviceState(context)
+            if (generation != state.generation || id !in state.visible) return@calendarEffects
+            val manager = context.getSystemService(NotificationManager::class.java)
+            val tag = decode(id)?.key?.deviceKey() ?: return@calendarEffects
+            if (activeNotifications(manager)[tag]?.extras?.getString(ALERT_EXTRA) == id) manager.cancel(tag, 1)
+            state.recordDelivery(state.visible - id, state.delivered + id)
+            updateSummary(context)
+        }
     }
 
     private fun isAlertCurrent(id: String, work: CalendarWork, policy: CalendarIntegrationSnapshot) =
@@ -348,21 +438,32 @@ internal object CalendarReminderRuntime {
         PendingIntent.getBroadcast(context, 0, Intent(context, CalendarReminderReceiver::class.java)
             .setAction(action).setData(payload(id, generation, "broadcast")), flags or PendingIntent.FLAG_IMMUTABLE)
 
-    private fun store(context: Context): CalendarStore = CeilingsDatabase.get(context).objectsClientsStore.calendar
     private fun kotlinx.datetime.LocalDate.shiftBackOne() =
         kotlinx.datetime.LocalDate.fromEpochDays(toEpochDays() - 1)
 
     suspend fun onBroadcast(context: Context, intent: Intent) {
         val parts = intent.data?.pathSegments?.takeIf { it.size == 3 } ?: return
         val (id, generation) = parts
-        if (intent.action == ALARM && id.startsWith("$MAINTENANCE/")) enqueue(context)
-        else if (intent.action == ALARM) {
-            fired(context, id, generation)
-            enqueue(context)
-        }
-        else if (intent.action == SNOOZE) {
-            val key = decode(id)?.key ?: return
-            snooze(context, key, Clock.System.now() + 15.minutes, id, generation)
+        when (intent.action) {
+            ALARM -> {
+                val state = CalendarDeviceState(context)
+                if (state.generation != generation || id !in physicalWakeups(state)) return
+                // The durable work also advances the queue if the broadcast process is interrupted.
+                enqueue(context)
+                reconcile(context, generation)
+            }
+            SNOOZE -> {
+                val key = decode(id)?.key ?: return
+                if (snooze(context, key, Clock.System.now() + 15.minutes, id, generation)) {
+                    enqueue(context)
+                    reconcile(context, generation)
+                }
+            }
+            DISMISS -> {
+                dismiss(context, id, generation)
+                enqueue(context)
+                reconcile(context, generation)
+            }
         }
     }
 }
@@ -386,7 +487,7 @@ class CalendarReminderReceiver : BroadcastReceiver() {
             try {
                 if (context.getSystemService(UserManager::class.java).isUserUnlocked) {
                     when (intent.action) {
-                        ALARM, SNOOZE -> CalendarReminderRuntime.onBroadcast(context.applicationContext, intent)
+                        ALARM, SNOOZE, DISMISS -> CalendarReminderRuntime.onBroadcast(context.applicationContext, intent)
                         else -> {
                             CalendarReminderRuntime.enqueue(context)
                             AndroidSystemCalendar.enqueue(context)

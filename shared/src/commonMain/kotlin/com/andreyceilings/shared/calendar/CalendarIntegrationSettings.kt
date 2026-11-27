@@ -96,9 +96,9 @@ private fun CalendarIntegrationSettings(store: CalendarStore) {
             }
         }
         if (label == Res.string.p7b_reminders) {
-            IntegrationSwitch(Res.string.p7b_reminders, settings.remindersEnabled, !busy) {
+            IntegrationSwitch(Res.string.p7b_reminders, settings.remindersEnabled, !busy) { enabled ->
                 perform {
-                    store.saveIntegrationSettings(settings.copy(remindersEnabled = it))
+                    store.updateIntegrationSettings { it.copy(remindersEnabled = enabled) }
                     platform.remindersChanged()
                 }
             }
@@ -108,8 +108,11 @@ private fun CalendarIntegrationSettings(store: CalendarStore) {
                     Text(stringResource(Res.string.p7b_allow_reminders))
                 }
             }
-            IntegrationSwitch(Res.string.p7b_lock_full, !settings.privateLockscreen, !busy) {
-                perform { store.saveIntegrationSettings(settings.copy(privateLockscreen = !it)) }
+            IntegrationSwitch(Res.string.p7b_lock_full, !settings.privateLockscreen, !busy) { full ->
+                perform {
+                    store.updateIntegrationSettings { it.copy(privateLockscreen = !full) }
+                    platform.remindersChanged()
+                }
             }
             options?.types.orEmpty().forEach { type ->
                 TextButton(onClick = { typeEditor = type }, enabled = !busy) { Text(calendarTypeLabel(type)) }
@@ -180,8 +183,13 @@ private fun CalendarIntegrationSettings(store: CalendarStore) {
             Text(stringResource(Res.string.p7b_export_fields), style = MaterialTheme.typography.titleSmall)
             CalendarExportField.entries.forEach { field ->
                 IntegrationSwitch(field.label(), field in settings.exportFields, !busy) {
-                    val fields = if (it) settings.exportFields + field else settings.exportFields - field
-                    perform { store.saveIntegrationSettings(settings.copy(exportFields = fields)) }
+                    val selected = it
+                    perform {
+                        store.updateIntegrationSettings { current ->
+                            val fields = if (selected) current.exportFields + field else current.exportFields - field
+                            current.copy(exportFields = fields)
+                        }
+                    }
                 }
             }
         }
@@ -384,6 +392,27 @@ internal fun WorkIntegrationActions(
     var snoozeDate by remember { mutableStateOf("") }
     var snoozeTime by remember { mutableStateOf("") }
     var exportDialog by remember { mutableStateOf(false) }
+    var adoption by remember { mutableStateOf<CalendarExportConfirmation?>(null) }
+
+    fun export(managed: Boolean, confirmation: CalendarExportConfirmation? = null) {
+        if (busy) return
+        busy = true
+        feedback = null
+        coroutine.launch {
+            try {
+                when (val result = platform.manualExport(work.key, work.version, managed, confirmation)) {
+                    CalendarManualExportResult.Exported -> feedback = Res.string.p7b_export_done
+                    is CalendarManualExportResult.ConfirmAdoption -> adoption = result.confirmation
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                feedback = Res.string.p7b_action_failed
+            } finally {
+                busy = false
+            }
+        }
+    }
     fun perform(success: StringResource, action: suspend () -> Unit) {
         if (busy) return
         busy = true
@@ -443,14 +472,29 @@ internal fun WorkIntegrationActions(
         text = { Column {
             TextButton(onClick = {
                 exportDialog = false
-                perform(Res.string.p7b_export_done) { platform.manualExport(work.key, work.version, false) }
+                export(managed = false)
             }) { Text(stringResource(Res.string.p7b_export_once)) }
             TextButton(onClick = {
                 exportDialog = false
-                perform(Res.string.p7b_export_done) { platform.manualExport(work.key, work.version, true) }
+                export(managed = true)
             }) { Text(stringResource(Res.string.p7b_export_managed)) }
         } },
         confirmButton = { TextButton(onClick = { exportDialog = false }) { Text(stringResource(Res.string.p5d_cancel)) } })
+    adoption?.let { confirmation ->
+        AlertDialog(
+            onDismissRequest = { adoption = null },
+            title = { Text(stringResource(Res.string.p7b_adopt_once_title)) },
+            text = { Text(stringResource(Res.string.p7b_adopt_once_text)) },
+            dismissButton = {
+                TextButton(onClick = { adoption = null }) { Text(stringResource(Res.string.p5d_cancel)) }
+            },
+            confirmButton = {
+                TextButton(onClick = { adoption = null; export(managed = true, confirmation = confirmation) }) {
+                    Text(stringResource(Res.string.p7b_export_managed))
+                }
+            },
+        )
+    }
 }
 
 private fun snoozeInstant(duration: Int) = kotlin.time.Clock.System.now() + duration.minutes

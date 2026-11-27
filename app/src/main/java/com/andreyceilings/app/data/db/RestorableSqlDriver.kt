@@ -44,6 +44,18 @@ internal object ProductionDatabaseGate {
         }
     }
 
+    /** Serializes a fresh calendar projection and its native effect with normal commits and restore. */
+    fun <R> calendarEffects(block: () -> R): R {
+        check(access.readHoldCount == 0 || access.isWriteLockedByCurrentThread)
+        val exclusive = access.writeLock()
+        exclusive.lock()
+        try {
+            return block()
+        } finally {
+            exclusive.unlock()
+        }
+    }
+
     /**
      * A statement holds a read lease until its mapper finishes. A SQLDelight
      * transaction holds the same lease until AFTER its commit/rollback;

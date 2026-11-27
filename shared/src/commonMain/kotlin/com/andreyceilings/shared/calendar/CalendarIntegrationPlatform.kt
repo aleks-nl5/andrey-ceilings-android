@@ -8,6 +8,13 @@ import kotlin.time.Instant
 
 data class CalendarDestinationChoice(val identity: String, val label: String, val writable: Boolean)
 
+data class CalendarExportConfirmation(val destination: String, val eventIds: Set<Long>)
+
+sealed interface CalendarManualExportResult {
+    data object Exported : CalendarManualExportResult
+    data class ConfirmAdoption(val confirmation: CalendarExportConfirmation) : CalendarManualExportResult
+}
+
 interface CalendarIntegrationPlatform {
     val revision: Long
     val problems: Set<WorkOccurrenceKey>
@@ -27,9 +34,11 @@ interface CalendarIntegrationPlatform {
     suspend fun selectDestination(identity: String, move: Boolean)
     suspend fun createDestination(): String
     suspend fun confirmRestore()
+    fun reactivateSyncRule(rule: CalendarSyncRule)
     suspend fun enableSync()
     suspend fun disableSync(remove: Boolean)
-    suspend fun manualExport(key: WorkOccurrenceKey, version: Long, managed: Boolean)
+    suspend fun manualExport(key: WorkOccurrenceKey, version: Long, managed: Boolean,
+        confirmation: CalendarExportConfirmation? = null): CalendarManualExportResult
     suspend fun snooze(key: WorkOccurrenceKey, at: Instant): Boolean
     fun cachedAvailability(range: WorkDateRange, zone: TimeZone): CalendarAvailability?
     suspend fun refreshAvailability(range: WorkDateRange, zone: TimeZone): CalendarAvailability

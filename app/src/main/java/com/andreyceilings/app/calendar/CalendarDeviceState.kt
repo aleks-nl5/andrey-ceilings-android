@@ -17,6 +17,7 @@ internal class CalendarDeviceState(context: Context, fileName: String = "calenda
     }
     val paused: Boolean get() = prefs.getBoolean("restore_pending", false)
     val remindersRequested: Boolean get() = prefs.getBoolean("reminders_requested", false)
+    val hasBatchedSchedule get() = prefs.contains("exact_wakeups")
     val alarmKeys: Set<String> get() = values("alarms")
     val delivered: Set<String> get() = values("delivered")
     val visible: Set<String> get() = values("visible")
@@ -47,21 +48,71 @@ internal class CalendarDeviceState(context: Context, fileName: String = "calenda
 
     fun save(key: String, values: Set<String>) { check(prefs.edit().putStringSet(key, values.toSet()).commit()) }
 
+    fun recordDelivery(visible: Set<String>, delivered: Set<String>) {
+        check(prefs.edit().putStringSet("visible", visible).putStringSet("delivered", delivered).commit())
+    }
+
+    fun recordSchedule(alerts: Set<String>, wakeups: Set<String>) {
+        check(prefs.edit().putStringSet("alarms", alerts).putStringSet("exact_wakeups", wakeups).commit())
+    }
+
     fun changeDestination(identity: String, move: Boolean) {
-        if (identity == destination) return
+        val current = destination
+        if (identity == current) return
         val edit = prefs.edit().putString("destination", identity)
-        if (move && destination != null) edit.putString("previous_destination", destination)
-        else edit.remove("previous_destination").putStringSet("left_events", leaving + exports.filter {
-            it.startsWith("${destination}|") || previousDestination?.let { prior -> it.startsWith("$prior|") } == true
-        })
+        if (move && current != null) {
+            edit.putString("previous_destination", current)
+        } else {
+            val previous = listOfNotNull(current, previousDestination).toSet()
+            edit.remove("previous_destination").putStringSet("left_events", leaving + exports.filter {
+                it.substringBefore('|') in previous && it !in values("remove_queue")
+            }).putStringSet("leave_pending", leftPending + pendingInserts.filter {
+                it.substringBefore('|') in previous && it !in values("remove_pending")
+            })
+        }
         check(edit.commit())
     }
 
-    fun suspendSync(managed: Set<String>, remove: Boolean) {
-        val edit = prefs.edit().putStringSet("sync_suspended", setOf("yes"))
-            .remove("manual_after_disable")
+    val suspendedRules get() = values("suspended_rules")
+
+    fun replaceSuspendedRules(rules: Set<String>) {
+        check(prefs.edit().putStringSet("suspended_rules", rules)
+            .remove("sync_suspended").remove("manual_after_disable").remove("activated_legacy_rules").commit())
+    }
+
+    fun activateRule(token: String) = synchronized(lock) {
+        if (values("sync_suspended").isNotEmpty()) {
+            save("activated_legacy_rules", values("activated_legacy_rules") + token)
+        } else {
+            val suspended = suspendedRules
+            if (token in suspended) replaceSuspendedRules(suspended - token)
+        }
+    }
+
+    fun suspendSync(managed: Set<String>, rules: Set<String>, remove: Boolean) {
+        val pending = pendingInserts.filterTo(mutableSetOf()) { "/managed/" in it }
+        val edit = prefs.edit().putStringSet("suspended_rules", rules)
+            .remove("sync_suspended").remove("manual_after_disable").remove("activated_legacy_rules")
         if (remove) edit.putStringSet("remove_queue", values("remove_queue") + managed)
+            .putStringSet("remove_pending", values("remove_pending") + pending)
         else edit.putStringSet("left_events", leaving + managed)
+            .putStringSet("leave_pending", values("leave_pending") + (pending - values("remove_pending")))
+        check(edit.commit())
+    }
+
+    val leftPending get() = values("leave_pending")
+    val pendingInserts get() = values("pending_inserts")
+
+    fun finishInsert(token: String, mapping: String?, replacedMapping: String? = null) {
+        val leave = values("leave_pending")
+        val remove = values("remove_pending")
+        val edit = prefs.edit().putStringSet("pending_inserts", pendingInserts - token)
+            .putStringSet("leave_pending", leave - token).putStringSet("remove_pending", remove - token)
+        if (mapping != null) {
+            edit.putStringSet("exports", exports - listOfNotNull(replacedMapping).toSet() + mapping)
+            if (token in remove) edit.putStringSet("remove_queue", values("remove_queue") + mapping)
+            else if (token in leave) edit.putStringSet("left_events", leaving + mapping)
+        }
         check(edit.commit())
     }
 

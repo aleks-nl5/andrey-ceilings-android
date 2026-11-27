@@ -14,7 +14,6 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.andreyceilings.shared.calendar.*
-import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.datetime.TimeZone
@@ -49,12 +48,6 @@ internal fun AndroidCalendarIntegrationHost(store: CalendarStore?, content: @Com
     DisposableEffect(store, canRead) {
         val observer = if (store != null && canRead) system.observe() else null
         onDispose { observer?.close() }
-    }
-    LaunchedEffect(store) {
-        store?.integrationChanges?.collectLatest {
-            CalendarReminderRuntime.enqueue(app)
-            AndroidSystemCalendar.enqueue(app)
-        }
     }
     val bridge = remember(store, platformRevision, syncProblems, syncFailed) {
         object : CalendarIntegrationPlatform {
@@ -107,11 +100,14 @@ internal fun AndroidCalendarIntegrationHost(store: CalendarStore?, content: @Com
                 check(!requested || remindersReady)
                 system.confirmRestore()
             }
+            override fun reactivateSyncRule(rule: CalendarSyncRule) = CalendarDeviceState(app).activateRule(rule.deviceToken())
             override suspend fun enableSync() = system.enableSync()
             override suspend fun disableSync(remove: Boolean) = system.disableSync(remove)
-            override suspend fun manualExport(key: WorkOccurrenceKey, version: Long, managed: Boolean) {
-                system.manualExport(key, version, managed)
-                refresh()
+            override suspend fun manualExport(key: WorkOccurrenceKey, version: Long, managed: Boolean,
+                confirmation: CalendarExportConfirmation?): CalendarManualExportResult {
+                val result = system.manualExport(key, version, managed, confirmation)
+                if (result == CalendarManualExportResult.Exported) refresh()
+                return result
             }
             override suspend fun snooze(key: WorkOccurrenceKey, at: Instant) = CalendarReminderRuntime.snooze(app, key, at)
             override fun cachedAvailability(range: WorkDateRange, zone: TimeZone) =
