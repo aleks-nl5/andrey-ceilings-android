@@ -18,16 +18,17 @@ class GlobalMeasurementNavigationTest {
         assertEquals(create, AppNavigationState.restore(create.snapshot()))
         assertSame(create, create.createMeasurement(7))
         assertEquals(list, create.back())
-        val saved = create.measurementCreated(7, 12)
-        assertEquals(MeasurementDetails(7, 12), saved.measurementDetails)
+        val saved = create.measurementCreatedInEditor(7, 12)
+        assertEquals(MeasurementEdit(7, 12), saved.measurementEdit)
+        assertNull(saved.measurementDetails)
+        assertEquals(saved, AppNavigationState.restore(saved.snapshot()).restoreCeilingWorkspace())
         assertEquals(list, saved.back())
-        assertSame(list, list.measurementCreated(7, 12), "Late create cannot reopen a cancelled editor")
+        assertSame(list, list.measurementCreatedInEditor(7, 12), "Late create cannot reopen a cancelled editor")
     }
 
-    @Test fun detailsEditCancelAndSaveNeverSwitchToObjects() {
+    @Test fun workspaceCancelAndSaveNeverSwitchToObjects() {
         for (list in listOf(AppNavigationState().selectTab(AppRoute.MEASUREMENTS),
             AppNavigationState().selectTab(AppRoute.SETTINGS).navigate(AppRoute.MEASUREMENTS))) {
-            val details = list.openMeasurement(7, 12)
             val edit = list.openCeilingWorkspace(7, 12)
             assertEquals(edit, AppNavigationState.restore(edit.snapshot()))
             assertEquals(list, edit.back())
@@ -35,7 +36,7 @@ class GlobalMeasurementNavigationTest {
             assertSame(edit, edit.measurementSaved(8, 12))
             assertSame(edit, edit.measurementSaved(7, 13))
             assertEquals(list.back(), edit.measurementSaved(7, 12).back())
-            assertEquals(list, details.back())
+            assertEquals(edit, list.openMeasurement(7, 12).restoreCeilingWorkspace())
             assertNull(edit.selectTab(AppRoute.PRICES).measurementEdit)
         }
     }

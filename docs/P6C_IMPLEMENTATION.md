@@ -24,3 +24,11 @@ Plans used the existing project, series, revision, tombstone and manifest indexe
 7. Check the registry sort controls with the same leading inset as other dropdowns. Open global search from the dashboard or an Object detail; with the keyboard open, scroll to the last result and check that the panel ends above the IME, including landscape. The header action is omitted on Objects/Clients, Ceilings, Quotes and Prices list screens that already contain a search field. Check that the existing local searches and exact revision navigation still work.
 
 The owner performs the APK acceptance. Platform FULL, SQLCipher device performance and the final integration gates remain pending.
+
+## FULL test alignment (27.11.2026)
+
+- Existing FULL jobs run unfiltered shared JVM and Simulator tests, Android instrumentation, migration verification, Windows encrypted JDBC/Desktop and production recovery. No FULL trigger or suite changes.
+- Adapted route and quote-save checks to the current ceiling workspace and registered quote presenters; legacy identity tokens are tested only as compatibility inputs to the workspace. Preserve physical pricing, immutable output, dirty-exit and blocked-writer assertions.
+- Added real SQLDelight dashboard/session cache tests (live invalidation, warm return, session closure and fresh replacement). QUICK explicitly includes DashboardStoreTest and TransientQuoteTest. No new UI automation.
+- Archived the Room v2-only importer test with an explicit Ignore; production importer and migration code unchanged. Renamed the misleading Windows v7 test name (its actual fixture is current). Keep current-schema concurrency and all existing security, restore, process-death, ENOSPC and PDF proofs.
+- P6B postmerge Android FULL #1386 and CMP FULL #1123 job receipts verified successful. P6C test changes are pending exact-SHA QUICK and owner-authorized FULL; no runtime pass is claimed by this record.

@@ -101,6 +101,7 @@ jobs:
           --tests '*LineCreationSnapTest' --tests '*MeasurementFormattingTest' --tests '*ProjectQuoteMetadataTest'
           --tests '*MeasurementEditModelTest' --tests '*MeasurementNavigationTest'
           --tests '*RegistryTest' --tests '*MeasurementCreateNavigationTest' --tests '*AppNavigationStateTest'
+          --tests '*DashboardStoreTest' --tests '*TransientQuoteTest'
           --tests '*EstimateNumberingTest' --tests '*EstimateNumberSettingsPersistenceTest'
           --tests '*EstimateV22MigrationTest'
           --tests '*FrozenEstimateConcurrencyTest'

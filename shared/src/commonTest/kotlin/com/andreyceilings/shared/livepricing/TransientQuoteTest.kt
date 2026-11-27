@@ -324,7 +324,7 @@ class TransientQuoteTest {
         assertTrue(p.state.value.canAcknowledge); assertFalse(p.state.value.acknowledged)
     }
 
-    @Test fun quoteBackAndRestorationPreserveOnlyRouteIdentity() {
+    @Test fun legacyQuoteSnapshotRestoresOnlyCurrentWorkspaceIdentity() {
         for (base in listOf(AppNavigationState().selectTab(AppRoute.MEASUREMENTS),
             AppNavigationState().selectTab(AppRoute.OBJECTS).openProject(1))) {
             val details = base.openMeasurement(1, 2)
@@ -332,7 +332,11 @@ class TransientQuoteTest {
             assertTrue(quote.measurementQuote); assertEquals(details, quote.back())
             assertEquals(quote, AppNavigationState.restore(quote.snapshot()))
             assertTrue(quote.snapshot().last().startsWith("MEASUREMENT_QUOTE:"))
-            assertFalse(quote.selectTab(AppRoute.PRICES).measurementQuote)
+            val workspace = AppNavigationState.restore(quote.snapshot()).restoreCeilingWorkspace()
+            assertEquals(base.openCeilingWorkspace(1, 2), workspace)
+            assertFalse(workspace.measurementQuote)
+            assertEquals(base, workspace.back())
+            assertNull(workspace.selectTab(AppRoute.PRICES).measurementEdit)
         }
         for (tail in listOf("MEASUREMENT_QUOTE:1:0", "MEASUREMENT_QUOTE:01:2", "MEASUREMENT_QUOTE:1:2:bad"))
             assertFalse(AppNavigationState.restore(listOf("MEASUREMENTS", tail)).measurementQuote)

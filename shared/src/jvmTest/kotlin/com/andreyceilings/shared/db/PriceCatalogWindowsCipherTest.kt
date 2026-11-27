@@ -56,7 +56,7 @@ class PriceCatalogWindowsCipherTest {
             } finally { file.delete() }
         } finally { key.fill(0) }
     }
-    @Test fun encryptedMeasurementElementsV7MigrationRacesAndSharedContracts() = runBlocking {
+    @Test fun currentEncryptedMeasurementElementRacesAndSharedContracts() = runBlocking {
         if (!System.getProperty("os.name").startsWith("Windows", ignoreCase = true)) return@runBlocking
         val key = ByteArray(32) { 64 }
         try {
