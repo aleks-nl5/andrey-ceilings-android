@@ -190,6 +190,7 @@ private fun DesktopPriceHost(
             mutableStateOf(runCatching { CalendarDisplayMode.valueOf(calendarPreferences.get("calendarDisplayMode", "WEEK")) }
                 .getOrDefault(CalendarDisplayMode.WEEK))
         }
+        LaunchedEffect(calendar, calendarMode) { calendar.warmCurrentPeriod(calendarMode) }
         var calendarClientRequest by remember(database) { mutableStateOf<Long?>(null) }
         var calendarEditor by remember(database) { mutableStateOf<CalendarEditorRoute?>(null) }
         var completedProject by remember(database) { mutableStateOf<Pair<String, WorkOccurrenceKey>?>(null) }

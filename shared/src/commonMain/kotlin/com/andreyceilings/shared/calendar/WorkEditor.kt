@@ -99,7 +99,8 @@ fun WorkEditor(
     registry: ObjectsClientsStore? = null,
     onRegistryTarget: ((GlobalRegistryTarget) -> Unit)? = null,
 ) = key(store, route) {
-    val optionsRead = calendarOptionsState(store)
+    var reload by remember { mutableIntStateOf(0) }
+    val optionsRead = key(reload) { calendarOptionsState(store) }
     val options = optionsRead.data()
     val lifecycleScope = rememberCoroutineScope()
     var editing by remember { mutableStateOf(route is CalendarEditorRoute.Create || (route as? CalendarEditorRoute.Open)?.edit == true || (route as? CalendarEditorRoute.Open)?.move == true) }
@@ -115,7 +116,6 @@ fun WorkEditor(
     var initial by remember { mutableStateOf<WorkInput?>(null) }
     var input by remember { mutableStateOf<WorkInput?>(null) }
     var loadFailed by remember { mutableStateOf(false) }
-    var reload by remember { mutableIntStateOf(0) }
     var busy by remember { mutableStateOf(false) }
     var discarding by remember { mutableStateOf(false) }
     var deleting by remember { mutableStateOf(false) }
@@ -153,6 +153,8 @@ fun WorkEditor(
             initial = data
             input = data
             stale = false
+            error = false
+            invalidDay = null
             loadFailed = false
             if ((route as? CalendarEditorRoute.Open)?.delete == true && reload == 0) deleting = true
         } catch (cancelled: CancellationException) { throw cancelled }
@@ -222,6 +224,22 @@ fun WorkEditor(
         }
     }
 
+    val formMessage = when {
+        loadFailed || optionsRead is CalendarRead.Unavailable -> Res.string.work_unavailable
+        stale -> Res.string.work_stale
+        error -> Res.string.work_save_failed
+        !editing || data == null -> null
+        invalidDay != null -> Res.string.work_invalid_day
+        data != initial && data.title.isBlank() -> Res.string.work_invalid_title
+        data.type == "INSTALL" && data.project == null -> Res.string.work_invalid_project
+        data.mode == WorkTimeMode.TIMED && data.days.any {
+            runCatching { LocalTime.parse(it.start) >= LocalTime.parse(it.end) }.getOrDefault(true)
+        } -> Res.string.work_invalid_time
+        invalidTime -> Res.string.work_invalid_time
+        draft == null && data != initial -> Res.string.work_invalid
+        clockChange -> Res.string.work_zone_change
+        else -> null
+    }
     val title = when {
         move -> Res.string.work_move
         route is CalendarEditorRoute.Create -> Res.string.work_add
@@ -271,37 +289,38 @@ fun WorkEditor(
                         }
                         Text(stringResource(title), Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
                         if (editing) CeilingsFab({ save() }, stringResource(Res.string.oc_save),
-                            profile = CeilingsFabProfile.COMPACT, enabled = !stale && !busy && draft != null && !invalidTime && invalidDay == null) {
+                            profile = CeilingsFabProfile.COMPACT, enabled = !stale && !busy && !loadFailed && optionsRead !is CalendarRead.Unavailable && draft != null && !invalidTime && invalidDay == null) {
                             Icon(Icons.Default.Check, null)
                         } else CeilingsFab({ editing = true }, stringResource(Res.string.work_edit), profile = CeilingsFabProfile.COMPACT) {
                             Icon(Icons.Default.Edit, null)
                         }
                     }
                 },
+                pinned = {
+                    formMessage?.let { message ->
+                        Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Box(Modifier.weight(1f)) {
+                                CalendarFeedback(message, if (message == Res.string.work_zone_change)
+                                    com.andreyceilings.shared.ui.ContextFeedbackKind.WARNING
+                                else com.andreyceilings.shared.ui.ContextFeedbackKind.ERROR)
+                            }
+                            if (stale || loadFailed || optionsRead is CalendarRead.Unavailable) IconButton(onClick = { reload++ }) {
+                                Icon(Icons.Default.Refresh, stringResource(Res.string.work_reload))
+                            }
+                        }
+                    }
+                }
             ) { padding ->
                 LazyColumn(Modifier.fillMaxSize().padding(horizontal = 14.dp), contentPadding = padding,
                     verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                    if (loadFailed || optionsRead is CalendarRead.Unavailable) item {
-                        CalendarFeedback(Res.string.work_unavailable)
+                    if (loadFailed || (optionsRead is CalendarRead.Unavailable && options == null)) {
+                        // The persistent feedback above owns the failure and retry action.
                     } else if (data == null || options == null) item { LinearProgressIndicator(Modifier.fillMaxWidth()) }
                     else if (!editing && original != null) {
                         item("work-view") {
                             WorkReadOnly(checkNotNull(original), options, store, onRegistryTarget, onDelete = { deleting = true })
                         }
-                        if (stale || error) item { CalendarFeedback(if (stale) Res.string.work_stale else Res.string.work_save_failed)
-                            if (stale) TextButton(onClick = { reload++ }) { Text(stringResource(Res.string.work_reload)) }
-                        }
                     } else {
-                        if (stale || error || invalidTime || clockChange || invalidDay != null || (draft == null && data != initial)) item {
-                            CalendarFeedback(when {
-                                stale -> Res.string.work_stale
-                                error -> Res.string.work_save_failed
-                                invalidDay != null -> Res.string.work_invalid_day
-                                invalidTime || draft == null -> Res.string.work_invalid
-                                else -> Res.string.work_zone_change
-                            })
-                            if (stale) TextButton(onClick = { reload++ }) { Text(stringResource(Res.string.work_reload)) }
-                        }
                         item("work-name") {
                             val focus = remember { FocusRequester() }
                             WorkField(data.title, Res.string.work_title, error = data.title.isBlank() && data != initial,
@@ -575,7 +594,10 @@ private fun RepeatSettings(input: WorkInput, onChange: (WorkInput) -> Unit) {
         }) {
             CalendarMenuItem(text = { Text(stringResource(Res.string.work_once)) }, onClick = { onChange(input.copy(frequency = null)) })
             WorkFrequency.entries.forEach {
-                CalendarMenuItem(text = { Text(stringResource(it.label())) }, onClick = { onChange(input.copy(frequency = it)) })
+                CalendarMenuItem(text = { Text(stringResource(it.label())) }, onClick = {
+                    val weekdays = if (it == WorkFrequency.CUSTOM) input.repeatsOn + LocalDate.parse(input.date).dayOfWeek else input.repeatsOn
+                    onChange(input.copy(frequency = it, repeatsOn = weekdays))
+                })
             }
         }
         if (input.frequency != null) {

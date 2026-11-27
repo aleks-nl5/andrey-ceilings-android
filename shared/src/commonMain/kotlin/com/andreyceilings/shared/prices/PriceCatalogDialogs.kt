@@ -8,6 +8,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -223,7 +225,7 @@ private fun CatalogUnitField(
     Box(Modifier.fillMaxWidth()) {
         OutlinedTextField(value = value, onValueChange = onChange, label = { Text(label) },
             singleLine = true, enabled = enabled, modifier = Modifier.fillMaxWidth().then(modifier),
-            trailingIcon = { TextButton(enabled = enabled, onClick = { expanded = true }) { Text("▾") } })
+            trailingIcon = { OutlinedIconButton(enabled = enabled, onClick = { expanded = true }) { Icon(Icons.Default.ArrowDropDown, label) } })
         CeilingsPopupMenu(expanded = expanded && enabled, onDismissRequest = { expanded = false }) {
             options.forEach { option -> DropdownMenuItem(text = { Text(option) },
                 onClick = { expanded = false; onChange(option) }) }
@@ -242,7 +244,7 @@ private fun <T> CatalogChoice(
         Box(Modifier.fillMaxWidth()) {
             OutlinedButton(enabled = enabled, onClick = { expanded = true }, modifier = Modifier.fillMaxWidth().then(modifier)) {
                 Text(value, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text("▾")
+                Icon(Icons.Default.ArrowDropDown, null, Modifier.size(18.dp))
             }
             CeilingsPopupMenu(expanded = expanded && enabled, onDismissRequest = { expanded = false }) {
                 options.forEach { option -> DropdownMenuItem(text = { Text(name(option)) },

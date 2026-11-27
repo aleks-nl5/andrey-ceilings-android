@@ -10,6 +10,13 @@ import kotlin.time.Duration.Companion.hours
 import kotlin.time.Instant
 
 class WorkRecurrenceTest {
+    @Test fun displayedCalendarDatesKeepDayMonthAndFourDigitYear() {
+        assertEquals("01.02.2026", LocalDate(2026, 2, 1).shortDate())
+        assertEquals("31.12.2026", LocalDate(2026, 12, 31).shortDate())
+        assertEquals("01.01.2027", LocalDate(2027, 1, 1).shortDate())
+        assertEquals("01.01.0001", LocalDate(1, 1, 1).shortDate())
+    }
+
     @Test fun monthlyClampsAndRetainsOriginalAnchorWithCountOrInclusiveUntil() {
         val anchor = LocalDate(2024, 1, 31)
         val end = LocalDate(2024, 4, 30)

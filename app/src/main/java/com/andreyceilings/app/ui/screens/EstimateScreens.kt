@@ -1,7 +1,13 @@
 package com.andreyceilings.app.ui.screens
 
 import com.andreyceilings.app.ui.theme.AppAlertDialog
-import com.andreyceilings.app.ui.theme.AppExposedDropdownMenu
+import com.andreyceilings.shared.ui.CeilingsPopupMenu
+import com.andreyceilings.shared.resources.Res
+import com.andreyceilings.shared.resources.p6c_project
+import com.andreyceilings.shared.resources.p6c_choose_project
+import org.jetbrains.compose.resources.stringResource
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -49,14 +55,14 @@ internal fun SaveEstimateDialog(
         title = { Text("Зберегти кошторис") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = it }) {
-                    OutlinedTextField(
-                        value = projects.firstOrNull { it.id == selectedProjectId }?.title ?: "Оберіть об’єкт",
-                        onValueChange = {}, readOnly = true, label = { Text("Об’єкт") },
-                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
-                        modifier = Modifier.menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable, enabled = true).fillMaxWidth()
-                    )
-                    AppExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                Text(stringResource(Res.string.p6c_project), style = MaterialTheme.typography.labelMedium)
+                Box(Modifier.fillMaxWidth()) {
+                    OutlinedButton(onClick = { expanded = true }, modifier = Modifier.fillMaxWidth()) {
+                        Text(projects.firstOrNull { it.id == selectedProjectId }?.title ?: stringResource(Res.string.p6c_choose_project),
+                            Modifier.weight(1f), maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                        Icon(Icons.Default.ArrowDropDown, null, Modifier.size(18.dp))
+                    }
+                    CeilingsPopupMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
                         projects.forEach { project -> DropdownMenuItem(text = { Text(project.title) }, onClick = { selectedProjectId = project.id; expanded = false }) }
                     }
                 }

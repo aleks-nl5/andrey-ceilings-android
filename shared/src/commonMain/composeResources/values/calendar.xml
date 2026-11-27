@@ -114,4 +114,7 @@
     <string name="work_interval_short">Крок</string>
     <string name="work_color_accessible">Колір #%1$s</string>
     <string name="work_repeat_anchor">Виберіть день тижня, на який припадає початкова дата.</string>
+    <string name="work_invalid_title">Введіть назву роботи.</string>
+    <string name="work_invalid_project">Оберіть об’єкт для монтажу.</string>
+    <string name="work_invalid_time">Час завершення має бути пізніше початку.</string>
 </resources>

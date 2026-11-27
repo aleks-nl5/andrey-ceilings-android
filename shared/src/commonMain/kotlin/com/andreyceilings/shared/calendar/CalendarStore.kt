@@ -19,7 +19,9 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.datetime.LocalDate
+import kotlinx.datetime.DayOfWeek
 import kotlinx.datetime.TimeZone
+import kotlinx.datetime.toLocalDateTime
 import kotlin.time.Clock
 
 sealed interface CalendarRead<out T> {
@@ -66,6 +68,20 @@ class CalendarStore(
 
     fun period(range: WorkDateRange, zone: TimeZone): Flow<CalendarRead<List<CalendarWork>>> = observe(cached(range, zone)) {
         fill(PeriodKey(range, zone), changes.value)
+    }
+
+    /** Warm only the saved display mode, never block dashboard rendering or persist UI state. */
+    fun warmCurrentPeriod(mode: CalendarDisplayMode, systemFirstDay: DayOfWeek = DayOfWeek.MONDAY) {
+        scope.launch {
+            try {
+                access {
+                    val settings = repository.settings()
+                    val today = clock.now().toLocalDateTime(settings.zone).date
+                    fill(PeriodKey(periodOf(today, mode, settings.firstWeekday ?: systemFirstDay), settings.zone), changes.value)
+                }
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (_: Exception) { /* The foreground flow reports actual errors. */ }
+        }
     }
 
     fun prefetch(range: WorkDateRange, zone: TimeZone) {

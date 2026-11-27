@@ -76,7 +76,7 @@ internal fun ContextFeedbackIcon(
 
 /** One raised, outlined menu surface for contextual explanations and version pickers. */
 @Composable
-internal fun CeilingsPopupMenu(
+fun CeilingsPopupMenu(
     expanded: Boolean, onDismissRequest: () -> Unit,
     modifier: Modifier = Modifier,
     content: @Composable ColumnScope.() -> Unit

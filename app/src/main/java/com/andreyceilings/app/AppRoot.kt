@@ -207,6 +207,7 @@ private fun CeilingsAppContent(
         calendarStorage.edit().putString("mode", mode.name).apply()
     }
     val firstWeekday = kotlinx.datetime.DayOfWeek.entries[(java.util.Calendar.getInstance().firstDayOfWeek + 5) % 7]
+    LaunchedEffect(calendarStore, calendarMode, firstWeekday) { calendarStore?.warmCurrentPeriod(calendarMode, firstWeekday) }
     var calendarEditor by remember(database) { mutableStateOf<CalendarEditorRoute?>(null) }
     var projectCalendar by remember(database) { mutableStateOf<String?>(null) }
     var completionProject by remember(database) { mutableStateOf<Pair<String, WorkOccurrenceKey>?>(null) }

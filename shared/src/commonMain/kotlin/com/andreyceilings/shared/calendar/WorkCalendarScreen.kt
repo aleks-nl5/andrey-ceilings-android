@@ -84,7 +84,10 @@ fun WorkCalendarScreen(
         if (store != null && options == null && optionsRead is CalendarRead.Loading) CalendarRead.Loading
         else calendarState(currentPeriod, store?.cached(range, zone))
     }
-    val fallbackRead = upcomingCalendarState(store, today, project, 12, now, type)
+    val fallbackRead = key(retry) {
+        if (options == null && optionsRead is CalendarRead.Loading) CalendarRead.Loading
+        else upcomingCalendarState(store, today, project, 12, now, type)
+    }
     val upcoming = fallbackRead.data().orEmpty().filter { it.upcoming(now) }
     var searchHorizon by rememberSaveable { mutableIntStateOf(90) }
     val searchFlow = remember(store, query, searchHorizon, retry) {
@@ -277,7 +280,10 @@ fun WorkCalendarScreen(
                     LinearProgressIndicator(Modifier.fillMaxWidth())
                 }
                 if (fallbackNeeded && fallbackRead is CalendarRead.Unavailable) item("calendar-fallback-error") {
-                    CalendarFeedback(Res.string.work_unavailable)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(Modifier.weight(1f)) { CalendarFeedback(Res.string.work_unavailable) }
+                        IconButton(onClick = { retry++ }) { Icon(Icons.Default.Refresh, stringResource(Res.string.work_reload)) }
+                    }
                 }
                 if (fallbackNeeded && displayed.isNotEmpty()) item("calendar-fallback-header") {
                     Text(stringResource(Res.string.p6c_upcoming), style = MaterialTheme.typography.titleSmall,
@@ -483,7 +489,7 @@ internal fun calendarNow(): Instant {
     return now
 }
 
-private fun periodOf(date: LocalDate, mode: CalendarDisplayMode, first: DayOfWeek): WorkDateRange {
+internal fun periodOf(date: LocalDate, mode: CalendarDisplayMode, first: DayOfWeek): WorkDateRange {
     fun weekStart(day: LocalDate) = day.shift(-((day.dayOfWeek.ordinal - first.ordinal + 7) % 7))
     return when (mode) {
         CalendarDisplayMode.WEEK -> weekStart(date).let { WorkDateRange(it, it.shift(6)) }

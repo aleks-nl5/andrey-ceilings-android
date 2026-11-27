@@ -46,10 +46,12 @@ fun DashboardScreen(
     onCalendarEdit: ((CalendarEditorRoute) -> Unit)? = null,
 ) {
     val now = Instant.fromEpochMilliseconds(nowMillis)
-    val calendarOptions = calendarOptionsState(calendar).data()
+    val optionsRead = calendarOptionsState(calendar)
+    val calendarOptions = optionsRead.data()
     val zone = calendarOptions?.settings?.zone ?: TimeZone.currentSystemDefault()
     val today = now.toLocalDateTime(zone).date
-    val workRead = upcomingCalendarState(calendar, today, null, 12, now)
+    val workRead = if (calendar != null && calendarOptions == null && optionsRead is CalendarRead.Loading)
+        CalendarRead.Loading else upcomingCalendarState(calendar, today, null, 12, now)
     val scheduled = workRead.data().orEmpty().filter { it.upcoming(now) }.mapNotNull { work ->
         val eventZone = work.draft.schedule.zone
         val next = work.days.firstOrNull { day ->
@@ -74,7 +76,8 @@ fun DashboardScreen(
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         preferences.rows().forEach { blocks ->
             when (blocks.singleOrNull()) {
-                DashboardBlock.WORK -> UpcomingEventsCard(if (calendar == null) upcomingEvents else scheduled, todayLabel, nowMillis,
+                DashboardBlock.WORK -> UpcomingEventsCard(if (calendar == null) upcomingEvents else scheduled,
+                    if (calendar == null) todayLabel else today.shortDate(), nowMillis,
                     store != null && (calendar == null || workRead !is CalendarRead.Unavailable), onCalendar, onOpenProject,
                     onOpenWork = onCalendarEdit?.let { open -> { open(CalendarEditorRoute.Open(it)) } },
                     onAddWork = onCalendarEdit?.takeIf { calendar != null }?.let { open -> { open(CalendarEditorRoute.Create()) } },
