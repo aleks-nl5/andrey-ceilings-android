@@ -231,6 +231,7 @@ internal class AndroidSystemCalendar(
             try {
                 withCalendarEffects(context, isolatedStore) {
                     check(!state.paused)
+                    finishPendingSyncTransition()
                     val destination = requireDestination(state.destination)
                     val work = checkNotNull(exact(key))
                     check(work.version == version && work.draft.status.active)
@@ -301,7 +302,7 @@ internal class AndroidSystemCalendar(
                 // Record the choice for mapped rows and interrupted inserts even if provider access is currently revoked.
                 state.suspendSync(managed.mapTo(mutableSetOf()) { it.encoded },
                     current.enabledSyncRules().mapTo(mutableSetOf()) { it.deviceToken() }, remove)
-                saveSettings(current.settings.copy(syncEnabled = false))
+                finishPendingSyncTransition()
             }
             enqueueLiveStore()
         }
@@ -312,11 +313,18 @@ internal class AndroidSystemCalendar(
             withCalendarEffects(context, isolatedStore) {
                 check(!state.paused)
                 requireDestination(state.destination)
-                saveSettings(snapshot().settings.copy(syncEnabled = true))
-                state.replaceSuspendedRules(emptySet())
+                state.beginSyncEnable()
+                finishPendingSyncTransition()
             }
             enqueueLiveStore()
         }
+    }
+
+    private fun CalendarStore.IntegrationAccess.finishPendingSyncTransition() {
+        val transition = state.syncTransition ?: return
+        val current = snapshot().settings
+        if (current.syncEnabled != transition.enabled) saveSettings(current.copy(syncEnabled = transition.enabled))
+        state.finishSyncTransition(transition)
     }
 
     private fun suspendedRules(snapshot: CalendarIntegrationSnapshot): Set<String> {
@@ -334,6 +342,7 @@ internal class AndroidSystemCalendar(
             if (state.paused || state.destination == null) return@withContext
             withCalendarEffects(context, isolatedStore) {
                 if (state.paused || state.destination == null) return@withCalendarEffects
+                finishPendingSyncTransition()
                 val zone = TimeZone.currentSystemDefault()
                 val now = Clock.System.now()
                 val today = now.toLocalDateTime(zone).date

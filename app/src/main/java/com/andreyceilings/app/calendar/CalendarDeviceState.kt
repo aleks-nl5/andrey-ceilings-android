@@ -35,7 +35,8 @@ internal class CalendarDeviceState(context: Context, fileName: String = "calenda
 
     fun pauseForRestore() = synchronized(lock) {
         check(prefs.edit().putString("generation", UUID.randomUUID().toString())
-            .putBoolean("restore_pending", true).remove("snoozes").remove("delivered").commit())
+            .putBoolean("restore_pending", true).remove("snoozes").remove("delivered")
+            .remove("sync_transition").commit())
     }
 
     fun resumeAfterRestore() = synchronized(lock) {
@@ -89,9 +90,25 @@ internal class CalendarDeviceState(context: Context, fileName: String = "calenda
         }
     }
 
+    val syncTransition get() = prefs.getString("sync_transition", null)?.let(SyncTransition::valueOf)
+
+    fun beginSyncEnable() {
+        check(prefs.edit().putString("sync_transition", SyncTransition.ENABLE.name).commit())
+    }
+
+    fun finishSyncTransition(transition: SyncTransition) {
+        val edit = prefs.edit().remove("sync_transition")
+        if (transition == SyncTransition.ENABLE) {
+            edit.remove("suspended_rules").remove("sync_suspended")
+                .remove("manual_after_disable").remove("activated_legacy_rules")
+        }
+        check(edit.commit())
+    }
+
     fun suspendSync(managed: Set<String>, rules: Set<String>, remove: Boolean) {
         val pending = pendingInserts.filterTo(mutableSetOf()) { "/managed/" in it }
         val edit = prefs.edit().putStringSet("suspended_rules", rules)
+            .putString("sync_transition", SyncTransition.DISABLE.name)
             .remove("sync_suspended").remove("manual_after_disable").remove("activated_legacy_rules")
         if (remove) edit.putStringSet("remove_queue", values("remove_queue") + managed)
             .putStringSet("remove_pending", values("remove_pending") + pending)
@@ -122,6 +139,8 @@ internal class CalendarDeviceState(context: Context, fileName: String = "calenda
         private val lock = Any()
     }
 }
+
+internal enum class SyncTransition(val enabled: Boolean) { ENABLE(true), DISABLE(false) }
 
 internal fun canScheduleCalendarAlarms(context: Context): Boolean =
     Build.VERSION.SDK_INT < 31 || context.getSystemService(AlarmManager::class.java).canScheduleExactAlarms()

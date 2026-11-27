@@ -124,8 +124,12 @@ class CalendarProviderIntegrationTest {
                 system.reconcile()
                 assertEquals(setOf(unrelated, leftId), events().map { it[0] }.toSet())
 
-                system.enableSync()
+                // Simulate a process exit after the device journal commits and before the DB setting.
+                device.beginSyncEnable()
+                assertFalse(store.integrationSnapshot().settings.syncEnabled)
                 system.reconcile()
+                assertTrue(store.integrationSnapshot().settings.syncEnabled)
+                assertNull(device.syncTransition)
                 val recreated = events().single { it[0] != unrelated && it[0] != leftId }[0]!!
                 interruptAfterProviderCommit(recreated)
                 device.pauseForRestore()
