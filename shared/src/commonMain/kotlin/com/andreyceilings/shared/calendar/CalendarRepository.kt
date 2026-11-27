@@ -584,7 +584,7 @@ class CalendarRepository(
     private fun checkConflicts(
         command: CalendarSave, draft: CalendarWorkDraft, target: Located?,
     ): Pair<Set<CalendarConflict>, LocalDate?> {
-        if (!draft.status.active || draft.schedule.mode == WorkTimeMode.DATE_ONLY) return emptySet<CalendarConflict>() to null
+        if (!draft.status.active) return emptySet<CalendarConflict>() to null
         val zone = draft.schedule.zone
         val rule = draft.recurrence.takeIf { target == null || command.scope == CalendarEditScope.THIS_AND_FOLLOWING }
         val today = clock.now().toLocalDateTime(zone).date
@@ -599,23 +599,49 @@ class CalendarRepository(
         val checkedThrough = if (lastProposed != null && rule?.count != null && rule.ordinal(lastProposed) + 1 == rule.count)
             lastProposed else end
         val root = target?.work?.key?.rootUuid ?: ""
+        val shiftingSeries = target?.takeIf { it.record.rule != null && it.work.draft.status.active &&
+            command.scope == CalendarEditScope.THIS_AND_FOLLOWING }
+        val identityShift = shiftingSeries?.let {
+            (it.work.key.originalDate.dayNumber() - draft.date.dayNumber()).toInt()
+        } ?: 0
+        val affected = shiftingSeries?.let(::followingSegments).orEmpty()
+        val exceptions = if (shiftingSeries == null) emptyMap() else
+            queries.selectCalendarExceptionsForRoot(root).executeAsList().associateBy { it.originalDay }
+        val overrides = load(exceptions.values.mapNotNull { it.overrideUuid })
+        val replaced = mutableSetOf<WorkOccurrenceKey>()
+        val now = clock.now()
         val proposed = proposedDates.flatMap { date ->
-            val key = if (target == null) WorkOccurrenceKey(root, date) else {
-                val shift = (target.work.key.originalDate.dayNumber() - draft.date.dayNumber()).toInt()
-                WorkOccurrenceKey(root, date.shift(shift))
+            val key = if (target != null && rule == null) target.work.key
+                else WorkOccurrenceKey(root, date.shift(identityShift))
+            val exception = exceptions[key.originalDate.dayNumber()]
+            val patch = exception?.overrideUuid?.let(overrides::get)
+            val base = exception?.segmentUuid?.let(affected::get)
+            if (key != target?.work?.key && exception != null) {
+                if (exception.deleted.bool() || patch?.row?.kind == "SINGLE" || base == null)
+                    return@flatMap emptyList()
+                val prior = hydrate(base, exception, overrides)
+                if (prior != null && !prior.upcoming(now)) return@flatMap emptyList()
             }
-            draft.schedule.on(date).mapNotNull { it.interval?.let { interval -> key to interval } }
+            replaced += key
+            val fields = if (key == target?.work?.key) 0L else exception?.fields ?: 0L
+            val dateOnCalendar = if (fields and DATE != 0L && patch != null) patch.draft.date else date
+            val schedule = if (fields and SCHEDULE != 0L && patch != null) patch.draft.schedule else draft.schedule
+            schedule.on(dateOnCalendar).mapNotNull { it.interval?.let { interval -> key to interval } }
         }
         if (proposed.isEmpty()) return emptySet<CalendarConflict>() to checkedThrough
-        val first = proposed.minOf { it.second.start }.toLocalDateTime(zone).date
-        val last = proposed.maxOf { it.second.endExclusive }.toLocalDateTime(zone).date
-        val exceptions = if (target != null && command.scope == CalendarEditScope.THIS_AND_FOLLOWING) {
-            queries.selectCalendarExceptionsForRoot(root).executeAsList().associateBy { it.originalDay }
-        } else emptyMap()
-        val others = readPeriod(WorkDateRange(first.shift(-2), last.shift(2)), zone).filter { work ->
-            if (!work.draft.status.active || work.key == target?.work?.key) false
-            else if (target == null || target.record.rule == null || command.scope != CalendarEditScope.THIS_AND_FOLLOWING ||
-                work.key.rootUuid != root || work.key.originalDate < target.work.key.originalDate) true
+        val ranges = proposed.map { (_, interval) ->
+            WorkDateRange(interval.start.toLocalDateTime(zone).date.shift(-2),
+                interval.endExclusive.toLocalDateTime(zone).date.shift(2))
+        }.distinct().sortedBy { it.from }.fold(mutableListOf<WorkDateRange>()) { merged, range ->
+            val last = merged.lastOrNull()
+            if (last == null || range.from > last.through.shift(1)) merged += range
+            else merged[merged.lastIndex] = WorkDateRange(last.from, maxOf(last.through, range.through))
+            merged
+        }
+        val others = ranges.flatMap { readPeriod(it, zone) }.distinctBy { it.key }.filter { work ->
+            if (!work.draft.status.active || work.key == target?.work?.key || work.key in replaced) false
+            else if (shiftingSeries == null || work.key.rootUuid != root ||
+                work.key.originalDate < shiftingSeries.work.key.originalDate) true
             else exceptions[work.key.originalDate.dayNumber()]?.overrideUuid != null
         }.flatMap { work -> work.days.mapNotNull { day -> day.interval?.let { work.key to it } } }
         val entries = (proposed.map { (key, interval) -> ConflictInterval(key, interval, true) } +

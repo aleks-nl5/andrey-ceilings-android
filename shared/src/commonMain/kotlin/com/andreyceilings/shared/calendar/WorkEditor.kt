@@ -37,7 +37,7 @@ private data class WorkInput(
     val frequency: WorkFrequency?, val step: String, val repeatsOn: Set<DayOfWeek>,
     val endMode: Int, val endValue: String,
 ) {
-    fun draft(includeRule: Boolean, original: WorkRecurrence?): CalendarWorkDraft {
+    fun draft(includeRule: Boolean, original: CalendarWork?): CalendarWorkDraft {
         val localDate = LocalDate.parse(date)
         require(localDate.year in 1..9998)
         val rule = frequency?.takeIf { includeRule }?.let { freq ->
@@ -45,7 +45,8 @@ private data class WorkInput(
                 if (freq == WorkFrequency.CUSTOM) repeatsOn else emptySet(),
                 until = if (endMode == 1) LocalDate.parse(endValue) else null,
                 count = if (endMode == 2) endValue.toInt() else null,
-                monthDay = original?.takeIf { it.frequency == freq && it.anchor.day == localDate.day }?.monthDay ?: localDate.day)
+                monthDay = original?.takeIf { it.draft.date == localDate }?.draft?.recurrence
+                    ?.takeIf { it.frequency == freq }?.monthDay ?: localDate.day)
         }
         val schedule = WorkSchedule(mode, TimeZone.of(zone), days.map { day ->
             if (mode == WorkTimeMode.TIMED) WorkDay(day.offset.toInt(), LocalTime.parse(day.start), LocalTime.parse(day.end))
@@ -136,9 +137,8 @@ fun WorkEditor(
     }
     val recurring = original?.draft?.recurrence != null
     val data = input
-    val unchangedRule = original?.draft?.recurrence
-    val draft = remember(data, scope, unchangedRule) {
-        runCatching { data?.draft(original == null || (recurring && scope == CalendarEditScope.THIS_AND_FOLLOWING), unchangedRule) }.getOrNull()
+    val draft = remember(data, scope, original) {
+        runCatching { data?.draft(original == null || (recurring && scope == CalendarEditScope.THIS_AND_FOLLOWING), original) }.getOrNull()
     }
     val preview by produceState<CalendarConflictPreview?>(null, draft, original, scope) {
         value = null

@@ -101,6 +101,25 @@ class CalendarRepositoryTest {
         assertNotNull(calendar.exact(dateOnly.key))
     }
 
+    @Test fun conflictPreviewUsesRemappedPersonalHoursAfterForwardMove() = fixture { _, calendar ->
+        val first = saved(calendar.save(CalendarSave(draft(timed = true,
+            recurrence = WorkRecurrence(today, WorkFrequency.DAILY)))))
+        val custom = assertNotNull(calendar.exact(WorkOccurrenceKey(first.rootUuid, today.shift(2))))
+        val afternoon = WorkSchedule(WorkTimeMode.TIMED, zone, listOf(WorkDay(0, LocalTime(15, 0), LocalTime(16, 0))))
+        saved(calendar.save(CalendarSave(custom.draft.copy(schedule = afternoon), custom.key, custom.version)))
+        val other = saved(calendar.save(CalendarSave(draft(timed = true).copy(date = today.shift(3), schedule = afternoon))))
+        val boundary = assertNotNull(calendar.exact(WorkOccurrenceKey(first.rootUuid, today.shift(1))))
+        val shift = CalendarSave(boundary.draft.copy(date = today.shift(2), recurrence = null),
+            boundary.key, boundary.version, CalendarEditScope.THIS_AND_FOLLOWING)
+        val preview = assertNotNull(calendar.previewConflicts(shift))
+        assertEquals(1, preview.count)
+        val warning = assertIs<CalendarSaveResult.Conflicts>(calendar.save(shift))
+        assertEquals(custom.key, warning.confirmation.conflicts.single().proposed)
+        assertEquals(other, warning.confirmation.conflicts.single().other)
+        saved(calendar.save(shift, warning.confirmation))
+        assertEquals(today.shift(3), calendar.exact(custom.key)?.draft?.date)
+    }
+
     @Test fun linkedDeletionNeedsFreshConfirmationAndKeepsHistory() = fixture { db, calendar ->
         val client = ClientRepository(db)
         val clientId = client.createReturningId("Client contact", phone = "555", createdAt = 12)
