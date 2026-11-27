@@ -1,6 +1,8 @@
 package com.andreyceilings.app
 
 import android.content.Context
+import com.andreyceilings.app.calendar.CalendarDeviceState
+import kotlinx.coroutines.runBlocking
 import com.andreyceilings.shared.calendar.*
 import com.andreyceilings.shared.db.removeEmptyCalendarSchema
 import com.andreyceilings.shared.db.createEncryptedPrototypeDriver
@@ -182,8 +184,8 @@ class EstimateRevisionPortableRestoreTest {
                     listOf(WorkDay(0))), "Migrated calendar work", "MEASURE")
                 val workKey = createEncryptedPrototypeDriver(context, passphrase, migratedName,
                     enableWalForTesting = true, initializePriceCatalog = true, requireExistingSchema = true).use { driver ->
-                    assertEquals(25L, PriceNameUniquenessProof.scalar(driver, "PRAGMA user_version"))
-                    PriceCatalogSchema.verifyStructure(driver, 25)
+                    assertEquals(PriceCatalogSchema.version, PriceNameUniquenessProof.scalar(driver, "PRAGMA user_version"))
+                    PriceCatalogSchema.verifyStructure(driver)
                     verifyCalendarContents(driver)
                     val db = PrototypeDatabase(driver)
                     val project = checkNotNull(ProjectRepository(db).find(projectId))
@@ -297,9 +299,18 @@ class EstimateRevisionPortableRestoreTest {
                 WorkSchedule(WorkTimeMode.DATE_ONLY, zone, listOf(WorkDay(0))), "Portable calendar work", customType.code,
                 recurrence = WorkRecurrence(day, WorkFrequency.DAILY, count = 3))))
                 as CalendarSaveResult.Saved).key
+            val calendarStore = original.objectsClientsStore.calendar
+            val integrationSettings = CalendarIntegrationSettings(syncEnabled = true, exportFields = setOf(CalendarExportField.ADDRESS))
+            val typeRules = CalendarTypeIntegration(setOf(ReminderRule(ReminderDay.DATE, 0, 9 * 60)), syncEnabled = true)
+            runBlocking {
+                calendarStore.saveIntegrationSettings(integrationSettings)
+                calendarStore.saveTypeIntegration(customType.code, typeRules)
+            }
             val changedKey = WorkOccurrenceKey(workKey.rootUuid, LocalDate(2026, 12, 16))
             val changed = checkNotNull(work.exact(changedKey))
-            assertTrue(work.save(CalendarSave(changed.draft.copy(title = "Portable exception"), changedKey, changed.version)) is CalendarSaveResult.Saved)
+            val exceptionRules = CalendarWorkIntegration(ReminderMode.OFF, syncMode = CalendarSyncMode.OFF)
+            assertTrue(work.save(CalendarSave(changed.draft.copy(title = "Portable exception"), changedKey, changed.version,
+                integration = exceptionRules)) is CalendarSaveResult.Saved)
             work.saveType(customType.copy(archived = true))
             val exported = PortableBackupManager.create(context, original, password)
 
@@ -325,18 +336,29 @@ class EstimateRevisionPortableRestoreTest {
             val event = checkNotNull(work.exact(workKey))
             assertTrue(work.delete(workKey, event.version, CalendarEditScope.OCCURRENCE))
             work.saveSettings(CalendarSettings(TimeZone.UTC, null, emptySet()))
+            runBlocking { calendarStore.saveIntegrationSettings(CalendarIntegrationSettings()) }
+            val device = CalendarDeviceState(context)
+            val oldGeneration = device.generation
+            device.save("snoozes", setOf("disposable-test-marker"))
 
             val decoded = PortableBackupManager.validate(context, exported, password)
             validatedContents = decoded
             assertFalse(decoded.clearsPreV22Estimates)
             language.select(AppLanguagePreference.System)
             val replaced = SqlCipherRestoreManager.restore(context, decoded)
+            assertTrue(device.paused)
+            assertTrue(device.snoozes.isEmpty())
+            assertFalse(oldGeneration == device.generation)
             assertEquals(AppLanguagePreference.System, AppLanguageState(AndroidAppLanguageStorage(preferences)).preference)
             assertEquals("wal", replaced.queryText("PRAGMA journal_mode")?.lowercase())
             assertTrue(replaced.checkIntegrity())
 
             fun verifyAll(db: CeilingsDatabase) {
                 val restoredCalendar = CalendarRepository(db.database)
+                val integration = runBlocking { db.objectsClientsStore.calendar.integrationSnapshot() }
+                assertEquals(integrationSettings, integration.settings)
+                assertEquals(typeRules, integration.types[customType.code])
+                assertEquals(exceptionRules, integration.overrides(changedKey))
                 assertEquals("Portable calendar work", restoredCalendar.exact(workKey)?.draft?.title)
                 assertEquals(zone, restoredCalendar.settings().zone)
                 assertEquals(emptySet<kotlinx.datetime.DayOfWeek>(), restoredCalendar.settings().workingDays)
