@@ -62,10 +62,12 @@ class BusinessDaoParityTest {
             assertEquals(1L, prices.count())
             assertEquals("New film", prices.find(priceId)?.title)
 
-            projects.delete(projectId)
-            assertNull(estimates.find(estimateId), "Foreign-key cascade must match Room")
-            // Measurements intentionally mirror Room: projectId has an index, NOT a foreign key.
+            kotlin.test.assertFailsWith<IllegalStateException> { projects.delete(projectId) }
             assertEquals(2L, measurements.count())
+            assertEquals(1L, estimates.count())
+            measurements.forProject(projectId).forEach { measurements.delete(it.id) }
+            projects.delete(projectId)
+            assertNull(estimates.find(estimateId))
         }
     }
 

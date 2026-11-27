@@ -178,9 +178,9 @@ fun ExposedDropdownMenuBoxScope.AppExposedDropdownMenu(
     ExposedDropdownMenu(
         expanded = expanded,
         onDismissRequest = onDismissRequest,
-        shape = MaterialTheme.shapes.medium,
-        containerColor = MaterialTheme.colorScheme.surface,
-        tonalElevation = 3.dp,
+        shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp),
+        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        tonalElevation = 4.dp,
         content = content
     )
 }

@@ -1,5 +1,6 @@
 package com.andreyceilings.shared.objects
 
+import com.andreyceilings.shared.ui.CeilingsPopupMenu
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -82,6 +83,8 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.zIndex
 import androidx.compose.ui.platform.LocalDensity
@@ -94,6 +97,7 @@ import com.andreyceilings.shared.theme.CeilingsEdge
 import com.andreyceilings.shared.theme.CeilingsEdgeGradient
 import com.andreyceilings.shared.theme.CeilingsEdgeDefaults
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
@@ -107,6 +111,7 @@ import com.andreyceilings.shared.theme.ceilingsStatusColors
 import com.andreyceilings.shared.navigation.AppHeaderHeight
 import com.andreyceilings.shared.domain.ClientListEntry
 import com.andreyceilings.shared.domain.GlobalSearchResults
+import com.andreyceilings.shared.calendar.*
 import com.andreyceilings.shared.domain.ObjectsClientsSearch
 import com.andreyceilings.shared.domain.ProjectListEntry
 import com.andreyceilings.shared.domain.ProjectPaymentStatus
@@ -133,6 +138,8 @@ private val ObjectsCreateFabExtent = 76.dp
 
 internal enum class SwipeSide { LEFT, RIGHT }
 internal data class OpenSwipe(val id: String, val side: SwipeSide)
+internal data class SwipeTrayAction(val label: String, val icon: ImageVector, val enabled: Boolean = true,
+    val destructive: Boolean = false, val onClick: () -> Unit)
 
 private sealed interface EditorTarget {
     data class Client(val item: ClientListEntry?) : EditorTarget
@@ -187,7 +194,9 @@ fun ObjectsClientsScreen(
     onOpenCeilingRegistry: (() -> Unit)? = null,
     returnToProjectsRequest: Int = 0,
     requestedClientId: Long? = null,
-    onClientRequestConsumed: () -> Unit = {}
+    onClientRequestConsumed: () -> Unit = {},
+    onCalendarEdit: ((CalendarEditorRoute) -> Unit)? = null,
+    onProjectCalendar: ((String) -> Unit)? = null,
 ) {
     val scope = rememberCoroutineScope()
     val focusManager = LocalFocusManager.current
@@ -588,6 +597,8 @@ fun ObjectsClientsScreen(
             onOpenMeasurement = { onOpenMeasurement(detailsProjectId, it) },
             onCreateMeasurement = { onCreateMeasurement(detailsProjectId) },
             onOpenCeilingRegistry = onOpenCeilingRegistry,
+            onCalendarEdit = onCalendarEdit,
+            onProjectCalendar = onProjectCalendar,
             onDial = onProjectDial,
             onOpenClient = { client -> message = null; viewedClientId = client.id },
             onBack = onCloseProject,
@@ -678,6 +689,7 @@ fun ObjectsClientsScreen(
         null -> Unit
     }
     deleting?.let { target ->
+        var calendarImpact by remember(target) { mutableStateOf<CalendarDeletionImpact?>(null) }
         val isClient = target is DeletionTarget.Client
         val name = when (target) {
             is DeletionTarget.Client -> target.item.name
@@ -695,6 +707,8 @@ fun ObjectsClientsScreen(
                         else Res.string.oc_delete_project_confirm, name))
                     // A failed delete must be visible here; a list-bottom
                     // message could be far offscreen after a long scroll.
+                    if (calendarImpact != null) Text(stringResource(if (isClient) Res.string.work_deletion_client
+                        else Res.string.work_deletion_project))
                     deletionError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                 }
             },
@@ -712,8 +726,20 @@ fun ObjectsClientsScreen(
                             scope.launch {
                                 try {
                                     when (target) {
-                                        is DeletionTarget.Client -> onDeleteClient(target.item.id)
-                                        is DeletionTarget.Project -> onDeleteProject(target.item.id)
+                                        is DeletionTarget.Client -> {
+                                            val confirmation = calendarImpact
+                                            if (confirmation == null) onDeleteClient(target.item.id)
+                                            else kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+                                                checkNotNull(detailsStore).deleteClient(target.item.id, confirmation)
+                                            }
+                                        }
+                                        is DeletionTarget.Project -> {
+                                            val confirmation = calendarImpact
+                                            if (confirmation == null) onDeleteProject(target.item.id)
+                                            else kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+                                                checkNotNull(detailsStore).deleteProject(target.item.id, confirmation)
+                                            }
+                                        }
                                     }
                                     message = null
                                     deletionError = null
@@ -721,6 +747,8 @@ fun ObjectsClientsScreen(
                                     deleting = null
                                 } catch (cancelled: CancellationException) {
                                     throw cancelled
+                                } catch (confirmation: CalendarDeletionConfirmationRequired) {
+                                    calendarImpact = confirmation.impact
                                 } catch (failure: Exception) {
                                     deletionError = failure.message ?: "Не вдалося видалити запис."
                                     // Keep the dialog open so the user sees the reason.
@@ -747,7 +775,7 @@ fun ObjectsClientsScreen(
  * elevation, parent clipping, resizing, or translation.
  */
 @Composable
-private fun ObjectsClientsCreateFab(
+internal fun ObjectsClientsCreateFab(
     visible: Boolean,
     actionLabel: String,
     modifier: Modifier = Modifier,
@@ -1134,6 +1162,7 @@ private fun ProjectCard(
     onSwipeClose: () -> Unit,
     onAnyInteraction: () -> Unit
 ) {
+    val clipboard = LocalClipboardManager.current
     val id = "p-" + item.id
     val actions = if (item.address.isBlank()) emptyList() else listOf(
         "Maps" to ContactAction.GOOGLE_MAPS, "Waze" to ContactAction.WAZE
@@ -1174,6 +1203,7 @@ private fun ProjectCard(
                     )
                     OverflowActions(
                         onMenuOpened = onAnyInteraction,
+                        onCopy = { clipboard.setText(AnnotatedString(listOf(item.title, item.address, item.clientName, item.notes).filter { it.isNotBlank() }.distinct().joinToString("\n"))) },
                         onDelete = { onSwipeClose(); onDelete() },
                         actions = actions,
                         onAction = { action ->
@@ -1220,6 +1250,7 @@ private fun ClientCard(
     onSwipeClose: () -> Unit,
     onAnyInteraction: () -> Unit
 ) {
+    val clipboard = LocalClipboardManager.current
     val id = "c-" + item.id
     val actions = if (item.phone.isBlank()) emptyList() else listOf(
         "WhatsApp" to ContactAction.WHATSAPP,
@@ -1255,6 +1286,7 @@ private fun ClientCard(
                         overflow = TextOverflow.Ellipsis)
                     OverflowActions(
                         onMenuOpened = onAnyInteraction,
+                        onCopy = { clipboard.setText(AnnotatedString(listOf(item.name, item.phone, item.email, item.notes).filter { it.isNotBlank() }.joinToString("\n"))) },
                         onDelete = { onSwipeClose(); onDelete() },
                         actions = actions,
                         onAction = { action ->
@@ -1316,11 +1348,13 @@ internal fun SwipeActionsSurface(
     onAction: (ContactAction) -> Unit,
     modifier: Modifier = Modifier,
     deleteTrayHeight: Dp = 80.dp,
+    trayActions: List<SwipeTrayAction> = emptyList(),
     content: @Composable () -> Unit
 ) {
     val density = LocalDensity.current
-    val leftWidth = (actions.size * 58 + (actions.size - 1).coerceAtLeast(0) * 6 + 8).dp
-    val leftPx = if (actions.isEmpty()) 0f else with(density) { leftWidth.toPx() }
+    val leftWidth = if (trayActions.isNotEmpty()) (trayActions.size * 48 + (trayActions.size - 1) * 4 + 8).dp
+        else (actions.size * 58 + (actions.size - 1).coerceAtLeast(0) * 6 + 8).dp
+    val leftPx = if (actions.isEmpty() && trayActions.isEmpty()) 0f else with(density) { leftWidth.toPx() }
     val rightPx = with(density) { 76.dp.toPx() }
     val reversalTolerancePx = with(density) { 14.dp.toPx() }
     val target = when {
@@ -1356,7 +1390,22 @@ internal fun SwipeActionsSurface(
     Box(modifier.fillMaxWidth()) {
         // Keep action buttons mounted behind the card while the tray is opening.
         // Slight spacing and compact themed pictograms distinguish each destination.
-        if (actions.isNotEmpty() && (displayed < 0f || target < 0f)) {
+        if (trayActions.isNotEmpty() && (displayed < 0f || target < 0f)) {
+            val colors = MaterialTheme.colorScheme
+            Row(Modifier.align(Alignment.CenterEnd).width(leftWidth).height(deleteTrayHeight)
+                .clip(RoundedCornerShape(18.dp)).background(colors.primaryContainer).padding(horizontal = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+                trayActions.forEach { action ->
+                    Box(Modifier.size(48.dp).clip(RoundedCornerShape(14.dp))
+                        .background(if (action.destructive) colors.errorContainer else colors.surface)
+                        .clickable(enabled = action.enabled, onClickLabel = action.label) { onSwipeClose(); action.onClick() },
+                        contentAlignment = Alignment.Center) {
+                        val tint = if (action.destructive) colors.onErrorContainer else colors.onSurfaceVariant
+                        Icon(action.icon, action.label, tint = if (action.enabled) tint else tint.copy(alpha = .38f))
+                    }
+                }
+            }
+        } else if (actions.isNotEmpty() && (displayed < 0f || target < 0f)) {
             Row(
                 Modifier.align(Alignment.CenterEnd)
                     .width(leftWidth)
@@ -1471,15 +1520,15 @@ private fun OverflowActions(
     onDelete: () -> Unit,
     actions: List<Pair<String, ContactAction>>,
     onAction: (ContactAction) -> Unit,
-    onMenuOpened: () -> Unit = {}
+    onMenuOpened: () -> Unit = {},
+    onCopy: (() -> Unit)? = null
 ) {
     var expanded by remember { mutableStateOf(false) }
     Box {
         IconButton(onClick = { onMenuOpened(); expanded = true }) {
             Icon(Icons.Default.MoreVert, contentDescription = "Дії із записом")
         }
-        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false },
-            containerColor = MaterialTheme.colorScheme.surface) {
+        CeilingsPopupMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
             actions.forEach { (label, action) ->
                 DropdownMenuItem(
                     text = { Text(label) },
@@ -1493,6 +1542,8 @@ private fun OverflowActions(
                     onClick = { expanded = false; onAction(action) }
                 )
             }
+            if (onCopy != null) DropdownMenuItem(text = { Text(stringResource(Res.string.work_copy_info)) },
+                leadingIcon = { Icon(Icons.Default.ContentCopy, null) }, onClick = { expanded = false; onCopy() })
             DropdownMenuItem(text = { Text("Видалити") }, leadingIcon = {
                 Icon(Icons.Default.Delete, null)
             }, onClick = { expanded = false; onDelete() })

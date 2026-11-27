@@ -55,7 +55,7 @@ class ObjectsClientsStoreTest {
             store.saveProject(project, ProjectDraft("Нова адреса"))
             assertEquals("Нова адреса", await { it.project?.address == "Нова адреса" }.project?.address)
             assertNull(store.observeProjectDetails(99999).first().project)
-            ProjectRepository(db).delete(project)
+            db.businessSchemaQueries.deleteProject(project) // Reproduce a historical orphan.
             assertNull(await { it.project == null }.project)
             collector.cancel()
         }

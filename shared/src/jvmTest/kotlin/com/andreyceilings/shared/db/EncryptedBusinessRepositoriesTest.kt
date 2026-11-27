@@ -77,12 +77,13 @@ class EncryptedBusinessRepositoriesTest {
                 val estimateId = estimates.forProject(project.id).single().id
                 assertEquals("Estimate", estimates.find(estimateId)?.name)
 
+                kotlin.test.assertFailsWith<IllegalStateException> { projects.delete(project.id) }
+                measurements.delete(measurements.forProject(project.id).single().id)
                 projects.delete(project.id)
                 assertNull(estimates.find(estimateId), "Cascade must delete estimates")
                 assertEquals(0, projects.all().size)
                 clients.delete(clients.all().single().id)
                 prices.delete(prices.all().single().id)
-                measurements.delete(measurements.forProject(project.id).single().id)
                 assertEquals(0, clients.all().size)
             }
         } finally {

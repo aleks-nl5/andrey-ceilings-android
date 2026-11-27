@@ -74,7 +74,7 @@ class MeasurementCreateSqlCipherTest {
                 assertTrue(deleted.state.value.conflict)
                 val orphanId = MeasurementCreateStore(db) { 2 }.create(draft(other, "rectangle", MeasurementPrecision.ONE_CENTIMETER))
                 val orphan = MeasurementEditModel(store, store.load(other, orphanId))
-                orphan.accept(MeasurementCreateIntent.Name("Orphan")); projects.delete(other); orphan.save()
+                orphan.accept(MeasurementCreateIntent.Name("Orphan")); db.businessSchemaQueries.deleteProject(other); orphan.save()
                 assertTrue(orphan.state.value.conflict)
             }
             open().use { driver ->

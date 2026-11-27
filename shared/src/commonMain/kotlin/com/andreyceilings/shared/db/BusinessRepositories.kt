@@ -1,6 +1,8 @@
 package com.andreyceilings.shared.db
 
 import app.cash.sqldelight.coroutines.asFlow
+import com.andreyceilings.shared.calendar.CalendarDeletionImpact
+import com.andreyceilings.shared.calendar.CalendarRepository
 import app.cash.sqldelight.coroutines.mapToList
 import app.cash.sqldelight.coroutines.mapToOneOrNull
 import com.andreyceilings.shared.estimate.ImmutableEstimateDraft
@@ -35,10 +37,22 @@ class ClientRepository(private val database: PrototypeDatabase) {
     fun update(id: Long, name: String, phone: String, email: String, notes: String) {
         queries.updateClient(name, phone, email, notes, id)
     }
-    fun delete(id: Long) = queries.deleteClient(id)
+    fun delete(id: Long, calendarConfirmation: CalendarDeletionImpact? = null) = database.transaction {
+        database.workCalendarQueries.claimCalendarWrite()
+        find(id)?.let {
+            check(queries.selectProjectsByClient(id).executeAsList().isEmpty()) {
+                "Спершу перенесіть або видаліть об'єкти цього клієнта."
+            }
+            CalendarRepository(database).beforeClientDeletion(it.uuid, calendarConfirmation)
+        }
+        queries.deleteClient(id)
+    }
 }
 
-class ProjectRepository(private val database: PrototypeDatabase) {
+class ProjectRepository(
+    private val database: PrototypeDatabase,
+    private val clock: kotlin.time.Clock = kotlin.time.Clock.System,
+) {
     private val queries = database.businessSchemaQueries
 
     fun tombstones() = queries.selectDeletedProjects().executeAsList()
@@ -73,7 +87,14 @@ class ProjectRepository(private val database: PrototypeDatabase) {
     ) {
         queries.updateProject(clientId, title, address, status, notes, updatedAt, id)
     }
-    fun delete(id: Long) = database.transaction {
+    fun delete(id: Long, calendarConfirmation: CalendarDeletionImpact? = null) = database.transaction {
+        database.workCalendarQueries.claimCalendarWrite()
+        find(id)?.let {
+            check(queries.selectMeasurementsForProject(id).executeAsList().isEmpty()) {
+                "Спочатку перенесіть або видаліть заміри цього об'єкта."
+            }
+            CalendarRepository(database, clock).beforeProjectDeletion(it.uuid, calendarConfirmation)
+        }
         queries.softDeleteEstimatesForProject(id)
         database.estimateHistoryQueries.softDeleteEstimateSeriesForProject(id)
         queries.deleteProject(id)
@@ -140,7 +161,13 @@ class MeasurementRepository(private val database: PrototypeDatabase) {
             database.pointPlacementsQueries.selectForMeasurement(row.uuid).executeAsList().isNotEmpty())
             throw com.andreyceilings.shared.measurement.MeasurementContourHasPoints()
     }
-    fun delete(id: Long) = database.transaction {
+    fun delete(id: Long, calendarConfirmation: CalendarDeletionImpact? = null) = database.transaction {
+        database.measurementElementsQueries.claimElementWrite("")
+        find(id)?.let {
+            if (database.revisionWorkflowQueries.selectApprovedQuoteVersions(it.projectId, it.uuid).executeAsList().isNotEmpty())
+                throw com.andreyceilings.shared.measurement.CeilingHasApprovedQuote()
+            CalendarRepository(database).beforeCeilingDeletion(it.uuid, it.name, calendarConfirmation)
+        }
         database.measurementElementsQueries.softDeleteForMeasurement(id)
         queries.deleteMeasurement(id)
     }

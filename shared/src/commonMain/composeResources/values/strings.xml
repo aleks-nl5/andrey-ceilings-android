@@ -353,6 +353,8 @@
     <string name="p6a_call_client">Зателефонувати</string>
     <string name="p6a_email_client">Написати листа</string>
     <string name="p6a_call_unavailable">Не вдалося відкрити телефонний застосунок.</string>
+    <string name="oc_messenger_unavailable">Не вдалося відкрити месенджер.</string>
+    <string name="oc_messenger_international_number">Потрібен міжнародний номер із кодом країни.</string>
     <string name="p6a_email_unavailable">Не вдалося відкрити поштовий застосунок.</string>
     <string name="p6a_client">Клієнт</string>
     <string name="p6a_no_client">Не вказано</string>

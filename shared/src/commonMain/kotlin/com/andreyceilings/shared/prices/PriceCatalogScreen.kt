@@ -1,5 +1,6 @@
 package com.andreyceilings.shared.prices
 
+import com.andreyceilings.shared.ui.CeilingsPopupMenu
 import androidx.compose.runtime.saveable.rememberSaveable
 import com.andreyceilings.shared.navigation.rememberRegistryScroll
 
@@ -250,7 +251,7 @@ fun PriceCatalogScreen(
                                         ) {
                                             Text("⋮", style = MaterialTheme.typography.titleMedium)
                                         }
-                                        DropdownMenu(
+                                        CeilingsPopupMenu(
                                             expanded = actionsExpanded,
                                             onDismissRequest = { actionsExpanded = false }
                                         ) {

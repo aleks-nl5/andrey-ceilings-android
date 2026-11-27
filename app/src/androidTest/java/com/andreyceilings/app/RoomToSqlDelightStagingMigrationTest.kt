@@ -80,9 +80,13 @@ class RoomToSqlDelightStagingMigrationTest {
                 assertEquals(23L, q.selectAllMeasurements().executeAsOne().id)
                 assertEquals(41L, q.selectPriceItems().executeAsOne().id)
                 assertTrue(q.selectAllEstimates().executeAsList().isEmpty())
-                com.andreyceilings.shared.db.ProjectRepository(PrototypeDatabase(driver)).delete(19)
-                assertTrue(q.selectAllEstimates().executeAsList().isEmpty())
+                val database = PrototypeDatabase(driver)
+                val projects = com.andreyceilings.shared.db.ProjectRepository(database)
+                kotlin.test.assertFailsWith<IllegalStateException> { projects.delete(19) }
                 assertEquals(1, q.selectAllMeasurements().executeAsList().size)
+                com.andreyceilings.shared.db.MeasurementRepository(database).delete(23)
+                projects.delete(19)
+                assertTrue(q.selectAllEstimates().executeAsList().isEmpty())
             }
             assertTrue(old.isFile) // Source database is never deleted during conversion.
         } finally {

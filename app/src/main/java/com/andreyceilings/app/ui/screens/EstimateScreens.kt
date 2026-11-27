@@ -1,7 +1,7 @@
 package com.andreyceilings.app.ui.screens
 
 import com.andreyceilings.app.ui.theme.AppAlertDialog
-import com.andreyceilings.app.ui.theme.AppExposedDropdownMenu
+import com.andreyceilings.shared.ui.CeilingsProjectPicker
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -43,23 +43,12 @@ internal fun SaveEstimateDialog(
 ) {
     var selectedProjectId by remember(projects) { mutableLongStateOf(projects.first().id) }
     var name by remember(defaultName) { mutableStateOf(defaultName) }
-    var expanded by remember { mutableStateOf(false) }
     AppAlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Зберегти кошторис") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = it }) {
-                    OutlinedTextField(
-                        value = projects.firstOrNull { it.id == selectedProjectId }?.title ?: "Оберіть об’єкт",
-                        onValueChange = {}, readOnly = true, label = { Text("Об’єкт") },
-                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
-                        modifier = Modifier.menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable, enabled = true).fillMaxWidth()
-                    )
-                    AppExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-                        projects.forEach { project -> DropdownMenuItem(text = { Text(project.title) }, onClick = { selectedProjectId = project.id; expanded = false }) }
-                    }
-                }
+                CeilingsProjectPicker(projects.map { it.id to it.title }, selectedProjectId) { selectedProjectId = it }
                 OutlinedTextField(name, { name = it }, keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(capitalization = androidx.compose.ui.text.input.KeyboardCapitalization.Sentences), label = { Text("Назва кімнати / кошторису") }, singleLine = true)
             }
         },

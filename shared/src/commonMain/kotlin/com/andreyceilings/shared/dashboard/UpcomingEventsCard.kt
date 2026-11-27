@@ -9,7 +9,9 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -20,22 +22,34 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CalendarMonth
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Event
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.ui.unit.dp
+import com.andreyceilings.shared.calendar.WorkOccurrenceKey
+import com.andreyceilings.shared.resources.*
+import org.jetbrains.compose.resources.stringResource
 
 /**
  * UI-only CMP contract. Only scheduled occurrences (NOT record createdAt) belong here.
@@ -50,7 +64,9 @@ data class UpcomingWorkEvent(
     val description: String,
     val projectName: String,
     val clientName: String? = null,
-    val projectId: String? = null
+    val projectId: String? = null,
+    val endsAtMillis: Long? = null,
+    val key: WorkOccurrenceKey? = null
 )
 
 enum class WorkUrgency { DISTANT, APPROACHING, SOON, IMMINENT }
@@ -67,7 +83,7 @@ fun workUrgency(nowMillis: Long, startsAtMillis: Long): WorkUrgency {
 
 fun upcomingWorkEvents(events: List<UpcomingWorkEvent>, nowMillis: Long): List<UpcomingWorkEvent> =
     events.asSequence()
-        .filter { it.startsAtMillis >= nowMillis }
+        .filter { it.endsAtMillis?.let { end -> end > nowMillis } ?: (it.startsAtMillis >= nowMillis) }
         .sortedWith(compareBy<UpcomingWorkEvent> { it.startsAtMillis }.thenBy { it.id })
         .take(4)
         .toList()
@@ -88,196 +104,107 @@ fun UpcomingEventsCard(
     databaseAvailable: Boolean,
     onCalendar: (() -> Unit)?,
     onOpenProject: ((String) -> Unit)? = null,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onOpenWork: ((WorkOccurrenceKey) -> Unit)? = null,
+    onAddWork: (() -> Unit)? = null,
+    loading: Boolean = false,
 ) {
     val upcoming = upcomingWorkEvents(events, nowMillis)
     val theme = MaterialTheme.colorScheme
+    val dark = theme.background.luminance() < 0.4f
+    val secondaryDateStyle = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold)
+    val secondaryTimeStyle = MaterialTheme.typography.bodyMedium
+    val measurer = rememberTextMeasurer()
+    val density = LocalDensity.current
+    // Equal, content-aware columns across every secondary row, including localized schedule-mode labels.
+    val secondaryWidths = remember(upcoming, secondaryDateStyle, secondaryTimeStyle, measurer, density) {
+        val secondary = upcoming.drop(1)
+        with(density) {
+            val dateWidth = (secondary.maxOfOrNull { event ->
+                measurer.measure(AnnotatedString(event.dateLabel), style = secondaryDateStyle,
+                    maxLines = 1, softWrap = false).size.width
+            } ?: 0).toDp() + 1.dp
+            val timeWidth = (secondary.maxOfOrNull { event ->
+                measurer.measure(AnnotatedString(event.timeLabel), style = secondaryTimeStyle,
+                    maxLines = 1, softWrap = false).size.width
+            } ?: 0).toDp() + 1.dp
+            dateWidth to timeWidth
+        }
+    }
 
-    Card(
-        modifier = modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = if (upcoming.isEmpty()) theme.primaryContainer else theme.surface
-        )
-    ) {
+    Card(modifier = modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = theme.surfaceContainerLow),
+        border = BorderStroke(1.dp, theme.outlineVariant.copy(alpha = .6f))) {
+    Column(Modifier.fillMaxWidth().padding(7.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
         if (upcoming.isEmpty()) {
-            // 58 -> 44dp (~24% shorter) while Compose's clickable touch
-            // expansion still allows a >=48dp hit area for the calendar link.
-            Row(
-                Modifier.fillMaxWidth().height(44.dp)
-                    .padding(start = 12.dp, end = 6.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Icon(
-                    Icons.Default.CalendarMonth,
-                    contentDescription = if (!databaseAvailable)
-                        "База даних недоступна: заплановані події не завантажені"
-                    else "Запланованих майбутніх подій немає",
-                    tint = theme.primary
-                )
-                Text(
-                    if (databaseAvailable) todayLabel else "",
-                    modifier = Modifier.weight(1f),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    color = theme.onPrimaryContainer,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Row(
-                    modifier = Modifier
-                        .height(44.dp)
-                        .clickable(enabled = onCalendar != null) { onCalendar?.invoke() }
-                        .padding(horizontal = 5.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(2.dp)
-                ) {
-                    val linkColor = if (onCalendar != null) theme.primary else theme.onSurfaceVariant
-                    Text(
-                        "Календар",
-                        style = MaterialTheme.typography.labelLarge,
-                        color = linkColor,
-                        maxLines = 1
-                    )
-                    Icon(
-                        Icons.Default.ChevronRight,
-                        contentDescription = null,
-                        tint = linkColor,
-                        modifier = Modifier.size(18.dp)
-                    )
+            Card(shape = RoundedCornerShape(18.dp), colors = CardDefaults.cardColors(containerColor = theme.primaryContainer)) {
+                Row(Modifier.fillMaxWidth().padding(start = 12.dp, end = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically) {
+                    Text(todayLabel, Modifier.weight(1f)
+                        .clickable(enabled = databaseAvailable && onCalendar != null) { onCalendar?.invoke() }.padding(vertical = 12.dp),
+                        style = MaterialTheme.typography.titleMedium, color = theme.onPrimaryContainer)
+                    if (onAddWork != null) IconButton(onClick = onAddWork) {
+                        Icon(Icons.Default.Add, stringResource(Res.string.work_add))
+                    }
                 }
             }
-        } else {
-            val closest = upcoming.first()
-            Column(
-                Modifier.fillMaxWidth().padding(14.dp),
-                verticalArrangement = Arrangement.spacedBy(9.dp)
-            ) {
-                Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    EventDateBadge(
-                        dateLabel = closest.dateLabel,
-                        timeLabel = closest.timeLabel,
-                        urgency = workUrgency(nowMillis, closest.startsAtMillis)
-                    )
-                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Text(
-                            closest.description,
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                        Text(
-                            closest.projectName,
-                            style = MaterialTheme.typography.bodyMedium,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                        closest.clientName?.takeIf { it.isNotBlank() }?.let {
-                            Text(it, style = MaterialTheme.typography.bodySmall,
-                                color = theme.onSurfaceVariant, maxLines = 1)
+        } else upcoming.forEachIndexed { index, event ->
+            val closest = index == 0
+            val urgency = workUrgency(nowMillis, event.startsAtMillis)
+            val background = if (!closest) (if (dark) theme.surface else theme.surfaceContainerHigh) else when (urgency) {
+                WorkUrgency.DISTANT -> theme.surfaceVariant
+                WorkUrgency.APPROACHING -> theme.primaryContainer
+                WorkUrgency.SOON -> theme.tertiaryContainer
+                WorkUrgency.IMMINENT -> Color(0xFFF6A55C)
+            }
+            val foreground = if (!closest) theme.onSurface else when (urgency) {
+                WorkUrgency.DISTANT -> theme.onSurfaceVariant
+                WorkUrgency.APPROACHING -> theme.onPrimaryContainer
+                WorkUrgency.SOON -> theme.onTertiaryContainer
+                WorkUrgency.IMMINENT -> Color(0xFF412004)
+            }
+            val open = event.key?.let { key -> onOpenWork?.let { action -> { action(key) } } }
+                ?: event.projectId?.let { id -> onOpenProject?.let { action -> { action(id) } } }
+            Card(shape = RoundedCornerShape(18.dp),
+                colors = CardDefaults.cardColors(containerColor = background, contentColor = foreground)) {
+                Row(Modifier.fillMaxWidth().clickable(enabled = open != null) { open?.invoke() }
+                    .padding(start = if (closest) 6.dp else 12.dp, end = if (closest) 0.dp else 5.dp,
+                        top = 5.dp, bottom = 5.dp),
+                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(if (closest) 4.dp else 6.dp)) {
+                    if (closest) {
+                        Column(Modifier.width(88.dp), verticalArrangement = Arrangement.spacedBy(1.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(event.dateLabel, Modifier.fillMaxWidth(), style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center)
+                            Text(event.timeLabel, Modifier.fillMaxWidth(), style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center)
                         }
-                        if (closest.projectId != null && onOpenProject != null) {
-                            TextButton(
-                                onClick = { onOpenProject(closest.projectId) },
-                                modifier = Modifier.align(Alignment.End)
-                            ) { Text("До об’єкта") }
+                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
+                            Text(event.description, style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                            if (event.projectName.isNotBlank()) Text(event.projectName, style = MaterialTheme.typography.bodyMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                            event.clientName?.takeIf { it.isNotBlank() }?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
                         }
-                    }
-                }
-
-                upcoming.drop(1).forEach { event ->
-                    val openProject = event.projectId?.let { id ->
-                        onOpenProject?.let { open -> { open(id) } }
-                    }
-                    Row(
-                        Modifier.fillMaxWidth()
-                            .clickable(enabled = openProject != null) { openProject?.invoke() }
-                            .padding(vertical = 7.dp, horizontal = 2.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(9.dp)
-                    ) {
-                        Text(
-                            "${event.dateLabel} · ${event.timeLabel}",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = theme.onSurfaceVariant,
-                            modifier = Modifier.width(106.dp),
-                            maxLines = 2
-                        )
-                        Text(
-                            event.description,
-                            style = MaterialTheme.typography.bodySmall,
-                            modifier = Modifier.weight(1f),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                        if (openProject != null) {
-                            Icon(Icons.Default.ChevronRight, contentDescription = "До об’єкта")
+                    } else {
+                        // Shared widths keep both the time's right edge and title's left edge aligned.
+                        // Cap columns on narrow screens so the title keeps its own space.
+                        BoxWithConstraints(Modifier.weight(1f)) {
+                            val dateWidth = secondaryWidths.first.coerceAtMost(maxWidth * .36f)
+                            val timeWidth = secondaryWidths.second.coerceAtMost(maxWidth * .30f)
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                verticalAlignment = Alignment.CenterVertically) {
+                                Text(event.dateLabel, Modifier.width(dateWidth), style = secondaryDateStyle,
+                                    textAlign = TextAlign.Start, maxLines = 1, overflow = TextOverflow.Ellipsis, softWrap = false)
+                                Text(event.timeLabel, Modifier.width(timeWidth), style = secondaryTimeStyle,
+                                    textAlign = TextAlign.End, maxLines = 1, overflow = TextOverflow.Ellipsis, softWrap = false)
+                                Text(event.description, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium,
+                                    maxLines = 1, overflow = TextOverflow.Ellipsis, softWrap = false)
+                            }
                         }
                     }
-                }
-                if (onCalendar != null) {
-                    TextButton(
-                        onClick = onCalendar,
-                        modifier = Modifier.align(Alignment.End)
-                    ) {
-                        Text("Усі події в календарі")
-                        Icon(Icons.Default.ChevronRight, contentDescription = null)
+                    if (closest && onAddWork != null) IconButton(onClick = onAddWork) {
+                        Icon(Icons.Default.Add, stringResource(Res.string.work_add), tint = foreground)
                     }
                 }
             }
         }
     }
 }
-
-@Composable
-private fun EventDateBadge(dateLabel: String, timeLabel: String, urgency: WorkUrgency) {
-    val theme = MaterialTheme.colorScheme
-    val background = when (urgency) {
-        WorkUrgency.DISTANT -> theme.surfaceVariant.copy(alpha = 0.55f)
-        WorkUrgency.APPROACHING -> theme.primaryContainer.copy(alpha = 0.75f)
-        WorkUrgency.SOON -> theme.tertiaryContainer
-        WorkUrgency.IMMINENT -> Color(0xFFF6A55C)
-    }
-    val foreground = when (urgency) {
-        WorkUrgency.IMMINENT -> Color(0xFF412004)
-        WorkUrgency.DISTANT -> theme.onSurfaceVariant
-        WorkUrgency.APPROACHING -> theme.onPrimaryContainer
-        WorkUrgency.SOON -> theme.onTertiaryContainer
-    }
-    // Pulse only the small badge for events starting within the next three hours.
-    // Slow, subtle alpha motion; no flashing entire cards or text.
-    val pulseAlpha = if (urgency == WorkUrgency.IMMINENT) {
-        val transition = rememberInfiniteTransition(label = "Наближення події")
-        val alpha by transition.animateFloat(
-            initialValue = 0.78f, targetValue = 1f,
-            animationSpec = infiniteRepeatable(
-                animation = tween(1700, easing = FastOutSlowInEasing),
-                repeatMode = RepeatMode.Reverse
-            ),
-            label = "М’яке підсвічування часу"
-        )
-        alpha
-    } else 1f
-
-    Column(
-        modifier = Modifier.width(98.dp)
-            .background(background.copy(alpha = pulseAlpha), RoundedCornerShape(14.dp))
-            .padding(horizontal = 10.dp, vertical = 9.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Text(
-            dateLabel,
-            style = MaterialTheme.typography.labelMedium,
-            fontWeight = FontWeight.SemiBold,
-            color = foreground,
-            maxLines = 2
-        )
-        Text(
-            timeLabel,
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Bold,
-            color = foreground,
-            maxLines = 1
-        )
-    }
 }

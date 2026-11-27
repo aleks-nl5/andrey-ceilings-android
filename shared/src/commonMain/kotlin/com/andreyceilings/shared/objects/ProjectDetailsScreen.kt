@@ -1,5 +1,8 @@
 package com.andreyceilings.shared.objects
 
+import com.andreyceilings.shared.ui.CeilingsPopupMenu
+import com.andreyceilings.shared.calendar.*
+
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.gestures.awaitEachGesture
@@ -7,6 +10,10 @@ import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -188,7 +195,9 @@ internal fun ProjectDetailsScreen(
     onOpenMeasurement: (Long) -> Unit = {},
     onCreateMeasurement: () -> Unit = {},
     onOpenCeilingRegistry: (() -> Unit)? = null,
-    swipeState: CardSwipeState = remember { CardSwipeState() }
+    swipeState: CardSwipeState = remember { CardSwipeState() },
+    onCalendarEdit: ((CalendarEditorRoute) -> Unit)? = null,
+    onProjectCalendar: ((String) -> Unit)? = null,
 ) {
     val flow = remember(store, projectId) {
         store?.observeProjectDetails(projectId)?.map<ProjectDetailsData, DetailsState> { DetailsState.Loaded(it) }
@@ -343,12 +352,14 @@ internal fun ProjectDetailsScreen(
     val approvedDeleteError = stringResource(Res.string.p6a_delete_ceiling_approved)
     val generalDeleteError = stringResource(Res.string.p6a_delete_ceiling_failed)
     deletingCeiling?.let { target ->
+        var calendarImpact by remember(target) { mutableStateOf<CalendarDeletionImpact?>(null) }
         AlertDialog(
             onDismissRequest = { if (!deletingBusy) deletingCeiling = null },
             title = { Text(stringResource(Res.string.p6a_delete_ceiling)) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(stringResource(Res.string.p6a_delete_ceiling_confirm, target.name))
+                    if (calendarImpact != null) Text(stringResource(Res.string.work_deletion_ceiling))
                     deleteError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                 }
             },
@@ -358,11 +369,12 @@ internal fun ProjectDetailsScreen(
                     deleteError = null
                     scope.launch {
                         try {
-                            checkNotNull(store).deleteCeiling(projectId, target.id, target.uuid)
+                            checkNotNull(store).deleteCeiling(projectId, target.id, target.uuid, calendarImpact)
                             deletingCeiling = null
                         } catch (cancelled: CancellationException) {
                             throw cancelled
-                        } catch (_: CeilingHasApprovedQuote) {
+                        } catch (confirmation: CalendarDeletionConfirmationRequired) { calendarImpact = confirmation.impact }
+                        catch (_: CeilingHasApprovedQuote) {
                             deleteError = approvedDeleteError
                         } catch (_: Exception) {
                             deleteError = generalDeleteError
@@ -513,11 +525,11 @@ internal fun ProjectDetailsScreen(
                             project.title != project.address &&
                             project.address.isNotBlank()
                         ) {
-                            Text(
+                            SelectionContainer { Text(
                                 project.title,
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
+                            ) }
                         }
                         // Fixed visual gap below either one- or two-line address.
                         // The heading item also has the shared 8dp list gap.
@@ -573,7 +585,17 @@ internal fun ProjectDetailsScreen(
                             }
                         }
                         if (project.notes.isNotBlank()) item(key = "notes") {
-                            DetailsCard("Примітки") { Text(project.notes, style = MaterialTheme.typography.bodyMedium) }
+                            DetailsCard("Примітки") { SelectionContainer { Text(project.notes, style = MaterialTheme.typography.bodyMedium) } }
+                        }
+                        if (store != null && onCalendarEdit != null && onProjectCalendar != null) item(key = "calendar-works") {
+                            val uuid by produceState<String?>(null, store, projectId) {
+                                value = store.calendarProjectUuid(projectId)
+                            }
+                            uuid?.let { projectUuid ->
+                                ProjectCalendarWorks(store.calendar, projectUuid,
+                                    (finance as? ProjectFinanceState.Loaded)?.summary?.hasApprovedQuote == true,
+                                    onCalendarEdit, onProjectCalendar, swipeState)
+                            }
                         }
                         item(key = "measurements-heading") {
                             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -662,6 +684,8 @@ private fun ProjectDetailsMovingTitle(
     modifier: Modifier = Modifier
 ) {
     val p = motion.progress
+    val clipboard = LocalClipboardManager.current
+    val copyLabel = stringResource(Res.string.work_copy_info)
     val density = LocalDensity.current
     val scheme = MaterialTheme.colorScheme
     val startPx = with(density) { startPadding.roundToPx() }
@@ -739,6 +763,9 @@ private fun ProjectDetailsMovingTitle(
                             )
                         )
                     }
+                    .combinedClickable(onClick = {}, onLongClickLabel = copyLabel, onLongClick = {
+                        clipboard.setText(AnnotatedString(project.address.ifBlank { project.title }))
+                    })
                     .onSizeChanged {
                         measuredTitleWidth = it.width
                         measuredTitleHeight = it.height
@@ -855,7 +882,7 @@ internal fun WorkStagePicker(
                 )
             }
         }
-        DropdownMenu(
+        CeilingsPopupMenu(
             expanded = expanded && enabled,
             onDismissRequest = { expanded = false },
             modifier = Modifier.widthIn(min = 204.dp)
@@ -923,7 +950,7 @@ internal fun PaymentStatusPicker(
                 )
             }
         }
-        DropdownMenu(
+        CeilingsPopupMenu(
             expanded = expanded && enabled,
             onDismissRequest = { expanded = false },
             modifier = Modifier.widthIn(min = 204.dp)
@@ -1024,7 +1051,7 @@ private fun ProjectDetailsClient(
             }
         }
         client?.notes?.takeIf { it.isNotBlank() }?.let {
-            Text(it, style = MaterialTheme.typography.bodyMedium)
+            SelectionContainer { Text(it, style = MaterialTheme.typography.bodyMedium) }
         }
         error?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
     }

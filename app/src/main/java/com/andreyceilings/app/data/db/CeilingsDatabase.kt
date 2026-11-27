@@ -26,7 +26,7 @@ internal class CeilingsDatabase private constructor(
 ) : Closeable {
     internal val database = PrototypeDatabase(driver)
     // Unlocked-session lifetime: retain in-flight shared edits across Activity recreation.
-    internal val objectsClientsStore = com.andreyceilings.shared.objects.ObjectsClientsStore(database, System::currentTimeMillis)
+    internal val objectsClientsStore = com.andreyceilings.shared.objects.ObjectsClientsStore(database, System::currentTimeMillis, ProductionDatabaseGate::read)
     private val clientDao = ClientDao(ClientRepository(database))
     private val projectDao = ProjectDao(ProjectRepository(database))
     private val measurementDao = RoomMeasurementDao(MeasurementRepository(database))
@@ -47,6 +47,7 @@ internal class CeilingsDatabase private constructor(
         // The production restore gate has drained every outer pricing transaction before this call.
         kotlinx.coroutines.runBlocking { objectsClientsStore.measurementDetails.elements.closePricingReads() }
         objectsClientsStore.measurementEdit.closePointReads()
+        objectsClientsStore.closeCalendar()
         objectsClientsStore.closeProjectReads()
         changeTracker.close()
         driver.close()
@@ -247,7 +248,8 @@ internal class SqlDelightChangeTracker(private val database: PrototypeDatabase) 
         "projects" to database.businessSchemaQueries.selectProjects(),
         "room_measurements" to database.businessSchemaQueries.selectAllMeasurements(),
         "price_items" to database.businessSchemaQueries.selectPriceItems(),
-        "estimates" to database.businessSchemaQueries.selectAllEstimates()
+        "estimates" to database.businessSchemaQueries.selectAllEstimates(),
+        "calendar" to database.workCalendarQueries.observeCalendar()
     )
 
     @Synchronized fun addObserver(observer: Observer) {

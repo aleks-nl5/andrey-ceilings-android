@@ -1,5 +1,6 @@
 package com.andreyceilings.shared.measurement
 
+import com.andreyceilings.shared.ui.CeilingsPopupMenu
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -343,7 +344,7 @@ internal fun ColumnScope.WorkspaceQuoteComposer(
             IconButton(enabled = enabled && state.source != null, onClick = { showCarry = true }) {
                 Icon(Icons.Default.ContentCopy, stringResource(Res.string.p5d_carry))
             }
-            DropdownMenu(showCarry, onDismissRequest = { showCarry = false }) {
+            CeilingsPopupMenu(showCarry, onDismissRequest = { showCarry = false }) {
                 DropdownMenuItem(text = { Text(stringResource(Res.string.p5d_carry_selection)) }, onClick = {
                     showCarry = false
                     carryError = !presenter.carrySelection()
@@ -622,7 +623,7 @@ internal fun WorkspaceQuoteStatusIcon(
             val (icon, tint) = workspaceStatusAppearance(quote.status)
             Icon(icon, stringResource(Res.string.p5d_status_change, workspaceStatusLabel(quote.status)), tint = tint)
         }
-        DropdownMenu(menu, onDismissRequest = { menu = false }) {
+        CeilingsPopupMenu(menu, onDismissRequest = { menu = false }) {
             EstimateWorkflowStatus.entries.forEach { status ->
                 val otherApprovals = approved.filter { it.revisionUuid != quote.revisionUuid }
                 DropdownMenuItem(text = { Text(workspaceStatusLabel(status)) }, leadingIcon = {

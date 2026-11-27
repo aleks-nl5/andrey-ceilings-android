@@ -42,6 +42,12 @@ fun createEncryptedPrototypeDriver(
         override fun create(driver: SqlDriver) = openStep(EncryptedDatabaseOpenStage.CREATE) {
             check(!requireExistingSchema) { "Snapshot does not contain a supported database schema" }
             schema.create(driver)
+            if (!initializePriceCatalog) {
+                val calendar = PrototypeDatabase(driver).workCalendarQueries
+                calendar.seedCalendarTypes()
+                calendar.seedCalendarSettings()
+            }
+            QueryResult.Unit
         }
         override fun migrate(driver: SqlDriver, oldVersion: Long, newVersion: Long, vararg callbacks: AfterVersion): QueryResult.Value<Unit> =
             try {
@@ -90,6 +96,7 @@ fun createEncryptedPrototypeDriver(
         openStep(EncryptedDatabaseOpenStage.SCHEMA) {
             PriceCatalogSchema.verifyStructure(driver)
             verifyFrozenEstimateContents(driver, PriceCatalogSchema.version)
+            verifyCalendarContents(driver)
         }
         if (enableWalForTesting) {
             // A manual PRAGMA journal_mode=WAL does not enable SQLCipher's

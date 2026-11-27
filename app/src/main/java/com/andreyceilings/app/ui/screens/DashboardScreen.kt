@@ -51,7 +51,8 @@ internal fun DashboardScreen(
     onObjects: () -> Unit,
     onClients: () -> Unit,
     onEstimates: () -> Unit,
-    onCalendar: () -> Unit
+    onCalendar: () -> Unit,
+    onCalendarEdit: (com.andreyceilings.shared.calendar.CalendarEditorRoute) -> Unit,
 ) {
     val store = remember(database) { database?.objectsClientsStore?.let(::DashboardStore) }
     val context = LocalContext.current
@@ -91,9 +92,9 @@ internal fun DashboardScreen(
                     )
                 }
             },
-            formatCurrencyDate = { millis -> currencyLocalDateTimeLabel(millis) }
-            // Scheduling fields do not exist in SQLDelight yet. The empty
-            // state is real; creation dates must never become fake appointments.
+            formatCurrencyDate = { millis -> currencyLocalDateTimeLabel(millis) },
+            calendar = database?.objectsClientsStore?.calendar,
+            onCalendarEdit = onCalendarEdit,
         )
     }
 }

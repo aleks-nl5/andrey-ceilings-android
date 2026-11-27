@@ -45,7 +45,7 @@ object EstimateV22MigrationProof {
     private fun businessSnapshot(driver: SqlDriver) = MeasurementElementMigrationProof.rows(driver,
         "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name", 1)
         .map { checkNotNull(it.single()) }
-        .filterNot { it.startsWith("consolidated_") || it in preV22EstimateTables || it in setOf("estimate_issuance_policy", "estimate_number_reservations") }
+        .filterNot { it.startsWith("consolidated_") || it.startsWith("calendar_") || it in preV22EstimateTables || it in setOf("estimate_issuance_policy", "estimate_number_reservations") }
         .associateWith { table ->
             val columns = MeasurementElementMigrationProof.rows(driver, "PRAGMA table_info($table)", 6)
                 .map { checkNotNull(it[1]) }
@@ -72,11 +72,17 @@ object EstimateV22MigrationProof {
             assertEquals(oldPayloads, MeasurementElementMigrationProof.rows(it,
                 "SELECT detailsJson FROM estimate_revisions ORDER BY revisionUuid", 1))
             assertEquals(oldCounts, counts(it))
+            verifyCalendarStructure(it, 21)
         }
         val (series, revision) = open(production).use { driver ->
             verifyFrozenEstimateContents(driver)
             assertTrue(counts(driver).values.all { it == 0L })
             assertEquals(original, businessSnapshot(driver))
+            if (production.version >= 25) {
+                verifyCalendarStructure(driver, production.version)
+                verifyCalendarContents(driver)
+                assertEquals(0L, PriceNameUniquenessProof.scalar(driver, "SELECT count(*) FROM calendar_works"))
+            }
             val db = PrototypeDatabase(driver)
             val history = ImmutableEstimateRepository(db)
             assertEquals(EstimateIssuancePolicy(), history.issuancePolicy())

@@ -67,7 +67,7 @@ class MeasurementDetailsStoreTest {
         assertIs<MeasurementGeometryView.HistoricalRectangle>(state.data.geometry)
         assertEquals("{}", measurements.find(id)?.drawingJson)
         assertEquals(MeasurementDetailsState.Missing, store.observe(-1, id).first())
-        projects.delete(p)
+        db.businessSchemaQueries.deleteProject(p) // Reproduce a historical orphan.
         assertEquals(MeasurementDetailsState.Missing, store.observe(p, id).first { it !is MeasurementDetailsState.Loading })
         driver.close()
         assertEquals(MeasurementDetailsState.Unavailable, store.observe(p, id).first { it !is MeasurementDetailsState.Loading })

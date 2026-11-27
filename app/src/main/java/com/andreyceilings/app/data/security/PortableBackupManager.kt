@@ -228,6 +228,8 @@ internal object PortableBackupManager {
                 // workflow, receipts and tombstoned source revisions in this staged image.
                 com.andreyceilings.shared.db.verifyFrozenEstimateStructure(driver, com.andreyceilings.shared.db.PriceCatalogSchema.version)
                 com.andreyceilings.shared.db.verifyFrozenEstimateContents(driver, com.andreyceilings.shared.db.PriceCatalogSchema.version)
+                com.andreyceilings.shared.db.verifyCalendarStructure(driver, com.andreyceilings.shared.db.PriceCatalogSchema.version)
+                com.andreyceilings.shared.db.verifyCalendarContents(driver)
                 check(invalidRevisionRows(
                     "SELECT count(*) FROM estimate_v1_frozen f JOIN estimate_revisions r USING(revisionUuid) " +
                         "JOIN estimate_series s USING(seriesUuid) WHERE r.versionNumber != 1 OR s.publicNumber IS NULL " +

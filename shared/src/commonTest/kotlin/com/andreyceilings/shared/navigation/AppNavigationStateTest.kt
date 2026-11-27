@@ -90,6 +90,49 @@ class AppNavigationStateTest {
         assertNull(details.selectTab(AppRoute.PRICES).projectDetails)
     }
 
+    @Test fun calendarLinksRetainOriginAndReuseTheExistingProjectParent() {
+        val calendar = AppNavigationState().navigate(AppRoute.CALENDAR)
+        val project = calendar.navigate(AppRoute.OBJECTS).openProject(42)
+        assertEquals(calendar, project.back().back())
+        val linked = calendar.openLinkedCeiling(42, 12)
+        assertEquals(AppRoute.MEASUREMENTS, linked.current)
+        assertEquals(MeasurementEdit(42, 12), linked.measurementEdit)
+        assertEquals(calendar, linked.back().back())
+        val sameParent = project.openLinkedCeiling(42, 12)
+        assertEquals(AppRoute.OBJECTS, sameParent.current)
+        assertEquals(project, sameParent.back())
+        assertEquals(sameParent, AppNavigationState.restore(sameParent.snapshot()))
+        assertSame(calendar, calendar.openLinkedCeiling(42, 12, setOf(AppRoute.DASHBOARD, AppRoute.CALENDAR)))
+    }
+
+    @Test fun calendarProjectAndCeilingLinksReturnDirectlyToTheExactOrigin() {
+        val calendar = AppNavigationState().navigate(AppRoute.CALENDAR)
+        val project = calendar.openCalendarProject(42)
+        assertEquals(ProjectDetails(42), project.projectDetails)
+        assertEquals(calendar, project.back())
+        assertEquals(project, AppNavigationState.restore(project.snapshot()))
+        assertEquals(calendar, AppNavigationState.restore(project.snapshot()).back())
+        val original = AppNavigationState().navigate(AppRoute.OBJECTS).openProject(7)
+        val different = original.openCalendarProject(42)
+        assertEquals(original, different.back())
+        val linked = original.openCalendarCeiling(42, 12)
+        assertEquals(MeasurementEdit(42, 12), linked.measurementEdit)
+        assertEquals(original, linked.back())
+        assertEquals(original, linked.measurementSaved(42, 12))
+        assertEquals(original, AppNavigationState.restore(linked.snapshot()).back())
+        val same = original.openCalendarCeiling(7, 12)
+        assertEquals(original, same.back())
+        assertEquals(original, original.openCalendarProject(7))
+        assertNull(linked.selectTab(AppRoute.PRICES).calendarLinkReturn)
+        assertEquals(calendar, calendar.openCalendarCeiling(42, 12).back())
+        val ceilingFromCalendar = calendar.openCalendarCeiling(42, 12)
+        assertEquals(ceilingFromCalendar, ceilingFromCalendar.navigate(AppRoute.CALCULATOR).back())
+        assertEquals(calendar, ceilingFromCalendar.navigate(AppRoute.CALCULATOR).back().back())
+        val projectRegistry = project.navigate(AppRoute.MEASUREMENTS)
+        assertEquals(project, projectRegistry.back())
+        assertEquals(calendar, projectRegistry.back().back())
+    }
+
     @Test fun historyCannotGrowWithoutBound() {
         var state = AppNavigationState()
         val routes = listOf(AppRoute.OBJECTS, AppRoute.MEASUREMENTS, AppRoute.PRICES)

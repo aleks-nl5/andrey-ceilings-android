@@ -35,6 +35,11 @@ fun openDesktopPriceCatalog(driver: SqlDriver, previouslyExisting: Boolean) {
                 cursor.next(); QueryResult.Value(cursor.getLong(0) != 0L)
             }, 0).value
         val structuralVersion = when {
+            calendarSchemaExists(driver) -> {
+                verifyCalendarStructure(driver, 25L)
+                verifyFrozenEstimateStructure(driver, 25L)
+                25L
+            }
             consolidatedSchema -> {
                 verifyFrozenEstimateStructure(driver, 24L)
                 24L
@@ -120,6 +125,7 @@ fun openDesktopPriceCatalog(driver: SqlDriver, previouslyExisting: Boolean) {
             PriceCatalogSchema.migrate(driver, oldVersion, PriceCatalogSchema.version)
         PriceCatalogSchema.verifyStructure(driver)
         verifyFrozenEstimateContents(driver, PriceCatalogSchema.version)
+        verifyCalendarContents(driver)
         driver.execute(null, "PRAGMA user_version = ${PriceCatalogSchema.version}", 0)
     }
 }

@@ -1,5 +1,6 @@
 package com.andreyceilings.shared.measurement
 
+import com.andreyceilings.shared.ui.CeilingsPopupMenu
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.Canvas
@@ -690,7 +691,7 @@ internal fun WorkspaceWorkList(
                             else MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(20.dp))
                 }
-                DropdownMenu(expanded = approvalMenu, onDismissRequest = { approvalMenu = false }) {
+                CeilingsPopupMenu(expanded = approvalMenu, onDismissRequest = { approvalMenu = false }) {
                     for (approval in listOf(ElementApproval.DISCUSSING, ElementApproval.APPROVED)) {
                         DropdownMenuItem(
                             text = { Text(stringResource(if (approval == ElementApproval.APPROVED)

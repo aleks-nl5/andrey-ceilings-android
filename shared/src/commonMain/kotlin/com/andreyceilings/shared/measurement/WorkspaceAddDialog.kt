@@ -1,5 +1,6 @@
 package com.andreyceilings.shared.measurement
 
+import com.andreyceilings.shared.ui.CeilingsPopupMenu
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -279,7 +280,7 @@ internal fun WorkspaceCatalogSearch(
                     modifier = Modifier.size(44.dp).testTag("p5b-add-annotation")) {
                     Icon(Icons.Default.Category, stringResource(Res.string.p5b_annotation_add))
                 }
-                DropdownMenu(expanded = annotationMenu,
+                CeilingsPopupMenu(expanded = annotationMenu,
                     onDismissRequest = { annotationMenu = false }) {
                     DropdownMenuItem(
                         modifier = Modifier.testTag("p5b-annotation-obstacle"),

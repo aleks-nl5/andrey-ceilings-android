@@ -37,7 +37,7 @@ class DashboardStoreTest {
             measurements.createReturningId(projectId, "Кімната 2", areaSquareMeters = 5.0, createdAt = 102L)
             assertEquals(DashboardSummary(1, 2, 17.25), store.summary.first())
 
-            projects.delete(projectId)
+            database.businessSchemaQueries.deleteProject(projectId) // Reproduce a historical orphan.
             assertEquals(DashboardSummary(0, 0, 0.0), store.summary.first())
         }
     }

@@ -1,6 +1,8 @@
 package com.andreyceilings.desktop
 
+import com.andreyceilings.shared.calendar.*
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.Box
@@ -79,6 +81,7 @@ import com.andreyceilings.shared.objects.dismissCardSwipeOnInteraction
 import com.andreyceilings.shared.objects.ObjectsClientsScreen
 import com.andreyceilings.shared.objects.ObjectsClientsRows
 import com.andreyceilings.shared.objects.ContactAction
+import com.andreyceilings.shared.objects.messengerLinks
 import com.andreyceilings.shared.prices.PriceCatalogScreen
 import com.andreyceilings.shared.prices.PriceCatalogStore
 import com.andreyceilings.shared.prices.PriceCatalogTheme
@@ -180,15 +183,51 @@ private fun DesktopPriceHost(
         SideEffect { measurementCreateNavigationGuard.bindQuotes(objectsStore.measurementDetails.elements) }
         val objectRows by objectsStore.rows.collectAsState(initial = objectsStore.cachedRows)
         var externalError by remember { mutableStateOf<String?>(null) }
-        fun openExternal(url: String) {
-            runCatching {
-                check(Desktop.isDesktopSupported() &&
-                    Desktop.getDesktop().isSupported(Desktop.Action.BROWSE)) {
-                    "Немає застосунку для зовнішнього посилання."
-                }
-                Desktop.getDesktop().browse(URI(url))
-            }.onFailure { externalError = it.message ?: "Не вдалося відкрити посилання." }
+        val calendar = remember(database) { objectsStore.calendar }
+        var calendarOpen by remember(database) { mutableStateOf(false) }
+        var calendarProject by remember(database) { mutableStateOf<String?>(null) }
+        val calendarPreferences = remember { java.util.prefs.Preferences.userNodeForPackage(DesktopPriceDatabase::class.java) }
+        var calendarMode by remember(calendarPreferences) {
+            mutableStateOf(runCatching { CalendarDisplayMode.valueOf(calendarPreferences.get("calendarDisplayMode", "WEEK")) }
+                .getOrDefault(CalendarDisplayMode.WEEK))
         }
+        var showWeekNumbers by remember(calendarPreferences) { mutableStateOf(calendarPreferences.getBoolean("calendarShowWeekNumbers", true)) }
+        LaunchedEffect(calendar, calendarMode) { calendar.warmCurrentPeriod(calendarMode) }
+        var calendarClientRequest by remember(database) { mutableStateOf<Long?>(null) }
+        var calendarEditor by remember(database) { mutableStateOf<CalendarEditorRoute?>(null) }
+        val calendarStates = key(database) { androidx.compose.runtime.saveable.rememberSaveableStateHolder() }
+        var calendarReturnOverlay by remember(database) { mutableStateOf<Triple<List<String>, CalendarEditorRoute, Pair<Boolean, String?>>?>(null) }
+        LaunchedEffect(navigation) {
+            val pending = calendarReturnOverlay
+            if (pending != null && navigation.calendarLinkReturn == null) {
+                if (navigation.snapshot() == pending.first) {
+                    calendarEditor = pending.second
+                    calendarOpen = pending.third.first
+                    calendarProject = pending.third.second
+                }
+                calendarReturnOverlay = null
+            } else if (pending != null && navigation.calendarLinkReturn != null && calendarEditor == pending.second) {
+                calendarEditor = null; calendarOpen = false
+            }
+        }
+        var completedProject by remember(database) { mutableStateOf<Pair<String, WorkOccurrenceKey>?>(null) }
+        var detachedWork by remember(database) { mutableStateOf(0) }
+        fun openExternalLinks(urls: List<String>) {
+            var lastFailure: Throwable? = null
+            for (url in urls) {
+                val result = runCatching {
+                    check(Desktop.isDesktopSupported() &&
+                        Desktop.getDesktop().isSupported(Desktop.Action.BROWSE)) {
+                        "Немає застосунку для зовнішнього посилання."
+                    }
+                    Desktop.getDesktop().browse(URI(url))
+                }
+                if (result.isSuccess) return
+                lastFailure = result.exceptionOrNull()
+            }
+            externalError = lastFailure?.message ?: "Не вдалося відкрити посилання."
+        }
+        fun openExternal(url: String) = openExternalLinks(listOf(url))
         val currencyGateway = remember(database) {
             MonobankCurrencyGateway(DesktopCurrencyRatesCache())
         }
@@ -261,7 +300,9 @@ private fun DesktopPriceHost(
                                 routeState.removeState(AppRoute.ESTIMATES.name)
                                 onNavigate(navigation.navigate(AppRoute.ESTIMATES, availableRoutes))
                             },
-                            onCalendar = null,
+                            onCalendar = { calendarStates.removeState("main"); calendarProject = null; calendarOpen = true },
+                            calendar = calendar,
+                            onCalendarEdit = { calendarEditor = it },
                             todayLabel = dashboardTodayLabel(currencyState.nowMillis),
                             nowMillis = currencyState.nowMillis,
                             currencyRates = currencyState,
@@ -283,6 +324,8 @@ private fun DesktopPriceHost(
                 AppRoute.OBJECTS -> ObjectsClientsScreen(
                     rows = objectRows ?: ObjectsClientsRows(emptyList(), emptyList()),
                     rowsReady = objectRows != null,
+                    requestedClientId = calendarClientRequest,
+                    onClientRequestConsumed = { calendarClientRequest = null },
                     swipeState = cardSwipes,
                     detailsProjectId = navigation.projectDetails?.projectId,
                     measurementEdit = navigation.measurementEdit,
@@ -292,6 +335,8 @@ private fun DesktopPriceHost(
                     onMeasurementCreated = { projectId, measurementId -> onNavigate(navigation.measurementCreatedInEditor(projectId, measurementId)) },
                     onOpenMeasurement = { projectId, measurementId -> onNavigate(navigation.openCeilingWorkspace(projectId, measurementId)) },
                     detailsStore = objectsStore,
+                    onCalendarEdit = { calendarEditor = it },
+                    onProjectCalendar = { calendarStates.removeState(it); calendarProject = it; calendarOpen = true },
                     onOpenProject = { onNavigate(navigation.openProject(it)) },
                     onOpenCeilingRegistry = {
                         routeState.removeState(AppRoute.MEASUREMENTS.name)
@@ -333,21 +378,14 @@ private fun DesktopPriceHost(
                     },
                     onExternalAction = { action, raw ->
                         val encoded = URLEncoder.encode(raw, "UTF-8")
-                        val digits = raw.filter(Char::isDigit)
-                        val international = raw.trim().startsWith("+") && digits.length in 8..15
-                        val url = when (action) {
+                        val links = when (action) {
                             ContactAction.GOOGLE_MAPS ->
-                                "https://www.google.com/maps/search/?api=1&query=$encoded"
+                                listOf("https://www.google.com/maps/search/?api=1&query=$encoded")
                             ContactAction.WAZE ->
-                                "https://waze.com/ul?q=$encoded&navigate=yes"
-                            ContactAction.WHATSAPP -> if (international)
-                                "https://wa.me/$digits" else null
-                            ContactAction.TELEGRAM -> if (international)
-                                "tg://resolve?phone=$digits" else null
-                            ContactAction.VIBER -> if (international)
-                                "viber://chat?number=" + URLEncoder.encode(raw.trim(), "UTF-8") else null
+                                listOf("https://waze.com/ul?q=$encoded&navigate=yes")
+                            else -> messengerLinks(action, raw)
                         }
-                        if (url != null) openExternal(url)
+                        if (links.isNotEmpty()) openExternalLinks(links)
                         else externalError = "Вкажіть телефон із міжнародним кодом країни."
                     }
                 )
@@ -390,6 +428,51 @@ private fun DesktopPriceHost(
                 )
                 else -> Unit // Only actually implemented desktop routes are exposed.
             }
+            if (calendarOpen) calendarStates.SaveableStateProvider(calendarProject ?: "main") {
+                fun closeCalendar() { calendarStates.removeState(calendarProject ?: "main"); calendarOpen = false }
+                androidx.compose.ui.window.Dialog(
+                onDismissRequest = ::closeCalendar,
+                properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false),
+            ) {
+                Surface(Modifier.fillMaxWidth(if (calendarProject == null) 1f else .7f).fillMaxHeight(if (calendarProject == null) 1f else .65f),
+                    shape = MaterialTheme.shapes.extraLarge) {
+                    WorkCalendarScreen(calendar, if (calendarProject == null) calendarMode else CalendarDisplayMode.LIST,
+                        onMode = { mode -> calendarMode = mode; calendarPreferences.put("calendarDisplayMode", mode.name) },
+                        onEdit = { calendarEditor = it }, contentPadding = PaddingValues(16.dp), projectFilter = calendarProject,
+                        onClose = ::closeCalendar, showWeekNumbers = showWeekNumbers,
+                         onShowWeekNumbersChange = { value -> showWeekNumbers = value; calendarPreferences.putBoolean("calendarShowWeekNumbers", value) })
+                }
+                }
+            }
+            calendarEditor?.let { route ->
+                WorkEditor(calendar, route, onClose = { calendarEditor = null }, registry = objectsStore,
+                    onRegistryTarget = { hit ->
+                        val destination = when (hit) {
+                            is com.andreyceilings.shared.registry.GlobalRegistryTarget.Project -> navigation.openCalendarProject(hit.id, availableRoutes)
+                            is com.andreyceilings.shared.registry.GlobalRegistryTarget.Ceiling -> navigation.openCalendarCeiling(hit.projectId, hit.id, availableRoutes)
+                            else -> navigation
+                        }
+                        if (destination != navigation && destination.calendarLinkReturn != null) {
+                            calendarReturnOverlay = Triple(checkNotNull(destination.calendarLinkReturn).origin, route, calendarOpen to calendarProject)
+                            onNavigate(destination)
+                        } else if (hit is com.andreyceilings.shared.registry.GlobalRegistryTarget.Project && navigation.projectDetails?.projectId == hit.id) {
+                            calendarEditor = null; calendarOpen = false
+                        }
+                    }, onSaved = { result, draft ->
+                    calendarEditor = null
+                    detachedWork = result.detached
+                    if (result.installationCompleted) completedProject = draft.projectUuid?.let { it to result.key }
+                })
+            }
+            CalendarSaveFeedback(detachedWork, completedProject != null,
+                onDismiss = { completedProject = null; detachedWork = 0 },
+                onComplete = {
+                    completedProject?.let { project ->
+                        scope.launch { runCatching { objectsStore.completeCalendarProject(project.first, project.second) } }
+                    }
+                    completedProject = null
+                    detachedWork = 0
+                })
             if (externalError != null) {
                 TextButton(onClick = { externalError = null },
                     modifier = Modifier.align(Alignment.TopEnd).padding(top = AppHeaderHeight)) {
@@ -416,7 +499,7 @@ private fun DesktopPriceHost(
                 darkTheme = isSystemInDarkTheme(),
                 onSelect = { id ->
                     AppRoute.fromId(id)?.let { route ->
-                        if (route != selectedTab) routeState.removeState(route.name)
+                        if (route != selectedTab) { calendarReturnOverlay = null; routeState.removeState(route.name) }
                         onNavigate(navigation.selectTab(route, availableRoutes))
                     }
                 },

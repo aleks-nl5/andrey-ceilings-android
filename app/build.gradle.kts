@@ -32,7 +32,7 @@ android {
             candidate.toInt()
         }
         versionCode = ciVersionCode ?: (600000 + actionsRunNumber)
-        versionName = "0.6.2" + when {
+        versionName = "0.6.3" + when {
             ciVersionCode != null -> "-ci$ciVersionCode"
             actionsRunNumber > 0 -> "-$actionsRunNumber"
             else -> ""
@@ -134,7 +134,7 @@ dependencies {
     androidTestImplementation("app.cash.sqldelight:android-driver:2.4.1")
     androidTestImplementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.9.0")
     // Explicit test dependency: shared keeps its date implementation internal.
-    androidTestImplementation("org.jetbrains.kotlinx:kotlinx-datetime:0.8.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-datetime:0.8.0")
     androidTestImplementation("androidx.test:core:1.6.1")
     androidTestImplementation("androidx.test:runner:1.6.2")
     androidTestImplementation("androidx.test:rules:1.6.1")

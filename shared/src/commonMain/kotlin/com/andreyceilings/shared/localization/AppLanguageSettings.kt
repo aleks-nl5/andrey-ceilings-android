@@ -1,5 +1,6 @@
 package com.andreyceilings.shared.localization
 
+import com.andreyceilings.shared.ui.CeilingsPopupMenu
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.material.icons.Icons
@@ -40,7 +41,7 @@ fun AppLanguageSettings(state: AppLanguageState) {
             headlineContent = { Text(stringResource(Res.string.app_language)) },
             supportingContent = { Text(options.first { it.first == state.preference }.second) }
         )
-        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+        CeilingsPopupMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
             options.forEach { (preference, label) ->
                 DropdownMenuItem(text = { Text(label) }, onClick = {
                     state.select(preference)
