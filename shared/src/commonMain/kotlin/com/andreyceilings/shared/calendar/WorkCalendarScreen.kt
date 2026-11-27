@@ -1,6 +1,14 @@
 package com.andreyceilings.shared.calendar
 
+import androidx.compose.animation.*
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
+import com.andreyceilings.shared.ui.CeilingsPopupMenu
+import com.andreyceilings.shared.ui.ContextFeedbackIcon
+import com.andreyceilings.shared.ui.ContextFeedbackKind
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.*
@@ -42,7 +50,7 @@ enum class CalendarDisplayMode { WEEK, MONTH, LIST }
 
 sealed interface CalendarEditorRoute {
     data class Create(val date: LocalDate? = null, val projectUuid: String? = null, val installation: Boolean = false) : CalendarEditorRoute
-    data class Open(val key: WorkOccurrenceKey, val move: Boolean = false, val delete: Boolean = false) : CalendarEditorRoute
+    data class Open(val key: WorkOccurrenceKey, val move: Boolean = false, val delete: Boolean = false, val edit: Boolean = false) : CalendarEditorRoute
 }
 
 @Composable
@@ -56,7 +64,8 @@ fun WorkCalendarScreen(
     projectFilter: String? = null,
     onClose: (() -> Unit)? = null,
 ) {
-    val options = calendarOptionsState(store).data()
+    val optionsRead = calendarOptionsState(store)
+    val options = optionsRead.data()
     val zone = options?.settings?.zone ?: TimeZone.currentSystemDefault()
     val now = calendarNow()
     val today = now.toLocalDateTime(zone).date
@@ -70,14 +79,17 @@ fun WorkCalendarScreen(
     val firstDay = options?.settings?.firstWeekday ?: systemFirstDay
     val range = periodOf(date, mode, firstDay)
     val currentPeriod = remember(store, range, zone) { store?.period(range, zone) }
-    val period = key(range, zone) { calendarState(currentPeriod, store?.cached(range, zone)) }
+    val period = key(store, range, zone) {
+        if (store != null && options == null && optionsRead is CalendarRead.Loading) CalendarRead.Loading
+        else calendarState(currentPeriod, store?.cached(range, zone))
+    }
     val fallbackRead = upcomingCalendarState(store, today, project, 12, now, type)
     val upcoming = fallbackRead.data().orEmpty().filter { it.upcoming(now) }
     var searchHorizon by rememberSaveable { mutableIntStateOf(90) }
     val searchFlow = remember(store, query, searchHorizon) {
         if (query.isBlank()) null else store?.search(query, searchHorizon)
     }
-    val search = key(query, searchHorizon) { calendarState(searchFlow) }
+    val search = key(store, query, searchHorizon) { if (query.isBlank()) CalendarRead.Loading else calendarState(searchFlow) }
     val list = rememberLazyListState()
     val scope = rememberCoroutineScope()
     val types = options?.types.orEmpty().associateBy { it.code }
@@ -123,10 +135,10 @@ fun WorkCalendarScreen(
                         if (onClose != null) IconButton(onClose) {
                             Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(Res.string.p5d_cancel))
                         }
-                        TextButton(onClick = {
+                        if (projectFilter != null) TodayButton(today) {
                             dateValue = null
                             scope.launch { list.scrollToItem(0) }
-                        }) { Text(stringResource(Res.string.work_today)) }
+                        }
                         Spacer(Modifier.weight(1f))
                         IconButton(onClick = { expanded = !expanded }) {
                             Icon(Icons.Default.FilterList, stringResource(Res.string.work_filters))
@@ -135,30 +147,32 @@ fun WorkCalendarScreen(
                             Icon(Icons.Default.Add, stringResource(Res.string.work_add))
                         }
                     }
-                    if (projectFilter == null) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    if (projectFilter == null) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
                         CalendarDisplayMode.entries.forEach {
                             FilterChip(selected = mode == it, onClick = { onMode(it) },
-                                label = { Text(stringResource(it.label())) })
+                                label = { Text(stringResource(it.label()), maxLines = 1) })
                         }
+                        Spacer(Modifier.weight(1f))
+                        TodayButton(today) { dateValue = null; scope.launch { list.scrollToItem(0) } }
                     }
                     if (expanded) {
                         OutlinedTextField(query, { query = it }, Modifier.fillMaxWidth(),
                             label = { Text(stringResource(Res.string.work_search)) }, singleLine = true)
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            CalendarMenu(label = type?.let { calendarTypeLabel(types[it]) } ?: stringResource(Res.string.work_type)) {
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            CalendarMenu(modifier = Modifier.weight(1f), label = type?.let { calendarTypeLabel(types[it]) } ?: stringResource(Res.string.work_type)) {
                                 DropdownMenuItem(text = { Text(stringResource(Res.string.work_all)) }, onClick = { type = null })
                                 types.values.forEach { item ->
                                     DropdownMenuItem(text = { Text(calendarTypeLabel(item)) }, onClick = { type = item.code })
                                 }
                             }
-                            CalendarMenu(label = status?.let { stringResource(WorkStatus.valueOf(it).label()) }
+                            CalendarMenu(modifier = Modifier.weight(1f), label = status?.let { stringResource(WorkStatus.valueOf(it).label()) }
                                 ?: stringResource(Res.string.work_status)) {
                                 DropdownMenuItem(text = { Text(stringResource(Res.string.work_all)) }, onClick = { status = null })
                                 WorkStatus.entries.forEach { item ->
                                     DropdownMenuItem(text = { Text(stringResource(item.label())) }, onClick = { status = item.name })
                                 }
                             }
-                            if (projectFilter == null) CalendarMenu(label = options?.projects?.firstOrNull { it.uuid == project }?.name
+                            if (projectFilter == null) CalendarMenu(modifier = Modifier.weight(1f), label = options?.projects?.firstOrNull { it.uuid == project }?.name
                                 ?: stringResource(Res.string.work_object)) {
                                 DropdownMenuItem(text = { Text(stringResource(Res.string.work_all)) }, onClick = { project = null })
                                 options?.projects.orEmpty().forEach { item ->
@@ -175,13 +189,19 @@ fun WorkCalendarScreen(
                 }
             }
             if (query.isBlank()) item("calendar-grid") {
+                var dragOffset by remember(range) { mutableFloatStateOf(0f) }
+                val visualOffset by animateFloatAsState(dragOffset, label = "calendar-drag")
                 val drag = Modifier.pointerInput(date, mode) {
                     var delta = 0f
-                    detectHorizontalDragGestures(onDragStart = { delta = 0f }, onDragEnd = {
+                    detectHorizontalDragGestures(onDragStart = { delta = 0f }, onDragCancel = { dragOffset = 0f }, onDragEnd = {
+                        dragOffset = 0f
                         if (abs(delta) > 48.dp.toPx()) movePeriod(if (delta < 0f) 1 else -1)
-                    }) { change, amount -> change.consume(); delta += amount }
+                    }) { change, amount -> change.consume(); delta += amount
+                        dragOffset = delta.coerceIn(-size.width.toFloat(), size.width.toFloat())
+                    }
                 }
-                Column(drag) {
+                Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).then(drag)) {
+                Column(Modifier.graphicsLayer { translationX = visualOffset }) {
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween) {
                         IconButton(onClick = { movePeriod(-1) }) {
@@ -213,7 +233,7 @@ fun WorkCalendarScreen(
                                             else if (!workday) MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .46f)
                                             else Color.Transparent
                                         Column(Modifier.weight(1f).heightIn(min = 43.dp)
-                                            .background(container, MaterialTheme.shapes.small)
+                                            .clip(RoundedCornerShape(22.dp)).background(container)
                                             .clickable { dateValue = day.toString() }.padding(vertical = 4.dp),
                                             horizontalAlignment = Alignment.CenterHorizontally) {
                                             Text(day.day.toString(), color = if (day == today) MaterialTheme.colorScheme.primary
@@ -230,8 +250,9 @@ fun WorkCalendarScreen(
                     }
                 }
             }
-            if (read is CalendarRead.Unavailable || store == null) item("calendar-error") {
-                Text(stringResource(Res.string.work_unavailable), color = MaterialTheme.colorScheme.error)
+            }
+            if (read is CalendarRead.Unavailable || store == null || optionsRead is CalendarRead.Unavailable) item("calendar-error") {
+                CalendarFeedback(Res.string.work_unavailable)
             } else if (read is CalendarRead.Loading) item("calendar-loading") {
                 LinearProgressIndicator(Modifier.fillMaxWidth())
             } else if (fallbackNeeded || displayed.isEmpty()) {
@@ -240,7 +261,7 @@ fun WorkCalendarScreen(
                     LinearProgressIndicator(Modifier.fillMaxWidth())
                 }
                 if (fallbackNeeded && fallbackRead is CalendarRead.Unavailable) item("calendar-fallback-error") {
-                    Text(stringResource(Res.string.work_unavailable), color = MaterialTheme.colorScheme.error)
+                    CalendarFeedback(Res.string.work_unavailable)
                 }
                 if (fallbackNeeded && displayed.isNotEmpty()) item("calendar-fallback-header") {
                     Text(stringResource(Res.string.p6c_upcoming), style = MaterialTheme.typography.titleSmall,
@@ -287,7 +308,7 @@ internal fun CalendarWorkRow(
     Surface(color = MaterialTheme.colorScheme.surface, contentColor = color, shape = MaterialTheme.shapes.medium) {
         Row(Modifier.fillMaxWidth().pointerInput(work.key) {
             var delta = 0f
-            detectHorizontalDragGestures(onDragStart = { delta = 0f }, onDragEnd = { if (delta > 42.dp.toPx()) menu = true }) {
+            detectHorizontalDragGestures(onDragStart = { delta = 0f }, onDragEnd = { if (delta > 42.dp.toPx()) onEdit(context.copy(delete = true)) }) {
                 change, dragAmount -> change.consume(); delta += dragAmount
             }
         }.clickable { onEdit(context) }.padding(start = 9.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -326,9 +347,9 @@ internal fun CalendarWorkRow(
             Icon(icon, stringResource(if (obsolete) Res.string.work_overdue else status.label()), modifier = Modifier.size(17.dp))
             Box {
                 IconButton(onClick = { menu = true }) { Icon(Icons.Default.MoreVert, stringResource(Res.string.work_edit)) }
-                DropdownMenu(menu, onDismissRequest = { menu = false }) {
+                CeilingsPopupMenu(menu, onDismissRequest = { menu = false }) {
                     DropdownMenuItem(text = { Text(stringResource(Res.string.work_edit)) },
-                        onClick = { menu = false; onEdit(context) })
+                        onClick = { menu = false; onEdit(context.copy(edit = true)) })
                     if (work.draft.schedule.days.size == 1 && status.active) {
                         DropdownMenuItem(text = { Text(stringResource(Res.string.work_move)) },
                             onClick = { menu = false; onEdit(context.copy(move = true)) })
@@ -342,15 +363,37 @@ internal fun CalendarWorkRow(
 }
 
 @Composable
-internal fun CalendarMenu(label: String, options: @Composable ColumnScope.() -> Unit) {
+private fun TodayButton(today: LocalDate, onClick: () -> Unit) {
+    OutlinedIconButton(onClick = onClick) {
+        Box(contentAlignment = Alignment.Center) {
+            Icon(Icons.Default.CalendarToday, stringResource(Res.string.work_today), Modifier.size(27.dp))
+            Text(today.day.toString(), Modifier.padding(top = 5.dp), style = MaterialTheme.typography.labelSmall)
+        }
+    }
+}
+
+@Composable
+internal fun CalendarFeedback(message: StringResource, kind: ContextFeedbackKind = ContextFeedbackKind.ERROR) {
+    val label = stringResource(message)
+    Row(Modifier.padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+        ContextFeedbackIcon(label, label, kind, compact = true)
+        Text(label, style = MaterialTheme.typography.labelMedium,
+            color = if (kind == ContextFeedbackKind.ERROR) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+@Composable
+internal fun CalendarMenu(label: String, modifier: Modifier = Modifier,
+    leading: (@Composable () -> Unit)? = null, options: @Composable ColumnScope.() -> Unit) {
     var expanded by remember { mutableStateOf(false) }
     LaunchedEffect(label) { expanded = false }
-    Box {
-        TextButton(onClick = { expanded = true }) {
-            Text(label, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Icon(Icons.Default.ArrowDropDown, null)
+    Box(modifier) {
+        OutlinedButton(onClick = { expanded = !expanded }, contentPadding = PaddingValues(horizontal = 9.dp, vertical = 2.dp)) {
+            leading?.invoke()
+            Text(label, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+            Icon(Icons.Default.ArrowDropDown, null, Modifier.size(18.dp))
         }
-        DropdownMenu(expanded, { expanded = false }) {
+        CeilingsPopupMenu(expanded, { expanded = false }) {
             options()
         }
     }

@@ -31,7 +31,7 @@ data class CalendarFormOptions(
     val settings: CalendarSettings, val types: List<CalendarWorkType>,
     val projects: List<CalendarOption>, val clients: List<CalendarOption>,
 )
-data class CalendarOption(val uuid: String, val name: String)
+data class CalendarOption(val uuid: String, val name: String, val clientUuid: String? = null)
 
 class CalendarStore(
     private val database: PrototypeDatabase,
@@ -61,7 +61,7 @@ class CalendarStore(
         }
     }
 
-    fun cached(range: WorkDateRange, zone: TimeZone): List<CalendarWork>? = periods.value[PeriodKey(range, zone)]?.works
+    fun cached(range: WorkDateRange, zone: TimeZone): List<CalendarWork>? = periods.value[PeriodKey(range, zone)]?.works.takeUnless { closed.value }
 
     fun period(range: WorkDateRange, zone: TimeZone): Flow<CalendarRead<List<CalendarWork>>> = observe(cached(range, zone)) {
         fill(PeriodKey(range, zone), changes.value)
@@ -88,9 +88,11 @@ class CalendarStore(
 
     fun options(): Flow<CalendarRead<CalendarFormOptions>> = observe(cachedOptions()) {
         database.transactionWithResult {
+            val clients = database.businessSchemaQueries.selectClients().executeAsList()
+            val clientIds = clients.associate { it.id to it.uuid }
             CalendarFormOptions(repository.settings(), repository.types(),
-                database.businessSchemaQueries.selectProjects().executeAsList().map { CalendarOption(it.uuid, it.title) },
-                database.businessSchemaQueries.selectClients().executeAsList().map { CalendarOption(it.uuid, it.name) })
+                database.businessSchemaQueries.selectProjects().executeAsList().map { CalendarOption(it.uuid, it.title, clientIds[it.clientId]) },
+                clients.map { CalendarOption(it.uuid, it.name) })
         }.also { optionsCache.value = it }
     }
 
@@ -143,6 +145,21 @@ class CalendarStore(
             }
             WorkContact(project?.address, client?.name, client?.phone, client?.email)
         }
+    }
+
+    internal suspend fun createClient(registry: com.andreyceilings.shared.objects.ObjectsClientsStore,
+        draft: com.andreyceilings.shared.objects.ClientDraft): CalendarOption = access {
+        val id = registry.saveClient(null, draft)
+        val client = database.businessSchemaQueries.selectClientById(id).executeAsOne()
+        CalendarOption(client.uuid, client.name)
+    }
+
+    internal suspend fun createProject(registry: com.andreyceilings.shared.objects.ObjectsClientsStore,
+        draft: com.andreyceilings.shared.objects.ProjectDraft): CalendarOption = access {
+        val id = registry.saveProject(null, draft)
+        val project = database.businessSchemaQueries.selectProjectById(id).executeAsOne()
+        val clientUuid = project.clientId?.let { database.businessSchemaQueries.selectClientById(it).executeAsOneOrNull()?.uuid }
+        CalendarOption(project.uuid, project.title, clientUuid)
     }
 
     suspend fun ceilings(projectUuid: String): List<WorkCeiling> = access {

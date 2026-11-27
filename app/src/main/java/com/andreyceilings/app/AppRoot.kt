@@ -950,6 +950,7 @@ private fun CeilingsAppContent(
             }
             calendarEditor?.let { route ->
                 WorkEditor(calendarStore, route, onClose = { calendarEditor = null }, properties = calendarWindow,
+                    registry = database?.objectsClientsStore,
                     onSaved = { result, draft ->
                         calendarEditor = null
                         detachedCalendarWorks = result.detached

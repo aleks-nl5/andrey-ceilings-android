@@ -416,7 +416,7 @@ private fun DesktopPriceHost(
                     onClose = { calendarOpen = false })
             }
             calendarEditor?.let { route ->
-                WorkEditor(calendar, route, onClose = { calendarEditor = null }, onSaved = { result, draft ->
+                WorkEditor(calendar, route, onClose = { calendarEditor = null }, registry = objectsStore, onSaved = { result, draft ->
                     calendarEditor = null
                     detachedWork = result.detached
                     if (result.installationCompleted) completedProject = draft.projectUuid?.let { it to result.key }

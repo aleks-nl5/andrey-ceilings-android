@@ -39,7 +39,7 @@ internal fun ProjectCalendarWorks(
         upcoming.data().orEmpty().filter { it.upcoming(now) }.take(2).forEach { work ->
             CalendarWorkRow(work, options?.types?.firstOrNull { it.code == work.draft.typeCode }, zone, now, onEdit)
         }
-        if (upcoming is CalendarRead.Unavailable) Text(stringResource(Res.string.work_unavailable))
+        if (upcoming is CalendarRead.Unavailable) CalendarFeedback(Res.string.work_unavailable)
         if (approvedQuote && installation is CalendarRead.Ready && installation.value.none { it.upcoming(now) }) {
             TextButton(onClick = { onEdit(CalendarEditorRoute.Create(projectUuid = projectUuid, installation = true)) }) {
                 Text(stringResource(Res.string.work_schedule_install))

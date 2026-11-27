@@ -9,6 +9,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -137,44 +138,25 @@ fun UpcomingEventsCard(
                 if (onAddWork != null) IconButton(onClick = onAddWork, modifier = Modifier.size(44.dp)) {
                     Icon(Icons.Default.Add, stringResource(Res.string.work_add))
                 }
-                Row(
-                    modifier = Modifier
-                        .height(44.dp)
-                        .clickable(enabled = onCalendar != null) { onCalendar?.invoke() }
-                        .padding(horizontal = 5.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(2.dp)
-                ) {
-                    val linkColor = if (onCalendar != null) theme.primary else theme.onSurfaceVariant
-                    Text(
-                        stringResource(Res.string.work_calendar),
-                        style = MaterialTheme.typography.labelLarge,
-                        color = linkColor,
-                        maxLines = 1
-                    )
-                    Icon(
-                        Icons.Default.ChevronRight,
-                        contentDescription = null,
-                        tint = linkColor,
-                        modifier = Modifier.size(18.dp)
-                    )
+                if (onCalendar != null) IconButton(onClick = onCalendar, modifier = Modifier.size(44.dp)) {
+                    Icon(Icons.Default.ChevronRight, stringResource(Res.string.work_calendar))
                 }
             }
         } else {
             val closest = upcoming.first()
             Column(
-                Modifier.fillMaxWidth().padding(14.dp),
-                verticalArrangement = Arrangement.spacedBy(9.dp)
+                Modifier.fillMaxWidth().padding(10.dp),
+                verticalArrangement = Arrangement.spacedBy(3.dp)
             ) {
                 val open = closest.key?.let { key -> onOpenWork?.let { { it(key) } } }
-                Row(Modifier.clickable(enabled = open != null) { open?.invoke() },
+                Row(Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     EventDateBadge(
                         dateLabel = closest.dateLabel,
                         timeLabel = closest.timeLabel,
                         urgency = workUrgency(nowMillis, closest.startsAtMillis)
                     )
-                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Column(Modifier.weight(1f).clickable(enabled = open != null) { open?.invoke() }, verticalArrangement = Arrangement.spacedBy(2.dp)) {
                         Text(
                             closest.description,
                             style = MaterialTheme.typography.titleMedium,
@@ -197,16 +179,20 @@ fun UpcomingEventsCard(
                             ) { Text("До об’єкта") }
                         }
                     }
+                    if (onAddWork != null) IconButton(onClick = onAddWork, modifier = Modifier.size(42.dp)) {
+                        Icon(Icons.Default.Add, stringResource(Res.string.work_add))
+                    }
                 }
 
                 upcoming.drop(1).forEach { event ->
+                    HorizontalDivider(color = theme.outlineVariant.copy(alpha = .5f))
                     val openProject = event.key?.let { key -> onOpenWork?.let { { it(key) } } } ?: event.projectId?.let { id ->
                         onOpenProject?.let { open -> { open(id) } }
                     }
                     Row(
                         Modifier.fillMaxWidth()
                             .clickable(enabled = openProject != null) { openProject?.invoke() }
-                            .padding(vertical = 7.dp, horizontal = 2.dp),
+                            .padding(vertical = 4.dp, horizontal = 2.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(9.dp)
                     ) {
@@ -227,15 +213,6 @@ fun UpcomingEventsCard(
                         if (openProject != null) {
                             Icon(Icons.Default.ChevronRight, contentDescription = null)
                         }
-                    }
-                }
-                Row(Modifier.align(Alignment.End), verticalAlignment = Alignment.CenterVertically) {
-                    if (onAddWork != null) IconButton(onClick = onAddWork) {
-                        Icon(Icons.Default.Add, stringResource(Res.string.work_add))
-                    }
-                    if (onCalendar != null) TextButton(onClick = onCalendar) {
-                        Text(stringResource(Res.string.work_calendar))
-                        Icon(Icons.Default.ChevronRight, contentDescription = null)
                     }
                 }
             }

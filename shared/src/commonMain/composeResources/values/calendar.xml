@@ -100,4 +100,13 @@
     <string name="work_deletion_project">Незавершені роботи об’єкта буде скасовано. Історія залишиться в календарі.</string>
     <string name="work_deletion_client">Роботи залишаться в календарі зі збереженими контактами.</string>
     <string name="work_deletion_ceiling">Позначка про видалену стелю залишиться в роботах.</string>
+    <string name="work_view">Перегляд роботи</string>
+    <string name="work_more_details">Додаткові дані</string>
+    <string name="work_switch_time_input">Змінити спосіб введення часу</string>
+    <string name="work_choose_color">Обрати колір</string>
+    <string name="work_every">Кожні</string>
+    <string name="work_unit_days">дн.</string>
+    <string name="work_unit_weeks">тиж.</string>
+    <string name="work_unit_months">міс.</string>
+    <string name="work_external_unavailable">Не вдалося відкрити посилання.</string>
 </resources>

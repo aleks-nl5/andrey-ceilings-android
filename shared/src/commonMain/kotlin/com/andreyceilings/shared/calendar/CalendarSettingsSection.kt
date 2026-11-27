@@ -1,6 +1,11 @@
 package com.andreyceilings.shared.calendar
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -27,7 +32,7 @@ fun CalendarSettingsSection(store: CalendarStore?) {
         Text(stringResource(Res.string.work_settings))
     }
     if (!open || store == null) return
-    val read = calendarState(remember(store) { store.options() })
+    val read = calendarOptionsState(store)
     val options = read.data()
     if (options == null) {
         if (read is CalendarRead.Loading) LinearProgressIndicator(Modifier.fillMaxWidth())
@@ -45,7 +50,7 @@ fun CalendarSettingsSection(store: CalendarStore?) {
     val changes = parsedZone?.let { CalendarSettings(it, first, days) }?.takeIf { it != options.settings }
 
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        WorkField(zone, Res.string.work_zone, error = parsedZone == null) { zone = it }
+        WorkZoneField(zone) { zone = it }
         Text(stringResource(Res.string.work_working_days), style = MaterialTheme.typography.labelMedium)
         DaySelection(days) { days = it }
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -74,7 +79,7 @@ fun CalendarSettingsSection(store: CalendarStore?) {
             }
         }
         options.types.forEach { type ->
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.fillMaxWidth().clickable { editor = type }.padding(vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) {
                 Icon(typeIcon(type), null, tint = typeColor(type))
                 Text(calendarTypeLabel(type), Modifier.weight(1f).padding(horizontal = 8.dp))
                 if (type.archived) Icon(Icons.Default.Archive, stringResource(Res.string.work_archive))
@@ -91,6 +96,7 @@ fun CalendarSettingsSection(store: CalendarStore?) {
 private fun CalendarTypeEditor(type: CalendarWorkType, store: CalendarStore, onClose: () -> Unit) {
     var label by remember(type) { mutableStateOf(type.label) }
     var color by remember(type) { mutableStateOf(type.color.toString(16).padStart(6, '0')) }
+    var pickingColor by remember(type) { mutableStateOf(false) }
     var icon by remember(type) { mutableStateOf(type.icon) }
     var duration by remember(type) { mutableStateOf(type.durationMinutes.toString()) }
     var archived by remember(type) { mutableStateOf(type.archived) }
@@ -105,7 +111,11 @@ private fun CalendarTypeEditor(type: CalendarWorkType, store: CalendarStore, onC
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 if (label != null) {
                     WorkField(label.orEmpty(), Res.string.work_type_label) { label = it }
-                    WorkField(color, Res.string.work_type_color, error = parsedColor == null) { color = it }
+                    OutlinedButton(onClick = { pickingColor = true }) {
+                        Box(Modifier.size(20.dp).clip(CircleShape).background(Color(0xff000000 or (parsedColor ?: 0).toLong())))
+                        Spacer(Modifier.width(8.dp))
+                        Text("#" + color.uppercase())
+                    }
                     Text(stringResource(Res.string.work_type_icon), style = MaterialTheme.typography.labelMedium)
                     Row {
                         listOf("measure", "install", "deliver", "other").forEach { option ->
@@ -122,7 +132,7 @@ private fun CalendarTypeEditor(type: CalendarWorkType, store: CalendarStore, onC
                     }
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Checkbox(archived, { archived = it })
-                        Text(stringResource(if (type.archived) Res.string.work_unarchive else Res.string.work_archive))
+                        Text(stringResource(Res.string.work_archive))
                     }
                 }
                 WorkField(duration, Res.string.work_type_duration, error = parsedDuration == null, keyboard = KeyboardType.Number) { duration = it }
@@ -144,4 +154,33 @@ private fun CalendarTypeEditor(type: CalendarWorkType, store: CalendarStore, onC
                     }
                 }) { Text(stringResource(Res.string.oc_save)) }
         }, dismissButton = { TextButton(onClick = onClose, enabled = !busy) { Text(stringResource(Res.string.p5d_cancel)) } })
+    if (pickingColor) CalendarColorPicker(color, onClose = { pickingColor = false }) { color = it; pickingColor = false }
+}
+
+@Composable
+private fun CalendarColorPicker(initial: String, onClose: () -> Unit, onSelect: (String) -> Unit) {
+    var value by remember { mutableStateOf(initial) }
+    val palette = listOf("B3261E","E53935","E91E63","9C27B0","673AB7","3F51B5","1976D2","039BE5","0097A7","008577",
+        "388E3C","689F38","827717","F9A825","EF6C00","BF360C","795548","546E7A","616161","37474F")
+    AlertDialog(onDismissRequest = onClose, title = { Text(stringResource(Res.string.work_choose_color)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                palette.chunked(5).forEach { row ->
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                        row.forEach { hex ->
+                            IconButton(onClick = { value = hex }, modifier = Modifier.size(42.dp)) {
+                                Box(Modifier.size(30.dp).clip(CircleShape).background(Color(0xff000000 or hex.toLong(16))),
+                                    contentAlignment = Alignment.Center) {
+                                    if (value.equals(hex, true)) Icon(Icons.Default.Check, null, tint = Color.White)
+                                }
+                            }
+                        }
+                    }
+                }
+                WorkField(value, Res.string.work_type_color, error = value.length != 6 || value.toIntOrNull(16) == null) { value = it }
+            }
+        },
+        confirmButton = { TextButton(onClick = { onSelect(value) },
+            enabled = value.length == 6 && value.toIntOrNull(16)?.let { it in 0..16777215 } == true) { Text(stringResource(Res.string.oc_save)) } },
+        dismissButton = { TextButton(onClick = onClose) { Text(stringResource(Res.string.p5d_cancel)) } })
 }
