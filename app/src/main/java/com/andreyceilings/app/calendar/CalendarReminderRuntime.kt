@@ -232,8 +232,13 @@ internal object CalendarReminderRuntime {
             NotificationManager.IMPORTANCE_DEFAULT).apply { enableVibration(true) })
         val day = work.days.zip(work.draft.schedule.days).firstOrNull { it.second.offset == decode(id)?.offset }
             ?: work.days.zip(work.draft.schedule.days).first()
-        val dateTime = listOfNotNull(day.first.date.toString(), day.second.start?.toString()?.take(5),
-            day.second.end?.toString()?.take(5)).joinToString(" ")
+        val zone = work.draft.schedule.zone
+        val times = day.first.interval?.takeIf { work.draft.schedule.mode == WorkTimeMode.TIMED }?.let {
+            val start = it.start.toLocalDateTime(zone)
+            val end = it.endExclusive.toLocalDateTime(zone)
+            "${start.time.toString().take(5)}–${end.time.toString().take(5)}"
+        }
+        val dateTime = listOfNotNull(day.first.date.toString(), times).joinToString(" · ")
         val type = types.firstOrNull { it.code == work.draft.typeCode }?.label ?: context.getString(when (work.draft.typeCode) {
             "MEASURE" -> R.string.p7b_measure
             "INSTALL" -> R.string.p7b_install
