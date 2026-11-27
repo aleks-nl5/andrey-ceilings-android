@@ -23,6 +23,8 @@ import org.junit.runner.RunWith
  */
 @RunWith(AndroidJUnit4::class)
 class RoomToSqlDelightStagingMigrationTest {
+    // Archived Room v2 import proof; regular CI uses current SQLDelight and supported v21+ upgrades.
+    @org.junit.Ignore("Archived pre-v21 Room migration proof")
     @Test
     fun encryptedLegacyDatabaseImportsAllFiveTablesAndPreservesOriginal() {
         val context: Context = ApplicationProvider.getApplicationContext()

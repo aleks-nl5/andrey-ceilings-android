@@ -117,9 +117,9 @@ fun UpcomingEventsCard(
                     tint = theme.primary
                 )
                 Text(
-                    if (databaseAvailable) todayLabel else "Події недоступні",
+                    if (databaseAvailable) todayLabel else "",
                     modifier = Modifier.weight(1f),
-                    style = MaterialTheme.typography.titleSmall,
+                    style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold,
                     color = theme.onPrimaryContainer,
                     maxLines = 1,

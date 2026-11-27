@@ -87,6 +87,8 @@ import com.andreyceilings.shared.resources.p6a_no_ceilings
 import com.andreyceilings.shared.resources.p6a_no_client
 import com.andreyceilings.shared.resources.p6a_open_client
 import org.jetbrains.compose.resources.stringResource
+import com.andreyceilings.shared.resources.p6c_open_ceilings
+import androidx.compose.material.icons.filled.Search
 import com.andreyceilings.shared.domain.ClientListEntry
 import com.andreyceilings.shared.domain.ProjectListEntry
 import com.andreyceilings.shared.estimate.ConsolidatedEstimateScreen
@@ -185,6 +187,7 @@ internal fun ProjectDetailsScreen(
     active: Boolean = true,
     onOpenMeasurement: (Long) -> Unit = {},
     onCreateMeasurement: () -> Unit = {},
+    onOpenCeilingRegistry: (() -> Unit)? = null,
     swipeState: CardSwipeState = remember { CardSwipeState() }
 ) {
     val flow = remember(store, projectId) {
@@ -192,7 +195,8 @@ internal fun ProjectDetailsScreen(
             ?.catch { emit(DetailsState.Unavailable) }
     }
     val state = key(store, projectId) {
-        flow?.collectAsState(initial = DetailsState.Loading)?.value ?: DetailsState.Unavailable
+        flow?.collectAsState(initial = store?.cachedProjectDetails(projectId)?.let { DetailsState.Loaded(it) }
+            ?: DetailsState.Loading)?.value ?: DetailsState.Unavailable
     }
     val uriHandler = LocalUriHandler.current
     val visibleProject = (state as? DetailsState.Loaded)?.data?.project
@@ -246,7 +250,9 @@ internal fun ProjectDetailsScreen(
                 }?.catch { emit(ProjectFinanceState.Unavailable) }
                 ?: flowOf(ProjectFinanceState.Unavailable)
         }
-        financeFlow.collectAsState(initial = ProjectFinanceState.Loading).value
+        val cached = store?.cachedProjectFinance(projectId)
+        financeFlow.collectAsState(initial = if (cached == null) ProjectFinanceState.Loading
+            else cached.second?.let { ProjectFinanceState.Loaded(it) } ?: ProjectFinanceState.Unavailable).value
     }
     val visibleCeilings by remember(detailsListState) {
         derivedStateOf {
@@ -256,6 +262,22 @@ internal fun ProjectDetailsScreen(
                     it.offset + it.size > layout.viewportStartOffset }
                 .mapNotNull { it.key as? Long }
                 .toSet()
+        }
+    }
+    val measurements = (state as? DetailsState.Loaded)?.data?.measurements.orEmpty()
+    val visibleContours = remember(projectId, measurements, visibleCeilings, active, composer) {
+        if (!active || composer != null) emptyList() else measurements.asSequence()
+            .filter { it.id in visibleCeilings }.map { it.uuid }.take(40).toList()
+    }
+    val contourFlow = remember(store, projectId, visibleContours) {
+        store?.observeVisibleCeilingContours(visibleContours, projectId)?.catch { emit(null) }
+    }
+    var contours by remember(store, projectId) { mutableStateOf(store?.cachedContours().orEmpty()) }
+    LaunchedEffect(contourFlow, visibleContours) {
+        if (visibleContours.isNotEmpty()) contourFlow?.collect { next ->
+            if (next != null) {
+                contours = (contours - visibleContours.toSet() + next).entries.toList().takeLast(160).associate { it.key to it.value }
+            } else contours = emptyMap()
         }
     }
     val density = LocalDensity.current
@@ -558,6 +580,9 @@ internal fun ProjectDetailsScreen(
                                 Text(stringResource(Res.string.p6a_ceilings_count, state.data.measurements.size),
                                     modifier = Modifier.weight(1f).padding(top = 4.dp, bottom = 2.dp),
                                     style = MaterialTheme.typography.titleMedium)
+                                if (onOpenCeilingRegistry != null) IconButton(onClick = onOpenCeilingRegistry, enabled = active) {
+                                    Icon(Icons.Default.Search, stringResource(Res.string.p6c_open_ceilings))
+                                }
                                 IconButton(onClick = onCreateMeasurement, enabled = active) {
                                     Icon(Icons.Default.Add, stringResource(Res.string.p6a_add_ceiling))
                                 }
@@ -568,13 +593,6 @@ internal fun ProjectDetailsScreen(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                         items(state.data.measurements, key = { it.id }) { measurement ->
-                            val visible = active && composer == null && measurement.id in visibleCeilings
-                            val contour = if (visible && store != null) key(store, projectId, measurement.uuid) {
-                                val contourFlow = remember {
-                                    store.observeCeilingContour(projectId, measurement.uuid).catch { emit(null) }
-                                }
-                                contourFlow.collectAsState(initial = null).value
-                            } else null
                             val quotes = (finance as? ProjectFinanceState.Loaded)?.summary
                             val swipeId = "ceiling-${measurement.uuid}"
                             val rowWasOpen = openCeilingSwipe?.id == swipeId
@@ -601,7 +619,7 @@ internal fun ProjectDetailsScreen(
                                 deleteTrayHeight = 70.dp
                             ) {
                                 CompactCeilingCard(
-                                    measurement, contour, quotes?.ceilings?.get(measurement.id),
+                                    measurement, contours[measurement.uuid], quotes?.ceilings?.get(measurement.id),
                                     quoteUnavailable = finance == ProjectFinanceState.Unavailable ||
                                         measurement.id in quotes?.unavailableCeilings.orEmpty(),
                                     quoteLoading = finance == ProjectFinanceState.Loading

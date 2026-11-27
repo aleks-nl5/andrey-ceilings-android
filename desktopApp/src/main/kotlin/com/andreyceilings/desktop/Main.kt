@@ -72,7 +72,7 @@ import com.andreyceilings.shared.navigation.AppHeader
 import com.andreyceilings.shared.navigation.AppHeaderHeight
 import com.andreyceilings.shared.navigation.FloatingBarHeight
 import com.andreyceilings.shared.dashboard.DashboardScreen
-import com.andreyceilings.shared.dashboard.DashboardSummary
+import com.andreyceilings.shared.dashboard.DashboardPreferences
 import kotlinx.coroutines.flow.Flow
 import com.andreyceilings.shared.objects.CardSwipeState
 import com.andreyceilings.shared.objects.dismissCardSwipeOnInteraction
@@ -93,7 +93,7 @@ fun main() = application {
         AppLanguageState(DesktopAppLanguageStorage(Preferences.userNodeForPackage(DesktopAppLanguageStorage::class.java)))
     }
     var navigation by remember { mutableStateOf(AppNavigationState()) }
-    val availableRoutes = remember { setOf(AppRoute.DASHBOARD, AppRoute.PRICES, AppRoute.OBJECTS, AppRoute.ESTIMATES) }
+    val availableRoutes = remember { setOf(AppRoute.DASHBOARD, AppRoute.PRICES, AppRoute.OBJECTS, AppRoute.MEASUREMENTS, AppRoute.ESTIMATES) }
     val measurementCreateNavigationGuard = remember { com.andreyceilings.shared.measurement.MeasurementCreateNavigationGuard() }
     SideEffect { measurementCreateNavigationGuard.quoteSession.navigate(navigation) }
     fun applyNavigation(next: AppNavigationState) { measurementCreateNavigationGuard.quoteSession.navigate(next); navigation = next }
@@ -170,15 +170,15 @@ private fun DesktopPriceHost(
         onDispose { database?.close() }
     }
     if (database != null) {
+        val routeState = key(database) { androidx.compose.runtime.saveable.rememberSaveableStateHolder() }
         val store = remember(database) {
             PriceCatalogStore(database.prices, nowMillis = System::currentTimeMillis)
         }
-        val items by store.items.collectAsState(initial = emptyList())
-        val priceGroups by store.groups.collectAsState(initial = emptyList())
+        val items by store.items.collectAsState(initial = null as List<com.andreyceilings.shared.prices.PriceCatalogItem>?)
+        val priceGroups by store.groups.collectAsState(initial = null as List<com.andreyceilings.shared.prices.PriceCatalogGroup>?)
         val objectsStore = remember(database) { database.objects }
         SideEffect { measurementCreateNavigationGuard.bindQuotes(objectsStore.measurementDetails.elements) }
-        val objectRows by objectsStore.rows.collectAsState(initial =
-            ObjectsClientsRows(emptyList(), emptyList()))
+        val objectRows by objectsStore.rows.collectAsState(initial = objectsStore.cachedRows)
         var externalError by remember { mutableStateOf<String?>(null) }
         fun openExternal(url: String) {
             runCatching {
@@ -189,8 +189,6 @@ private fun DesktopPriceHost(
                 Desktop.getDesktop().browse(URI(url))
             }.onFailure { externalError = it.message ?: "Не вдалося відкрити посилання." }
         }
-        val summaryFlow: Flow<DashboardSummary?> = remember(database) { database.dashboard.summary }
-        val summary by summaryFlow.collectAsState(initial = null)
         val currencyGateway = remember(database) {
             MonobankCurrencyGateway(DesktopCurrencyRatesCache())
         }
@@ -222,7 +220,7 @@ private fun DesktopPriceHost(
         }
         val isProjectDetailsOpen = selectedTab == AppRoute.OBJECTS &&
             navigation.projectDetails != null
-        val isMeasurementDetailsOpen = isProjectDetailsOpen &&
+        val isMeasurementDetailsOpen = (isProjectDetailsOpen || selectedTab == AppRoute.MEASUREMENTS) &&
             (navigation.measurementDetails != null || navigation.measurementCreate != null || navigation.measurementEdit != null)
         var projectTitleProgress by remember { mutableFloatStateOf(0f) }
         val passiveDetailsScroll = remember { object : NestedScrollConnection {} }
@@ -236,6 +234,9 @@ private fun DesktopPriceHost(
             if (isProjectDetailsOpen) passiveDetailsScroll
             else topScrollBehavior.nestedScrollConnection
         )) {
+            val routeSlot = if (selectedTab == AppRoute.MEASUREMENTS && isMeasurementDetailsOpen)
+                "ceiling-workspace" else selectedTab.name
+            routeState.SaveableStateProvider(routeSlot) {
             when (selectedTab) {
                 AppRoute.DASHBOARD -> {
                     Column(
@@ -248,12 +249,18 @@ private fun DesktopPriceHost(
                     ) {
                         // Only real host actions are available, never mock buttons.
                         DashboardScreen(
-                            summary = summary,
-                            databaseAvailable = true,
-                            onNewMeasurement = null,
-                            onCalculator = null,
+                            store = database.dashboard,
+                            preferences = DashboardPreferences.default,
+                            onCeilings = {
+                                routeState.removeState(AppRoute.MEASUREMENTS.name)
+                                onNavigate(navigation.navigate(AppRoute.MEASUREMENTS, availableRoutes))
+                            },
                             onObjects = { onNavigate(navigation.selectTab(AppRoute.OBJECTS, availableRoutes)) },
-                            onEstimates = { onNavigate(navigation.selectTab(AppRoute.ESTIMATES, availableRoutes)) },
+                            onClients = null,
+                            onEstimates = {
+                                routeState.removeState(AppRoute.ESTIMATES.name)
+                                onNavigate(navigation.navigate(AppRoute.ESTIMATES, availableRoutes))
+                            },
                             onCalendar = null,
                             todayLabel = dashboardTodayLabel(currencyState.nowMillis),
                             nowMillis = currencyState.nowMillis,
@@ -274,13 +281,11 @@ private fun DesktopPriceHost(
                     }
                 }
                 AppRoute.OBJECTS -> ObjectsClientsScreen(
-                    rows = objectRows,
+                    rows = objectRows ?: ObjectsClientsRows(emptyList(), emptyList()),
+                    rowsReady = objectRows != null,
                     swipeState = cardSwipes,
                     detailsProjectId = navigation.projectDetails?.projectId,
-                    measurementDetails = navigation.measurementDetails,
-                    measurementQuote = navigation.measurementQuote,
                     measurementEdit = navigation.measurementEdit,
-                    onEditMeasurement = { projectId, measurementId -> onNavigate(navigation.editMeasurement(projectId, measurementId)) },
                     measurementCreate = navigation.measurementCreate,
                     measurementCreateNavigationGuard = measurementCreateNavigationGuard,
                     onCreateMeasurement = { onNavigate(navigation.createMeasurement(it)) },
@@ -288,6 +293,10 @@ private fun DesktopPriceHost(
                     onOpenMeasurement = { projectId, measurementId -> onNavigate(navigation.openCeilingWorkspace(projectId, measurementId)) },
                     detailsStore = objectsStore,
                     onOpenProject = { onNavigate(navigation.openProject(it)) },
+                    onOpenCeilingRegistry = {
+                        routeState.removeState(AppRoute.MEASUREMENTS.name)
+                        onNavigate(navigation.navigate(AppRoute.MEASUREMENTS, availableRoutes))
+                    },
                     onCloseProject = { onNavigate(navigation.back(availableRoutes)) },
                     onProjectHeaderProgress = { projectTitleProgress = it.coerceIn(0f, 1f) },
                     onListTabChanged = {
@@ -342,13 +351,21 @@ private fun DesktopPriceHost(
                         else externalError = "Вкажіть телефон із міжнародним кодом країни."
                     }
                 )
-                AppRoute.ESTIMATES -> Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())
-                    .padding(top = AppHeaderHeight + 16.dp, bottom = FloatingBarHeight + 16.dp, start = 24.dp, end = 24.dp)) {
-                    com.andreyceilings.shared.estimate.SavedIndividualQuoteList(objectsStore.measurementDetails.elements)
-                }
+                AppRoute.MEASUREMENTS -> com.andreyceilings.shared.measurement.MeasurementsScreen(
+                    store = objectsStore, navigation = navigation,
+                    precision = com.andreyceilings.shared.calculation.MeasurementPrecision.ONE_CENTIMETER,
+                    contentPadding = PaddingValues(start = 24.dp, end = 24.dp,
+                        top = if (isMeasurementDetailsOpen) 8.dp else AppHeaderHeight + 16.dp,
+                        bottom = if (isMeasurementDetailsOpen) 8.dp else FloatingBarHeight + 16.dp),
+                    systemTopInset = 0.dp, navigationGuard = measurementCreateNavigationGuard,
+                    onNavigate = onNavigate
+                )
+                AppRoute.ESTIMATES -> com.andreyceilings.shared.registry.QuoteRegistryScreen(objectsStore,
+                    PaddingValues(start = 24.dp, end = 24.dp, top = AppHeaderHeight + 16.dp, bottom = FloatingBarHeight + 16.dp))
                 AppRoute.PRICES -> PriceCatalogScreen(
-                    items = items,
-                    groups = priceGroups,
+                    items = items.orEmpty(),
+                    groups = priceGroups.orEmpty(),
+                    rowsReady = items != null && priceGroups != null,
                     databaseAvailable = true,
                     contentPadding = PaddingValues(
                         start = 24.dp, end = 24.dp,
@@ -379,6 +396,7 @@ private fun DesktopPriceHost(
                     Text(externalError.orEmpty(), color = MaterialTheme.colorScheme.error)
                 }
             }
+            }
             if (!isMeasurementDetailsOpen && (!isProjectDetailsOpen || projectTitleProgress < 0.95f)) AppHeader(
                 collapsedFraction = if (isProjectDetailsOpen) 0f
                     else topScrollBehavior.state.collapsedFraction,
@@ -392,12 +410,13 @@ private fun DesktopPriceHost(
                         (1f - projectTitleProgress) * (1f - projectTitleProgress)
                     else 1f)
             )
-            if (!measurementFullscreen) AppFloatingNavigation(
+            if (!measurementFullscreen && !isMeasurementDetailsOpen) AppFloatingNavigation(
                 selectedId = selectedTab.name,
                 destinations = navItems,
                 darkTheme = isSystemInDarkTheme(),
                 onSelect = { id ->
                     AppRoute.fromId(id)?.let { route ->
+                        if (route != selectedTab) routeState.removeState(route.name)
                         onNavigate(navigation.selectTab(route, availableRoutes))
                     }
                 },

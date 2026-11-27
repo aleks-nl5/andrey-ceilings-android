@@ -45,9 +45,21 @@ class ConsolidatedEstimateRepositoryTest {
             fixture.command(listOf(second), "Branch from v1", v2.revisionUuid, stored.revisionUuid), date, 754)
         assertEquals(v2.revisionUuid, fixture.consolidated.read(v3.revisionUuid)?.frozen?.parentRevisionUuid)
         assertEquals(saved.publicNumber, fixture.consolidated.read(v3.revisionUuid)?.frozen?.publicNumber)
+        val registry = ObjectsClientsStore(db) { 754 }
+        val series = runBlocking { registry.observeRegistryQuotes().filterNotNull().first() }
+            .single { it.id == stored.seriesUuid }
+        assertEquals(750L, series.createdAt)
+        assertEquals(saved.publicNumber, series.number)
+        assertEquals(mapOf(stored.revisionUuid to 2L, v2.revisionUuid to 1L, v3.revisionUuid to 1L),
+            series.versions.associate { it.id to it.ceilingCount })
+        assertEquals(3L, runBlocking { registry.observeDashboardQuoteCount().filterNotNull().first() })
         assertTrue(fixture.consolidated.delete(fixture.projectId,
             listOf(stored, v2, v3).associate { it.revisionUuid to 1L }, true, 760))
         assertNull(fixture.consolidated.read(stored.revisionUuid))
+        assertEquals(2L, runBlocking { registry.observeDashboardQuoteCount().filterNotNull().first() })
+        assertFalse(runBlocking { registry.observeRegistryQuotes().filterNotNull().first() }
+            .any { it.id == stored.seriesUuid })
+        runBlocking { registry.closeAndAwaitProjectReads() }
         assertTrue(fixture.individuals.deleteIndividualSeries(second.seriesUuid, mapOf(second.revisionUuid to 1L), 761))
         val historical = assertNotNull(fixture.consolidated.read(stored.revisionUuid, historical = true)).document()
         assertEquals(saved.amounts.finalCents, historical.totalCents)
@@ -89,10 +101,12 @@ class ConsolidatedEstimateRepositoryTest {
         val summary = runBlocking { store.observeProjectQuoteSummary(f.projectId).filterNotNull().first() }
         assertEquals(a.frozen.amounts.finalCents + b.frozen.amounts.finalCents + c.frozen.amounts.finalCents - 101L,
             summary.approvedCents)
+        assertEquals(summary.approvedCents, runBlocking { store.observeDashboardFinance().first() })
         driver.execute(null, "UPDATE consolidated_revisions SET finalCents = finalCents + 1", 0)
         val damaged = runBlocking { store.observeProjectQuoteSummary(f.projectId).filterNotNull().first() }
         assertTrue(damaged.approvedUnavailable)
         assertNull(damaged.approvedCents)
+        assertNull(runBlocking { store.observeDashboardFinance().first() })
         driver.execute(null, "UPDATE consolidated_revisions SET finalCents = finalCents - 1", 0)
         runBlocking { store.closeAndAwaitProjectReads() }
 

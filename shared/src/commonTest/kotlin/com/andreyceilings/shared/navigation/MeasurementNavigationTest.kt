@@ -6,13 +6,14 @@ class MeasurementNavigationTest {
     @Test fun projectMeasurementBackAndDoubleTapUseOneNestedRoute() {
         val list = AppNavigationState().selectTab(AppRoute.OBJECTS)
         val project = list.openProject(7)
-        val measurement = project.openMeasurement(7, 12)
-        assertEquals(MeasurementDetails(7, 12), measurement.measurementDetails)
-        assertSame(measurement, measurement.openMeasurement(7, 12))
-        assertEquals(project, measurement.back())
-        assertEquals(list, measurement.back().back())
-        assertNull(measurement.openProject(8).measurementDetails)
-        assertNull(measurement.selectTab(AppRoute.MEASUREMENTS).measurementDetails)
+        val workspace = project.openCeilingWorkspace(7, 12)
+        assertEquals(MeasurementEdit(7, 12), workspace.measurementEdit)
+        assertNull(workspace.measurementDetails)
+        assertSame(workspace, workspace.openCeilingWorkspace(7, 12))
+        assertEquals(project, workspace.back())
+        assertEquals(list, workspace.back().back())
+        assertNull(workspace.openProject(8).measurementEdit)
+        assertNull(workspace.selectTab(AppRoute.MEASUREMENTS).measurementEdit)
     }
 
     @Test fun workspaceSkipsDetailsAndRestoresParentAfterBackAndCreate() {
@@ -28,10 +29,11 @@ class MeasurementNavigationTest {
         assertSame(project, project.openCeilingWorkspace(8, 12))
     }
 
-    @Test fun snapshotRestoresOnlyCanonicalIdsAndNeverReplaysCommands() {
+    @Test fun legacyDetailsSnapshotPromotesToWorkspaceAndNeverReplaysCommands() {
         val state = AppNavigationState().selectTab(AppRoute.OBJECTS).openProject(7).openMeasurement(7, 12)
         assertEquals(listOf("OBJECTS", "DASHBOARD", "PROJECT_DETAILS:7", "MEASUREMENT_DETAILS:7:12"), state.snapshot())
         assertEquals(state, AppNavigationState.restore(state.snapshot()))
+        assertEquals(state.openCeilingWorkspace(7, 12), AppNavigationState.restore(state.snapshot()).restoreCeilingWorkspace())
         assertNull(AppNavigationState.restore(state.copy(pendingQuickCreate = AppQuickCreate.MEASUREMENT).snapshot()).pendingQuickCreate)
         for (suffix in listOf("7:0", "7:-1", "7:012", "7:+12", "07:12", "8:12", "7:12:3", "7:9223372036854775808")) {
             val restored = AppNavigationState.restore(listOf("OBJECTS", "PROJECT_DETAILS:7", "MEASUREMENT_DETAILS:$suffix"))
@@ -44,10 +46,10 @@ class MeasurementNavigationTest {
 
     @Test fun wrongParentInvalidIdsAndUnavailableHostCannotOpenMeasurement() {
         val project = AppNavigationState().selectTab(AppRoute.OBJECTS).openProject(7)
-        assertSame(project, project.openMeasurement(8, 12))
-        assertSame(project, project.openMeasurement(7, 0))
-        assertNull(AppNavigationState().openMeasurement(7, 12).measurementDetails)
-        assertNull(AppNavigationState.restore(project.openMeasurement(7, 12).snapshot(),
-            setOf(AppRoute.DASHBOARD, AppRoute.PRICES)).measurementDetails)
+        assertSame(project, project.openCeilingWorkspace(8, 12))
+        assertSame(project, project.openCeilingWorkspace(7, 0))
+        assertNull(AppNavigationState().openCeilingWorkspace(7, 12).measurementEdit)
+        assertNull(AppNavigationState.restore(project.openCeilingWorkspace(7, 12).snapshot(),
+            setOf(AppRoute.DASHBOARD, AppRoute.PRICES)).measurementEdit)
     }
 }

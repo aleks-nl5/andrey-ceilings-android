@@ -1,0 +1,38 @@
+# P6C implementation and APK acceptance
+
+The shared ceiling and quote registries implement [#140](https://github.com/aleks-nl5/andrey-ceilings-android/issues/140). They reuse P6A ceiling cards, its contour cache and the P6B/P5D exact document readers and workflow screens. [#141](https://github.com/aleks-nl5/andrey-ceilings-android/issues/141) applies to Objects, Clients, Ceilings, Quotes and Prices. [#77](https://github.com/aleks-nl5/andrey-ceilings-android/issues/77) is covered by registry search, source-preserving Back and confirmed ceiling deletion inside the owning Object. [#136](https://github.com/aleks-nl5/andrey-ceilings-android/issues/136) remains open through owner acceptance.
+
+The floating bar on Android exposes measurement creation as a central action. The picker uses the existing project form when no project exists. First measurement Save promotes the editor to the saved ceiling. Older Details/Quote navigation snapshots reopen the ceiling workspace. The old Android archive UI and measurement detail/quote screens were removed after their production entry points moved to the shared screens. Stored documents, tombstones, protected deletion and the exact PDF paths are preserved.
+
+The dashboard uses local layout preferences, the existing empty calendar state and the existing Monobank card. The finance calculation uses stored amounts, validates the approved consolidated manifest and counts approved individuals outside the manifest. The existing historical DB test policy and all migrations remain in force. The patch contains no schema version change.
+
+## Query performance
+
+A local in-memory SQLite 3.53.1 check used 100 and 1,000 synthetic ceilings, one individual version per ceiling, and one consolidated version per ten ceilings with two exact manifest members. The check used the checked-in queries and table/index definitions, ran `ANALYZE`, and took the median of 15 warm executions including row materialization. Representative timings in milliseconds were 0.20/1.96 for base ceiling rows, 0.61/6.04 for individual revision metadata, 0.04/0.41 for consolidated metadata and 0.02/0.02 for a batch of ten contours. Ranked individual finance metadata measured 0.95/25.53 ms in this run. Device timings and frozen JSON sizes on real data can differ.
+
+Plans used the existing project, series, revision, tombstone and manifest indexes. Financial registry and dashboard reads are bounded batches grouped off the UI thread. Visible contour reads issue one UUID-batch query per visible set, limited to 40, and reuse the session cache. The individual title is extracted in SQL from the existing immutable revision JSON because the schema has no separate title column. The list receives the compact projection. Opening an exact revision still verifies its frozen document. Measure realistic long histories and document sizes on the device before considering a schema or pagination change.
+
+## Physical Android APK acceptance
+
+1. Scroll each of Objects, Clients, Ceilings, Quotes and Prices past the first screen after setting a search or filter. Open the available child, make a safe change, and return using both Back paths. Check the top row and pixel offset after rotation or Activity recreation, after deleting the anchor, and when returning from a nested screen. Verify that fresh entry and an intentional top-level switch reset the relevant list.
+2. Open ceilings from the dashboard, search and an Object. Verify compact outer contours and address, the approved/latest financially eligible status, no-quote and rejected-only filters, and missing amounts last in both cost sort directions. Confirm protected deletion in the Object and the calculator handoff for saved valid contours.
+3. In Quotes, search for a title unique to one revision, then for a shared number, address and client phone. Combine type, status and date, and check that a title hit uses the same version as the filters. Tap older individual and consolidated versions and compare version, frozen amount and PDF. Check both layouts for equal and different manifest counts.
+4. Use the central action from the dashboard, Objects, a specific Object, settings, Prices and registries. Test zero, one and many active projects. Cancel at every stage, create an explicit project, save one measurement, then return to the source. Double-tap, rotate during a save, and check dirty-exit behavior.
+5. Check the default dashboard order, series counts, area, zero approvals and invalid finance. Approve a consolidated estimate containing an already-approved individual and verify the dashboard counts it once. Hide optional rows, reorder with drag and buttons, reset, and check persistence across restart and business backup restore. Verify currencies while the business DB is unavailable and the calendar empty state.
+6. Check light and dark themes, compact Android widths, landscape, keyboard/system insets and accessibility labels. On realistic 100/1,000-ceiling data, measure cold and warm first content, finance and thumbnail readiness, filtering and scroll frames. Lock or replace the DB while queries are active and check return navigation.
+
+7. Check the registry sort controls with the same leading inset as other dropdowns. Open global search from the dashboard or an Object detail; with the keyboard open, scroll to the last result and check that the panel ends above the IME, including landscape. The header action is omitted on Objects/Clients, Ceilings, Quotes and Prices list screens that already contain a search field. Check that the existing local searches and exact revision navigation still work.
+
+The owner performs the APK acceptance. Platform FULL, SQLCipher device performance and the final integration gates remain pending.
+
+## FULL test alignment (27.11.2026)
+
+- Existing FULL jobs run unfiltered shared JVM and Simulator tests, Android instrumentation, migration verification, Windows encrypted JDBC/Desktop and production recovery. No FULL trigger or suite changes.
+- Adapted route and quote-save checks to the current ceiling workspace and registered quote presenters; legacy identity tokens are tested only as compatibility inputs to the workspace. Preserve physical pricing, immutable output, dirty-exit and blocked-writer assertions.
+- Added real SQLDelight dashboard/session cache tests (live invalidation, warm return, session closure and fresh replacement). QUICK explicitly includes DashboardStoreTest and TransientQuoteTest. No new UI automation.
+- Archived the Room v2-only importer test with an explicit Ignore; production importer and migration code unchanged. Renamed the misleading Windows v7 test name (its actual fixture is current). Keep current-schema concurrency and all existing security, restore, process-death, ENOSPC and PDF proofs.
+- P6B postmerge Android FULL #1386 and CMP FULL #1123 job receipts verified successful. P6C test changes are pending exact-SHA QUICK and owner-authorized FULL; no runtime pass is claimed by this record.
+
+## Final review — session read gate
+
+QUICK #259 passed at fd101de. Final static review found that the Objects/Clients row source still used independent ungated queries: a surviving collector could read from the closed session despite the snapshot being cleared. Route that source through the same admission/drain mutex and close signal as the ceiling and quote registries, retain the nonnullable public list API with empty rows after close, and verify that the old session cannot return client/project data in DashboardStoreTest. Exact-SHA QUICK is required again before the manually authorized FULL runs. No schema or FULL workflow changes.

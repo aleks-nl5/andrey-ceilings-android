@@ -1,51 +1,30 @@
 package com.andreyceilings.shared.dashboard
 
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.BoxWithConstraints
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Business
-import androidx.compose.material.icons.filled.Calculate
-import androidx.compose.material.icons.filled.ReceiptLong
-import androidx.compose.material.icons.filled.SquareFoot
-import androidx.compose.material.icons.filled.Straighten
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
-import kotlinx.coroutines.delay
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.andreyceilings.shared.objects.compactQuoteAmount
+import com.andreyceilings.shared.registry.RegistryRead
+import com.andreyceilings.shared.registry.registryRead
+import com.andreyceilings.shared.resources.*
+import org.jetbrains.compose.resources.stringResource
 
-/** Common CMP home content. Scrolling/insets are owned by each platform host. */
+/** The host owns scrolling, system insets and public rates transport. */
 @Composable
 fun DashboardScreen(
-    summary: DashboardSummary?,
-    databaseAvailable: Boolean,
-    onNewMeasurement: (() -> Unit)?,
-    onCalculator: (() -> Unit)?,
+    store: DashboardStore?,
+    preferences: DashboardPreferences,
+    onCeilings: (() -> Unit)?,
     onObjects: (() -> Unit)?,
+    onClients: (() -> Unit)?,
     onEstimates: (() -> Unit)?,
     onCalendar: (() -> Unit)?,
     todayLabel: String,
@@ -59,140 +38,94 @@ fun DashboardScreen(
     formatCurrencyDate: ((Long) -> String)? = null,
     modifier: Modifier = Modifier
 ) {
-    // Opening SQLCipher and loading its repositories can briefly expose a null
-    // database handle. Do not flash a false alarm during a normal startup.
-    var showDatabaseUnavailable by remember { mutableStateOf(false) }
-    LaunchedEffect(databaseAvailable) {
-        showDatabaseUnavailable = false
-        if (!databaseAvailable) {
-            delay(2_000L)
-            showDatabaseUnavailable = true
-        }
-    }
-
-    Column(
-        modifier = modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
-    ) {
-        UpcomingEventsCard(
-            events = upcomingEvents,
-            todayLabel = todayLabel,
-            nowMillis = nowMillis,
-            databaseAvailable = databaseAvailable,
-            onCalendar = onCalendar,
-            onOpenProject = onOpenProject
-        )
-
-        BoxWithConstraints(Modifier.fillMaxWidth()) {
-            if (maxWidth >= 900.dp) {
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    DashboardActionTile("Заміри", Icons.Default.Straighten, onNewMeasurement, Modifier.weight(1f))
-                    DashboardActionTile("Калькулятор", Icons.Default.Calculate, onCalculator, Modifier.weight(1f))
-                    DashboardActionTile("Об’єкти", Icons.Default.Business, onObjects, Modifier.weight(1f))
-                    DashboardActionTile("Кошториси", Icons.Default.ReceiptLong, onEstimates, Modifier.weight(1f))
+    val summary = registryRead(store?.rows)
+    val stats = (summary as? RegistryRead.Ready)?.data
+    val count = registryRead(store?.quoteCount)
+    val financeVisible = preferences.isVisible(DashboardBlock.FINANCE)
+    val financeFlow = remember(store, financeVisible) { if (financeVisible) store?.approvedFinance() else null }
+    val finance = registryRead(financeFlow)
+    val countText = (count as? RegistryRead.Ready)?.data?.toString()
+    val area = stats?.let { dashboardAreaLabel(it.area) }
+    Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        preferences.rows().forEach { blocks ->
+            when (blocks.singleOrNull()) {
+                DashboardBlock.WORK -> UpcomingEventsCard(upcomingEvents, todayLabel, nowMillis,
+                    store != null, onCalendar, onOpenProject)
+                DashboardBlock.RATES -> if (currencyRates != null && formatCurrencyDate != null) {
+                    CurrencyRatesCard(state = currencyRates, onRefresh = onCurrencyRefresh,
+                        onMonobank = onMonobank, onMessageTimeout = onCurrencyMessageDismiss, formatDate = formatCurrencyDate)
                 }
-            } else {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        DashboardActionTile("Заміри", Icons.Default.Straighten, onNewMeasurement, Modifier.weight(1f))
-                        DashboardActionTile("Калькулятор", Icons.Default.Calculate, onCalculator, Modifier.weight(1f))
-                    }
-                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        DashboardActionTile("Об’єкти", Icons.Default.Business, onObjects, Modifier.weight(1f))
-                        DashboardActionTile("Кошториси", Icons.Default.ReceiptLong, onEstimates, Modifier.weight(1f))
+                else -> Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    blocks.forEach { block ->
+                        val value = when (block) {
+                            DashboardBlock.FINANCE -> (finance as? RegistryRead.Ready)?.data?.let { compactQuoteAmount(it) }
+                                ?: if (store == null || finance is RegistryRead.Loading) "" else stringResource(Res.string.p6a_finance_unavailable)
+                            DashboardBlock.AREA -> area
+                            DashboardBlock.CEILINGS -> stats?.ceilingCount?.toString()
+                            DashboardBlock.QUOTES -> countText
+                            DashboardBlock.OBJECTS -> stats?.projectCount?.toString()
+                            DashboardBlock.CLIENTS -> stats?.clientCount?.toString()
+                            else -> null
+                        } ?: when (if (block == DashboardBlock.QUOTES) count else summary) {
+                            RegistryRead.Loading -> ""
+                            else -> if (store == null) "" else stringResource(Res.string.p6c_unavailable)
+                        }
+                        val action = when (block) {
+                            DashboardBlock.CEILINGS -> onCeilings
+                            DashboardBlock.QUOTES -> onEstimates
+                            DashboardBlock.OBJECTS -> onObjects
+                            DashboardBlock.CLIENTS -> onClients
+                            else -> null
+                        }
+                        DashboardTile(block, value, Modifier.weight(1f), action)
                     }
                 }
             }
-        }
-
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            CompactMetric("Об’єкти", summary?.projectCount?.toString() ?: "—", Icons.Default.Business, Modifier.weight(1f))
-            CompactMetric("Заміри", summary?.measurementCount?.toString() ?: "—", Icons.Default.Straighten, Modifier.weight(1f))
-            CompactMetric("Площа", summary?.areaLabel() ?: "—", Icons.Default.SquareFoot, Modifier.weight(1f))
-        }
-        // The metric cards already show "—" while their SQLDelight summary loads.
-        // Avoid inserting/removing an extra line during normal startup, which
-        // would shift the currency card vertically. Only show a persistent DB
-        // failure after the existing two-second grace period.
-        if (!databaseAvailable && showDatabaseUnavailable) {
-            Text(
-                "Захищена база даних недоступна. Статистику не завантажено.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-        // The currency block is public market data and remains usable offline,
-        // independently of the encrypted business database.
-        if (currencyRates != null && formatCurrencyDate != null) {
-            CurrencyRatesCard(
-                state = currencyRates,
-                onRefresh = onCurrencyRefresh,
-                onMonobank = onMonobank,
-                onMessageTimeout = onCurrencyMessageDismiss,
-                formatDate = formatCurrencyDate
-            )
         }
     }
 }
 
 @Composable
-private fun DashboardActionTile(
-    title: String,
-    icon: ImageVector,
-    onClick: (() -> Unit)?,
-    modifier: Modifier = Modifier
-) {
-    Card(
-        onClick = { onClick?.invoke() },
-        enabled = onClick != null,
-        modifier = modifier.heightIn(min = 132.dp),
-        shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
-    ) {
+private fun DashboardTile(block: DashboardBlock, value: String, modifier: Modifier, action: (() -> Unit)?) {
+    val isRegistry = block.columns == 2
+    val shape = RoundedCornerShape(16.dp)
+    val colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+    val content: @Composable ColumnScope.() -> Unit = {
         Column(
-            Modifier.fillMaxWidth().padding(14.dp),
-            verticalArrangement = Arrangement.SpaceBetween
-        ) {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Top) {
-                Surface(shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.primaryContainer) {
-                    Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.padding(10.dp).size(24.dp))
-                }
-                val label = if (onClick == null) "Пізніше" else null
-                if (label != null) Text(
-                    label, style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(top = 4.dp)
-                )
-            }
-            Spacer(Modifier.height(18.dp))
-            Text(
-                title,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
-                maxLines = 1,
-                softWrap = false
-            )
-        }
-    }
-}
-
-@Composable
-private fun CompactMetric(label: String, value: String, icon: ImageVector, modifier: Modifier = Modifier) {
-    Card(
-        modifier = modifier,
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
-    ) {
-        Column(
-            Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 10.dp),
+            Modifier.fillMaxWidth().heightIn(min = if (isRegistry) 100.dp else 78.dp).padding(8.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(3.dp)
+            verticalArrangement = Arrangement.spacedBy(3.dp, Alignment.CenterVertically)
         ) {
-            Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(19.dp))
-            Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
-            Text(value, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, maxLines = 1)
+            Icon(block.icon(), null, tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(if (isRegistry) 32.dp else 20.dp))
+            Text(stringResource(block.label()), style = if (isRegistry) MaterialTheme.typography.titleMedium
+                else MaterialTheme.typography.titleSmall, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+            Text(value, minLines = 1, style = if (isRegistry) MaterialTheme.typography.bodySmall else MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
+    if (action == null) Card(modifier, shape = shape, colors = colors, content = content)
+    else Card(action, modifier, shape = shape, colors = colors, content = content)
+}
+
+private fun DashboardBlock.icon(): ImageVector = when (this) {
+    DashboardBlock.WORK -> Icons.Default.CalendarMonth
+    DashboardBlock.FINANCE -> Icons.Default.Payments
+    DashboardBlock.AREA -> Icons.Default.SquareFoot
+    DashboardBlock.CEILINGS -> Icons.Default.CropSquare
+    DashboardBlock.QUOTES -> Icons.Default.ReceiptLong
+    DashboardBlock.OBJECTS -> Icons.Default.Business
+    DashboardBlock.CLIENTS -> Icons.Default.People
+    DashboardBlock.RATES -> Icons.Default.CurrencyExchange
+}
+
+internal fun DashboardBlock.label() = when (this) {
+    DashboardBlock.WORK -> Res.string.p6c_upcoming
+    DashboardBlock.FINANCE -> Res.string.p6c_approved_value
+    DashboardBlock.AREA -> Res.string.p6c_total_area
+    DashboardBlock.CEILINGS -> Res.string.p6c_ceilings
+    DashboardBlock.QUOTES -> Res.string.p6c_quotes
+    DashboardBlock.OBJECTS -> Res.string.p6c_objects
+    DashboardBlock.CLIENTS -> Res.string.p6c_clients
+    DashboardBlock.RATES -> Res.string.p6c_rates
 }

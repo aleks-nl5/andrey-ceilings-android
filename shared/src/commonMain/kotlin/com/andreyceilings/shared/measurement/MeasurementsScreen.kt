@@ -5,138 +5,115 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import com.andreyceilings.shared.calculation.CeilingShapeTemplates
 import com.andreyceilings.shared.calculation.MeasurementPrecision
-import com.andreyceilings.shared.estimate.FrozenPolygonGeometry
 import com.andreyceilings.shared.navigation.AppNavigationState
-import kotlinx.coroutines.CancellationException
+import com.andreyceilings.shared.objects.ObjectsClientsStore
+import com.andreyceilings.shared.objects.ProjectEditor
+import com.andreyceilings.shared.objects.PickerProjectSave
+import com.andreyceilings.shared.registry.CeilingRegistryScreen
+import com.andreyceilings.shared.registry.RegistryRead
+import com.andreyceilings.shared.registry.registryRead
+import com.andreyceilings.shared.resources.*
 import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.launch
-import com.andreyceilings.shared.resources.Res
-import com.andreyceilings.shared.resources.p6a_delete_ceiling_approved
+import kotlinx.coroutines.withContext
 import org.jetbrains.compose.resources.stringResource
 
-/** Shared global list and actions. Hosts supply only session stores, insets and navigation. */
+/** Shared ceiling registry and the existing workspace, also hosted over quick-create sources. */
 @Composable
 fun MeasurementsScreen(
-    store: MeasurementsStore?,
-    detailsStore: MeasurementDetailsStore?, editStore: MeasurementEditStore?,
+    store: ObjectsClientsStore?,
     navigation: AppNavigationState, precision: MeasurementPrecision,
     contentPadding: PaddingValues, systemTopInset: Dp,
     navigationGuard: MeasurementCreateNavigationGuard,
     onNavigate: (AppNavigationState) -> Unit,
-    onUseMeasurement: (FrozenPolygonGeometry) -> Unit,
-    onOpenEstimates: () -> Unit, onCreateProject: () -> Unit
+    initialSearch: String = "",
+    searchRequest: Int = 0,
+    onUseMeasurement: ((com.andreyceilings.shared.estimate.FrozenPolygonGeometry) -> Unit)? = null,
+    headerVisibleFraction: Float = 1f
 ) {
     val back = { onNavigate(navigation.back()) }
+    val details = store?.measurementDetails
+    val editor = store?.measurementEdit
     navigation.measurementCreate?.let { route ->
-        MeasurementCreateWorkspace(route.projectId, precision, editStore, contentPadding, systemTopInset,
+        MeasurementCreateWorkspace(route.projectId, precision, editor, contentPadding, systemTopInset,
             onBack = back, onSaved = { onNavigate(navigation.measurementCreatedInEditor(route.projectId, it)) },
-            navigationGuard = navigationGuard, quoteStore = detailsStore?.elements)
+            navigationGuard = navigationGuard, quoteStore = details?.elements)
         return
     }
     navigation.measurementEdit?.let { route ->
-        MeasurementEditScreen(route.projectId, route.measurementId, editStore, contentPadding, systemTopInset,
-            onBack = back, navigationGuard = navigationGuard, quoteStore = detailsStore?.elements)
+        MeasurementEditScreen(route.projectId, route.measurementId, editor, contentPadding, systemTopInset,
+            onBack = back, navigationGuard = navigationGuard, quoteStore = details?.elements,
+            onUseMeasurement = onUseMeasurement)
         return
     }
-    navigation.measurementDetails?.let { route ->
-        MeasurementDetailsScreen(route.projectId, route.measurementId, detailsStore, contentPadding, systemTopInset,
-            onBack = back, onEdit = { onNavigate(navigation.editMeasurement(route.projectId, route.measurementId)) },
-            navigationGuard = navigationGuard, backLabel = "До замірів", editStore=editStore,
-            quoteOpen = navigation.measurementQuote)
-        return
+    if (navigation.measurementProjectPicker) {
+        MeasurementProjectPicker(store, contentPadding, back) { onNavigate(navigation.createMeasurement(it)) }
+    } else {
+        CeilingRegistryScreen(store, contentPadding, initialSearch, searchRequest, headerVisibleFraction) { project, ceiling ->
+            onNavigate(navigation.openCeilingWorkspace(project, ceiling))
+        }
     }
-    key(store) {
-        var retry by remember { mutableIntStateOf(0) }
-        val flow = remember(retry) { store?.observe() }
-        val state = flow?.collectAsState(MeasurementsState.Loading)?.value ?: MeasurementsState.Unavailable
-        val scope = rememberCoroutineScope()
-        var busy by remember { mutableStateOf(false) }
-        var error by remember { mutableStateOf<String?>(null) }
-        val approvedDeleteError = stringResource(Res.string.p6a_delete_ceiling_approved)
-        fun action(block: suspend () -> Unit) {
-            if (busy) return
-            busy = true
-            scope.launch(start = CoroutineStart.UNDISPATCHED) {
-                try { block(); error = null }
-                catch (cancelled: CancellationException) { throw cancelled }
-                catch (_: CeilingHasApprovedQuote) { error = approvedDeleteError }
-                catch (_: Exception) { error = "Не вдалося виконати дію. Перевірте доступність заміру та бази даних." }
-                finally { busy = false }
+}
+
+@Composable
+private fun MeasurementProjectPicker(
+    store: ObjectsClientsStore?, padding: PaddingValues, onClose: () -> Unit, onChoose: (Long) -> Unit
+) {
+    var retry by remember { mutableIntStateOf(0) }
+    val flow = remember(store) { store?.rows?.flowOn(Dispatchers.Default) }
+    val result = registryRead(flow, retry)
+    val rows = (result as? RegistryRead.Ready)?.data
+    val scope = rememberCoroutineScope()
+    var editor by rememberSaveable { mutableStateOf(false) }
+    val save by store?.pickerProjectSave?.collectAsState(PickerProjectSave.Idle)
+        ?: remember { mutableStateOf<PickerProjectSave>(PickerProjectSave.Idle) }
+    val busy = save == PickerProjectSave.Saving
+    val onChooseLatest by rememberUpdatedState(onChoose)
+    LaunchedEffect(store, save) {
+        val created = save as? PickerProjectSave.Saved ?: return@LaunchedEffect
+        editor = false
+        onChooseLatest(created.id)
+        store?.clearPickerResult(created)
+    }
+    val failed = stringResource(Res.string.p6c_unavailable)
+    LazyColumn(Modifier.fillMaxSize(), contentPadding = padding, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        item {
+            Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                Text(stringResource(Res.string.p6c_choose_project), Modifier.weight(1f),
+                    style = MaterialTheme.typography.headlineSmall)
+                TextButton(enabled = !busy, onClick = onClose) { Text(stringResource(Res.string.p5d_cancel)) }
             }
         }
-        LazyColumn(Modifier.fillMaxSize(), contentPadding = contentPadding,
-            verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            item {
-                Text(if (navigation.measurementProjectPicker) "Оберіть об'єкт" else "Заміри",
-                    style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-                if (navigation.measurementProjectPicker) {
-                    Text("Оберіть активний об'єкт для нового заміру.")
-                    TextButton(onClick = back) { Text("Скасувати") }
-                } else {
-                    Text("Заміри зберігаються в зашифрованій локальній БД")
-                    OutlinedButton(onClick = onOpenEstimates) { Text("Кошториси") }
-                    Button(onClick = { onNavigate(navigation.chooseMeasurementProject()) },
-                        enabled = state is MeasurementsState.Loaded && !busy) { Text("Створити замір") }
-                }
+        when (result) {
+            RegistryRead.Loading -> item { LinearProgressIndicator(Modifier.fillMaxWidth()) }
+            RegistryRead.Unavailable -> item {
+                Text(failed, color = MaterialTheme.colorScheme.error)
+                TextButton(onClick = { retry++ }) { Text(stringResource(Res.string.p6c_retry)) }
             }
-            when (val current = state) {
-                MeasurementsState.Loading -> item { LinearProgressIndicator(Modifier.fillMaxWidth()); Text("Завантаження замірів…") }
-                MeasurementsState.Unavailable -> item {
-                    Text("Захищена база недоступна або завантажується.")
-                    TextButton(onClick = { retry++ }) { Text("Повторити") }
+            is RegistryRead.Ready -> if (result.data.projects.isEmpty()) {
+                item {
+                    Text(stringResource(Res.string.p6c_need_project))
+                    Button(onClick = { editor = true }) { Text(stringResource(Res.string.p6c_create_project)) }
                 }
-                is MeasurementsState.Loaded -> {
-                    if (current.projects.isEmpty()) item {
-                        Text("Спочатку створіть об'єкт для заміру.")
-                        Button(onClick = onCreateProject) { Text("Створити об'єкт") }
-                    }
-                    if (navigation.measurementProjectPicker) {
-                        items(current.projects, key = { it.id }) { project ->
-                            OutlinedButton(onClick = { onNavigate(navigation.createMeasurement(project.id)) },
-                                modifier = Modifier.fillMaxWidth()) {
-                                Text(project.address.ifBlank { project.title })
-                            }
-                        }
-                    } else {
-                        if (current.measurements.isEmpty()) item { Text("Заміри ще не додані.") }
-                        items(current.measurements, key = { it.id }) { row ->
-                            val project = current.projects.firstOrNull { it.id == row.projectId }
-                            val geometry = remember(row.drawingJson, row.shape) {
-                                measurementGeometryForViewing(row.shape, row.drawingJson, row.lengthMeters, row.widthMeters)
-                            }
-                            val capturedPrecision = (geometry as? MeasurementGeometryView.Captured)?.geometry
-                                ?.precisionStepMeters?.let(MeasurementPrecision::fromStep)
-                            Card(Modifier.fillMaxWidth()) {
-                                Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                    Text(row.name, fontWeight = FontWeight.SemiBold)
-                                    Text(project?.let { it.address.ifBlank { it.title } }.orEmpty())
-                                    Text(CeilingShapeTemplates.template(row.shape)?.title ?:
-                                        if (row.shape == "polygon") "Багатокутник" else row.shape)
-                                    Text("${formatMeasurementArea(row.areaSquareMeters, capturedPrecision)} м² · " +
-                                        "периметр ${formatMeasurementLength(row.perimeterMeters, capturedPrecision)} м")
-                                    MeasurementDrawing(geometry, Modifier.fillMaxWidth())
-                                    FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                        TextButton(onClick = { onNavigate(navigation.openCeilingWorkspace(row.projectId, row.id)) }, enabled = !busy) { Text("Переглянути") }
-                                        TextButton(onClick = {
-                                            onNavigate(navigation.openCeilingWorkspace(row.projectId, row.id))
-                                        }, enabled = !busy && geometry is MeasurementGeometryView.Captured) { Text("Редагувати") }
-                                        TextButton(onClick = { action { onUseMeasurement(checkNotNull(store).geometry(row.projectId, row.id)) } },
-                                            enabled = !busy && geometry is MeasurementGeometryView.Captured) { Text("Розрахувати") }
-                                        TextButton(onClick = { action { checkNotNull(store).delete(row.projectId, row.id) } }, enabled = !busy) { Text("Видалити") }
-                                    }
-                                }
-                            }
-                        }
+            } else {
+                items(result.data.projects, key = { it.id }) { project ->
+                    OutlinedButton(onClick = { onChoose(project.id) }, modifier = Modifier.fillMaxWidth()) {
+                        Text(project.address.ifBlank { project.title })
                     }
                 }
             }
-            error?.let { message -> item { Text(message, color = MaterialTheme.colorScheme.error) } }
         }
     }
+    if (editor && rows != null && store != null) ProjectEditor(null, rows.clients, busy,
+        failed.takeIf { save == PickerProjectSave.Failed },
+        onDismiss = { if (!busy) { editor = false; store.clearPickerResult(save) } },
+        onSave = { draft -> scope.launch(start = CoroutineStart.UNDISPATCHED) { store.createPickerProject(draft) } },
+        onCreateClient = { draft -> withContext(Dispatchers.Default) { store.saveClient(null, draft) } })
 }

@@ -5,10 +5,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.unit.dp
 import com.andreyceilings.app.data.db.CeilingsDatabase
 import com.andreyceilings.shared.calculation.MeasurementPrecision
-import com.andreyceilings.shared.estimate.FrozenPolygonGeometry
 import com.andreyceilings.shared.measurement.MeasurementCreateNavigationGuard
 import com.andreyceilings.shared.measurement.MeasurementsScreen
-import com.andreyceilings.shared.measurement.MeasurementsStore
 import com.andreyceilings.shared.navigation.AppNavigationState
 
 /** Android supplies the unlocked SQLCipher session and system insets; UI and actions are CMP. */
@@ -17,21 +15,20 @@ internal fun MeasurementsHost(
     database: CeilingsDatabase?, navigation: AppNavigationState, precision: MeasurementPrecision,
     navigationGuard: MeasurementCreateNavigationGuard,
     onNavigate: (AppNavigationState) -> Unit,
-    onUseMeasurement: (FrozenPolygonGeometry) -> Unit,
-    onOpenEstimates: () -> Unit, onCreateProject: () -> Unit
+    initialSearch: String = "",
+    searchRequest: Int = 0,
+    onUseMeasurement: ((com.andreyceilings.shared.estimate.FrozenPolygonGeometry) -> Unit)? = null,
+    headerVisibleFraction: Float = 1f
 ) {
-    val store = remember(database) { database?.let { MeasurementsStore(it.database) } }
-    val editors = database?.objectsClientsStore
     val fullscreen by navigationGuard.fullscreen.collectAsState()
-    MeasurementsScreen(store, editors?.measurementDetails, editors?.measurementEdit,
+    MeasurementsScreen(database?.objectsClientsStore,
         navigation, precision,
         contentPadding = if (navigation.measurementEdit != null || navigation.measurementCreate != null) measurementEditorPadding()
         else PaddingValues(start = 16.dp, end = 16.dp,
             top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 72.dp,
             bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + if (fullscreen) 0.dp else 84.dp),
         systemTopInset = WindowInsets.statusBars.asPaddingValues().calculateTopPadding(),
-        navigationGuard = navigationGuard, onNavigate = onNavigate,
-        onUseMeasurement = onUseMeasurement, onOpenEstimates = onOpenEstimates, onCreateProject = onCreateProject)
+        navigationGuard = navigationGuard, onNavigate = onNavigate, initialSearch = initialSearch, searchRequest = searchRequest, onUseMeasurement = onUseMeasurement, headerVisibleFraction = headerVisibleFraction)
 }
 
 /** The editor supplies its own chrome and applies the keyboard inset after consuming system bars. */

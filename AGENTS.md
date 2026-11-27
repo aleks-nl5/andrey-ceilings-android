@@ -1,3 +1,7 @@
+## CURRENT — P6C implementation and acceptance
+
+The owner authorized P6C implementation. The [implementation and APK acceptance record](docs/P6C_IMPLEMENTATION.md) supplements the [approved handoff](docs/P6C_CODEX_HANDOFF.md). The owner controls Ready and merge. Verify previous post-merge FULLs before the next production merge.
+
 ## CURRENT — P6C approved technical planning (26.11.2026)
 
 P6B #180 and completion docs #181 merged. All 35 product and 15 technical P6C decisions approved; [P6C technical plan and Codex handoff](docs/P6C_CODEX_HANDOFF.md) governs #140/#141/#77 with the P6 spec and current CI policy. One production Draft PR, all five registries scroll restoration, exact revision navigation, batched metadata and manifest-aware finance, local dashboard preferences. Planning only: **do not start production until explicit owner authorization**. Verify previous post-merge FULLs before further production merge. Owner-only Ready/merge. No P7/P8/Firebase/branding, no speculative DB migration or CI changes.

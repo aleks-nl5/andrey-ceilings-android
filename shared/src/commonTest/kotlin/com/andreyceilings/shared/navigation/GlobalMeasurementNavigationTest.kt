@@ -18,16 +18,17 @@ class GlobalMeasurementNavigationTest {
         assertEquals(create, AppNavigationState.restore(create.snapshot()))
         assertSame(create, create.createMeasurement(7))
         assertEquals(list, create.back())
-        val saved = create.measurementCreated(7, 12)
-        assertEquals(MeasurementDetails(7, 12), saved.measurementDetails)
+        val saved = create.measurementCreatedInEditor(7, 12)
+        assertEquals(MeasurementEdit(7, 12), saved.measurementEdit)
+        assertNull(saved.measurementDetails)
+        assertEquals(saved, AppNavigationState.restore(saved.snapshot()).restoreCeilingWorkspace())
         assertEquals(list, saved.back())
-        assertSame(list, list.measurementCreated(7, 12), "Late create cannot reopen a cancelled editor")
+        assertSame(list, list.measurementCreatedInEditor(7, 12), "Late create cannot reopen a cancelled editor")
     }
 
-    @Test fun detailsEditCancelAndSaveNeverSwitchToObjects() {
+    @Test fun workspaceCancelAndSaveNeverSwitchToObjects() {
         for (list in listOf(AppNavigationState().selectTab(AppRoute.MEASUREMENTS),
             AppNavigationState().selectTab(AppRoute.SETTINGS).navigate(AppRoute.MEASUREMENTS))) {
-            val details = list.openMeasurement(7, 12)
             val edit = list.openCeilingWorkspace(7, 12)
             assertEquals(edit, AppNavigationState.restore(edit.snapshot()))
             assertEquals(list, edit.back())
@@ -35,7 +36,7 @@ class GlobalMeasurementNavigationTest {
             assertSame(edit, edit.measurementSaved(8, 12))
             assertSame(edit, edit.measurementSaved(7, 13))
             assertEquals(list.back(), edit.measurementSaved(7, 12).back())
-            assertEquals(list, details.back())
+            assertEquals(edit, list.openMeasurement(7, 12).restoreCeilingWorkspace())
             assertNull(edit.selectTab(AppRoute.PRICES).measurementEdit)
         }
     }
@@ -44,9 +45,43 @@ class GlobalMeasurementNavigationTest {
         val list = AppNavigationState().selectTab(AppRoute.MEASUREMENTS)
         for (start in listOf(list, AppNavigationState(), AppNavigationState().selectTab(AppRoute.OBJECTS).openProject(7))) {
             val picker = start.requestQuickCreate(AppQuickCreate.MEASUREMENT)
-            assertEquals(list.chooseMeasurementProject(), picker)
+            assertEquals(start.current, picker.current)
+            assertTrue(picker.measurementProjectPicker)
+            assertEquals(start, picker.back())
+            assertSame(picker, picker.requestQuickCreate(AppQuickCreate.MEASUREMENT))
+            val created = picker.createMeasurement(9).measurementCreatedInEditor(9, 10)
+            assertEquals(MeasurementEdit(9, 10), created.measurementEdit)
+            assertEquals(start, created.back())
             assertEquals(picker, AppNavigationState.restore(picker.snapshot()))
             assertNull(picker.pendingQuickCreate)
+        }
+    }
+
+    @Test fun quickCreateUsesAnExplicitlyVerifiedProjectAndReturnsToIt() {
+        val project = AppNavigationState().selectTab(AppRoute.OBJECTS).openProject(7)
+        val create = project.requestQuickCreate(AppQuickCreate.MEASUREMENT, activeProjectId = 7)
+        assertEquals(MeasurementCreate(7), create.measurementCreate)
+        assertEquals(create, AppNavigationState.restore(create.snapshot()))
+        assertEquals(project, create.back())
+        assertTrue(project.requestQuickCreate(AppQuickCreate.MEASUREMENT, activeProjectId = 8).measurementProjectPicker)
+        val registry = project.navigate(AppRoute.MEASUREMENTS)
+        assertEquals(project, AppNavigationState.restore(registry.snapshot()).back())
+    }
+
+    @Test fun calculatorReturnsToExactCeilingAcrossRestore() {
+        val root = AppNavigationState()
+        val origins = listOf(
+            root.selectTab(AppRoute.MEASUREMENTS).openCeilingWorkspace(7, 12),
+            root.selectTab(AppRoute.OBJECTS).openProject(7).openCeilingWorkspace(7, 12),
+            root.requestQuickCreate(AppQuickCreate.MEASUREMENT).createMeasurement(7).measurementCreatedInEditor(7, 12)
+        )
+        for (origin in origins) {
+            val calculator = origin.navigate(AppRoute.CALCULATOR)
+            assertNull(calculator.measurementEdit)
+            assertEquals(origin, calculator.back())
+            assertEquals(calculator, AppNavigationState.restore(calculator.snapshot()))
+            assertEquals(origin, AppNavigationState.restore(calculator.snapshot()).back())
+            assertNull(calculator.selectTab(AppRoute.PRICES).back().measurementEdit)
         }
     }
 

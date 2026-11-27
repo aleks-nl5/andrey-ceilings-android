@@ -61,8 +61,7 @@ class QuoteSaveIntentLockTest {
         val model = MeasurementEditModel(null, MeasurementEditDocument(measurementId, 1,
             MeasurementCreateDraft(projectId, com.andreyceilings.shared.calculation.MeasurementPrecision.ONE_MILLIMETER, "Room")))
         model.accept(MeasurementCreateIntent.Name("Changed room"))
-        val nav = AppNavigationState().selectTab(AppRoute.MEASUREMENTS).openMeasurement(projectId, measurementId)
-            .editMeasurement(projectId, measurementId)
+        val nav = AppNavigationState().selectTab(AppRoute.MEASUREMENTS).openCeilingWorkspace(projectId, measurementId)
         val destination = nav.selectTab(AppRoute.DASHBOARD)
         val guard = MeasurementCreateNavigationGuard().also { it.bindEdit(model) }
         var quoteConfirmation: (() -> Unit)? = null
@@ -185,11 +184,13 @@ class QuoteSaveIntentLockTest {
                 }
             }
             val store = MeasurementElementsStore(PrototypeDatabase(blocked), { 1000 }, Dispatchers.Unconfined)
-            val guard = MeasurementCreateNavigationGuard()
+            val guard = MeasurementCreateNavigationGuard().also { it.bindQuotes(store) }
             val nav = AppNavigationState().selectTab(AppRoute.MEASUREMENTS)
-                .openMeasurement(fixture.projectId, measurement.id).openMeasurementQuote()
-            guard.quoteSession.navigate(nav)
-            val p = guard.quoteSession.acquire(fixture.projectId, measurement.id, measurement.uuid, store)
+                .openCeilingWorkspace(fixture.projectId, measurement.id)
+            val workspace = WorkspaceQuoteSession()
+            val p = store.newQuote(measurement.uuid)
+            workspace.presenter = p
+            workspace.measurementVersion = measurement.updatedAt
             p.acceptRead(p.beginRead(), loaded)
             p.editTitle("Captured quote")
             p.editDiscount("10"); p.confirmDiscount()
@@ -226,7 +227,7 @@ class QuoteSaveIntentLockTest {
             } finally {
                 release.countDown()
                 store.closeAndAwaitWrites()
-                guard.quoteSession.clear()
+                workspace.closeDraft(store)
             }
         }
     }

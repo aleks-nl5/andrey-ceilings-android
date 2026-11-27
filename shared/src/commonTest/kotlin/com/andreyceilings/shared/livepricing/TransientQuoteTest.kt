@@ -324,7 +324,7 @@ class TransientQuoteTest {
         assertTrue(p.state.value.canAcknowledge); assertFalse(p.state.value.acknowledged)
     }
 
-    @Test fun quoteBackAndRestorationPreserveOnlyRouteIdentity() {
+    @Test fun legacyQuoteSnapshotRestoresOnlyCurrentWorkspaceIdentity() {
         for (base in listOf(AppNavigationState().selectTab(AppRoute.MEASUREMENTS),
             AppNavigationState().selectTab(AppRoute.OBJECTS).openProject(1))) {
             val details = base.openMeasurement(1, 2)
@@ -332,18 +332,16 @@ class TransientQuoteTest {
             assertTrue(quote.measurementQuote); assertEquals(details, quote.back())
             assertEquals(quote, AppNavigationState.restore(quote.snapshot()))
             assertTrue(quote.snapshot().last().startsWith("MEASUREMENT_QUOTE:"))
-            assertFalse(quote.selectTab(AppRoute.PRICES).measurementQuote)
+            val workspace = AppNavigationState.restore(quote.snapshot()).restoreCeilingWorkspace()
+            assertEquals(base.openCeilingWorkspace(1, 2), workspace)
+            assertFalse(workspace.measurementQuote)
+            assertEquals(base, workspace.back())
+            assertNull(workspace.selectTab(AppRoute.PRICES).measurementEdit)
         }
         for (tail in listOf("MEASUREMENT_QUOTE:1:0", "MEASUREMENT_QUOTE:01:2", "MEASUREMENT_QUOTE:1:2:bad"))
             assertFalse(AppNavigationState.restore(listOf("MEASUREMENTS", tail)).measurementQuote)
         assertFalse(AppNavigationState.restore(listOf("MEASUREMENTS", "MEASUREMENT_DETAILS:1:2", "MEASUREMENT_QUOTE:1:2")).measurementQuote)
     }
 
-    @Test fun visibilityRespondsToViewportInsteadOfScrollPercentage() {
-        assertEquals(0f, quoteSummaryVisibility(1000, 200, 0, 1000))
-        assertEquals(.5f, quoteSummaryVisibility(900, 200, 0, 1000))
-        assertEquals(1f, quoteSummaryVisibility(800, 200, 0, 1000))
-        assertEquals(0f, quoteSummaryVisibility(800, 200, 0, 700))
-        assertEquals(1f, quoteSummaryVisibility(0, 1200, 0, 700))
-    }
+
 }

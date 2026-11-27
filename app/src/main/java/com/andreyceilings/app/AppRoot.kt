@@ -69,6 +69,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.DialogProperties
 import com.andreyceilings.shared.localization.AndroidAppLanguageResources
 import com.andreyceilings.shared.localization.AndroidAppLanguageStorage
 import com.andreyceilings.shared.localization.AppLanguageState
@@ -80,8 +81,15 @@ import com.andreyceilings.shared.navigation.AppNavigationState
 import com.andreyceilings.shared.navigation.AppPredictiveBackSurface
 import com.andreyceilings.shared.navigation.AppQuickCreate
 import com.andreyceilings.shared.navigation.AppRoute
+import com.andreyceilings.shared.navigation.appRouteDisplayTitle
 import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
+import com.andreyceilings.shared.dashboard.DashboardPreferences
+import com.andreyceilings.shared.registry.QuoteRegistryScreen
+import com.andreyceilings.shared.dashboard.RegistrySearchDialog
+import com.andreyceilings.shared.registry.GlobalRegistryTarget
+import com.andreyceilings.shared.dashboard.RegistrySearchAction
 import com.andreyceilings.app.ui.theme.CeilingsTheme
 import com.andreyceilings.app.ui.theme.ThemeMode
 import com.andreyceilings.app.ui.theme.ThemeModeSelector
@@ -113,7 +121,7 @@ internal typealias AppTab = AppRoute
 
 internal val navigationStateSaver = Saver<AppNavigationState, ArrayList<String>>(
     save = { ArrayList(it.snapshot()) },
-    restore = { AppNavigationState.restore(it) }
+    restore = { AppNavigationState.restore(it).restoreCeilingWorkspace() }
 )
 
 @Composable
@@ -144,7 +152,7 @@ private fun CeilingsAppContent(
     appLanguage: AppLanguageState
 ) {
     var navigation by rememberSaveable(stateSaver = navigationStateSaver) {
-        mutableStateOf(initialNavigation)
+        mutableStateOf(initialNavigation.restoreCeilingWorkspace())
     }
     val cardSwipes = remember(database) { CardSwipeState() }
     LaunchedEffect(navigation, cardSwipes) { cardSwipes.dismiss() }
@@ -156,11 +164,36 @@ private fun CeilingsAppContent(
     }
     val measurementFullscreen by measurementCreateNavigationGuard.fullscreen.collectAsState()
     val tab = navigation.current
+    val registryState = rememberSaveableStateHolder()
+    var sessionGeneration by remember { mutableIntStateOf(0) }
+    var lastDatabase by remember { mutableStateOf(database) }
+    if (lastDatabase !== database) {
+        val hadSession = lastDatabase != null
+        SideEffect {
+            if (hadSession) {
+                AppRoute.entries.forEach { registryState.removeState(it.name) }
+                registryState.removeState("quick-measurement")
+                registryState.removeState("ceiling-workspace")
+                sessionGeneration++
+            }
+            lastDatabase = database
+        }
+    }
+    var objectsStartInClients by rememberSaveable { mutableStateOf(false) }
+    var clientsBackToObjects by rememberSaveable { mutableStateOf(false) }
+    var returnToProjectsRequest by rememberSaveable { mutableIntStateOf(0) }
+    val scope = rememberCoroutineScope()
     var tabChangedAt by remember { mutableLongStateOf(SystemClock.elapsedRealtime()) }
     var lastBackPressTime by remember { mutableStateOf(0L) }
     val predictiveBackProgress = remember { Animatable(0f) }
     val predictiveBackFromLeft = remember { mutableStateOf(true) }
     val context = LocalContext.current
+    val dashboardStorage = remember(context) {
+        context.applicationContext.getSharedPreferences("dashboard_preferences", Context.MODE_PRIVATE)
+    }
+    var dashboardPreferences by remember(dashboardStorage) {
+        mutableStateOf(DashboardPreferences.decode(dashboardStorage.getString("layout", null)))
+    }
     val systemDarkTheme = isSystemInDarkTheme()
     val useDarkTheme = themeMode.usesDarkColors(systemDarkTheme)
 
@@ -172,8 +205,8 @@ private fun CeilingsAppContent(
     val topAppBarScrollBehavior = key(tab) {
         TopAppBarDefaults.enterAlwaysScrollBehavior()
     }
-    val isProjectDetailsOpen = tab == AppTab.OBJECTS && navigation.projectDetails != null
-    val isMeasurementDetailsOpen = (isProjectDetailsOpen || tab == AppTab.MEASUREMENTS) &&
+    val isProjectDetailsOpen = !navigation.quickMeasurement && tab == AppTab.OBJECTS && navigation.projectDetails != null
+    val isMeasurementDetailsOpen = (navigation.quickMeasurement || isProjectDetailsOpen || tab == AppTab.MEASUREMENTS) &&
         (navigation.measurementDetails != null || navigation.measurementCreate != null || navigation.measurementEdit != null)
     val isMeasurementEditOpen = isMeasurementDetailsOpen &&
         (navigation.measurementEdit != null || navigation.measurementCreate != null)
@@ -222,11 +255,71 @@ private fun CeilingsAppContent(
         applyNavigation(measurementCreateNavigationGuard.transition(navigation, proposed, ::applyNavigation))
     }
 
-    fun navigateTo(target: AppTab) = updateNavigation(navigation.selectTab(target))
+    var initialSearch by remember { mutableStateOf("") }
+    // Only the screens without their own search field need the global action.
+    val showGlobalSearch = !isMeasurementDetailsOpen && when {
+        navigation.measurementProjectPicker -> true
+        tab == AppTab.OBJECTS -> isProjectDetailsOpen
+        tab == AppTab.MEASUREMENTS || tab == AppTab.ESTIMATES || tab == AppTab.PRICES -> false
+        else -> true
+    }
+    var openSearch by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(showGlobalSearch) { if (!showGlobalSearch) openSearch = false }
+    var requestedClientId by remember(database) { mutableStateOf<Long?>(null) }
+    var requestedQuote by remember(database) { mutableStateOf<GlobalRegistryTarget.Quote?>(null) }
+    var searchGeneration by rememberSaveable { mutableIntStateOf(0) }
+    var repeatedSearchRoute by remember { mutableStateOf<AppTab?>(null) }
+    val searchRequest = if (tab == repeatedSearchRoute) searchGeneration else 0
+    fun navigateTo(target: AppTab, clients: Boolean = false, query: String = "") {
+        if (target == tab) return
+        if (target == AppTab.OBJECTS) {
+            objectsStartInClients = clients
+            clientsBackToObjects = false
+        }
+        initialSearch = query
+        AppRoute.entries.filter { it != tab }.forEach { registryState.removeState(it.name) }
+        updateNavigation(navigation.selectTab(target))
+    }
 
-    fun openNested(target: AppTab) = updateNavigation(navigation.navigate(target))
+    fun openNested(target: AppTab, query: String = "", clients: Boolean = false) {
+        if (target == tab) return
+        initialSearch = query
+        if (target == AppTab.OBJECTS) {
+            objectsStartInClients = clients
+            clientsBackToObjects = false
+        }
+        registryState.removeState(target.name)
+        updateNavigation(navigation.navigate(target))
+    }
 
-    fun startQuickCreate(action: AppQuickCreate) = updateNavigation(navigation.requestQuickCreate(action))
+    var checkingProject by remember { mutableStateOf(false) }
+    fun startQuickCreate(action: AppQuickCreate) {
+        if (action == AppQuickCreate.OBJECT) {
+            updateNavigation(navigation.requestQuickCreate(action))
+            return
+        }
+        if (checkingProject || navigation.quickMeasurement) return
+        val origin = navigation
+        val projectId = origin.projectDetails?.projectId
+        if (projectId == null) {
+            updateNavigation(origin.requestQuickCreate(action))
+            return
+        }
+        checkingProject = true
+        scope.launch {
+            try {
+                val active = database?.objectsClientsStore?.isActiveProject(projectId) == true
+                if (navigation == origin) updateNavigation(origin.requestQuickCreate(action,
+                    activeProjectId = projectId.takeIf { active }))
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                if (navigation == origin) updateNavigation(origin.requestQuickCreate(action))
+            } finally {
+                checkingProject = false
+            }
+        }
+    }
 
     LaunchedEffect(tab) {
         contentScrolledPx.floatValue = 0f
@@ -336,7 +429,7 @@ private fun CeilingsAppContent(
 
     // Android only provides gesture progress. KMP owns the destination and CMP the preview.
     // Keep the callback composed unconditionally; dialogs may take Back precedence.
-    PredictiveBackHandler(enabled = tab != AppTab.DASHBOARD) { events ->
+    PredictiveBackHandler(enabled = tab != AppTab.DASHBOARD || navigation.quickMeasurement) { events ->
         if (measurementCreateNavigationGuard.blocksExit(navigation)) {
             // Consume the gesture without preview or navigation while Save owns the screen.
             events.collect { }
@@ -351,7 +444,11 @@ private fun CeilingsAppContent(
             // Commit only after a fully completed gesture (never during a swipe).
             completed = true
             predictiveBackProgress.snapTo(0f)
-            updateNavigation(navigation.back())
+            if (tab == AppTab.OBJECTS && navigation.projectDetails == null && !navigation.quickMeasurement && clientsBackToObjects) {
+                clientsBackToObjects = false
+                objectsStartInClients = false
+                returnToProjectsRequest++
+            } else updateNavigation(navigation.back())
             lastBackPressTime = 0L
         } catch (cancelled: CancellationException) {
             throw cancelled
@@ -365,7 +462,7 @@ private fun CeilingsAppContent(
         }
     }
     // Dashboard retains its familiar two-step Back-to-exit behavior.
-    BackHandler(enabled = tab == AppTab.DASHBOARD) {
+    BackHandler(enabled = tab == AppTab.DASHBOARD && !navigation.quickMeasurement) {
         val now = SystemClock.elapsedRealtime()
         if (lastBackPressTime != 0L && now - lastBackPressTime <= 2_000L) {
             context.findActivity()?.finish()
@@ -548,7 +645,7 @@ private fun CeilingsAppContent(
     AppPredictiveBackSurface(
         progress = predictiveBackProgress.asState(),
         fromLeftEdge = predictiveBackFromLeft,
-        destinationTitle = navigation.back().current.title,
+        destinationTitle = appRouteDisplayTitle(navigation.back().current),
         modifier = Modifier.fillMaxSize()
     ) {
         Box(
@@ -559,8 +656,34 @@ private fun CeilingsAppContent(
                 .nestedScroll(if (isProjectDetailsOpen || isMeasurementDetailsOpen) passiveDetailsScroll
                     else topAppBarScrollBehavior.nestedScrollConnection)
         ) {
-        key(tab) {
-            if (tab == AppTab.OBJECTS || tab == AppTab.MEASUREMENTS || tab == AppTab.ESTIMATES || tab == AppTab.PRICES || tab == AppTab.CALENDAR) {
+        val useCeilingInCalculator: (com.andreyceilings.shared.estimate.FrozenPolygonGeometry) -> Unit = { source ->
+            capturedCalculatorPrecision = checkNotNull(MeasurementPrecision.fromStep(source.precisionStepMeters))
+            geometryShape = source.shapeType
+            legacyPolygonSource = null
+            if (source.shapeType == "polygon") {
+                if (source.sides.isEmpty()) legacyPolygonSource = source
+                else {
+                    polygonSides.clear()
+                    polygonSides.addAll(source.sides.map { wall ->
+                        (wall.lengthMm / 1000.0).toString() to wall.turnAfter
+                    })
+                }
+            } else source.measurementsMm.forEach { (key, mm) ->
+                geometryMeasurements["${source.shapeType}.$key"] = (mm / 1000.0).toString()
+            }
+            openNested(AppTab.CALCULATOR)
+        }
+        val routeSlot = when {
+            navigation.quickMeasurement -> "quick-measurement"
+            tab == AppTab.MEASUREMENTS && (isMeasurementDetailsOpen || navigation.measurementProjectPicker) -> "ceiling-workspace"
+            else -> tab.name
+        }
+        key(sessionGeneration) {
+        registryState.SaveableStateProvider(routeSlot) {
+            if (navigation.quickMeasurement) {
+                MeasurementsHost(database, navigation, measurementPrecision, measurementCreateNavigationGuard, ::updateNavigation,
+                    onUseMeasurement = useCeilingInCalculator, headerVisibleFraction = 1f - topAppBarScrollBehavior.state.collapsedFraction)
+            } else if (tab == AppTab.OBJECTS || tab == AppTab.MEASUREMENTS || tab == AppTab.ESTIMATES || tab == AppTab.PRICES || tab == AppTab.CALENDAR) {
                 Box(
                     Modifier.fillMaxSize().nestedScroll(screenScrollConnection)
                         .padding(horizontal = if (tab == AppTab.OBJECTS || tab == AppTab.MEASUREMENTS) 0.dp else 16.dp)
@@ -570,12 +693,7 @@ private fun CeilingsAppContent(
                             database = database,
                             swipeState = cardSwipes,
                             detailsProjectId = navigation.projectDetails?.projectId,
-                            measurementDetails = navigation.measurementDetails,
-                            measurementQuote = navigation.measurementQuote,
                             measurementEdit = navigation.measurementEdit,
-                            onEditMeasurement = { projectId, measurementId ->
-                                updateNavigation(navigation.editMeasurement(projectId, measurementId))
-                            },
                             measurementCreate = navigation.measurementCreate,
                             measurementCreateNavigationGuard = measurementCreateNavigationGuard,
                             measurementPrecision = measurementPrecision,
@@ -587,9 +705,18 @@ private fun CeilingsAppContent(
                                 updateNavigation(navigation.openCeilingWorkspace(projectId, measurementId))
                             },
                             onOpenProject = { updateNavigation(navigation.openProject(it)) },
+                            onOpenCeilingRegistry = { openNested(AppTab.MEASUREMENTS) },
+                            initialClients = objectsStartInClients,
+                            initialSearch = initialSearch,
+                            searchRequest = searchRequest,
                             onCloseProject = { updateNavigation(navigation.back()) },
                             onProjectHeaderProgress = { projectTitleProgress = it.coerceIn(0f, 1f) },
-                            onListTabChanged = {
+                            returnToProjectsRequest = returnToProjectsRequest,
+                            requestedClientId = requestedClientId,
+                            onClientRequestConsumed = { requestedClientId = null },
+                             onListTabChanged = { selected ->
+                                 clientsBackToObjects = selected == com.andreyceilings.shared.objects.ObjectsClientsTab.CLIENTS
+                                 objectsStartInClients = clientsBackToObjects
                                 // The CMP list resets on tab change; reset the parent
                                 // enterAlways header and scroll-based shading too.
                                 topAppBarScrollBehavior.state.heightOffset = 0f
@@ -602,32 +729,14 @@ private fun CeilingsAppContent(
                             onCreateProjectConsumed = { updateNavigation(navigation.consumeQuickCreate(AppQuickCreate.OBJECT)) }
                         )
                         AppTab.MEASUREMENTS -> MeasurementsHost(
-                            database = database, navigation = navigation, precision = measurementPrecision,
-                            navigationGuard = measurementCreateNavigationGuard,
-                            onNavigate = ::updateNavigation,
-                            onOpenEstimates = { navigateTo(AppTab.ESTIMATES) },
-                            onUseMeasurement = { source ->
-                                // Copy validated saved inputs; neither the source row nor preferences are written.
-                                capturedCalculatorPrecision = checkNotNull(
-                                    MeasurementPrecision.fromStep(source.precisionStepMeters))
-                                geometryShape = source.shapeType
-                                legacyPolygonSource = null
-                                if (source.shapeType == "polygon") {
-                                    if (source.sides.isEmpty()) legacyPolygonSource = source
-                                    else {
-                                        polygonSides.clear()
-                                        polygonSides.addAll(source.sides.map { wall ->
-                                            (wall.lengthMm / 1000.0).toString() to wall.turnAfter
-                                        })
-                                    }
-                                } else source.measurementsMm.forEach { (key, mm) ->
-                                    geometryMeasurements["${source.shapeType}.$key"] = (mm / 1000.0).toString()
-                                }
-                                navigateTo(AppTab.CALCULATOR)
-                            },
-                            onCreateProject = { startQuickCreate(AppQuickCreate.OBJECT) }
+                            database, navigation, measurementPrecision, measurementCreateNavigationGuard,
+                            ::updateNavigation, initialSearch = initialSearch, searchRequest = searchRequest,
+                            onUseMeasurement = useCeilingInCalculator, headerVisibleFraction = 1f - topAppBarScrollBehavior.state.collapsedFraction
                         )
-                        AppTab.ESTIMATES -> EstimatesScreen(database)
+                        AppTab.ESTIMATES -> QuoteRegistryScreen(database?.objectsClientsStore,
+                            PaddingValues(top = topContentPadding, bottom = bottomContentPadding), initialSearch, searchRequest,
+                            headerVisibleFraction = 1f - topAppBarScrollBehavior.state.collapsedFraction,
+                            requestedQuote = requestedQuote, onQuoteRequestConsumed = { requestedQuote = null })
                         AppTab.PRICES -> PriceListScreen(database, darkTheme = useDarkTheme)
                         AppTab.CALENDAR -> CalendarScreen(database)
                         else -> Unit
@@ -649,10 +758,11 @@ private fun CeilingsAppContent(
                     when (tab) {
                         AppTab.DASHBOARD -> DashboardScreen(
                             database = database,
-                            onNewMeasurement = { navigateTo(AppTab.MEASUREMENTS) },
-                            onCalculator = { navigateTo(AppTab.CALCULATOR) },
+                            preferences = dashboardPreferences,
+                            onCeilings = { openNested(AppTab.MEASUREMENTS) },
                             onObjects = { navigateTo(AppTab.OBJECTS) },
-                            onEstimates = { navigateTo(AppTab.ESTIMATES) },
+                            onClients = { navigateTo(AppTab.OBJECTS, clients = true) },
+                            onEstimates = { openNested(AppTab.ESTIMATES) },
                             onCalendar = { navigateTo(AppTab.CALENDAR) }
                         )
                         AppTab.CALCULATOR -> CalculatorScreen(
@@ -711,6 +821,14 @@ private fun CeilingsAppContent(
                         AppTab.SETTINGS -> SettingsScreen(
                             databaseStatus, database, onDatabaseReplaced, themeMode, onThemeModeChange,
                             onOpenPriceList = { openNested(AppTab.PRICES) },
+                            dashboardPreferences = dashboardPreferences,
+                            onDashboardPreferences = { next ->
+                                val saved = withContext(Dispatchers.IO) {
+                                    dashboardStorage.edit().putString("layout", next.encode()).commit()
+                                }
+                                if (saved) dashboardPreferences = next
+                                saved
+                            },
                             appLanguage = appLanguage,
                             measurementPrecision = measurementPrecision,
                             onMeasurementPrecision = { selected ->
@@ -724,6 +842,7 @@ private fun CeilingsAppContent(
                 }
             }
         }
+        }
 
         // As the original address moves into the top safe area, it takes the
         // place of СтеляПро. On a true return to the top, the chrome reappears.
@@ -735,12 +854,14 @@ private fun CeilingsAppContent(
             // rather than covering it with the 93% collapsed-header shade.
             shadeOpacity = if (tab == AppTab.OBJECTS && !isProjectDetailsOpen)
                 0.50f else headerShadeOpacity,
-            drawGradient = tab != AppTab.OBJECTS || isProjectDetailsOpen,
+            drawGradient = (tab != AppTab.OBJECTS || isProjectDetailsOpen) &&
+                !(tab == AppTab.ESTIMATES || tab == AppTab.MEASUREMENTS && !navigation.measurementProjectPicker),
             statusBarHeight = statusBarInset,
             windowInsets = WindowInsets.statusBars,
             scrollBehavior = if (isProjectDetailsOpen) null else topAppBarScrollBehavior,
             onSettings = { openNested(AppTab.SETTINGS) },
             extraActions = {
+                if (showGlobalSearch) RegistrySearchAction { openSearch = true }
                 ThemeModeSelector(mode = themeMode, onModeChange = onThemeModeChange, compact = true)
             },
             modifier = Modifier.align(Alignment.TopCenter)
@@ -754,10 +875,47 @@ private fun CeilingsAppContent(
                 .height(navigationBarInset + systemPanelGradientHeight)
         )
 
-        if (!isMeasurementEditOpen && !measurementFullscreen) FloatingNavigationBar(
+        if (showGlobalSearch && openSearch) RegistrySearchDialog(
+            database?.objectsClientsStore, onClose = { openSearch = false },
+            // Android Dialog has its own window; opt into edge-to-edge so its
+            // content receives the IME insets instead of being panned behind it.
+            properties = DialogProperties(usePlatformDefaultWidth = false,
+                dismissOnClickOutside = false, decorFitsSystemWindows = false)
+        ) { hit ->
+            openSearch = false
+            val target = when (hit) {
+                is GlobalRegistryTarget.Project, is GlobalRegistryTarget.Client -> AppTab.OBJECTS
+                is GlobalRegistryTarget.Ceiling -> AppTab.MEASUREMENTS
+                is GlobalRegistryTarget.Quote -> AppTab.ESTIMATES
+            }
+            if (target != tab) {
+                initialSearch = ""
+                repeatedSearchRoute = null
+                registryState.removeState(target.name)
+                if (target == AppTab.OBJECTS) {
+                    objectsStartInClients = hit is GlobalRegistryTarget.Client
+                    clientsBackToObjects = false
+                }
+            }
+            val destination = navigation.navigate(target)
+            when (hit) {
+                is GlobalRegistryTarget.Project -> updateNavigation(destination.openProject(hit.id))
+                is GlobalRegistryTarget.Ceiling -> updateNavigation(destination.openCeilingWorkspace(hit.projectId, hit.id))
+                is GlobalRegistryTarget.Client -> {
+                    requestedClientId = hit.id
+                    updateNavigation(destination)
+                }
+                is GlobalRegistryTarget.Quote -> {
+                    requestedQuote = hit
+                    updateNavigation(destination)
+                }
+            }
+        }
+
+        if (!isMeasurementEditOpen && !measurementFullscreen && !navigation.measurementProjectPicker) FloatingNavigationBar(
             selectedTab = tab,
             darkTheme = useDarkTheme,
-            onSelect = ::navigateTo,
+            onSelect = { navigateTo(it) },
             onQuickCreate = { target ->
                 if (database == null) {
                     Toast.makeText(context, "Захищена база зараз недоступна", Toast.LENGTH_SHORT).show()

@@ -36,14 +36,15 @@ internal fun PriceListScreen(database: CeilingsDatabase?, darkTheme: Boolean) {
     val priceFlow = remember(store) {
         store?.items ?: flowOf<List<PriceCatalogItem>>(emptyList())
     }
-    val catalog by priceFlow.collectAsState(initial = emptyList())
+    val catalog by priceFlow.collectAsState(initial = null as List<PriceCatalogItem>?)
     val groupFlow = remember(store) { store?.groups ?: flowOf<List<PriceCatalogGroup>>(emptyList()) }
-    val groups by groupFlow.collectAsState(initial = emptyList())
+    val groups by groupFlow.collectAsState(initial = null as List<PriceCatalogGroup>?)
 
     PriceCatalogTheme(darkTheme) {
         PriceCatalogScreen(
-            items = catalog,
-            groups = groups,
+            items = catalog.orEmpty(),
+            groups = groups.orEmpty(),
+            rowsReady = catalog != null && groups != null,
             databaseAvailable = store != null,
             // AppRoot already applies 16.dp on each side, just like Settings.
             // Avoid another nested 16.dp that made Price List appear too narrow.

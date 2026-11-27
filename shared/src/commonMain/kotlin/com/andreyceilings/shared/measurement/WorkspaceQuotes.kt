@@ -481,6 +481,7 @@ internal fun ColumnScope.WorkspaceFrozenQuote(
     onStatus: (SavedIndividualQuote, EstimateWorkflowStatus, List<SavedIndividualQuote>) -> Unit,
     onNewRevision: (SavedIndividualQuote?) -> Unit,
     onDelete: () -> Unit,
+    registryPresentation: Boolean = false,
     onBack: () -> Unit = session::closeView
 ) {
     val frozen = quote.frozen
@@ -535,9 +536,9 @@ internal fun ColumnScope.WorkspaceFrozenQuote(
             Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(Res.string.p5d_back_quotes))
         }
         Column(Modifier.weight(1f)) {
-            Text(frozen.title, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Text(frozen.title, style = if (registryPresentation) MaterialTheme.typography.titleMedium else MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
             Text(stringResource(Res.string.p5d_revision_heading, frozen.publicNumber, quote.versionNumber),
-                style = MaterialTheme.typography.labelSmall)
+                style = if (registryPresentation) MaterialTheme.typography.labelMedium else MaterialTheme.typography.labelSmall)
         }
         if (drift != false) WorkspaceCostHelp(stringResource(if (drift == null) Res.string.p5d_drift_unavailable else Res.string.p5d_drift))
         WorkspaceQuoteStatusIcon(quote, approved, !busy && !exporting, onStatus)

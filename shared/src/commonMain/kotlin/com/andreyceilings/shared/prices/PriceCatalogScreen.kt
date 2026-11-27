@@ -1,5 +1,8 @@
 package com.andreyceilings.shared.prices
 
+import androidx.compose.runtime.saveable.rememberSaveable
+import com.andreyceilings.shared.navigation.rememberRegistryScroll
+
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -63,11 +66,12 @@ fun PriceCatalogScreen(
     onDeleteGroup: suspend (group: PriceCatalogGroup) -> Unit,
     onDelete: suspend (item: PriceCatalogItem) -> Unit,
     modifier: Modifier = Modifier,
-    contentPadding: PaddingValues = PaddingValues(16.dp)
+    contentPadding: PaddingValues = PaddingValues(16.dp),
+    rowsReady: Boolean = true
 ) {
     val scope = rememberCoroutineScope()
-    var search by remember { mutableStateOf("") }
-    var selectedCategory by remember { mutableStateOf<String?>(null) }
+    var search by rememberSaveable { mutableStateOf("") }
+    var selectedCategory by rememberSaveable { mutableStateOf<String?>(null) }
     var itemEditor by remember { mutableStateOf<PriceItemEditor?>(null) }
     var managingGroups by remember { mutableStateOf(false) }
     var groupEditor by remember { mutableStateOf<PriceGroupEditor?>(null) }
@@ -76,7 +80,9 @@ fun PriceCatalogScreen(
     var pending by remember { mutableStateOf(false) }
     var editorError by remember { mutableStateOf<String?>(null) }
     val categories = groups
-    LaunchedEffect(groups) { selectedCategory = activePriceFilter(selectedCategory, groups) }
+    LaunchedEffect(groups, rowsReady) {
+        if (rowsReady) selectedCategory = activePriceFilter(selectedCategory, groups)
+    }
     val unitOptions = remember(items) { PriceCatalogRules.unitOptions(items) }
     val visible = remember(items, groups, search, selectedCategory) {
         visiblePriceItems(items, groups, search, activePriceFilter(selectedCategory, groups))
@@ -91,8 +97,22 @@ fun PriceCatalogScreen(
 
     BoxWithConstraints(modifier.fillMaxSize()) {
         val desktopLayout = maxWidth >= 760.dp
+        val rowKeys = remember(databaseAvailable, rowsReady, items, visible, desktopLayout, selectedCategory, search) {
+            if (!databaseAvailable || !rowsReady) null else buildList<String> {
+                addAll(listOf("heading", "search", "categories", "manage-categories"))
+                if (desktopLayout && visible.isNotEmpty()) add("columns")
+                when {
+                    selectedCategory != null && visible.isEmpty() && search.isBlank() -> add("category-empty")
+                    items.isEmpty() -> add("empty")
+                    visible.isEmpty() -> add("filtered-empty")
+                    else -> visible.forEach { add("price-${it.id}") }
+                }
+            }
+        }
+        val listState = rememberRegistryScroll(rowKeys, resetKey = search)
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
+            state = listState,
             contentPadding = contentPadding,
             verticalArrangement = Arrangement.spacedBy(if (desktopLayout) 6.dp else 7.dp)
         ) {

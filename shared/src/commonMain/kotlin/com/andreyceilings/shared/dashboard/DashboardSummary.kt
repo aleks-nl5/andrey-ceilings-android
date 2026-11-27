@@ -11,13 +11,7 @@ data class DashboardSummary(
     val measurementCount: Int,
     val measuredAreaSquareMeters: Double
 ) {
-    fun areaLabel(): String {
-        if (!measuredAreaSquareMeters.isFinite() || measuredAreaSquareMeters < 0.0 ||
-            measuredAreaSquareMeters > Long.MAX_VALUE / 10.0
-        ) return "—"
-        val tenths = (measuredAreaSquareMeters * 10.0).roundToLong()
-        return "${tenths / 10},${tenths % 10} м²"
-    }
+    fun areaLabel(): String = dashboardAreaLabel(measuredAreaSquareMeters)
 
     companion object {
         fun fromRecords(
@@ -35,4 +29,11 @@ data class DashboardSummary(
             )
         }
     }
+}
+
+
+internal fun dashboardAreaLabel(squareMeters: Double): String {
+    if (!squareMeters.isFinite() || squareMeters < 0.0 || squareMeters > Long.MAX_VALUE / 10.0) return "—"
+    val tenths = (squareMeters * 10.0).roundToLong()
+    return "${tenths / 10},${tenths % 10} м²"
 }

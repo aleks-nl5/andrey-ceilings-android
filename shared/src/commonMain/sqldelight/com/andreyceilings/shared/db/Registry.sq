@@ -1,0 +1,106 @@
+activeCeilings:
+SELECT m.id, m.uuid, m.projectId, m.name, m.areaSquareMeters, m.perimeterMeters, m.createdAt, m.updatedAt,
+    p.title AS projectTitle, p.address, c.name AS clientName, c.phone
+FROM room_measurements m
+JOIN projects p ON p.id = m.projectId AND p.deletedAt IS NULL
+LEFT JOIN clients c ON c.id = p.clientId AND c.deletedAt IS NULL
+WHERE m.deletedAt IS NULL;
+
+visibleContours:
+SELECT m.uuid, m.shape, m.drawingJson, m.lengthMeters, m.widthMeters
+FROM room_measurements m
+JOIN projects p ON p.id = m.projectId AND p.deletedAt IS NULL
+WHERE m.deletedAt IS NULL AND m.uuid IN :uuids AND m.projectId = coalesce(:projectId, m.projectId);
+
+-- Read just the title from the existing immutable envelope. The exact reader
+-- still verifies payload, proof, line items and ownership after a user opens it.
+individualVersions:
+SELECT s.projectId, s.seriesUuid, s.publicNumber, s.createdAt AS seriesCreatedAt,
+    r.revisionUuid, r.versionNumber, r.createdAt, w.status, r.currency, m.id AS ceilingId,
+    p.title AS projectTitle, p.address, m.name AS ceilingName, c.name AS clientName, c.phone,
+    CAST(CASE WHEN json_valid(r.detailsJson) THEN json_extract(r.detailsJson, '$.document.title') END AS TEXT) AS title,
+    CAST(CASE
+        WHEN s.publicNumber IS NULL OR trim(s.publicNumber) = '' OR ch.seriesUuid IS NULL
+            OR typeof(r.versionNumber) != 'integer' OR r.versionNumber < 1
+            OR typeof(r.createdAt) != 'integer' OR r.createdAt < 1
+            OR typeof(w.version) != 'integer' OR w.version < 1
+            OR typeof(w.updatedAt) != 'integer' OR w.updatedAt < 1 THEN -1
+        WHEN r.versionNumber = 1 AND f.revisionUuid IS NOT NULL AND n.revisionUuid IS NULL
+            AND typeof(f.totalCents) = 'integer' THEN f.totalCents
+        WHEN r.versionNumber > 1 AND n.revisionUuid IS NOT NULL AND f.revisionUuid IS NULL
+            AND typeof(n.totalCents) = 'integer' THEN n.totalCents
+        ELSE -1 END AS INTEGER) AS finalCents
+FROM estimate_series s
+JOIN projects p ON p.id = s.projectId AND p.deletedAt IS NULL
+JOIN room_measurements m ON m.uuid = s.measurementUuid AND m.projectId = p.id AND m.deletedAt IS NULL
+JOIN estimate_revisions r ON r.seriesUuid = s.seriesUuid
+LEFT JOIN clients c ON c.id = p.clientId AND c.deletedAt IS NULL
+LEFT JOIN estimate_revision_workflow w ON w.revisionUuid = r.revisionUuid
+LEFT JOIN estimate_revision_choice ch ON ch.seriesUuid = s.seriesUuid
+LEFT JOIN estimate_v1_frozen f ON f.revisionUuid = r.revisionUuid
+LEFT JOIN estimate_revision_frozen n ON n.revisionUuid = r.revisionUuid
+WHERE s.deletedAt IS NULL
+    AND (f.revisionUuid IS NOT NULL OR n.revisionUuid IS NOT NULL OR w.revisionUuid IS NOT NULL)
+    AND NOT EXISTS (SELECT 1 FROM estimate_revision_tombstones d WHERE d.revisionUuid = r.revisionUuid);
+
+consolidatedVersions:
+SELECT s.projectId, s.seriesUuid, n.publicNumber, initial_revision.createdAt AS seriesCreatedAt,
+    r.revisionUuid, r.versionNumber, r.createdAt, w.status, r.title, r.finalCents,
+    p.title AS projectTitle, p.address, c.name AS clientName, c.phone,
+    (SELECT count(*) FROM consolidated_members m WHERE m.consolidatedRevisionUuid = r.revisionUuid) AS ceilingCount
+FROM consolidated_series s
+JOIN projects p ON p.id = s.projectId AND p.deletedAt IS NULL
+JOIN consolidated_revisions r ON r.seriesUuid = s.seriesUuid AND r.projectId = p.id
+LEFT JOIN consolidated_revisions initial_revision ON initial_revision.seriesUuid = s.seriesUuid AND initial_revision.versionNumber = 1
+LEFT JOIN consolidated_workflow w ON w.revisionUuid = r.revisionUuid AND w.projectId = p.id
+LEFT JOIN estimate_number_reservations n ON n.seriesUuid = s.seriesUuid AND n.estimateType = 'CONSOLIDATED'
+LEFT JOIN clients c ON c.id = p.clientId AND c.deletedAt IS NULL
+WHERE w.deletedAt IS NULL;
+
+dashboardSummary:
+SELECT
+    (SELECT count(*) FROM projects WHERE deletedAt IS NULL) AS projectCount,
+    (SELECT count(*) FROM clients WHERE deletedAt IS NULL) AS clientCount,
+    count(*) AS ceilingCount,
+    total(CASE WHEN m.areaSquareMeters >= 0.0 AND m.areaSquareMeters - m.areaSquareMeters = 0.0
+        THEN m.areaSquareMeters ELSE 0.0 END) AS area
+FROM room_measurements m JOIN projects p ON p.id = m.projectId
+WHERE m.deletedAt IS NULL AND p.deletedAt IS NULL;
+
+dashboardQuoteCounts:
+SELECT
+    (SELECT count(*) FROM estimate_series s
+      JOIN room_measurements m ON m.uuid = s.measurementUuid AND m.projectId = s.projectId AND m.deletedAt IS NULL
+      JOIN projects p ON p.id = s.projectId AND p.deletedAt IS NULL
+      WHERE s.deletedAt IS NULL AND EXISTS (
+          SELECT 1 FROM estimate_revisions r
+          LEFT JOIN estimate_revision_workflow w ON w.revisionUuid = r.revisionUuid
+          LEFT JOIN estimate_v1_frozen f ON f.revisionUuid = r.revisionUuid
+          LEFT JOIN estimate_revision_frozen n ON n.revisionUuid = r.revisionUuid
+          WHERE r.seriesUuid = s.seriesUuid
+          AND (w.revisionUuid IS NOT NULL OR f.revisionUuid IS NOT NULL OR n.revisionUuid IS NOT NULL)
+          AND NOT EXISTS (SELECT 1 FROM estimate_revision_tombstones d WHERE d.revisionUuid = r.revisionUuid)
+      )) AS individualCount,
+    (SELECT count(*) FROM consolidated_series s JOIN projects p ON p.id = s.projectId AND p.deletedAt IS NULL
+      WHERE EXISTS (SELECT 1 FROM consolidated_revisions r
+      LEFT JOIN consolidated_workflow w ON w.revisionUuid = r.revisionUuid AND w.projectId = p.id
+      WHERE r.seriesUuid = s.seriesUuid AND r.projectId = p.id AND w.deletedAt IS NULL)) AS consolidatedCount;
+
+ceilingQuotePresence:
+SELECT m.id AS ceilingId, s.publicNumber,
+    max(CASE WHEN w.status = 'REJECTED' AND s.publicNumber IS NOT NULL
+        AND r.currency = 'UAH' AND typeof(w.version) = 'integer' AND w.version > 0
+        AND ((r.versionNumber = 1 AND f.revisionUuid IS NOT NULL AND n.revisionUuid IS NULL)
+          OR (r.versionNumber > 1 AND n.revisionUuid IS NOT NULL AND f.revisionUuid IS NULL))
+        THEN 0 ELSE 1 END) AS hasOther
+FROM estimate_series s
+JOIN projects p ON p.id = s.projectId AND p.deletedAt IS NULL
+JOIN room_measurements m ON m.uuid = s.measurementUuid AND m.projectId = p.id AND m.deletedAt IS NULL
+JOIN estimate_revisions r ON r.seriesUuid = s.seriesUuid
+LEFT JOIN estimate_revision_workflow w ON w.revisionUuid = r.revisionUuid
+LEFT JOIN estimate_v1_frozen f ON f.revisionUuid = r.revisionUuid
+LEFT JOIN estimate_revision_frozen n ON n.revisionUuid = r.revisionUuid
+WHERE s.deletedAt IS NULL
+AND (w.revisionUuid IS NOT NULL OR f.revisionUuid IS NOT NULL OR n.revisionUuid IS NOT NULL)
+AND NOT EXISTS (SELECT 1 FROM estimate_revision_tombstones d WHERE d.revisionUuid = r.revisionUuid)
+GROUP BY m.id, s.publicNumber;

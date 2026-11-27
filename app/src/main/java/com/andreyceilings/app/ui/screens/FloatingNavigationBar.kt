@@ -9,7 +9,8 @@ import androidx.compose.material.icons.filled.Business
 import androidx.compose.material.icons.filled.Calculate
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Dashboard
-import androidx.compose.material.icons.filled.Straighten
+import androidx.compose.material.icons.filled.Add
+import com.andreyceilings.shared.navigation.measurementQuickCreateLabel
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
@@ -34,7 +35,8 @@ internal fun FloatingNavigationBar(
 ) {
     val androidView = LocalView.current
     val navigationInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
-    val destinations = remember {
+    val newMeasurement = measurementQuickCreateLabel()
+    val destinations = remember(newMeasurement) {
         listOf(
             AppDestination(AppTab.DASHBOARD.name, AppTab.DASHBOARD.title, "Панель", Icons.Default.Dashboard),
             AppDestination(
@@ -42,8 +44,8 @@ internal fun FloatingNavigationBar(
                 quickCreateLabel = "Створити новий об’єкт"
             ),
             AppDestination(
-                AppTab.MEASUREMENTS.name, AppTab.MEASUREMENTS.title, "Заміри", Icons.Default.Straighten,
-                quickCreateLabel = "Створити новий замір"
+                id = "new-measurement", title = newMeasurement, caption = "", icon = Icons.Default.Add,
+                actionOnly = true
             ),
             AppDestination(AppTab.CALCULATOR.name, AppTab.CALCULATOR.title, "Кальк.", Icons.Default.Calculate),
             AppDestination(AppTab.CALENDAR.name, AppTab.CALENDAR.title, "Календар", Icons.Default.CalendarMonth)
@@ -55,7 +57,7 @@ internal fun FloatingNavigationBar(
         destinations = destinations,
         darkTheme = darkTheme,
         onSelect = { id -> onSelect(AppTab.valueOf(id)) },
-        onQuickCreate = { id -> onQuickCreate(AppTab.valueOf(id)) },
+        onQuickCreate = { id -> onQuickCreate(if (id == "new-measurement") AppTab.MEASUREMENTS else AppTab.valueOf(id)) },
         onFeedback = { feedback ->
             androidView.performHapticFeedback(
                 when (feedback) {

@@ -28,9 +28,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.andreyceilings.app.data.db.CeilingsDatabase
 import com.andreyceilings.shared.dashboard.DashboardScreen as SharedDashboardScreen
+import com.andreyceilings.shared.dashboard.DashboardPreferences
 import com.andreyceilings.shared.dashboard.DashboardStore
-import com.andreyceilings.shared.dashboard.DashboardSummary
-import kotlinx.coroutines.flow.flowOf
 
 /** Android-only compatibility helper still used by Calculator/Settings. */
 @Composable
@@ -47,15 +46,14 @@ internal fun SectionTitle(title: String, subtitle: String? = null) {
 @Composable
 internal fun DashboardScreen(
     database: CeilingsDatabase?,
-    onNewMeasurement: () -> Unit,
-    onCalculator: () -> Unit,
+    preferences: DashboardPreferences,
+    onCeilings: () -> Unit,
     onObjects: () -> Unit,
+    onClients: () -> Unit,
     onEstimates: () -> Unit,
     onCalendar: () -> Unit
 ) {
-    val store = remember(database) { database?.let { DashboardStore(it.database) } }
-    val summaryFlow = remember(store) { store?.summary ?: flowOf<DashboardSummary?>(null) }
-    val summary by summaryFlow.collectAsState(initial = null)
+    val store = remember(database) { database?.objectsClientsStore?.let(::DashboardStore) }
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val gateway = remember(context) { MonobankCurrencyGateway(AndroidCurrencyRatesCache(context)) }
@@ -74,11 +72,11 @@ internal fun DashboardScreen(
 
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         SharedDashboardScreen(
-            summary = summary,
-            databaseAvailable = database != null,
-            onNewMeasurement = onNewMeasurement,
-            onCalculator = onCalculator,
+            store = store,
+            preferences = preferences,
+            onCeilings = onCeilings,
             onObjects = onObjects,
+            onClients = onClients,
             onEstimates = onEstimates,
             onCalendar = onCalendar,
             todayLabel = dashboardTodayLabel(currencyState.nowMillis),

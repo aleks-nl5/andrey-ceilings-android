@@ -1,3 +1,7 @@
+## P6C implementation and APK acceptance (26.11.2026)
+
+[P6C implementation and APK acceptance](P6C_IMPLEMENTATION.md) records the shared registries, dashboard, central action and return context. Owner APK acceptance and the integration gates are pending.
+
 ## P6C technical planning complete (26.11.2026)
 
 All 35 product + 15 technical decisions approved. [P6C technical plan and Codex handoff](P6C_CODEX_HANDOFF.md): one production Draft PR after separate owner authorization, #141 across all five registries, #140/#77, bounded reactive metadata, reuse P6B finances, local dashboard personalization. Static audit complete for planning; query plans and runtime performance still require verification. P6B completion docs #181 merged; verify post-merge FULL before next production merge.
