@@ -21,6 +21,7 @@ internal fun ProjectCalendarWorks(
     approvedQuote: Boolean,
     onEdit: (CalendarEditorRoute) -> Unit,
     onOpen: (String) -> Unit,
+    swipeState: com.andreyceilings.shared.objects.CardSwipeState,
 ) {
     val options = calendarOptionsState(store).data()
     val zone = options?.settings?.zone ?: TimeZone.currentSystemDefault()
@@ -37,7 +38,7 @@ internal fun ProjectCalendarWorks(
             }
         }
         upcoming.data().orEmpty().filter { it.upcoming(now) }.take(2).forEach { work ->
-            CalendarWorkRow(work, options?.types?.firstOrNull { it.code == work.draft.typeCode }, zone, now, onEdit)
+            CalendarWorkRow(work, options?.types?.firstOrNull { it.code == work.draft.typeCode }, zone, now, onEdit, swipeState = swipeState)
         }
         if (upcoming is CalendarRead.Unavailable) CalendarFeedback(Res.string.work_unavailable)
         if (approvedQuote && installation is CalendarRead.Ready && installation.value.none { it.upcoming(now) }) {

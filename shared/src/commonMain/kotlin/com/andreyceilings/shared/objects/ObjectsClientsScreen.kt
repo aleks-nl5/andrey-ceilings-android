@@ -770,7 +770,7 @@ fun ObjectsClientsScreen(
  * elevation, parent clipping, resizing, or translation.
  */
 @Composable
-private fun ObjectsClientsCreateFab(
+internal fun ObjectsClientsCreateFab(
     visible: Boolean,
     actionLabel: String,
     modifier: Modifier = Modifier,

@@ -590,7 +590,7 @@ internal fun ProjectDetailsScreen(
                             uuid?.let { projectUuid ->
                                 ProjectCalendarWorks(store.calendar, projectUuid,
                                     (finance as? ProjectFinanceState.Loaded)?.summary?.hasApprovedQuote == true,
-                                    onCalendarEdit, onProjectCalendar)
+                                    onCalendarEdit, onProjectCalendar, swipeState)
                             }
                         }
                         item(key = "measurements-heading") {

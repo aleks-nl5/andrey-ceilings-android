@@ -104,176 +104,58 @@ fun UpcomingEventsCard(
     val upcoming = upcomingWorkEvents(events, nowMillis)
     val theme = MaterialTheme.colorScheme
 
-    Card(
-        modifier = modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = if (upcoming.isEmpty()) theme.primaryContainer else theme.surface
-        )
-    ) {
+    Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(5.dp)) {
         if (upcoming.isEmpty()) {
-            // 58 -> 44dp (~24% shorter) while Compose's clickable touch
-            // expansion still allows a >=48dp hit area for the calendar link.
-            Row(
-                Modifier.fillMaxWidth().height(44.dp)
-                    .padding(start = 12.dp, end = 6.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Icon(
-                    Icons.Default.CalendarMonth,
-                    contentDescription = if (!databaseAvailable) stringResource(Res.string.work_unavailable)
-                    else if (loading) null else stringResource(Res.string.work_none),
-                    tint = theme.primary
-                )
-                Text(
-                    if (databaseAvailable) todayLabel else "",
-                    modifier = Modifier.weight(1f),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    color = theme.onPrimaryContainer,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                if (onCalendar != null) IconButton(onClick = onCalendar, modifier = Modifier.size(44.dp)) {
-                    Icon(Icons.Default.CalendarMonth, stringResource(Res.string.work_calendar))
-                }
-                if (onAddWork != null) IconButton(onClick = onAddWork, modifier = Modifier.size(44.dp)) {
-                    Icon(Icons.Default.Add, stringResource(Res.string.work_add))
+            Card(shape = RoundedCornerShape(18.dp), colors = CardDefaults.cardColors(containerColor = theme.primaryContainer)) {
+                Row(Modifier.fillMaxWidth().padding(start = 12.dp, end = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically) {
+                    Text(if (databaseAvailable) todayLabel else "", Modifier.weight(1f)
+                        .clickable(enabled = databaseAvailable && onCalendar != null) { onCalendar?.invoke() }.padding(vertical = 12.dp),
+                        style = MaterialTheme.typography.titleMedium, color = theme.onPrimaryContainer)
+                    if (onAddWork != null) IconButton(onClick = onAddWork) {
+                        Icon(Icons.Default.Add, stringResource(Res.string.work_add))
+                    }
                 }
             }
-        } else {
-            val closest = upcoming.first()
-            Column(
-                Modifier.fillMaxWidth().padding(10.dp),
-                verticalArrangement = Arrangement.spacedBy(3.dp)
-            ) {
-                val open = closest.key?.let { key -> onOpenWork?.let { { it(key) } } }
-                Row(Modifier.fillMaxWidth().clickable(enabled = open != null) { open?.invoke() },
-                    verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    EventDateBadge(
-                        dateLabel = closest.dateLabel,
-                        timeLabel = closest.timeLabel,
-                        urgency = workUrgency(nowMillis, closest.startsAtMillis)
-                    )
+        } else upcoming.forEachIndexed { index, event ->
+            val closest = index == 0
+            val urgency = workUrgency(nowMillis, event.startsAtMillis)
+            val background = if (!closest) theme.surface else when (urgency) {
+                WorkUrgency.DISTANT -> theme.surfaceVariant
+                WorkUrgency.APPROACHING -> theme.primaryContainer
+                WorkUrgency.SOON -> theme.tertiaryContainer
+                WorkUrgency.IMMINENT -> Color(0xFFF6A55C)
+            }
+            val foreground = if (!closest) theme.onSurface else when (urgency) {
+                WorkUrgency.DISTANT -> theme.onSurfaceVariant
+                WorkUrgency.APPROACHING -> theme.onPrimaryContainer
+                WorkUrgency.SOON -> theme.onTertiaryContainer
+                WorkUrgency.IMMINENT -> Color(0xFF412004)
+            }
+            val open = event.key?.let { key -> onOpenWork?.let { action -> { action(key) } } }
+                ?: event.projectId?.let { id -> onOpenProject?.let { action -> { action(id) } } }
+            Card(shape = RoundedCornerShape(18.dp),
+                colors = CardDefaults.cardColors(containerColor = background, contentColor = foreground)) {
+                Row(Modifier.fillMaxWidth().clickable(enabled = open != null) { open?.invoke() }
+                    .padding(start = 12.dp, end = 5.dp, top = 7.dp, bottom = 7.dp),
+                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Column(Modifier.width(88.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text(event.dateLabel, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
+                        Text(event.timeLabel, style = if (closest) MaterialTheme.typography.titleMedium else MaterialTheme.typography.bodyMedium)
+                    }
                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                        Text(
-                            closest.description,
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                        Text(
-                            closest.projectName,
-                            style = MaterialTheme.typography.bodyMedium,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                        closest.clientName?.takeIf { it.isNotBlank() }?.let {
-                            Text(it, style = MaterialTheme.typography.bodySmall,
-                                color = theme.onSurfaceVariant, maxLines = 1)
-                        }
-                        if (closest.projectId != null && onOpenProject != null) {
-                            TextButton(
-                                onClick = { onOpenProject(closest.projectId) },
-                                modifier = Modifier.align(Alignment.End)
-                            ) { Text("До об’єкта") }
+                        Text(event.description, style = if (closest) MaterialTheme.typography.titleMedium else MaterialTheme.typography.bodyMedium,
+                            fontWeight = if (closest) FontWeight.SemiBold else FontWeight.Normal, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        if (closest) {
+                            if (event.projectName.isNotBlank()) Text(event.projectName, style = MaterialTheme.typography.bodyMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                            event.clientName?.takeIf { it.isNotBlank() }?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
                         }
                     }
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        if (onAddWork != null) IconButton(onClick = onAddWork, modifier = Modifier.size(42.dp)) {
-                            Icon(Icons.Default.Add, stringResource(Res.string.work_add))
-                        }
-                        if (onCalendar != null) IconButton(onClick = onCalendar, modifier = Modifier.size(42.dp)) {
-                            Icon(Icons.Default.CalendarMonth, stringResource(Res.string.work_calendar))
-                        }
-                    }
-                }
-
-                upcoming.drop(1).forEach { event ->
-                    HorizontalDivider(color = theme.outlineVariant.copy(alpha = .5f))
-                    val openProject = event.key?.let { key -> onOpenWork?.let { { it(key) } } } ?: event.projectId?.let { id ->
-                        onOpenProject?.let { open -> { open(id) } }
-                    }
-                    Row(
-                        Modifier.fillMaxWidth()
-                            .clickable(enabled = openProject != null) { openProject?.invoke() }
-                            .padding(vertical = 4.dp, horizontal = 2.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(9.dp)
-                    ) {
-                        Text(
-                            "${event.dateLabel} · ${event.timeLabel}",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = theme.onSurfaceVariant,
-                            modifier = Modifier.width(112.dp),
-                            maxLines = 2
-                        )
-                        Text(
-                            event.description,
-                            style = MaterialTheme.typography.bodySmall,
-                            modifier = Modifier.weight(1f),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                        if (openProject != null) {
-                            Icon(Icons.Default.ChevronRight, contentDescription = null)
-                        }
+                    if (closest && onAddWork != null) IconButton(onClick = onAddWork) {
+                        Icon(Icons.Default.Add, stringResource(Res.string.work_add), tint = foreground)
                     }
                 }
             }
         }
-    }
-}
-
-@Composable
-private fun EventDateBadge(dateLabel: String, timeLabel: String, urgency: WorkUrgency) {
-    val theme = MaterialTheme.colorScheme
-    val background = when (urgency) {
-        WorkUrgency.DISTANT -> theme.surfaceVariant.copy(alpha = 0.55f)
-        WorkUrgency.APPROACHING -> theme.primaryContainer.copy(alpha = 0.75f)
-        WorkUrgency.SOON -> theme.tertiaryContainer
-        WorkUrgency.IMMINENT -> Color(0xFFF6A55C)
-    }
-    val foreground = when (urgency) {
-        WorkUrgency.IMMINENT -> Color(0xFF412004)
-        WorkUrgency.DISTANT -> theme.onSurfaceVariant
-        WorkUrgency.APPROACHING -> theme.onPrimaryContainer
-        WorkUrgency.SOON -> theme.onTertiaryContainer
-    }
-    // Pulse only the small badge for events starting within the next three hours.
-    // Slow, subtle alpha motion; no flashing entire cards or text.
-    val pulseAlpha = if (urgency == WorkUrgency.IMMINENT) {
-        val transition = rememberInfiniteTransition(label = "Наближення події")
-        val alpha by transition.animateFloat(
-            initialValue = 0.78f, targetValue = 1f,
-            animationSpec = infiniteRepeatable(
-                animation = tween(1700, easing = FastOutSlowInEasing),
-                repeatMode = RepeatMode.Reverse
-            ),
-            label = "М’яке підсвічування часу"
-        )
-        alpha
-    } else 1f
-
-    Column(
-        modifier = Modifier.width(110.dp)
-            .background(background.copy(alpha = pulseAlpha), RoundedCornerShape(14.dp))
-            .padding(horizontal = 10.dp, vertical = 9.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Text(
-            dateLabel,
-            style = MaterialTheme.typography.labelMedium,
-            fontWeight = FontWeight.SemiBold,
-            color = foreground,
-            maxLines = 2
-        )
-        Text(
-            timeLabel,
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Bold,
-            color = foreground,
-            maxLines = 1
-        )
     }
 }

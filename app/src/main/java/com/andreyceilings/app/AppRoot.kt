@@ -234,6 +234,18 @@ private fun CeilingsAppContent(
     // Let the shared title own details scrolling rather than enterAlways showing
     // the original toolbar during a reverse swipe.
     val passiveDetailsScroll = remember { object : NestedScrollConnection {} }
+    // Collapse only after a child actually scrolls. A short list cannot hide the header.
+    val contentOnlyHeaderScroll = remember(topAppBarScrollBehavior) {
+        object : NestedScrollConnection {
+            override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset {
+                val state = topAppBarScrollBehavior.state
+                val delta = if (consumed.y != 0f) consumed.y else available.y.coerceAtLeast(0f)
+                if (delta != 0f) state.heightOffset = (state.heightOffset + delta).coerceIn(state.heightOffsetLimit, 0f)
+                state.contentOffset += consumed.y
+                return Offset.Zero
+            }
+        }
+    }
     LaunchedEffect(navigation.projectDetails?.projectId) {
         projectTitleProgress = 0f
         if (navigation.projectDetails != null) {
@@ -674,7 +686,7 @@ private fun CeilingsAppContent(
                 .background(MaterialTheme.colorScheme.background)
                 .then(if (tab == AppTab.OBJECTS) Modifier.dismissCardSwipeOnInteraction(cardSwipes) else Modifier)
                 .nestedScroll(if (isProjectDetailsOpen || isMeasurementDetailsOpen) passiveDetailsScroll
-                    else topAppBarScrollBehavior.nestedScrollConnection)
+                    else contentOnlyHeaderScroll)
         ) {
         val useCeilingInCalculator: (com.andreyceilings.shared.estimate.FrozenPolygonGeometry) -> Unit = { source ->
             capturedCalculatorPrecision = checkNotNull(MeasurementPrecision.fromStep(source.precisionStepMeters))

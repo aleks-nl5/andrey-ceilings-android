@@ -60,7 +60,7 @@ fun DashboardScreen(
         val start = next.interval?.start ?: next.date.atStartOfDayIn(eventZone)
         val end = next.interval?.endExclusive ?: next.date.shift(1).atStartOfDayIn(eventZone)
         UpcomingWorkEvent("${work.key.rootUuid}/${work.key.originalDate}", start.toEpochMilliseconds(),
-            next.date.shortDate(), if (work.draft.schedule.mode == WorkTimeMode.TIMED)
+            dashboardWorkDate(next.date), if (work.draft.schedule.mode == WorkTimeMode.TIMED)
                 start.toLocalDateTime(eventZone).time.shortTime() else stringResource(work.draft.schedule.mode.label()),
             work.draft.title, work.projectLabel ?: work.contact.address.orEmpty(), work.contact.name,
             endsAtMillis = end.toEpochMilliseconds(), key = work.key)
@@ -77,7 +77,7 @@ fun DashboardScreen(
         preferences.rows().forEach { blocks ->
             when (blocks.singleOrNull()) {
                 DashboardBlock.WORK -> UpcomingEventsCard(if (calendar == null) upcomingEvents else scheduled,
-                    if (calendar == null) todayLabel else today.shortDate(), nowMillis,
+                    if (calendar == null) todayLabel else dashboardWorkDate(today), nowMillis,
                     store != null && (calendar == null || workRead !is CalendarRead.Unavailable), onCalendar, onOpenProject,
                     onOpenWork = onCalendarEdit?.let { open -> { open(CalendarEditorRoute.Open(it)) } },
                     onAddWork = onCalendarEdit?.takeIf { calendar != null }?.let { open -> { open(CalendarEditorRoute.Create()) } },
@@ -160,3 +160,7 @@ internal fun DashboardBlock.label() = when (this) {
     DashboardBlock.CLIENTS -> Res.string.p6c_clients
     DashboardBlock.RATES -> Res.string.p6c_rates
 }
+
+@Composable
+private fun dashboardWorkDate(date: kotlinx.datetime.LocalDate): String =
+    stringResource(date.dayOfWeek.label()) + " " + date.day.toString().padStart(2, '0') + "." + date.monthNumber.toString().padStart(2, '0')

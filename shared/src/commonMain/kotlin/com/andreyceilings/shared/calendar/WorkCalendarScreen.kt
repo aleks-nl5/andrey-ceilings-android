@@ -12,6 +12,18 @@ import com.andreyceilings.shared.ui.ContextFeedbackKind
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.*
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.geometry.Offset
+import com.andreyceilings.shared.objects.CardSwipeState
+import com.andreyceilings.shared.objects.SwipeActionsSurface
+import com.andreyceilings.shared.objects.dismissCardSwipeOnInteraction
+import com.andreyceilings.shared.objects.ObjectsClientsCreateFab
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.receiveAsFlow
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.first
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -95,6 +107,23 @@ fun WorkCalendarScreen(
     }
     val search = key(store, query, searchHorizon, retry) { if (query.isBlank()) CalendarRead.Loading else calendarState(searchFlow) }
     val list = rememberLazyListState()
+    val swipes = remember { CardSwipeState() }
+    var fabVisible by remember { mutableStateOf(true) }
+    val scrollEvents = remember { Channel<Unit>(Channel.CONFLATED) }
+    val fabScroll = remember { object : NestedScrollConnection {
+        override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset {
+            if (abs(consumed.y) > 0.5f) { fabVisible = false; swipes.dismiss(); scrollEvents.trySend(Unit) }
+            return Offset.Zero
+        }
+    } }
+    LaunchedEffect(list) {
+        scrollEvents.receiveAsFlow().collectLatest {
+            delay(120L)
+            snapshotFlow { list.isScrollInProgress }.first { !it }
+            fabVisible = true
+        }
+    }
+    LaunchedEffect(range, query, type, status, project) { swipes.dismiss() }
     val scope = rememberCoroutineScope()
     val types = options?.types.orEmpty().associateBy { it.code }
 
@@ -127,39 +156,41 @@ fun WorkCalendarScreen(
     val grouped = if (query.isBlank() && mode == CalendarDisplayMode.LIST)
         days.entries.filter { it.key in range }.sortedBy { it.key } else emptyList()
     val read = if (query.isBlank()) period else search
+    val fabBottom = if (onClose == null) maxOf(142.dp, contentPadding.calculateBottomPadding() + 8.dp) else 8.dp
+    val direction = androidx.compose.ui.platform.LocalLayoutDirection.current
     CeilingsScreenScaffold(
-        contentPadding = contentPadding,
+        modifier = Modifier.dismissCardSwipeOnInteraction(swipes),
+        contentPadding = PaddingValues(start = contentPadding.calculateLeftPadding(direction), end = contentPadding.calculateRightPadding(direction),
+            top = contentPadding.calculateTopPadding(), bottom = maxOf(contentPadding.calculateBottomPadding(), fabBottom + 84.dp)),
         windowInsets = WindowInsets(0, 0, 0, 0),
         topGradient = {},
         bottomGradient = false,
+        overlay = {
+            ObjectsClientsCreateFab(fabVisible && store != null, stringResource(Res.string.work_add),
+                Modifier.align(Alignment.BottomEnd).padding(end = 6.dp, bottom = fabBottom)) {
+                swipes.dismiss()
+                onEdit(CalendarEditorRoute.Create(date, projectFilter))
+            }
+        }
     ) { padding ->
-        LazyColumn(Modifier.fillMaxSize(), state = list, contentPadding = padding,
+        LazyColumn(Modifier.fillMaxSize().nestedScroll(fabScroll), state = list, contentPadding = padding,
             verticalArrangement = Arrangement.spacedBy(4.dp)) {
             item("calendar-controls") {
                 Column {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(3.dp), verticalAlignment = Alignment.CenterVertically) {
                         if (onClose != null) IconButton(onClose) {
                             Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(Res.string.p5d_cancel))
                         }
-                        if (projectFilter != null) TodayButton(today) {
-                            dateValue = null
-                            scope.launch { list.scrollToItem(0) }
-                        }
-                        Spacer(Modifier.weight(1f))
-                        IconButton(onClick = { expanded = !expanded }) {
-                            Icon(Icons.Default.FilterList, stringResource(Res.string.work_filters))
-                        }
-                        IconButton(onClick = { onEdit(CalendarEditorRoute.Create(date, projectFilter)) }, enabled = store != null) {
-                            Icon(Icons.Default.Add, stringResource(Res.string.work_add))
-                        }
-                    }
-                    if (projectFilter == null) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
-                        CalendarDisplayMode.entries.forEach {
+                        if (projectFilter == null) CalendarDisplayMode.entries.forEach {
                             FilterChip(selected = mode == it, onClick = { onMode(it) },
-                                label = { Text(stringResource(it.label()), maxLines = 1) })
+                                label = { Text(stringResource(it.label()), maxLines = 1, style = MaterialTheme.typography.bodyMedium) })
                         }
                         Spacer(Modifier.weight(1f))
                         TodayButton(today) { dateValue = null; scope.launch { list.scrollToItem(0) } }
+                        IconButton(onClick = { expanded = !expanded }) {
+                            Icon(Icons.Default.FilterList, stringResource(Res.string.work_filters),
+                                tint = if (expanded || type != null || status != null || project != projectFilter) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface)
+                        }
                     }
                     if (expanded) {
                         OutlinedTextField(query, { query = it }, Modifier.fillMaxWidth(),
@@ -224,7 +255,7 @@ fun WorkCalendarScreen(
                         }
                         Text(if (mode == CalendarDisplayMode.MONTH) visualRange.from.shift(7).let { it.monthNumber.toString().padStart(2, '0') + "." + it.year }
                             else "${visualRange.from.shortDate()} – ${visualRange.through.shortDate()}",
-                            style = MaterialTheme.typography.titleSmall)
+                            style = MaterialTheme.typography.titleMedium)
                         IconButton(onClick = { movePeriod(1) }) {
                             Icon(Icons.Default.ChevronRight, stringResource(Res.string.work_next))
                         }
@@ -234,7 +265,7 @@ fun WorkCalendarScreen(
                             (0..6).forEach { offset ->
                                 Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
                                     Text(stringResource(DayOfWeek.entries[(firstDay.ordinal + offset) % 7].label()),
-                                        style = MaterialTheme.typography.labelSmall)
+                                        style = MaterialTheme.typography.bodyMedium)
                                 }
                             }
                         }
@@ -252,7 +283,7 @@ fun WorkCalendarScreen(
                                             .clickable { dateValue = day.toString() }.padding(vertical = 4.dp),
                                             horizontalAlignment = Alignment.CenterHorizontally) {
                                             Text(day.day.toString(), color = if (day == today) MaterialTheme.colorScheme.primary
-                                                else MaterialTheme.colorScheme.onSurface, style = MaterialTheme.typography.bodySmall)
+                                                else MaterialTheme.colorScheme.onSurface, style = MaterialTheme.typography.bodyLarge)
                                             Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
                                                 visualDays[day].orEmpty().map { it.draft.typeCode }.distinct().take(4).forEach { code ->
                                                     Box(Modifier.size(4.dp).background(typeColor(types[code]), CircleShape))
@@ -305,12 +336,12 @@ fun WorkCalendarScreen(
                         }?.interval?.start
                     }
                     items(ordered, key = { "$day/${it.key.rootUuid}/${it.key.originalDate}" }) { work ->
-                        CalendarWorkRow(work, types[work.draft.typeCode], zone, now, onEdit, selectedDate = day)
+                        CalendarWorkRow(work, types[work.draft.typeCode], zone, now, onEdit, selectedDate = day, swipeState = swipes)
                     }
                 }
             } else items(displayed, key = { "${it.key.rootUuid}/${it.key.originalDate}" }) { work ->
                 CalendarWorkRow(work, types[work.draft.typeCode], zone, now, onEdit,
-                    selectedDate = date.takeIf { dayMode && !fallbackNeeded })
+                    selectedDate = date.takeIf { dayMode && !fallbackNeeded }, swipeState = swipes)
             }
         }
     }
@@ -321,34 +352,25 @@ internal fun CalendarWorkRow(
     work: CalendarWork, type: CalendarWorkType?, zone: TimeZone, now: Instant,
     onEdit: (CalendarEditorRoute) -> Unit,
     selectedDate: LocalDate? = null,
+    swipeState: CardSwipeState = remember { CardSwipeState() },
 ) {
     val status = work.draft.status
     val context = CalendarEditorRoute.Open(work.key)
     var menu by remember { mutableStateOf(false) }
     val color = if (status.active) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant
     val obsolete = status.active && !work.upcoming(now)
-    var swipeOffset by remember(work.key) { mutableFloatStateOf(0f) }
-    val swipeVisual by animateFloatAsState(swipeOffset)
-    Box(Modifier.fillMaxWidth().clip(MaterialTheme.shapes.medium)) {
-        if (swipeVisual > 1f) Box(Modifier.matchParentSize().background(MaterialTheme.colorScheme.errorContainer),
-            contentAlignment = Alignment.CenterStart) {
-            Icon(Icons.Default.Delete, stringResource(Res.string.oc_delete), Modifier.padding(start = 14.dp), tint = MaterialTheme.colorScheme.onErrorContainer)
-        }
-        Surface(modifier = Modifier.graphicsLayer { translationX = swipeVisual },
-            color = MaterialTheme.colorScheme.surface, contentColor = color, shape = MaterialTheme.shapes.medium) {
-        Row(Modifier.fillMaxWidth().pointerInput(work.key) {
-            var delta = 0f
-            detectHorizontalDragGestures(onDragStart = { delta = 0f }, onDragCancel = { swipeOffset = 0f }, onDragEnd = {
-                swipeOffset = 0f
-                if (delta > 64.dp.toPx()) onEdit(context.copy(delete = true))
-            }) { change, dragAmount -> change.consume(); delta += dragAmount
-                swipeOffset = delta.coerceIn(0f, 104.dp.toPx())
-            }
-        }.clickable { onEdit(context) }.padding(start = 9.dp), verticalAlignment = Alignment.CenterVertically) {
+    val id = "${work.key.rootUuid}/${work.key.originalDate}/${selectedDate ?: work.draft.date}"
+    var opened by swipeState.opened
+    SwipeActionsSurface(id, emptyList(), opened, { opened = it }, { swipeState.dismiss() },
+        onDelete = { onEdit(context.copy(delete = true)) }, onAction = {}, deleteTrayHeight = 58.dp) {
+        Surface(color = MaterialTheme.colorScheme.surface, contentColor = color, shape = MaterialTheme.shapes.medium) {
+        Row(Modifier.fillMaxWidth().clickable {
+            if (opened?.id == id) swipeState.dismiss() else onEdit(context)
+        }.padding(start = 9.dp), verticalAlignment = Alignment.CenterVertically) {
             Icon(typeIcon(type), null, tint = typeColor(type), modifier = Modifier.size(19.dp))
             Column(Modifier.weight(1f).padding(horizontal = 10.dp, vertical = 7.dp)) {
                 Text(work.draft.title, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                    style = MaterialTheme.typography.titleSmall,
+                    style = MaterialTheme.typography.titleMedium,
                     textDecoration = if (status == WorkStatus.CANCELLED) TextDecoration.LineThrough else null)
                 val zoneLabel = if (work.draft.schedule.zone != zone) " · ${work.draft.schedule.zone.id}" else ""
                 val localZone = work.draft.schedule.zone
@@ -369,7 +391,7 @@ internal fun CalendarWorkRow(
                 }
                 Text(listOfNotNull("${relevant.date.shortDate()} · $modeLabel$zoneLabel", work.projectLabel)
                     .joinToString(" · "), maxLines = 1, overflow = TextOverflow.Ellipsis,
-                    style = MaterialTheme.typography.labelSmall)
+                    style = MaterialTheme.typography.bodyMedium)
             }
             val icon = if (obsolete) Icons.Default.WarningAmber else when (status) {
                 WorkStatus.PLANNED -> Icons.Default.Schedule
@@ -379,7 +401,7 @@ internal fun CalendarWorkRow(
             }
             Icon(icon, stringResource(if (obsolete) Res.string.work_overdue else status.label()), modifier = Modifier.size(17.dp))
             Box {
-                IconButton(onClick = { menu = true }) { Icon(Icons.Default.MoreVert, stringResource(Res.string.work_edit)) }
+                IconButton(onClick = { swipeState.dismiss(); menu = true }) { Icon(Icons.Default.MoreVert, stringResource(Res.string.work_edit)) }
                 CeilingsPopupMenu(menu, onDismissRequest = { menu = false }) {
                     CalendarMenuItem(text = { Text(stringResource(Res.string.work_edit)) },
                         onClick = { menu = false; onEdit(context.copy(edit = true)) })
@@ -398,7 +420,7 @@ internal fun CalendarWorkRow(
 
 @Composable
 private fun TodayButton(today: LocalDate, onClick: () -> Unit) {
-    OutlinedIconButton(onClick = onClick) {
+    IconButton(onClick = onClick) {
         Box(contentAlignment = Alignment.Center) {
             Icon(Icons.Default.CalendarToday, stringResource(Res.string.work_today), Modifier.size(27.dp))
             Text(today.day.toString(), Modifier.padding(top = 5.dp), style = MaterialTheme.typography.labelSmall)
@@ -423,9 +445,9 @@ internal fun CalendarMenu(label: String, modifier: Modifier = Modifier,
     var expanded by remember { mutableStateOf(false) }
     LaunchedEffect(label) { expanded = false }
     Box(modifier) {
-        OutlinedButton(onClick = { expanded = !expanded }, modifier = if (fillWidth) Modifier.fillMaxWidth() else Modifier,
+        OutlinedButton(onClick = { expanded = !expanded }, modifier = (if (fillWidth) Modifier.fillMaxWidth() else Modifier).heightIn(min = 48.dp),
             contentPadding = PaddingValues(horizontal = 9.dp, vertical = 2.dp)) {
-            leading?.invoke()
+            if (leading != null) { leading(); Spacer(Modifier.width(6.dp)) }
             Text(label, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
             Icon(Icons.Default.ArrowDropDown, null, Modifier.size(18.dp))
         }
