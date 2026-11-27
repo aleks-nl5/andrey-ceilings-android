@@ -66,7 +66,9 @@ internal fun SettingsScreen(
     onDashboardPreferences: suspend (com.andreyceilings.shared.dashboard.DashboardPreferences) -> Boolean,
     measurementPrecision: MeasurementPrecision,
     onMeasurementPrecision: (MeasurementPrecision) -> Unit,
-    appLanguage: AppLanguageState
+    appLanguage: AppLanguageState,
+    showWeekNumbers: Boolean = true,
+    onShowWeekNumbersChange: ((Boolean) -> Unit)? = null,
 ) {
     var fileCheck by remember { mutableStateOf("Натисніть кнопку, щоб перевірити записи та файли бази даних.") }
     var lastWalCheckpoint by remember(database) { mutableStateOf<String?>(null) }
@@ -202,7 +204,8 @@ internal fun SettingsScreen(
         }
     }
     SectionTitle("Налаштування", "Персоналізація та резервне копіювання")
-    com.andreyceilings.shared.calendar.CalendarSettingsSection(database?.objectsClientsStore?.calendar)
+    com.andreyceilings.shared.calendar.CalendarSettingsSection(database?.objectsClientsStore?.calendar,
+        showWeekNumbers, onShowWeekNumbersChange)
     Card(
         shape = MaterialTheme.shapes.large,
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),

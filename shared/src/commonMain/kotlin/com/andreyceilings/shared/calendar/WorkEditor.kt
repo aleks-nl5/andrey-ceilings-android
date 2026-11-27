@@ -16,12 +16,14 @@ import com.andreyceilings.shared.ui.ContextFeedbackIcon
 import com.andreyceilings.shared.ui.ContextFeedbackKind
 import com.andreyceilings.shared.objects.ClientReadCard
 import com.andreyceilings.shared.objects.ContactAction
+import com.andreyceilings.shared.objects.ExternalBrandArtwork
 import com.andreyceilings.shared.objects.messengerLinks
 import com.andreyceilings.shared.objects.tryOpenContactLinks
 import com.andreyceilings.shared.measurement.LocalMeasurementInputFocus
 import com.andreyceilings.shared.measurement.MeasurementInputFocus
 import com.andreyceilings.shared.measurement.measurementFieldFocusModifier
 import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.rememberScrollState
@@ -951,10 +953,13 @@ private fun WorkReadOnly(work: CalendarWork, options: CalendarFormOptions, store
             WorkDetailRow(Icons.Default.Repeat, detail)
         }
         work.contact.address?.takeIf { it.isNotBlank() }?.let { address ->
-            WorkDetailRow(Icons.Default.Place, address, onClick = {
-                val encoded = calendarUriComponent(address)
-                open("https://www.google.com/maps/dir/?api=1&destination=" + encoded,
-                    "geo:0,0?q=" + encoded)
+            val encoded = calendarUriComponent(address)
+            val maps = { open("https://www.google.com/maps/dir/?api=1&destination=" + encoded, "geo:0,0?q=" + encoded) }
+            WorkDetailRow(Icons.Default.Place, address, onClick = maps, trailing = {
+                WorkContactIcon(ContactAction.GOOGLE_MAPS, "Google Maps", maps)
+                WorkContactIcon(ContactAction.WAZE, "Waze") {
+                    open("https://waze.com/ul?q=" + encoded + "&navigate=yes")
+                }
             })
         }
         work.projectLabel?.let { label ->
@@ -976,7 +981,14 @@ private fun WorkReadOnly(work: CalendarWork, options: CalendarFormOptions, store
         if (clientName != null && !work.contact.name.isNullOrBlank() && work.contact.name != clientName)
             WorkDetailRow(Icons.Default.Badge, work.contact.name, stringResource(Res.string.work_name))
         work.contact.phone?.takeIf { it.isNotBlank() }?.let { phone ->
-            WorkDetailRow(Icons.Default.Call, phone, onClick = { open("tel:" + phone.filter { it.isDigit() || it == '+' }) })
+            WorkDetailRow(Icons.Default.Call, phone, onClick = { open("tel:" + phone.filter { it.isDigit() || it == '+' }) }, trailing = {
+                listOf(ContactAction.WHATSAPP to "WhatsApp", ContactAction.TELEGRAM to "Telegram",
+                    ContactAction.VIBER to "Viber").forEach { (action, label) ->
+                    WorkContactIcon(action, label) {
+                        externalError = !tryOpenContactLinks(messengerLinks(action, phone), openUri)
+                    }
+                }
+            })
         }
         work.contact.email?.takeIf { it.isNotBlank() }?.let { email ->
             WorkDetailRow(Icons.Default.Email, email, onClick = { open("mailto:" + calendarUriComponent(email, keepAt = true)) })
@@ -987,7 +999,8 @@ private fun WorkReadOnly(work: CalendarWork, options: CalendarFormOptions, store
 }
 
 @Composable
-private fun WorkDetailRow(icon: ImageVector, value: String, subtitle: String? = null, onClick: (() -> Unit)? = null) {
+private fun WorkDetailRow(icon: ImageVector, value: String, subtitle: String? = null,
+    onClick: (() -> Unit)? = null, trailing: (@Composable RowScope.() -> Unit)? = null) {
     val clipboard = LocalClipboardManager.current
     val copyLabel = stringResource(Res.string.work_copy_info)
     Row(Modifier.fillMaxWidth().combinedClickable(onClick = { onClick?.invoke() },
@@ -998,6 +1011,14 @@ private fun WorkDetailRow(icon: ImageVector, value: String, subtitle: String? = 
             Text(value, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurface)
             if (subtitle != null) Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
+        if (trailing != null) Row(horizontalArrangement = Arrangement.spacedBy(0.dp), content = trailing)
+    }
+}
+
+@Composable
+private fun WorkContactIcon(action: ContactAction, label: String, onClick: () -> Unit) {
+    IconButton(onClick = onClick, modifier = Modifier.size(40.dp).semantics { contentDescription = label }) {
+        ExternalBrandArtwork(action, modifier = Modifier.size(25.dp), monochromeTint = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 

@@ -97,6 +97,7 @@ import com.andreyceilings.shared.theme.CeilingsEdge
 import com.andreyceilings.shared.theme.CeilingsEdgeGradient
 import com.andreyceilings.shared.theme.CeilingsEdgeDefaults
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
@@ -137,6 +138,8 @@ private val ObjectsCreateFabExtent = 76.dp
 
 internal enum class SwipeSide { LEFT, RIGHT }
 internal data class OpenSwipe(val id: String, val side: SwipeSide)
+internal data class SwipeTrayAction(val label: String, val icon: ImageVector, val enabled: Boolean = true,
+    val destructive: Boolean = false, val onClick: () -> Unit)
 
 private sealed interface EditorTarget {
     data class Client(val item: ClientListEntry?) : EditorTarget
@@ -1345,11 +1348,13 @@ internal fun SwipeActionsSurface(
     onAction: (ContactAction) -> Unit,
     modifier: Modifier = Modifier,
     deleteTrayHeight: Dp = 80.dp,
+    trayActions: List<SwipeTrayAction> = emptyList(),
     content: @Composable () -> Unit
 ) {
     val density = LocalDensity.current
-    val leftWidth = (actions.size * 58 + (actions.size - 1).coerceAtLeast(0) * 6 + 8).dp
-    val leftPx = if (actions.isEmpty()) 0f else with(density) { leftWidth.toPx() }
+    val leftWidth = if (trayActions.isNotEmpty()) (trayActions.size * 48 + (trayActions.size - 1) * 4 + 8).dp
+        else (actions.size * 58 + (actions.size - 1).coerceAtLeast(0) * 6 + 8).dp
+    val leftPx = if (actions.isEmpty() && trayActions.isEmpty()) 0f else with(density) { leftWidth.toPx() }
     val rightPx = with(density) { 76.dp.toPx() }
     val reversalTolerancePx = with(density) { 14.dp.toPx() }
     val target = when {
@@ -1385,7 +1390,22 @@ internal fun SwipeActionsSurface(
     Box(modifier.fillMaxWidth()) {
         // Keep action buttons mounted behind the card while the tray is opening.
         // Slight spacing and compact themed pictograms distinguish each destination.
-        if (actions.isNotEmpty() && (displayed < 0f || target < 0f)) {
+        if (trayActions.isNotEmpty() && (displayed < 0f || target < 0f)) {
+            val colors = MaterialTheme.colorScheme
+            Row(Modifier.align(Alignment.CenterEnd).width(leftWidth).height(deleteTrayHeight)
+                .clip(RoundedCornerShape(18.dp)).background(colors.primaryContainer).padding(horizontal = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+                trayActions.forEach { action ->
+                    Box(Modifier.size(48.dp).clip(RoundedCornerShape(14.dp))
+                        .background(if (action.destructive) colors.errorContainer else colors.surface)
+                        .clickable(enabled = action.enabled, onClickLabel = action.label) { onSwipeClose(); action.onClick() },
+                        contentAlignment = Alignment.Center) {
+                        val tint = if (action.destructive) colors.onErrorContainer else colors.onSurfaceVariant
+                        Icon(action.icon, action.label, tint = if (action.enabled) tint else tint.copy(alpha = .38f))
+                    }
+                }
+            }
+        } else if (actions.isNotEmpty() && (displayed < 0f || target < 0f)) {
             Row(
                 Modifier.align(Alignment.CenterEnd)
                     .width(leftWidth)

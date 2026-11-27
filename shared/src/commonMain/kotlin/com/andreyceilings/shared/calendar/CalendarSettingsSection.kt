@@ -27,7 +27,8 @@ import kotlinx.datetime.TimeZone
 import org.jetbrains.compose.resources.stringResource
 
 @Composable
-fun CalendarSettingsSection(store: CalendarStore?) {
+fun CalendarSettingsSection(store: CalendarStore?, showWeekNumbers: Boolean = true,
+    onShowWeekNumbersChange: ((Boolean) -> Unit)? = null) {
     var open by remember(store) { mutableStateOf(false) }
     OutlinedButton(onClick = { open = !open }, enabled = store != null, modifier = Modifier.fillMaxWidth()) {
         Icon(Icons.Default.CalendarMonth, null)
@@ -35,6 +36,7 @@ fun CalendarSettingsSection(store: CalendarStore?) {
         Text(stringResource(Res.string.work_settings))
     }
     if (!open || store == null) return
+    if (onShowWeekNumbersChange != null) WeekNumbersSetting(showWeekNumbers, onShowWeekNumbersChange)
     val read = calendarOptionsState(store)
     val options = read.data()
     if (options == null) {
@@ -92,6 +94,14 @@ fun CalendarSettingsSection(store: CalendarStore?) {
     }
     editor?.let { type ->
         CalendarTypeEditor(type, store, onClose = { editor = null })
+    }
+}
+
+@Composable
+internal fun WeekNumbersSetting(checked: Boolean, onChange: (Boolean) -> Unit) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Text(stringResource(Res.string.work_show_week_numbers), Modifier.weight(1f))
+        Switch(checked = checked, onCheckedChange = onChange)
     }
 }
 

@@ -191,6 +191,7 @@ private fun DesktopPriceHost(
             mutableStateOf(runCatching { CalendarDisplayMode.valueOf(calendarPreferences.get("calendarDisplayMode", "WEEK")) }
                 .getOrDefault(CalendarDisplayMode.WEEK))
         }
+        var showWeekNumbers by remember(calendarPreferences) { mutableStateOf(calendarPreferences.getBoolean("calendarShowWeekNumbers", true)) }
         LaunchedEffect(calendar, calendarMode) { calendar.warmCurrentPeriod(calendarMode) }
         var calendarClientRequest by remember(database) { mutableStateOf<Long?>(null) }
         var calendarEditor by remember(database) { mutableStateOf<CalendarEditorRoute?>(null) }
@@ -438,7 +439,8 @@ private fun DesktopPriceHost(
                     WorkCalendarScreen(calendar, if (calendarProject == null) calendarMode else CalendarDisplayMode.LIST,
                         onMode = { mode -> calendarMode = mode; calendarPreferences.put("calendarDisplayMode", mode.name) },
                         onEdit = { calendarEditor = it }, contentPadding = PaddingValues(16.dp), projectFilter = calendarProject,
-                        onClose = ::closeCalendar)
+                        onClose = ::closeCalendar, showWeekNumbers = showWeekNumbers,
+                         onShowWeekNumbersChange = { value -> showWeekNumbers = value; calendarPreferences.putBoolean("calendarShowWeekNumbers", value) })
                 }
                 }
             }

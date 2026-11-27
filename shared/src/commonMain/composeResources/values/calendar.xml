@@ -1,6 +1,8 @@
 <resources>
     <string name="work_calendar">Календар</string>
     <string name="work_week">Тиждень</string>
+    <string name="work_show_week_numbers">Показувати номери тижнів</string>
+    <string name="work_week_number_short">№</string>
     <string name="work_month">Місяць</string>
     <string name="work_list">Список</string>
     <string name="work_today">Сьогодні</string>

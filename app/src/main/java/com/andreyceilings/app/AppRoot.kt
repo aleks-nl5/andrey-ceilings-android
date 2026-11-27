@@ -203,6 +203,11 @@ private fun CeilingsAppContent(
         mutableStateOf(runCatching { CalendarDisplayMode.valueOf(calendarStorage.getString("mode", null).orEmpty()) }
             .getOrDefault(CalendarDisplayMode.WEEK))
     }
+    var showWeekNumbers by remember(calendarStorage) { mutableStateOf(calendarStorage.getBoolean("showWeekNumbers", true)) }
+    fun setShowWeekNumbers(value: Boolean) {
+        showWeekNumbers = value
+        calendarStorage.edit().putBoolean("showWeekNumbers", value).apply()
+    }
     fun setCalendarMode(mode: CalendarDisplayMode) {
         calendarMode = mode
         calendarStorage.edit().putString("mode", mode.name).apply()
@@ -797,7 +802,7 @@ private fun CeilingsAppContent(
                         AppTab.PRICES -> PriceListScreen(database, darkTheme = useDarkTheme)
                         AppTab.CALENDAR -> WorkCalendarScreen(calendarStore, calendarMode, ::setCalendarMode,
                             onEdit = { calendarEditor = it }, contentPadding = PaddingValues(top = topContentPadding, bottom = bottomContentPadding),
-                            systemFirstDay = firstWeekday)
+                            systemFirstDay = firstWeekday, showWeekNumbers = showWeekNumbers)
                         else -> Unit
                     }
                 }
@@ -890,6 +895,7 @@ private fun CeilingsAppContent(
                                 saved
                             },
                             appLanguage = appLanguage,
+                            showWeekNumbers = showWeekNumbers, onShowWeekNumbersChange = ::setShowWeekNumbers,
                             measurementPrecision = measurementPrecision,
                             onMeasurementPrecision = { selected ->
                                 capturedCalculatorPrecision = null

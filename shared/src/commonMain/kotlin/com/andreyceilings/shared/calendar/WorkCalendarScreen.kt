@@ -19,6 +19,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.unit.Velocity
 import com.andreyceilings.shared.objects.CardSwipeState
 import com.andreyceilings.shared.objects.SwipeActionsSurface
+import com.andreyceilings.shared.objects.SwipeTrayAction
 import com.andreyceilings.shared.objects.dismissCardSwipeOnInteraction
 import com.andreyceilings.shared.objects.ObjectsClientsCreateFab
 import kotlinx.coroutines.channels.Channel
@@ -79,6 +80,8 @@ fun WorkCalendarScreen(
     systemFirstDay: DayOfWeek = DayOfWeek.MONDAY,
     projectFilter: String? = null,
     onClose: (() -> Unit)? = null,
+    showWeekNumbers: Boolean = true,
+    onShowWeekNumbersChange: ((Boolean) -> Unit)? = null,
 ) {
     var retry by remember { mutableIntStateOf(0) }
     val optionsRead = key(retry) { calendarOptionsState(store) }
@@ -94,6 +97,11 @@ fun WorkCalendarScreen(
     var status by rememberSaveable(projectFilter) { mutableStateOf<String?>(null) }
     var project by rememberSaveable(projectFilter) { mutableStateOf(projectFilter) }
     val firstDay = options?.settings?.firstWeekday ?: systemFirstDay
+    val workingDays = options?.settings?.workingDays ?: DayOfWeek.entries.take(5).toSet()
+    val colors = MaterialTheme.colorScheme
+    val light = colors.background.luminance() > .4f
+    val weekdayBackground = colors.surfaceVariant.copy(alpha = if (light) .95f else .46f)
+    val weekendBackground = if (light) Color(0xFFF9E3E8) else Color(0xFF49323B)
     val range = periodOf(date, mode, firstDay)
     val currentPeriod = remember(store, range, zone, retry) { store?.period(range, zone) }
     val period = key(store, range, zone, retry) {
@@ -208,6 +216,7 @@ fun WorkCalendarScreen(
                         }
                     }
                     if (expanded) {
+                        if (onShowWeekNumbersChange != null && mode != CalendarDisplayMode.LIST) WeekNumbersSetting(showWeekNumbers, onShowWeekNumbersChange)
                         OutlinedTextField(query, { query = it }, Modifier.fillMaxWidth(),
                             label = { Text(stringResource(Res.string.work_search)) }, singleLine = true)
                         Spacer(Modifier.height(8.dp))
@@ -277,22 +286,36 @@ fun WorkCalendarScreen(
                         }
                     }
                     if (mode != CalendarDisplayMode.LIST) {
-                        Row(Modifier.fillMaxWidth()) {
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                            if (showWeekNumbers) Box(Modifier.width(30.dp).height(28.dp)
+                                .clip(RoundedCornerShape(9.dp)).background(weekdayBackground), contentAlignment = Alignment.Center) {
+                                Text(stringResource(Res.string.work_week_number_short), style = MaterialTheme.typography.labelSmall,
+                                    color = colors.onSurfaceVariant)
+                            }
                             (0..6).forEach { offset ->
-                                Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
-                                    Text(stringResource(DayOfWeek.entries[(firstDay.ordinal + offset) % 7].label()),
-                                        style = MaterialTheme.typography.bodyMedium)
+                                val weekday = DayOfWeek.entries[(firstDay.ordinal + offset) % 7]
+                                Box(Modifier.weight(1f).height(28.dp).clip(RoundedCornerShape(9.dp))
+                                    .background(if (weekday in workingDays) weekdayBackground else weekendBackground),
+                                    contentAlignment = Alignment.Center) {
+                                    Text(stringResource(weekday.label()), style = MaterialTheme.typography.bodyMedium)
                                 }
                             }
                         }
+                        Spacer(Modifier.height(3.dp))
                         generateSequence(visualRange.from) { it.shift(1).takeIf { next -> next <= visualRange.through } }
                             .toList().chunked(7).forEach { week ->
-                                Row(Modifier.fillMaxWidth()) {
+                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(2.dp),
+                                    verticalAlignment = Alignment.CenterVertically) {
+                                    if (showWeekNumbers) Box(Modifier.width(30.dp).height(43.dp)
+                                        .clip(RoundedCornerShape(10.dp)).background(weekdayBackground), contentAlignment = Alignment.Center) {
+                                        Text(isoWeekNumber(week.first { it.dayOfWeek == DayOfWeek.THURSDAY }).toString(),
+                                            style = MaterialTheme.typography.labelMedium, color = colors.onSurfaceVariant)
+                                    }
                                     week.forEach { day ->
                                         val selected = day == date
-                                        val workday = options?.settings?.workingDays?.contains(day.dayOfWeek) != false
+                                        val workday = day.dayOfWeek in workingDays
                                         val container = if (selected) MaterialTheme.colorScheme.primaryContainer
-                                            else if (!workday) MaterialTheme.colorScheme.surfaceVariant.copy(alpha = if (MaterialTheme.colorScheme.background.luminance() > .4f) .95f else .46f)
+                                            else if (!workday) weekendBackground
                                             else Color.Transparent
                                         Column(Modifier.weight(1f).heightIn(min = 43.dp)
                                             .clip(RoundedCornerShape(22.dp)).background(container)
@@ -308,6 +331,7 @@ fun WorkCalendarScreen(
                                         }
                                     }
                                 }
+                                Spacer(Modifier.height(2.dp))
                             }
                     }
                 }
@@ -378,8 +402,29 @@ internal fun CalendarWorkRow(
     val obsolete = status.active && !work.upcoming(now)
     val id = "${work.key.rootUuid}/${work.key.originalDate}/${selectedDate ?: work.draft.date}"
     var opened by swipeState.opened
+    fun copyInfo() {
+        val summary = buildList {
+            add(work.draft.title)
+            work.days.forEach { day ->
+                val time = if (work.draft.schedule.mode == WorkTimeMode.TIMED) day.interval?.let { interval ->
+                    interval.start.toLocalDateTime(work.draft.schedule.zone).time.shortTime() + "–" + interval.endExclusive.toLocalDateTime(work.draft.schedule.zone).time.shortTime()
+                }.orEmpty() else ""
+                add(listOf(day.date.shortDate(), time).filter { it.isNotBlank() }.joinToString(" · "))
+            }
+            addAll(listOfNotNull(work.projectLabel, work.contact.name, work.contact.address, work.contact.phone, work.contact.email, work.draft.notes).filter { it.isNotBlank() }.distinct())
+        }.joinToString("\n")
+        clipboard.setText(AnnotatedString(summary))
+    }
+    val delete = { onEdit(context.copy(delete = true)) }
+    val tray = listOf(
+        SwipeTrayAction(stringResource(Res.string.oc_delete), Icons.Default.Delete, destructive = true, onClick = delete),
+        SwipeTrayAction(stringResource(Res.string.work_copy_info), Icons.Default.ContentCopy, onClick = ::copyInfo),
+        SwipeTrayAction(stringResource(Res.string.work_move), Icons.Default.Event,
+            enabled = work.draft.schedule.days.size == 1 && status.active, onClick = { onEdit(context.copy(move = true)) }),
+        SwipeTrayAction(stringResource(Res.string.work_edit), Icons.Default.Edit, onClick = { onEdit(context.copy(edit = true)) })
+    )
     SwipeActionsSurface(id, emptyList(), opened, { opened = it }, { swipeState.dismiss() },
-        onDelete = { onEdit(context.copy(delete = true)) }, onAction = {}, deleteTrayHeight = 58.dp) {
+        onDelete = delete, onAction = {}, deleteTrayHeight = 58.dp, trayActions = tray) {
         Surface(color = MaterialTheme.colorScheme.surface, contentColor = color, shape = MaterialTheme.shapes.medium) {
         Row(Modifier.fillMaxWidth().clickable {
             if (opened?.id == id) swipeState.dismiss() else onEdit(context)
@@ -420,33 +465,12 @@ internal fun CalendarWorkRow(
             Box {
                 IconButton(onClick = { swipeState.dismiss(); menu = true }) { Icon(Icons.Default.MoreVert, stringResource(Res.string.work_edit)) }
                 CeilingsPopupMenu(menu, onDismissRequest = { menu = false }) {
-                    CalendarMenuItem(text = { Text(stringResource(Res.string.work_edit)) },
-                        leadingIcon = { Icon(Icons.Default.Edit, null, tint = MaterialTheme.colorScheme.onSurfaceVariant) },
-                        onClick = { menu = false; onEdit(context.copy(edit = true)) })
-                    if (work.draft.schedule.days.size == 1 && status.active) {
-                        CalendarMenuItem(text = { Text(stringResource(Res.string.work_move)) },
-                            leadingIcon = { Icon(Icons.Default.Event, null, tint = MaterialTheme.colorScheme.onSurfaceVariant) },
-                            onClick = { menu = false; onEdit(context.copy(move = true)) })
+                    tray.filter { it.enabled }.forEach { action ->
+                        CalendarMenuItem(text = { Text(action.label) },
+                            leadingIcon = { Icon(action.icon, null, tint = if (action.destructive)
+                                MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant) },
+                            onClick = { menu = false; swipeState.dismiss(); action.onClick() })
                     }
-                    CalendarMenuItem(text = { Text(stringResource(Res.string.work_copy_info)) },
-                        leadingIcon = { Icon(Icons.Default.ContentCopy, null, tint = MaterialTheme.colorScheme.onSurfaceVariant) },
-                        onClick = {
-                            menu = false
-                            val summary = buildList {
-                                add(work.draft.title)
-                                work.days.forEach { day ->
-                                    val time = if (work.draft.schedule.mode == WorkTimeMode.TIMED) day.interval?.let { interval ->
-                                        interval.start.toLocalDateTime(work.draft.schedule.zone).time.shortTime() + "–" + interval.endExclusive.toLocalDateTime(work.draft.schedule.zone).time.shortTime()
-                                    }.orEmpty() else ""
-                                    add(listOf(day.date.shortDate(), time).filter { it.isNotBlank() }.joinToString(" · "))
-                                }
-                                addAll(listOfNotNull(work.projectLabel, work.contact.name, work.contact.address, work.contact.phone, work.contact.email, work.draft.notes).filter { it.isNotBlank() }.distinct())
-                            }.joinToString("\n")
-                            clipboard.setText(AnnotatedString(summary))
-                        })
-                    CalendarMenuItem(text = { Text(stringResource(Res.string.oc_delete)) },
-                        leadingIcon = { Icon(Icons.Default.Delete, null, tint = MaterialTheme.colorScheme.onSurfaceVariant) },
-                        onClick = { menu = false; onEdit(context.copy(delete = true)) })
                 }
             }
         }
@@ -545,6 +569,14 @@ internal fun calendarNow(): Instant {
     var now by remember { mutableStateOf(Clock.System.now()) }
     LaunchedEffect(Unit) { while (true) { delay(30_000); now = Clock.System.now() } }
     return now
+}
+
+/** ISO-8601: the week belongs to the year containing its Thursday. */
+internal fun isoWeekNumber(date: LocalDate): Int {
+    val thursday = date.shift(3 - date.dayOfWeek.ordinal)
+    val january4 = LocalDate(thursday.year, 1, 4)
+    val firstThursday = january4.shift(3 - january4.dayOfWeek.ordinal)
+    return ((thursday.dayNumber() - firstThursday.dayNumber()) / 7).toInt() + 1
 }
 
 internal fun periodOf(date: LocalDate, mode: CalendarDisplayMode, first: DayOfWeek): WorkDateRange {
