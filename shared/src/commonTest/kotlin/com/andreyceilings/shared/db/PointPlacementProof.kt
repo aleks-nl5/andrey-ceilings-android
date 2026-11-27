@@ -132,7 +132,12 @@ object PointPlacementProof {
             val p = points.addPoint(child.element.version, child.contourVersion, 1000, 1000, 10)
             when (kind) {
                 "measurement" -> measurements.delete(child.id)
-                "project" -> ProjectRepository(db).delete(child.project)
+                "project" -> {
+                    assertFails { ProjectRepository(db).delete(child.project) }
+                    assertNull(points.find(p.uuid)?.deletedAt)
+                    measurements.delete(child.id)
+                    ProjectRepository(db).delete(child.project)
+                }
                 "raw measurement" -> driver.execute(null, "UPDATE room_measurements SET updatedAt=99,deletedAt=99 WHERE id=${child.id}", 0)
                 else -> driver.execute(null, "UPDATE projects SET updatedAt=99,deletedAt=99 WHERE id=${child.project}", 0)
             }

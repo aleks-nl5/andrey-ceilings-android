@@ -1,6 +1,10 @@
 package com.andreyceilings.app
 
 import android.content.Context
+import com.andreyceilings.shared.calendar.*
+import com.andreyceilings.shared.db.removeEmptyCalendarSchema
+import kotlinx.datetime.LocalDate
+import kotlinx.datetime.TimeZone
 import app.cash.sqldelight.driver.android.AndroidSqliteDriver
 import com.andreyceilings.shared.db.EstimateV22MigrationProof
 import com.andreyceilings.shared.db.FrozenIndividualEstimateProof
@@ -139,7 +143,36 @@ class EstimateRevisionPortableRestoreTest {
             }
     }
 
-    @Test fun v23EncryptedBackupPassesV24PreflightWithoutChangingSourceBytes() {
+    @Test fun v24EncryptedBackupPassesCalendarPreflightAndPreservesSourceBytes() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val name = "calendar-v24-restore-source.db"
+        val source = context.getDatabasePath(name)
+        val passphrase = ByteArray(32) { 24 }
+        context.deleteDatabase(name)
+        try {
+            System.loadLibrary("sqlcipher")
+            AndroidSqliteDriver(PriceCatalogSchema, context, name,
+                factory = SupportOpenHelperFactory(passphrase.copyOf())).use { driver ->
+                val db = PrototypeDatabase(driver)
+                val fixture = MeasurementPricingFixture.seed(db)
+                ImmutableEstimateRepository(db).saveIndividual(
+                    FrozenIndividualEstimateProof.command(db, fixture), 2026, 600)
+                removeEmptyCalendarSchema(driver)
+                driver.execute(null, "PRAGMA user_version = 24", 0)
+                PriceCatalogSchema.verifyStructure(driver, 24)
+            }
+            val before = source.readBytes()
+            try {
+                PortableBackupManager.verifyEncryptedSnapshot(context, source, passphrase)
+                assertArrayEquals(before, source.readBytes())
+            } finally { before.fill(0) }
+        } finally {
+            passphrase.fill(0)
+            context.deleteDatabase(name)
+        }
+    }
+
+    @Test fun v23EncryptedBackupPassesPreflightWithoutChangingSourceBytes() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val name = "consolidated-v23-restore-source.db"
         val source = context.getDatabasePath(name)
@@ -215,6 +248,13 @@ class EstimateRevisionPortableRestoreTest {
             assertEquals(catalogBefore, prices.all())
             assertEquals(groupsBefore, PriceGroupRepository(original.database).all())
             assertEquals(revisionsBefore, repo.revisions(first.seriesUuid))
+            val work = CalendarRepository(original.database)
+            val zone = TimeZone.of("Europe/Kyiv")
+            work.saveSettings(CalendarSettings(zone, null, emptySet()))
+            val day = LocalDate(2026, 12, 15)
+            val workKey = (work.save(CalendarSave(CalendarWorkDraft(day,
+                WorkSchedule(WorkTimeMode.DATE_ONLY, zone, listOf(WorkDay(0))), "Portable calendar work", "MEASURE")))
+                as CalendarSaveResult.Saved).key
             val exported = PortableBackupManager.create(context, original, password)
 
             // A bad password must reject before changing the live database.
@@ -236,6 +276,9 @@ class EstimateRevisionPortableRestoreTest {
                 draft(99.0, 9.0, "Should not survive portable restore")
             )
             assertEquals(4, repo.revisions(first.seriesUuid).size)
+            val event = checkNotNull(work.exact(workKey))
+            assertTrue(work.delete(workKey, event.version, CalendarEditScope.OCCURRENCE))
+            work.saveSettings(CalendarSettings(TimeZone.UTC, null, emptySet()))
 
             val decoded = PortableBackupManager.validate(context, exported, password)
             validatedContents = decoded
@@ -247,6 +290,9 @@ class EstimateRevisionPortableRestoreTest {
             assertTrue(replaced.checkIntegrity())
 
             fun verifyAll(db: CeilingsDatabase) {
+                val restoredCalendar = CalendarRepository(db.database)
+                assertEquals("Portable calendar work", restoredCalendar.exact(workKey)?.draft?.title)
+                assertEquals(zone, restoredCalendar.settings().zone)
                 val history = ImmutableEstimateRepository(db.database)
                 val actual = history.revisions(first.seriesUuid)
                 assertEquals(revisionsBefore, actual)

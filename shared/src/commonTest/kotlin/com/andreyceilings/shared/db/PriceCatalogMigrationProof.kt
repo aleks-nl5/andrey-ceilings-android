@@ -114,6 +114,7 @@ object PriceCatalogMigrationProof {
 
 /** Turns a current individual-only fixture into the exact pre-P6B structure. */
 internal fun removeEmptyConsolidatedSchema(driver: SqlDriver) {
+    removeEmptyCalendarSchema(driver)
     for (table in listOf("consolidated_workflow", "consolidated_members", "consolidated_revisions", "consolidated_series")) {
         assertEquals(0L, PriceNameUniquenessProof.scalar(driver, "SELECT count(*) FROM $table"))
     }

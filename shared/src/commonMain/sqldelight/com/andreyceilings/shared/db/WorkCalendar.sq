@@ -1,0 +1,345 @@
+CREATE TABLE calendar_types (
+    code TEXT NOT NULL PRIMARY KEY,
+    label TEXT,
+    color INTEGER NOT NULL CHECK (color BETWEEN 0 AND 16777215),
+    icon TEXT NOT NULL CHECK (icon IN ('measure','install','deliver','other')),
+    durationMinutes INTEGER NOT NULL CHECK (durationMinutes BETWEEN 1 AND 1439),
+    archived INTEGER NOT NULL DEFAULT 0 CHECK (archived IN (0, 1)),
+    CHECK ((code IN ('MEASURE','INSTALL','DELIVER','OTHER') AND label IS NULL AND archived = 0)
+        OR (code NOT IN ('MEASURE','INSTALL','DELIVER','OTHER') AND label IS NOT NULL AND length(trim(label)) > 0))
+);
+
+CREATE TABLE calendar_settings (
+    id INTEGER NOT NULL PRIMARY KEY CHECK (id = 1),
+    zoneId TEXT,
+    firstWeekday INTEGER CHECK (firstWeekday BETWEEN 1 AND 7),
+    workingDays INTEGER NOT NULL DEFAULT 31 CHECK (workingDays BETWEEN 0 AND 127)
+);
+
+CREATE TABLE calendar_roots (
+    uuid TEXT NOT NULL PRIMARY KEY,
+    originalDay INTEGER NOT NULL,
+    version INTEGER NOT NULL DEFAULT 1 CHECK (version > 0)
+);
+
+CREATE TABLE calendar_works (
+    uuid TEXT NOT NULL PRIMARY KEY,
+    rootUuid TEXT NOT NULL REFERENCES calendar_roots(uuid),
+    kind TEXT NOT NULL CHECK (kind IN ('SINGLE','SEGMENT','OVERRIDE')),
+    dateDay INTEGER NOT NULL,
+    lastDay INTEGER NOT NULL CHECK (lastDay BETWEEN dateDay AND dateDay + 365),
+    typeCode TEXT NOT NULL REFERENCES calendar_types(code),
+    status TEXT NOT NULL CHECK (status IN ('PLANNED','CONFIRMED','COMPLETED','CANCELLED')),
+    timeMode TEXT NOT NULL CHECK (timeMode IN ('TIMED','ALL_DAY','DATE_ONLY')),
+    zoneId TEXT NOT NULL,
+    title TEXT NOT NULL CHECK (length(trim(title)) > 0),
+    notes TEXT NOT NULL,
+    projectUuid TEXT REFERENCES projects(uuid),
+    clientUuid TEXT REFERENCES clients(uuid),
+    projectLabel TEXT,
+    addressOverride TEXT,
+    nameOverride TEXT,
+    phoneOverride TEXT,
+    emailOverride TEXT,
+    frozen INTEGER NOT NULL DEFAULT 0 CHECK (frozen IN (0, 1)),
+    clientDetached INTEGER NOT NULL DEFAULT 0 CHECK (clientDetached IN (0, 1)),
+    deleted INTEGER NOT NULL DEFAULT 0 CHECK (deleted IN (0, 1)),
+    explicitCeilings INTEGER NOT NULL DEFAULT 0 CHECK (explicitCeilings IN (0, 1)),
+    CHECK (typeCode != 'INSTALL' OR projectUuid IS NOT NULL),
+    UNIQUE (uuid, rootUuid)
+);
+
+CREATE TABLE calendar_rules (
+    workUuid TEXT NOT NULL PRIMARY KEY REFERENCES calendar_works(uuid),
+    frequency TEXT NOT NULL CHECK (frequency IN ('DAILY','WEEKLY','MONTHLY','CUSTOM')),
+    step INTEGER NOT NULL CHECK (step BETWEEN 1 AND 366),
+    weekdays INTEGER NOT NULL CHECK (weekdays BETWEEN 0 AND 127 AND ((frequency = 'CUSTOM') = (weekdays > 0))),
+    monthDay INTEGER NOT NULL CHECK (monthDay BETWEEN 1 AND 31),
+    untilDay INTEGER,
+    occurrenceCount INTEGER CHECK (occurrenceCount > 0),
+    stopBeforeDay INTEGER,
+    CHECK (untilDay IS NULL OR occurrenceCount IS NULL)
+);
+
+CREATE TABLE calendar_days (
+    workUuid TEXT NOT NULL REFERENCES calendar_works(uuid),
+    dayOffset INTEGER NOT NULL CHECK (dayOffset BETWEEN 0 AND 365),
+    startSecond INTEGER CHECK (startSecond BETWEEN 0 AND 86399),
+    endSecond INTEGER CHECK (endSecond BETWEEN 0 AND 86399),
+    PRIMARY KEY (workUuid, dayOffset),
+    CHECK ((startSecond IS NULL AND endSecond IS NULL)
+        OR (startSecond IS NOT NULL AND endSecond IS NOT NULL AND startSecond < endSecond))
+);
+
+CREATE TABLE calendar_ceilings (
+    workUuid TEXT NOT NULL REFERENCES calendar_works(uuid),
+    ceilingUuid TEXT NOT NULL REFERENCES room_measurements(uuid),
+    label TEXT NOT NULL,
+    removed INTEGER NOT NULL DEFAULT 0 CHECK (removed IN (0, 1)),
+    PRIMARY KEY (workUuid, ceilingUuid)
+);
+
+CREATE TABLE calendar_exceptions (
+    rootUuid TEXT NOT NULL REFERENCES calendar_roots(uuid),
+    originalDay INTEGER NOT NULL,
+    scheduledDay INTEGER NOT NULL,
+    segmentUuid TEXT NOT NULL,
+    overrideUuid TEXT,
+    fields INTEGER NOT NULL CHECK (fields BETWEEN 0 AND 4095),
+    deleted INTEGER NOT NULL CHECK (deleted IN (0, 1)),
+    PRIMARY KEY (rootUuid, originalDay),
+    UNIQUE (segmentUuid, scheduledDay),
+    UNIQUE (overrideUuid),
+    FOREIGN KEY (segmentUuid, rootUuid) REFERENCES calendar_works(uuid, rootUuid),
+    FOREIGN KEY (overrideUuid, rootUuid) REFERENCES calendar_works(uuid, rootUuid),
+    CHECK (overrideUuid IS NOT NULL OR fields = 0)
+);
+
+CREATE INDEX calendar_single_range ON calendar_works(lastDay, dateDay)
+    WHERE kind = 'SINGLE' AND deleted = 0;
+CREATE INDEX calendar_segment_range ON calendar_works(dateDay)
+    WHERE kind = 'SEGMENT' AND deleted = 0;
+CREATE INDEX calendar_override_range ON calendar_works(lastDay, dateDay)
+    WHERE deleted = 0 AND (kind = 'OVERRIDE' OR (kind = 'SINGLE' AND uuid != rootUuid));
+CREATE INDEX calendar_work_root ON calendar_works(rootUuid);
+CREATE INDEX calendar_work_project ON calendar_works(projectUuid);
+CREATE INDEX calendar_work_client ON calendar_works(clientUuid);
+CREATE INDEX calendar_ceiling_scope ON calendar_ceilings(ceilingUuid, removed);
+
+CREATE TRIGGER calendar_type_keep_standard BEFORE DELETE ON calendar_types
+WHEN old.code IN ('MEASURE','INSTALL','DELIVER','OTHER')
+BEGIN SELECT RAISE(ABORT, 'calendar_standard_type_required'); END;
+
+CREATE TRIGGER calendar_project_link_guard BEFORE UPDATE OF deletedAt ON projects
+WHEN old.deletedAt IS NULL AND new.deletedAt IS NOT NULL
+AND EXISTS (SELECT 1 FROM calendar_works WHERE projectUuid = old.uuid AND frozen = 0 AND deleted = 0)
+BEGIN SELECT RAISE(ABORT, 'calendar_project_history_required'); END;
+
+CREATE TRIGGER calendar_client_link_guard BEFORE UPDATE OF deletedAt ON clients
+WHEN old.deletedAt IS NULL AND new.deletedAt IS NOT NULL
+AND EXISTS (SELECT 1 FROM calendar_works WHERE clientUuid = old.uuid AND clientDetached = 0 AND frozen = 0 AND deleted = 0)
+BEGIN SELECT RAISE(ABORT, 'calendar_client_history_required'); END;
+
+CREATE TRIGGER calendar_ceiling_link_guard BEFORE UPDATE OF deletedAt ON room_measurements
+WHEN old.deletedAt IS NULL AND new.deletedAt IS NOT NULL
+AND EXISTS (SELECT 1 FROM calendar_ceilings WHERE ceilingUuid = old.uuid AND removed = 0)
+BEGIN SELECT RAISE(ABORT, 'calendar_ceiling_history_required'); END;
+
+seedCalendarTypes:
+INSERT OR IGNORE INTO calendar_types(code,label,color,icon,durationMinutes) VALUES
+    ('MEASURE',NULL,3763412,'measure',60),
+    ('INSTALL',NULL,3919448,'install',240),
+    ('DELIVER',NULL,14059316,'deliver',60),
+    ('OTHER',NULL,9408475,'other',60);
+
+seedCalendarSettings:
+INSERT OR IGNORE INTO calendar_settings(id) VALUES (1);
+
+selectCalendarTypes:
+SELECT * FROM calendar_types ORDER BY label IS NOT NULL, code;
+
+selectCalendarSettings:
+SELECT * FROM calendar_settings WHERE id = 1;
+
+saveCalendarSettings:
+UPDATE calendar_settings SET zoneId = ?, firstWeekday = ?, workingDays = ? WHERE id = 1;
+
+saveCalendarType:
+INSERT INTO calendar_types(code,label,color,icon,durationMinutes,archived)
+VALUES (?, ?, ?, ?, ?, ?)
+ON CONFLICT(code) DO UPDATE SET label = excluded.label, color = excluded.color, icon = excluded.icon,
+    durationMinutes = excluded.durationMinutes, archived = excluded.archived;
+
+observeCalendar:
+SELECT
+    (SELECT count(*) FROM calendar_roots) +
+    (SELECT count(*) FROM calendar_works) +
+    (SELECT count(*) FROM calendar_rules) +
+    (SELECT count(*) FROM calendar_days) +
+    (SELECT count(*) FROM calendar_ceilings) +
+    (SELECT count(*) FROM calendar_exceptions) +
+    (SELECT count(*) FROM calendar_types) +
+    (SELECT count(*) FROM calendar_settings) +
+    (SELECT count(*) FROM projects) +
+    (SELECT count(*) FROM clients);
+
+claimCalendarWrite:
+UPDATE calendar_settings SET workingDays = workingDays WHERE id = 0;
+
+insertCalendarRoot:
+INSERT INTO calendar_roots(uuid, originalDay) VALUES (?, ?);
+
+selectCalendarRoot:
+SELECT * FROM calendar_roots WHERE uuid = ?;
+
+advanceCalendarRoot:
+UPDATE calendar_roots SET version = version + 1 WHERE uuid = ? AND version = ?;
+
+selectCalendarWorksForRoot:
+SELECT * FROM calendar_works WHERE rootUuid = :uuid;
+
+selectCalendarWork:
+SELECT * FROM calendar_works WHERE uuid = :uuid;
+
+insertCalendarWork:
+INSERT INTO calendar_works(uuid,rootUuid,kind,dateDay,lastDay,typeCode,status,timeMode,zoneId,title,
+    notes,projectUuid,clientUuid,projectLabel,addressOverride,nameOverride,phoneOverride,emailOverride,frozen,deleted,explicitCeilings)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+updateCalendarWork:
+UPDATE calendar_works SET dateDay = ?, lastDay = ?, typeCode = ?, status = ?, timeMode = ?, zoneId = ?,
+    title = ?, notes = ?, projectUuid = ?,
+    clientDetached = CASE WHEN clientUuid IS :clientUuid THEN clientDetached ELSE 0 END, clientUuid = :clientUuid,
+    projectLabel = ?, addressOverride = ?,
+    nameOverride = ?, phoneOverride = ?, emailOverride = ?, frozen = ?, deleted = ?, explicitCeilings = ?
+WHERE uuid = ? AND deleted = 0;
+
+deleteCalendarWork:
+UPDATE calendar_works SET deleted = 1 WHERE uuid = ? AND deleted = 0;
+
+setCalendarRule:
+INSERT INTO calendar_rules(workUuid,frequency,step,weekdays,monthDay,untilDay,occurrenceCount)
+VALUES (?, ?, ?, ?, ?, ?, ?);
+
+stopCalendarRule:
+UPDATE calendar_rules SET stopBeforeDay = ? WHERE workUuid = ?;
+
+insertCalendarDay:
+INSERT INTO calendar_days(workUuid,dayOffset,startSecond,endSecond) VALUES (?, ?, ?, ?);
+
+deleteCalendarDays:
+DELETE FROM calendar_days WHERE workUuid = ?;
+
+insertCalendarCeiling:
+INSERT INTO calendar_ceilings(workUuid,ceilingUuid,label,removed) VALUES (?, ?, ?, ?);
+
+deleteCalendarCeilings:
+DELETE FROM calendar_ceilings WHERE workUuid = ?;
+
+selectCalendarCeilingImpact:
+SELECT calendar_ceilings.*, rootUuid FROM calendar_ceilings JOIN calendar_works ON uuid = workUuid
+WHERE ceilingUuid = :ceilingUuid AND removed = 0 AND deleted = 0 ORDER BY workUuid;
+
+markCalendarCeilingRemoved:
+UPDATE calendar_ceilings SET removed = 1, label = :label WHERE ceilingUuid = :ceilingUuid AND removed = 0;
+
+selectCalendarProjectImpact:
+SELECT * FROM calendar_works WHERE projectUuid = :projectUuid AND deleted = 0 ORDER BY uuid;
+
+selectCalendarClientImpact:
+SELECT * FROM calendar_works WHERE clientUuid = :clientUuid AND deleted = 0 AND frozen = 0 ORDER BY uuid;
+
+selectCalendarDirectProject:
+SELECT * FROM projects WHERE uuid = :uuid AND deletedAt IS NULL;
+
+selectCalendarDirectClient:
+SELECT * FROM clients WHERE uuid = :uuid AND deletedAt IS NULL;
+
+selectCalendarCandidates:
+SELECT uuid FROM calendar_works WHERE kind = 'SINGLE' AND uuid = rootUuid AND deleted = 0 AND dateDay <= :throughDay AND lastDay >= :fromDay
+UNION ALL
+SELECT uuid FROM calendar_works JOIN calendar_rules ON workUuid = uuid
+WHERE kind = 'SEGMENT' AND deleted = 0 AND dateDay <= :throughDay
+    AND (untilDay IS NULL OR untilDay >= :fromDay - (lastDay - dateDay))
+    AND (stopBeforeDay IS NULL OR stopBeforeDay > :fromDay - (lastDay - dateDay))
+UNION ALL
+SELECT segmentUuid FROM calendar_works INDEXED BY calendar_override_range
+CROSS JOIN calendar_exceptions ON overrideUuid = uuid
+WHERE calendar_works.deleted = 0 AND (kind = 'OVERRIDE' OR (kind = 'SINGLE' AND uuid != calendar_works.rootUuid))
+    AND calendar_exceptions.deleted = 0 AND dateDay <= :throughDay AND lastDay >= :fromDay;
+
+selectCalendarDetails:
+SELECT calendar_works.*, calendar_roots.version, calendar_roots.originalDay,
+    p.title AS liveProjectLabel, p.address AS liveAddress,
+    CASE WHEN calendar_works.clientUuid IS NULL THEN inherited.name ELSE direct.name END AS liveName,
+    CASE WHEN calendar_works.clientUuid IS NULL THEN inherited.phone ELSE direct.phone END AS livePhone,
+    CASE WHEN calendar_works.clientUuid IS NULL THEN inherited.email ELSE direct.email END AS liveEmail
+FROM calendar_works
+JOIN calendar_roots ON calendar_roots.uuid = calendar_works.rootUuid
+LEFT JOIN projects p ON p.uuid = calendar_works.projectUuid AND p.deletedAt IS NULL
+LEFT JOIN clients direct ON direct.uuid = calendar_works.clientUuid AND direct.deletedAt IS NULL AND calendar_works.clientDetached = 0
+LEFT JOIN clients inherited ON inherited.id = p.clientId AND inherited.deletedAt IS NULL
+WHERE calendar_works.uuid IN :workUuids;
+
+selectCalendarRules:
+SELECT * FROM calendar_rules WHERE workUuid IN :workUuids;
+
+selectCalendarDays:
+SELECT * FROM calendar_days WHERE workUuid IN :workUuids ORDER BY dayOffset;
+
+selectCalendarCeilings:
+SELECT * FROM calendar_ceilings WHERE workUuid IN :workUuids ORDER BY ceilingUuid;
+
+selectCalendarExceptions:
+SELECT calendar_exceptions.* FROM calendar_exceptions
+LEFT JOIN calendar_works replacement ON replacement.uuid = calendar_exceptions.overrideUuid
+WHERE segmentUuid IN :workUuids AND
+    (scheduledDay BETWEEN :fromDay AND :throughDay OR
+    (replacement.dateDay <= :throughDay AND replacement.lastDay >= :fromDay));
+
+selectCalendarExceptionsForRoot:
+SELECT * FROM calendar_exceptions WHERE rootUuid = :rootUuid ORDER BY originalDay;
+
+setCalendarException:
+INSERT INTO calendar_exceptions(rootUuid,originalDay,scheduledDay,segmentUuid,overrideUuid,fields,deleted)
+VALUES (?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT(rootUuid,originalDay) DO UPDATE SET scheduledDay = excluded.scheduledDay,
+    segmentUuid = excluded.segmentUuid, overrideUuid = excluded.overrideUuid,
+    fields = excluded.fields, deleted = excluded.deleted;
+
+selectPersistedCalendarWorks:
+SELECT uuid FROM calendar_works WHERE kind = 'SINGLE' AND uuid = rootUuid AND deleted = 0
+UNION ALL
+SELECT segmentUuid FROM calendar_exceptions WHERE overrideUuid IS NOT NULL AND deleted = 0;
+
+selectCalendarCeiling:
+SELECT * FROM room_measurements WHERE uuid = :uuid AND deletedAt IS NULL;
+
+selectCalendarHistoricalExceptions:
+SELECT calendar_exceptions.* FROM calendar_exceptions
+JOIN calendar_works replacement ON replacement.uuid = calendar_exceptions.overrideUuid
+WHERE segmentUuid IN :workUuids AND calendar_exceptions.deleted = 0 AND replacement.deleted = 0;
+
+unassignCalendarException:
+DELETE FROM calendar_exceptions WHERE rootUuid = :rootUuid AND originalDay = :originalDay;
+
+detachCalendarOverride:
+UPDATE calendar_works SET kind = 'SINGLE' WHERE uuid = :uuid AND kind = 'OVERRIDE';
+
+touchCalendarRoot:
+UPDATE calendar_roots SET version = version + 1 WHERE uuid = :uuid;
+
+detachCalendarClient:
+UPDATE calendar_works SET clientDetached = 1,
+    nameOverride = coalesce(nameOverride, :name), phoneOverride = coalesce(phoneOverride, :phone),
+    emailOverride = coalesce(emailOverride, :email)
+WHERE clientUuid = :uuid AND frozen = 0 AND deleted = 0;
+
+freezeCalendarProjectWork:
+UPDATE calendar_works SET frozen = 1, status = 'CANCELLED', projectLabel = :projectLabel,
+    addressOverride = :address, nameOverride = :name, phoneOverride = :phone, emailOverride = :email
+WHERE uuid = :uuid AND status IN ('PLANNED','CONFIRMED');
+
+freezeCalendarException:
+UPDATE calendar_exceptions SET fields = 4095 WHERE overrideUuid = :uuid;
+
+selectUpcomingCalendarWorkIds:
+SELECT uuid FROM calendar_works LEFT JOIN calendar_rules ON workUuid = uuid
+WHERE deleted = 0 AND (kind = 'SEGMENT' OR lastDay >= :fromDay)
+    AND (:projectId IS NULL OR projectUuid = :projectId)
+    AND (kind = 'OVERRIDE' OR status IN ('PLANNED','CONFIRMED') OR kind = 'SEGMENT');
+
+hasActiveCalendarInstallation:
+SELECT EXISTS(
+    SELECT 1 FROM calendar_works w LEFT JOIN calendar_rules r ON r.workUuid = w.uuid
+    WHERE projectUuid = :projectUuid AND typeCode = 'INSTALL' AND status IN ('PLANNED','CONFIRMED')
+        AND w.deleted = 0 AND r.stopBeforeDay IS NULL
+        AND (w.kind != 'OVERRIDE' OR EXISTS (SELECT 1 FROM calendar_exceptions e WHERE e.overrideUuid = w.uuid AND e.deleted = 0))
+);
+
+selectCalendarExceptionsForRoots:
+SELECT * FROM calendar_exceptions WHERE rootUuid IN :rootUuids ORDER BY originalDay;
+
+selectCalendarReservedKeys:
+SELECT rootUuid, originalDay FROM calendar_exceptions
+WHERE rootUuid IN :rootUuids AND originalDay BETWEEN :fromDay AND :throughDay;

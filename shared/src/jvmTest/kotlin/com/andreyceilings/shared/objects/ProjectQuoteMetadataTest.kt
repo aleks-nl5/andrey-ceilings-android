@@ -90,7 +90,7 @@ class ProjectQuoteMetadataTest {
             assertEquals(407L, next().ceilings[ceiling]?.finalCents)
             measurements.delete(ceiling)
             assertTrue(next().ceilings.isEmpty())
-            ProjectRepository(db).delete(other)
+            db.businessSchemaQueries.deleteProject(other) // Reproduce a historical orphan.
             assertTrue(assertNotNull(store.observeProjectQuoteSummary(other).first()).ceilings.isEmpty())
 
             store.closeAndAwaitProjectReads()

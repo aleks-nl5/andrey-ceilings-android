@@ -1,0 +1,133 @@
+CREATE TABLE calendar_types (
+    code TEXT NOT NULL PRIMARY KEY,
+    label TEXT,
+    color INTEGER NOT NULL CHECK (color BETWEEN 0 AND 16777215),
+    icon TEXT NOT NULL CHECK (icon IN ('measure','install','deliver','other')),
+    durationMinutes INTEGER NOT NULL CHECK (durationMinutes BETWEEN 1 AND 1439),
+    archived INTEGER NOT NULL DEFAULT 0 CHECK (archived IN (0, 1)),
+    CHECK ((code IN ('MEASURE','INSTALL','DELIVER','OTHER') AND label IS NULL AND archived = 0)
+        OR (code NOT IN ('MEASURE','INSTALL','DELIVER','OTHER') AND label IS NOT NULL AND length(trim(label)) > 0))
+);
+
+CREATE TABLE calendar_settings (
+    id INTEGER NOT NULL PRIMARY KEY CHECK (id = 1),
+    zoneId TEXT,
+    firstWeekday INTEGER CHECK (firstWeekday BETWEEN 1 AND 7),
+    workingDays INTEGER NOT NULL DEFAULT 31 CHECK (workingDays BETWEEN 0 AND 127)
+);
+
+CREATE TABLE calendar_roots (
+    uuid TEXT NOT NULL PRIMARY KEY,
+    originalDay INTEGER NOT NULL,
+    version INTEGER NOT NULL DEFAULT 1 CHECK (version > 0)
+);
+
+CREATE TABLE calendar_works (
+    uuid TEXT NOT NULL PRIMARY KEY,
+    rootUuid TEXT NOT NULL REFERENCES calendar_roots(uuid),
+    kind TEXT NOT NULL CHECK (kind IN ('SINGLE','SEGMENT','OVERRIDE')),
+    dateDay INTEGER NOT NULL,
+    lastDay INTEGER NOT NULL CHECK (lastDay BETWEEN dateDay AND dateDay + 365),
+    typeCode TEXT NOT NULL REFERENCES calendar_types(code),
+    status TEXT NOT NULL CHECK (status IN ('PLANNED','CONFIRMED','COMPLETED','CANCELLED')),
+    timeMode TEXT NOT NULL CHECK (timeMode IN ('TIMED','ALL_DAY','DATE_ONLY')),
+    zoneId TEXT NOT NULL,
+    title TEXT NOT NULL CHECK (length(trim(title)) > 0),
+    notes TEXT NOT NULL,
+    projectUuid TEXT REFERENCES projects(uuid),
+    clientUuid TEXT REFERENCES clients(uuid),
+    projectLabel TEXT,
+    addressOverride TEXT,
+    nameOverride TEXT,
+    phoneOverride TEXT,
+    emailOverride TEXT,
+    frozen INTEGER NOT NULL DEFAULT 0 CHECK (frozen IN (0, 1)),
+    clientDetached INTEGER NOT NULL DEFAULT 0 CHECK (clientDetached IN (0, 1)),
+    deleted INTEGER NOT NULL DEFAULT 0 CHECK (deleted IN (0, 1)),
+    explicitCeilings INTEGER NOT NULL DEFAULT 0 CHECK (explicitCeilings IN (0, 1)),
+    CHECK (typeCode != 'INSTALL' OR projectUuid IS NOT NULL),
+    UNIQUE (uuid, rootUuid)
+);
+
+CREATE TABLE calendar_rules (
+    workUuid TEXT NOT NULL PRIMARY KEY REFERENCES calendar_works(uuid),
+    frequency TEXT NOT NULL CHECK (frequency IN ('DAILY','WEEKLY','MONTHLY','CUSTOM')),
+    step INTEGER NOT NULL CHECK (step BETWEEN 1 AND 366),
+    weekdays INTEGER NOT NULL CHECK (weekdays BETWEEN 0 AND 127 AND ((frequency = 'CUSTOM') = (weekdays > 0))),
+    monthDay INTEGER NOT NULL CHECK (monthDay BETWEEN 1 AND 31),
+    untilDay INTEGER,
+    occurrenceCount INTEGER CHECK (occurrenceCount > 0),
+    stopBeforeDay INTEGER,
+    CHECK (untilDay IS NULL OR occurrenceCount IS NULL)
+);
+
+CREATE TABLE calendar_days (
+    workUuid TEXT NOT NULL REFERENCES calendar_works(uuid),
+    dayOffset INTEGER NOT NULL CHECK (dayOffset BETWEEN 0 AND 365),
+    startSecond INTEGER CHECK (startSecond BETWEEN 0 AND 86399),
+    endSecond INTEGER CHECK (endSecond BETWEEN 0 AND 86399),
+    PRIMARY KEY (workUuid, dayOffset),
+    CHECK ((startSecond IS NULL AND endSecond IS NULL)
+        OR (startSecond IS NOT NULL AND endSecond IS NOT NULL AND startSecond < endSecond))
+);
+
+CREATE TABLE calendar_ceilings (
+    workUuid TEXT NOT NULL REFERENCES calendar_works(uuid),
+    ceilingUuid TEXT NOT NULL REFERENCES room_measurements(uuid),
+    label TEXT NOT NULL,
+    removed INTEGER NOT NULL DEFAULT 0 CHECK (removed IN (0, 1)),
+    PRIMARY KEY (workUuid, ceilingUuid)
+);
+
+CREATE TABLE calendar_exceptions (
+    rootUuid TEXT NOT NULL REFERENCES calendar_roots(uuid),
+    originalDay INTEGER NOT NULL,
+    scheduledDay INTEGER NOT NULL,
+    segmentUuid TEXT NOT NULL,
+    overrideUuid TEXT,
+    fields INTEGER NOT NULL CHECK (fields BETWEEN 0 AND 4095),
+    deleted INTEGER NOT NULL CHECK (deleted IN (0, 1)),
+    PRIMARY KEY (rootUuid, originalDay),
+    UNIQUE (segmentUuid, scheduledDay),
+    UNIQUE (overrideUuid),
+    FOREIGN KEY (segmentUuid, rootUuid) REFERENCES calendar_works(uuid, rootUuid),
+    FOREIGN KEY (overrideUuid, rootUuid) REFERENCES calendar_works(uuid, rootUuid),
+    CHECK (overrideUuid IS NOT NULL OR fields = 0)
+);
+
+CREATE INDEX calendar_single_range ON calendar_works(lastDay, dateDay)
+    WHERE kind = 'SINGLE' AND deleted = 0;
+CREATE INDEX calendar_segment_range ON calendar_works(dateDay)
+    WHERE kind = 'SEGMENT' AND deleted = 0;
+CREATE INDEX calendar_override_range ON calendar_works(lastDay, dateDay)
+    WHERE deleted = 0 AND (kind = 'OVERRIDE' OR (kind = 'SINGLE' AND uuid != rootUuid));
+CREATE INDEX calendar_work_root ON calendar_works(rootUuid);
+CREATE INDEX calendar_work_project ON calendar_works(projectUuid);
+CREATE INDEX calendar_work_client ON calendar_works(clientUuid);
+CREATE INDEX calendar_ceiling_scope ON calendar_ceilings(ceilingUuid, removed);
+
+CREATE TRIGGER calendar_type_keep_standard BEFORE DELETE ON calendar_types
+WHEN old.code IN ('MEASURE','INSTALL','DELIVER','OTHER')
+BEGIN SELECT RAISE(ABORT, 'calendar_standard_type_required'); END;
+
+CREATE TRIGGER calendar_project_link_guard BEFORE UPDATE OF deletedAt ON projects
+WHEN old.deletedAt IS NULL AND new.deletedAt IS NOT NULL
+AND EXISTS (SELECT 1 FROM calendar_works WHERE projectUuid = old.uuid AND frozen = 0 AND deleted = 0)
+BEGIN SELECT RAISE(ABORT, 'calendar_project_history_required'); END;
+
+CREATE TRIGGER calendar_client_link_guard BEFORE UPDATE OF deletedAt ON clients
+WHEN old.deletedAt IS NULL AND new.deletedAt IS NOT NULL
+AND EXISTS (SELECT 1 FROM calendar_works WHERE clientUuid = old.uuid AND clientDetached = 0 AND frozen = 0 AND deleted = 0)
+BEGIN SELECT RAISE(ABORT, 'calendar_client_history_required'); END;
+
+CREATE TRIGGER calendar_ceiling_link_guard BEFORE UPDATE OF deletedAt ON room_measurements
+WHEN old.deletedAt IS NULL AND new.deletedAt IS NOT NULL
+AND EXISTS (SELECT 1 FROM calendar_ceilings WHERE ceilingUuid = old.uuid AND removed = 0)
+BEGIN SELECT RAISE(ABORT, 'calendar_ceiling_history_required'); END;
+
+INSERT INTO calendar_types(code,label,color,icon,durationMinutes) VALUES
+    ('MEASURE',NULL,3763412,'measure',60),
+    ('INSTALL',NULL,3919448,'install',240),
+    ('DELIVER',NULL,14059316,'deliver',60),
+    ('OTHER',NULL,9408475,'other',60);
+INSERT INTO calendar_settings(id) VALUES (1);

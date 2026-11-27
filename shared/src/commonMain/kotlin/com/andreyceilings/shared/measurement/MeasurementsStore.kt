@@ -26,16 +26,15 @@ class MeasurementsStore(private val database: PrototypeDatabase) {
         .catch { emit(MeasurementsState.Unavailable) }
         .flowOn(Dispatchers.Default)
 
-    suspend fun delete(projectId: Long, measurementId: Long, expectedUuid: String? = null) = withContext(Dispatchers.Default) {
+    suspend fun delete(projectId: Long, measurementId: Long, expectedUuid: String? = null,
+        confirmation: com.andreyceilings.shared.calendar.CalendarDeletionImpact? = null) = withContext(Dispatchers.Default) {
         database.transaction {
             // Acquire the writer before checking status/ownership to prevent an approval race.
             database.measurementElementsQueries.claimElementWrite("")
             checkNotNull(projects.find(projectId))
             val row = checkNotNull(measurements.find(measurementId))
             check(row.projectId == projectId && (expectedUuid == null || row.uuid == expectedUuid))
-            if (database.revisionWorkflowQueries.selectApprovedQuoteVersions(projectId, row.uuid).executeAsList().isNotEmpty())
-                throw CeilingHasApprovedQuote()
-            measurements.delete(measurementId)
+            measurements.delete(measurementId, confirmation)
         }
     }
 

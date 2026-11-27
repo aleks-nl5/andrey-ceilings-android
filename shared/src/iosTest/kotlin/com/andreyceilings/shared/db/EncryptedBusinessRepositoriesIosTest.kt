@@ -1,5 +1,13 @@
 package com.andreyceilings.shared.db
 
+import app.cash.sqldelight.db.AfterVersion
+import app.cash.sqldelight.db.QueryResult
+import app.cash.sqldelight.db.SqlDriver
+import app.cash.sqldelight.db.SqlSchema
+import com.andreyceilings.shared.calendar.*
+import kotlinx.datetime.LocalDate
+import kotlinx.datetime.TimeZone
+
 import com.yet.sqlcipher.NativeSqlCipherDriverFactory
 import com.yet.sqlcipher.SqlCipherConfig
 import com.yet.sqlcipher.SqlCipherKey
@@ -23,6 +31,40 @@ class EncryptedBusinessRepositoriesIosTest {
         key = SqlCipherKey { ByteArray(32) { byte } },
         recovery = SqlCipherRecovery.Fail,
     )
+
+    @Test fun calendarV24UpgradeAndEncryptedReopen(): Unit = runBlocking {
+        val name = "libellaro-ios-calendar-${Random.nextLong().toString(16)}.db"
+        val legacy = object : SqlSchema<QueryResult.Value<Unit>> {
+            override val version = 24L
+            override fun create(driver: SqlDriver): QueryResult.Value<Unit> {
+                PriceCatalogSchema.createInTransaction(driver)
+                removeEmptyCalendarSchema(driver)
+                PriceCatalogSchema.verifyStructure(driver, version)
+                return QueryResult.Unit
+            }
+            override fun migrate(driver: SqlDriver, oldVersion: Long, newVersion: Long,
+                vararg callbacks: AfterVersion): QueryResult.Value<Unit> = error("Fixture cannot migrate")
+        }
+        try {
+            factory.create(legacy, config(name, 56)).use { driver ->
+                ClientRepository(PrototypeDatabase(driver)).create("Calendar migration fixture", createdAt = 1)
+            }
+            val key = factory.create(IosPriceCatalogSchema, config(name, 56)).use { driver ->
+                val db = PrototypeDatabase(driver)
+                assertEquals("Calendar migration fixture", ClientRepository(db).all().single().name)
+                val calendar = CalendarRepository(db)
+                assertEquals(4, calendar.types().size)
+                val date = LocalDate(2026, 12, 15)
+                assertIs<CalendarSaveResult.Saved>(calendar.save(CalendarSave(CalendarWorkDraft(date,
+                    WorkSchedule(WorkTimeMode.DATE_ONLY, TimeZone.UTC, listOf(WorkDay(0))), "Simulator work", "OTHER")))).key
+            }
+            factory.create(IosPriceCatalogSchema, config(name, 56)).use { driver ->
+                verifyCalendarStructure(driver, PriceCatalogSchema.version)
+                verifyCalendarContents(driver)
+                assertEquals("Simulator work", CalendarRepository(PrototypeDatabase(driver)).exact(key)?.draft?.title)
+            }
+        } finally { factory.deleteDatabase(name) }
+    }
 
     @Test fun cmpEditCasOnSimulatorCipher(): Unit = runBlocking {
         val name = "andrey-ios-edit-${Random.nextLong().toString(16)}.db"

@@ -71,10 +71,12 @@ class SqlDelightBusinessRepositoriesInstrumentedTest {
                 assertTrue(estimateId > 0L)
                 assertEquals(1L, estimates.count())
                 assertEquals(1L, clients.count())
+                kotlin.test.assertFailsWith<IllegalStateException> { projects.delete(projectId) }
+                assertEquals(1L, measurements.count())
+                assertEquals(1L, estimates.count())
+                measurements.delete(measurementId)
                 projects.delete(projectId)
                 assertNull(estimates.find(estimateId))
-                // Room parity: measurements have an index, not an FK/cascade.
-                assertEquals(1L, measurements.count())
             }
 
             val bytes = file.readBytes()

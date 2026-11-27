@@ -103,7 +103,7 @@ object MeasurementElementsPresentationProof {
             assertNull(siblingModel.editor.value); assertNull(model.editor.value)
             val otherModel = store.model(other)
             assertTrue((withTimeout(10_000) { otherModel.state.first { it is MeasurementElementsState.Loaded } } as MeasurementElementsState.Loaded).items.isEmpty())
-            projects.delete(p2)
+            db.businessSchemaQueries.deleteProject(p2) // Reproduce a historical orphan.
             withTimeout(10_000) { otherModel.state.first { it == MeasurementElementsState.Missing } }
             otherModel.add(); assertNull(otherModel.editor.value)
             store.close(); assertEquals(MeasurementElementsState.Unavailable, otherModel.state.value)

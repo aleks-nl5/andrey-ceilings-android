@@ -103,14 +103,14 @@ class SyncMetadataTest {
                 category = "Materials", unit = "m2", price = 2.0, updatedAt = 6)
             assertNotEquals(oldPriceUuid, prices.find(replacement)!!.uuid)
 
+            kotlin.test.assertFailsWith<IllegalStateException> { projects.delete(project) }
+            assertNotNull(measurements.find(measurement))
+            measurements.delete(measurement)
             projects.delete(project)
             assertNull(projects.find(project))
             assertNull(estimates.find(estimate))
             assertEquals(1, projects.tombstones().size)
             assertEquals(1, estimates.tombstones().size)
-            // Preserve existing Room behavior: measurements do not cascade on project removal.
-            assertNotNull(measurements.find(measurement))
-            measurements.delete(measurement)
             clients.delete(client)
             prices.delete(replacement)
 

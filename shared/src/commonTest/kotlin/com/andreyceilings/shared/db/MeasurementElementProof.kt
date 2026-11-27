@@ -116,7 +116,7 @@ object MeasurementElementProof {
             geometry.lengthMeters, geometry.widthMeters, geometry.areaSquareMeters, geometry.perimeterMeters,
             geometry.drawingJson, geometry.notes, 110))
         repo.edit(wish.version, "Independent", wish.approval, wish.quantity, 110)
-        projects.delete(otherProject)
+        db.businessSchemaQueries.deleteProject(otherProject) // Reproduce a historical orphan.
         assertTrue(repo.observeForMeasurement(other).firstValue().isEmpty())
         assertFailsWith<MeasurementElementFailure.ParentUnavailable> { repo.createWish(other, "Blocked", 111) }
         val hidden = checkNotNull(repo.find("other"))
