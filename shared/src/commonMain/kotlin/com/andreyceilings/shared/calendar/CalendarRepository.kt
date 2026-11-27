@@ -533,7 +533,9 @@ class CalendarRepository(
                 explicitCeilings = if (has(CEILINGS)) patch.explicitCeilings else draft.explicitCeilings,
             ),
             projectLabel = if (has(LINKS) || replacement.row.frozen.bool()) personal.projectLabel else inherited.projectLabel,
-            contact = contact.over(if (has(LINKS)) replacement.liveContact else base.liveContact),
+            // Frozen snapshots include absent fields; never fill those from a later live contact.
+            contact = if (replacement.row.frozen.bool()) personal.contact
+                else contact.over(if (has(LINKS)) replacement.liveContact else base.liveContact),
         )
     }
 
@@ -649,12 +651,12 @@ class CalendarRepository(
         val today = clock.now().toLocalDateTime(zone).date
         val start = maxOf(today, draft.date)
         val end = rule?.let { minOf(start.shift(89), it.until ?: start.shift(89)) }
-        val proposedDates = when {
+        val regularDates = when {
             rule == null -> listOf(draft.date)
             end != null && end >= start -> rule.occurrences(WorkDateRange(start, end)).toList()
             else -> emptyList()
         }
-        val lastProposed = proposedDates.lastOrNull()
+        val lastProposed = regularDates.lastOrNull()
         val checkedThrough = if (lastProposed != null && rule?.count != null && rule.ordinal(lastProposed) + 1 == rule.count)
             lastProposed else end
         val root = target?.work?.key?.rootUuid ?: ""
@@ -669,6 +671,19 @@ class CalendarRepository(
         val overrides = load(exceptions.values.mapNotNull { it.overrideUuid })
         val replaced = mutableSetOf<WorkOccurrenceKey>()
         val now = clock.now()
+        // A persisted exception can inherit a new schedule well beyond the ordinary
+        // recurrence horizon. Use the same identity remapping and eligibility as split().
+        val exactExceptionDates = if (rule != null && shiftingSeries != null) exceptions.values.mapNotNull { exception ->
+            val patch = exception.overrideUuid?.let(overrides::get) ?: return@mapNotNull null
+            val base = affected[exception.segmentUuid] ?: return@mapNotNull null
+            if (exception.deleted.bool() || patch.row.kind == "SINGLE" ||
+                exception.originalDay <= shiftingSeries.work.key.originalDate.dayNumber()) return@mapNotNull null
+            val prior = hydrate(base, exception, overrides) ?: return@mapNotNull null
+            if (!prior.upcoming(now)) return@mapNotNull null
+            val remapped = exception.originalDay.localDate().shift(-identityShift)
+            remapped.takeIf { it > draft.date && rule.contains(it) }
+        } else emptyList()
+        val proposedDates = (regularDates + exactExceptionDates).distinct().sorted()
         val proposed = proposedDates.flatMap { date ->
             val key = if (target != null && rule == null) target.work.key
                 else WorkOccurrenceKey(root, date.shift(identityShift))

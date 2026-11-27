@@ -120,6 +120,58 @@ class CalendarRepositoryTest {
         assertEquals(today.shift(3), calendar.exact(custom.key)?.draft?.date)
     }
 
+    @Test fun terminalSeriesContactsDoNotInheritPreviouslyAbsentLiveFields() = fixture { db, calendar ->
+        val clients = ClientRepository(db)
+        val projects = ProjectRepository(db)
+        val projectId = projects.createReturningId(null, "Original site", createdAt = 1)
+        val projectUuid = assertNotNull(projects.find(projectId)).uuid
+        val first = saved(calendar.save(CalendarSave(draft(recurrence = WorkRecurrence(today, WorkFrequency.DAILY))
+            .copy(projectUuid = projectUuid))))
+        fun occurrence(offset: Int) = assertNotNull(calendar.exact(WorkOccurrenceKey(first.rootUuid, today.shift(offset))))
+        val completed = occurrence(0)
+        saved(calendar.save(CalendarSave(completed.draft.copy(status = WorkStatus.COMPLETED), completed.key, completed.version)))
+        val cancelled = occurrence(1)
+        saved(calendar.save(CalendarSave(cancelled.draft.copy(status = WorkStatus.CANCELLED), cancelled.key, cancelled.version)))
+        val clientId = clients.createReturningId("New client", phone = "555", email = "new@example.com", createdAt = 2)
+        projects.update(projectId, clientId, "Renamed site", "New address", "measurement", "", 3)
+        for (history in listOf(occurrence(0), occurrence(1))) {
+            assertEquals("Original site", history.projectLabel)
+            assertNull(history.contact.name)
+            assertNull(history.contact.phone)
+            assertNull(history.contact.email)
+            assertEquals("", history.contact.address)
+        }
+        assertEquals("555", occurrence(2).contact.phone)
+        assertEquals("New address", occurrence(2).contact.address)
+        val historical = calendar.period(WorkDateRange(today, today.shift(2)), zone)
+        assertNull(historical.single { it.key == completed.key }.contact.phone)
+        assertNull(historical.single { it.key == cancelled.key }.contact.phone)
+    }
+
+    @Test fun forwardEditChecksPersistedExceptionBeyondOrdinaryConflictHorizon() = fixture { _, calendar ->
+        fun schedule(start: Int, end: Int) = WorkSchedule(WorkTimeMode.TIMED, zone,
+            listOf(WorkDay(0, LocalTime(start, 0), LocalTime(end, 0))))
+        val first = saved(calendar.save(CalendarSave(draft(timed = true, recurrence = WorkRecurrence(today, WorkFrequency.DAILY)))))
+        val personal = assertNotNull(calendar.exact(WorkOccurrenceKey(first.rootUuid, today.shift(120))))
+        val movedDate = today.shift(150)
+        saved(calendar.save(CalendarSave(personal.draft.copy(date = movedDate, schedule = schedule(15, 16)),
+            personal.key, personal.version)))
+        val other = saved(calendar.save(CalendarSave(draft(timed = true).copy(date = movedDate, schedule = schedule(16, 17)))))
+        val boundary = assertNotNull(calendar.exact(WorkOccurrenceKey(first.rootUuid, today.shift(1))))
+        val command = CalendarSave(boundary.draft.copy(schedule = schedule(9, 11), recurrence = null),
+            boundary.key, boundary.version, CalendarEditScope.THIS_AND_FOLLOWING)
+        val preview = assertNotNull(calendar.previewConflicts(command))
+        assertEquals(1, preview.count)
+        assertEquals(today.shift(90), preview.checkedThrough)
+        val warning = assertIs<CalendarSaveResult.Conflicts>(calendar.save(command))
+        assertEquals(personal.key, warning.confirmation.conflicts.single().proposed)
+        assertEquals(other, warning.confirmation.conflicts.single().other)
+        assertEquals(schedule(15, 16), calendar.exact(personal.key)?.draft?.schedule)
+        saved(calendar.save(command, warning.confirmation))
+        assertEquals(movedDate, calendar.exact(personal.key)?.draft?.date)
+        assertEquals(schedule(15, 17), calendar.exact(personal.key)?.draft?.schedule)
+    }
+
     @Test fun linkedDeletionNeedsFreshConfirmationAndKeepsHistory() = fixture { db, calendar ->
         val client = ClientRepository(db)
         val clientId = client.createReturningId("Client contact", phone = "555", createdAt = 12)
