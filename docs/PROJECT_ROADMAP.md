@@ -1,3 +1,7 @@
+## CURRENT — P7A technical plan approved (27.11.2026)
+
+46 product + 26 technical owner decisions: [P7 specification](P7_CALENDAR_SPEC.md), [P7A technical contract and Codex handoff](P7A_CODEX_HANDOFF.md). One Draft implementation PR after #184 merge and separate owner authorization. P7A: additive v24->25, bounded recurrence, shared calendar, dashboard/object/search/settings, focused tests; P7B separate. #49 open. No production or CI changes in planning.
+
 # CURRENT — P7 product planning complete (27.11.2026)
 
 [46 approved decisions and initial audit](P7_CALENDAR_SPEC.md) for #49. P7A core and CMP calendar; P7B notifications/system integration. Technical planning next, separate implementation approval required. P6 postmerge FULL #1390/#1127 SUCCESS, all four P6 issues closed.
