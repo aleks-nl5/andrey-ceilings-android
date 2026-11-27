@@ -946,7 +946,7 @@ private fun WorkReadOnly(work: CalendarWork, options: CalendarFormOptions, store
             WorkDetailRow(Icons.Default.Layers, ceiling.label + if (ceiling.removed) " · " + stringResource(Res.string.work_removed) else "",
                 onClick = if (!ceiling.removed && onRegistryTarget != null) { { navigate { store.ceilingTarget(ceiling.uuid) } } } else null)
         }
-        if (data.typeCode == "INSTALL" && !data.explicit) WorkDetailRow(Icons.Default.Layers, stringResource(Res.string.work_whole_project))
+        if (data.typeCode == "INSTALL" && !data.explicitCeilings) WorkDetailRow(Icons.Default.Layers, stringResource(Res.string.work_whole_project))
         val effectiveClient = data.clientUuid ?: options.projects.firstOrNull { it.uuid == data.projectUuid }?.clientUuid
         val clientName = options.clients.firstOrNull { it.uuid == effectiveClient }?.name
         (clientName ?: work.contact.name)?.takeIf { it.isNotBlank() }?.let { name ->
