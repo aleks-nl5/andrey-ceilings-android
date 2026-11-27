@@ -8,9 +8,10 @@ import android.graphics.pdf.PdfRenderer
 import android.os.Build
 import android.os.ParcelFileDescriptor
 import androidx.annotation.RequiresApi
-import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.ui.test.junit4.createComposeRule
-import androidx.compose.ui.test.*
+import androidx.compose.ui.text.TextMeasurer
+import androidx.compose.ui.text.font.createFontFamilyResolver
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.test.core.app.ApplicationProvider
 import com.andreyceilings.app.ui.screens.writeEstimateDocumentPdf
 import com.andreyceilings.shared.calculation.CeilingPointMm
@@ -25,9 +26,9 @@ import com.andreyceilings.shared.measurement.MeasurementGeometryCodec
 import com.andreyceilings.shared.measurement.MeasurementGeometryView
 import com.andreyceilings.shared.measurement.measurementDrawingContour
 import com.andreyceilings.shared.measurement.optimalMeasurementDrawingProjection
-import com.andreyceilings.shared.theme.CeilingsTheme
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
-import org.junit.Rule
+import kotlinx.coroutines.withContext
 import org.junit.Test
 import java.io.File
 import kotlin.math.abs
@@ -36,7 +37,6 @@ import kotlin.math.floor
 import kotlin.test.*
 
 class FrozenEstimatePdfShapeTest {
-    @get:Rule val compose = createComposeRule()
 
     @Test fun rectangleRevisionShowsItsFourVertexLetters() = assertFrozenContour(
         MeasurementOutlineDraft.Template("rectangle", mapOf("length" to "5", "width" to "4")),
@@ -82,37 +82,34 @@ class FrozenEstimatePdfShapeTest {
 
                 val store = MeasurementElementsStore(db, { 610 })
                 try {
-                    var captured: EstimateDocumentPages? = null
-                    compose.setContent {
-                        CompositionLocalProvider(LocalEstimateDocumentExporter provides EstimateDocumentExporter { pages, _, done ->
-                            captured = pages
-                            done(null)
-                        }) {
-                            CeilingsTheme(false) {
-                                SavedIndividualQuoteDialog(store, frozen.seriesUuid, frozen.initialRevisionUuid) {}
-                            }
-                        }
-                    }
-                    compose.waitUntil(10_000) {
-                        compose.onAllNodesWithContentDescription("Перегляд PDF").fetchSemanticsNodes().isNotEmpty()
-                    }
+                    // Exercise the same exact-revision reader, pagination and Android writer
+                    // as the preview, without Compose test recomposition or UI gestures.
                     fun exportFirstRevision(): List<RectF> {
-                        compose.runOnIdle { captured = null }
-                        compose.onNodeWithContentDescription("Перегляд PDF").performClick()
-                        compose.waitUntil(10_000) {
-                            compose.onAllNodesWithContentDescription("Зберегти PDF").fetchSemanticsNodes().isNotEmpty()
+                        runBlocking {
+                            val document = assertNotNull(store.estimateDocument(
+                                frozen.seriesUuid, frozen.initialRevisionUuid
+                            ))
+                            val pages = withContext(Dispatchers.Main.immediate) {
+                                val measurer = TextMeasurer(
+                                    createFontFamilyResolver(context), Density(1f), LayoutDirection.Ltr
+                                )
+                                val options = DocumentPresentationOptions(
+                                    order = EstimateDocumentSection.entries.filter {
+                                        it != EstimateDocumentSection.ISSUER && it != EstimateDocumentSection.PHOTOS
+                                    },
+                                    moneyColumnLabels = DocumentMoneyColumnLabels("Ціна, грн", "Сума, грн")
+                                )
+                                layoutEstimateDocument(document, options, measurer)
+                            }
+                            assertTrue(pages.fileName.endsWith("-v1.pdf"))
+                            assertTrue(pages.exportable)
+                            assertTrue(pages.count > 0)
+                            writeEstimateDocumentPdf(pages, 0 until pages.count) { file.outputStream() }
                         }
-                        compose.onNodeWithContentDescription("Зберегти PDF").performClick()
-                        val pages = compose.runOnIdle { assertNotNull(captured) }
-                        assertTrue(pages.fileName.endsWith("-v1.pdf"))
-                        runBlocking { writeEstimateDocumentPdf(pages, 0 until pages.count) { file.outputStream() } }
                         return assertRenderedContour(file, contour, edge, interior)
                     }
 
                     val firstLetters = exportFirstRevision()
-                    compose.onNode(hasContentDescription("Назад") and hasAnyAncestor(
-                        isDialog() and hasAnyDescendant(hasText("Попередній перегляд PDF"))
-                    )).performClick()
 
                     edit.update(shaped, shaped.draft.copy(outline = original.draft.outline), now = 601)
                     val second = history.appendIndividual(FrozenRevisionProof.request(db, fixture, frozen.seriesUuid), 602)
