@@ -114,12 +114,17 @@ class DashboardStoreTest {
             assertEquals(RegistryRead.Unavailable, initial(finance))
             assertEquals(RegistryRead.Unavailable, initial(quotes))
             assertNull(session.cachedRows)
+            assertNull(withTimeout(5_000) { objects.first() })
+            assertEquals(0, withTimeout(5_000) { session.rows.first() }.projects.size)
+            assertEquals(0, withTimeout(5_000) { session.rows.first() }.clients.size)
             assertNull(withTimeout(5_000) { ceilings.first() })
             assertNull(withTimeout(5_000) { stats.first() })
             assertNull(withTimeout(5_000) { quoteCount.first() })
             assertNull(withTimeout(5_000) { finance.first() })
             assertNull(withTimeout(5_000) { quotes.first() })
             assertEquals(RegistryRead.Unavailable, initial(ceilings))
+            assertEquals(RegistryRead.Unavailable, initial(objects))
+            assertNull(session.cachedRows)
             val replacement = ObjectsClientsStore(db) { 200L }
             try {
                 assertEquals(RegistryRead.Loading, initial(replacement.uiRegistryCeilings()))

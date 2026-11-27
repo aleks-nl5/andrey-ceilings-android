@@ -111,7 +111,7 @@ class ObjectsClientsStore(
     internal fun cachedProjectDetails(projectId: Long) = projectDetailsCache.value?.takeIf { it.first == projectId }?.second
     internal fun cachedProjectFinance(projectId: Long) = projectFinanceCache.value?.takeIf { it.first == projectId }
     internal fun cachedContours(): Map<String, MeasurementDrawingContour?> = contours.snapshot()
-    internal fun uiObjectsRows() = objectsCache.observe(rows)
+    internal fun uiObjectsRows() = objectsCache.observe(activeObjectRows)
     internal fun uiRegistryCeilings() = ceilingCache.observe(observeRegistryCeilings())
     internal fun uiRegistryCeilingFinance() = ceilingFinanceCache.observe(observeRegistryCeilingFinance())
     internal fun uiRegistryQuotes() = quoteCache.observe(observeRegistryQuotes())
@@ -174,9 +174,13 @@ class ObjectsClientsStore(
     val measurementEdit = com.andreyceilings.shared.measurement.MeasurementEditStore(database, nowMillis)
     val measurementDetails = com.andreyceilings.shared.measurement.MeasurementDetailsStore(database, nowMillis)
 
-    val rows: Flow<ObjectsClientsRows> = combine(
-        clients.observeAll(), projects.observeAll()
-    ) { clientRecords, projectRecords ->
+    // Use the same admission/drain gate as the other registry reads. In particular,
+    // a collector surviving lock or database replacement must not reopen a JDBC read.
+    private val activeObjectRows: Flow<ObjectsClientsRows?> = observeRegistryQueries(
+        clients.observeQuery(), projects.observeQuery()
+    ) { clientQuery, projectQuery ->
+        val clientRecords = clientQuery.executeAsList()
+        val projectRecords = projectQuery.executeAsList()
         val activeClients = clientRecords.associateBy { it.id }
         val counts = projectRecords.groupingBy { it.clientId }.eachCount()
         ObjectsClientsRows(
@@ -203,7 +207,10 @@ class ObjectsClientsStore(
                 )
             }
         )
-    }.onEach { objectsCache.record(it) }.distinctUntilChanged()
+    }.onEach { objectsCache.record(it) }
+
+    val rows: Flow<ObjectsClientsRows> = activeObjectRows
+        .map { it ?: ObjectsClientsRows(emptyList(), emptyList()) }.distinctUntilChanged()
 
     fun observeProjectDetails(projectId: Long): Flow<ProjectDetailsData> {
         require(projectId > 0)

@@ -32,3 +32,7 @@ The owner performs the APK acceptance. Platform FULL, SQLCipher device performan
 - Added real SQLDelight dashboard/session cache tests (live invalidation, warm return, session closure and fresh replacement). QUICK explicitly includes DashboardStoreTest and TransientQuoteTest. No new UI automation.
 - Archived the Room v2-only importer test with an explicit Ignore; production importer and migration code unchanged. Renamed the misleading Windows v7 test name (its actual fixture is current). Keep current-schema concurrency and all existing security, restore, process-death, ENOSPC and PDF proofs.
 - P6B postmerge Android FULL #1386 and CMP FULL #1123 job receipts verified successful. P6C test changes are pending exact-SHA QUICK and owner-authorized FULL; no runtime pass is claimed by this record.
+
+## Final review — session read gate
+
+QUICK #259 passed at fd101de. Final static review found that the Objects/Clients row source still used independent ungated queries: a surviving collector could read from the closed session despite the snapshot being cleared. Route that source through the same admission/drain mutex and close signal as the ceiling and quote registries, retain the nonnullable public list API with empty rows after close, and verify that the old session cannot return client/project data in DashboardStoreTest. Exact-SHA QUICK is required again before the manually authorized FULL runs. No schema or FULL workflow changes.
