@@ -152,6 +152,7 @@ fun WorkEditor(
     var stale by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf(false) }
     var scope by remember { mutableStateOf(CalendarEditScope.OCCURRENCE) }
+    var editScopeChosen by remember { mutableStateOf(false) }
     var conflict by remember { mutableStateOf<CalendarSaveResult.Conflicts?>(null) }
     val deleteOnly = (route as? CalendarEditorRoute.Open)?.delete == true
     val move = (route as? CalendarEditorRoute.Open)?.move == true &&
@@ -208,12 +209,13 @@ fun WorkEditor(
             work.draft.date >= now.toLocalDateTime(work.draft.schedule.zone).date
     } == true
     LaunchedEffect(recurring) { if (!recurring) scope = CalendarEditScope.OCCURRENCE }
+    val awaitingEditScope = recurring && editing && !move && !deleteOnly && !editScopeChosen
     val data = input
     val draft = remember(data, scope, original) {
         runCatching { data?.draft(original == null || (recurring && scope == CalendarEditScope.THIS_AND_FOLLOWING), original) }.getOrNull()
     }
-    val preview by produceState<CalendarConflictPreview?>(null, draft, original, scope, editing) {
-        if (draft != null && editing) {
+    val preview by produceState<CalendarConflictPreview?>(null, draft, original, scope, editing, awaitingEditScope) {
+        if (draft != null && editing && !awaitingEditScope) {
             delay(280)
             try { value = store.previewConflicts(CalendarSave(draft, original?.key, original?.version, scope, replaceRecurrence = !move)) }
             catch (cancelled: CancellationException) { throw cancelled }
@@ -238,7 +240,7 @@ fun WorkEditor(
 
     fun save(confirmation: CalendarConflictConfirmation? = null) {
         val valid = draft ?: return
-        if (busy || linkBusy || invalidDay != null || optionsRead is CalendarRead.Unavailable) return
+        if (busy || linkBusy || awaitingEditScope || invalidDay != null || optionsRead is CalendarRead.Unavailable) return
         busy = true
         error = false
         lifecycleScope.launch {
@@ -358,10 +360,10 @@ fun WorkEditor(
                             }
                         }
                         if (editing) CeilingsFab({ save() }, stringResource(Res.string.oc_save),
-                            profile = CeilingsFabProfile.COMPACT, enabled = !stale && !busy && !loadFailed && optionsRead !is CalendarRead.Unavailable && draft != null && !invalidTime && invalidDay == null,
+                            profile = CeilingsFabProfile.COMPACT, enabled = !awaitingEditScope && !stale && !busy && !loadFailed && optionsRead !is CalendarRead.Unavailable && draft != null && !invalidTime && invalidDay == null,
                             containerColor = fabColor, outlineAlpha = fabOutline) {
                             Icon(Icons.Default.Check, null, tint = if (draft != null && !invalidTime && !busy) scheme.onSurface else scheme.onSurfaceVariant.copy(alpha = .45f), modifier = Modifier.size(23.dp))
-                        } else CeilingsFab({ editing = true }, stringResource(Res.string.work_edit), profile = CeilingsFabProfile.COMPACT,
+                        } else CeilingsFab({ editScopeChosen = false; scope = CalendarEditScope.OCCURRENCE; editing = true }, stringResource(Res.string.work_edit), profile = CeilingsFabProfile.COMPACT,
                             enabled = original != null && !busy, containerColor = fabColor, outlineAlpha = fabOutline) {
                             Icon(Icons.Default.Edit, null, tint = scheme.onSurface, modifier = Modifier.size(23.dp))
                         }
@@ -369,7 +371,7 @@ fun WorkEditor(
                 },
                 bottomNavigation = {
                     if (original != null) Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                        IconButton(onClick = { deleting = true }, enabled = !busy) {
+                        IconButton(onClick = { deleting = true }, enabled = !busy && !awaitingEditScope) {
                             Icon(Icons.Default.Delete, stringResource(Res.string.oc_delete), tint = scheme.error)
                         }
                     }
@@ -381,12 +383,18 @@ fun WorkEditor(
                     if (loadFailed || (optionsRead is CalendarRead.Unavailable && options == null)) {
                         // The persistent feedback above owns the failure and retry action.
                     } else if (data == null || options == null) item { LinearProgressIndicator(Modifier.fillMaxWidth()) }
-                    else if (!editing && original != null) {
+                    else if (awaitingEditScope) {
+                        // No editable fields until the owner explicitly chooses the scope.
+                    } else if (!editing && original != null) {
                         item("work-view") {
                             WorkReadOnly(checkNotNull(original), options, store, onRegistryTarget, openUri,
                                 onClientCard = { clientCardId = it })
                         }
                     } else {
+                        if (editing && original?.draft?.recurrence != null) item("work-edit-scope") {
+                            if (recurring) ScopeSelection(scope) { scope = it }
+                            else Text(stringResource(Res.string.work_only_this), style = MaterialTheme.typography.labelMedium)
+                        }
                         item("work-name") {
                             val focus = remember { FocusRequester() }
                             WorkField(data.title, Res.string.work_title, error = data.title.isBlank() && data != initial,
@@ -480,7 +488,6 @@ fun WorkEditor(
                             }
                         }
                         item("work-recurrence") {
-                            if (recurring) ScopeSelection(scope) { scope = it }
                             if (original == null || recurring && scope == CalendarEditScope.THIS_AND_FOLLOWING)
                                 RepeatSettings(data) { input = it }
                         }
@@ -609,6 +616,28 @@ fun WorkEditor(
                     }
                 }
             }, onCreateClient = { value -> withContext(Dispatchers.Default) { registry.saveClient(null, value) } })
+    }
+
+    if (awaitingEditScope && data != null && options != null && !loadFailed) {
+        fun cancelScope() {
+            if ((route as? CalendarEditorRoute.Open)?.edit == true) onClose()
+            else { editing = false; scope = CalendarEditScope.OCCURRENCE; editScopeChosen = false }
+        }
+        AlertDialog(onDismissRequest = ::cancelScope,
+            title = { Text(stringResource(Res.string.work_edit)) },
+            text = {
+                Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(modifier = Modifier.fillMaxWidth(), onClick = {
+                        scope = CalendarEditScope.OCCURRENCE
+                        editScopeChosen = true
+                    }) { Text(stringResource(Res.string.work_only_this)) }
+                    OutlinedButton(modifier = Modifier.fillMaxWidth(), onClick = {
+                        scope = CalendarEditScope.THIS_AND_FOLLOWING
+                        editScopeChosen = true
+                    }) { Text(stringResource(Res.string.work_following)) }
+                }
+            },
+            confirmButton = { TextButton(onClick = ::cancelScope) { Text(stringResource(Res.string.p5d_cancel)) } })
     }
 
     if (confirmReload) AlertDialog(onDismissRequest = { confirmReload = false },

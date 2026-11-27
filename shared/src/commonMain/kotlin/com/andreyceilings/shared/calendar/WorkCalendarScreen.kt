@@ -65,6 +65,9 @@ import kotlin.time.Instant
 
 enum class CalendarDisplayMode { WEEK, MONTH, LIST }
 
+// Outgoing AnimatedContent must retain its own mode and weekday layout.
+private data class CalendarVisualPeriod(val range: WorkDateRange, val mode: CalendarDisplayMode, val firstDay: DayOfWeek)
+
 sealed interface CalendarEditorRoute {
     data class Create(val date: LocalDate? = null, val projectUuid: String? = null, val installation: Boolean = false) : CalendarEditorRoute
     data class Open(val key: WorkOccurrenceKey, val move: Boolean = false, val delete: Boolean = false, val edit: Boolean = false) : CalendarEditorRoute
@@ -263,11 +266,12 @@ fun WorkCalendarScreen(
                     }
                 }
                 Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).then(drag)) {
-                AnimatedContent(targetState = range, transitionSpec = {
-                    val forward = targetState.from > initialState.from
+                AnimatedContent(targetState = CalendarVisualPeriod(range, mode, firstDay), transitionSpec = {
+                    val forward = targetState.range.from > initialState.range.from
                     (slideInHorizontally { if (forward) it else -it } + fadeIn()) togetherWith
                         (slideOutHorizontally { if (forward) -it else it } + fadeOut())
-                }) { visualRange ->
+                }) { visualPeriod ->
+                val (visualRange, visualMode, visualFirstDay) = visualPeriod
                 val visualDays = if (visualRange == range) days else store?.cached(visualRange, zone).orEmpty().filter {
                     (project == null || it.draft.projectUuid == project) && (type == null || it.draft.typeCode == type) &&
                         (status == null || it.draft.status.name == status)
@@ -278,14 +282,14 @@ fun WorkCalendarScreen(
                         IconButton(onClick = { movePeriod(-1) }) {
                             Icon(Icons.Default.ChevronLeft, stringResource(Res.string.work_previous))
                         }
-                        Text(if (mode == CalendarDisplayMode.MONTH) visualRange.from.shift(7).let { it.monthNumber.toString().padStart(2, '0') + "." + it.year }
+                        Text(if (visualMode == CalendarDisplayMode.MONTH) visualRange.from.shift(7).let { it.monthNumber.toString().padStart(2, '0') + "." + it.year }
                             else "${visualRange.from.shortDate()} – ${visualRange.through.shortDate()}",
                             style = MaterialTheme.typography.titleMedium)
                         IconButton(onClick = { movePeriod(1) }) {
                             Icon(Icons.Default.ChevronRight, stringResource(Res.string.work_next))
                         }
                     }
-                    if (mode != CalendarDisplayMode.LIST) {
+                    if (visualMode != CalendarDisplayMode.LIST) {
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
                             if (showWeekNumbers) Box(Modifier.width(30.dp).height(28.dp)
                                 .clip(RoundedCornerShape(9.dp)).background(weekdayBackground), contentAlignment = Alignment.Center) {
@@ -293,7 +297,7 @@ fun WorkCalendarScreen(
                                     color = colors.onSurfaceVariant)
                             }
                             (0..6).forEach { offset ->
-                                val weekday = DayOfWeek.entries[(firstDay.ordinal + offset) % 7]
+                                val weekday = DayOfWeek.entries[(visualFirstDay.ordinal + offset) % 7]
                                 Box(Modifier.weight(1f).height(28.dp).clip(RoundedCornerShape(9.dp))
                                     .background(if (weekday in workingDays) weekdayBackground else weekendBackground),
                                     contentAlignment = Alignment.Center) {
@@ -308,7 +312,7 @@ fun WorkCalendarScreen(
                                     verticalAlignment = Alignment.CenterVertically) {
                                     if (showWeekNumbers) Box(Modifier.width(30.dp).height(43.dp)
                                         .clip(RoundedCornerShape(10.dp)).background(weekdayBackground), contentAlignment = Alignment.Center) {
-                                        Text(isoWeekNumber(week.first { it.dayOfWeek == DayOfWeek.THURSDAY }).toString(),
+                                        Text(calendarRowIsoWeekNumber(week.first()).toString(),
                                             style = MaterialTheme.typography.labelMedium, color = colors.onSurfaceVariant)
                                     }
                                     week.forEach { day ->
@@ -578,6 +582,10 @@ internal fun isoWeekNumber(date: LocalDate): Int {
     val firstThursday = january4.shift(3 - january4.dayOfWeek.ordinal)
     return ((thursday.dayNumber() - firstThursday.dayNumber()) / 7).toInt() + 1
 }
+
+/** Number the displayed row by its Thursday, even if a transient range is incomplete. */
+internal fun calendarRowIsoWeekNumber(firstDate: LocalDate): Int =
+    isoWeekNumber(firstDate.shift((DayOfWeek.THURSDAY.ordinal - firstDate.dayOfWeek.ordinal + 7) % 7))
 
 internal fun periodOf(date: LocalDate, mode: CalendarDisplayMode, first: DayOfWeek): WorkDateRange {
     fun weekStart(day: LocalDate) = day.shift(-((day.dayOfWeek.ordinal - first.ordinal + 7) % 7))

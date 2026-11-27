@@ -166,8 +166,7 @@ fun UpcomingEventsCard(
             val open = event.key?.let { key -> onOpenWork?.let { action -> { action(key) } } }
                 ?: event.projectId?.let { id -> onOpenProject?.let { action -> { action(id) } } }
             Card(shape = RoundedCornerShape(18.dp),
-                colors = CardDefaults.cardColors(containerColor = background, contentColor = foreground),
-                border = if (!closest && !dark) BorderStroke(1.dp, theme.outlineVariant) else null) {
+                colors = CardDefaults.cardColors(containerColor = background, contentColor = foreground)) {
                 Row(Modifier.fillMaxWidth().clickable(enabled = open != null) { open?.invoke() }
                     .padding(start = if (closest) 6.dp else 12.dp, end = if (closest) 0.dp else 5.dp,
                         top = 5.dp, bottom = 5.dp),
