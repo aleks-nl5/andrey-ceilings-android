@@ -1,5 +1,6 @@
 package com.andreyceilings.shared.objects
 
+import com.andreyceilings.shared.ui.CeilingsPopupMenu
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -1500,8 +1501,7 @@ private fun OverflowActions(
         IconButton(onClick = { onMenuOpened(); expanded = true }) {
             Icon(Icons.Default.MoreVert, contentDescription = "Дії із записом")
         }
-        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false },
-            containerColor = MaterialTheme.colorScheme.surface) {
+        CeilingsPopupMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
             actions.forEach { (label, action) ->
                 DropdownMenuItem(
                     text = { Text(label) },

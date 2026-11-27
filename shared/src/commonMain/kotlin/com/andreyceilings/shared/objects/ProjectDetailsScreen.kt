@@ -1,5 +1,6 @@
 package com.andreyceilings.shared.objects
 
+import com.andreyceilings.shared.ui.CeilingsPopupMenu
 import com.andreyceilings.shared.calendar.*
 
 import androidx.compose.animation.core.animateFloatAsState
@@ -872,7 +873,7 @@ internal fun WorkStagePicker(
                 )
             }
         }
-        DropdownMenu(
+        CeilingsPopupMenu(
             expanded = expanded && enabled,
             onDismissRequest = { expanded = false },
             modifier = Modifier.widthIn(min = 204.dp)
@@ -940,7 +941,7 @@ internal fun PaymentStatusPicker(
                 )
             }
         }
-        DropdownMenu(
+        CeilingsPopupMenu(
             expanded = expanded && enabled,
             onDismissRequest = { expanded = false },
             modifier = Modifier.widthIn(min = 204.dp)

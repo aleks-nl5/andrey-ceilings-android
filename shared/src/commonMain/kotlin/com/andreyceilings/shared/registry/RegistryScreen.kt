@@ -1,5 +1,6 @@
 package com.andreyceilings.shared.registry
 
+import com.andreyceilings.shared.ui.CeilingsPopupMenu
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.DragInteraction
 import androidx.compose.material.icons.filled.Sort
@@ -455,8 +456,7 @@ private fun <T> RegistryDropdown(
             }
             Icon(Icons.Default.ArrowDropDown, null, Modifier.size(18.dp))
         }
-        DropdownMenu(expanded, onDismissRequest = { expanded = false }, modifier = Modifier.heightIn(max = 320.dp),
-            containerColor = MaterialTheme.colorScheme.surface) {
+        CeilingsPopupMenu(expanded, onDismissRequest = { expanded = false }, modifier = Modifier.heightIn(max = 320.dp)) {
             options.forEach { option ->
                 DropdownMenuItem(text = { Text(optionLabel(option)) }, onClick = { expanded = false; onSelect(option) })
             }
@@ -534,8 +534,7 @@ private fun RegistryOptions(controls: RegistryControls, projects: Map<Long, Stri
                         }
                         Icon(Icons.Default.ArrowDropDown, null)
                     }
-                    DropdownMenu(statusExpanded, onDismissRequest = { statusExpanded = false },
-                        containerColor = MaterialTheme.colorScheme.surface) {
+                    CeilingsPopupMenu(statusExpanded, onDismissRequest = { statusExpanded = false }) {
                         DropdownMenuItem(text = { Text(all) }, onClick = { draft = draft.copy(statuses = emptySet()) })
                         kinds.forEach { kind ->
                             val checked = kind.name in draft.statuses

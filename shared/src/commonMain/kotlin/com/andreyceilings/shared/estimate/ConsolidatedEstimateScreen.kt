@@ -562,7 +562,7 @@ private fun ConsolidatedStatusControl(status: EstimateWorkflowStatus, enabled: B
         IconButton(enabled = enabled, onClick = { expanded = true }) {
             Icon(icon, stringResource(Res.string.p5d_status_change, workspaceStatusLabel(status)), tint = tint)
         }
-        DropdownMenu(expanded, onDismissRequest = { expanded = false }) {
+        CeilingsPopupMenu(expanded, onDismissRequest = { expanded = false }) {
             EstimateWorkflowStatus.entries.filter { it != EstimateWorkflowStatus.DRAFT }.forEach {
                 DropdownMenuItem(text = { Text(workspaceStatusLabel(it)) }, enabled = it != status, onClick = {
                     expanded = false

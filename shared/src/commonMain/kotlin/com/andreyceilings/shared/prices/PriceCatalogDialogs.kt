@@ -1,5 +1,6 @@
 package com.andreyceilings.shared.prices
 
+import com.andreyceilings.shared.ui.CeilingsPopupMenu
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -223,7 +224,7 @@ private fun CatalogUnitField(
         OutlinedTextField(value = value, onValueChange = onChange, label = { Text(label) },
             singleLine = true, enabled = enabled, modifier = Modifier.fillMaxWidth().then(modifier),
             trailingIcon = { TextButton(enabled = enabled, onClick = { expanded = true }) { Text("▾") } })
-        DropdownMenu(expanded = expanded && enabled, onDismissRequest = { expanded = false }) {
+        CeilingsPopupMenu(expanded = expanded && enabled, onDismissRequest = { expanded = false }) {
             options.forEach { option -> DropdownMenuItem(text = { Text(option) },
                 onClick = { expanded = false; onChange(option) }) }
         }
@@ -243,7 +244,7 @@ private fun <T> CatalogChoice(
                 Text(value, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text("▾")
             }
-            DropdownMenu(expanded = expanded && enabled, onDismissRequest = { expanded = false }) {
+            CeilingsPopupMenu(expanded = expanded && enabled, onDismissRequest = { expanded = false }) {
                 options.forEach { option -> DropdownMenuItem(text = { Text(name(option)) },
                     onClick = { expanded = false; onSelect(option) }) }
             }

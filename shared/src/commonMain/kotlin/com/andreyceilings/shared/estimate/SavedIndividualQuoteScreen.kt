@@ -1,5 +1,6 @@
 package com.andreyceilings.shared.estimate
 
+import com.andreyceilings.shared.ui.CeilingsPopupMenu
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
@@ -113,7 +114,7 @@ fun SavedIndividualQuoteDialog(
                                 TextButton(onClick = { choose = true }) {
                                     Text(stringResource(Res.string.p5d_version, opened.versionNumber))
                                 }
-                                DropdownMenu(choose, onDismissRequest = { choose = false }) {
+                                CeilingsPopupMenu(choose, onDismissRequest = { choose = false }) {
                                     history.forEach { alternative ->
                                         DropdownMenuItem(text = { Text(stringResource(Res.string.p5d_line_problem,
                                             stringResource(Res.string.p5d_version, alternative.versionNumber), alternative.title.orEmpty())) },
