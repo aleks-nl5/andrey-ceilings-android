@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="p7b_notification_channel">Нагадування про роботи Libellaro</string>
+    <string name="p7b_measure">Замір</string>
+    <string name="p7b_install">Монтаж</string>
+    <string name="p7b_deliver">Доставка</string>
+    <string name="p7b_other">Інша робота</string>
+    <string name="p7b_snooze">Відкласти</string>
+    <string name="p7b_navigate">Маршрут</string>
+    <string name="p7b_dial">Зателефонувати</string>
+    <string name="p7b_message">Повідомлення</string>
+</resources>
