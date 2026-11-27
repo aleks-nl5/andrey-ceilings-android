@@ -101,7 +101,7 @@ fun WorkCalendarScreen(
     val colors = MaterialTheme.colorScheme
     val light = colors.background.luminance() > .4f
     val weekdayBackground = colors.surfaceVariant.copy(alpha = if (light) .95f else .46f)
-    val weekendBackground = if (light) Color(0xFFF9E3E8) else Color(0xFF49323B)
+    val weekendBackground = if (light) Color(0xFFFCEEF1) else Color(0xFF3D3036)
     val range = periodOf(date, mode, firstDay)
     val currentPeriod = remember(store, range, zone, retry) { store?.period(range, zone) }
     val period = key(store, range, zone, retry) {

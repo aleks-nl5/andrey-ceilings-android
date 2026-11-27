@@ -11,6 +11,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -33,11 +34,15 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.foundation.BorderStroke
@@ -107,6 +112,25 @@ fun UpcomingEventsCard(
     val upcoming = upcomingWorkEvents(events, nowMillis)
     val theme = MaterialTheme.colorScheme
     val dark = theme.background.luminance() < 0.4f
+    val secondaryDateStyle = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold)
+    val secondaryTimeStyle = MaterialTheme.typography.bodyMedium
+    val measurer = rememberTextMeasurer()
+    val density = LocalDensity.current
+    // Equal, content-aware columns across every secondary row, including localized schedule-mode labels.
+    val secondaryWidths = remember(upcoming, secondaryDateStyle, secondaryTimeStyle, measurer, density) {
+        val secondary = upcoming.drop(1)
+        with(density) {
+            val dateWidth = (secondary.maxOfOrNull { event ->
+                measurer.measure(AnnotatedString(event.dateLabel), style = secondaryDateStyle,
+                    maxLines = 1, softWrap = false).size.width
+            } ?: 0).toDp() + 1.dp
+            val timeWidth = (secondary.maxOfOrNull { event ->
+                measurer.measure(AnnotatedString(event.timeLabel), style = secondaryTimeStyle,
+                    maxLines = 1, softWrap = false).size.width
+            } ?: 0).toDp() + 1.dp
+            dateWidth to timeWidth
+        }
+    }
 
     Card(modifier = modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp),
         colors = CardDefaults.cardColors(containerColor = theme.surfaceContainerLow),
@@ -145,31 +169,36 @@ fun UpcomingEventsCard(
                 colors = CardDefaults.cardColors(containerColor = background, contentColor = foreground),
                 border = if (!closest && !dark) BorderStroke(1.dp, theme.outlineVariant) else null) {
                 Row(Modifier.fillMaxWidth().clickable(enabled = open != null) { open?.invoke() }
-                    .padding(start = 12.dp, end = 5.dp, top = if (closest) 7.dp else 3.dp, bottom = if (closest) 7.dp else 3.dp),
-                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    .padding(start = if (closest) 6.dp else 12.dp, end = if (closest) 0.dp else 5.dp,
+                        top = 5.dp, bottom = 5.dp),
+                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(if (closest) 4.dp else 6.dp)) {
                     if (closest) {
-                        Column(Modifier.width(96.dp), verticalArrangement = Arrangement.spacedBy(2.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                        Column(Modifier.width(88.dp), verticalArrangement = Arrangement.spacedBy(1.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                             Text(event.dateLabel, Modifier.fillMaxWidth(), style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center)
                             Text(event.timeLabel, Modifier.fillMaxWidth(), style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center)
                         }
-                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
                             Text(event.description, style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
                             if (event.projectName.isNotBlank()) Text(event.projectName, style = MaterialTheme.typography.bodyMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
                             event.clientName?.takeIf { it.isNotBlank() }?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
                         }
                     } else {
-                        // The three secondary cards keep their existing type sizes.
-                        // Reserve space for the title; never wrap or shrink the typography.
-                        Row(Modifier.weight(1f, fill = false), horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalAlignment = Alignment.CenterVertically) {
-                            Text(event.dateLabel, style = MaterialTheme.typography.labelLarge,
-                                fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis, softWrap = false)
-                            Text(event.timeLabel, style = MaterialTheme.typography.bodyMedium,
-                                maxLines = 1, overflow = TextOverflow.Ellipsis, softWrap = false)
+                        // Shared widths keep both the time's right edge and title's left edge aligned.
+                        // Cap columns on narrow screens so the title keeps its own space.
+                        BoxWithConstraints(Modifier.weight(1f)) {
+                            val dateWidth = secondaryWidths.first.coerceAtMost(maxWidth * .36f)
+                            val timeWidth = secondaryWidths.second.coerceAtMost(maxWidth * .30f)
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                verticalAlignment = Alignment.CenterVertically) {
+                                Text(event.dateLabel, Modifier.width(dateWidth), style = secondaryDateStyle,
+                                    textAlign = TextAlign.Start, maxLines = 1, overflow = TextOverflow.Ellipsis, softWrap = false)
+                                Text(event.timeLabel, Modifier.width(timeWidth), style = secondaryTimeStyle,
+                                    textAlign = TextAlign.End, maxLines = 1, overflow = TextOverflow.Ellipsis, softWrap = false)
+                                Text(event.description, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium,
+                                    maxLines = 1, overflow = TextOverflow.Ellipsis, softWrap = false)
+                            }
                         }
-                        Text(event.description, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium,
-                            maxLines = 1, overflow = TextOverflow.Ellipsis, softWrap = false)
                     }
                     if (closest && onAddWork != null) IconButton(onClick = onAddWork) {
                         Icon(Icons.Default.Add, stringResource(Res.string.work_add), tint = foreground)
