@@ -38,6 +38,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.ui.unit.dp
 import com.andreyceilings.shared.calendar.WorkOccurrenceKey
 import com.andreyceilings.shared.resources.*
@@ -104,7 +106,10 @@ fun UpcomingEventsCard(
     val upcoming = upcomingWorkEvents(events, nowMillis)
     val theme = MaterialTheme.colorScheme
 
-    Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+    Card(modifier = modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = theme.surfaceContainerLow),
+        border = BorderStroke(1.dp, theme.outlineVariant.copy(alpha = .6f))) {
+    Column(Modifier.fillMaxWidth().padding(7.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
         if (upcoming.isEmpty()) {
             Card(shape = RoundedCornerShape(18.dp), colors = CardDefaults.cardColors(containerColor = theme.primaryContainer)) {
                 Row(Modifier.fillMaxWidth().padding(start = 12.dp, end = 6.dp),
@@ -139,9 +144,9 @@ fun UpcomingEventsCard(
                 Row(Modifier.fillMaxWidth().clickable(enabled = open != null) { open?.invoke() }
                     .padding(start = 12.dp, end = 5.dp, top = 7.dp, bottom = 7.dp),
                     verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Column(Modifier.width(88.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                        Text(event.dateLabel, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
-                        Text(event.timeLabel, style = if (closest) MaterialTheme.typography.titleMedium else MaterialTheme.typography.bodyMedium)
+                    Column(Modifier.width(96.dp), verticalArrangement = Arrangement.spacedBy(2.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(event.dateLabel, Modifier.fillMaxWidth(), style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center)
+                        Text(event.timeLabel, Modifier.fillMaxWidth(), style = if (closest) MaterialTheme.typography.titleMedium else MaterialTheme.typography.bodyMedium, textAlign = TextAlign.Center)
                     }
                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                         Text(event.description, style = if (closest) MaterialTheme.typography.titleMedium else MaterialTheme.typography.bodyMedium,
@@ -158,4 +163,5 @@ fun UpcomingEventsCard(
             }
         }
     }
+}
 }

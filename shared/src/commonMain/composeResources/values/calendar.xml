@@ -121,4 +121,5 @@
     <string name="work_search_projects">Пошук об’єктів</string>
     <string name="work_search_clients">Пошук клієнтів</string>
     <string name="work_search_zones">Пошук часового поясу</string>
+    <string name="work_copy_info">Копіювати інформацію</string>
 </resources>

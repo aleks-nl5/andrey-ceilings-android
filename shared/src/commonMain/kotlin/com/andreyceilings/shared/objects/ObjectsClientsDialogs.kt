@@ -2,6 +2,7 @@ package com.andreyceilings.shared.objects
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -53,7 +54,7 @@ internal fun ClientReadCard(
         containerColor = MaterialTheme.colorScheme.surface,
         title = {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(item.name, modifier = Modifier.weight(1f), style = MaterialTheme.typography.titleLarge)
+                SelectionContainer(Modifier.weight(1f)) { Text(item.name, style = MaterialTheme.typography.titleLarge) }
                 if (onEdit != null) IconButton(onClick = onEdit) {
                     Icon(Icons.Default.Edit, stringResource(Res.string.oc_edit_client))
                 }
@@ -81,15 +82,20 @@ internal fun ClientReadCard(
                                     Text(stringResource(Res.string.oc_phone),
                                         style = MaterialTheme.typography.labelMedium,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                    Text(item.phone, style = MaterialTheme.typography.bodyLarge,
-                                        color = MaterialTheme.colorScheme.onSurface)
+                                    SelectionContainer { Text(item.phone, style = MaterialTheme.typography.bodyLarge,
+                                        color = MaterialTheme.colorScheme.onSurface) }
                                 }
-                                IconButton(onClick = {
-                                    error = if (runCatching { onDial(item.phone) }.isFailure) callError else null
-                                }) { Icon(Icons.Default.Call, stringResource(Res.string.p6a_call_client),
-                                    tint = MaterialTheme.colorScheme.primary) }
                             }
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                                IconButton(onClick = {
+                                    error = if (runCatching { onDial(item.phone) }.isFailure) callError else null
+                                }) {
+                                    Box(Modifier.size(40.dp).background(MaterialTheme.colorScheme.primaryContainer, CircleShape),
+                                        contentAlignment = Alignment.Center) {
+                                        Icon(Icons.Default.Call, stringResource(Res.string.p6a_call_client),
+                                            tint = MaterialTheme.colorScheme.onPrimaryContainer)
+                                    }
+                                }
                                 listOf("WhatsApp" to ContactAction.WHATSAPP, "Telegram" to ContactAction.TELEGRAM,
                                     "Viber" to ContactAction.VIBER).forEach { (name, action) ->
                                     IconButton(onClick = {
@@ -99,7 +105,7 @@ internal fun ClientReadCard(
                                         modifier = Modifier.semantics { contentDescription = name }) {
                                         Box(Modifier.size(40.dp).background(MaterialTheme.colorScheme.primaryContainer, CircleShape),
                                             contentAlignment = Alignment.Center) {
-                                            ExternalBrandArtwork(action, modifier = Modifier.size(28.dp))
+                                            ExternalBrandArtwork(action, modifier = Modifier.size(28.dp), monochromeTint = MaterialTheme.colorScheme.onPrimaryContainer)
                                         }
                                     }
                                 }
@@ -113,8 +119,8 @@ internal fun ClientReadCard(
                                 Text(stringResource(Res.string.oc_email),
                                     style = MaterialTheme.typography.labelMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                Text(item.email, style = MaterialTheme.typography.bodyLarge,
-                                    color = MaterialTheme.colorScheme.onSurface)
+                                SelectionContainer { Text(item.email, style = MaterialTheme.typography.bodyLarge,
+                                    color = MaterialTheme.colorScheme.onSurface) }
                             }
                             IconButton(onClick = {
                                 error = if (runCatching { uri.openUri("mailto:" + item.email.trim()) }.isFailure) mailError else null
@@ -128,8 +134,8 @@ internal fun ClientReadCard(
                     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Text(stringResource(Res.string.oc_notes), style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Text(item.notes, style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurface)
+                        SelectionContainer { Text(item.notes, style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurface) }
                     }
                 }
                 error?.let { Text(it, color = MaterialTheme.colorScheme.error) }

@@ -38,6 +38,9 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
@@ -207,6 +210,7 @@ fun WorkCalendarScreen(
                     if (expanded) {
                         OutlinedTextField(query, { query = it }, Modifier.fillMaxWidth(),
                             label = { Text(stringResource(Res.string.work_search)) }, singleLine = true)
+                        Spacer(Modifier.height(8.dp))
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                             CalendarMenu(modifier = Modifier.weight(1f), fillWidth = true, menuModifier = Modifier.height(240.dp), label = type?.let { calendarTypeLabel(types[it]) } ?: stringResource(Res.string.work_type)) {
                                 CalendarMenuItem(text = { Text(stringResource(Res.string.work_all)) }, onClick = { type = null })
@@ -288,7 +292,7 @@ fun WorkCalendarScreen(
                                         val selected = day == date
                                         val workday = options?.settings?.workingDays?.contains(day.dayOfWeek) != false
                                         val container = if (selected) MaterialTheme.colorScheme.primaryContainer
-                                            else if (!workday) MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .46f)
+                                            else if (!workday) MaterialTheme.colorScheme.surfaceVariant.copy(alpha = if (MaterialTheme.colorScheme.background.luminance() > .4f) .95f else .46f)
                                             else Color.Transparent
                                         Column(Modifier.weight(1f).heightIn(min = 43.dp)
                                             .clip(RoundedCornerShape(22.dp)).background(container)
@@ -369,6 +373,7 @@ internal fun CalendarWorkRow(
     val status = work.draft.status
     val context = CalendarEditorRoute.Open(work.key)
     var menu by remember { mutableStateOf(false) }
+    val clipboard = LocalClipboardManager.current
     val color = if (status.active) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant
     val obsolete = status.active && !work.upcoming(now)
     val id = "${work.key.rootUuid}/${work.key.originalDate}/${selectedDate ?: work.draft.date}"
@@ -416,12 +421,31 @@ internal fun CalendarWorkRow(
                 IconButton(onClick = { swipeState.dismiss(); menu = true }) { Icon(Icons.Default.MoreVert, stringResource(Res.string.work_edit)) }
                 CeilingsPopupMenu(menu, onDismissRequest = { menu = false }) {
                     CalendarMenuItem(text = { Text(stringResource(Res.string.work_edit)) },
+                        leadingIcon = { Icon(Icons.Default.Edit, null, tint = MaterialTheme.colorScheme.onSurfaceVariant) },
                         onClick = { menu = false; onEdit(context.copy(edit = true)) })
                     if (work.draft.schedule.days.size == 1 && status.active) {
                         CalendarMenuItem(text = { Text(stringResource(Res.string.work_move)) },
+                            leadingIcon = { Icon(Icons.Default.Event, null, tint = MaterialTheme.colorScheme.onSurfaceVariant) },
                             onClick = { menu = false; onEdit(context.copy(move = true)) })
                     }
+                    CalendarMenuItem(text = { Text(stringResource(Res.string.work_copy_info)) },
+                        leadingIcon = { Icon(Icons.Default.ContentCopy, null, tint = MaterialTheme.colorScheme.onSurfaceVariant) },
+                        onClick = {
+                            menu = false
+                            val summary = buildList {
+                                add(work.draft.title)
+                                work.days.forEach { day ->
+                                    val time = if (work.draft.schedule.mode == WorkTimeMode.TIMED) day.interval?.let { interval ->
+                                        interval.start.toLocalDateTime(work.draft.schedule.zone).time.shortTime() + "–" + interval.endExclusive.toLocalDateTime(work.draft.schedule.zone).time.shortTime()
+                                    }.orEmpty() else ""
+                                    add(listOf(day.date.shortDate(), time).filter { it.isNotBlank() }.joinToString(" · "))
+                                }
+                                addAll(listOfNotNull(work.projectLabel, work.contact.name, work.contact.address, work.contact.phone, work.contact.email, work.draft.notes).filter { it.isNotBlank() }.distinct())
+                            }.joinToString("\n")
+                            clipboard.setText(AnnotatedString(summary))
+                        })
                     CalendarMenuItem(text = { Text(stringResource(Res.string.oc_delete)) },
+                        leadingIcon = { Icon(Icons.Default.Delete, null, tint = MaterialTheme.colorScheme.onSurfaceVariant) },
                         onClick = { menu = false; onEdit(context.copy(delete = true)) })
                 }
             }

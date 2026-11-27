@@ -83,6 +83,8 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.zIndex
 import androidx.compose.ui.platform.LocalDensity
@@ -1157,6 +1159,7 @@ private fun ProjectCard(
     onSwipeClose: () -> Unit,
     onAnyInteraction: () -> Unit
 ) {
+    val clipboard = LocalClipboardManager.current
     val id = "p-" + item.id
     val actions = if (item.address.isBlank()) emptyList() else listOf(
         "Maps" to ContactAction.GOOGLE_MAPS, "Waze" to ContactAction.WAZE
@@ -1197,6 +1200,7 @@ private fun ProjectCard(
                     )
                     OverflowActions(
                         onMenuOpened = onAnyInteraction,
+                        onCopy = { clipboard.setText(AnnotatedString(listOf(item.title, item.address, item.clientName, item.notes).filter { it.isNotBlank() }.distinct().joinToString("\n"))) },
                         onDelete = { onSwipeClose(); onDelete() },
                         actions = actions,
                         onAction = { action ->
@@ -1243,6 +1247,7 @@ private fun ClientCard(
     onSwipeClose: () -> Unit,
     onAnyInteraction: () -> Unit
 ) {
+    val clipboard = LocalClipboardManager.current
     val id = "c-" + item.id
     val actions = if (item.phone.isBlank()) emptyList() else listOf(
         "WhatsApp" to ContactAction.WHATSAPP,
@@ -1278,6 +1283,7 @@ private fun ClientCard(
                         overflow = TextOverflow.Ellipsis)
                     OverflowActions(
                         onMenuOpened = onAnyInteraction,
+                        onCopy = { clipboard.setText(AnnotatedString(listOf(item.name, item.phone, item.email, item.notes).filter { it.isNotBlank() }.joinToString("\n"))) },
                         onDelete = { onSwipeClose(); onDelete() },
                         actions = actions,
                         onAction = { action ->
@@ -1494,7 +1500,8 @@ private fun OverflowActions(
     onDelete: () -> Unit,
     actions: List<Pair<String, ContactAction>>,
     onAction: (ContactAction) -> Unit,
-    onMenuOpened: () -> Unit = {}
+    onMenuOpened: () -> Unit = {},
+    onCopy: (() -> Unit)? = null
 ) {
     var expanded by remember { mutableStateOf(false) }
     Box {
@@ -1515,6 +1522,8 @@ private fun OverflowActions(
                     onClick = { expanded = false; onAction(action) }
                 )
             }
+            if (onCopy != null) DropdownMenuItem(text = { Text(stringResource(Res.string.work_copy_info)) },
+                leadingIcon = { Icon(Icons.Default.ContentCopy, null) }, onClick = { expanded = false; onCopy() })
             DropdownMenuItem(text = { Text("Видалити") }, leadingIcon = {
                 Icon(Icons.Default.Delete, null)
             }, onClick = { expanded = false; onDelete() })

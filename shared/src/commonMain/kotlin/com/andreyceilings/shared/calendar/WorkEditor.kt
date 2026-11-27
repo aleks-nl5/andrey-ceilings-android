@@ -3,6 +3,10 @@ package com.andreyceilings.shared.calendar
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
@@ -294,17 +298,17 @@ fun WorkEditor(
             title = { Text(stringResource(title)) },
             text = {
                 Column {
-                    DiskDateField(data.date) { next ->
-                        input = data.copy(date = next)
-                    }
-                    if (data.mode == WorkTimeMode.TIMED) {
-                        val day = data.days.single()
-                        val source = checkNotNull(original).draft.schedule.days.single()
-                        val duration = checkNotNull(source.end).toSecondOfDay() - checkNotNull(source.start).toSecondOfDay()
-                        WorkTimeField(day.start, Res.string.work_start) { start ->
-                            val next = runCatching { LocalTime.parse(start).toSecondOfDay() + duration }.getOrNull()
-                            val end = next?.takeIf { it < 86400 }?.let { LocalTime.fromSecondOfDay(it).shortTime() }.orEmpty()
-                            input = data.copy(days = listOf(day.copy(start = start, end = end)))
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                        DiskDateField(data.date, prominent = true) { next -> input = data.copy(date = next) }
+                        if (data.mode == WorkTimeMode.TIMED) {
+                            val day = data.days.single()
+                            val source = checkNotNull(original).draft.schedule.days.single()
+                            val duration = checkNotNull(source.end).toSecondOfDay() - checkNotNull(source.start).toSecondOfDay()
+                            WorkTimeField(day.start, Res.string.work_start, prominent = true) { start ->
+                                val next = runCatching { LocalTime.parse(start).toSecondOfDay() + duration }.getOrNull()
+                                val end = next?.takeIf { it < 86400 }?.let { LocalTime.fromSecondOfDay(it).shortTime() }.orEmpty()
+                                input = data.copy(days = listOf(day.copy(start = start, end = end)))
+                            }
                         }
                     }
                     if (recurring) ScopeSelection(scope) { scope = it }
@@ -669,6 +673,7 @@ private fun ScopeSelection(scope: CalendarEditScope, onScope: (CalendarEditScope
 
 @Composable
 private fun RepeatSettings(input: WorkInput, onChange: (WorkInput) -> Unit) {
+    Column(Modifier.fillMaxWidth().padding(vertical = 5.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
     Text(stringResource(Res.string.work_recurrence), style = MaterialTheme.typography.labelMedium)
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
         CalendarMenu(stringResource(input.frequency?.label() ?: Res.string.work_once), modifier = Modifier.weight(1f), fillWidth = true, leading = {
@@ -712,6 +717,7 @@ private fun RepeatSettings(input: WorkInput, onChange: (WorkInput) -> Unit) {
                 onChange(input.copy(endValue = it))
             }
         }
+    }
     }
 }
 
@@ -774,12 +780,12 @@ private fun CalendarLinkMenu(label: StringResource, selected: String?, entries: 
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun DiskDateField(value: String, label: StringResource = Res.string.work_date, error: Boolean = false, neutral: Boolean = false, onChange: (String) -> Unit) {
+private fun DiskDateField(value: String, label: StringResource = Res.string.work_date, error: Boolean = false, neutral: Boolean = false, prominent: Boolean = false, onChange: (String) -> Unit) {
     var picker by remember { mutableStateOf(false) }
     TextButton(onClick = { picker = true }, contentPadding = PaddingValues(horizontal = 2.dp, vertical = 4.dp)) {
         val formatted = runCatching { LocalDate.parse(value).shortDate() }.getOrDefault(value)
         Text(formatted.ifBlank { stringResource(label) }, color = if (error) MaterialTheme.colorScheme.error else if (neutral) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.primary,
-            style = MaterialTheme.typography.bodyLarge, maxLines = 1)
+            style = if (prominent) MaterialTheme.typography.titleLarge else MaterialTheme.typography.bodyLarge, maxLines = 1)
     }
     if (picker) {
         val current = runCatching { LocalDate.parse(value) }.getOrNull()
@@ -809,12 +815,12 @@ internal fun WorkField(value: String, label: StringResource, error: Boolean = fa
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun WorkTimeField(value: String, label: StringResource, modifier: Modifier = Modifier, error: Boolean = false, onChange: (String) -> Unit) {
+private fun WorkTimeField(value: String, label: StringResource, modifier: Modifier = Modifier, error: Boolean = false, prominent: Boolean = false, onChange: (String) -> Unit) {
     var open by remember { mutableStateOf(false) }
     TextButton(onClick = { open = true }, modifier = modifier, contentPadding = PaddingValues(horizontal = 2.dp, vertical = 4.dp)) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(stringResource(label), style = MaterialTheme.typography.labelSmall)
-            Text(value, style = MaterialTheme.typography.titleMedium,
+            if (!prominent) Text(stringResource(label), style = MaterialTheme.typography.labelSmall)
+            Text(value, style = if (prominent) MaterialTheme.typography.titleLarge else MaterialTheme.typography.titleMedium,
                 color = if (error) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary)
         }
     }
@@ -900,14 +906,14 @@ private fun WorkReadOnly(work: CalendarWork, options: CalendarFormOptions, store
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.Top) {
             Icon(typeIcon(type), null, Modifier.size(26.dp).padding(top = 3.dp), tint = typeColor(type))
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(9.dp)) {
-                Text(data.title, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.SemiBold)
+                SelectionContainer { Text(data.title, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.SemiBold) }
                 work.days.forEach { day ->
                     val time = if (data.schedule.mode == WorkTimeMode.TIMED) day.interval?.let { interval ->
                         interval.start.toLocalDateTime(data.schedule.zone).time.shortTime() + " – " +
                             interval.endExclusive.toLocalDateTime(data.schedule.zone).time.shortTime()
                     } ?: stringResource(Res.string.work_invalid) else stringResource(data.schedule.mode.label())
-                    Text(stringResource(day.date.dayOfWeek.label()) + ", " + day.date.shortDate() + " · " + time,
-                        style = MaterialTheme.typography.bodyLarge)
+                    SelectionContainer { Text(stringResource(day.date.dayOfWeek.label()) + ", " + day.date.shortDate() + " · " + time,
+                        style = MaterialTheme.typography.bodyLarge) }
                 }
                 Text(data.schedule.zone.id, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
@@ -968,7 +974,10 @@ private fun WorkReadOnly(work: CalendarWork, options: CalendarFormOptions, store
 
 @Composable
 private fun WorkDetailRow(icon: ImageVector, value: String, subtitle: String? = null, onClick: (() -> Unit)? = null) {
-    Row(Modifier.fillMaxWidth().then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
+    val clipboard = LocalClipboardManager.current
+    val copyLabel = stringResource(Res.string.work_copy_info)
+    Row(Modifier.fillMaxWidth().combinedClickable(onClick = { onClick?.invoke() },
+        onLongClickLabel = copyLabel, onLongClick = { clipboard.setText(AnnotatedString(value)) })
         .padding(vertical = 7.dp), horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
         Icon(icon, null, Modifier.size(24.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
