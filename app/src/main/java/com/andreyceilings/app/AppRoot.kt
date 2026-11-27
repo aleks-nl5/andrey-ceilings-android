@@ -899,16 +899,7 @@ private fun CeilingsAppContent(
                 .height(navigationBarInset + systemPanelGradientHeight)
         )
 
-        if (showGlobalSearch && openSearch) RegistrySearchDialog(
-            database?.objectsClientsStore, onClose = { openSearch = false },
-            // Android Dialog has its own window; opt into edge-to-edge so its
-            // content receives the IME insets instead of being panned behind it.
-            properties = DialogProperties(usePlatformDefaultWidth = false,
-                dismissOnClickOutside = false, decorFitsSystemWindows = false),
-            calendar = calendarStore,
-            onWork = { calendarEditor = CalendarEditorRoute.Open(it) },
-        ) { hit ->
-            openSearch = false
+        fun openCalendarRegistryTarget(hit: GlobalRegistryTarget) {
             val target = when (hit) {
                 is GlobalRegistryTarget.Project, is GlobalRegistryTarget.Client -> AppTab.OBJECTS
                 is GlobalRegistryTarget.Ceiling -> AppTab.MEASUREMENTS
@@ -938,19 +929,35 @@ private fun CeilingsAppContent(
             }
         }
 
+        if (showGlobalSearch && openSearch) RegistrySearchDialog(
+            database?.objectsClientsStore, onClose = { openSearch = false },
+            // Android Dialog has its own window; opt into edge-to-edge so its
+            // content receives the IME insets instead of being panned behind it.
+            properties = DialogProperties(usePlatformDefaultWidth = false,
+                dismissOnClickOutside = false, decorFitsSystemWindows = false),
+            calendar = calendarStore,
+            onWork = { calendarEditor = CalendarEditorRoute.Open(it) },
+        ) { hit ->
+            openSearch = false
+            openCalendarRegistryTarget(hit)
+        }
+
         if (calendarStore != null) {
             projectCalendar?.let { projectUuid ->
                 androidx.compose.ui.window.Dialog(onDismissRequest = { projectCalendar = null }, properties = calendarWindow) {
-                    Box(Modifier.fillMaxSize().safeDrawingPadding().imePadding().padding(horizontal = 12.dp)) {
-                        WorkCalendarScreen(calendarStore, CalendarDisplayMode.LIST, {}, onEdit = { calendarEditor = it },
-                            contentPadding = PaddingValues(), systemFirstDay = firstWeekday, projectFilter = projectUuid,
-                            onClose = { projectCalendar = null })
+                    Box(Modifier.fillMaxSize().safeDrawingPadding().imePadding().padding(horizontal = 12.dp), contentAlignment = Alignment.Center) {
+                        Surface(Modifier.fillMaxWidth().fillMaxHeight(.66f), shape = MaterialTheme.shapes.extraLarge) {
+                            WorkCalendarScreen(calendarStore, CalendarDisplayMode.LIST, {}, onEdit = { calendarEditor = it },
+                                contentPadding = PaddingValues(8.dp), systemFirstDay = firstWeekday, projectFilter = projectUuid,
+                                onClose = { projectCalendar = null })
+                        }
                     }
                 }
             }
             calendarEditor?.let { route ->
                 WorkEditor(calendarStore, route, onClose = { calendarEditor = null }, properties = calendarWindow,
                     registry = database?.objectsClientsStore,
+                    onRegistryTarget = { hit -> calendarEditor = null; projectCalendar = null; openSearch = false; openCalendarRegistryTarget(hit) },
                     onSaved = { result, draft ->
                         calendarEditor = null
                         detachedCalendarWorks = result.detached

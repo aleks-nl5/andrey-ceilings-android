@@ -41,8 +41,9 @@ internal fun ProjectCalendarWorks(
         }
         if (upcoming is CalendarRead.Unavailable) CalendarFeedback(Res.string.work_unavailable)
         if (approvedQuote && installation is CalendarRead.Ready && installation.value.none { it.upcoming(now) }) {
-            TextButton(onClick = { onEdit(CalendarEditorRoute.Create(projectUuid = projectUuid, installation = true)) }) {
-                Text(stringResource(Res.string.work_schedule_install))
+            OutlinedButton(modifier = Modifier.fillMaxWidth(), onClick = { onEdit(CalendarEditorRoute.Create(projectUuid = projectUuid, installation = true)) }) {
+                Icon(Icons.Default.Add, null, Modifier.size(18.dp))
+                Text(stringResource(Res.string.work_schedule_install), Modifier.padding(start = 6.dp))
             }
         }
     }

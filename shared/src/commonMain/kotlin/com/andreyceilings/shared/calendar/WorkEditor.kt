@@ -11,6 +11,7 @@ import com.andreyceilings.shared.ui.CeilingsFab
 import com.andreyceilings.shared.ui.CeilingsFabProfile
 import com.andreyceilings.shared.input.CompactOutlinedStringField
 import com.andreyceilings.shared.objects.ObjectsClientsStore
+import com.andreyceilings.shared.registry.GlobalRegistryTarget
 import com.andreyceilings.shared.objects.ProjectEditor
 import com.andreyceilings.shared.objects.ClientEditor
 import kotlinx.coroutines.withContext
@@ -94,11 +95,13 @@ fun WorkEditor(
     onSaved: (CalendarSaveResult.Saved, CalendarWorkDraft) -> Unit = { _, _ -> onClose() },
     properties: DialogProperties = DialogProperties(usePlatformDefaultWidth = false, dismissOnClickOutside = false),
     registry: ObjectsClientsStore? = null,
+    onRegistryTarget: ((GlobalRegistryTarget) -> Unit)? = null,
 ) = key(store, route) {
     val optionsRead = calendarOptionsState(store)
     val options = optionsRead.data()
     val lifecycleScope = rememberCoroutineScope()
     var editing by remember { mutableStateOf(route is CalendarEditorRoute.Create || (route as? CalendarEditorRoute.Open)?.edit == true || (route as? CalendarEditorRoute.Open)?.move == true) }
+    var dateError by remember { mutableStateOf(false) }
     var showDetails by remember { mutableStateOf(false) }
     var createLink by remember { mutableStateOf<String?>(null) }
     var linkBusy by remember { mutableStateOf(false) }
@@ -140,8 +143,7 @@ fun WorkEditor(
                     val end = 9 * 3600 + minOf(options.types.firstOrNull { it.code == code }?.durationMinutes ?: 60, 899) * 60
                     CalendarWorkDraft(date, WorkSchedule(WorkTimeMode.TIMED, options.settings.zone,
                         listOf(WorkDay(0, LocalTime(9, 0), LocalTime.fromSecondOfDay(end)))),
-                        "", code, projectUuid = route.projectUuid,
-                        clientUuid = options.projects.firstOrNull { it.uuid == route.projectUuid }?.clientUuid)
+                        "", code, projectUuid = route.projectUuid)
                 }
             }
             val data = WorkInput.from(draft, options.types.firstOrNull { it.code == draft.typeCode }?.durationMinutes ?: 60)
@@ -280,14 +282,15 @@ fun WorkEditor(
                     } else if (data == null || options == null) item { LinearProgressIndicator(Modifier.fillMaxWidth()) }
                     else if (!editing && original != null) {
                         item("work-view") {
-                            WorkReadOnly(checkNotNull(original), options, onDelete = { deleting = true })
+                            WorkReadOnly(checkNotNull(original), options, store, onRegistryTarget, onDelete = { deleting = true })
                         }
                         if (stale || error) item { CalendarFeedback(if (stale) Res.string.work_stale else Res.string.work_save_failed) }
                     } else {
-                        if (stale || error || invalidTime || clockChange || (draft == null && data != initial)) item {
+                        if (stale || error || invalidTime || clockChange || dateError || (draft == null && data != initial)) item {
                             CalendarFeedback(when {
                                 stale -> Res.string.work_stale
                                 error -> Res.string.work_save_failed
+                                dateError -> Res.string.work_invalid_day
                                 invalidTime || draft == null -> Res.string.work_invalid
                                 else -> Res.string.work_zone_change
                             })
@@ -359,16 +362,23 @@ fun WorkEditor(
                                 val actualDate = runCatching { LocalDate.parse(data.date).shift(day.offset.toInt()) }.getOrNull()
                                 Box(Modifier.weight(1.4f)) {
                                     DiskDateField(actualDate?.toString().orEmpty()) { chosen ->
-                                        if (index == 0) input = data.copy(date = chosen)
+                                        if (index == 0) { dateError = false; input = data.copy(date = chosen) }
                                         else {
                                             val offset = LocalDate.parse(chosen).dayNumber() - LocalDate.parse(data.date).dayNumber()
-                                            if (offset in 1..365 && data.days.none { it.offset.toLongOrNull() == offset }) set(day.copy(offset = offset.toString()))
+                                            if (offset in 1L..365L && data.days.withIndex().none { it.index != index && it.value.offset.toLongOrNull() == offset }) {
+                                                dateError = false; set(day.copy(offset = offset.toString()))
+                                            } else dateError = true
                                         }
                                     }
                                 }
                                 if (data.mode == WorkTimeMode.TIMED) {
-                                    WorkTimeField(day.start, Res.string.work_start, Modifier.weight(1f)) { set(day.copy(start = it)) }
-                                    WorkTimeField(day.end, Res.string.work_end, Modifier.weight(1f)) { set(day.copy(end = it)) }
+                                    val badTime = runCatching { LocalTime.parse(day.start) >= LocalTime.parse(day.end) }.getOrDefault(true)
+                                    WorkTimeField(day.start, Res.string.work_start, Modifier.weight(1f), badTime) { start ->
+                                        val duration = runCatching { LocalTime.parse(day.end).toSecondOfDay() - LocalTime.parse(day.start).toSecondOfDay() }.getOrDefault(0)
+                                        val end = LocalTime.parse(start).toSecondOfDay() + duration
+                                        set(day.copy(start = start, end = if (duration > 0 && end < 86400) LocalTime.fromSecondOfDay(end).shortTime() else day.end))
+                                    }
+                                    WorkTimeField(day.end, Res.string.work_end, Modifier.weight(1f), badTime) { set(day.copy(end = it)) }
                                 }
                                 if (index != 0) IconButton(onClick = {
                                     input = data.copy(days = data.days.filterIndexed { i, _ -> i != index })
@@ -394,10 +404,12 @@ fun WorkEditor(
                             val clients = (options.clients + listOfNotNull(createdClient)).distinctBy { it.uuid }
                             CalendarLinkMenu(Res.string.work_object, data.project, projects, error = data.type == "INSTALL" && data.project == null,
                                 onCreate = registry?.let { { createLink = "project"; linkError = false } }) {
-                                input = data.copy(project = it, client = projects.firstOrNull { item -> item.uuid == it }?.clientUuid ?: data.client,
-                                    ceilings = emptyList(), explicit = false)
+                                input = data.copy(project = it, client = if (it == data.project || it == null) data.client else null,
+                                    ceilings = if (it == data.project) data.ceilings else emptyList(), explicit = it == data.project && data.explicit)
                             }
-                            CalendarLinkMenu(Res.string.work_client, data.client, clients,
+                            val inheritedClient = projects.firstOrNull { it.uuid == data.project }?.clientUuid
+                            CalendarLinkMenu(Res.string.work_client, data.client ?: inheritedClient, clients,
+                                emptyLabel = if (inheritedClient != null) Res.string.work_inherit_client else Res.string.work_empty_link,
                                 onCreate = registry?.let { { createLink = "client"; linkError = false } }) {
                                 input = data.copy(client = it)
                             }
@@ -482,7 +494,7 @@ fun WorkEditor(
                         try {
                             val entry = store.createProject(registry, value)
                             createdProject = entry
-                            input = input?.copy(project = entry.uuid, client = entry.clientUuid,
+                            input = input?.copy(project = entry.uuid, client = null,
                                 ceilings = emptyList(), explicit = false)
                             createLink = null
                         } catch (cancelled: CancellationException) { throw cancelled }
@@ -589,7 +601,7 @@ internal fun DaySelection(days: Set<DayOfWeek>, onChange: (Set<DayOfWeek>) -> Un
 
 @Composable
 private fun CalendarLinkMenu(label: StringResource, selected: String?, entries: List<CalendarOption>,
-    error: Boolean = false, onCreate: (() -> Unit)? = null, onSelect: (String?) -> Unit) {
+    error: Boolean = false, emptyLabel: StringResource = Res.string.work_empty_link, onCreate: (() -> Unit)? = null, onSelect: (String?) -> Unit) {
     var open by remember { mutableStateOf(false) }
     var query by remember { mutableStateOf("") }
     Text(stringResource(label), style = MaterialTheme.typography.labelMedium,
@@ -603,7 +615,7 @@ private fun CalendarLinkMenu(label: StringResource, selected: String?, entries: 
             if (onCreate != null) DropdownMenuItem(text = { Text(stringResource(if (label == Res.string.work_object) Res.string.oc_new_project else Res.string.oc_new_client)) },
                 leadingIcon = { Icon(Icons.Default.Add, null) }, onClick = { open = false; onCreate() })
             WorkField(query, Res.string.work_search) { query = it }
-            DropdownMenuItem(text = { Text(stringResource(Res.string.work_empty_link)) }, onClick = { open = false; onSelect(null) })
+            DropdownMenuItem(text = { Text(stringResource(emptyLabel)) }, onClick = { open = false; onSelect(null) })
             entries.filter { it.name.contains(query, ignoreCase = true) }.forEach {
                 DropdownMenuItem(text = { Text(it.name) }, onClick = { open = false; onSelect(it.uuid) })
             }
@@ -617,7 +629,8 @@ private fun DiskDateField(value: String, label: StringResource = Res.string.work
     var picker by remember { mutableStateOf(false) }
     TextButton(onClick = { picker = true }) {
         Icon(Icons.Default.CalendarMonth, stringResource(label), Modifier.size(18.dp))
-        Text(value.ifBlank { stringResource(label) }, modifier = Modifier.padding(start = 4.dp), maxLines = 1)
+        val formatted = runCatching { LocalDate.parse(value).let { it.shortDate() + "." + it.year } }.getOrDefault(value)
+        Text(formatted.ifBlank { stringResource(label) }, modifier = Modifier.padding(start = 4.dp), maxLines = 1)
     }
     if (picker) {
         val current = runCatching { LocalDate.parse(value) }.getOrNull()
@@ -645,12 +658,13 @@ internal fun WorkField(value: String, label: StringResource, error: Boolean = fa
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun WorkTimeField(value: String, label: StringResource, modifier: Modifier = Modifier, onChange: (String) -> Unit) {
+private fun WorkTimeField(value: String, label: StringResource, modifier: Modifier = Modifier, error: Boolean = false, onChange: (String) -> Unit) {
     var open by remember { mutableStateOf(false) }
     TextButton(onClick = { open = true }, modifier = modifier) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text(stringResource(label), style = MaterialTheme.typography.labelSmall)
-            Text(value, style = MaterialTheme.typography.titleSmall)
+            Text(value, style = MaterialTheme.typography.titleSmall,
+                color = if (error) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary)
         }
     }
     if (open) {
@@ -706,11 +720,28 @@ internal fun WorkZoneField(value: String, onChange: (String) -> Unit) {
 }
 
 @Composable
-private fun WorkReadOnly(work: CalendarWork, options: CalendarFormOptions, onDelete: () -> Unit) {
+private fun WorkReadOnly(work: CalendarWork, options: CalendarFormOptions, store: CalendarStore,
+    onRegistryTarget: ((GlobalRegistryTarget) -> Unit)?, onDelete: () -> Unit) {
     val data = work.draft
     val uriHandler = LocalUriHandler.current
+    val scope = rememberCoroutineScope()
     var externalError by remember { mutableStateOf(false) }
-    fun open(uri: String) { try { uriHandler.openUri(uri) } catch (_: Exception) { externalError = true } }
+    fun open(uri: String, fallback: String? = null) {
+        try { uriHandler.openUri(uri) } catch (_: Exception) {
+            if (fallback == null) externalError = true
+            else try { uriHandler.openUri(fallback) } catch (_: Exception) { externalError = true }
+        }
+    }
+    fun navigate(resolve: suspend () -> GlobalRegistryTarget?) {
+        val handler = onRegistryTarget ?: return
+        scope.launch {
+            try {
+                val target = resolve()
+                if (target != null) handler(target) else externalError = true
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (_: Exception) { externalError = true }
+        }
+    }
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(7.dp)) {
         Text(data.title, style = MaterialTheme.typography.headlineSmall)
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -730,19 +761,45 @@ private fun WorkReadOnly(work: CalendarWork, options: CalendarFormOptions, onDel
         }
         Text(data.schedule.zone.id, style = MaterialTheme.typography.labelMedium)
         data.recurrence?.let { Text(stringResource(it.frequency.label()) + " · " + it.step) }
-        work.projectLabel?.let { Text(stringResource(Res.string.work_object) + " · " + it) }
-        data.ceilings.forEach { Text(it.label + if (it.removed) " · " + stringResource(Res.string.work_removed) else "") }
-        work.contact.name?.let { Text(stringResource(Res.string.work_client) + " · " + it) }
+        work.projectLabel?.let { label ->
+            val uuid = data.projectUuid
+            if (uuid != null && onRegistryTarget != null) TextButton(onClick = { navigate { store.projectTarget(uuid) } }) {
+                Text(stringResource(Res.string.work_object) + " · " + label)
+            } else Text(stringResource(Res.string.work_object) + " · " + label)
+        }
+        data.ceilings.forEach { ceiling ->
+            if (!ceiling.removed && onRegistryTarget != null) TextButton(onClick = { navigate { store.ceilingTarget(ceiling.uuid) } }) { Text(ceiling.label) }
+            else Text(ceiling.label + if (ceiling.removed) " · " + stringResource(Res.string.work_removed) else "")
+        }
+        work.contact.name?.let { label ->
+            if ((data.clientUuid != null || data.projectUuid != null) && onRegistryTarget != null)
+                TextButton(onClick = { navigate { store.clientTarget(data.projectUuid, data.clientUuid) } }) {
+                    Text(stringResource(Res.string.work_client) + " · " + label)
+                }
+            else Text(stringResource(Res.string.work_client) + " · " + label)
+        }
         work.contact.address?.takeIf { it.isNotBlank() }?.let { address ->
-            TextButton(onClick = { open("geo:0,0?q=" + address.replace(" ", "%20").replace("#", "%23")) }) { Text(address) }
+            TextButton(onClick = {
+                val encoded = calendarUriComponent(address)
+                open("geo:0,0?q=" + encoded, "https://www.google.com/maps/search/?api=1&query=" + encoded)
+            }) { Text(address) }
         }
         work.contact.phone?.takeIf { it.isNotBlank() }?.let { phone ->
             TextButton(onClick = { open("tel:" + phone.filter { it.isDigit() || it == '+' }) }) { Text(phone) }
         }
-        work.contact.email?.takeIf { it.isNotBlank() }?.let { email -> TextButton(onClick = { open("mailto:" + email) }) { Text(email) } }
+        work.contact.email?.takeIf { it.isNotBlank() }?.let { email -> TextButton(onClick = { open("mailto:" + calendarUriComponent(email, keepAt = true)) }) { Text(email) } }
         if (data.notes.isNotBlank()) Text(data.notes)
         if (externalError) CalendarFeedback(Res.string.work_external_unavailable)
         IconButton(onClick = onDelete) { Icon(Icons.Default.Delete, stringResource(Res.string.oc_delete), tint = MaterialTheme.colorScheme.error) }
+    }
+}
+
+private fun calendarUriComponent(value: String, keepAt: Boolean = false): String = buildString {
+    value.encodeToByteArray().forEach { byte ->
+        val n = byte.toInt() and 255
+        val ch = n.toChar()
+        if (ch in 'a'..'z' || ch in 'A'..'Z' || ch in '0'..'9' || ch in "-._~" || keepAt && ch == '@') append(ch)
+        else { append('%'); append(n.toString(16).uppercase().padStart(2, '0')) }
     }
 }
 

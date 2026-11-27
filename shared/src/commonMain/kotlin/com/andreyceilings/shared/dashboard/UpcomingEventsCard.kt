@@ -149,14 +149,14 @@ fun UpcomingEventsCard(
                 verticalArrangement = Arrangement.spacedBy(3.dp)
             ) {
                 val open = closest.key?.let { key -> onOpenWork?.let { { it(key) } } }
-                Row(Modifier.fillMaxWidth(),
+                Row(Modifier.fillMaxWidth().clickable(enabled = open != null) { open?.invoke() },
                     verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     EventDateBadge(
                         dateLabel = closest.dateLabel,
                         timeLabel = closest.timeLabel,
                         urgency = workUrgency(nowMillis, closest.startsAtMillis)
                     )
-                    Column(Modifier.weight(1f).clickable(enabled = open != null) { open?.invoke() }, verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                         Text(
                             closest.description,
                             style = MaterialTheme.typography.titleMedium,

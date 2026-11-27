@@ -21,7 +21,8 @@ internal data class ProjectQuoteSummary(
     val ceilings: Map<Long, CeilingQuoteSummary>,
     val unavailableCeilings: Set<Long>,
     val approvedCents: Long?,
-    val approvedUnavailable: Boolean
+    val approvedUnavailable: Boolean,
+    val hasApprovedQuote: Boolean = approvedCents != null
 )
 
 internal data class ApprovedConsolidatedFinance(
@@ -77,6 +78,7 @@ internal fun projectQuoteSummary(
         if (matched.keys != covered.keys || expectedPayable != consolidated.finalCents) approvedUnavailable = true
     }
     return ProjectQuoteSummary(
-        ceilings, unavailable, approvedTotal.takeUnless { approvedUnavailable }, approvedUnavailable
+        ceilings, unavailable, approvedTotal.takeUnless { approvedUnavailable }, approvedUnavailable,
+        consolidated != null || candidates.any { it.status == EstimateWorkflowStatus.APPROVED.name }
     )
 }

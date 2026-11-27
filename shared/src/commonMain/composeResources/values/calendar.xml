@@ -109,4 +109,6 @@
     <string name="work_unit_weeks">тиж.</string>
     <string name="work_unit_months">міс.</string>
     <string name="work_external_unavailable">Не вдалося відкрити посилання.</string>
+    <string name="work_invalid_day">Оберіть окрему дату наступного дня в межах року.</string>
+    <string name="work_inherit_client">Клієнт об’єкта</string>
 </resources>

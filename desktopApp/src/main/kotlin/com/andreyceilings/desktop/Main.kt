@@ -2,6 +2,7 @@ package com.andreyceilings.desktop
 
 import com.andreyceilings.shared.calendar.*
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.Box
@@ -189,6 +190,7 @@ private fun DesktopPriceHost(
             mutableStateOf(runCatching { CalendarDisplayMode.valueOf(calendarPreferences.get("calendarDisplayMode", "WEEK")) }
                 .getOrDefault(CalendarDisplayMode.WEEK))
         }
+        var calendarClientRequest by remember(database) { mutableStateOf<Long?>(null) }
         var calendarEditor by remember(database) { mutableStateOf<CalendarEditorRoute?>(null) }
         var completedProject by remember(database) { mutableStateOf<Pair<String, WorkOccurrenceKey>?>(null) }
         var detachedWork by remember(database) { mutableStateOf(0) }
@@ -297,6 +299,8 @@ private fun DesktopPriceHost(
                 AppRoute.OBJECTS -> ObjectsClientsScreen(
                     rows = objectRows ?: ObjectsClientsRows(emptyList(), emptyList()),
                     rowsReady = objectRows != null,
+                    requestedClientId = calendarClientRequest,
+                    onClientRequestConsumed = { calendarClientRequest = null },
                     swipeState = cardSwipes,
                     detailsProjectId = navigation.projectDetails?.projectId,
                     measurementEdit = navigation.measurementEdit,
@@ -410,13 +414,25 @@ private fun DesktopPriceHost(
                 onDismissRequest = { calendarOpen = false },
                 properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false),
             ) {
-                WorkCalendarScreen(calendar, if (calendarProject == null) calendarMode else CalendarDisplayMode.LIST,
-                    onMode = { mode -> calendarMode = mode; calendarPreferences.put("calendarDisplayMode", mode.name) },
-                    onEdit = { calendarEditor = it }, contentPadding = PaddingValues(16.dp), projectFilter = calendarProject,
-                    onClose = { calendarOpen = false })
+                Surface(Modifier.fillMaxWidth(if (calendarProject == null) 1f else .7f).fillMaxHeight(if (calendarProject == null) 1f else .65f),
+                    shape = MaterialTheme.shapes.extraLarge) {
+                    WorkCalendarScreen(calendar, if (calendarProject == null) calendarMode else CalendarDisplayMode.LIST,
+                        onMode = { mode -> calendarMode = mode; calendarPreferences.put("calendarDisplayMode", mode.name) },
+                        onEdit = { calendarEditor = it }, contentPadding = PaddingValues(16.dp), projectFilter = calendarProject,
+                        onClose = { calendarOpen = false })
+                }
             }
             calendarEditor?.let { route ->
-                WorkEditor(calendar, route, onClose = { calendarEditor = null }, registry = objectsStore, onSaved = { result, draft ->
+                WorkEditor(calendar, route, onClose = { calendarEditor = null }, registry = objectsStore,
+                    onRegistryTarget = { hit ->
+                        calendarEditor = null; calendarOpen = false
+                        when (hit) {
+                            is com.andreyceilings.shared.registry.GlobalRegistryTarget.Project -> onNavigate(navigation.navigate(AppRoute.OBJECTS, availableRoutes).openProject(hit.id))
+                            is com.andreyceilings.shared.registry.GlobalRegistryTarget.Client -> { calendarClientRequest = hit.id; onNavigate(navigation.navigate(AppRoute.OBJECTS, availableRoutes)) }
+                            is com.andreyceilings.shared.registry.GlobalRegistryTarget.Ceiling -> onNavigate(navigation.navigate(AppRoute.MEASUREMENTS, availableRoutes).openCeilingWorkspace(hit.projectId, hit.id))
+                            is com.andreyceilings.shared.registry.GlobalRegistryTarget.Quote -> Unit
+                        }
+                    }, onSaved = { result, draft ->
                     calendarEditor = null
                     detachedWork = result.detached
                     if (result.installationCompleted) completedProject = draft.projectUuid?.let { it to result.key }

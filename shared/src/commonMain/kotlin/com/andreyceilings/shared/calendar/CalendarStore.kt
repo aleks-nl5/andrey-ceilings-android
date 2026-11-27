@@ -7,6 +7,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.catch
@@ -91,7 +92,7 @@ class CalendarStore(
             val clients = database.businessSchemaQueries.selectClients().executeAsList()
             val clientIds = clients.associate { it.id to it.uuid }
             CalendarFormOptions(repository.settings(), repository.types(),
-                database.businessSchemaQueries.selectProjects().executeAsList().map { CalendarOption(it.uuid, it.title, clientIds[it.clientId]) },
+                database.businessSchemaQueries.selectProjects().executeAsList().map { CalendarOption(it.uuid, it.title, it.clientId?.let(clientIds::get)) },
                 clients.map { CalendarOption(it.uuid, it.name) })
         }.also { optionsCache.value = it }
     }
@@ -147,6 +148,27 @@ class CalendarStore(
         }
     }
 
+    internal suspend fun projectTarget(uuid: String): com.andreyceilings.shared.registry.GlobalRegistryTarget.Project? = access {
+        database.workCalendarQueries.selectCalendarDirectProject(uuid).executeAsOneOrNull()?.let {
+            com.andreyceilings.shared.registry.GlobalRegistryTarget.Project(it.id)
+        }
+    }
+
+    internal suspend fun clientTarget(projectUuid: String?, clientUuid: String?): com.andreyceilings.shared.registry.GlobalRegistryTarget.Client? = access {
+        database.transactionWithResult {
+            val client = if (clientUuid != null) database.workCalendarQueries.selectCalendarDirectClient(clientUuid).executeAsOneOrNull()
+                else projectUuid?.let { database.workCalendarQueries.selectCalendarDirectProject(it).executeAsOneOrNull()?.clientId }
+                    ?.let { database.businessSchemaQueries.selectClientById(it).executeAsOneOrNull() }
+            client?.let { com.andreyceilings.shared.registry.GlobalRegistryTarget.Client(it.id) }
+        }
+    }
+
+    internal suspend fun ceilingTarget(uuid: String): com.andreyceilings.shared.registry.GlobalRegistryTarget.Ceiling? = access {
+        database.workCalendarQueries.selectCalendarCeiling(uuid).executeAsOneOrNull()?.let {
+            com.andreyceilings.shared.registry.GlobalRegistryTarget.Ceiling(it.projectId, it.id)
+        }
+    }
+
     internal suspend fun createClient(registry: com.andreyceilings.shared.objects.ObjectsClientsStore,
         draft: com.andreyceilings.shared.objects.ClientDraft): CalendarOption = access {
         val id = registry.saveClient(null, draft)
@@ -181,15 +203,22 @@ class CalendarStore(
     private fun <T> observe(previous: T? = null, trigger: Flow<*> = changes, read: () -> T): Flow<CalendarRead<T>> {
         var last = previous
         return trigger.map {
-            try {
-                val value = access(read)
-                last = value
-                CalendarRead.Ready(value)
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (_: Exception) {
-                CalendarRead.Unavailable(last.takeUnless { closed.value })
+            var result: CalendarRead<T> = CalendarRead.Unavailable(last.takeUnless { closed.value })
+            for (attempt in 0..2) {
+                if (closed.value) { result = CalendarRead.Unavailable(); break }
+                try {
+                    val value = access(read)
+                    last = value
+                    result = CalendarRead.Ready(value)
+                    break
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (_: Exception) {
+                    result = CalendarRead.Unavailable(last.takeUnless { closed.value })
+                    if (attempt < 2 && !closed.value) delay(150L * (attempt + 1))
+                }
             }
+            result
         }
     }
 
