@@ -3,6 +3,9 @@ package com.andreyceilings.app
 import android.content.Context
 import com.andreyceilings.shared.calendar.*
 import com.andreyceilings.shared.db.removeEmptyCalendarSchema
+import com.andreyceilings.shared.db.createEncryptedPrototypeDriver
+import com.andreyceilings.shared.db.PriceNameUniquenessProof
+import com.andreyceilings.shared.db.verifyCalendarContents
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.TimeZone
 import app.cash.sqldelight.driver.android.AndroidSqliteDriver
@@ -146,28 +149,64 @@ class EstimateRevisionPortableRestoreTest {
     @Test fun v24EncryptedBackupPassesCalendarPreflightAndPreservesSourceBytes() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val name = "calendar-v24-restore-source.db"
+        val migratedName = "calendar-v24-migrated-copy.db"
         val source = context.getDatabasePath(name)
         val passphrase = ByteArray(32) { 24 }
         context.deleteDatabase(name)
+        context.deleteDatabase(migratedName)
         try {
             System.loadLibrary("sqlcipher")
-            AndroidSqliteDriver(PriceCatalogSchema, context, name,
+            val (projectId, revisionUuid, expectedDetails) = AndroidSqliteDriver(PriceCatalogSchema, context, name,
                 factory = SupportOpenHelperFactory(passphrase.copyOf())).use { driver ->
                 val db = PrototypeDatabase(driver)
                 val fixture = MeasurementPricingFixture.seed(db)
-                ImmutableEstimateRepository(db).saveIndividual(
+                val quotes = ImmutableEstimateRepository(db)
+                val saved = quotes.saveIndividual(
                     FrozenIndividualEstimateProof.command(db, fixture), 2026, 600)
+                val details = checkNotNull(quotes.revision(saved.initialRevisionUuid)).detailsJson
                 removeEmptyCalendarSchema(driver)
                 driver.execute(null, "PRAGMA user_version = 24", 0)
                 PriceCatalogSchema.verifyStructure(driver, 24)
+                Triple(fixture.projectId, saved.initialRevisionUuid, details)
             }
             val before = source.readBytes()
             try {
                 PortableBackupManager.verifyEncryptedSnapshot(context, source, passphrase)
                 assertArrayEquals(before, source.readBytes())
+
+                // Open a separate encrypted copy through the production Android driver.
+                // Keep the original v24 backup immutable, including on migration failure.
+                source.copyTo(context.getDatabasePath(migratedName))
+                val day = LocalDate(2026, 12, 1)
+                val draft = CalendarWorkDraft(day, WorkSchedule(WorkTimeMode.DATE_ONLY, TimeZone.UTC,
+                    listOf(WorkDay(0))), "Migrated calendar work", "MEASURE")
+                val workKey = createEncryptedPrototypeDriver(context, passphrase, migratedName,
+                    enableWalForTesting = true, initializePriceCatalog = true, requireExistingSchema = true).use { driver ->
+                    assertEquals(25L, PriceNameUniquenessProof.scalar(driver, "PRAGMA user_version"))
+                    PriceCatalogSchema.verifyStructure(driver, 25)
+                    verifyCalendarContents(driver)
+                    val db = PrototypeDatabase(driver)
+                    val project = checkNotNull(ProjectRepository(db).find(projectId))
+                    assertEquals(expectedDetails, ImmutableEstimateRepository(db).revision(revisionUuid)?.detailsJson)
+                    val calendar = CalendarRepository(db)
+                    assertEquals(4, calendar.types().size)
+                    assertTrue(calendar.period(WorkDateRange(day, day), TimeZone.UTC).isEmpty())
+                    val result = calendar.save(CalendarSave(draft.copy(projectUuid = project.uuid)))
+                    assertTrue(result is CalendarSaveResult.Saved)
+                    (result as CalendarSaveResult.Saved).key
+                }
+                createEncryptedPrototypeDriver(context, passphrase, migratedName,
+                    enableWalForTesting = true, initializePriceCatalog = true, requireExistingSchema = true).use { driver ->
+                    val db = PrototypeDatabase(driver)
+                    val project = checkNotNull(ProjectRepository(db).find(projectId))
+                    assertEquals(expectedDetails, ImmutableEstimateRepository(db).revision(revisionUuid)?.detailsJson)
+                    assertEquals(draft.copy(projectUuid = project.uuid), CalendarRepository(db).exact(workKey)?.draft)
+                }
+                assertArrayEquals(before, source.readBytes())
             } finally { before.fill(0) }
         } finally {
             passphrase.fill(0)
+            context.deleteDatabase(migratedName)
             context.deleteDatabase(name)
         }
     }

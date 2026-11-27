@@ -32,7 +32,7 @@ android {
             candidate.toInt()
         }
         versionCode = ciVersionCode ?: (600000 + actionsRunNumber)
-        versionName = "0.6.2" + when {
+        versionName = "0.6.3" + when {
             ciVersionCode != null -> "-ci$ciVersionCode"
             actionsRunNumber > 0 -> "-$actionsRunNumber"
             else -> ""
