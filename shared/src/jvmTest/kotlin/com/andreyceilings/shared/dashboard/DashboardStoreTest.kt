@@ -63,7 +63,8 @@ class DashboardStoreTest {
                     while (current != expected) current = updates.receive()
                 }
                 collector.cancelAndJoin()
-                val warm = assertIs<RegistryRead.Ready<*>>(initial(rows))
+                val warm = initial(rows)
+                assertIs<RegistryRead.Ready<*>>(warm)
                 assertEquals(warm, initial(session.uiDashboardSummary()))
                 measurements.createReturningId(project, "Second", areaSquareMeters = 5.0, createdAt = 102L)
                 // No active collector: reuse the last good value, then refresh from the real query.
