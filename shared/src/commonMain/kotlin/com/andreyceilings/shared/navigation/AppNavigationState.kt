@@ -75,7 +75,7 @@ data class AppNavigationState(
             }, calculatorOrigin = if (target == AppRoute.CALCULATOR && measurementEdit != null)
                 copy(calculatorOrigin = emptyList()).snapshot() else if (target == AppRoute.CALCULATOR)
                 emptyList() else calculatorOrigin,
-            calendarLinkReturn = null
+            calendarLinkReturn = calendarLinkReturn
         )
     }
 
@@ -199,7 +199,7 @@ data class AppNavigationState(
         if (measurementProjectPicker) return copy(measurementProjectPicker = false, pendingQuickCreate = null)
         if (current == AppRoute.CALCULATOR && calculatorOrigin.isNotEmpty()) {
             val origin = restore(calculatorOrigin, available)
-            if (origin.measurementEdit != null && origin.current == backStack.lastOrNull()) return origin
+            if (origin.measurementEdit != null && origin.current == backStack.lastOrNull()) return origin.copy(calendarLinkReturn = calendarLinkReturn ?: origin.calendarLinkReturn)
         }
         val index = backStack.indexOfLast { it in available && it != current }
         if (index >= 0) {

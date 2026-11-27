@@ -211,6 +211,7 @@ private fun CeilingsAppContent(
     LaunchedEffect(calendarStore, calendarMode, firstWeekday) { calendarStore?.warmCurrentPeriod(calendarMode, firstWeekday) }
     var calendarEditor by remember(database) { mutableStateOf<CalendarEditorRoute?>(null) }
     var projectCalendar by remember(database) { mutableStateOf<String?>(null) }
+    val projectCalendarStates = key(database) { rememberSaveableStateHolder() }
     var calendarReturnOverlay by remember(database) { mutableStateOf<Triple<List<String>, CalendarEditorRoute, String?>?>(null) }
     var completionProject by remember(database) { mutableStateOf<Pair<String, WorkOccurrenceKey>?>(null) }
     var detachedCalendarWorks by remember(database) { mutableIntStateOf(0) }
@@ -291,12 +292,16 @@ private fun CeilingsAppContent(
         measurementCreateNavigationGuard.quoteSession.navigate(next)
         if (next.current != navigation.current) tabChangedAt = SystemClock.elapsedRealtime()
         val pending = calendarReturnOverlay
-        if (pending != null && navigation.calendarLinkReturn != null && next.snapshot() == pending.first) {
+        if (pending != null && next != navigation && navigation.calendarLinkReturn != null && next.calendarLinkReturn == null &&
+            next.snapshot() == pending.first && next == navigation.back()) {
             calendarEditor = pending.second
             projectCalendar = pending.third
             calendarReturnOverlay = null
-        } else if (pending != null && next.calendarLinkReturn == null) {
+        } else if (pending != null && next != navigation && next.calendarLinkReturn == null) {
             calendarReturnOverlay = null
+        } else if (pending != null && next != navigation && next.calendarLinkReturn != null && calendarEditor == pending.second) {
+            calendarEditor = null
+            projectCalendar = null
         }
         navigation = next
     }
@@ -321,6 +326,7 @@ private fun CeilingsAppContent(
     val searchRequest = if (tab == repeatedSearchRoute) searchGeneration else 0
     fun navigateTo(target: AppTab, clients: Boolean = false, query: String = "") {
         if (target == tab) return
+        calendarReturnOverlay = null
         if (target == AppTab.OBJECTS) {
             objectsStartInClients = clients
             clientsBackToObjects = false
@@ -764,7 +770,7 @@ private fun CeilingsAppContent(
                             requestedClientId = requestedClientId,
                             onClientRequestConsumed = { requestedClientId = null },
                             onCalendarEdit = { calendarEditor = it },
-                            onProjectCalendar = { projectCalendar = it },
+                            onProjectCalendar = { projectCalendarStates.removeState(it); projectCalendar = it },
                              onListTabChanged = { selected ->
                                  clientsBackToObjects = selected == com.andreyceilings.shared.objects.ObjectsClientsTab.CLIENTS
                                  objectsStartInClients = clientsBackToObjects
@@ -970,7 +976,7 @@ private fun CeilingsAppContent(
             properties = DialogProperties(usePlatformDefaultWidth = false,
                 dismissOnClickOutside = false, decorFitsSystemWindows = false),
             calendar = calendarStore,
-            onWork = { calendarEditor = CalendarEditorRoute.Open(it) },
+            onWork = { openSearch = false; calendarEditor = CalendarEditorRoute.Open(it) },
         ) { hit ->
             openSearch = false
             openCalendarRegistryTarget(hit)
@@ -978,14 +984,17 @@ private fun CeilingsAppContent(
 
         if (calendarStore != null) {
             projectCalendar?.let { projectUuid ->
-                androidx.compose.ui.window.Dialog(onDismissRequest = { projectCalendar = null }, properties = calendarWindow) {
+                fun closeProjectCalendar() { projectCalendarStates.removeState(projectUuid); projectCalendar = null }
+                projectCalendarStates.SaveableStateProvider(projectUuid) {
+                androidx.compose.ui.window.Dialog(onDismissRequest = ::closeProjectCalendar, properties = calendarWindow) {
                     Box(Modifier.fillMaxSize().safeDrawingPadding().imePadding().padding(horizontal = 12.dp), contentAlignment = Alignment.Center) {
                         Surface(Modifier.fillMaxWidth().fillMaxHeight(.66f), shape = MaterialTheme.shapes.extraLarge) {
                             WorkCalendarScreen(calendarStore, CalendarDisplayMode.LIST, {}, onEdit = { calendarEditor = it },
                                 contentPadding = PaddingValues(8.dp), systemFirstDay = firstWeekday, projectFilter = projectUuid,
-                                onClose = { projectCalendar = null })
+                                onClose = ::closeProjectCalendar)
                         }
                     }
+                }
                 }
             }
             calendarEditor?.let { route ->
@@ -1003,8 +1012,6 @@ private fun CeilingsAppContent(
                         }
                         if (destination != navigation && destination.calendarLinkReturn != null) {
                             calendarReturnOverlay = Triple(checkNotNull(destination.calendarLinkReturn).origin, route, projectCalendar)
-                            calendarEditor = null
-                            projectCalendar = null
                             openSearch = false
                             if (destination.current != tab) {
                                 initialSearch = ""

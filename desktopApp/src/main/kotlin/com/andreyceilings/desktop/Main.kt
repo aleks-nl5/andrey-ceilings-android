@@ -193,6 +193,7 @@ private fun DesktopPriceHost(
         LaunchedEffect(calendar, calendarMode) { calendar.warmCurrentPeriod(calendarMode) }
         var calendarClientRequest by remember(database) { mutableStateOf<Long?>(null) }
         var calendarEditor by remember(database) { mutableStateOf<CalendarEditorRoute?>(null) }
+        val calendarStates = key(database) { androidx.compose.runtime.saveable.rememberSaveableStateHolder() }
         var calendarReturnOverlay by remember(database) { mutableStateOf<Triple<List<String>, CalendarEditorRoute, Pair<Boolean, String?>>?>(null) }
         LaunchedEffect(navigation) {
             val pending = calendarReturnOverlay
@@ -203,6 +204,8 @@ private fun DesktopPriceHost(
                     calendarProject = pending.third.second
                 }
                 calendarReturnOverlay = null
+            } else if (pending != null && navigation.calendarLinkReturn != null && calendarEditor == pending.second) {
+                calendarEditor = null; calendarOpen = false
             }
         }
         var completedProject by remember(database) { mutableStateOf<Pair<String, WorkOccurrenceKey>?>(null) }
@@ -288,7 +291,7 @@ private fun DesktopPriceHost(
                                 routeState.removeState(AppRoute.ESTIMATES.name)
                                 onNavigate(navigation.navigate(AppRoute.ESTIMATES, availableRoutes))
                             },
-                            onCalendar = { calendarProject = null; calendarOpen = true },
+                            onCalendar = { calendarStates.removeState("main"); calendarProject = null; calendarOpen = true },
                             calendar = calendar,
                             onCalendarEdit = { calendarEditor = it },
                             todayLabel = dashboardTodayLabel(currencyState.nowMillis),
@@ -324,7 +327,7 @@ private fun DesktopPriceHost(
                     onOpenMeasurement = { projectId, measurementId -> onNavigate(navigation.openCeilingWorkspace(projectId, measurementId)) },
                     detailsStore = objectsStore,
                     onCalendarEdit = { calendarEditor = it },
-                    onProjectCalendar = { calendarProject = it; calendarOpen = true },
+                    onProjectCalendar = { calendarStates.removeState(it); calendarProject = it; calendarOpen = true },
                     onOpenProject = { onNavigate(navigation.openProject(it)) },
                     onOpenCeilingRegistry = {
                         routeState.removeState(AppRoute.MEASUREMENTS.name)
@@ -423,8 +426,10 @@ private fun DesktopPriceHost(
                 )
                 else -> Unit // Only actually implemented desktop routes are exposed.
             }
-            if (calendarOpen) androidx.compose.ui.window.Dialog(
-                onDismissRequest = { calendarOpen = false },
+            if (calendarOpen) calendarStates.SaveableStateProvider(calendarProject ?: "main") {
+                fun closeCalendar() { calendarStates.removeState(calendarProject ?: "main"); calendarOpen = false }
+                androidx.compose.ui.window.Dialog(
+                onDismissRequest = ::closeCalendar,
                 properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false),
             ) {
                 Surface(Modifier.fillMaxWidth(if (calendarProject == null) 1f else .7f).fillMaxHeight(if (calendarProject == null) 1f else .65f),
@@ -432,7 +437,8 @@ private fun DesktopPriceHost(
                     WorkCalendarScreen(calendar, if (calendarProject == null) calendarMode else CalendarDisplayMode.LIST,
                         onMode = { mode -> calendarMode = mode; calendarPreferences.put("calendarDisplayMode", mode.name) },
                         onEdit = { calendarEditor = it }, contentPadding = PaddingValues(16.dp), projectFilter = calendarProject,
-                        onClose = { calendarOpen = false })
+                        onClose = ::closeCalendar)
+                }
                 }
             }
             calendarEditor?.let { route ->
@@ -445,7 +451,6 @@ private fun DesktopPriceHost(
                         }
                         if (destination != navigation && destination.calendarLinkReturn != null) {
                             calendarReturnOverlay = Triple(checkNotNull(destination.calendarLinkReturn).origin, route, calendarOpen to calendarProject)
-                            calendarEditor = null; calendarOpen = false
                             onNavigate(destination)
                         } else if (hit is com.andreyceilings.shared.registry.GlobalRegistryTarget.Project && navigation.projectDetails?.projectId == hit.id) {
                             calendarEditor = null; calendarOpen = false
@@ -491,7 +496,7 @@ private fun DesktopPriceHost(
                 darkTheme = isSystemInDarkTheme(),
                 onSelect = { id ->
                     AppRoute.fromId(id)?.let { route ->
-                        if (route != selectedTab) routeState.removeState(route.name)
+                        if (route != selectedTab) { calendarReturnOverlay = null; routeState.removeState(route.name) }
                         onNavigate(navigation.selectTab(route, availableRoutes))
                     }
                 },

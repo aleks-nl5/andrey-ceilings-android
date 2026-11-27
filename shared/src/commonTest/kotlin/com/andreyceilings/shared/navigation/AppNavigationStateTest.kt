@@ -125,6 +125,12 @@ class AppNavigationStateTest {
         assertEquals(original, original.openCalendarProject(7))
         assertNull(linked.selectTab(AppRoute.PRICES).calendarLinkReturn)
         assertEquals(calendar, calendar.openCalendarCeiling(42, 12).back())
+        val ceilingFromCalendar = calendar.openCalendarCeiling(42, 12)
+        assertEquals(ceilingFromCalendar, ceilingFromCalendar.navigate(AppRoute.CALCULATOR).back())
+        assertEquals(calendar, ceilingFromCalendar.navigate(AppRoute.CALCULATOR).back().back())
+        val projectRegistry = project.navigate(AppRoute.MEASUREMENTS)
+        assertEquals(project, projectRegistry.back())
+        assertEquals(calendar, projectRegistry.back().back())
     }
 
     @Test fun historyCannotGrowWithoutBound() {
