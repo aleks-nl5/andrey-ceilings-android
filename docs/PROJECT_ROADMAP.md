@@ -1,3 +1,21 @@
+## CURRENT — P7A technical plan approved (27.11.2026)
+
+46 product + 26 technical owner decisions: [P7 specification](P7_CALENDAR_SPEC.md), [P7A technical contract and Codex handoff](P7A_CODEX_HANDOFF.md). One Draft implementation PR after #184 merge and separate owner authorization. P7A: additive v24->25, bounded recurrence, shared calendar, dashboard/object/search/settings, focused tests; P7B separate. #49 open. No production or CI changes in planning.
+
+# CURRENT — P7 product planning complete (27.11.2026)
+
+[46 approved decisions and initial audit](P7_CALENDAR_SPEC.md) for #49. P7A core and CMP calendar; P7B notifications/system integration. Technical planning next, separate implementation approval required. P6 postmerge FULL #1390/#1127 SUCCESS, all four P6 issues closed.
+
+# CURRENT — P6 integrated; P7 calendar planning next (27.11.2026)
+
+Owner merged [PR #183](https://github.com/aleks-nl5/andrey-ceilings-android/pull/183) on 27.11.2026 at `93baa187a924bf4b163973ddc195e13e311f559d`. Exact premerge head `fb5ad4aeb221db8df6771eb35f6a96f0fd24a293`: [QUICK #260](https://github.com/aleks-nl5/andrey-ceilings-android/actions/runs/45918427259), [Android FULL #1389](https://github.com/aleks-nl5/andrey-ceilings-android/actions/runs/45919835568), [CMP FULL #1126](https://github.com/aleks-nl5/andrey-ceilings-android/actions/runs/45919853861) all SUCCESS (attempt 1, all jobs and receipts verified). P6B postmerge FULL #1386/#1123 verified SUCCESS. P6C postmerge [Android #1390](https://github.com/aleks-nl5/andrey-ceilings-android/actions/runs/45922541589) and [CMP #1127](https://github.com/aleks-nl5/andrey-ceilings-android/actions/runs/45922541626) SUCCESS on merge SHA (all jobs and receipts verified 27.11.2026). QUICK #261 (Ready transition, identical SHA) cancelled after merge; #260 remains the exact-SHA proof. P6 postmerge gate fulfilled. No schema change (v24).
+
+P6 implementation delivered: P6A compact Object, P6B persisted consolidated estimates, P6C shared registries, central creation, exact revision routing, dashboard preferences and session-scoped reactive caches. #136/#140/#77 implementation complete; #141 physical APK scroll/return acceptance confirmed by owner on 27.11.2026 and closed. Owner merge confirmed. A separate quantified 100/1,000-ceiling performance measurement was not recorded; do not claim it as performed. Remaining release checks belong to #138. No automatic reparenting of ceilings; a future move function requires separate approval.
+
+Next: P7 [#49](https://github.com/aleks-nl5/andrey-ceilings-android/issues/49), real planned work events and calendar. Begin product/technical audit on merged main only: separate internal event CRUD/reactive dashboard and calendar from external free/busy, notifications and system integration increments. Existing empty calendar must remain honest until real records exist. Verify schema/backup/restore, stable UUIDs, timezone/DST, ownership, localization, and #141 list-return policy. Production scope and implementation require separate owner approval; P8/#177, Firebase #174, branding #171 remain separate. Owner-only Ready/merge. No CI policy change in this documentation PR.
+
+See [P6C implementation and completion](P6C_IMPLEMENTATION.md). Earlier CURRENT/NEXT entries are historical where inconsistent.
+
 ## P6C implementation and APK acceptance (26.11.2026)
 
 [P6C implementation and APK acceptance](P6C_IMPLEMENTATION.md) records the shared registries, dashboard, central action and return context. Owner APK acceptance and the integration gates are pending.
@@ -73,8 +91,8 @@ Firebase — лише Android delivery/updates та діагностика; не
 | P6A — завершено | [#136](https://github.com/aleks-nl5/andrey-ceilings-android/issues/136) — компактний Об'єкт, стелі, клієнт, summary | Nonblocking open; фізичний Android 1, 10 і 30 стель, до/після; без fake consolidated state |
 | Нумерація — #143A завершено | [#143](https://github.com/aleks-nl5/andrey-ceilings-android/issues/143) — без суфікса, shared/independent counters, prefixes | До P6B; незалежно від P6A за потреби; атомарна унікальність, незмінність старих номерів |
 | P6B — завершено | #136 — збережені зведені кошториси, версійність, транзакційні статуси, PDF | Verified frozen sources, migration/backup/restore, інтегроване APK-приймання P6A/B |
-| P6C — наступний етап | [#140](https://github.com/aleks-nl5/andrey-ceilings-android/issues/140) — глобальні Стелі/Кошториси, центральний +, пошук | 35 продуктових питань погоджено (реєстри, dashboard, personalization); #141 перед редизайном, #77 узгодити; технічний аудит + окремий handoff |
-| P7 | [#49](https://github.com/aleks-nl5/andrey-ceilings-android/issues/49) — робочий календар | Після P6; окремий UX/архітектурний етап |
+| P6C — інтегровано | [#140](https://github.com/aleks-nl5/andrey-ceilings-android/issues/140) — глобальні Стелі/Кошториси, центральний +, пошук | PR #183 merged; QUICK/FULL verified; physical scroll acceptance #141 closed; main FULL verified SUCCESS |
+| P7 — наступний етап планування | [#49](https://github.com/aleks-nl5/andrey-ceilings-android/issues/49) — робочий календар | Після P6; окремий UX/архітектурний етап |
 
 Порядок P6A та #143 — пропозиція delivery, нумерація обов'язково перед P6B. Подальша Android-first [#138](https://github.com/aleks-nl5/andrey-ceilings-android/issues/138) дорожня карта: CMP Settings (#137/#145, #114), незалежний калькулятор #139, інкрементальна локалізація і стабілізація → перший Android-реліз за окремими рішеннями власника. Windows/iOS продуктові hosts #42 та sync #123–127 відкладені, shared KMP/CMP перевірки зберігаються.
 

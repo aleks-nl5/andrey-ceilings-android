@@ -1,3 +1,21 @@
+## CURRENT — P7A technical planning approved (27.11.2026)
+
+Owner approved 46 product and 26 technical calendar decisions. Read [P7 product contract](docs/P7_CALENDAR_SPEC.md) and [P7A technical contract / bounded Codex handoff](docs/P7A_CODEX_HANDOFF.md). One production Draft PR, additive v24->25, shared KMP/CMP Android-first, focused tests and owner APK/UI polish. Planning approved only: start production after #184 merge and explicit owner authorization. No P7B/P8/Firebase/branding/CI trigger edits. #49 remains open through P7B. Owner-only Ready/merge.
+
+## CURRENT — P7 product planning complete (27.11.2026)
+
+Owner approved all 46 calendar decisions and two stages P7A/P7B. [P7 contract and initial technical audit](docs/P7_CALENDAR_SPEC.md) supersedes conflicting older #49 planning. Technical audit/decision handoff only; no production authorization. P6 postmerge FULL #1390/#1127 SUCCESS; #136/#140/#77/#141 closed. Owner-only Ready/merge.
+
+## CURRENT — P6 integrated; P7 planning next (27.11.2026)
+
+Owner merged [PR #183](https://github.com/aleks-nl5/andrey-ceilings-android/pull/183) on 27.11.2026 at `93baa187a924bf4b163973ddc195e13e311f559d`. Exact premerge head `fb5ad4aeb221db8df6771eb35f6a96f0fd24a293`: [QUICK #260](https://github.com/aleks-nl5/andrey-ceilings-android/actions/runs/45918427259), [Android FULL #1389](https://github.com/aleks-nl5/andrey-ceilings-android/actions/runs/45919835568), [CMP FULL #1126](https://github.com/aleks-nl5/andrey-ceilings-android/actions/runs/45919853861) all SUCCESS (attempt 1, all jobs and receipts verified). P6B postmerge FULL #1386/#1123 verified SUCCESS. P6C postmerge [Android #1390](https://github.com/aleks-nl5/andrey-ceilings-android/actions/runs/45922541589) and [CMP #1127](https://github.com/aleks-nl5/andrey-ceilings-android/actions/runs/45922541626) SUCCESS on merge SHA (all jobs and receipts verified 27.11.2026). QUICK #261 (Ready transition, identical SHA) cancelled after merge; #260 remains the exact-SHA proof. P6 postmerge gate fulfilled. No schema change (v24).
+
+P6 implementation delivered: P6A compact Object, P6B persisted consolidated estimates, P6C shared registries, central creation, exact revision routing, dashboard preferences and session-scoped reactive caches. #136/#140/#77 implementation complete; #141 physical APK scroll/return acceptance confirmed by owner on 27.11.2026 and closed. Owner merge confirmed. A separate quantified 100/1,000-ceiling performance measurement was not recorded; do not claim it as performed. Remaining release checks belong to #138. No automatic reparenting of ceilings; a future move function requires separate approval.
+
+Next: P7 [#49](https://github.com/aleks-nl5/andrey-ceilings-android/issues/49), real planned work events and calendar. Begin product/technical audit on merged main only: separate internal event CRUD/reactive dashboard and calendar from external free/busy, notifications and system integration increments. Existing empty calendar must remain honest until real records exist. Verify schema/backup/restore, stable UUIDs, timezone/DST, ownership, localization, and #141 list-return policy. Production scope and implementation require separate owner approval; P8/#177, Firebase #174, branding #171 remain separate. Owner-only Ready/merge. No CI policy change in this documentation PR.
+
+Canonical [P6C completion record](docs/P6C_IMPLEMENTATION.md). Earlier CURRENT/planning entries below are historical where inconsistent.
+
 ## CURRENT — P6C implementation and acceptance
 
 The owner authorized P6C implementation. The [implementation and APK acceptance record](docs/P6C_IMPLEMENTATION.md) supplements the [approved handoff](docs/P6C_CODEX_HANDOFF.md). The owner controls Ready and merge. Verify previous post-merge FULLs before the next production merge.
