@@ -970,6 +970,10 @@ private fun CeilingsAppContent(
             calendarEditor?.let { route ->
                 WorkEditor(calendarStore, route, onClose = { calendarEditor = null }, properties = calendarWindow,
                     registry = database?.objectsClientsStore,
+                    openExternalUri = { url ->
+                        val action = if (url.startsWith("tel:")) android.content.Intent.ACTION_DIAL else android.content.Intent.ACTION_VIEW
+                        context.startActivity(android.content.Intent(action, Uri.parse(url)))
+                    },
                     onRegistryTarget = { hit -> calendarEditor = null; projectCalendar = null; openSearch = false; openCalendarRegistryTarget(hit) },
                     onSaved = { result, draft ->
                         calendarEditor = null

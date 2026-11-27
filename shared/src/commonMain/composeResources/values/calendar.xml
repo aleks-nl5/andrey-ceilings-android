@@ -118,4 +118,7 @@
     <string name="work_invalid_project">Оберіть об’єкт для монтажу.</string>
     <string name="work_invalid_time">Час завершення має бути пізніше початку.</string>
     <string name="work_reload_discard">Перезавантажити роботу й відкинути незбережені зміни?</string>
+    <string name="work_search_projects">Пошук об’єктів</string>
+    <string name="work_search_clients">Пошук клієнтів</string>
+    <string name="work_search_zones">Пошук часового поясу</string>
 </resources>

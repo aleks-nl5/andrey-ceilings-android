@@ -39,8 +39,8 @@ import org.jetbrains.compose.resources.stringResource
 internal fun ClientReadCard(
     item: ClientListEntry,
     onDismiss: () -> Unit,
-    onEdit: () -> Unit,
-    onDelete: () -> Unit,
+    onEdit: (() -> Unit)?,
+    onDelete: (() -> Unit)?,
     onDial: (String) -> Unit,
     onExternalAction: (ContactAction, String) -> Unit
 ) {
@@ -54,7 +54,7 @@ internal fun ClientReadCard(
         title = {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(item.name, modifier = Modifier.weight(1f), style = MaterialTheme.typography.titleLarge)
-                IconButton(onClick = onEdit) {
+                if (onEdit != null) IconButton(onClick = onEdit) {
                     Icon(Icons.Default.Edit, stringResource(Res.string.oc_edit_client))
                 }
             }
@@ -134,7 +134,7 @@ internal fun ClientReadCard(
         },
         confirmButton = {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = onDelete) {
+                if (onDelete != null) IconButton(onClick = onDelete) {
                     Icon(Icons.Default.Delete, stringResource(Res.string.oc_delete_client),
                         tint = MaterialTheme.colorScheme.error)
                 }
