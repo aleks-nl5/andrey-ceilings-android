@@ -44,6 +44,7 @@ object PriceCatalogSchema : SqlSchema<QueryResult.Value<Unit>> {
         StarterPriceCatalog.initializeInTransaction(database)
         database.workCalendarQueries.seedCalendarTypes()
         database.workCalendarQueries.seedCalendarSettings()
+        database.calendarIntegrationsQueries.seedIntegrationSettings()
         verifyStructure(driver)
         return QueryResult.Unit
     }
@@ -74,7 +75,7 @@ object PriceCatalogSchema : SqlSchema<QueryResult.Value<Unit>> {
         if (oldVersion < 21L && newVersion >= 6L) StarterPriceCatalog.initializeInTransaction(PrototypeDatabase(driver))
         if (newVersion >= 8L) verifyStructure(driver, newVersion)
         if (newVersion >= 17L) verifyFrozenEstimateContents(driver, newVersion)
-        if (newVersion >= 25L) verifyCalendarContents(driver)
+        if (newVersion >= 25L) verifyCalendarContents(driver, newVersion)
         return QueryResult.Unit
     }
 }

@@ -15,10 +15,18 @@ fun removeEmptyCalendarSchema(driver: SqlDriver) {
         cursor.next()
         QueryResult.Value(cursor.getLong(0))
     }, 0).value)
+    removeCalendarIntegrationsSchema(driver)
     for (name in listOf("type_keep_standard", "project_link_guard", "client_link_guard", "ceiling_link_guard")) {
         driver.execute(null, "DROP TRIGGER calendar_$name", 0)
     }
     for (name in listOf("exceptions", "ceilings", "days", "rules", "works", "roots", "settings", "types")) {
         driver.execute(null, "DROP TABLE calendar_$name", 0)
+    }
+}
+
+/** Reconstructs the published v25 schema before testing the production v26 upgrade. */
+fun removeCalendarIntegrationsSchema(driver: SqlDriver) {
+    for (name in listOf("work_reminders", "work_integrations", "type_reminders", "type_integrations", "integration_settings")) {
+        driver.execute(null, "DROP TABLE IF EXISTS calendar_$name", 0)
     }
 }

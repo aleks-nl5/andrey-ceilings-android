@@ -1,0 +1,90 @@
+CREATE TABLE calendar_integration_settings (
+    singleton INTEGER NOT NULL PRIMARY KEY CHECK(singleton = 1),
+    remindersEnabled INTEGER NOT NULL DEFAULT 1 CHECK(remindersEnabled IN (0, 1)),
+    privateLockscreen INTEGER NOT NULL DEFAULT 1 CHECK(privateLockscreen IN (0, 1)),
+    syncEnabled INTEGER NOT NULL DEFAULT 0 CHECK(syncEnabled IN (0, 1)),
+    exportFields INTEGER NOT NULL DEFAULT 0 CHECK(exportFields BETWEEN 0 AND 31)
+);
+
+CREATE TABLE calendar_type_integrations (
+    typeCode TEXT NOT NULL PRIMARY KEY REFERENCES calendar_types(code),
+    customReminders INTEGER NOT NULL CHECK(customReminders IN (0, 1)),
+    syncEnabled INTEGER NOT NULL CHECK(syncEnabled IN (0, 1))
+);
+
+CREATE TABLE calendar_type_reminders (
+    typeCode TEXT NOT NULL REFERENCES calendar_type_integrations(typeCode) ON DELETE CASCADE,
+    dayKind TEXT NOT NULL CHECK(dayKind IN ('FIRST', 'LATER', 'DATE')),
+    dayLead INTEGER NOT NULL CHECK(dayLead BETWEEN 0 AND 365),
+    minute INTEGER NOT NULL CHECK(minute BETWEEN 0 AND 1439),
+    PRIMARY KEY(typeCode, dayKind, dayLead, minute)
+);
+
+CREATE TABLE calendar_work_integrations (
+    rootUuid TEXT NOT NULL REFERENCES calendar_roots(uuid),
+    originalDay INTEGER NOT NULL,
+    following INTEGER NOT NULL CHECK(following IN (0, 1)),
+    reminderMode TEXT CHECK(reminderMode IN ('INHERIT', 'ADD', 'REPLACE', 'OFF')),
+    syncMode TEXT CHECK(syncMode IN ('INHERIT', 'ON', 'OFF')),
+    PRIMARY KEY(rootUuid, originalDay, following)
+);
+
+CREATE TABLE calendar_work_reminders (
+    rootUuid TEXT NOT NULL,
+    originalDay INTEGER NOT NULL,
+    following INTEGER NOT NULL,
+    dayKind TEXT NOT NULL CHECK(dayKind IN ('FIRST', 'LATER', 'DATE', 'DAY')),
+    dayOffset INTEGER NOT NULL CHECK((dayKind = 'DAY' AND dayOffset BETWEEN 0 AND 365) OR (dayKind != 'DAY' AND dayOffset = -1)),
+    dayLead INTEGER NOT NULL CHECK(dayLead BETWEEN 0 AND 365),
+    minute INTEGER NOT NULL CHECK(minute BETWEEN 0 AND 1439),
+    PRIMARY KEY(rootUuid, originalDay, following, dayKind, dayOffset, dayLead, minute),
+    FOREIGN KEY(rootUuid, originalDay, following) REFERENCES calendar_work_integrations(rootUuid, originalDay, following) ON DELETE CASCADE
+);
+
+seedIntegrationSettings:
+INSERT INTO calendar_integration_settings(singleton) VALUES (1);
+
+integrationSettings:
+SELECT * FROM calendar_integration_settings WHERE singleton = 1;
+
+saveIntegrationSettings:
+UPDATE calendar_integration_settings SET remindersEnabled = ?, privateLockscreen = ?, syncEnabled = ?, exportFields = ? WHERE singleton = 1;
+
+typeIntegrations:
+SELECT * FROM calendar_type_integrations;
+
+typeReminderRules:
+SELECT * FROM calendar_type_reminders;
+
+saveTypeIntegration:
+INSERT INTO calendar_type_integrations VALUES (?, ?, ?)
+ON CONFLICT(typeCode) DO UPDATE SET customReminders = excluded.customReminders, syncEnabled = excluded.syncEnabled;
+
+clearTypeReminderRules:
+DELETE FROM calendar_type_reminders WHERE typeCode = ?;
+
+insertTypeReminderRule:
+INSERT INTO calendar_type_reminders VALUES (?, ?, ?, ?);
+
+workIntegrations:
+SELECT * FROM calendar_work_integrations;
+
+workReminderRules:
+SELECT * FROM calendar_work_reminders;
+
+saveWorkIntegration:
+INSERT INTO calendar_work_integrations VALUES (?, ?, ?, ?, ?)
+ON CONFLICT(rootUuid, originalDay, following) DO UPDATE SET reminderMode = excluded.reminderMode, syncMode = excluded.syncMode;
+
+clearWorkReminderRules:
+DELETE FROM calendar_work_reminders WHERE rootUuid = ? AND originalDay = ? AND following = ?;
+
+insertWorkReminderRule:
+INSERT INTO calendar_work_reminders VALUES (?, ?, ?, ?, ?, ?, ?);
+
+observeIntegrations:
+SELECT count(*) FROM calendar_integration_settings
+UNION ALL SELECT count(*) FROM calendar_type_integrations
+UNION ALL SELECT count(*) FROM calendar_type_reminders
+UNION ALL SELECT count(*) FROM calendar_work_integrations
+UNION ALL SELECT count(*) FROM calendar_work_reminders;

@@ -351,3 +351,6 @@ SELECT * FROM calendar_exceptions WHERE rootUuid IN :rootUuids ORDER BY original
 selectCalendarReservedKeys:
 SELECT rootUuid, originalDay FROM calendar_exceptions
 WHERE rootUuid IN :rootUuids AND originalDay BETWEEN :fromDay AND :throughDay;
+
+selectStandaloneCalendarIds:
+SELECT uuid FROM calendar_works WHERE kind = 'SINGLE' AND deleted = 0 AND status IN ('PLANNED','CONFIRMED');

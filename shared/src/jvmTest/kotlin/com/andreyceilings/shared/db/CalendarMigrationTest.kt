@@ -48,8 +48,9 @@ class CalendarMigrationTest {
                 }
                 PriceCatalogSchema.verifyStructure(driver, 24)
                 assertEquals(24L, PriceNameUniquenessProof.scalar(driver, "PRAGMA user_version"))
-                openDesktopPriceCatalog(driver, true)
-                assertEquals(25L, PriceNameUniquenessProof.scalar(driver, "PRAGMA user_version"))
+                PriceCatalogSchema.migrate(driver, 24, 25)
+                driver.execute(null, "PRAGMA user_version = 25", 0)
+                PriceCatalogSchema.verifyStructure(driver, 25)
                 val db = PrototypeDatabase(driver)
                 val calendar = CalendarRepository(db)
                 assertEquals(4, calendar.types().size)
@@ -57,18 +58,33 @@ class CalendarMigrationTest {
                 assertEquals(bytes, assertNotNull(ImmutableEstimateRepository(db).revision(revision)).detailsJson)
                 val uuid = assertNotNull(ProjectRepository(db).find(project)).uuid
                 calendar.saveSettings(CalendarSettings(TimeZone.of("Europe/Kyiv"), null, emptySet()))
-                assertIs<CalendarSaveResult.Saved>(calendar.save(CalendarSave(
+                val key = assertIs<CalendarSaveResult.Saved>(calendar.save(CalendarSave(
                     CalendarWorkDraft(date, WorkSchedule(WorkTimeMode.DATE_ONLY, TimeZone.UTC, listOf(WorkDay(0))),
                         "Calendar-only content", "MEASURE", projectUuid = uuid)
                 ))).key
+                assertFailsWith<IllegalStateException> {
+                    PriceCatalogSchema.migrate(driver, 25, 26, AfterVersion(25) { error("Injected v26 failure") })
+                }
+                PriceCatalogSchema.verifyStructure(driver, 25)
+                assertEquals(25L, PriceNameUniquenessProof.scalar(driver, "PRAGMA user_version"))
+                assertEquals("Calendar-only content", calendar.exact(key)?.draft?.title)
+                key
             }
             open(file).use { driver ->
                 openDesktopPriceCatalog(driver, true)
-                val calendar = CalendarRepository(PrototypeDatabase(driver))
+                assertEquals(PriceCatalogSchema.version, PriceNameUniquenessProof.scalar(driver, "PRAGMA user_version"))
+                val db = PrototypeDatabase(driver)
+                val calendar = CalendarRepository(db)
+                val integrations = CalendarIntegrationRepository(db)
+                assertEquals(CalendarIntegrationSettings(), integrations.snapshot().settings)
+                val work = assertNotNull(calendar.exact(workKey))
+                val rules = CalendarWorkIntegration(ReminderMode.OFF, syncMode = CalendarSyncMode.ON)
+                assertIs<CalendarSaveResult.Saved>(calendar.save(CalendarSave(work.draft, work.key, work.version, integration = rules)))
+                assertEquals(rules, integrations.snapshot().overrides(workKey))
                 assertEquals("Calendar-only content", calendar.exact(workKey)?.draft?.title)
                 assertEquals("Europe/Kyiv", calendar.settings().zone.id)
                 driver.execute(null, "DROP INDEX calendar_single_range", 0)
-                assertFails { verifyCalendarStructure(driver, 25) }
+                assertFails { verifyCalendarStructure(driver, PriceCatalogSchema.version) }
             }
         } finally { directory.deleteRecursively() }
     }

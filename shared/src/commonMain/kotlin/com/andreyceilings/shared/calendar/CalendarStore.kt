@@ -42,6 +42,7 @@ class CalendarStore(
     private val physicalLease: ((() -> Unit) -> Unit)? = null,
 ) {
     private val repository = CalendarRepository(database, clock)
+    private val integrations = CalendarIntegrationRepository(database)
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val admitted = Mutex()
     private val closed = MutableStateFlow(false)
@@ -61,6 +62,38 @@ class CalendarStore(
             database.workCalendarQueries.observeCalendar().asFlow().catch { changes.update { it + 1 } }.collect {
                 changes.update { it + 1 }
             }
+        }
+    }
+
+    val integrationChanges: Flow<Unit> = kotlinx.coroutines.flow.merge(
+        changes.map { Unit },
+        database.calendarIntegrationsQueries.observeIntegrations().asFlow().map { Unit },
+    )
+
+    suspend fun integrationSnapshot() = access { integrations.snapshot() }
+
+    suspend fun integrationPlan(from: LocalDate, through: LocalDate, zone: TimeZone, includeLead: Boolean) = access {
+        database.transactionWithResult {
+            val snapshot = integrations.snapshot()
+            val range = WorkDateRange(from, if (includeLead) through.shift(snapshot.maximumLeadDays) else through)
+            CalendarIntegrationPlan(snapshot, repository.integrationWorks(range, zone), repository.types())
+        }
+    }
+
+    suspend fun saveIntegrationSettings(settings: CalendarIntegrationSettings) = access { integrations.save(settings) }
+
+    suspend fun saveTypeIntegration(code: String, defaults: CalendarTypeIntegration) = access {
+        integrations.saveType(code, defaults)
+    }
+
+    suspend fun setManagedExport(key: WorkOccurrenceKey, version: Long) = access {
+        database.transactionWithResult {
+            database.workCalendarQueries.claimCalendarWrite()
+            val current = repository.exact(key)
+            if (current?.version != version || !current.draft.status.active) return@transactionWithResult false
+            integrations.saveWork(key, CalendarEditScope.OCCURRENCE,
+                CalendarWorkIntegration(syncMode = CalendarSyncMode.ON))
+            true
         }
     }
 
@@ -211,6 +244,7 @@ class CalendarStore(
             .executeAsList().map { WorkCeiling(it.uuid, it.name) }
     }
 
+    suspend fun externalProposal(command: CalendarSave) = access { repository.externalProposal(command) }
     suspend fun previewConflicts(command: CalendarSave) = access { repository.previewConflicts(command) }
     suspend fun exact(key: WorkOccurrenceKey) = access { repository.exact(key) }
     suspend fun save(command: CalendarSave, confirmation: CalendarConflictConfirmation? = null) =

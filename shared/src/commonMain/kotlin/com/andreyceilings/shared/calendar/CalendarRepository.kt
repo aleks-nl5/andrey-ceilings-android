@@ -38,6 +38,7 @@ class CalendarRepository(
     private val deviceZone: () -> TimeZone = TimeZone::currentSystemDefault,
 ) {
     private val queries = database.workCalendarQueries
+    private val integrations = CalendarIntegrationRepository(database)
 
     fun types(): List<CalendarWorkType> = queries.selectCalendarTypes().executeAsList().map {
         CalendarWorkType(it.code, it.label, it.color.toInt(), it.icon, it.durationMinutes.toInt(), it.archived == 1L)
@@ -66,6 +67,15 @@ class CalendarRepository(
     fun period(range: WorkDateRange, displayZone: TimeZone): List<CalendarWork> = database.transactionWithResult {
         readPeriod(range, displayZone)
     }
+
+    internal fun integrationWorks(range: WorkDateRange, zone: TimeZone): List<CalendarIntegrationWork> =
+        database.transactionWithResult {
+            val standalone = load(queries.selectStandaloneCalendarIds().executeAsList()).values
+                .map { it.toWork(it.draft.date) }
+            val standaloneKeys = standalone.mapTo(mutableSetOf()) { it.key }
+            standalone.map { CalendarIntegrationWork(it, standalone = true) } +
+                readPeriod(range, zone).filter { it.key !in standaloneKeys }.map { CalendarIntegrationWork(it, standalone = false) }
+        }
 
     fun exact(key: WorkOccurrenceKey): CalendarWork? = database.transactionWithResult { locate(key)?.work }
 
@@ -146,6 +156,20 @@ class CalendarRepository(
         CalendarConflictPreview(conflicts.size, through)
     }
 
+    internal fun externalProposal(command: CalendarSave): List<WorkInterval> = database.transactionWithResult {
+        val target = command.target?.let(::locate)
+        if (command.target != null && (target == null || target.work.version != command.expectedVersion)) {
+            return@transactionWithResult emptyList()
+        }
+        val draft = validate(draftForScope(command, target), target?.work?.draft)
+        val rule = if (target == null) draft.recurrence else if (command.scope == CalendarEditScope.THIS_AND_FOLLOWING &&
+            target.record.rule != null && target.work.draft.status.active && draft.status.active) nextRule(command, target, draft)
+        else null
+        var proposed = emptyList<WorkInterval>()
+        checkConflicts(command, draft.copy(recurrence = rule), target) { proposed = it }
+        proposed
+    }
+
     fun save(command: CalendarSave, confirmation: CalendarConflictConfirmation? = null): CalendarSaveResult =
         database.transactionWithResult {
             queries.claimCalendarWrite()
@@ -171,13 +195,15 @@ class CalendarRepository(
                 val root = newRecordUuid()
                 queries.insertCalendarRoot(root, draft.date.dayNumber())
                 persist(root, root, if (draft.recurrence == null) "SINGLE" else "SEGMENT", draft, null)
-                return@transactionWithResult CalendarSaveResult.Saved(WorkOccurrenceKey(root, draft.date), installationCompleted = completedInstallation)
+                val key = WorkOccurrenceKey(root, draft.date)
+                command.integration?.let { integrations.saveWork(key, CalendarEditScope.THIS_AND_FOLLOWING, it) }
+                return@transactionWithResult CalendarSaveResult.Saved(key, installationCompleted = completedInstallation)
             }
 
             queries.advanceCalendarRoot(target.work.key.rootUuid, target.work.version)
             val base = target.record
             val key = target.work.key
-            when {
+            val result = when {
                 base.row.kind == "SINGLE" -> {
                     persist(base.row.uuid, key.rootUuid, "SINGLE", draft.copy(recurrence = null), target.work, update = true)
                     CalendarSaveResult.Saved(key, installationCompleted = completedInstallation)
@@ -189,6 +215,8 @@ class CalendarRepository(
                     CalendarSaveResult.Saved(key, installationCompleted = completedInstallation)
                 }
             }
+            command.integration?.let { integrations.saveWork(result.key, command.scope, it) }
+            result
         }
 
     fun delete(key: WorkOccurrenceKey, version: Long, scope: CalendarEditScope): Boolean =
@@ -644,6 +672,7 @@ class CalendarRepository(
 
     private fun checkConflicts(
         command: CalendarSave, draft: CalendarWorkDraft, target: Located?,
+        projectOnly: ((List<WorkInterval>) -> Unit)? = null,
     ): Pair<Set<CalendarConflict>, LocalDate?> {
         if (!draft.status.active) return emptySet<CalendarConflict>() to null
         val zone = draft.schedule.zone
@@ -701,6 +730,10 @@ class CalendarRepository(
             val dateOnCalendar = if (fields and DATE != 0L && patch != null) patch.draft.date else date
             val schedule = if (patch != null) mergeSchedule(draft.schedule, patch.draft.schedule, fields, patch.dayOverrides) else draft.schedule
             schedule.on(dateOnCalendar).mapNotNull { it.interval?.let { interval -> key to interval } }
+        }
+        projectOnly?.let {
+            it(proposed.map { pair -> pair.second })
+            return emptySet<CalendarConflict>() to checkedThrough
         }
         if (proposed.isEmpty()) return emptySet<CalendarConflict>() to checkedThrough
         val ranges = proposed.map { (_, interval) ->
