@@ -1,3 +1,7 @@
+## CURRENT — P7A technical planning approved (27.11.2026)
+
+Owner approved 46 product and 26 technical calendar decisions. Read [P7 product contract](docs/P7_CALENDAR_SPEC.md) and [P7A technical contract / bounded Codex handoff](docs/P7A_CODEX_HANDOFF.md). One production Draft PR, additive v24->25, shared KMP/CMP Android-first, focused tests and owner APK/UI polish. Planning approved only: start production after #184 merge and explicit owner authorization. No P7B/P8/Firebase/branding/CI trigger edits. #49 remains open through P7B. Owner-only Ready/merge.
+
 ## CURRENT — P7 product planning complete (27.11.2026)
 
 Owner approved all 46 calendar decisions and two stages P7A/P7B. [P7 contract and initial technical audit](docs/P7_CALENDAR_SPEC.md) supersedes conflicting older #49 planning. Technical audit/decision handoff only; no production authorization. P6 postmerge FULL #1390/#1127 SUCCESS; #136/#140/#77/#141 closed. Owner-only Ready/merge.
