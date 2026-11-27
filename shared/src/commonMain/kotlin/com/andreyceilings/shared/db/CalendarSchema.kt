@@ -45,7 +45,8 @@ fun verifyCalendarContents(driver: SqlDriver) {
             OR NOT EXISTS (SELECT 1 FROM calendar_days d WHERE d.workUuid = w.uuid AND d.dayOffset = 0)
             OR lastDay != dateDay + (SELECT max(dayOffset) FROM calendar_days d WHERE d.workUuid = w.uuid)
             OR EXISTS (SELECT 1 FROM calendar_days d WHERE d.workUuid = w.uuid
-                AND (w.timeMode = 'TIMED') != (d.startSecond IS NOT NULL))
+                AND ((w.timeMode = 'TIMED') != (d.startSecond IS NOT NULL)
+                    OR (d.overrideFields != 0 AND (w.kind != 'OVERRIDE' OR w.timeMode != 'TIMED'))))
             OR (r.untilDay IS NOT NULL AND r.untilDay < w.dateDay)
             OR (w.explicitCeilings = 0 AND EXISTS (SELECT 1 FROM calendar_ceilings c WHERE c.workUuid = w.uuid))
     """.trimIndent()) == 0L) { "Invalid calendar schedule" }
@@ -64,4 +65,4 @@ fun verifyCalendarContents(driver: SqlDriver) {
     }, 0).value
 }
 
-private const val CALENDAR_V25_SIGNATURE = "d247505222fc6bc01855b1c9c9e1924be9c20efeac1d2b88ee1e7ab3b6702750"
+private const val CALENDAR_V25_SIGNATURE = "cae9557977546a56ad7f53399ac68c0e8296b7d6244eeb1bb619d1cc91d667fa"

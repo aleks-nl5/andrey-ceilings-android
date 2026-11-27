@@ -5,6 +5,7 @@ import kotlinx.datetime.LocalDate
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.isoDayNumber
 import kotlinx.datetime.toLocalDateTime
+import kotlinx.datetime.atStartOfDayIn
 import kotlin.time.Instant
 import kotlin.time.Duration.Companion.nanoseconds
 
@@ -44,6 +45,16 @@ data class CalendarWork(
     fun upcoming(now: Instant): Boolean = draft.status.active && days.any { day ->
         day.interval?.let { it.endExclusive > now } ?: (day.date >= now.toLocalDateTime(draft.schedule.zone).date)
     }
+
+    private fun nextDay(now: Instant): ScheduledWorkDay? = days.firstOrNull { day ->
+        day.interval?.let { it.endExclusive > now } ?: (day.date >= now.toLocalDateTime(draft.schedule.zone).date)
+    }
+
+    internal fun nextStart(now: Instant): Instant? =
+        nextDay(now)?.let { it.interval?.start ?: it.date.atStartOfDayIn(draft.schedule.zone) }
+
+    internal fun nextBoundary(now: Instant): Instant? =
+        nextDay(now)?.let { it.interval?.endExclusive ?: it.date.shift(1).atStartOfDayIn(draft.schedule.zone) }
 
     fun displayDates(zone: TimeZone): Set<LocalDate> = buildSet {
         days.forEach { day ->

@@ -67,6 +67,7 @@ CREATE TABLE calendar_days (
     dayOffset INTEGER NOT NULL CHECK (dayOffset BETWEEN 0 AND 365),
     startSecond INTEGER CHECK (startSecond BETWEEN 0 AND 86399),
     endSecond INTEGER CHECK (endSecond BETWEEN 0 AND 86399),
+    overrideFields INTEGER NOT NULL DEFAULT 0 CHECK (overrideFields BETWEEN 0 AND 3),
     PRIMARY KEY (workUuid, dayOffset),
     CHECK ((startSecond IS NULL AND endSecond IS NULL)
         OR (startSecond IS NOT NULL AND endSecond IS NOT NULL AND startSecond < endSecond))
@@ -86,7 +87,7 @@ CREATE TABLE calendar_exceptions (
     scheduledDay INTEGER NOT NULL,
     segmentUuid TEXT NOT NULL,
     overrideUuid TEXT,
-    fields INTEGER NOT NULL CHECK (fields BETWEEN 0 AND 4095),
+    fields INTEGER NOT NULL CHECK (fields BETWEEN 0 AND 32767),
     deleted INTEGER NOT NULL CHECK (deleted IN (0, 1)),
     PRIMARY KEY (rootUuid, originalDay),
     UNIQUE (segmentUuid, scheduledDay),
@@ -208,6 +209,9 @@ UPDATE calendar_rules SET stopBeforeDay = ? WHERE workUuid = ?;
 insertCalendarDay:
 INSERT INTO calendar_days(workUuid,dayOffset,startSecond,endSecond) VALUES (?, ?, ?, ?);
 
+setCalendarDayOverrideFields:
+UPDATE calendar_days SET overrideFields = ? WHERE workUuid = ? AND dayOffset = ?;
+
 deleteCalendarDays:
 DELETE FROM calendar_days WHERE workUuid = ?;
 
@@ -322,12 +326,15 @@ UPDATE calendar_works SET frozen = 1, status = 'CANCELLED', projectLabel = :proj
 WHERE uuid = :uuid AND status IN ('PLANNED','CONFIRMED');
 
 freezeCalendarException:
-UPDATE calendar_exceptions SET fields = 4095 WHERE overrideUuid = :uuid;
+UPDATE calendar_exceptions SET fields = 32767 WHERE overrideUuid = :uuid;
 
 selectUpcomingCalendarWorkIds:
 SELECT uuid FROM calendar_works LEFT JOIN calendar_rules ON workUuid = uuid
 WHERE deleted = 0 AND (kind = 'SEGMENT' OR lastDay >= :fromDay)
-    AND (:projectId IS NULL OR projectUuid = :projectId)
+    AND (:projectId IS NULL OR projectUuid = :projectId OR uuid IN (
+        SELECT e.segmentUuid FROM calendar_exceptions e JOIN calendar_works o ON o.uuid = e.overrideUuid
+        WHERE o.projectUuid = :projectId AND o.deleted = 0 AND e.deleted = 0
+    ))
     AND (kind = 'OVERRIDE' OR status IN ('PLANNED','CONFIRMED') OR kind = 'SEGMENT');
 
 hasActiveCalendarInstallation:

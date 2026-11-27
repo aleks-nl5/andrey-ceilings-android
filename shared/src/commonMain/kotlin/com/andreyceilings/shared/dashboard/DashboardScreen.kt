@@ -46,10 +46,10 @@ fun DashboardScreen(
     onCalendarEdit: ((CalendarEditorRoute) -> Unit)? = null,
 ) {
     val now = Instant.fromEpochMilliseconds(nowMillis)
-    val calendarOptions = calendarState(remember(calendar) { calendar?.options() }).data()
+    val calendarOptions = calendarOptionsState(calendar).data()
     val zone = calendarOptions?.settings?.zone ?: TimeZone.currentSystemDefault()
     val today = now.toLocalDateTime(zone).date
-    val workRead = calendarState(remember(calendar, today) { calendar?.upcoming(today, limit = 12) })
+    val workRead = upcomingCalendarState(calendar, today, null, 12, now)
     val scheduled = workRead.data().orEmpty().filter { it.upcoming(now) }.mapNotNull { work ->
         val eventZone = work.draft.schedule.zone
         val next = work.days.firstOrNull { day ->

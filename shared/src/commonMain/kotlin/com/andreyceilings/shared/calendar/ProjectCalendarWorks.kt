@@ -22,14 +22,12 @@ internal fun ProjectCalendarWorks(
     onEdit: (CalendarEditorRoute) -> Unit,
     onOpen: (String) -> Unit,
 ) {
-    val options = calendarState(remember(store) { store.options() }).data()
+    val options = calendarOptionsState(store).data()
     val zone = options?.settings?.zone ?: TimeZone.currentSystemDefault()
     val now = calendarNow()
     val today = now.toLocalDateTime(zone).date
-    val upcoming = calendarState(remember(store, today, projectUuid) { store.upcoming(today, projectUuid, 8) })
-    val installation = calendarState(remember(store, today, projectUuid, approvedQuote) {
-        if (approvedQuote) store.activeInstallation(projectUuid) else null
-    })
+    val upcoming = upcomingCalendarState(store, today, projectUuid, 8, now)
+    val installation = upcomingCalendarState(store.takeIf { approvedQuote }, today, projectUuid, 1, now, "INSTALL")
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(stringResource(Res.string.work_rows), Modifier.weight(1f), style = MaterialTheme.typography.titleSmall)
@@ -42,7 +40,7 @@ internal fun ProjectCalendarWorks(
             CalendarWorkRow(work, options?.types?.firstOrNull { it.code == work.draft.typeCode }, zone, now, onEdit)
         }
         if (upcoming is CalendarRead.Unavailable) Text(stringResource(Res.string.work_unavailable))
-        if (approvedQuote && installation is CalendarRead.Ready && !installation.value) {
+        if (approvedQuote && installation is CalendarRead.Ready && installation.value.none { it.upcoming(now) }) {
             TextButton(onClick = { onEdit(CalendarEditorRoute.Create(projectUuid = projectUuid, installation = true)) }) {
                 Text(stringResource(Res.string.work_schedule_install))
             }

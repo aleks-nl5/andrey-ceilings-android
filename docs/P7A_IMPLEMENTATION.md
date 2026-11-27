@@ -19,6 +19,15 @@
 - The session cache holds up to eight date ranges and prefetches adjacent periods. The UI clock updates display state without recurring SQL ticks. Restore invalidates the outgoing calendar session before closing its driver.
 - A Linux in-memory SQLite 3.53.1 check of the candidate query used 12,000 standalone rows, 200 sparse monthly rules and 1,000 moved exceptions. The 42-day sample returned 262 candidate rows. Over 120 executions the median was 0.252 ms and p95 was 0.405 ms. The query plan used all three range indexes and looked up exceptions by override UUID. This measures candidate selection on Linux SQLite. End-to-end SQLCipher read/expansion and phone rendering require separate measurements.
 
+## Independent review corrections (27.11.2026)
+
+- Scope operations on expired occurrences require an individual edit/delete; a forward split cannot start in the past.
+- Individual start, duration, structural schedule and timezone override flags survive forward edits. Conflict preview uses the same merged schedule as persistence.
+- Before deleting a project, resolve effective exception links and freeze/cancel only affected work; re-linked active work is detached with its exact key.
+- Upcoming projections sort by next effective day/instant before limiting, include distant re-linked exceptions, and the installation suggestion checks actual remaining active occurrences rather than only a persisted series flag.
+- Session-bounded upcoming/options caches seed returning screens, refresh on DB changes and work-interval boundaries, clear on close/restore. List mode groups days; empty selected days show an explicit empty state and up to three upcoming results.
+- New targeted JVM regression cases; actual verification pending QUICK. The v25 draft DDL fingerprint changes to accommodate independent override flags; production v24 migration remains additive, but previous unpublished v25 test databases are not an upgrade source for this draft. Do not clear or modify a user's v25 database without an explicit decision; restore a v24 backup or use a separate test installation if needed.
+
 ## Manual APK acceptance
 
 1. Upgrade a populated v24 installation. Verify that objects, clients, ceilings, quotes and payments retain their values, and that the calendar starts empty with the four standard types.

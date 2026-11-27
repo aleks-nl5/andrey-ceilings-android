@@ -35,6 +35,7 @@ import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.stringResource
 import kotlin.math.abs
 import kotlin.time.Clock
+import kotlin.time.Duration.Companion.nanoseconds
 import kotlin.time.Instant
 
 enum class CalendarDisplayMode { WEEK, MONTH, LIST }
@@ -55,7 +56,7 @@ fun WorkCalendarScreen(
     projectFilter: String? = null,
     onClose: (() -> Unit)? = null,
 ) {
-    val options = calendarState(remember(store) { store?.options() }).data()
+    val options = calendarOptionsState(store).data()
     val zone = options?.settings?.zone ?: TimeZone.currentSystemDefault()
     val now = calendarNow()
     val today = now.toLocalDateTime(zone).date
@@ -70,8 +71,7 @@ fun WorkCalendarScreen(
     val range = periodOf(date, mode, firstDay)
     val currentPeriod = remember(store, range, zone) { store?.period(range, zone) }
     val period = key(range, zone) { calendarState(currentPeriod, store?.cached(range, zone)) }
-    val fallback = remember(store, today, project) { store?.upcoming(today, project, 12) }
-    val fallbackRead = calendarState(fallback)
+    val fallbackRead = upcomingCalendarState(store, today, project, 12, now, type)
     val upcoming = fallbackRead.data().orEmpty().filter { it.upcoming(now) }
     var searchHorizon by rememberSaveable { mutableIntStateOf(90) }
     val searchFlow = remember(store, query, searchHorizon) {
@@ -97,13 +97,17 @@ fun WorkCalendarScreen(
     }
     val days = filtered.flatMap { work -> work.displayDates(zone).map { it to work } }.groupBy({ it.first }, { it.second })
     val exact = days[date].orEmpty()
+    val dayMode = query.isBlank() && mode != CalendarDisplayMode.LIST
+    val fallbackNeeded = dayMode && exact.isEmpty()
     val displayed = when {
         query.isNotBlank() -> filtered
         mode == CalendarDisplayMode.LIST -> filtered
-        exact.isNotEmpty() || date != today -> exact
+        exact.isNotEmpty() -> exact
         else -> upcoming.filter { (type == null || it.draft.typeCode == type) &&
             (status == null || it.draft.status.name == status) }.take(3)
     }
+    val grouped = if (query.isBlank() && mode == CalendarDisplayMode.LIST)
+        days.entries.filter { it.key in range }.sortedBy { it.key } else emptyList()
     val read = if (query.isBlank()) period else search
     CeilingsScreenScaffold(
         contentPadding = contentPadding,
@@ -228,15 +232,42 @@ fun WorkCalendarScreen(
             }
             if (read is CalendarRead.Unavailable || store == null) item("calendar-error") {
                 Text(stringResource(Res.string.work_unavailable), color = MaterialTheme.colorScheme.error)
-            } else if (read is CalendarRead.Loading || (date == today && displayed.isEmpty() &&
-                    query.isBlank() && mode != CalendarDisplayMode.LIST && fallbackRead is CalendarRead.Loading)) item("calendar-loading") {
+            } else if (read is CalendarRead.Loading) item("calendar-loading") {
                 LinearProgressIndicator(Modifier.fillMaxWidth())
-            } else if (displayed.isEmpty()) {
+            } else if (fallbackNeeded || displayed.isEmpty()) {
                 item("calendar-empty") { Text(stringResource(Res.string.work_none), Modifier.padding(12.dp)) }
+                if (fallbackNeeded && fallbackRead is CalendarRead.Loading) item("calendar-fallback-loading") {
+                    LinearProgressIndicator(Modifier.fillMaxWidth())
+                }
+                if (fallbackNeeded && fallbackRead is CalendarRead.Unavailable) item("calendar-fallback-error") {
+                    Text(stringResource(Res.string.work_unavailable), color = MaterialTheme.colorScheme.error)
+                }
+                if (fallbackNeeded && displayed.isNotEmpty()) item("calendar-fallback-header") {
+                    Text(stringResource(Res.string.p6c_upcoming), style = MaterialTheme.typography.titleSmall,
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp))
+                }
             }
-            items(displayed, key = { "${it.key.rootUuid}/${it.key.originalDate}" }) { work ->
+            if (query.isBlank() && mode == CalendarDisplayMode.LIST) {
+                grouped.forEach { (day, works) ->
+                    item("calendar-day/$day") {
+                        Text(day.shortDate(), style = MaterialTheme.typography.titleSmall,
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp))
+                    }
+                    val ordered = works.sortedBy { work ->
+                        work.days.firstOrNull { scheduled ->
+                            scheduled.interval?.let { interval ->
+                                day >= interval.start.toLocalDateTime(zone).date &&
+                                    day <= (interval.endExclusive - 1.nanoseconds).toLocalDateTime(zone).date
+                            } ?: (scheduled.date == day)
+                        }?.interval?.start
+                    }
+                    items(ordered, key = { "$day/${it.key.rootUuid}/${it.key.originalDate}" }) { work ->
+                        CalendarWorkRow(work, types[work.draft.typeCode], zone, now, onEdit, selectedDate = day)
+                    }
+                }
+            } else items(displayed, key = { "${it.key.rootUuid}/${it.key.originalDate}" }) { work ->
                 CalendarWorkRow(work, types[work.draft.typeCode], zone, now, onEdit,
-                    selectedDate = date.takeIf { query.isBlank() && mode != CalendarDisplayMode.LIST })
+                    selectedDate = date.takeIf { dayMode && !fallbackNeeded })
             }
         }
     }
@@ -269,7 +300,10 @@ internal fun CalendarWorkRow(
                 val localZone = work.draft.schedule.zone
                 val relevant = work.days.firstOrNull { day ->
                     if (work.draft.schedule.mode == WorkTimeMode.TIMED)
-                        day.date == selectedDate || day.interval?.start?.toLocalDateTime(zone)?.date == selectedDate
+                        day.date == selectedDate || day.interval?.let {
+                            selectedDate != null && selectedDate >= it.start.toLocalDateTime(zone).date &&
+                                selectedDate <= (it.endExclusive - 1.nanoseconds).toLocalDateTime(zone).date
+                        } == true
                     else day.date == selectedDate
                 } ?: work.days.firstOrNull { it.interval?.endExclusive?.let { end -> end > now } ?: (it.date >= now.toLocalDateTime(localZone).date) }
                     ?: work.days.first()
@@ -326,6 +360,34 @@ internal fun CalendarMenu(label: String, options: @Composable ColumnScope.() -> 
 internal fun <T> calendarState(flow: kotlinx.coroutines.flow.Flow<CalendarRead<T>>?, previous: T? = null): CalendarRead<T> =
     flow?.collectAsState(if (previous == null) CalendarRead.Loading else CalendarRead.Ready(previous))?.value
         ?: CalendarRead.Unavailable()
+
+@Composable
+internal fun calendarOptionsState(store: CalendarStore?): CalendarRead<CalendarFormOptions> =
+    key(store) { calendarState(remember(store) { store?.options() }, store?.cachedOptions()) }
+
+@Composable
+internal fun upcomingCalendarState(
+    store: CalendarStore?, since: LocalDate, projectUuid: String?, limit: Int, now: Instant,
+    typeCode: String? = null,
+): CalendarRead<List<CalendarWork>> = key(store, since, projectUuid, limit, typeCode) {
+    val flow = remember(store, since, projectUuid, limit, typeCode) { store?.upcoming(since, projectUuid, limit, typeCode) }
+    val state = calendarState(flow, store?.cachedUpcoming(since, projectUuid, limit, typeCode))
+    val works = state.data().orEmpty()
+    // Remember the next boundary for this projection; do not advance it just
+    // because the display clock ticked past it.
+    var nextBoundary by remember(works) { mutableStateOf(works.mapNotNull { it.nextBoundary(now) }.minOrNull()) }
+    val expired = nextBoundary?.let { it <= now } == true || works.any { !it.upcoming(now) }
+    LaunchedEffect(store, works, nextBoundary, expired) {
+        if (expired) {
+            store?.refreshUpcoming()
+            // The same multiday occurrence may remain in the result after a
+            // day expires. Advance the remembered boundary even if equality
+            // prevents the new projection from causing recomposition.
+            nextBoundary = works.mapNotNull { it.nextBoundary(now) }.filter { it > now }.minOrNull()
+        }
+    }
+    state
+}
 
 internal fun <T> CalendarRead<T>.data(): T? = when (this) {
     CalendarRead.Loading -> null

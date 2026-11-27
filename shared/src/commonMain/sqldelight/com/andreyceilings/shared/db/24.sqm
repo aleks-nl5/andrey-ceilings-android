@@ -67,6 +67,7 @@ CREATE TABLE calendar_days (
     dayOffset INTEGER NOT NULL CHECK (dayOffset BETWEEN 0 AND 365),
     startSecond INTEGER CHECK (startSecond BETWEEN 0 AND 86399),
     endSecond INTEGER CHECK (endSecond BETWEEN 0 AND 86399),
+    overrideFields INTEGER NOT NULL DEFAULT 0 CHECK (overrideFields BETWEEN 0 AND 3),
     PRIMARY KEY (workUuid, dayOffset),
     CHECK ((startSecond IS NULL AND endSecond IS NULL)
         OR (startSecond IS NOT NULL AND endSecond IS NOT NULL AND startSecond < endSecond))
@@ -86,7 +87,7 @@ CREATE TABLE calendar_exceptions (
     scheduledDay INTEGER NOT NULL,
     segmentUuid TEXT NOT NULL,
     overrideUuid TEXT,
-    fields INTEGER NOT NULL CHECK (fields BETWEEN 0 AND 4095),
+    fields INTEGER NOT NULL CHECK (fields BETWEEN 0 AND 32767),
     deleted INTEGER NOT NULL CHECK (deleted IN (0, 1)),
     PRIMARY KEY (rootUuid, originalDay),
     UNIQUE (segmentUuid, scheduledDay),

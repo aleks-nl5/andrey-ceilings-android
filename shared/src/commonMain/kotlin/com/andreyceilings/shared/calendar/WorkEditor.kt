@@ -135,7 +135,12 @@ fun WorkEditor(
             if (input != initial) discarding = true else onClose()
         }
     }
-    val recurring = original?.draft?.recurrence != null
+    val recurring = original?.let { work ->
+        val now = Clock.System.now()
+        work.draft.recurrence != null && work.upcoming(now) &&
+            work.draft.date >= now.toLocalDateTime(work.draft.schedule.zone).date
+    } == true
+    LaunchedEffect(recurring) { if (!recurring) scope = CalendarEditScope.OCCURRENCE }
     val data = input
     val draft = remember(data, scope, original) {
         runCatching { data?.draft(original == null || (recurring && scope == CalendarEditScope.THIS_AND_FOLLOWING), original) }.getOrNull()

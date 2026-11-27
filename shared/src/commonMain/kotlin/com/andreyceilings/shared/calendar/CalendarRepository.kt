@@ -26,7 +26,11 @@ private const val CEILINGS = 256L
 private const val CONTACT_NAME = 512L
 private const val CONTACT_PHONE = 1024L
 private const val CONTACT_EMAIL = 2048L
-private const val ALL_FIELDS = 4095L
+private const val START_TIME = 4096L
+private const val DURATION = 8192L
+private const val SCHEDULE_ZONE = 16384L
+private const val SCHEDULE_FIELDS = 28736L // SCHEDULE | START_TIME | DURATION | SCHEDULE_ZONE
+private const val ALL_FIELDS = 32767L
 
 class CalendarRepository(
     private val database: PrototypeDatabase,
@@ -65,12 +69,17 @@ class CalendarRepository(
 
     fun exact(key: WorkOccurrenceKey): CalendarWork? = database.transactionWithResult { locate(key)?.work }
 
-    fun upcoming(since: LocalDate, projectUuid: String?, limit: Int): List<CalendarWork> = database.transactionWithResult {
+    fun upcoming(since: LocalDate, projectUuid: String?, limit: Int, typeCode: String? = null): List<CalendarWork> = database.transactionWithResult {
+        require(limit > 0)
         val now = clock.now()
         val zone = settings().zone
-        val near = readPeriod(WorkDateRange(since, since.shift(34)), zone)
-            .filter { it.upcoming(now) && (projectUuid == null || it.draft.projectUuid == projectUuid) }
-        if (near.size >= limit) return@transactionWithResult near.take(limit)
+        fun matches(work: CalendarWork) = work.upcoming(now) &&
+            (projectUuid == null || work.draft.projectUuid == projectUuid) &&
+            (typeCode == null || work.draft.typeCode == typeCode)
+        val order = compareBy<CalendarWork> { it.nextStart(now) }.then(workOrder)
+        val near = readPeriod(WorkDateRange(since, since.shift(34)), zone).filter(::matches).sortedWith(order)
+        if (near.size >= limit && near[limit - 1].nextStart(now)?.toLocalDateTime(zone)?.date?.let { it <= since.shift(32) } == true)
+            return@transactionWithResult near.take(limit)
 
         val ids = queries.selectUpcomingCalendarWorkIds(since.shift(-2).dayNumber(), projectUuid).executeAsList()
         val records = load(ids)
@@ -86,15 +95,19 @@ class CalendarRepository(
             val suppressed = overrides.mapTo(mutableSetOf()) { it.scheduledDay }
             val start = since.shift(-2 - (record.row.lastDay - record.row.dateDay).toInt())
             val far = LocalDate(9999, 12, 31)
-            val dynamic = if (record.draft.status.active) record.dates(WorkDateRange(start, far))
+            val dynamic = if (record.draft.status.active &&
+                (projectUuid == null || record.draft.projectUuid == projectUuid) &&
+                (typeCode == null || record.draft.typeCode == typeCode)) record.dates(WorkDateRange(start, far))
                 .filter { it.dayNumber() !in suppressed &&
                     record.identityDate(it).dayNumber() !in reserved[record.row.rootUuid].orEmpty() }
-                .map(record::toWork).filter { it.upcoming(now) }.take(limit).toList() else emptyList()
-            dynamic + overrides.mapNotNull { hydrate(record, it, complete) }.filter { it.upcoming(now) }
+                .map(record::toWork).filter(::matches).take(limit).toList() else emptyList()
+            dynamic + overrides.mapNotNull { hydrate(record, it, complete) }.filter(::matches)
         }
-        (near + exact).distinctBy { it.key }.filter { projectUuid == null || it.draft.projectUuid == projectUuid }
-            .sortedWith(workOrder).take(limit)
+        (near + exact).distinctBy { it.key }.filter(::matches).sortedWith(order).take(limit)
     }
+
+    fun hasActiveInstallation(projectUuid: String): Boolean =
+        upcoming(clock.now().toLocalDateTime(settings().zone).date, projectUuid, 1, "INSTALL").isNotEmpty()
 
     fun search(text: String, horizonDays: Int = 90): List<CalendarWork> = database.transactionWithResult {
         require(horizonDays == 90 || horizonDays == 365)
@@ -123,6 +136,8 @@ class CalendarRepository(
         val target = command.target?.let(::locate)
         if (command.target != null && (target == null || target.work.version != command.expectedVersion))
             return@transactionWithResult null
+        if (target != null && command.scope == CalendarEditScope.THIS_AND_FOLLOWING &&
+            !canChangeFollowing(target, command.draft.date)) return@transactionWithResult null
         val draft = validate(draftForScope(command, target), target?.work?.draft)
         val rule = if (target == null) draft.recurrence else if (command.scope == CalendarEditScope.THIS_AND_FOLLOWING &&
             target.record.rule != null && target.work.draft.status.active && draft.status.active) nextRule(command, target, draft)
@@ -138,6 +153,8 @@ class CalendarRepository(
             if (command.target != null && (target == null || target.work.version != command.expectedVersion)) {
                 return@transactionWithResult CalendarSaveResult.Stale
             }
+            require(target == null || command.scope != CalendarEditScope.THIS_AND_FOLLOWING ||
+                canChangeFollowing(target, command.draft.date)) { "Past occurrences must be edited individually" }
             val draft = validate(draftForScope(command, target), target?.work?.draft)
             val splitRule = if (target != null && command.scope == CalendarEditScope.THIS_AND_FOLLOWING &&
                 target.record.rule != null && target.work.draft.status.active && draft.status.active) {
@@ -178,7 +195,8 @@ class CalendarRepository(
         database.transactionWithResult {
             queries.claimCalendarWrite()
             val target = locate(key) ?: return@transactionWithResult false
-            if (target.work.version != version) return@transactionWithResult false
+            if (target.work.version != version || (scope == CalendarEditScope.THIS_AND_FOLLOWING &&
+                !canChangeFollowing(target, target.work.draft.date))) return@transactionWithResult false
             queries.advanceCalendarRoot(key.rootUuid, version)
             when {
                 target.record.row.kind == "SINGLE" -> queries.deleteCalendarWork(target.record.row.uuid)
@@ -194,7 +212,7 @@ class CalendarRepository(
     fun cancelFollowing(key: WorkOccurrenceKey, version: Long): Boolean = database.transactionWithResult {
         queries.claimCalendarWrite()
         val target = locate(key) ?: return@transactionWithResult false
-        if (target.work.version != version || target.record.rule == null || !target.work.draft.status.active)
+        if (target.work.version != version || target.record.rule == null || !canChangeFollowing(target, target.work.draft.date))
             return@transactionWithResult false
         queries.advanceCalendarRoot(key.rootUuid, version)
         terminate(target, cancelled = true)
@@ -202,10 +220,39 @@ class CalendarRepository(
         true
     }
 
+    private fun canChangeFollowing(target: Located, newDate: LocalDate): Boolean {
+        val now = clock.now()
+        val today = now.toLocalDateTime(target.work.draft.schedule.zone).date
+        return target.record.rule != null && target.work.upcoming(now) && target.scheduled >= today && newDate >= today
+    }
+
     internal fun beforeProjectDeletion(projectUuid: String, confirmation: CalendarDeletionImpact?) {
         val affected = queries.selectCalendarProjectImpact(projectUuid).executeAsList().filter { !it.frozen.bool() }
         verifyDeletionImpact(confirmation, "project", projectUuid, affected.map { it.uuid to it.rootUuid })
-        val records = load(affected.map { it.uuid })
+        // Resolve effective occurrence links and contact data before freezing any segment.
+        // A re-linked occurrence must not inherit cancellation from a different project.
+        val roots = affected.map { it.rootUuid }.distinct()
+        val exceptions = roots.chunked(250).flatMap {
+            queries.selectCalendarExceptionsForRoots(it).executeAsList()
+        }.filter { !it.deleted.bool() && it.overrideUuid != null }
+        val linked = load(exceptions.flatMap { listOfNotNull(it.segmentUuid, it.overrideUuid) })
+        for (exception in exceptions) {
+            val base = linked[exception.segmentUuid] ?: continue
+            val replacement = exception.overrideUuid?.let(linked::get) ?: continue
+            val work = hydrate(base, exception, linked) ?: continue
+            if (!work.draft.status.active) continue
+            val target = Located(base, exception.scheduledDay.localDate(), exception, work)
+            if (work.draft.projectUuid == projectUuid) {
+                if (replacement.row.kind == "SINGLE") {
+                    persist(replacement.row.uuid, work.key.rootUuid, "SINGLE",
+                        work.draft.copy(status = WorkStatus.CANCELLED, recurrence = null), work, update = true)
+                } else override(target, work.draft.copy(status = WorkStatus.CANCELLED))
+            } else if (base.draft.projectUuid == projectUuid && replacement.row.kind != "SINGLE") {
+                makeStandalone(target, work.draft.copy(recurrence = null))
+            }
+        }
+        val records = load(queries.selectCalendarProjectImpact(projectUuid).executeAsList()
+            .filter { !it.frozen.bool() }.map { it.uuid })
         for (record in records.values) {
             val work = record.toWork(record.draft.date)
             val localToday = clock.now().toLocalDateTime(work.draft.schedule.zone).date
@@ -217,7 +264,7 @@ class CalendarRepository(
                 work.contact.phone, work.contact.email, record.row.uuid)
             if (record.row.kind == "OVERRIDE") queries.freezeCalendarException(record.row.uuid)
         }
-        affected.map { it.rootUuid }.distinct().forEach(queries::touchCalendarRoot)
+        roots.forEach(queries::touchCalendarRoot)
     }
 
     internal fun beforeClientDeletion(clientUuid: String, confirmation: CalendarDeletionImpact?) {
@@ -354,7 +401,7 @@ class CalendarRepository(
                 if (exception.overrideUuid != null && !exception.deleted.bool()) {
                     val inherited = checkNotNull(hydrate(checkNotNull(nextRecord), moved, records))
                     persist(exception.overrideUuid, key.rootUuid, "OVERRIDE", inherited.draft.copy(recurrence = null),
-                        inherited, update = true)
+                        inherited, update = true, dayOverrides = records.getValue(exception.overrideUuid).dayOverrides)
                 }
             } else if (prior != null && exception.overrideUuid != null) {
                 makeStandalone(Located(previousSegment, scheduled, exception, prior), prior.draft.copy(recurrence = null))
@@ -388,9 +435,14 @@ class CalendarRepository(
     private fun override(target: Located, draft: CalendarWorkDraft) {
         val key = target.work.key
         val uuid = target.exception?.overrideUuid ?: newRecordUuid()
-        val fields = if (draft.status.active) difference(target.record.draft.copy(date = target.scheduled), draft) else ALL_FIELDS
+        val base = target.record.draft.copy(date = target.scheduled)
+        val oldDayOverrides = target.exception?.overrideUuid?.let { load(listOf(it))[it]?.dayOverrides }.orEmpty()
+        val schedule = if (draft.status.active) scheduleDifference(base.schedule, draft.schedule,
+            target.work.draft.schedule, target.exception?.fields ?: 0L, oldDayOverrides)
+            else ScheduleOverrides(ALL_FIELDS, emptyMap())
+        val fields = if (draft.status.active) difference(base, draft) or schedule.fields else ALL_FIELDS
         persist(uuid, key.rootUuid, "OVERRIDE", draft.copy(recurrence = null), target.work,
-            update = target.exception?.overrideUuid != null)
+            update = target.exception?.overrideUuid != null, dayOverrides = schedule.days)
         queries.setCalendarException(key.rootUuid, key.originalDate.dayNumber(), target.scheduled.dayNumber(),
             target.record.row.uuid, uuid, fields, 0L)
     }
@@ -476,7 +528,7 @@ class CalendarRepository(
                 projectUuid = if (has(LINKS)) patch.projectUuid else draft.projectUuid,
                 clientUuid = if (has(LINKS)) patch.clientUuid else draft.clientUuid,
                 contactOverrides = contact,
-                schedule = if (has(SCHEDULE)) patch.schedule else draft.schedule,
+                schedule = mergeSchedule(draft.schedule, patch.schedule, fields, replacement.dayOverrides),
                 ceilings = if (has(CEILINGS)) patch.ceilings else draft.ceilings,
                 explicitCeilings = if (has(CEILINGS)) patch.explicitCeilings else draft.explicitCeilings,
             ),
@@ -504,7 +556,8 @@ class CalendarRepository(
                 row.explicitCeilings.bool(), rule,
             )
             row.uuid to WorkRecord(row, draft, rule, persistedRule?.stopBeforeDay?.localDate(),
-                persistedRule?.identityShift?.toInt() ?: 0)
+                persistedRule?.identityShift?.toInt() ?: 0,
+                days.getValue(row.uuid).filter { it.overrideFields != 0L }.associate { it.dayOffset.toInt() to it.overrideFields })
         }
     }.toMap()
 
@@ -547,6 +600,7 @@ class CalendarRepository(
     private fun persist(
         uuid: String, root: String, kind: String, draft: CalendarWorkDraft,
         prior: CalendarWork?, update: Boolean = false, identityShift: Int = 0,
+        dayOverrides: Map<Int, Long> = emptyMap(),
     ) {
         val project = draft.projectUuid?.let { queries.selectCalendarDirectProject(it).executeAsOneOrNull() }
         val client = if (draft.clientUuid != null) queries.selectCalendarDirectClient(draft.clientUuid).executeAsOneOrNull()
@@ -571,8 +625,13 @@ class CalendarRepository(
                 draft.clientUuid, projectLabel, contact.address, contact.name, contact.phone, contact.email,
                 frozen.sql(), 0L, draft.explicitCeilings.sql())
         }
-        draft.schedule.days.forEach { queries.insertCalendarDay(uuid, it.offset.toLong(),
-            it.start?.toSecondOfDay()?.toLong(), it.end?.toSecondOfDay()?.toLong()) }
+        draft.schedule.days.forEach {
+            queries.insertCalendarDay(uuid, it.offset.toLong(),
+                it.start?.toSecondOfDay()?.toLong(), it.end?.toSecondOfDay()?.toLong())
+            dayOverrides[it.offset]?.takeIf { flags -> flags != 0L && it.start != null }?.let { flags ->
+                queries.setCalendarDayOverrideFields(flags, uuid, it.offset.toLong())
+            }
+        }
         draft.ceilings.forEach { queries.insertCalendarCeiling(uuid, it.uuid, it.label, it.removed.sql()) }
         draft.recurrence?.let { rule ->
             require(rule.anchor == draft.date)
@@ -625,7 +684,7 @@ class CalendarRepository(
             replaced += key
             val fields = if (key == target?.work?.key) 0L else exception?.fields ?: 0L
             val dateOnCalendar = if (fields and DATE != 0L && patch != null) patch.draft.date else date
-            val schedule = if (fields and SCHEDULE != 0L && patch != null) patch.draft.schedule else draft.schedule
+            val schedule = if (patch != null) mergeSchedule(draft.schedule, patch.draft.schedule, fields, patch.dayOverrides) else draft.schedule
             schedule.on(dateOnCalendar).mapNotNull { it.interval?.let { interval -> key to interval } }
         }
         if (proposed.isEmpty()) return emptySet<CalendarConflict>() to checkedThrough
@@ -669,7 +728,7 @@ private data class Located(val record: WorkRecord, val scheduled: LocalDate, val
 
 private data class WorkRecord(
     val row: SelectCalendarDetails, val draft: CalendarWorkDraft, val rule: WorkRecurrence?, val stop: LocalDate?,
-    val identityShift: Int,
+    val identityShift: Int, val dayOverrides: Map<Int, Long>,
 ) {
     val liveContact get() = if (row.frozen.bool()) WorkContact()
         else WorkContact(row.liveAddress, row.liveName, row.livePhone, row.liveEmail)
@@ -706,10 +765,64 @@ private fun difference(base: CalendarWorkDraft, changed: CalendarWorkDraft): Lon
     if (base.contactOverrides.name != changed.contactOverrides.name) fields = fields or CONTACT_NAME
     if (base.contactOverrides.phone != changed.contactOverrides.phone) fields = fields or CONTACT_PHONE
     if (base.contactOverrides.email != changed.contactOverrides.email) fields = fields or CONTACT_EMAIL
-    if (base.schedule != changed.schedule) fields = fields or SCHEDULE
     if (base.date != changed.date) fields = fields or DATE
     if (base.ceilings != changed.ceilings || base.explicitCeilings != changed.explicitCeilings) fields = fields or CEILINGS
     return fields
+}
+
+// The shape (mode/offsets), timezone and each day's start and duration are
+// independent override fields. Persist flags even when a later series value matches.
+private data class ScheduleOverrides(val fields: Long, val days: Map<Int, Long>)
+private const val DAY_START = 1L
+private const val DAY_DURATION = 2L
+
+private fun scheduleDifference(base: WorkSchedule, changed: WorkSchedule, previous: WorkSchedule,
+    oldFields: Long, oldDays: Map<Int, Long>): ScheduleOverrides {
+    fun shape(s: WorkSchedule) = s.mode to s.days.map { it.offset }
+    fun duration(day: WorkDay?) = day?.start?.let { checkNotNull(day.end).toSecondOfDay() - it.toSecondOfDay() }
+    fun flag(bit: Long, baseValue: Any?, changedValue: Any?, previousValue: Any?, oldMask: Long): Long =
+        if (baseValue != changedValue || (oldMask and bit != 0L && changedValue == previousValue)) bit else 0L
+    val structure = flag(SCHEDULE, shape(base), shape(changed), shape(previous), oldFields)
+    val zone = flag(SCHEDULE_ZONE, base.zone, changed.zone, previous.zone, oldFields)
+    if (structure != 0L || changed.mode != WorkTimeMode.TIMED) return ScheduleOverrides(structure or zone, emptyMap())
+    val baseDays = base.days.associateBy { it.offset }
+    val previousDays = previous.days.associateBy { it.offset }
+    val days = changed.days.mapNotNull { day ->
+        val original = baseDays[day.offset]
+        val prior = previousDays[day.offset]
+        val old = oldDays[day.offset] ?: 0L
+        val flags = flag(DAY_START, original?.start, day.start, prior?.start, old) or
+            flag(DAY_DURATION, duration(original), duration(day), duration(prior), old)
+        (day.offset to flags).takeIf { flags != 0L }
+    }.toMap()
+    val starts = if (days.values.any { it and DAY_START != 0L }) START_TIME else 0L
+    val durations = if (days.values.any { it and DAY_DURATION != 0L }) DURATION else 0L
+    return ScheduleOverrides(zone or starts or durations, days)
+}
+
+private fun mergeSchedule(base: WorkSchedule, patch: WorkSchedule, fields: Long,
+    dayOverrides: Map<Int, Long>): WorkSchedule {
+    if (fields and SCHEDULE_FIELDS == 0L) return base
+    val zone = if (fields and SCHEDULE_ZONE != 0L) patch.zone else base.zone
+    if (fields and SCHEDULE != 0L) return patch.copy(zone = zone)
+    if (fields and (START_TIME or DURATION) == 0L) return base.copy(zone = zone)
+    // If a later series changes time mode, retain an explicitly timed agreement.
+    if (base.mode != WorkTimeMode.TIMED) return patch.copy(zone = zone)
+    val personal = patch.days.associateBy { it.offset }
+    val days = base.days.map { day ->
+        val flags = dayOverrides[day.offset] ?: return@map day
+        val override = personal[day.offset] ?: return@map day
+        val baseStart = checkNotNull(day.start).toSecondOfDay()
+        val personalStart = checkNotNull(override.start).toSecondOfDay()
+        val start = if (flags and DAY_START != 0L) personalStart else baseStart
+        val duration = if (flags and DAY_DURATION != 0L) checkNotNull(override.end).toSecondOfDay() - personalStart
+            else checkNotNull(day.end).toSecondOfDay() - baseStart
+        require(start + duration < 86400) { "Inherited schedule crosses midnight" }
+        WorkDay(day.offset, LocalTime.fromSecondOfDay(start), LocalTime.fromSecondOfDay(start + duration))
+    }
+    // A personally edited day is not silently discarded if the template removes it.
+    val retained = patch.days.filter { it.offset in dayOverrides && base.days.none { day -> day.offset == it.offset } }
+    return base.copy(zone = zone, days = (days + retained).sortedBy { it.offset })
 }
 
 private val workOrder = compareBy<CalendarWork> { it.draft.date }

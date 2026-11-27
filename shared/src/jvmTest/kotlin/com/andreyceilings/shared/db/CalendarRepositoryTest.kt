@@ -178,6 +178,117 @@ class CalendarRepositoryTest {
         }
     }
 
+    @Test fun pastSeriesBoundaryCannotRewriteOtherPastOccurrences() = fixture { _, calendar ->
+        val start = today.shift(-4)
+        val first = saved(calendar.save(CalendarSave(draft(recurrence = WorkRecurrence(start, WorkFrequency.DAILY)).copy(date = start))))
+        val source = assertNotNull(calendar.exact(first))
+        val following = CalendarSave(source.draft.copy(title = "Changed past", recurrence = null),
+            source.key, source.version, CalendarEditScope.THIS_AND_FOLLOWING)
+        assertNull(calendar.previewConflicts(following))
+        assertFailsWith<IllegalArgumentException> { calendar.save(following) }
+        assertFalse(calendar.cancelFollowing(source.key, source.version))
+        assertFalse(calendar.delete(source.key, source.version, CalendarEditScope.THIS_AND_FOLLOWING))
+        saved(calendar.save(following.copy(scope = CalendarEditScope.OCCURRENCE)))
+        assertEquals("Changed past", calendar.exact(first)?.draft?.title)
+        assertEquals("Service visit", calendar.exact(WorkOccurrenceKey(first.rootUuid, start.shift(1)))?.draft?.title)
+        assertEquals("Service visit", calendar.exact(WorkOccurrenceKey(first.rootUuid, today))?.draft?.title)
+    }
+
+    @Test fun forwardEditsInheritDurationAndPreserveExplicitStartEvenAfterCoincidence() = fixture { _, calendar ->
+        fun schedule(start: Int, end: Int) = WorkSchedule(WorkTimeMode.TIMED, zone,
+            listOf(WorkDay(0, LocalTime(start, 0), LocalTime(end, 0))))
+        val first = saved(calendar.save(CalendarSave(draft(timed = true, recurrence = WorkRecurrence(today, WorkFrequency.DAILY)))))
+        fun occurrence(offset: Int) = assertNotNull(calendar.exact(WorkOccurrenceKey(first.rootUuid, today.shift(offset))))
+        val personal = occurrence(5)
+        saved(calendar.save(CalendarSave(personal.draft.copy(schedule = schedule(15, 16)), personal.key, personal.version)))
+        fun change(offset: Int, schedule: WorkSchedule) {
+            val boundary = occurrence(offset)
+            saved(calendar.save(CalendarSave(boundary.draft.copy(schedule = schedule, recurrence = null),
+                boundary.key, boundary.version, CalendarEditScope.THIS_AND_FOLLOWING)))
+        }
+        change(1, schedule(9, 11))
+        assertEquals(schedule(15, 17), occurrence(5).draft.schedule)
+        change(2, schedule(15, 17))
+        assertEquals(schedule(15, 17), occurrence(5).draft.schedule)
+        change(3, schedule(12, 15))
+        assertEquals(schedule(15, 18), occurrence(5).draft.schedule)
+    }
+
+    @Test fun forwardEditsInheritStartWhenOnlyDurationWasOverridden() = fixture { _, calendar ->
+        fun schedule(start: Int, end: Int) = WorkSchedule(WorkTimeMode.TIMED, zone,
+            listOf(WorkDay(0, LocalTime(start, 0), LocalTime(end, 0))))
+        val first = saved(calendar.save(CalendarSave(draft(timed = true, recurrence = WorkRecurrence(today, WorkFrequency.DAILY)))))
+        val key = WorkOccurrenceKey(first.rootUuid, today.shift(3))
+        val personal = assertNotNull(calendar.exact(key))
+        saved(calendar.save(CalendarSave(personal.draft.copy(schedule = schedule(9, 12)), key, personal.version)))
+        val boundary = assertNotNull(calendar.exact(WorkOccurrenceKey(first.rootUuid, today.shift(1))))
+        saved(calendar.save(CalendarSave(boundary.draft.copy(schedule = schedule(10, 11), recurrence = null),
+            boundary.key, boundary.version, CalendarEditScope.THIS_AND_FOLLOWING)))
+        assertEquals(schedule(10, 13), calendar.exact(key)?.draft?.schedule)
+    }
+
+    @Test fun multidayExceptionOnlyOverridesTheIndividuallyEditedDay() = fixture { _, calendar ->
+        fun schedule(firstStart: Int, firstEnd: Int, secondStart: Int, secondEnd: Int) =
+            WorkSchedule(WorkTimeMode.TIMED, zone, listOf(
+                WorkDay(0, LocalTime(firstStart, 0), LocalTime(firstEnd, 0)),
+                WorkDay(1, LocalTime(secondStart, 0), LocalTime(secondEnd, 0))))
+        val first = saved(calendar.save(CalendarSave(draft(recurrence = WorkRecurrence(today, WorkFrequency.WEEKLY))
+            .copy(schedule = schedule(9, 10, 11, 12)))))
+        val key = WorkOccurrenceKey(first.rootUuid, today.shift(14))
+        val personal = assertNotNull(calendar.exact(key))
+        saved(calendar.save(CalendarSave(personal.draft.copy(schedule = schedule(15, 16, 11, 12)), key, personal.version)))
+        val boundary = assertNotNull(calendar.exact(WorkOccurrenceKey(first.rootUuid, today.shift(7))))
+        saved(calendar.save(CalendarSave(boundary.draft.copy(schedule = schedule(9, 11, 12, 14), recurrence = null),
+            boundary.key, boundary.version, CalendarEditScope.THIS_AND_FOLLOWING)))
+        assertEquals(schedule(15, 17, 12, 14), calendar.exact(key)?.draft?.schedule)
+    }
+
+    @Test fun deletingSeriesProjectDoesNotCancelRelinkedOccurrence() = fixture { db, calendar ->
+        val projects = ProjectRepository(db, clock)
+        val a = projects.createReturningId(null, "Project A", "Address A", createdAt = 12)
+        val b = projects.createReturningId(null, "Project B", "Address B", createdAt = 13)
+        val aUuid = assertNotNull(projects.find(a)).uuid
+        val bUuid = assertNotNull(projects.find(b)).uuid
+        val first = saved(calendar.save(CalendarSave(draft(recurrence = WorkRecurrence(today, WorkFrequency.DAILY))
+            .copy(projectUuid = aUuid, typeCode = "INSTALL"))))
+        val key = WorkOccurrenceKey(first.rootUuid, today.shift(40))
+        val personal = assertNotNull(calendar.exact(key))
+        saved(calendar.save(CalendarSave(personal.draft.copy(projectUuid = bUuid), key, personal.version)))
+        assertEquals(key, calendar.upcoming(today, bUuid, 1).single().key)
+        projects.delete(a, assertNotNull(calendar.projectDeletionImpact(aUuid)))
+        val retained = assertNotNull(calendar.exact(key))
+        assertEquals(bUuid, retained.draft.projectUuid)
+        assertEquals("Address B", retained.contact.address)
+        assertEquals(WorkStatus.PLANNED, retained.draft.status)
+        assertNull(retained.draft.recurrence)
+        assertEquals(key, calendar.upcoming(today, bUuid, 1).single().key)
+        assertEquals(WorkStatus.CANCELLED, calendar.exact(first)?.draft?.status)
+        assertNull(calendar.exact(WorkOccurrenceKey(first.rootUuid, today.shift(41))))
+    }
+
+    @Test fun expiredFiniteInstallationDoesNotSuppressScheduleAction() = fixture { db, calendar ->
+        val projects = ProjectRepository(db, clock)
+        val id = projects.createReturningId(null, "Site", createdAt = 12)
+        val uuid = assertNotNull(projects.find(id)).uuid
+        val start = today.shift(-7)
+        saved(calendar.save(CalendarSave(draft(recurrence = WorkRecurrence(start, WorkFrequency.DAILY, count = 2))
+            .copy(date = start, typeCode = "INSTALL", projectUuid = uuid))))
+        assertFalse(calendar.hasActiveInstallation(uuid))
+        val future = saved(calendar.save(CalendarSave(draft().copy(date = today.shift(2), typeCode = "INSTALL", projectUuid = uuid))))
+        assertTrue(calendar.hasActiveInstallation(uuid))
+        val work = assertNotNull(calendar.exact(future))
+        saved(calendar.save(CalendarSave(work.draft.copy(status = WorkStatus.COMPLETED), future, work.version)))
+        assertFalse(calendar.hasActiveInstallation(uuid))
+    }
+
+    @Test fun upcomingOrdersByNextWorkingDayBeforeApplyingLimit() = fixture { _, calendar ->
+        val multiday = saved(calendar.save(CalendarSave(draft().copy(date = today.shift(-2),
+            schedule = WorkSchedule(WorkTimeMode.DATE_ONLY, zone, listOf(WorkDay(0), WorkDay(4)))))))
+        val nearer = saved(calendar.save(CalendarSave(draft().copy(date = today.shift(1)))))
+        assertEquals(nearer, calendar.upcoming(today, null, 1).single().key)
+        assertEquals(listOf(nearer, multiday), calendar.upcoming(today, null, 2).map { it.key })
+    }
+
     @Test fun sessionCacheClearsWhenClosedAndFindsDistantWork() = fixture { db, calendar ->
         val future = today.shift(620)
         val key = saved(calendar.save(CalendarSave(draft().copy(date = future))))
@@ -187,8 +298,14 @@ class CalendarRepositoryTest {
             val range = WorkDateRange(future, future)
             assertEquals(key, assertIs<CalendarRead.Ready<List<CalendarWork>>>(store.period(range, zone).first()).value.single().key)
             assertNotNull(store.cached(range, zone))
+            assertEquals(key, assertIs<CalendarRead.Ready<List<CalendarWork>>>(store.upcoming(today).first()).value.single().key)
+            assertEquals(key, store.cachedUpcoming(today)?.single()?.key)
+            assertIs<CalendarRead.Ready<CalendarFormOptions>>(store.options().first())
+            assertNotNull(store.cachedOptions())
             store.closeAndAwait()
             assertNull(store.cached(range, zone))
+            assertNull(store.cachedUpcoming(today))
+            assertNull(store.cachedOptions())
             assertNull(assertIs<CalendarRead.Unavailable<List<CalendarWork>>>(store.period(range, zone).first()).previous)
         }
     }
