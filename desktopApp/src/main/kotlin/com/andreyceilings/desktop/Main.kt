@@ -193,6 +193,18 @@ private fun DesktopPriceHost(
         LaunchedEffect(calendar, calendarMode) { calendar.warmCurrentPeriod(calendarMode) }
         var calendarClientRequest by remember(database) { mutableStateOf<Long?>(null) }
         var calendarEditor by remember(database) { mutableStateOf<CalendarEditorRoute?>(null) }
+        var calendarReturnOverlay by remember(database) { mutableStateOf<Triple<List<String>, CalendarEditorRoute, Pair<Boolean, String?>>?>(null) }
+        LaunchedEffect(navigation) {
+            val pending = calendarReturnOverlay
+            if (pending != null && navigation.calendarLinkReturn == null) {
+                if (navigation.snapshot() == pending.first) {
+                    calendarEditor = pending.second
+                    calendarOpen = pending.third.first
+                    calendarProject = pending.third.second
+                }
+                calendarReturnOverlay = null
+            }
+        }
         var completedProject by remember(database) { mutableStateOf<Pair<String, WorkOccurrenceKey>?>(null) }
         var detachedWork by remember(database) { mutableStateOf(0) }
         fun openExternal(url: String) {
@@ -426,12 +438,17 @@ private fun DesktopPriceHost(
             calendarEditor?.let { route ->
                 WorkEditor(calendar, route, onClose = { calendarEditor = null }, registry = objectsStore,
                     onRegistryTarget = { hit ->
-                        calendarEditor = null; calendarOpen = false
-                        when (hit) {
-                            is com.andreyceilings.shared.registry.GlobalRegistryTarget.Project -> onNavigate(navigation.navigate(AppRoute.OBJECTS, availableRoutes).openProject(hit.id))
-                            is com.andreyceilings.shared.registry.GlobalRegistryTarget.Client -> { calendarClientRequest = hit.id; onNavigate(navigation.navigate(AppRoute.OBJECTS, availableRoutes)) }
-                            is com.andreyceilings.shared.registry.GlobalRegistryTarget.Ceiling -> onNavigate(navigation.openLinkedCeiling(hit.projectId, hit.id, availableRoutes))
-                            is com.andreyceilings.shared.registry.GlobalRegistryTarget.Quote -> Unit
+                        val destination = when (hit) {
+                            is com.andreyceilings.shared.registry.GlobalRegistryTarget.Project -> navigation.openCalendarProject(hit.id, availableRoutes)
+                            is com.andreyceilings.shared.registry.GlobalRegistryTarget.Ceiling -> navigation.openCalendarCeiling(hit.projectId, hit.id, availableRoutes)
+                            else -> navigation
+                        }
+                        if (destination != navigation && destination.calendarLinkReturn != null) {
+                            calendarReturnOverlay = Triple(checkNotNull(destination.calendarLinkReturn).origin, route, calendarOpen to calendarProject)
+                            calendarEditor = null; calendarOpen = false
+                            onNavigate(destination)
+                        } else if (hit is com.andreyceilings.shared.registry.GlobalRegistryTarget.Project && navigation.projectDetails?.projectId == hit.id) {
+                            calendarEditor = null; calendarOpen = false
                         }
                     }, onSaved = { result, draft ->
                     calendarEditor = null

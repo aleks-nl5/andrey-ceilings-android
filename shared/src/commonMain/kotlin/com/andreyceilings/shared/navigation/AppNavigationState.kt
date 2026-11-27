@@ -27,6 +27,9 @@ data class MeasurementEdit(val projectId: Long, val measurementId: Long) {
     init { require(projectId > 0 && measurementId > 0) }
 }
 
+/** One bounded return context, with no business fields or recursive history. */
+data class CalendarLinkReturn(val projectId: Long, val measurementId: Long?, val origin: List<String>)
+
 enum class AppQuickCreate(val destination: AppRoute) {
     OBJECT(AppRoute.OBJECTS), MEASUREMENT(AppRoute.MEASUREMENTS)
 }
@@ -48,14 +51,15 @@ data class AppNavigationState(
     val measurementQuote: Boolean = false,
     val quickMeasurement: Boolean = false,
     val registrySourceProject: ProjectDetails? = null,
-    val calculatorOrigin: List<String> = emptyList()
+    val calculatorOrigin: List<String> = emptyList(),
+    val calendarLinkReturn: CalendarLinkReturn? = null
 ) {
     fun selectTab(target: AppRoute, available: Set<AppRoute> = allRoutes): AppNavigationState {
         if (target !in available || current == target) return this
         return copy(
             current = target,
             backStack = if (target == AppRoute.DASHBOARD) emptyList() else listOf(AppRoute.DASHBOARD),
-            pendingQuickCreate = null, projectDetails = null, measurementDetails = null, measurementQuote = false, measurementCreate = null, measurementEdit = null, measurementProjectPicker = false, quickMeasurement = false, registrySourceProject = null, calculatorOrigin = emptyList()
+            pendingQuickCreate = null, projectDetails = null, measurementDetails = null, measurementQuote = false, measurementCreate = null, measurementEdit = null, measurementProjectPicker = false, quickMeasurement = false, registrySourceProject = null, calculatorOrigin = emptyList(), calendarLinkReturn = null
         )
     }
 
@@ -70,13 +74,14 @@ data class AppNavigationState(
                 else -> registrySourceProject
             }, calculatorOrigin = if (target == AppRoute.CALCULATOR && measurementEdit != null)
                 copy(calculatorOrigin = emptyList()).snapshot() else if (target == AppRoute.CALCULATOR)
-                emptyList() else calculatorOrigin
+                emptyList() else calculatorOrigin,
+            calendarLinkReturn = null
         )
     }
 
     fun replace(target: AppRoute, available: Set<AppRoute> = allRoutes): AppNavigationState {
         if (target !in available || current == target) return this
-        return copy(current = target, pendingQuickCreate = null, projectDetails = null, measurementDetails = null, measurementQuote = false, measurementCreate = null, measurementEdit = null, measurementProjectPicker = false, quickMeasurement = false, registrySourceProject = null, calculatorOrigin = emptyList())
+        return copy(current = target, pendingQuickCreate = null, projectDetails = null, measurementDetails = null, measurementQuote = false, measurementCreate = null, measurementEdit = null, measurementProjectPicker = false, quickMeasurement = false, registrySourceProject = null, calculatorOrigin = emptyList(), calendarLinkReturn = null)
     }
 
     fun openProject(projectId: Long): AppNavigationState =
@@ -108,6 +113,29 @@ data class AppNavigationState(
     }
 
     /** Ordinary ceiling navigation skips the retired intermediate details screen. */
+    fun openCalendarProject(projectId: Long, available: Set<AppRoute> = allRoutes): AppNavigationState {
+        if (projectId <= 0 || AppRoute.OBJECTS !in available) return this
+        val destination = navigate(AppRoute.OBJECTS, available).openProject(projectId)
+        if (destination == this) return this
+        return destination.copy(calendarLinkReturn = CalendarLinkReturn(projectId, null, calendarReturnSnapshot()))
+    }
+
+    fun openCalendarCeiling(projectId: Long, measurementId: Long, available: Set<AppRoute> = allRoutes): AppNavigationState {
+        val destination = openLinkedCeiling(projectId, measurementId, available)
+        if (destination == this) return this
+        return destination.copy(calendarLinkReturn = CalendarLinkReturn(projectId, measurementId, calendarReturnSnapshot()))
+    }
+
+    private fun calendarReturnSnapshot(): List<String> =
+        copy(calendarLinkReturn = null, calculatorOrigin = emptyList(), pendingQuickCreate = null).snapshot()
+
+    private fun CalendarLinkReturn.matches(state: AppNavigationState): Boolean =
+        if (measurementId == null) state.current == AppRoute.OBJECTS &&
+            state.projectDetails?.projectId == projectId && state.measurementEdit == null &&
+            state.measurementCreate == null && state.measurementDetails == null && !state.quickMeasurement
+        else !state.quickMeasurement && state.measurementEdit == MeasurementEdit(projectId, measurementId) &&
+            (state.current == AppRoute.MEASUREMENTS || state.current == AppRoute.OBJECTS && state.projectDetails?.projectId == projectId)
+
     fun openLinkedCeiling(projectId: Long, measurementId: Long, available: Set<AppRoute> = allRoutes): AppNavigationState {
         if (projectId <= 0 || measurementId <= 0) return this
         // Calendar/project/global links must not detach a ceiling from its already-open parent.
@@ -159,6 +187,7 @@ data class AppNavigationState(
     fun back(available: Set<AppRoute> = allRoutes): AppNavigationState {
         if (current !in available) return restore(snapshot(), available)
         if (measurementQuote) return copy(measurementQuote = false)
+        calendarLinkReturn?.takeIf { it.matches(this) }?.let { return restore(it.origin, available) }
         if (quickMeasurement) return copy(quickMeasurement = false, measurementDetails = null,
             measurementEdit = null, measurementCreate = null, measurementProjectPicker = false,
             pendingQuickCreate = null)
@@ -214,6 +243,7 @@ data class AppNavigationState(
         listOf(current.name) + backStack.takeLast(maxHistory).map { it.name } +
             (registrySourceProject?.let { listOf("REGISTRY_SOURCE_PROJECT:${it.projectId}") } ?: emptyList()) +
             (calculatorOrigin.takeIf { it.isNotEmpty() }?.let { listOf("CALCULATOR_ORIGIN:" + it.joinToString("|")) } ?: emptyList()) +
+            (calendarLinkReturn?.let { listOf("CALENDAR_LINK_RETURN:${it.projectId}:${it.measurementId ?: 0}:" + it.origin.joinToString("~")) } ?: emptyList()) +
             (if (quickMeasurement) listOf("QUICK_MEASUREMENT") else emptyList()) +
             (projectDetails?.let { listOf("PROJECT_DETAILS:${it.projectId}") } ?: emptyList()) +
             (measurementDetails?.let { listOf("${if (measurementQuote) "MEASUREMENT_QUOTE" else "MEASUREMENT_DETAILS"}:${it.projectId}:${it.measurementId}") } ?: emptyList()) +
@@ -282,13 +312,27 @@ data class AppNavigationState(
                     val calculatorIndex = if (route == AppRoute.CALCULATOR) history.size else history.indexOf(AppRoute.CALCULATOR)
                     origin.measurementEdit != null && origin.current == history.getOrNull(calculatorIndex - 1)
                 }.orEmpty()
-            return AppNavigationState(route, history, projectDetails = details,
+            val restored = AppNavigationState(route, history, projectDetails = details,
                 measurementDetails = measurement, measurementCreate = create, measurementEdit = edit,
                 measurementQuote = hasQuoteTail && measurement != null,
                 measurementProjectPicker = picker && childCount == 0 &&
                     (quick || route == AppRoute.MEASUREMENTS && details == null),
                 quickMeasurement = quick && (picker || create != null || edit != null),
                 registrySourceProject = source, calculatorOrigin = calculatorSource)
+            val linked = snapshot.singleOrNull { it.startsWith("CALENDAR_LINK_RETURN:") }?.split(':', limit = 4)?.let { parts ->
+                if (parts.size != 4) null else {
+                    val parent = canonicalId(parts[1])
+                    val child = canonicalId(parts[2])
+                    val origin = parts[3].split('~')
+                    if (parent == null || (parts[2] != "0" && child == null) || origin.size > maxHistory + 5 ||
+                        origin.any { it.startsWith("CALENDAR_LINK_RETURN:") || it.startsWith("CALCULATOR_ORIGIN:") } ||
+                        origin.firstOrNull()?.let(AppRoute::fromId) !in available) null
+                    else CalendarLinkReturn(parent, child, origin)
+                }
+            }
+            return restored.copy(calendarLinkReturn = linked?.takeIf { link ->
+                link.matches(restored) || link.measurementId == null && restored.current == AppRoute.OBJECTS && restored.projectDetails?.projectId == link.projectId
+            })
         }
     }
 }

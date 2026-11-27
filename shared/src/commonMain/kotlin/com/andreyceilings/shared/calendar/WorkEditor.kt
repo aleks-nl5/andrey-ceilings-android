@@ -281,6 +281,7 @@ fun WorkEditor(
         }
     }
     if (deleteOnly) {
+        // Do not compose the fullscreen work viewer at all for a list deletion.
         if (!deleting) AlertDialog(onDismissRequest = ::cancelDelete,
             title = { Text(stringResource(Res.string.work_delete_title)) },
             text = {
@@ -624,7 +625,7 @@ fun WorkEditor(
         title = { Text(stringResource(Res.string.work_exit_title)) },
         confirmButton = { TextButton(onClick = { discarding = false }) { Text(stringResource(Res.string.p5d_cancel)) } },
         dismissButton = { TextButton(onClick = onClose) { Text(stringResource(Res.string.work_discard), color = MaterialTheme.colorScheme.error) } })
-    if (deleting) AlertDialog(onDismissRequest = ::cancelDelete,
+    if (deleting && original != null) AlertDialog(onDismissRequest = ::cancelDelete,
         title = { Text(stringResource(Res.string.work_delete_title)) },
         text = { if (recurring) ScopeSelection(scope) { scope = it } },
         dismissButton = {

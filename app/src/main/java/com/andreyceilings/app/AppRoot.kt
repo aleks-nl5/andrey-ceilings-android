@@ -211,6 +211,7 @@ private fun CeilingsAppContent(
     LaunchedEffect(calendarStore, calendarMode, firstWeekday) { calendarStore?.warmCurrentPeriod(calendarMode, firstWeekday) }
     var calendarEditor by remember(database) { mutableStateOf<CalendarEditorRoute?>(null) }
     var projectCalendar by remember(database) { mutableStateOf<String?>(null) }
+    var calendarReturnOverlay by remember(database) { mutableStateOf<Triple<List<String>, CalendarEditorRoute, String?>?>(null) }
     var completionProject by remember(database) { mutableStateOf<Pair<String, WorkOccurrenceKey>?>(null) }
     var detachedCalendarWorks by remember(database) { mutableIntStateOf(0) }
     val calendarWindow = DialogProperties(usePlatformDefaultWidth = false, dismissOnClickOutside = false,
@@ -289,6 +290,14 @@ private fun CeilingsAppContent(
     fun applyNavigation(next: AppNavigationState) {
         measurementCreateNavigationGuard.quoteSession.navigate(next)
         if (next.current != navigation.current) tabChangedAt = SystemClock.elapsedRealtime()
+        val pending = calendarReturnOverlay
+        if (pending != null && navigation.calendarLinkReturn != null && next.snapshot() == pending.first) {
+            calendarEditor = pending.second
+            projectCalendar = pending.third
+            calendarReturnOverlay = null
+        } else if (pending != null && next.calendarLinkReturn == null) {
+            calendarReturnOverlay = null
+        }
         navigation = next
     }
     fun updateNavigation(proposed: AppNavigationState) {
@@ -986,7 +995,33 @@ private fun CeilingsAppContent(
                         val action = if (url.startsWith("tel:")) android.content.Intent.ACTION_DIAL else android.content.Intent.ACTION_VIEW
                         context.startActivity(android.content.Intent(action, Uri.parse(url)))
                     },
-                    onRegistryTarget = { hit -> calendarEditor = null; projectCalendar = null; openSearch = false; openCalendarRegistryTarget(hit) },
+                    onRegistryTarget = { hit ->
+                        val destination = when (hit) {
+                            is GlobalRegistryTarget.Project -> navigation.openCalendarProject(hit.id)
+                            is GlobalRegistryTarget.Ceiling -> navigation.openCalendarCeiling(hit.projectId, hit.id)
+                            else -> navigation
+                        }
+                        if (destination != navigation && destination.calendarLinkReturn != null) {
+                            calendarReturnOverlay = Triple(checkNotNull(destination.calendarLinkReturn).origin, route, projectCalendar)
+                            calendarEditor = null
+                            projectCalendar = null
+                            openSearch = false
+                            if (destination.current != tab) {
+                                initialSearch = ""
+                                repeatedSearchRoute = null
+                                if (destination.current == AppTab.OBJECTS) {
+                                    objectsStartInClients = false
+                                    clientsBackToObjects = false
+                                }
+                            }
+                            updateNavigation(destination)
+                        } else if (hit is GlobalRegistryTarget.Project && navigation.projectDetails?.projectId == hit.id) {
+                            calendarEditor = null
+                            projectCalendar = null
+                        } else if (hit !is GlobalRegistryTarget.Project && hit !is GlobalRegistryTarget.Ceiling) {
+                            calendarEditor = null; projectCalendar = null; openSearch = false; openCalendarRegistryTarget(hit)
+                        }
+                    },
                     onSaved = { result, draft ->
                         calendarEditor = null
                         detachedCalendarWorks = result.detached
