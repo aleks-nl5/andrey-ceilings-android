@@ -310,6 +310,33 @@ class CalendarRepositoryTest {
         }
     }
 
+    @Test fun calendarCreatesRealRegistryRecordsAndResolvesExactLinks() = fixture { db, _ ->
+        runBlocking {
+            val registry = ObjectsClientsStore(db) { clock.now().toEpochMilliseconds() }
+            val store = registry.calendar
+            try {
+                val client = store.createClient(registry, com.andreyceilings.shared.objects.ClientDraft("New client", "123456"))
+                val clientTarget = assertNotNull(store.clientTarget(null, client.uuid))
+                val project = store.createProject(registry, com.andreyceilings.shared.objects.ProjectDraft("New site", clientTarget.id))
+                assertEquals(client.uuid, project.clientUuid)
+                val projectTarget = assertNotNull(store.projectTarget(project.uuid))
+                assertEquals(project.uuid, registry.calendarProjectUuid(projectTarget.id))
+                assertEquals(clientTarget, store.clientTarget(project.uuid, null))
+                val options = assertIs<CalendarRead.Ready<CalendarFormOptions>>(store.options().first()).value
+                assertTrue(options.projects.any { it.uuid == project.uuid && it.clientUuid == client.uuid })
+                assertTrue(options.clients.any { it.uuid == client.uuid })
+                val key = saved(store.save(CalendarSave(draft().copy(projectUuid = project.uuid, typeCode = "INSTALL"))))
+                val work = assertNotNull(store.exact(key))
+                assertEquals("New client", work.contact.name)
+                assertNull(work.draft.clientUuid)
+                val other = store.createClient(registry, com.andreyceilings.shared.objects.ClientDraft("Other client", "654321"))
+                saved(store.save(CalendarSave(work.draft.copy(clientUuid = other.uuid), key, work.version)))
+                assertEquals("Other client", store.exact(key)?.contact?.name)
+                assertEquals(clientTarget, store.clientTarget(project.uuid, null))
+            } finally { store.closeAndAwait(); registry.closeAndAwaitProjectReads() }
+        }
+    }
+
     private fun fixture(assertions: (PrototypeDatabase, CalendarRepository) -> Unit) {
         JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).use { driver ->
             driver.execute(null, "PRAGMA foreign_keys = ON", 0)

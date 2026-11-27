@@ -98,7 +98,8 @@ fun WorkCalendarScreen(
         dateValue = nextPeriod(date, mode, direction).toString()
         scope.launch { list.scrollToItem(0) }
     }
-    LaunchedEffect(store, range, zone, mode, firstDay) {
+    LaunchedEffect(store, range, zone, mode, firstDay, options != null) {
+        if (options == null) return@LaunchedEffect
         store?.prefetch(periodOf(nextPeriod(date, mode, -1), mode, firstDay), zone)
         store?.prefetch(periodOf(nextPeriod(date, mode, 1), mode, firstDay), zone)
     }
@@ -115,6 +116,7 @@ fun WorkCalendarScreen(
         query.isNotBlank() -> filtered
         mode == CalendarDisplayMode.LIST -> filtered
         exact.isNotEmpty() -> exact
+        period.data() == null -> emptyList()
         else -> upcoming.filter { (type == null || it.draft.typeCode == type) &&
             (status == null || it.draft.status.name == status) }.take(3)
     }
@@ -160,23 +162,23 @@ fun WorkCalendarScreen(
                             label = { Text(stringResource(Res.string.work_search)) }, singleLine = true)
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                             CalendarMenu(modifier = Modifier.weight(1f), label = type?.let { calendarTypeLabel(types[it]) } ?: stringResource(Res.string.work_type)) {
-                                DropdownMenuItem(text = { Text(stringResource(Res.string.work_all)) }, onClick = { type = null })
+                                CalendarMenuItem(text = { Text(stringResource(Res.string.work_all)) }, onClick = { type = null })
                                 types.values.forEach { item ->
-                                    DropdownMenuItem(text = { Text(calendarTypeLabel(item)) }, onClick = { type = item.code })
+                                    CalendarMenuItem(text = { Text(calendarTypeLabel(item)) }, onClick = { type = item.code })
                                 }
                             }
                             CalendarMenu(modifier = Modifier.weight(1f), label = status?.let { stringResource(WorkStatus.valueOf(it).label()) }
                                 ?: stringResource(Res.string.work_status)) {
-                                DropdownMenuItem(text = { Text(stringResource(Res.string.work_all)) }, onClick = { status = null })
+                                CalendarMenuItem(text = { Text(stringResource(Res.string.work_all)) }, onClick = { status = null })
                                 WorkStatus.entries.forEach { item ->
-                                    DropdownMenuItem(text = { Text(stringResource(item.label())) }, onClick = { status = item.name })
+                                    CalendarMenuItem(text = { Text(stringResource(item.label())) }, onClick = { status = item.name })
                                 }
                             }
                             if (projectFilter == null) CalendarMenu(modifier = Modifier.weight(1f), label = options?.projects?.firstOrNull { it.uuid == project }?.name
                                 ?: stringResource(Res.string.work_object)) {
-                                DropdownMenuItem(text = { Text(stringResource(Res.string.work_all)) }, onClick = { project = null })
+                                CalendarMenuItem(text = { Text(stringResource(Res.string.work_all)) }, onClick = { project = null })
                                 options?.projects.orEmpty().forEach { item ->
-                                    DropdownMenuItem(text = { Text(item.name) }, onClick = { project = item.uuid })
+                                    CalendarMenuItem(text = { Text(item.name) }, onClick = { project = item.uuid })
                                 }
                             }
                         }
@@ -190,7 +192,7 @@ fun WorkCalendarScreen(
             }
             if (query.isBlank()) item("calendar-grid") {
                 var dragOffset by remember(range) { mutableFloatStateOf(0f) }
-                val visualOffset by animateFloatAsState(dragOffset, label = "calendar-drag")
+                val visualOffset by animateFloatAsState(dragOffset)
                 val drag = Modifier.pointerInput(date, mode) {
                     var delta = 0f
                     detectHorizontalDragGestures(onDragStart = { delta = 0f }, onDragCancel = { dragOffset = 0f }, onDragEnd = {
@@ -201,14 +203,23 @@ fun WorkCalendarScreen(
                     }
                 }
                 Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).then(drag)) {
+                AnimatedContent(targetState = range, transitionSpec = {
+                    val forward = targetState.from > initialState.from
+                    (slideInHorizontally { if (forward) it else -it } + fadeIn()) togetherWith
+                        (slideOutHorizontally { if (forward) -it else it } + fadeOut())
+                }) { visualRange ->
+                val visualDays = if (visualRange == range) days else store?.cached(visualRange, zone).orEmpty().filter {
+                    (project == null || it.draft.projectUuid == project) && (type == null || it.draft.typeCode == type) &&
+                        (status == null || it.draft.status.name == status)
+                }.flatMap { work -> work.displayDates(zone).map { it to work } }.groupBy({ it.first }, { it.second })
                 Column(Modifier.graphicsLayer { translationX = visualOffset }) {
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween) {
                         IconButton(onClick = { movePeriod(-1) }) {
                             Icon(Icons.Default.ChevronLeft, stringResource(Res.string.work_previous))
                         }
-                        Text(if (mode == CalendarDisplayMode.MONTH) date.toString().take(7)
-                            else "${range.from.shortDate()} – ${range.through.shortDate()}",
+                        Text(if (mode == CalendarDisplayMode.MONTH) visualRange.from.shift(7).toString().take(7)
+                            else "${visualRange.from.shortDate()} – ${visualRange.through.shortDate()}",
                             style = MaterialTheme.typography.titleSmall)
                         IconButton(onClick = { movePeriod(1) }) {
                             Icon(Icons.Default.ChevronRight, stringResource(Res.string.work_next))
@@ -223,7 +234,7 @@ fun WorkCalendarScreen(
                                 }
                             }
                         }
-                        generateSequence(range.from) { it.shift(1).takeIf { next -> next <= range.through } }
+                        generateSequence(visualRange.from) { it.shift(1).takeIf { next -> next <= visualRange.through } }
                             .toList().chunked(7).forEach { week ->
                                 Row(Modifier.fillMaxWidth()) {
                                     week.forEach { day ->
@@ -239,7 +250,7 @@ fun WorkCalendarScreen(
                                             Text(day.day.toString(), color = if (day == today) MaterialTheme.colorScheme.primary
                                                 else MaterialTheme.colorScheme.onSurface, style = MaterialTheme.typography.bodySmall)
                                             Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                                                days[day].orEmpty().map { it.draft.typeCode }.distinct().take(4).forEach { code ->
+                                                visualDays[day].orEmpty().map { it.draft.typeCode }.distinct().take(4).forEach { code ->
                                                     Box(Modifier.size(4.dp).background(typeColor(types[code]), CircleShape))
                                                 }
                                             }
@@ -251,12 +262,13 @@ fun WorkCalendarScreen(
                 }
             }
             }
+            }
             if (read is CalendarRead.Unavailable || store == null || optionsRead is CalendarRead.Unavailable) item("calendar-error") {
                 CalendarFeedback(Res.string.work_unavailable)
             } else if (read is CalendarRead.Loading) item("calendar-loading") {
                 LinearProgressIndicator(Modifier.fillMaxWidth())
             } else if (fallbackNeeded || displayed.isEmpty()) {
-                item("calendar-empty") { Text(stringResource(Res.string.work_none), Modifier.padding(12.dp)) }
+                item("calendar-empty") { CalendarFeedback(Res.string.work_none, ContextFeedbackKind.INFO) }
                 if (fallbackNeeded && fallbackRead is CalendarRead.Loading) item("calendar-fallback-loading") {
                     LinearProgressIndicator(Modifier.fillMaxWidth())
                 }
@@ -305,11 +317,22 @@ internal fun CalendarWorkRow(
     var menu by remember { mutableStateOf(false) }
     val color = if (status.active) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant
     val obsolete = status.active && !work.upcoming(now)
-    Surface(color = MaterialTheme.colorScheme.surface, contentColor = color, shape = MaterialTheme.shapes.medium) {
+    var swipeOffset by remember(work.key) { mutableFloatStateOf(0f) }
+    val swipeVisual by animateFloatAsState(swipeOffset)
+    Box(Modifier.fillMaxWidth().clip(MaterialTheme.shapes.medium)) {
+        if (swipeVisual > 1f) Box(Modifier.matchParentSize().background(MaterialTheme.colorScheme.errorContainer),
+            contentAlignment = Alignment.CenterStart) {
+            Icon(Icons.Default.Delete, stringResource(Res.string.oc_delete), Modifier.padding(start = 14.dp), tint = MaterialTheme.colorScheme.onErrorContainer)
+        }
+        Surface(modifier = Modifier.graphicsLayer { translationX = swipeVisual },
+            color = MaterialTheme.colorScheme.surface, contentColor = color, shape = MaterialTheme.shapes.medium) {
         Row(Modifier.fillMaxWidth().pointerInput(work.key) {
             var delta = 0f
-            detectHorizontalDragGestures(onDragStart = { delta = 0f }, onDragEnd = { if (delta > 42.dp.toPx()) onEdit(context.copy(delete = true)) }) {
-                change, dragAmount -> change.consume(); delta += dragAmount
+            detectHorizontalDragGestures(onDragStart = { delta = 0f }, onDragCancel = { swipeOffset = 0f }, onDragEnd = {
+                swipeOffset = 0f
+                if (delta > 64.dp.toPx()) onEdit(context.copy(delete = true))
+            }) { change, dragAmount -> change.consume(); delta += dragAmount
+                swipeOffset = delta.coerceIn(0f, 104.dp.toPx())
             }
         }.clickable { onEdit(context) }.padding(start = 9.dp), verticalAlignment = Alignment.CenterVertically) {
             Icon(typeIcon(type), null, tint = typeColor(type), modifier = Modifier.size(19.dp))
@@ -348,18 +371,19 @@ internal fun CalendarWorkRow(
             Box {
                 IconButton(onClick = { menu = true }) { Icon(Icons.Default.MoreVert, stringResource(Res.string.work_edit)) }
                 CeilingsPopupMenu(menu, onDismissRequest = { menu = false }) {
-                    DropdownMenuItem(text = { Text(stringResource(Res.string.work_edit)) },
+                    CalendarMenuItem(text = { Text(stringResource(Res.string.work_edit)) },
                         onClick = { menu = false; onEdit(context.copy(edit = true)) })
                     if (work.draft.schedule.days.size == 1 && status.active) {
-                        DropdownMenuItem(text = { Text(stringResource(Res.string.work_move)) },
+                        CalendarMenuItem(text = { Text(stringResource(Res.string.work_move)) },
                             onClick = { menu = false; onEdit(context.copy(move = true)) })
                     }
-                    DropdownMenuItem(text = { Text(stringResource(Res.string.oc_delete)) },
+                    CalendarMenuItem(text = { Text(stringResource(Res.string.oc_delete)) },
                         onClick = { menu = false; onEdit(context.copy(delete = true)) })
                 }
             }
         }
     }
+}
 }
 
 @Composable
@@ -394,9 +418,17 @@ internal fun CalendarMenu(label: String, modifier: Modifier = Modifier,
             Icon(Icons.Default.ArrowDropDown, null, Modifier.size(18.dp))
         }
         CeilingsPopupMenu(expanded, { expanded = false }) {
-            options()
+            CompositionLocalProvider(LocalCalendarMenuClose provides { expanded = false }) { options() }
         }
     }
+}
+
+private val LocalCalendarMenuClose = staticCompositionLocalOf<() -> Unit> { {} }
+
+@Composable
+internal fun CalendarMenuItem(text: @Composable () -> Unit, onClick: () -> Unit, leadingIcon: (@Composable () -> Unit)? = null) {
+    val close = LocalCalendarMenuClose.current
+    DropdownMenuItem(text = text, leadingIcon = leadingIcon, onClick = { close(); onClick() })
 }
 
 @Composable

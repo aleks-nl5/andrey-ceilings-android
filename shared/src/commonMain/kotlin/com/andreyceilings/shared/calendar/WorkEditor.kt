@@ -198,7 +198,7 @@ fun WorkEditor(
 
     fun save(confirmation: CalendarConflictConfirmation? = null) {
         val valid = draft ?: return
-        if (busy) return
+        if (busy || dateError) return
         busy = true
         error = false
         lifecycleScope.launch {
@@ -267,7 +267,7 @@ fun WorkEditor(
                         }
                         Text(stringResource(title), Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
                         if (editing) CeilingsFab({ save() }, stringResource(Res.string.oc_save),
-                            profile = CeilingsFabProfile.COMPACT, enabled = !stale && !busy && draft != null && !invalidTime) {
+                            profile = CeilingsFabProfile.COMPACT, enabled = !stale && !busy && draft != null && !invalidTime && !dateError) {
                             Icon(Icons.Default.Check, null)
                         } else CeilingsFab({ editing = true }, stringResource(Res.string.work_edit), profile = CeilingsFabProfile.COMPACT) {
                             Icon(Icons.Default.Edit, null)
@@ -318,7 +318,7 @@ fun WorkEditor(
                                     Icon(typeIcon(selected), null, Modifier.size(18.dp), tint = typeColor(selected))
                                 }) {
                                     options.types.filter { !it.archived || it.code == data.type }.forEach { type ->
-                                        DropdownMenuItem(text = { Text(calendarTypeLabel(type)) },
+                                        CalendarMenuItem(text = { Text(calendarTypeLabel(type)) },
                                             leadingIcon = { Icon(typeIcon(type), null, tint = typeColor(type)) },
                                             onClick = {
                                                 val first = data.days.first()
@@ -333,7 +333,7 @@ fun WorkEditor(
                                 }
                                 CalendarMenu(stringResource(data.status.label()), modifier = Modifier.weight(1f)) {
                                     WorkStatus.entries.forEach { state ->
-                                        DropdownMenuItem(text = { Text(stringResource(state.label())) }, onClick = {
+                                        CalendarMenuItem(text = { Text(stringResource(state.label())) }, onClick = {
                                             input = data.copy(status = state)
                                         })
                                     }
@@ -348,7 +348,7 @@ fun WorkEditor(
                             }
                             if (data.mode != WorkTimeMode.ALL_DAY) CalendarMenu(stringResource(data.mode.label())) {
                                 WorkTimeMode.entries.forEach { mode ->
-                                    DropdownMenuItem(text = { Text(stringResource(mode.label())) }, onClick = {
+                                    CalendarMenuItem(text = { Text(stringResource(mode.label())) }, onClick = {
                                         input = data.copy(mode = mode)
                                     })
                                 }
@@ -551,40 +551,48 @@ fun WorkEditor(
 @Composable
 private fun ScopeSelection(scope: CalendarEditScope, onScope: (CalendarEditScope) -> Unit) {
     CalendarMenu(stringResource(if (scope == CalendarEditScope.OCCURRENCE) Res.string.work_only_this else Res.string.work_following)) {
-        DropdownMenuItem(text = { Text(stringResource(Res.string.work_only_this)) }, onClick = { onScope(CalendarEditScope.OCCURRENCE) })
-        DropdownMenuItem(text = { Text(stringResource(Res.string.work_following)) }, onClick = { onScope(CalendarEditScope.THIS_AND_FOLLOWING) })
+        CalendarMenuItem(text = { Text(stringResource(Res.string.work_only_this)) }, onClick = { onScope(CalendarEditScope.OCCURRENCE) })
+        CalendarMenuItem(text = { Text(stringResource(Res.string.work_following)) }, onClick = { onScope(CalendarEditScope.THIS_AND_FOLLOWING) })
     }
 }
 
 @Composable
 private fun RepeatSettings(input: WorkInput, onChange: (WorkInput) -> Unit) {
     Text(stringResource(Res.string.work_recurrence), style = MaterialTheme.typography.labelMedium)
-    CalendarMenu(stringResource(input.frequency?.label() ?: Res.string.work_once)) {
-        DropdownMenuItem(text = { Text(stringResource(Res.string.work_once)) }, onClick = { onChange(input.copy(frequency = null)) })
-        WorkFrequency.entries.forEach {
-            DropdownMenuItem(text = { Text(stringResource(it.label())) }, onClick = { onChange(input.copy(frequency = it)) })
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        CalendarMenu(stringResource(input.frequency?.label() ?: Res.string.work_once), modifier = Modifier.weight(1f), leading = {
+            Icon(Icons.Default.Repeat, null, Modifier.size(18.dp))
+        }) {
+            CalendarMenuItem(text = { Text(stringResource(Res.string.work_once)) }, onClick = { onChange(input.copy(frequency = null)) })
+            WorkFrequency.entries.forEach {
+                CalendarMenuItem(text = { Text(stringResource(it.label())) }, onClick = { onChange(input.copy(frequency = it)) })
+            }
         }
-    }
-    if (input.frequency != null) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text(stringResource(Res.string.work_every))
-            WorkField(input.step, Res.string.work_step, keyboard = KeyboardType.Number, modifier = Modifier.weight(1f)) { onChange(input.copy(step = it)) }
+        if (input.frequency != null) {
+            Text(stringResource(Res.string.work_every), style = MaterialTheme.typography.labelSmall)
+            WorkField(input.step, Res.string.work_interval_short, keyboard = KeyboardType.Number, modifier = Modifier.width(64.dp),
+                error = input.step.toIntOrNull()?.let { it in 1..366 } != true) { onChange(input.copy(step = it)) }
             Text(stringResource(when (input.frequency) {
                 WorkFrequency.DAILY -> Res.string.work_unit_days
                 WorkFrequency.MONTHLY -> Res.string.work_unit_months
                 else -> Res.string.work_unit_weeks
-            }))
+            }), style = MaterialTheme.typography.labelSmall)
         }
+    }
+    if (input.frequency != null) {
         if (input.frequency == WorkFrequency.CUSTOM) DaySelection(input.repeatsOn) { onChange(input.copy(repeatsOn = it)) }
         val ends = listOf(Res.string.work_unlimited, Res.string.work_until, Res.string.work_count)
-        CalendarMenu(stringResource(ends[input.endMode])) {
-            ends.forEachIndexed { i, label ->
-                DropdownMenuItem(text = { Text(stringResource(label)) }, onClick = { onChange(input.copy(endMode = i, endValue = "")) })
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            CalendarMenu(stringResource(ends[input.endMode]), modifier = Modifier.weight(1f)) {
+                ends.forEachIndexed { i, label ->
+                    CalendarMenuItem(text = { Text(stringResource(label)) }, onClick = { onChange(input.copy(endMode = i, endValue = "")) })
+                }
             }
-        }
-        if (input.endMode == 1) DiskDateField(input.endValue, Res.string.work_until) { onChange(input.copy(endValue = it)) }
-        if (input.endMode == 2) WorkField(input.endValue, Res.string.work_count, keyboard = KeyboardType.Number) {
-            onChange(input.copy(endValue = it))
+            if (input.endMode == 1) DiskDateField(input.endValue, Res.string.work_until) { onChange(input.copy(endValue = it)) }
+            if (input.endMode == 2) WorkField(input.endValue, Res.string.work_count, keyboard = KeyboardType.Number,
+                modifier = Modifier.weight(1f), error = input.endValue.toIntOrNull()?.let { it > 0 } != true) {
+                onChange(input.copy(endValue = it))
+            }
         }
     }
 }
@@ -612,12 +620,12 @@ private fun CalendarLinkMenu(label: StringResource, selected: String?, entries: 
             Icon(Icons.Default.ArrowDropDown, null)
         }
         com.andreyceilings.shared.ui.CeilingsPopupMenu(open, { open = false }) {
-            if (onCreate != null) DropdownMenuItem(text = { Text(stringResource(if (label == Res.string.work_object) Res.string.oc_new_project else Res.string.oc_new_client)) },
+            if (onCreate != null) CalendarMenuItem(text = { Text(stringResource(if (label == Res.string.work_object) Res.string.oc_new_project else Res.string.oc_new_client)) },
                 leadingIcon = { Icon(Icons.Default.Add, null) }, onClick = { open = false; onCreate() })
             WorkField(query, Res.string.work_search) { query = it }
-            DropdownMenuItem(text = { Text(stringResource(emptyLabel)) }, onClick = { open = false; onSelect(null) })
+            CalendarMenuItem(text = { Text(stringResource(emptyLabel)) }, onClick = { open = false; onSelect(null) })
             entries.filter { it.name.contains(query, ignoreCase = true) }.forEach {
-                DropdownMenuItem(text = { Text(it.name) }, onClick = { open = false; onSelect(it.uuid) })
+                CalendarMenuItem(text = { Text(it.name) }, onClick = { open = false; onSelect(it.uuid) })
             }
         }
     }

@@ -111,4 +111,5 @@
     <string name="work_external_unavailable">Не вдалося відкрити посилання.</string>
     <string name="work_invalid_day">Оберіть окрему дату наступного дня в межах року.</string>
     <string name="work_inherit_client">Клієнт об’єкта</string>
+    <string name="work_interval_short">Крок</string>
 </resources>

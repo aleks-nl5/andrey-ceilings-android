@@ -36,7 +36,7 @@ fun CalendarSettingsSection(store: CalendarStore?) {
     val options = read.data()
     if (options == null) {
         if (read is CalendarRead.Loading) LinearProgressIndicator(Modifier.fillMaxWidth())
-        else Text(stringResource(Res.string.work_unavailable))
+        else CalendarFeedback(Res.string.work_unavailable)
         return
     }
     val scope = rememberCoroutineScope()
@@ -56,9 +56,9 @@ fun CalendarSettingsSection(store: CalendarStore?) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(stringResource(Res.string.work_first_day), Modifier.weight(1f))
             CalendarMenu(stringResource(first?.label() ?: Res.string.work_system)) {
-                DropdownMenuItem(text = { Text(stringResource(Res.string.work_system)) }, onClick = { first = null })
+                CalendarMenuItem(text = { Text(stringResource(Res.string.work_system)) }, onClick = { first = null })
                 DayOfWeek.entries.forEach { day ->
-                    DropdownMenuItem(text = { Text(stringResource(day.label())) }, onClick = { first = day })
+                    CalendarMenuItem(text = { Text(stringResource(day.label())) }, onClick = { first = day })
                 }
             }
         }
@@ -71,7 +71,7 @@ fun CalendarSettingsSection(store: CalendarStore?) {
                 finally { busy = false }
             }
         }) { Text(stringResource(Res.string.oc_save)) }
-        if (failure) Text(stringResource(Res.string.work_save_failed), color = MaterialTheme.colorScheme.error)
+        if (failure) CalendarFeedback(Res.string.work_save_failed)
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(stringResource(Res.string.work_manage_types), Modifier.weight(1f), style = MaterialTheme.typography.titleSmall)
             IconButton(onClick = { editor = CalendarWorkType(newRecordUuid(), "", 3763412, "other", 60, false) }) {
@@ -136,7 +136,7 @@ private fun CalendarTypeEditor(type: CalendarWorkType, store: CalendarStore, onC
                     }
                 }
                 WorkField(duration, Res.string.work_type_duration, error = parsedDuration == null, keyboard = KeyboardType.Number) { duration = it }
-                if (error) Text(stringResource(Res.string.work_save_failed), color = MaterialTheme.colorScheme.error)
+                if (error) CalendarFeedback(Res.string.work_save_failed)
             }
         },
         confirmButton = {
