@@ -16,7 +16,8 @@ import com.andreyceilings.shared.ui.ContextFeedbackIcon
 import com.andreyceilings.shared.ui.ContextFeedbackKind
 import com.andreyceilings.shared.objects.ClientReadCard
 import com.andreyceilings.shared.objects.ContactAction
-import com.andreyceilings.shared.objects.internationalMessengerDigits
+import com.andreyceilings.shared.objects.messengerLinks
+import com.andreyceilings.shared.objects.tryOpenContactLinks
 import com.andreyceilings.shared.measurement.LocalMeasurementInputFocus
 import com.andreyceilings.shared.measurement.MeasurementInputFocus
 import com.andreyceilings.shared.measurement.measurementFieldFocusModifier
@@ -553,18 +554,12 @@ fun WorkEditor(
             onEdit = null, onDelete = null,
             onDial = { phone -> openUri("tel:" + phone.filter { it.isDigit() || it == '+' }) },
             onExternalAction = { action, raw ->
-                val phone = internationalMessengerDigits(raw)
-                val (uri, fallback) = when (action) {
-                    ContactAction.GOOGLE_MAPS -> ("https://www.google.com/maps/search/?api=1&query=" + calendarUriComponent(raw)) to null
-                    ContactAction.WAZE -> ("https://waze.com/ul?q=" + calendarUriComponent(raw) + "&navigate=yes") to null
-                    ContactAction.WHATSAPP -> "whatsapp://send?phone=${requireNotNull(phone)}" to "https://wa.me/$phone"
-                    ContactAction.TELEGRAM -> "tg://resolve?phone=${requireNotNull(phone)}" to "https://t.me/+$phone"
-                    ContactAction.VIBER -> ("viber://chat?number=" + calendarUriComponent("+" + requireNotNull(phone))) to null
+                val links = when (action) {
+                    ContactAction.GOOGLE_MAPS -> listOf("https://www.google.com/maps/search/?api=1&query=" + calendarUriComponent(raw))
+                    ContactAction.WAZE -> listOf("https://waze.com/ul?q=" + calendarUriComponent(raw) + "&navigate=yes")
+                    else -> messengerLinks(action, raw)
                 }
-                try { openUri(uri) } catch (failure: Exception) {
-                    if (fallback == null) throw failure
-                    openUri(fallback)
-                }
+                check(tryOpenContactLinks(links, openUri))
             })
     } else if (clientCardId != null) {
         AlertDialog(onDismissRequest = { clientCardId = null },

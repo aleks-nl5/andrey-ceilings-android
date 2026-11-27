@@ -36,17 +36,6 @@ import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.pluralStringResource
 import org.jetbrains.compose.resources.stringResource
 
-/** A country code must be explicit; never guess one from the device locale. */
-internal fun internationalMessengerDigits(raw: String): String? {
-    val trimmed = raw.trim()
-    val number = when {
-        trimmed.startsWith("+") -> trimmed.drop(1)
-        trimmed.startsWith("00") -> trimmed.drop(2)
-        else -> return null
-    }
-    return number.filter { it in '0'..'9' }.takeIf { it.length in 8..15 && it.first() != '0' }
-}
-
 @Composable
 internal fun ClientReadCard(
     item: ClientListEntry,

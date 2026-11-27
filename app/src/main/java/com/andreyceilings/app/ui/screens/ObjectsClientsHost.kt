@@ -18,6 +18,8 @@ import androidx.compose.ui.unit.dp
 import com.andreyceilings.app.data.db.CeilingsDatabase
 import com.andreyceilings.shared.objects.CardSwipeState
 import com.andreyceilings.shared.objects.ContactAction
+import com.andreyceilings.shared.objects.messengerLinks
+import com.andreyceilings.shared.objects.tryOpenContactLinks
 import com.andreyceilings.shared.objects.ObjectsClientsRows
 import com.andreyceilings.shared.objects.ObjectsClientsScreen
 import com.andreyceilings.shared.objects.ObjectsClientsTab
@@ -70,14 +72,14 @@ internal fun ObjectsClientsHost(
     val loadedRows by flow.collectAsState(initial = store?.cachedRows)
     val rows = loadedRows ?: ObjectsClientsRows(emptyList(), emptyList())
 
-    fun openIntent(uri: Uri, dial: Boolean = false) {
-        val intent = Intent(if (dial) Intent.ACTION_DIAL else Intent.ACTION_VIEW, uri)
-        runCatching { context.startActivity(intent) }
-            .onFailure {
-                Toast.makeText(context, "Не вдалося відкрити відповідний застосунок.",
-                    Toast.LENGTH_LONG).show()
-            }
+    fun openIntents(uris: List<String>, dial: Boolean = false) {
+        if (!tryOpenContactLinks(uris) { uri ->
+                context.startActivity(Intent(if (dial) Intent.ACTION_DIAL else Intent.ACTION_VIEW, Uri.parse(uri)))
+            }) Toast.makeText(context, "Не вдалося відкрити відповідний застосунок.",
+                Toast.LENGTH_LONG).show()
     }
+
+    fun openIntent(uri: Uri, dial: Boolean = false) = openIntents(listOf(uri.toString()), dial)
 
     ObjectsClientsScreen(
         rows = rows,
@@ -142,34 +144,18 @@ internal fun ObjectsClientsHost(
             context.startActivity(Intent(Intent.ACTION_DIAL, Uri.fromParts("tel", phone.trim(), null)))
         },
         onExternalAction = { action, raw ->
-            val uri = when (action) {
+            val links = when (action) {
                 ContactAction.GOOGLE_MAPS ->
-                    "https://www.google.com/maps/search/?api=1&query=${Uri.encode(raw)}"
+                    listOf("https://www.google.com/maps/search/?api=1&query=${Uri.encode(raw)}")
                 ContactAction.WAZE ->
-                    "https://waze.com/ul?q=${Uri.encode(raw)}&navigate=yes"
-                ContactAction.WHATSAPP -> {
-                    val digits = raw.filter(Char::isDigit)
-                    if (raw.trim().startsWith("+") && digits.length in 8..15) {
-                        "https://wa.me/$digits"
-                    } else null // Never guess a missing international country code.
-                }
-                ContactAction.TELEGRAM -> {
-                    val phone = raw.filter(Char::isDigit)
-                    if (raw.trim().startsWith("+") && phone.length in 8..15) {
-                        "tg://resolve?phone=$phone"
-                    } else null
-                }
-                ContactAction.VIBER -> {
-                    if (raw.trim().startsWith("+")) {
-                        "viber://chat?number=${Uri.encode(raw.trim())}"
-                    } else null
-                }
+                    listOf("https://waze.com/ul?q=${Uri.encode(raw)}&navigate=yes")
+                else -> messengerLinks(action, raw)
             }
-            if (uri == null) {
+            if (links.isEmpty()) {
                 Toast.makeText(context,
                     "Для цього месенджера потрібен міжнародний номер із кодом країни.",
                     Toast.LENGTH_LONG).show()
-            } else openIntent(Uri.parse(uri))
+            } else openIntents(links)
         }
     )
 }

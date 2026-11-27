@@ -81,6 +81,7 @@ import com.andreyceilings.shared.objects.dismissCardSwipeOnInteraction
 import com.andreyceilings.shared.objects.ObjectsClientsScreen
 import com.andreyceilings.shared.objects.ObjectsClientsRows
 import com.andreyceilings.shared.objects.ContactAction
+import com.andreyceilings.shared.objects.messengerLinks
 import com.andreyceilings.shared.prices.PriceCatalogScreen
 import com.andreyceilings.shared.prices.PriceCatalogStore
 import com.andreyceilings.shared.prices.PriceCatalogTheme
@@ -210,15 +211,22 @@ private fun DesktopPriceHost(
         }
         var completedProject by remember(database) { mutableStateOf<Pair<String, WorkOccurrenceKey>?>(null) }
         var detachedWork by remember(database) { mutableStateOf(0) }
-        fun openExternal(url: String) {
-            runCatching {
-                check(Desktop.isDesktopSupported() &&
-                    Desktop.getDesktop().isSupported(Desktop.Action.BROWSE)) {
-                    "Немає застосунку для зовнішнього посилання."
+        fun openExternalLinks(urls: List<String>) {
+            var lastFailure: Throwable? = null
+            for (url in urls) {
+                val result = runCatching {
+                    check(Desktop.isDesktopSupported() &&
+                        Desktop.getDesktop().isSupported(Desktop.Action.BROWSE)) {
+                        "Немає застосунку для зовнішнього посилання."
+                    }
+                    Desktop.getDesktop().browse(URI(url))
                 }
-                Desktop.getDesktop().browse(URI(url))
-            }.onFailure { externalError = it.message ?: "Не вдалося відкрити посилання." }
+                if (result.isSuccess) return
+                lastFailure = result.exceptionOrNull()
+            }
+            externalError = lastFailure?.message ?: "Не вдалося відкрити посилання."
         }
+        fun openExternal(url: String) = openExternalLinks(listOf(url))
         val currencyGateway = remember(database) {
             MonobankCurrencyGateway(DesktopCurrencyRatesCache())
         }
@@ -369,21 +377,14 @@ private fun DesktopPriceHost(
                     },
                     onExternalAction = { action, raw ->
                         val encoded = URLEncoder.encode(raw, "UTF-8")
-                        val digits = raw.filter(Char::isDigit)
-                        val international = raw.trim().startsWith("+") && digits.length in 8..15
-                        val url = when (action) {
+                        val links = when (action) {
                             ContactAction.GOOGLE_MAPS ->
-                                "https://www.google.com/maps/search/?api=1&query=$encoded"
+                                listOf("https://www.google.com/maps/search/?api=1&query=$encoded")
                             ContactAction.WAZE ->
-                                "https://waze.com/ul?q=$encoded&navigate=yes"
-                            ContactAction.WHATSAPP -> if (international)
-                                "https://wa.me/$digits" else null
-                            ContactAction.TELEGRAM -> if (international)
-                                "tg://resolve?phone=$digits" else null
-                            ContactAction.VIBER -> if (international)
-                                "viber://chat?number=" + URLEncoder.encode(raw.trim(), "UTF-8") else null
+                                listOf("https://waze.com/ul?q=$encoded&navigate=yes")
+                            else -> messengerLinks(action, raw)
                         }
-                        if (url != null) openExternal(url)
+                        if (links.isNotEmpty()) openExternalLinks(links)
                         else externalError = "Вкажіть телефон із міжнародним кодом країни."
                     }
                 )

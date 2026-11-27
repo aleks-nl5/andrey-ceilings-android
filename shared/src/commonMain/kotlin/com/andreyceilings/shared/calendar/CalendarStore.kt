@@ -70,7 +70,7 @@ class CalendarStore(
         fill(PeriodKey(range, zone), changes.value)
     }
 
-    /** Warm only the saved display mode, never block dashboard rendering or persist UI state. */
+    /** Warm the dashboard projection and saved calendar mode without persisting UI state. */
     fun warmCurrentPeriod(mode: CalendarDisplayMode, systemFirstDay: DayOfWeek = DayOfWeek.MONDAY) {
         scope.launch {
             try {
