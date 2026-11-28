@@ -19,6 +19,8 @@ internal class CalendarDeviceState(context: Context, fileName: String = "calenda
     val remindersRequested: Boolean get() = prefs.getBoolean("reminders_requested", false)
     val hasBatchedSchedule get() = prefs.contains("exact_wakeups")
     val alarmKeys: Set<String> get() = values("alarms")
+    val scheduledBoot: Int get() = prefs.getInt("scheduled_boot", -1)
+    val overflow: Set<String> get() = values("overflow")
     val delivered: Set<String> get() = values("delivered")
     val visible: Set<String> get() = values("visible")
     val snoozes: Set<String> get() = values("snoozes")
@@ -49,12 +51,14 @@ internal class CalendarDeviceState(context: Context, fileName: String = "calenda
 
     fun save(key: String, values: Set<String>) { check(prefs.edit().putStringSet(key, values.toSet()).commit()) }
 
-    fun recordDelivery(visible: Set<String>, delivered: Set<String>) {
-        check(prefs.edit().putStringSet("visible", visible).putStringSet("delivered", delivered).commit())
+    fun recordDelivery(visible: Set<String>, delivered: Set<String>, overflow: Set<String> = this.overflow) {
+        check(prefs.edit().putStringSet("visible", visible).putStringSet("delivered", delivered)
+            .putStringSet("overflow", overflow).commit())
     }
 
-    fun recordSchedule(alerts: Set<String>, wakeups: Set<String>) {
-        check(prefs.edit().putStringSet("alarms", alerts).putStringSet("exact_wakeups", wakeups).commit())
+    fun recordSchedule(alerts: Set<String>, wakeups: Set<String>, boot: Int = -1) {
+        check(prefs.edit().putStringSet("alarms", alerts).putStringSet("exact_wakeups", wakeups)
+            .putInt("scheduled_boot", boot).commit())
     }
 
     fun changeDestination(identity: String, move: Boolean) {

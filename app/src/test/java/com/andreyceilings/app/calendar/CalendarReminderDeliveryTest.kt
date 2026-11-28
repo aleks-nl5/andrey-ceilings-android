@@ -23,6 +23,26 @@ class CalendarReminderDeliveryTest {
         assertFalse(reminderIsDue(101, 100, scheduled = true, relevant = false, workStarted = true))
     }
 
+    @Test fun staleScheduledAlertsDoNotReplayAfterWorkStart() {
+        assertTrue(reminderIsDue(100, 100, scheduled = true, relevant = true, workStarted = true))
+        assertTrue(reminderIsDue(100 + EXACT_DELIVERY_GRACE_MS, 100, true, true, true))
+        assertFalse(reminderIsDue(101 + EXACT_DELIVERY_GRACE_MS, 100, true, true, true))
+        assertFalse(reminderIsDue(100, 100, false, true, true))
+        assertTrue(reminderIsDue(1_000_000, 100, false, true, false))
+        assertFalse(reminderIsDue(1_000_000, 100, false, false, false))
+    }
+
+    @Test fun fullTrayUsesOneOverflowBatchWithoutWaitingForDismissal() {
+        val due = (1..130).toList()
+        val (individual, overflow) = reminderOverflow(due, setOf(1, 2), 0)
+        assertEquals(listOf(1, 2), individual)
+        assertEquals(due.drop(2), overflow)
+        val (withSlots, rest) = reminderOverflow(due, setOf(2), 2)
+        assertEquals(listOf(1, 2, 3), withSlots)
+        assertEquals(due.drop(3), rest)
+        assertEquals(due, reminderOverflow(due, emptySet(), 0).second)
+    }
+
     @Test fun privacyChangeReplacesAnActiveAlertAndDismissalInvalidatesActions() {
         assertEquals(VisibleReminderChange.REPLACE, visibleReminderChange(true, true, false))
         assertEquals(VisibleReminderChange.CANCEL, visibleReminderChange(true, false, false))

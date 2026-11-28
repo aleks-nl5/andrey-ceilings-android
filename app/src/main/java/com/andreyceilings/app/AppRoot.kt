@@ -134,6 +134,8 @@ internal fun CeilingsApp(
     initialNavigation: AppNavigationState = AppNavigationState(),
     notificationWork: WorkOccurrenceKey? = null,
     onNotificationOpened: () -> Unit = {},
+    notificationCalendar: Boolean = false,
+    onNotificationCalendarOpened: () -> Unit = {},
 ) {
     val context = LocalContext.current.applicationContext
     val appLanguage = remember(context) { AppLanguageState(AndroidAppLanguageStorage(context)) }
@@ -142,6 +144,7 @@ internal fun CeilingsApp(
             CeilingsAppContent(
                 databaseStatus, database, onDatabaseReplaced, themeMode, onThemeModeChange,
                 initialNavigation, appLanguage, notificationWork, onNotificationOpened,
+                notificationCalendar, onNotificationCalendarOpened,
             )
         }
     }
@@ -159,6 +162,8 @@ private fun CeilingsAppContent(
     appLanguage: AppLanguageState,
     notificationWork: WorkOccurrenceKey?,
     onNotificationOpened: () -> Unit,
+    notificationCalendar: Boolean,
+    onNotificationCalendarOpened: () -> Unit,
 ) {
     var navigation by rememberSaveable(stateSaver = navigationStateSaver) {
         mutableStateOf(initialNavigation.restoreCeilingWorkspace())
@@ -364,6 +369,14 @@ private fun CeilingsAppContent(
         }
         registryState.removeState(target.name)
         updateNavigation(navigation.navigate(target))
+    }
+
+    LaunchedEffect(notificationCalendar, calendarStore, calendarEditor == null, projectCalendar == null) {
+        if (notificationCalendar && calendarStore != null && calendarEditor == null && projectCalendar == null) {
+            openSearch = false
+            openNested(AppTab.CALENDAR)
+            onNotificationCalendarOpened()
+        }
     }
 
     var checkingProject by remember { mutableStateOf(false) }

@@ -9,4 +9,17 @@
     <string name="p7b_navigate">Маршрут</string>
     <string name="p7b_dial">Зателефонувати</string>
     <string name="p7b_message">Повідомлення</string>
+    <plurals name="p7b_overflow_title">
+        <item quantity="one">Ще %d нагадування</item>
+        <item quantity="few">Ще %d нагадування</item>
+        <item quantity="many">Ще %d нагадувань</item>
+        <item quantity="other">Ще %d нагадувань</item>
+    </plurals>
+    <plurals name="p7b_overflow_more">
+        <item quantity="one">Ще %d робота</item>
+        <item quantity="few">Ще %d роботи</item>
+        <item quantity="many">Ще %d робіт</item>
+        <item quantity="other">Ще %d робіт</item>
+    </plurals>
+    <string name="p7b_overflow_open">Переглянути в календарі</string>
 </resources>

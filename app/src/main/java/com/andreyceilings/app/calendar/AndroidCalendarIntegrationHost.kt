@@ -109,7 +109,11 @@ internal fun AndroidCalendarIntegrationHost(store: CalendarStore?, content: @Com
                 if (result == CalendarManualExportResult.Exported) refresh()
                 return result
             }
-            override suspend fun snooze(key: WorkOccurrenceKey, at: Instant) = CalendarReminderRuntime.snooze(app, key, at)
+            override suspend fun snooze(key: WorkOccurrenceKey, at: Instant) = withContext(Dispatchers.IO) {
+                CalendarReminderRuntime.snooze(app, key, at).also {
+                    if (it) CalendarReminderRuntime.enqueue(app)
+                }
+            }
             override fun cachedAvailability(range: WorkDateRange, zone: TimeZone) =
                 busyCache[range to zone].takeIf { readCalendarGranted && !restorePending && busySelection.isNotEmpty() }
 
