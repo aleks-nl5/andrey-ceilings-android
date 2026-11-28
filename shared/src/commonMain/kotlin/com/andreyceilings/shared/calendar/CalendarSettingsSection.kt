@@ -28,12 +28,13 @@ import org.jetbrains.compose.resources.stringResource
 
 @Composable
 fun CalendarSettingsSection(store: CalendarStore?, showWeekNumbers: Boolean = true,
-    onShowWeekNumbersChange: ((Boolean) -> Unit)? = null) {
+    onShowWeekNumbersChange: ((Boolean) -> Unit)? = null,
+    nested: Boolean = false) {
     var open by remember(store) { mutableStateOf(false) }
     OutlinedButton(onClick = { open = !open }, enabled = store != null, modifier = Modifier.fillMaxWidth()) {
         Icon(Icons.Default.CalendarMonth, null)
         Spacer(Modifier.width(8.dp))
-        Text(stringResource(Res.string.work_settings))
+        Text(stringResource(if (nested) Res.string.p7b_calendar else Res.string.work_settings))
     }
     if (!open || store == null) return
     if (onShowWeekNumbersChange != null) WeekNumbersSetting(showWeekNumbers, onShowWeekNumbersChange)

@@ -21,7 +21,10 @@ object PerformanceDiagnosticsLog {
         Log.d(TAG, message)
         synchronized(lock) {
             runCatching {
-                File(context.applicationContext.cacheDir, FILE_NAME).appendText(
+                val log = File(context.applicationContext.cacheDir, FILE_NAME)
+                // Bound debug-only diagnostics without touching business files.
+                if (log.length() > 2L * 1024 * 1024) log.delete()
+                log.appendText(
                     "${System.currentTimeMillis()} $message\n",
                     Charsets.UTF_8
                 )

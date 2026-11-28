@@ -151,6 +151,7 @@ internal object SqlCipherRestoreManager {
             }
             PortableBackupManager.verifyEncryptedSnapshot(context, stage, contents.passphrase)
 
+            com.andreyceilings.app.calendar.CalendarReminderRuntime.pauseForRestore(context)
             if(rawRecovery) {
                 check(!CeilingsDatabase.hasOpenSession())
                 val bundle=RawDatabaseRecovery.capture(RawDatabaseRecovery.root(context),live,

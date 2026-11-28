@@ -33,6 +33,30 @@ class CalendarRepositoryTest {
         assertEquals(CalendarSaveResult.Stale, calendar.save(command))
     }
 
+    @Test fun integrationWindowIncludesLeadDaysAndExactMovedExceptions() = fixture { db, calendar ->
+        val start = today.shift(30)
+        val first = saved(calendar.save(CalendarSave(draft(timed = true).copy(date = start,
+            recurrence = WorkRecurrence(start, WorkFrequency.WEEKLY)))))
+        val futureKey = WorkOccurrenceKey(first.rootUuid, start.shift(7))
+        val occurrence = assertNotNull(calendar.exact(futureKey))
+        val special = ReminderRule(ReminderDay.FIRST, 5, 0)
+        saved(calendar.save(CalendarSave(occurrence.draft.copy(date = today.shift(10)), futureKey, occurrence.version,
+            integration = CalendarWorkIntegration(ReminderMode.REPLACE, setOf(special)))))
+        val standalone = saved(calendar.save(CalendarSave(draft().copy(date = today.shift(300)))))
+        val store = CalendarStore(db, clock)
+        try {
+            val plan = runBlocking { store.integrationPlan(today, today.shift(7), zone, includeLead = true) }
+            assertEquals(setOf(futureKey, standalone), plan.works.map { it.work.key }.toSet())
+            val moved = plan.works.single { it.work.key == futureKey }
+            assertFalse(moved.standalone)
+            assertEquals(Instant.parse("2026-12-02T09:00:00Z"),
+                calendarReminders(moved.work, plan.snapshot.rules(moved.work)).single().trigger)
+            assertTrue(plan.works.single { it.work.key == standalone }.standalone)
+        } finally {
+            runBlocking { store.closeAndAwait() }
+        }
+    }
+
     @Test fun forwardSplitInheritsFieldsAndKeepsTerminalHistory() = fixture { _, calendar ->
         val rule = WorkRecurrence(today, WorkFrequency.DAILY, count = 5)
         val first = saved(calendar.save(CalendarSave(draft(recurrence = rule))))

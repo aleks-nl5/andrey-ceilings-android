@@ -36,9 +36,10 @@ fun openDesktopPriceCatalog(driver: SqlDriver, previouslyExisting: Boolean) {
             }, 0).value
         val structuralVersion = when {
             calendarSchemaExists(driver) -> {
-                verifyCalendarStructure(driver, 25L)
-                verifyFrozenEstimateStructure(driver, 25L)
-                25L
+                val calendarVersion = if (columns("calendar_integration_settings").isEmpty()) 25L else 26L
+                verifyCalendarStructure(driver, calendarVersion)
+                verifyFrozenEstimateStructure(driver, calendarVersion)
+                calendarVersion
             }
             consolidatedSchema -> {
                 verifyFrozenEstimateStructure(driver, 24L)

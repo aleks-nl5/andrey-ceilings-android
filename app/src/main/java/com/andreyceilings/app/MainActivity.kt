@@ -1,6 +1,10 @@
 package com.andreyceilings.app
 
 import android.os.Bundle
+import android.content.Intent
+import com.andreyceilings.shared.calendar.WorkOccurrenceKey
+import com.andreyceilings.app.calendar.CalendarReminderRuntime
+import com.andreyceilings.app.calendar.OPEN_REMINDER_CALENDAR
 import android.os.SystemClock
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -29,6 +33,8 @@ class MainActivity : ComponentActivity() {
     private val databaseState = mutableStateOf<CeilingsDatabase?>(null)
     private val storageWarning = mutableStateOf<String?>(null)
     private val themeMode = mutableStateOf(ThemeMode.SYSTEM)
+    private val notificationWork = mutableStateOf<WorkOccurrenceKey?>(null)
+    private val notificationCalendar = mutableStateOf(false)
     private val startupFailure = mutableStateOf<DatabaseStartupDiagnostics.Report?>(null)
 
     private fun saveThemeMode(mode: ThemeMode) {
@@ -45,6 +51,29 @@ class MainActivity : ComponentActivity() {
             AutomaticBackupScheduler.triggerOnBackground(applicationContext)
         }
         super.onStop()
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleCalendarIntent(intent)
+    }
+
+    private fun handleCalendarIntent(intent: Intent) {
+        if (intent.action == OPEN_REMINDER_CALENDAR) {
+            lifecycleScope.launch {
+                val valid = withContext(Dispatchers.IO) {
+                    runCatching { CalendarReminderRuntime.openOverflow(this@MainActivity, intent) }.getOrDefault(false)
+                }
+                if (valid) notificationCalendar.value = true
+            }
+            return
+        }
+        if (intent.action != "com.andreyceilings.app.calendar.OPEN") return
+        lifecycleScope.launch {
+            val result = withContext(Dispatchers.IO) { runCatching { CalendarReminderRuntime.open(this@MainActivity, intent) } }
+            result.getOrNull()?.let { notificationWork.value = it }
+        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -67,6 +96,7 @@ class MainActivity : ComponentActivity() {
                 val (db, warning) = withContext(Dispatchers.IO) {
                     // Non-blocking internal-storage preflight BEFORE opening
                     // SQLCipher. It is only advisory; normal reads stay usable.
+                    runCatching { com.andreyceilings.app.ui.screens.pruneExpiredEstimatePdfCache(applicationContext) }
                     val warning = StorageSpaceGuard.startupWarning(applicationContext)
                     val databaseOpenStartedAt = SystemClock.elapsedRealtime()
                     val database = CeilingsDatabase.get(applicationContext)
@@ -79,6 +109,7 @@ class MainActivity : ComponentActivity() {
                     database to warning
                 }
                 databaseState.value = db
+                if (savedInstanceState == null) handleCalendarIntent(intent)
                 storageWarning.value = warning
                 databaseStatus.value = "Зашифрована база даних активна"
             } catch (failure: Exception) {
@@ -96,6 +127,10 @@ class MainActivity : ComponentActivity() {
                         onThemeModeChange = ::saveThemeMode,
                         databaseStatus = databaseStatus.value,
                         database = databaseState.value,
+                        notificationWork = notificationWork.value,
+                        onNotificationOpened = { notificationWork.value = null },
+                        notificationCalendar = notificationCalendar.value,
+                        onNotificationCalendarOpened = { notificationCalendar.value = false },
                         onDatabaseReplaced = { refreshed ->
                             databaseState.value = refreshed
                             startupFailure.value = null

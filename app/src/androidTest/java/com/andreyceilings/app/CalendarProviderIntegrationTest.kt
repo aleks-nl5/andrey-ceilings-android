@@ -1,0 +1,200 @@
+package com.andreyceilings.app
+
+import android.Manifest
+import android.content.ContentUris
+import android.content.ContentValues
+import android.content.Context
+import android.provider.CalendarContract
+import android.provider.CalendarContract.Calendars
+import android.provider.CalendarContract.Events
+import androidx.test.core.app.ApplicationProvider
+import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.rule.GrantPermissionRule
+import com.andreyceilings.app.calendar.AndroidSystemCalendar
+import com.andreyceilings.app.calendar.CalendarDeviceState
+import com.andreyceilings.app.data.db.CeilingsDatabase
+import com.andreyceilings.shared.calendar.*
+import kotlinx.coroutines.runBlocking
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.toLocalDateTime
+import kotlin.time.Clock
+import kotlin.time.Duration.Companion.days
+import org.junit.Assert.*
+import org.junit.Rule
+import org.junit.Test
+import org.junit.runner.RunWith
+import java.util.UUID
+
+@RunWith(AndroidJUnit4::class)
+class CalendarProviderIntegrationTest {
+    @get:Rule val access: GrantPermissionRule =
+        GrantPermissionRule.grant(Manifest.permission.READ_CALENDAR, Manifest.permission.WRITE_CALENDAR)
+
+    @Test fun localProviderDeduplicatesOwnedExportAndPreservesUnprovedEvents() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val token = UUID.randomUUID().toString()
+        val dbName = "sqldelight_test_calendar_$token.db"
+        val preferences = "calendar_provider_test_$token"
+        val key = ByteArray(32) { 47 }
+        val device = CalendarDeviceState(context, preferences)
+        val resolver = context.contentResolver
+        val calendarIds = mutableListOf<Long>()
+        try {
+            CeilingsDatabase.openIsolatedForTesting(context, dbName, key).use { database ->
+                val store = database.objectsClientsStore.calendar
+                val system = AndroidSystemCalendar(context, device, store)
+                val calendar = system.createLocalCalendar("libellaro-test-$token")
+                val id = calendar.substringBefore(':').toLong()
+                calendarIds += id
+                system.selectDestination(calendar, move = false)
+                system.selectBusy(setOf(calendar))
+                val date = (Clock.System.now() + 10.days).toLocalDateTime(TimeZone.UTC).date
+                val work = CalendarWorkDraft(date, WorkSchedule(WorkTimeMode.ALL_DAY, TimeZone.UTC,
+                    listOf(WorkDay(0))), "Private fixture title", "MEASURE", notes = "Private fixture notes")
+                val created = store.save(CalendarSave(work)) as CalendarSaveResult.Saved
+                val saved = checkNotNull(store.exact(created.key))
+                system.manualExport(saved.key, saved.version, managed = true)
+                system.manualExport(saved.key, saved.version, managed = true)
+                fun events(calendarId: Long = id) = checkNotNull(resolver.query(Events.CONTENT_URI,
+                    arrayOf(Events._ID, Events.TITLE, Events.DESCRIPTION, Events.DTSTART, Events.DTEND),
+                    "${Events.CALENDAR_ID} = ? AND ${Events.DELETED} = 0", arrayOf(calendarId.toString()), null)).use { cursor ->
+                    buildList {
+                        while (cursor.moveToNext()) add(listOf(cursor.getString(0), cursor.getString(1), cursor.getString(2),
+                            cursor.getString(3), cursor.getString(4)))
+                    }
+                }
+                var exported = events().single()
+                assertNotEquals(work.title, exported[1])
+                assertNull(exported[2])
+                val thirdParty = checkNotNull(resolver.insert(Events.CONTENT_URI, ContentValues().apply {
+                    put(Events.CALENDAR_ID, id)
+                    put(Events.TITLE, "Unrelated provider event")
+                    put(Events.DTSTART, exported[3]!!.toLong())
+                    put(Events.DTEND, exported[4]!!.toLong())
+                    put(Events.EVENT_TIMEZONE, "UTC")
+                    put(Events.ALL_DAY, 1)
+                    put(Events.AVAILABILITY, Events.AVAILABILITY_BUSY)
+                }))
+                val availability = system.availability(WorkDateRange(date, date), TimeZone.UTC) as CalendarAvailability.Available
+                assertEquals(1, availability.busy.size)
+
+                val eventUri = ContentUris.withAppendedId(Events.CONTENT_URI, exported[0]!!.toLong())
+                assertEquals(1, resolver.update(eventUri, ContentValues().apply {
+                    put(Events.TITLE, "External edit")
+                }, null, null))
+                system.reconcile()
+                assertEquals(exported[1], events().single { it[0] == exported[0] }[1])
+
+                // An external delete must be repaired without counting the replacement as third-party busy.
+                assertEquals(1, resolver.delete(eventUri, null, null))
+                system.reconcile()
+                val unrelatedId = ContentUris.parseId(thirdParty).toString()
+                val originalTitle = exported[1]
+                exported = events().single { it[0] != unrelatedId }
+                assertEquals(originalTitle, exported[1])
+                assertEquals(1, (system.availability(WorkDateRange(date, date), TimeZone.UTC)
+                    as CalendarAvailability.Available).busy.size)
+
+                fun interruptAfterProviderCommit(eventId: String) {
+                    val mapping = device.exports.single { it.split('|')[1] == eventId }
+                    val fields = mapping.split('|')
+                    device.save("pending_inserts", device.pendingInserts + "${fields[0]}|${fields[5]}")
+                    device.save("exports", device.exports - mapping)
+                }
+
+                interruptAfterProviderCommit(exported[0]!!)
+                val afterExport = checkNotNull(store.exact(saved.key))
+                assertTrue(store.delete(afterExport.key, afterExport.version, CalendarEditScope.OCCURRENCE))
+                system.reconcile()
+                val unrelated = ContentUris.parseId(thirdParty).toString()
+                assertEquals(unrelated, events().single()[0])
+                assertTrue(device.pendingInserts.isEmpty())
+
+                suspend fun create(offset: Int, explicit: Boolean = false): CalendarWork {
+                    val draft = work.copy(date = kotlinx.datetime.LocalDate.fromEpochDays(date.toEpochDays() + offset))
+                    val options = if (explicit) CalendarWorkIntegration(syncMode = CalendarSyncMode.ON) else null
+                    val result = store.save(CalendarSave(draft, integration = options)) as CalendarSaveResult.Saved
+                    return checkNotNull(store.exact(result.key))
+                }
+
+                // Direct cancellation exercises the same provider item-URI deletion
+                // without relying on a pending-insert recovery or a global disable.
+                val cancelled = create(4)
+                system.manualExport(cancelled.key, cancelled.version, managed = true)
+                val cancelledId = events().single { it[0] != unrelated }[0]!!
+                val beforeCancel = checkNotNull(store.exact(cancelled.key))
+                assertTrue(store.save(CalendarSave(beforeCancel.draft.copy(status = WorkStatus.CANCELLED),
+                    target = beforeCancel.key, expectedVersion = beforeCancel.version)) is CalendarSaveResult.Saved)
+                system.reconcile()
+                assertFalse(events().any { it[0] == cancelledId })
+                assertEquals(unrelated, events().single()[0])
+
+                val left = create(1)
+                system.manualExport(left.key, left.version, managed = true)
+                val leftId = events().single { it[0] != unrelated }[0]!!
+                interruptAfterProviderCommit(leftId)
+                system.disableSync(remove = false)
+                system.reconcile()
+                assertTrue(device.pendingInserts.isEmpty())
+                assertTrue(device.leaving.any { it.split('|')[1] == leftId })
+
+                val individual = create(2, explicit = true)
+                system.reconcile()
+                val individualId = events().single { it[0] != unrelated && it[0] != leftId }[0]!!
+                interruptAfterProviderCommit(individualId)
+                system.disableSync(remove = true)
+                system.reconcile()
+                assertEquals(setOf(unrelated, leftId), events().map { it[0] }.toSet())
+
+                // Simulate a process exit after the device journal commits and before the DB setting.
+                device.beginSyncEnable()
+                assertFalse(store.integrationSnapshot().settings.syncEnabled)
+                system.reconcile()
+                assertTrue(store.integrationSnapshot().settings.syncEnabled)
+                assertNull(device.syncTransition)
+                val recreated = events().single { it[0] != unrelated && it[0] != leftId }[0]!!
+                interruptAfterProviderCommit(recreated)
+                device.pauseForRestore()
+                system.confirmRestore()
+                assertTrue(device.pendingInserts.isEmpty())
+                assertTrue(device.exports.any { it.split('|')[1] == recreated })
+
+                val secondCalendar = system.createLocalCalendar("libellaro-second-$token")
+                val secondId = secondCalendar.substringBefore(':').toLong()
+                calendarIds += secondId
+                system.selectDestination(secondCalendar, move = true)
+                system.reconcile()
+                assertEquals(setOf(unrelated, leftId), events().map { it[0] }.toSet())
+                assertEquals(1, events(secondId).size)
+                assertEquals(individual.key, store.exact(individual.key)?.key)
+
+                val once = create(3)
+                system.manualExport(once.key, once.version, managed = false)
+                val confirmation = system.manualExport(once.key, once.version, managed = true)
+                    as CalendarManualExportResult.ConfirmAdoption
+                val originalId = confirmation.confirmation.eventIds.single().toString()
+                assertFalse(store.integrationSnapshot().managed(once))
+                assertEquals(CalendarManualExportResult.Exported,
+                    system.manualExport(once.key, once.version, managed = true, confirmation.confirmation))
+                assertTrue(store.integrationSnapshot().managed(once))
+                assertEquals(2, events(secondId).size)
+                assertTrue(events(secondId).any { it[0] == originalId })
+                val current = checkNotNull(store.exact(once.key))
+                assertTrue(store.delete(current.key, current.version, CalendarEditScope.OCCURRENCE))
+                system.reconcile()
+                assertFalse(events(secondId).any { it[0] == originalId })
+            }
+        } finally {
+            calendarIds.forEach { id ->
+                val delete = ContentUris.withAppendedId(Calendars.CONTENT_URI, id).buildUpon()
+                    .appendQueryParameter(CalendarContract.CALLER_IS_SYNCADAPTER, "true")
+                    .appendQueryParameter(Calendars.ACCOUNT_NAME, context.packageName)
+                    .appendQueryParameter(Calendars.ACCOUNT_TYPE, CalendarContract.ACCOUNT_TYPE_LOCAL).build()
+                resolver.delete(delete, null, null)
+            }
+            context.deleteSharedPreferences(preferences)
+            context.deleteDatabase(dbName)
+            key.fill(0)
+        }
+    }
+}

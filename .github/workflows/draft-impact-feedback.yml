@@ -107,7 +107,7 @@ jobs:
           --tests '*FrozenEstimateConcurrencyTest'
           --tests '*ConsolidatedEstimateRepositoryTest' --tests '*ConsolidatedMigrationTest'
           --tests '*WorkRecurrenceTest' --tests '*CalendarRepositoryTest' --tests '*CalendarMigrationTest'
-          --tests '*CalendarWeekNumberTest' --tests '*ContactMessengerLinksTest'
+          --tests '*CalendarIntegrationPolicyTest' --tests '*CalendarWeekNumberTest' --tests '*ContactMessengerLinksTest'
           --stacktrace --warning-mode all
       - name: Verify unsigned release candidate for trusted signing
         shell: bash

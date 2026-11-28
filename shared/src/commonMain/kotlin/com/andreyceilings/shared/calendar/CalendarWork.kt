@@ -83,6 +83,7 @@ data class CalendarSave(
     val expectedVersion: Long? = null,
     val scope: CalendarEditScope = CalendarEditScope.OCCURRENCE,
     val replaceRecurrence: Boolean = false,
+    val integration: CalendarWorkIntegration? = null,
 )
 
 data class CalendarConflictPreview(val count: Int, val checkedThrough: LocalDate?)

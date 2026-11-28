@@ -131,15 +131,22 @@ internal val navigationStateSaver = Saver<AppNavigationState, ArrayList<String>>
 internal fun CeilingsApp(
     databaseStatus: String, database: CeilingsDatabase?, onDatabaseReplaced: (CeilingsDatabase) -> Unit,
     themeMode: ThemeMode, onThemeModeChange: (ThemeMode) -> Unit,
-    initialNavigation: AppNavigationState = AppNavigationState()
+    initialNavigation: AppNavigationState = AppNavigationState(),
+    notificationWork: WorkOccurrenceKey? = null,
+    onNotificationOpened: () -> Unit = {},
+    notificationCalendar: Boolean = false,
+    onNotificationCalendarOpened: () -> Unit = {},
 ) {
     val context = LocalContext.current.applicationContext
     val appLanguage = remember(context) { AppLanguageState(AndroidAppLanguageStorage(context)) }
     AndroidAppLanguageResources(appLanguage) {
-        CeilingsAppContent(
-            databaseStatus, database, onDatabaseReplaced, themeMode, onThemeModeChange,
-            initialNavigation, appLanguage
-        )
+        com.andreyceilings.app.calendar.AndroidCalendarIntegrationHost(database?.objectsClientsStore?.calendar) {
+            CeilingsAppContent(
+                databaseStatus, database, onDatabaseReplaced, themeMode, onThemeModeChange,
+                initialNavigation, appLanguage, notificationWork, onNotificationOpened,
+                notificationCalendar, onNotificationCalendarOpened,
+            )
+        }
     }
 }
 
@@ -152,7 +159,11 @@ private fun CeilingsAppContent(
     themeMode: ThemeMode,
     onThemeModeChange: (ThemeMode) -> Unit,
     initialNavigation: AppNavigationState,
-    appLanguage: AppLanguageState
+    appLanguage: AppLanguageState,
+    notificationWork: WorkOccurrenceKey?,
+    onNotificationOpened: () -> Unit,
+    notificationCalendar: Boolean,
+    onNotificationCalendarOpened: () -> Unit,
 ) {
     var navigation by rememberSaveable(stateSaver = navigationStateSaver) {
         mutableStateOf(initialNavigation.restoreCeilingWorkspace())
@@ -215,6 +226,14 @@ private fun CeilingsAppContent(
     val firstWeekday = kotlinx.datetime.DayOfWeek.entries[(java.util.Calendar.getInstance().firstDayOfWeek + 5) % 7]
     LaunchedEffect(calendarStore, calendarMode, firstWeekday) { calendarStore?.warmCurrentPeriod(calendarMode, firstWeekday) }
     var calendarEditor by remember(database) { mutableStateOf<CalendarEditorRoute?>(null) }
+    LaunchedEffect(notificationWork, calendarStore, calendarEditor == null) {
+        if (notificationWork != null && calendarStore != null) {
+            if (calendarEditor == null) {
+                calendarEditor = CalendarEditorRoute.Open(notificationWork)
+                onNotificationOpened()
+            }
+        }
+    }
     var projectCalendar by remember(database) { mutableStateOf<String?>(null) }
     val projectCalendarStates = key(database) { rememberSaveableStateHolder() }
     var calendarReturnOverlay by remember(database) { mutableStateOf<Triple<List<String>, CalendarEditorRoute, String?>?>(null) }
@@ -350,6 +369,14 @@ private fun CeilingsAppContent(
         }
         registryState.removeState(target.name)
         updateNavigation(navigation.navigate(target))
+    }
+
+    LaunchedEffect(notificationCalendar, calendarStore, calendarEditor == null, projectCalendar == null) {
+        if (notificationCalendar && calendarStore != null && calendarEditor == null && projectCalendar == null) {
+            openSearch = false
+            openNested(AppTab.CALENDAR)
+            onNotificationCalendarOpened()
+        }
     }
 
     var checkingProject by remember { mutableStateOf(false) }
@@ -993,6 +1020,7 @@ private fun CeilingsAppContent(
                 fun closeProjectCalendar() { projectCalendarStates.removeState(projectUuid); projectCalendar = null }
                 projectCalendarStates.SaveableStateProvider(projectUuid) {
                 androidx.compose.ui.window.Dialog(onDismissRequest = ::closeProjectCalendar, properties = calendarWindow) {
+                    LocalCalendarDialogChrome.current(useDarkTheme)
                     Box(Modifier.fillMaxSize().safeDrawingPadding().imePadding().padding(horizontal = 12.dp), contentAlignment = Alignment.Center) {
                         Surface(Modifier.fillMaxWidth().fillMaxHeight(.66f), shape = MaterialTheme.shapes.extraLarge) {
                             WorkCalendarScreen(calendarStore, CalendarDisplayMode.LIST, {}, onEdit = { calendarEditor = it },
@@ -1005,6 +1033,11 @@ private fun CeilingsAppContent(
             }
             calendarEditor?.let { route ->
                 WorkEditor(calendarStore, route, onClose = { calendarEditor = null }, properties = calendarWindow,
+                    incomingWork = notificationWork,
+                    onIncomingWorkHandled = { accepted ->
+                        if (accepted) notificationWork?.let { calendarEditor = CalendarEditorRoute.Open(it) }
+                        onNotificationOpened()
+                    },
                     registry = database?.objectsClientsStore,
                     openExternalUri = { url ->
                         val action = if (url.startsWith("tel:")) android.content.Intent.ACTION_DIAL else android.content.Intent.ACTION_VIEW

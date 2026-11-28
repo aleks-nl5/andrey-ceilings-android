@@ -38,6 +38,8 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalClipboardManager
@@ -54,6 +56,7 @@ import kotlinx.datetime.DatePeriod
 import kotlinx.datetime.DayOfWeek
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.TimeZone
+import kotlinx.datetime.atStartOfDayIn
 import kotlinx.datetime.plus
 import kotlinx.datetime.toLocalDateTime
 import org.jetbrains.compose.resources.StringResource
@@ -106,6 +109,21 @@ fun WorkCalendarScreen(
     val weekdayBackground = colors.surfaceVariant.copy(alpha = if (light) .95f else .46f)
     val weekendBackground = if (light) Color(0xFFFCEEF1) else Color(0xFF3D3036)
     val range = periodOf(date, mode, firstDay)
+    val integration = LocalCalendarIntegrationPlatform.current
+    val cachedAvailability = integration?.cachedAvailability(range, zone) ?: CalendarAvailability.Disabled
+    val availability by produceState(cachedAvailability, integration?.revision, range, zone,
+        projectFilter, query.isBlank()) {
+        value = if (integration != null && projectFilter == null && query.isBlank()) integration.refreshAvailability(range, zone)
+            else CalendarAvailability.Disabled
+    }
+    val busyByDate = remember(availability, range, zone) {
+        val busy = (availability as? CalendarAvailability.Available)?.busy.orEmpty()
+        generateSequence(range.from) { it.shift(1).takeIf { next -> next <= range.through } }.associateWith { day ->
+            val start = day.atStartOfDayIn(zone)
+            val end = day.shift(1).atStartOfDayIn(zone)
+            busy.filter { it.interval.start < end && it.interval.endExclusive > start }.sortedBy { it.interval.start }
+        }.filterValues { it.isNotEmpty() }
+    }
     val currentPeriod = remember(store, range, zone, retry) { store?.period(range, zone) }
     val period = key(store, range, zone, retry) {
         if (store != null && options == null && optionsRead is CalendarRead.Loading) CalendarRead.Loading
@@ -170,17 +188,17 @@ fun WorkCalendarScreen(
     val days = filtered.flatMap { work -> work.displayDates(zone).map { it to work } }.groupBy({ it.first }, { it.second })
     val exact = days[date].orEmpty()
     val dayMode = query.isBlank() && mode != CalendarDisplayMode.LIST
-    val fallbackNeeded = dayMode && exact.isEmpty() && period is CalendarRead.Ready
+    val fallbackNeeded = dayMode && exact.isEmpty() && busyByDate[date].isNullOrEmpty() && period is CalendarRead.Ready
     val displayed = when {
         query.isNotBlank() -> filtered
         mode == CalendarDisplayMode.LIST -> filtered
-        exact.isNotEmpty() -> exact
+        exact.isNotEmpty() || busyByDate[date].orEmpty().isNotEmpty() -> exact
         period.data() == null -> emptyList()
         else -> upcoming.filter { (type == null || it.draft.typeCode == type) &&
             (status == null || it.draft.status.name == status) }.take(3)
     }
     val grouped = if (query.isBlank() && mode == CalendarDisplayMode.LIST)
-        days.entries.filter { it.key in range }.sortedBy { it.key } else emptyList()
+        days.filterKeys { it in range } else emptyMap()
     val read = if (query.isBlank()) period else search
     val fabBottom = if (onClose == null) maxOf(142.dp, contentPadding.calculateBottomPadding() + 8.dp) else 8.dp
     val direction = androidx.compose.ui.platform.LocalLayoutDirection.current
@@ -331,6 +349,11 @@ fun WorkCalendarScreen(
                                                 visualDays[day].orEmpty().map { it.draft.typeCode }.distinct().take(4).forEach { code ->
                                                     Box(Modifier.size(4.dp).background(typeColor(types[code]), CircleShape))
                                                 }
+                                                if (visualRange == range && busyByDate[day].orEmpty().isNotEmpty()) {
+                                                    val description = stringResource(Res.string.p7b_busy)
+                                                    Box(Modifier.size(4.dp).background(colors.onSurfaceVariant, CircleShape)
+                                                        .semantics { contentDescription = description })
+                                                }
                                             }
                                         }
                                     }
@@ -349,7 +372,8 @@ fun WorkCalendarScreen(
                 }
             } else if (read is CalendarRead.Loading) item("calendar-loading") {
                 Box(Modifier.fillMaxWidth().height(48.dp), contentAlignment = Alignment.Center) { LinearProgressIndicator(Modifier.fillMaxWidth()) }
-            } else if (fallbackNeeded || displayed.isEmpty()) {
+            } else if (fallbackNeeded || displayed.isEmpty() &&
+                (query.isNotBlank() || if (mode == CalendarDisplayMode.LIST) busyByDate.isEmpty() else busyByDate[date].isNullOrEmpty())) {
                 item("calendar-empty") { CalendarFeedback(Res.string.work_none, ContextFeedbackKind.INFO) }
                 if (fallbackNeeded && fallbackRead is CalendarRead.Loading) item("calendar-fallback-loading") {
                     LinearProgressIndicator(Modifier.fillMaxWidth())
@@ -365,27 +389,39 @@ fun WorkCalendarScreen(
                         modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp))
                 }
             }
+            if (query.isBlank() && availability is CalendarAvailability.Unknown) item("calendar-external-unknown") {
+                CalendarFeedback(Res.string.p7b_busy_unknown, ContextFeedbackKind.WARNING)
+            }
             if (query.isBlank() && mode == CalendarDisplayMode.LIST) {
-                grouped.forEach { (day, works) ->
+                (grouped.keys + busyByDate.keys).sorted().forEach { day ->
+                    val works = grouped[day].orEmpty()
                     item("calendar-day/$day") {
                         Text(day.shortDate(), style = MaterialTheme.typography.titleSmall,
                             modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp))
                     }
-                    val ordered = works.sortedBy { work ->
-                        work.days.firstOrNull { scheduled ->
-                            scheduled.interval?.let { interval ->
-                                day >= interval.start.toLocalDateTime(zone).date &&
-                                    day <= (interval.endExclusive - 1.nanoseconds).toLocalDateTime(zone).date
-                            } ?: (scheduled.date == day)
-                        }?.interval?.start
-                    }
-                    items(ordered, key = { "$day/${it.key.rootUuid}/${it.key.originalDate}" }) { work ->
-                        CalendarWorkRow(work, types[work.draft.typeCode], zone, now, onEdit, selectedDate = day, swipeState = swipes)
+                    items(calendarDayRows(works, busyByDate[day].orEmpty(), day, zone),
+                        key = { "$day/${it.key}" }) { row ->
+                        when (row) {
+                            is CalendarDayRow.Work -> CalendarWorkRow(row.work, types[row.work.draft.typeCode], zone,
+                                now, onEdit, selectedDate = day, swipeState = swipes)
+                            is CalendarDayRow.Busy -> ExternalBusyRow(row.busy, day, zone)
+                        }
                     }
                 }
-            } else items(displayed, key = { "${it.key.rootUuid}/${it.key.originalDate}" }) { work ->
-                CalendarWorkRow(work, types[work.draft.typeCode], zone, now, onEdit,
-                    selectedDate = date.takeIf { dayMode && !fallbackNeeded }, swipeState = swipes)
+            } else {
+                val busy = if (query.isBlank() && !fallbackNeeded) busyByDate[date].orEmpty() else emptyList()
+                if (busy.isNotEmpty()) {
+                    items(calendarDayRows(displayed, busy, date, zone), key = { it.key }) { row ->
+                        when (row) {
+                            is CalendarDayRow.Work -> CalendarWorkRow(row.work, types[row.work.draft.typeCode],
+                                zone, now, onEdit, selectedDate = date, swipeState = swipes)
+                            is CalendarDayRow.Busy -> ExternalBusyRow(row.busy, date, zone)
+                        }
+                    }
+                } else items(displayed, key = { "${it.key.rootUuid}/${it.key.originalDate}" }) { work ->
+                    CalendarWorkRow(work, types[work.draft.typeCode], zone, now, onEdit,
+                        selectedDate = date.takeIf { dayMode && !fallbackNeeded }, swipeState = swipes)
+                }
             }
         }
     }
@@ -466,6 +502,10 @@ internal fun CalendarWorkRow(
                 WorkStatus.CANCELLED -> Icons.Default.Cancel
             }
             Icon(icon, stringResource(if (obsolete) Res.string.work_overdue else status.label()), modifier = Modifier.size(17.dp))
+            if (work.key in LocalCalendarIntegrationPlatform.current?.problems.orEmpty()) {
+                val label = stringResource(Res.string.p7b_sync_problem)
+                ContextFeedbackIcon(label, label, ContextFeedbackKind.WARNING, compact = true)
+            }
             Box {
                 IconButton(onClick = { swipeState.dismiss(); menu = true }) { Icon(Icons.Default.MoreVert, stringResource(Res.string.work_edit)) }
                 CeilingsPopupMenu(menu, onDismissRequest = { menu = false }) {
@@ -480,6 +520,53 @@ internal fun CalendarWorkRow(
         }
     }
 }
+}
+
+private sealed interface CalendarDayRow {
+    val key: String
+    val start: Instant
+    data class Work(val work: CalendarWork, override val start: Instant) : CalendarDayRow {
+        override val key = "${work.key.rootUuid}/${work.key.originalDate}"
+    }
+    data class Busy(val busy: ExternalBusyInterval, override val start: Instant) : CalendarDayRow {
+        override val key = "external/${busy.interval.start}/${busy.interval.endExclusive}/${busy.allDay}"
+    }
+}
+
+private fun calendarDayRows(works: List<CalendarWork>, busy: List<ExternalBusyInterval>, day: LocalDate,
+    zone: TimeZone): List<CalendarDayRow> {
+    val from = day.atStartOfDayIn(zone)
+    val through = day.shift(1).atStartOfDayIn(zone)
+    val workRows = works.map { work ->
+        val start = work.days.firstOrNull { scheduled ->
+            if (work.draft.schedule.mode != WorkTimeMode.TIMED) scheduled.date == day
+            else scheduled.interval?.let { it.start < through && it.endExclusive > from } == true
+        }?.interval?.start
+        CalendarDayRow.Work(work, maxOf(from, start ?: from))
+    }
+    return (workRows + busy.map { CalendarDayRow.Busy(it, maxOf(from, it.interval.start)) })
+        .sortedBy { it.start }
+}
+
+@Composable
+private fun ExternalBusyRow(busy: ExternalBusyInterval, day: LocalDate, zone: TimeZone) {
+    val from = day.atStartOfDayIn(zone)
+    val through = day.shift(1).atStartOfDayIn(zone)
+    val timing = if (busy.allDay) stringResource(Res.string.work_all_day) else {
+        val start = maxOf(busy.interval.start, from).toLocalDateTime(zone).time.shortTime()
+        val end = if (busy.interval.endExclusive >= through) "24:00"
+            else busy.interval.endExclusive.toLocalDateTime(zone).time.shortTime()
+        "$start–$end"
+    }
+    Surface(color = MaterialTheme.colorScheme.surfaceVariant, contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+        shape = MaterialTheme.shapes.medium) {
+        Row(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 9.dp),
+            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Icon(Icons.Default.Schedule, null, Modifier.size(19.dp))
+            Text(stringResource(Res.string.p7b_busy), Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+            Text(timing, style = MaterialTheme.typography.bodyMedium)
+        }
+    }
 }
 
 @Composable

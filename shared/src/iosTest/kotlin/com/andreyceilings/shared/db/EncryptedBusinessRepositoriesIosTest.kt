@@ -67,6 +67,42 @@ class EncryptedBusinessRepositoriesIosTest {
         } finally { factory.deleteDatabase(name) }
     }
 
+    @Test fun calendarV25IntegrationUpgradePersistsEncryptedRules(): Unit = runBlocking {
+        val name = "libellaro-ios-integrations-${Random.nextLong().toString(16)}.db"
+        val date = LocalDate(2026, 12, 15)
+        val draft = CalendarWorkDraft(date, WorkSchedule(WorkTimeMode.DATE_ONLY, TimeZone.UTC,
+            listOf(WorkDay(0))), "Simulator work", "OTHER")
+        val legacy = object : SqlSchema<QueryResult.Value<Unit>> {
+            override val version = 25L
+            override fun create(driver: SqlDriver): QueryResult.Value<Unit> {
+                PriceCatalogSchema.createInTransaction(driver)
+                removeCalendarIntegrationsSchema(driver)
+                PriceCatalogSchema.verifyStructure(driver, version)
+                return QueryResult.Unit
+            }
+            override fun migrate(driver: SqlDriver, oldVersion: Long, newVersion: Long,
+                vararg callbacks: AfterVersion): QueryResult.Value<Unit> = error("Fixture cannot migrate")
+        }
+        try {
+            val key = factory.create(legacy, config(name, 57)).use { driver ->
+                assertIs<CalendarSaveResult.Saved>(CalendarRepository(PrototypeDatabase(driver)).save(CalendarSave(draft))).key
+            }
+            val policy = CalendarWorkIntegration(reminderMode = ReminderMode.OFF, syncMode = CalendarSyncMode.ON)
+            factory.create(IosPriceCatalogSchema, config(name, 57)).use { driver ->
+                val database = PrototypeDatabase(driver)
+                val repository = CalendarRepository(database)
+                val work = checkNotNull(repository.exact(key))
+                assertEquals(draft, work.draft)
+                assertIs<CalendarSaveResult.Saved>(repository.save(CalendarSave(draft, key, work.version, integration = policy)))
+            }
+            factory.create(IosPriceCatalogSchema, config(name, 57)).use { driver ->
+                PriceCatalogSchema.verifyStructure(driver)
+                verifyCalendarContents(driver)
+                assertEquals(policy, CalendarIntegrationRepository(PrototypeDatabase(driver)).snapshot().overrides(key))
+            }
+        } finally { factory.deleteDatabase(name) }
+    }
+
     @Test fun cmpEditCasOnSimulatorCipher(): Unit = runBlocking {
         val name = "andrey-ios-edit-${Random.nextLong().toString(16)}.db"
         try {

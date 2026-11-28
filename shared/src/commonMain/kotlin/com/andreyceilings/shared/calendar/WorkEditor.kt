@@ -122,6 +122,8 @@ fun WorkEditor(
     registry: ObjectsClientsStore? = null,
     onRegistryTarget: ((GlobalRegistryTarget) -> Unit)? = null,
     openExternalUri: ((String) -> Unit)? = null,
+    incomingWork: WorkOccurrenceKey? = null,
+    onIncomingWorkHandled: (Boolean) -> Unit = {},
 ) = key(store, route) {
     var reload by remember { mutableIntStateOf(0) }
     var optionsRetry by remember { mutableIntStateOf(0) }
@@ -148,11 +150,18 @@ fun WorkEditor(
     var loadFailed by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
     var discarding by remember { mutableStateOf(false) }
+    var switchingWork by remember { mutableStateOf(false) }
     var deleting by remember { mutableStateOf(false) }
     var stale by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf(false) }
     var scope by remember { mutableStateOf(CalendarEditScope.OCCURRENCE) }
     var editScopeChosen by remember { mutableStateOf(false) }
+    val integrationPlatform = LocalCalendarIntegrationPlatform.current
+    val integrationSnapshot = if (integrationPlatform != null) integrationSnapshotState(store) else null
+    var integrationEdit by remember { mutableStateOf(CalendarWorkIntegration()) }
+    var integrationValid by remember { mutableStateOf(true) }
+    var externalConflict by remember { mutableStateOf<Pair<CalendarSave, CalendarAvailability>?>(null) }
+    var confirmedExternal by remember { mutableStateOf<Pair<CalendarSave, CalendarAvailability>?>(null) }
     var conflict by remember { mutableStateOf<CalendarSaveResult.Conflicts?>(null) }
     val deleteOnly = (route as? CalendarEditorRoute.Open)?.delete == true
     val move = (route as? CalendarEditorRoute.Open)?.move == true &&
@@ -184,6 +193,10 @@ fun WorkEditor(
             val data = WorkInput.from(draft, options.types.firstOrNull { it.code == draft.typeCode }?.durationMinutes ?: 60)
             initial = data
             input = data
+            integrationEdit = CalendarWorkIntegration()
+            integrationValid = true
+            confirmedExternal = null
+            externalConflict = null
             loadedRevision = reload
             stale = false
             error = false
@@ -193,14 +206,25 @@ fun WorkEditor(
         catch (_: Exception) { loadFailed = true }
     }
 
+    LaunchedEffect(incomingWork, busy, linkBusy, loadedRevision, reload, loadFailed) {
+        val target = incomingWork ?: return@LaunchedEffect
+        if (busy || linkBusy || loadedRevision != reload && !loadFailed) return@LaunchedEffect
+        if ((route as? CalendarEditorRoute.Open)?.key == target) {
+            onIncomingWorkHandled(false)
+        } else if (input != initial || integrationEdit != CalendarWorkIntegration()) {
+            switchingWork = true
+            discarding = true
+        } else onIncomingWorkHandled(true)
+    }
+
     fun requestClose() {
         if (!busy && !linkBusy) {
-            if (input != initial) discarding = true else onClose()
+            if (input != initial || integrationEdit != CalendarWorkIntegration()) discarding = true else onClose()
         }
     }
     fun requestReload() {
         if (optionsRead is CalendarRead.Unavailable) optionsRetry++
-        else if (stale && input != initial) confirmReload = true
+        else if (stale && (input != initial || integrationEdit != CalendarWorkIntegration())) confirmReload = true
         else reload++
     }
     val recurring = original?.let { work ->
@@ -222,6 +246,19 @@ fun WorkEditor(
             catch (_: Exception) { value = null /* Explicit Save reports any unavailable writer. */ }
         } else value = null
     }
+    val command = draft?.let {
+        CalendarSave(it, original?.key, original?.version, scope, replaceRecurrence = !move,
+            integration = integrationEdit.takeUnless { value -> value == CalendarWorkIntegration() })
+    }
+    val externalPreview by produceState<CalendarAvailability>(CalendarAvailability.Disabled, command,
+        integrationPlatform?.revision, editing, awaitingEditScope) {
+        if (command != null && editing && !awaitingEditScope && integrationPlatform != null) {
+            delay(280)
+            try { value = externalConflictSnapshot(integrationPlatform, store, command) }
+            catch (cancelled: CancellationException) { throw cancelled }
+            catch (_: Exception) { value = CalendarAvailability.Unknown }
+        } else value = CalendarAvailability.Disabled
+    }
     val invalidTime = remember(draft) { draft != null && draft.schedule.mode == WorkTimeMode.TIMED &&
         draft.schedule.on(draft.date).any { it.interval == null } }
     val clockChange = remember(draft) { draft?.schedule?.on(draft.date)?.any { it.shiftedByZone } == true }
@@ -238,19 +275,31 @@ fun WorkEditor(
         } else emptyList()
     }
 
-    fun save(confirmation: CalendarConflictConfirmation? = null) {
-        val valid = draft ?: return
-        if (busy || linkBusy || awaitingEditScope || invalidDay != null || optionsRead is CalendarRead.Unavailable) return
+    fun save(confirmation: CalendarConflictConfirmation? = null,
+        externalConfirmation: Pair<CalendarSave, CalendarAvailability>? = confirmedExternal) {
+        val saving = command ?: return
+        val valid = saving.draft
+        if (busy || linkBusy || awaitingEditScope || invalidDay != null || !integrationValid ||
+            optionsRead is CalendarRead.Unavailable) return
         busy = true
         error = false
         lifecycleScope.launch {
             try {
+                val fresh = externalConflictSnapshot(integrationPlatform, store, saving)
+                val warning = saving to fresh
+                if (fresh.requiresConfirmation() && warning != externalConfirmation) {
+                    externalConflict = warning
+                    conflict = null
+                    return@launch
+                }
+                confirmedExternal = warning.takeIf { fresh.requiresConfirmation() }
+                externalConflict = null
                 val source = original
                 if (source != null && recurring && scope == CalendarEditScope.THIS_AND_FOLLOWING &&
                     valid.status == WorkStatus.CANCELLED) {
                     if (store.cancelFollowing(source.key, source.version)) onSaved(CalendarSaveResult.Saved(source.key), valid)
                     else stale = true
-                } else when (val result = store.save(CalendarSave(valid, source?.key, source?.version, scope, replaceRecurrence = !move), confirmation)) {
+                } else when (val result = store.save(saving, confirmation, integrationPlatform?.let { it::reactivateSyncRule })) {
                     is CalendarSaveResult.Saved -> { conflict = null; onSaved(result, valid) }
                     is CalendarSaveResult.Conflicts -> conflict = result
                     CalendarSaveResult.Stale -> { conflict = null; stale = true }
@@ -328,6 +377,7 @@ fun WorkEditor(
         Dialog(onDismissRequest = ::requestClose, properties = properties) {
             val scheme = MaterialTheme.colorScheme
             val dark = scheme.background.luminance() < 0.4f
+            LocalCalendarDialogChrome.current(dark)
             val fabColor = if (dark) scheme.surfaceContainerHigh else Color.White
             val fabOutline = ceilingsFloatingOutlineAlpha(dark)
             // Shrink the actual scroll viewport above the keyboard, rather than only adding
@@ -353,6 +403,12 @@ fun WorkEditor(
                                 if (stale || loadFailed || optionsRead is CalendarRead.Unavailable) IconButton(onClick = ::requestReload,
                                     enabled = !busy && !linkBusy) { Icon(Icons.Default.Refresh, stringResource(Res.string.work_reload)) }
                             }
+                            if (editing && externalPreview.requiresConfirmation()) {
+                                val message = if (externalPreview is CalendarAvailability.Unknown) Res.string.p7b_busy_unknown
+                                    else Res.string.p7b_busy_conflicts
+                                val label = stringResource(message)
+                                ContextFeedbackIcon(label, label, ContextFeedbackKind.WARNING)
+                            }
                             if (editing && (preview?.count ?: 0) > 0) {
                                 val detail = stringResource(Res.string.work_conflict_count, preview?.count ?: 0) +
                                     (preview?.checkedThrough?.let { "\n" + stringResource(Res.string.work_checked_through, it.shortDate()) } ?: "")
@@ -360,7 +416,7 @@ fun WorkEditor(
                             }
                         }
                         if (editing) CeilingsFab({ save() }, stringResource(Res.string.oc_save),
-                            profile = CeilingsFabProfile.COMPACT, enabled = !awaitingEditScope && !stale && !busy && !loadFailed && optionsRead !is CalendarRead.Unavailable && draft != null && !invalidTime && invalidDay == null,
+                            profile = CeilingsFabProfile.COMPACT, enabled = !awaitingEditScope && !stale && !busy && !loadFailed && optionsRead !is CalendarRead.Unavailable && draft != null && !invalidTime && invalidDay == null && integrationValid,
                             containerColor = fabColor, outlineAlpha = fabOutline) {
                             Icon(Icons.Default.Check, null, tint = if (draft != null && !invalidTime && !busy) scheme.onSurface else scheme.onSurfaceVariant.copy(alpha = .45f), modifier = Modifier.size(23.dp))
                         } else CeilingsFab({ editScopeChosen = false; scope = CalendarEditScope.OCCURRENCE; editing = true }, stringResource(Res.string.work_edit), profile = CeilingsFabProfile.COMPACT,
@@ -389,6 +445,9 @@ fun WorkEditor(
                         item("work-view") {
                             WorkReadOnly(checkNotNull(original), options, store, onRegistryTarget, openUri,
                                 onClientCard = { clientCardId = it })
+                        }
+                        if (integrationPlatform != null) item("work-integration-actions") {
+                            WorkIntegrationActions(checkNotNull(original), integrationPlatform, integrationSnapshot?.settings)
                         }
                     } else {
                         if (editing && original?.draft?.recurrence != null) item("work-edit-scope") {
@@ -467,7 +526,8 @@ fun WorkEditor(
                                 if (data.mode == WorkTimeMode.TIMED) {
                                     val badTime = runCatching { LocalTime.parse(day.start) >= LocalTime.parse(day.end) }.getOrDefault(true)
                                     WorkTimeField(day.start, Res.string.work_start, Modifier.weight(1f), badTime) { start ->
-                                        set(day.copy(start = start))
+                                        val duration = options.types.firstOrNull { it.code == data.type }?.durationMinutes ?: 60
+                                        set(day.copy(start = start, end = shiftedWorkEnd(day.start, day.end, start, duration)))
                                     }
                                     WorkTimeField(day.end, Res.string.work_end, Modifier.weight(1f), badTime) { set(day.copy(end = it)) }
                                 }
@@ -485,6 +545,16 @@ fun WorkEditor(
                             }) { Icon(Icons.Default.Add, null); Text(stringResource(Res.string.work_day_add)) }
                             WorkZoneField(data.zone) {
                                 input = data.copy(zone = it)
+                            }
+                        }
+                        if (integrationPlatform != null && !move) item("work-integrations") {
+                            val base = original?.key?.let { integrationSnapshot?.overrides(it) } ?: CalendarWorkIntegration()
+                            if (integrationSnapshot == null) {
+                                LinearProgressIndicator(Modifier.fillMaxWidth())
+                            } else {
+                                val defaults = integrationSnapshot.types[data.type]?.reminders ?: standardReminderRules
+                                WorkIntegrationControls(base, integrationEdit, data.mode, data.days.mapNotNull { it.offset.toIntOrNull() },
+                                    defaults, setValidation = { integrationValid = it }) { integrationEdit = it }
                             }
                         }
                         item("work-recurrence") {
@@ -645,10 +715,19 @@ fun WorkEditor(
         dismissButton = { TextButton(onClick = { confirmReload = false; reload++ }) {
             Text(stringResource(Res.string.work_discard), color = MaterialTheme.colorScheme.error)
         } }, confirmButton = { TextButton(onClick = { confirmReload = false }) { Text(stringResource(Res.string.p5d_cancel)) } })
-    if (discarding) AlertDialog(onDismissRequest = { discarding = false },
-        title = { Text(stringResource(Res.string.work_exit_title)) },
-        confirmButton = { TextButton(onClick = { discarding = false }) { Text(stringResource(Res.string.p5d_cancel)) } },
-        dismissButton = { TextButton(onClick = onClose) { Text(stringResource(Res.string.work_discard), color = MaterialTheme.colorScheme.error) } })
+    if (discarding) {
+        fun keepEditing() {
+            discarding = false
+            if (switchingWork) onIncomingWorkHandled(false)
+            switchingWork = false
+        }
+        AlertDialog(onDismissRequest = ::keepEditing,
+            title = { Text(stringResource(Res.string.work_exit_title)) },
+            confirmButton = { TextButton(onClick = ::keepEditing) { Text(stringResource(Res.string.p5d_cancel)) } },
+            dismissButton = { TextButton(onClick = {
+                if (switchingWork) onIncomingWorkHandled(true) else onClose()
+            }) { Text(stringResource(Res.string.work_discard), color = MaterialTheme.colorScheme.error) } })
+    }
     if (deleteOnly || deleting && original != null) {
         val deleteProblem = when {
             stale -> Res.string.work_stale
@@ -685,6 +764,28 @@ fun WorkEditor(
                 }) { Text(stringResource(Res.string.oc_delete), color = MaterialTheme.colorScheme.error) }
             },
             confirmButton = { TextButton(enabled = !busy, onClick = ::cancelDelete) { Text(stringResource(Res.string.p5d_cancel)) } })
+    }
+    externalConflict?.let { warning ->
+        AlertDialog(onDismissRequest = { if (!busy) externalConflict = null },
+            title = { Text(stringResource(Res.string.p7b_busy_conflicts)) },
+            text = {
+                when (val evidence = warning.second) {
+                    CalendarAvailability.Unknown -> Text(stringResource(Res.string.p7b_busy_unknown))
+                    is CalendarAvailability.Available -> Column(Modifier.verticalScroll(rememberScrollState())) {
+                        val zone = warning.first.draft.schedule.zone
+                        evidence.busy.sortedBy { it.interval.start }.take(8).forEach {
+                            val start = it.interval.start.toLocalDateTime(zone)
+                            val end = it.interval.endExclusive.toLocalDateTime(zone)
+                            Text("${start.date.shortDate()} · ${start.time.shortTime()}–${end.time.shortTime()}")
+                        }
+                    }
+                    CalendarAvailability.Disabled -> Unit
+                }
+            },
+            dismissButton = { TextButton(onClick = { externalConflict = null }) { Text(stringResource(Res.string.p5d_cancel)) } },
+            confirmButton = { TextButton(enabled = !busy, onClick = { save(externalConfirmation = warning) }) {
+                Text(stringResource(Res.string.work_save_anyway))
+            } })
     }
     conflict?.let { found ->
         AlertDialog(onDismissRequest = { if (!busy) conflict = null },
@@ -825,7 +926,7 @@ private fun CalendarLinkMenu(label: StringResource, selected: String?, entries: 
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun DiskDateField(value: String, label: StringResource = Res.string.work_date, error: Boolean = false, neutral: Boolean = false, prominent: Boolean = false, onChange: (String) -> Unit) {
+internal fun DiskDateField(value: String, label: StringResource = Res.string.work_date, error: Boolean = false, neutral: Boolean = false, prominent: Boolean = false, onChange: (String) -> Unit) {
     var picker by remember { mutableStateOf(false) }
     TextButton(onClick = { picker = true }, contentPadding = PaddingValues(horizontal = 2.dp, vertical = 4.dp)) {
         val formatted = runCatching { LocalDate.parse(value).shortDate() }.getOrDefault(value)
@@ -834,7 +935,7 @@ private fun DiskDateField(value: String, label: StringResource = Res.string.work
     }
     if (picker) {
         val current = runCatching { LocalDate.parse(value) }.getOrNull()
-        val state = rememberDatePickerState(initialSelectedDateMillis = current?.dayNumber()?.times(86_400_000L))
+        val state = rememberCalendarPickerState(current?.dayNumber()?.times(86_400_000L))
         DatePickerDialog(onDismissRequest = { picker = false },
             confirmButton = { TextButton(onClick = {
                 state.selectedDateMillis?.let { onChange((it / 86_400_000L).localDate().toString()) }
@@ -860,7 +961,7 @@ internal fun WorkField(value: String, label: StringResource, error: Boolean = fa
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun WorkTimeField(value: String, label: StringResource, modifier: Modifier = Modifier, error: Boolean = false, prominent: Boolean = false, onChange: (String) -> Unit) {
+internal fun WorkTimeField(value: String, label: StringResource, modifier: Modifier = Modifier, error: Boolean = false, prominent: Boolean = false, onChange: (String) -> Unit) {
     var open by remember { mutableStateOf(false) }
     TextButton(onClick = { open = true }, modifier = modifier, contentPadding = PaddingValues(horizontal = 2.dp, vertical = 4.dp)) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {

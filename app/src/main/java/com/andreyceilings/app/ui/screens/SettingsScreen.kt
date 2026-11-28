@@ -204,7 +204,7 @@ internal fun SettingsScreen(
         }
     }
     SectionTitle("Налаштування", "Персоналізація та резервне копіювання")
-    com.andreyceilings.shared.calendar.CalendarSettingsSection(database?.objectsClientsStore?.calendar,
+    com.andreyceilings.shared.calendar.CalendarAndNotificationSettings(database?.objectsClientsStore?.calendar,
         showWeekNumbers, onShowWeekNumbersChange)
     Card(
         shape = MaterialTheme.shapes.large,
