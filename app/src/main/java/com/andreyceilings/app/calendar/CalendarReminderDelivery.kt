@@ -9,7 +9,7 @@ internal const val EXACT_DELIVERY_GRACE_MS = 120_000L
 internal fun reminderIsDue(now: Long, trigger: Long, scheduled: Boolean, relevant: Boolean, workStarted: Boolean): Boolean =
     trigger <= now && relevant && (!workStarted || scheduled && now - trigger <= EXACT_DELIVERY_GRACE_MS)
 
-internal fun reminderOverflow<T>(due: List<T>, alreadyVisible: Set<T>, available: Int): Pair<List<T>, List<T>> {
+internal fun <T> reminderOverflow(due: List<T>, alreadyVisible: Set<T>, available: Int): Pair<List<T>, List<T>> {
     var slots = available.coerceAtLeast(0)
     return due.partition { key ->
         if (key in alreadyVisible) true else if (slots > 0) { slots--; true } else false
