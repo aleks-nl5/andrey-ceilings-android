@@ -45,6 +45,13 @@ class CalendarReminderDeliveryTest {
         assertFalse(reminderIsDue(hourBefore + 60_000, hourBefore, false, true, false))
     }
 
+    @Test fun groupSummaryIsRetainedWhenOpeningOrDismissingAnyChild() {
+        assertFalse(canRemoveReminderSummary(3))
+        assertFalse(canRemoveReminderSummary(2))
+        assertFalse(canRemoveReminderSummary(1))
+        assertTrue(canRemoveReminderSummary(0))
+    }
+
     @Test fun fullTrayUsesOneOverflowBatchWithoutWaitingForDismissal() {
         val due = (1..130).toList()
         val (individual, overflow) = reminderOverflow(due, setOf(1, 2), 0)

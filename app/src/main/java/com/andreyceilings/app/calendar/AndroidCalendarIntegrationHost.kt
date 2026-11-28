@@ -10,6 +10,14 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.*
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.window.DialogWindowProvider
+import androidx.core.view.WindowCompat
+import androidx.compose.material3.DatePickerState
+import androidx.compose.material3.ExperimentalMaterial3Api
+import kotlinx.coroutines.launch
+import java.util.Locale
+import java.time.temporal.WeekFields
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -19,6 +27,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.datetime.TimeZone
 import kotlin.time.Instant
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun AndroidCalendarIntegrationHost(store: CalendarStore?, content: @Composable () -> Unit) {
     val context = LocalContext.current
@@ -28,6 +37,16 @@ internal fun AndroidCalendarIntegrationHost(store: CalendarStore?, content: @Com
     val platformRevision by AndroidSystemCalendar.revision.collectAsState()
     val syncProblems by AndroidSystemCalendar.problems.collectAsState()
     val syncFailed by AndroidSystemCalendar.failed.collectAsState()
+    val syncReason by AndroidSystemCalendar.failureReason.collectAsState()
+    val coroutine = rememberCoroutineScope()
+    var syncRetrying by remember { mutableStateOf(false) }
+    val optionsFlow = remember(store) { store?.options() }
+    val options = optionsFlow?.collectAsState(initial = CalendarRead.Loading)?.value
+    val preferredFirstDay = when (options) {
+        is CalendarRead.Ready -> options.value.settings.firstWeekday
+        is CalendarRead.Unavailable -> options.previous?.settings?.firstWeekday
+        else -> store?.cachedOptions()?.settings?.firstWeekday
+    }
     fun refresh() {
         AndroidSystemCalendar.invalidate()
         CalendarReminderRuntime.enqueue(app)
@@ -49,11 +68,20 @@ internal fun AndroidCalendarIntegrationHost(store: CalendarStore?, content: @Com
         val observer = if (store != null && canRead) system.observe() else null
         onDispose { observer?.close() }
     }
-    val bridge = remember(store, platformRevision, syncProblems, syncFailed) {
+    val bridge = remember(store, platformRevision, syncProblems, syncFailed, syncReason, syncRetrying) {
         object : CalendarIntegrationPlatform {
             override val revision = platformRevision
             override val problems = syncProblems
             override val failed = syncFailed
+            override val failureReason = syncReason
+            override val retrying = syncRetrying
+            override val exactAlarmsGranted = canScheduleCalendarAlarms(app)
+            override fun requestExactAlarms() {
+                if (Build.VERSION.SDK_INT >= 31) runCatching {
+                    exactAccess.launch(Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM,
+                        Uri.fromParts("package", app.packageName, null)))
+                }
+            }
             override val restorePending = system.paused
             override val remindersReady = CalendarDeviceState(app).remindersRequested &&
                 canPostCalendarNotifications(app) && canScheduleCalendarAlarms(app)
@@ -85,7 +113,24 @@ internal fun AndroidCalendarIntegrationHost(store: CalendarStore?, content: @Com
                     else arrayOf(Manifest.permission.READ_CALENDAR))
             }
 
-            override fun retry() = refresh()
+            override fun retry() {
+                if (syncRetrying) return
+                syncRetrying = true
+                coroutine.launch {
+                    try {
+                        AndroidSystemCalendar.enqueue(app)
+                        system.reconcile()
+                        AndroidSystemCalendar.reportFailure(false)
+                    } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                        throw cancelled
+                    } catch (_: Exception) {
+                        AndroidSystemCalendar.reportFailure(true)
+                    } finally {
+                        syncRetrying = false
+                        AndroidSystemCalendar.invalidate()
+                    }
+                }
+            }
             override suspend fun remindersChanged() {
                 withContext(Dispatchers.IO) { CalendarReminderRuntime.reconcile(app) }
                 refresh()
@@ -127,5 +172,29 @@ internal fun AndroidCalendarIntegrationHost(store: CalendarStore?, content: @Com
             override suspend fun availability(range: WorkDateRange, zone: TimeZone) = system.availability(range, zone)
         }
     }
-    CompositionLocalProvider(LocalCalendarIntegrationPlatform provides bridge, content = content)
+    val pickerFactory: @Composable (Long?) -> DatePickerState = { initial ->
+        val base = LocalContext.current.resources.configuration.locales[0]
+        val first = preferredFirstDay ?: kotlinx.datetime.DayOfWeek.entries[(java.util.Calendar.getInstance().firstDayOfWeek + 5) % 7]
+        val dayTag = first.name.lowercase().take(3)
+        val locale = remember(base, dayTag) {
+            val adjusted = Locale.Builder().setLocale(base).setUnicodeLocaleKeyword("fw", dayTag).build()
+            // Older Android releases may ignore fw; retain the app's language in that case.
+            adjusted.takeIf { WeekFields.of(it).firstDayOfWeek.value == first.ordinal + 1 } ?: base
+        }
+        remember(locale, initial) { DatePickerState(locale = locale, initialSelectedDateMillis = initial) }
+    }
+    val dialogChrome: @Composable (Boolean) -> Unit = { dark ->
+        val view = LocalView.current
+        SideEffect {
+            (view.parent as? DialogWindowProvider)?.window?.let { window ->
+                WindowCompat.getInsetsController(window, window.decorView).apply {
+                    isAppearanceLightStatusBars = !dark
+                    isAppearanceLightNavigationBars = !dark
+                }
+            }
+        }
+    }
+    CompositionLocalProvider(LocalCalendarIntegrationPlatform provides bridge,
+        LocalCalendarPickerFactory provides pickerFactory, LocalCalendarDialogChrome provides dialogChrome,
+        content = content)
 }

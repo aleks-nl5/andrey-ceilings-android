@@ -1,6 +1,10 @@
 package com.andreyceilings.shared.calendar
 
 import androidx.compose.runtime.compositionLocalOf
+import androidx.compose.runtime.Composable
+import androidx.compose.material3.DatePickerState
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.rememberDatePickerState
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
 import kotlin.time.Duration.Companion.nanoseconds
@@ -15,10 +19,28 @@ sealed interface CalendarManualExportResult {
     data class ConfirmAdoption(val confirmation: CalendarExportConfirmation) : CalendarManualExportResult
 }
 
+enum class CalendarSyncFailure { ACCESS, DESTINATION, DELETE, EXPORT, OTHER }
+
+@OptIn(ExperimentalMaterial3Api::class)
+val LocalCalendarPickerFactory = compositionLocalOf<@Composable (Long?) -> DatePickerState> {
+    { initial -> rememberDatePickerState(initialSelectedDateMillis = initial) }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun rememberCalendarPickerState(initialSelectedDateMillis: Long?): DatePickerState =
+    LocalCalendarPickerFactory.current(initialSelectedDateMillis)
+
+val LocalCalendarDialogChrome = compositionLocalOf<@Composable (Boolean) -> Unit> { {} }
+
 interface CalendarIntegrationPlatform {
     val revision: Long
     val problems: Set<WorkOccurrenceKey>
     val failed: Boolean
+    val failureReason: CalendarSyncFailure? get() = null
+    val retrying: Boolean get() = false
+    val exactAlarmsGranted: Boolean get() = remindersReady
+    fun requestExactAlarms() = requestReminders()
     val restorePending: Boolean
     val remindersReady: Boolean
     val readCalendarGranted: Boolean

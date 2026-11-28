@@ -595,7 +595,7 @@ private fun RegistryOptions(controls: RegistryControls, projects: Map<Long, Stri
     }
     dateSide?.let { from ->
         val initial = if (from) draft.from else draft.through
-        val state = rememberDatePickerState(initialSelectedDateMillis = initial?.toEpochDays()?.toLong()?.times(86_400_000L))
+        val state = com.andreyceilings.shared.calendar.rememberCalendarPickerState(initial?.toEpochDays()?.toLong()?.times(86_400_000L))
         DatePickerDialog(onDismissRequest = { dateSide = null },
             confirmButton = { TextButton(onClick = {
                 val date = state.selectedDateMillis?.let { dateOf(it, TimeZone.UTC) }

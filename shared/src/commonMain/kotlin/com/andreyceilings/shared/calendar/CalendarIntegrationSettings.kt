@@ -110,6 +110,11 @@ private fun CalendarIntegrationSettings(store: CalendarStore) {
                     Text(stringResource(Res.string.p7b_allow_reminders))
                 }
             }
+            Text(stringResource(if (platform.exactAlarmsGranted) Res.string.p7b_exact_allowed else Res.string.p7b_exact_denied),
+                style = MaterialTheme.typography.bodyMedium)
+            if (!platform.exactAlarmsGranted) TextButton(onClick = platform::requestExactAlarms) {
+                Text(stringResource(Res.string.p7b_exact_open))
+            }
             IntegrationSwitch(Res.string.p7b_lock_full, !settings.privateLockscreen, !busy) { full ->
                 perform {
                     store.updateIntegrationSettings { it.copy(privateLockscreen = !full) }
@@ -168,8 +173,10 @@ private fun CalendarIntegrationSettings(store: CalendarStore) {
                 if (it) perform { platform.enableSync() } else disable = true
             }
             if (platform.failed || platform.problems.isNotEmpty() || platform.destination != null && current == null) {
-                CalendarFeedback(Res.string.p7b_sync_problem, ContextFeedbackKind.WARNING)
-                TextButton(onClick = platform::retry) { Text(stringResource(Res.string.work_reload)) }
+                CalendarFeedback(syncFailureLabel(platform.failureReason), ContextFeedbackKind.WARNING)
+                TextButton(onClick = platform::retry, enabled = !platform.retrying) {
+                    Text(stringResource(if (platform.retrying) Res.string.p7b_sync_retrying else Res.string.work_reload))
+                }
             } else if (settings.syncEnabled) {
                 Text(stringResource(Res.string.p7b_sync_enabled), style = MaterialTheme.typography.labelMedium)
             }
@@ -527,8 +534,8 @@ internal fun WorkIntegrationActions(
         }
     }
     if (work.key in platform.problems) {
-        CalendarFeedback(Res.string.p7b_sync_problem, ContextFeedbackKind.WARNING)
-        TextButton(onClick = platform::retry, enabled = !busy) { Text(stringResource(Res.string.work_reload)) }
+        CalendarFeedback(syncFailureLabel(platform.failureReason), ContextFeedbackKind.WARNING)
+        TextButton(onClick = platform::retry, enabled = !busy && !platform.retrying) { Text(stringResource(Res.string.work_reload)) }
     }
     if (work.draft.status.active && !platform.restorePending) {
         Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -600,3 +607,11 @@ internal fun WorkIntegrationActions(
 }
 
 private fun snoozeInstant(duration: Int) = kotlin.time.Clock.System.now() + duration.minutes
+
+private fun syncFailureLabel(reason: CalendarSyncFailure?) = when (reason) {
+    CalendarSyncFailure.ACCESS -> Res.string.p7b_sync_access
+    CalendarSyncFailure.DESTINATION -> Res.string.p7b_sync_destination
+    CalendarSyncFailure.DELETE -> Res.string.p7b_sync_delete
+    CalendarSyncFailure.EXPORT -> Res.string.p7b_sync_export
+    else -> Res.string.p7b_sync_problem
+}

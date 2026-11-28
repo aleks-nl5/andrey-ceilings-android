@@ -377,6 +377,7 @@ fun WorkEditor(
         Dialog(onDismissRequest = ::requestClose, properties = properties) {
             val scheme = MaterialTheme.colorScheme
             val dark = scheme.background.luminance() < 0.4f
+            LocalCalendarDialogChrome.current(dark)
             val fabColor = if (dark) scheme.surfaceContainerHigh else Color.White
             val fabOutline = ceilingsFloatingOutlineAlpha(dark)
             // Shrink the actual scroll viewport above the keyboard, rather than only adding
@@ -934,7 +935,7 @@ internal fun DiskDateField(value: String, label: StringResource = Res.string.wor
     }
     if (picker) {
         val current = runCatching { LocalDate.parse(value) }.getOrNull()
-        val state = rememberDatePickerState(initialSelectedDateMillis = current?.dayNumber()?.times(86_400_000L))
+        val state = rememberCalendarPickerState(current?.dayNumber()?.times(86_400_000L))
         DatePickerDialog(onDismissRequest = { picker = false },
             confirmButton = { TextButton(onClick = {
                 state.selectedDateMillis?.let { onChange((it / 86_400_000L).localDate().toString()) }

@@ -7,7 +7,7 @@
     <string name="p7b_other">Інша робота</string>
     <string name="p7b_snooze">Відкласти</string>
     <string name="p7b_navigate">Маршрут</string>
-    <string name="p7b_dial">Зателефонувати</string>
+    <string name="p7b_dial">Подзвонити</string>
     <string name="p7b_message">Повідомлення</string>
     <plurals name="p7b_overflow_title">
         <item quantity="one">Ще %d нагадування</item>

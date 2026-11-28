@@ -192,9 +192,8 @@ internal object CalendarReminderRuntime {
                 // The summary is the single reserved slot; it exposes no client details.
                 if (overflow.isNotEmpty()) {
                     postOverflow(context, state, overflow.values.toList(), plan.types,
-                        alert = grouped.isNotEmpty() && !sounded, hasChildren = visible.isNotEmpty())
+                        alert = grouped.isNotEmpty() && !sounded)
                 } else {
-                    if (previousSummary?.extras?.getString(OVERFLOW_EXTRA) != null) manager.cancel(GROUP_SUMMARY, 1)
                     updateSummary(context, state, ignoreOverflow = true)
                 }
                 for (key in grouped) sent += dueIds.getValue(key)
@@ -290,9 +289,7 @@ internal object CalendarReminderRuntime {
                 }
             } else emptyList()
             if (remaining.isNotEmpty()) {
-                postOverflow(context, state, remaining, types(), alert = false, hasChildren = visible.isNotEmpty())
-            } else if (activeSummary?.extras?.getString(OVERFLOW_EXTRA) != null) {
-                manager.cancel(GROUP_SUMMARY, 1)
+                postOverflow(context, state, remaining, types(), alert = false)
             }
             state.recordDelivery(visible, state.delivered, remaining.mapTo(mutableSetOf()) { it.first })
             updateSummary(context, state)
@@ -385,8 +382,7 @@ internal object CalendarReminderRuntime {
             action(context, R.string.p7b_navigate, activity(context, id, state.generation, "navigate")))
         if (!work.contact.phone.isNullOrBlank()) {
             notification.addAction(action(context, R.string.p7b_dial, activity(context, id, state.generation, "dial")))
-            if (work.contact.address.isNullOrBlank())
-                notification.addAction(action(context, R.string.p7b_message, activity(context, id, state.generation, "message")))
+
         }
         manager.notify(key, 1, notification.build())
     }
@@ -395,7 +391,7 @@ internal object CalendarReminderRuntime {
 
     private fun postOverflow(context: Context, state: CalendarDeviceState,
         entries: List<Pair<String, CalendarWork>>, types: List<CalendarWorkType>,
-        alert: Boolean, hasChildren: Boolean) {
+        alert: Boolean) {
         val ids = entries.mapTo(mutableSetOf()) { it.first }
         val token = overflowToken(ids)
         val title = context.resources.getQuantityString(R.plurals.p7b_overflow_title, entries.size, entries.size)
@@ -418,7 +414,7 @@ internal object CalendarReminderRuntime {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
         context.getSystemService(NotificationManager::class.java).notify(GROUP_SUMMARY, 1,
             builder(context, title, context.getString(R.string.p7b_overflow_open))
-                .setStyle(style).setGroupSummary(hasChildren).setSilent(!alert).setOnlyAlertOnce(!alert)
+                .setStyle(style).setGroupSummary(true).setSilent(!alert).setOnlyAlertOnce(!alert)
                 .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
                 .setExtras(android.os.Bundle().apply { putString(OVERFLOW_EXTRA, token) })
                 .setContentIntent(intent)
@@ -430,7 +426,9 @@ internal object CalendarReminderRuntime {
         if (!ignoreOverflow && state.overflow.isNotEmpty()) return
         val manager = context.getSystemService(NotificationManager::class.java)
         val count = manager.activeNotifications.count { it.tag != GROUP_SUMMARY && it.notification.group == GROUP }
-        if (count < 2) manager.cancel(GROUP_SUMMARY, 1)
+        // Cancelling a summary cancels its group children on Android. Retain it until
+        // the last child is gone; SystemUI decides whether to render a singleton grouped.
+        if (canRemoveReminderSummary(count)) manager.cancel(GROUP_SUMMARY, 1)
         else manager.notify(GROUP_SUMMARY, 1, builder(context, "Libellaro", context.getString(R.string.p7b_notification_channel))
             .setGroupSummary(true).setSilent(true).setOnlyAlertOnce(true).setVisibility(NotificationCompat.VISIBILITY_PUBLIC).build())
     }
@@ -455,7 +453,6 @@ internal object CalendarReminderRuntime {
                 }
             if (valid) {
                 state.recordDelivery(state.visible, state.delivered + state.overflow, emptySet())
-                context.getSystemService(NotificationManager::class.java).cancel(GROUP_SUMMARY, 1)
                 updateSummary(context, state)
             }
             valid
@@ -518,7 +515,7 @@ internal object CalendarReminderRuntime {
                 else -> null
             }
             if (external != null && runCatching {
-                    context.startActivity(external)
+                    context.applicationContext.startActivity(external.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
                 }.isSuccess) consumeAlert(context, state, id, key)
             null
         }

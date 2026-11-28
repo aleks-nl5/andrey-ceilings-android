@@ -62,4 +62,12 @@
     <string name="p7b_on_day_at">У день роботи о %1$s</string>
     <string name="p7b_previous_day_at">Напередодні о %1$s</string>
     <string name="p7b_days_before_at">За %1$d дн. о %2$s</string>
+    <string name="p7b_exact_allowed">Точні будильники: дозволено</string>
+    <string name="p7b_exact_denied">Точні будильники: не дозволено</string>
+    <string name="p7b_exact_open">Налаштувати точні будильники</string>
+    <string name="p7b_sync_access">Немає дозволу на запис у системний календар.</string>
+    <string name="p7b_sync_destination">Календар призначення недоступний або не вдалося перевірити попередні записи.</string>
+    <string name="p7b_sync_delete">Не вдалося видалити синхронізовані записи. Повторіть синхронізацію.</string>
+    <string name="p7b_sync_export">Не вдалося оновити або створити запис у системному календарі.</string>
+    <string name="p7b_sync_retrying">Синхронізація…</string>
 </resources>

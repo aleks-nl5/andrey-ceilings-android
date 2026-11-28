@@ -11,6 +11,14 @@ import kotlinx.coroutines.withContext
 class CalendarReminderActionActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Keep the transient window edge-to-edge too, with no transition that resizes
+        // the visible task behind the system resolver.
+        androidx.core.view.WindowCompat.setDecorFitsSystemWindows(window, false)
+        window.statusBarColor = android.graphics.Color.TRANSPARENT
+        window.navigationBarColor = android.graphics.Color.TRANSPARENT
+        window.setDimAmount(0f)
+        @Suppress("DEPRECATION")
+        overridePendingTransition(0, 0)
         if (savedInstanceState != null || intent.data?.pathSegments?.lastOrNull() !in setOf("navigate", "dial", "message")) {
             finish()
             return
@@ -24,6 +32,8 @@ class CalendarReminderActionActivity : ComponentActivity() {
                 // Fail closed; do not launch or consume an unverified notification.
             } finally {
                 finish()
+                @Suppress("DEPRECATION")
+                overridePendingTransition(0, 0)
             }
         }
     }

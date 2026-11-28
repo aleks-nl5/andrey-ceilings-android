@@ -203,6 +203,17 @@ internal fun AndroidEstimateDocumentExport(content: @Composable () -> Unit) {
 
 private class PendingEstimateShare(val dispose: () -> Unit, val complete: (String?) -> Unit)
 
+// Only disposable PDF staging directories; never delete encrypted DB or restore files.
+internal fun pruneExpiredEstimatePdfCache(context: Context) {
+    val expired = System.currentTimeMillis() - 24 * 60 * 60 * 1000L
+    for (directory in listOf(SaveCache, ShareCache)) {
+        File(context.cacheDir, directory).listFiles()?.filter {
+            it.isDirectory && it.name.startsWith("pdf-") && it.lastModified() < expired &&
+                it.listFiles().orEmpty().all { child -> child.lastModified() < expired }
+        }?.forEach { it.deleteRecursively() }
+    }
+}
+
 private fun stagePdf(context: Context, directory: String, name: String): File {
     val cache = File(context.cacheDir, directory)
     check(cache.isDirectory || cache.mkdirs())

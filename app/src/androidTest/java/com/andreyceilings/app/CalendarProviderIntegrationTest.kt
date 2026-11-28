@@ -117,6 +117,18 @@ class CalendarProviderIntegrationTest {
                     return checkNotNull(store.exact(result.key))
                 }
 
+                // Direct cancellation exercises the same provider item-URI deletion
+                // without relying on a pending-insert recovery or a global disable.
+                val cancelled = create(4)
+                system.manualExport(cancelled.key, cancelled.version, managed = true)
+                val cancelledId = events().single { it[0] != unrelated }[0]!!
+                val beforeCancel = checkNotNull(store.exact(cancelled.key))
+                assertTrue(store.save(CalendarSave(beforeCancel.draft.copy(status = WorkStatus.CANCELLED),
+                    target = beforeCancel.key, expectedVersion = beforeCancel.version)) is CalendarSaveResult.Saved)
+                system.reconcile()
+                assertFalse(events().any { it[0] == cancelledId })
+                assertEquals(unrelated, events().single()[0])
+
                 val left = create(1)
                 system.manualExport(left.key, left.version, managed = true)
                 val leftId = events().single { it[0] != unrelated }[0]!!

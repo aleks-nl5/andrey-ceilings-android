@@ -96,6 +96,7 @@ class MainActivity : ComponentActivity() {
                 val (db, warning) = withContext(Dispatchers.IO) {
                     // Non-blocking internal-storage preflight BEFORE opening
                     // SQLCipher. It is only advisory; normal reads stay usable.
+                    runCatching { com.andreyceilings.app.ui.screens.pruneExpiredEstimatePdfCache(applicationContext) }
                     val warning = StorageSpaceGuard.startupWarning(applicationContext)
                     val databaseOpenStartedAt = SystemClock.elapsedRealtime()
                     val database = CeilingsDatabase.get(applicationContext)

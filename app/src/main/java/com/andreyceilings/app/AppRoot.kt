@@ -1020,6 +1020,7 @@ private fun CeilingsAppContent(
                 fun closeProjectCalendar() { projectCalendarStates.removeState(projectUuid); projectCalendar = null }
                 projectCalendarStates.SaveableStateProvider(projectUuid) {
                 androidx.compose.ui.window.Dialog(onDismissRequest = ::closeProjectCalendar, properties = calendarWindow) {
+                    LocalCalendarDialogChrome.current(useDarkTheme)
                     Box(Modifier.fillMaxSize().safeDrawingPadding().imePadding().padding(horizontal = 12.dp), contentAlignment = Alignment.Center) {
                         Surface(Modifier.fillMaxWidth().fillMaxHeight(.66f), shape = MaterialTheme.shapes.extraLarge) {
                             WorkCalendarScreen(calendarStore, CalendarDisplayMode.LIST, {}, onEdit = { calendarEditor = it },

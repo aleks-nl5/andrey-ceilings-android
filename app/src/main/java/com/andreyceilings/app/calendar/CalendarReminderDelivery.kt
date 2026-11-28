@@ -30,3 +30,6 @@ internal fun visibleReminderChange(active: Boolean, current: Boolean, samePayloa
 
 internal fun activeReminderAction(allowed: Boolean, recorded: String?, active: String?, requested: String): Boolean =
     allowed && recorded == requested && active == requested
+
+// A summary is a parent, not an ordinary independent notification on Android.
+internal fun canRemoveReminderSummary(childCount: Int): Boolean = childCount == 0

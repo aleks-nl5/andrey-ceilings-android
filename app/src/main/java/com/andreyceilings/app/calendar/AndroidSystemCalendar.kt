@@ -361,6 +361,7 @@ internal class AndroidSystemCalendar(
                         plan = plan(today, today.shiftBy(89), zone, false)
                     }
                 } catch (failure: Exception) {
+                    _failureReason.value = if (!canWrite) CalendarSyncFailure.ACCESS else CalendarSyncFailure.DESTINATION
                     _problems.value = plan.works.filter { syncAllowed(plan.snapshot, it.work, state.suspendedRules) }
                         .map { it.work.key }.toSet() + mappings().filter { it.mode == "managed" }.map { it.key }
                     throw failure
@@ -380,13 +381,20 @@ internal class AndroidSystemCalendar(
                     if (exact[mapping.key]?.draft?.status == WorkStatus.COMPLETED) {
                         state.save("left_events", state.leaving + mapping.encoded)
                     } else {
-                        deleteOwned(mapping)
-                        forget(mapping)
+                        try {
+                            deleteOwned(mapping)
+                            forget(mapping)
+                        } catch (failure: Exception) {
+                            _failureReason.value = CalendarSyncFailure.DELETE
+                            throw failure
+                        }
                     }
                     state.save("remove_queue", state.values("remove_queue") - mapping.encoded)
                 }
                 state.save("remove_queue", state.values("remove_queue").intersect(state.exports))
                 val failures = mutableSetOf<WorkOccurrenceKey>()
+                var deletionFailed = false
+                var exportFailed = false
                 // Deletions must not wait behind repairs/exports of unrelated works.
                 val terminal = known.filter { mapping ->
                     mapping.encoded !in remove && (exact[mapping.key] == null ||
@@ -397,6 +405,7 @@ internal class AndroidSystemCalendar(
                         deleteOwned(mapping)
                         forget(mapping)
                     } catch (_: Exception) {
+                        deletionFailed = true
                         failures += mapping.key
                     }
                 }
@@ -404,6 +413,7 @@ internal class AndroidSystemCalendar(
                     try {
                         export(work, plan.snapshot.settings, plan.types, destination, "managed")
                     } catch (_: Exception) {
+                        exportFailed = true
                         failures += work.key
                     }
                 }
@@ -422,6 +432,7 @@ internal class AndroidSystemCalendar(
                                 deleteOwned(mapping)
                                 forget(mapping)
                             } catch (_: Exception) {
+                                deletionFailed = true
                                 failures += mapping.key
                             }
                         }
@@ -430,6 +441,11 @@ internal class AndroidSystemCalendar(
                 if (previous != null && mappings().none { it.calendarId == previous.id && it.mode == "managed" &&
                         it.encoded !in state.leaving }) state.finishMove()
                 _problems.value = failures
+                _failureReason.value = when {
+                    deletionFailed -> CalendarSyncFailure.DELETE
+                    exportFailed -> CalendarSyncFailure.EXPORT
+                    else -> null
+                }
                 if (failures.isNotEmpty()) error("Calendar reconciliation incomplete")
             }
         }
@@ -576,8 +592,10 @@ internal class AndroidSystemCalendar(
         val result = resolver.applyBatch(CalendarContract.AUTHORITY, arrayListOf(
             ContentProviderOperation.newAssertQuery(Events.CONTENT_URI)
                 .withSelection(OWNED, ownership(mapping)).withExpectedCount(1).build(),
+            // An item URI must not carry a selection (CalendarContract.Events).
+            // The preceding assert and delete are in one provider transaction, without yield.
             ContentProviderOperation.newDelete(ContentUris.withAppendedId(Events.CONTENT_URI, mapping.eventId))
-                .withSelection(OWNED, ownership(mapping)).build(),
+                .withExpectedCount(1).build(),
         ))
         val deleted = checkNotNull(result[1].count)
         val after = row(mapping.eventId)
@@ -646,6 +664,8 @@ internal class AndroidSystemCalendar(
         val revision = _revision.asStateFlow()
         private val _problems = MutableStateFlow<Set<WorkOccurrenceKey>>(emptySet())
         val problems = _problems.asStateFlow()
+        private val _failureReason = MutableStateFlow<CalendarSyncFailure?>(null)
+        val failureReason = _failureReason.asStateFlow()
         private val _failed = MutableStateFlow(false)
         val failed = _failed.asStateFlow()
 
@@ -659,7 +679,11 @@ internal class AndroidSystemCalendar(
                 PeriodicWorkRequestBuilder<CalendarSystemSyncWorker>(1, TimeUnit.HOURS).build())
         }
 
-        fun reportFailure(failed: Boolean) { _failed.value = failed }
+        fun reportFailure(failed: Boolean) {
+            if (!failed) _failureReason.value = null
+            else if (_failureReason.value == null) _failureReason.value = CalendarSyncFailure.OTHER
+            _failed.value = failed
+        }
     }
 }
 
