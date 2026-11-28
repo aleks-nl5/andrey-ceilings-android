@@ -28,8 +28,21 @@ class CalendarReminderDeliveryTest {
         assertTrue(reminderIsDue(100 + EXACT_DELIVERY_GRACE_MS, 100, true, true, true))
         assertFalse(reminderIsDue(101 + EXACT_DELIVERY_GRACE_MS, 100, true, true, true))
         assertFalse(reminderIsDue(100, 100, false, true, true))
-        assertTrue(reminderIsDue(1_000_000, 100, false, true, false))
+        assertFalse(reminderIsDue(1_000_000, 100, false, true, false))
+        assertTrue(reminderIsDue(1_000_000, 100, true, true, false, sameBoot = false))
+        assertFalse(reminderIsDue(100, 100, true, true, true, sameBoot = false))
         assertFalse(reminderIsDue(1_000_000, 100, false, false, false))
+    }
+
+    @Test fun creatingOrReschedulingWorkNeverDeliversAnUnplannedPastRule() {
+        val now = 9 * 60 * 60_000L + 6 * 60_000L
+        val start = 10 * 60 * 60_000L + 10 * 60_000L
+        val dayBefore = start - 24 * 60 * 60_000L
+        val hourBefore = start - 60 * 60_000L
+        assertFalse(reminderIsDue(now, dayBefore, false, true, false))
+        assertFalse(reminderIsDue(now, hourBefore, false, true, false))
+        assertTrue(reminderIsDue(hourBefore, hourBefore, true, true, false))
+        assertFalse(reminderIsDue(hourBefore + 60_000, hourBefore, false, true, false))
     }
 
     @Test fun fullTrayUsesOneOverflowBatchWithoutWaitingForDismissal() {

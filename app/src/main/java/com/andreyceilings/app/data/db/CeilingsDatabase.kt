@@ -54,6 +54,8 @@ internal class CeilingsDatabase private constructor(
         objectsClientsStore.calendar.observeIntegrationChanges {
             withContext(Dispatchers.IO) {
                 val state = CalendarDeviceState(context)
+                // Schedule the durable retry before either immediate native effect.
+                if (state.destination != null) runCatching { AndroidSystemCalendar.enqueue(context) }
                 if (state.remindersRequested || state.visible.isNotEmpty()) {
                     // Schedule independently before refreshing sensitive notifications immediately.
                     runCatching { CalendarReminderRuntime.enqueue(context) }
@@ -65,7 +67,16 @@ internal class CeilingsDatabase private constructor(
                         // The runtime already redacted the failing projection; WorkManager retries.
                     }
                 }
-                if (state.destination != null) runCatching { AndroidSystemCalendar.enqueue(context) }
+                if (state.destination != null && !state.paused) {
+                    try {
+                        AndroidSystemCalendar(context).reconcile()
+                        AndroidSystemCalendar.reportFailure(false)
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (_: Exception) {
+                        AndroidSystemCalendar.reportFailure(true)
+                    }
+                }
             }
         }
     }

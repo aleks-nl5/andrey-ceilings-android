@@ -188,11 +188,11 @@ fun WorkCalendarScreen(
     val days = filtered.flatMap { work -> work.displayDates(zone).map { it to work } }.groupBy({ it.first }, { it.second })
     val exact = days[date].orEmpty()
     val dayMode = query.isBlank() && mode != CalendarDisplayMode.LIST
-    val fallbackNeeded = dayMode && exact.isEmpty() && period is CalendarRead.Ready
+    val fallbackNeeded = dayMode && exact.isEmpty() && busyByDate[date].isNullOrEmpty() && period is CalendarRead.Ready
     val displayed = when {
         query.isNotBlank() -> filtered
         mode == CalendarDisplayMode.LIST -> filtered
-        exact.isNotEmpty() -> exact
+        exact.isNotEmpty() || busyByDate[date].orEmpty().isNotEmpty() -> exact
         period.data() == null -> emptyList()
         else -> upcoming.filter { (type == null || it.draft.typeCode == type) &&
             (status == null || it.draft.status.name == status) }.take(3)
@@ -372,7 +372,8 @@ fun WorkCalendarScreen(
                 }
             } else if (read is CalendarRead.Loading) item("calendar-loading") {
                 Box(Modifier.fillMaxWidth().height(48.dp), contentAlignment = Alignment.Center) { LinearProgressIndicator(Modifier.fillMaxWidth()) }
-            } else if (fallbackNeeded || displayed.isEmpty()) {
+            } else if (fallbackNeeded || displayed.isEmpty() &&
+                (query.isNotBlank() || if (mode == CalendarDisplayMode.LIST) busyByDate.isEmpty() else busyByDate[date].isNullOrEmpty())) {
                 item("calendar-empty") { CalendarFeedback(Res.string.work_none, ContextFeedbackKind.INFO) }
                 if (fallbackNeeded && fallbackRead is CalendarRead.Loading) item("calendar-fallback-loading") {
                     LinearProgressIndicator(Modifier.fillMaxWidth())
@@ -398,26 +399,26 @@ fun WorkCalendarScreen(
                         Text(day.shortDate(), style = MaterialTheme.typography.titleSmall,
                             modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp))
                     }
-                    if (busyByDate[day].orEmpty().isNotEmpty()) item("calendar-external/$day") {
-                        ExternalBusyRows(busyByDate[day].orEmpty(), day, zone)
-                    }
-                    val ordered = works.sortedBy { work ->
-                        work.days.firstOrNull { scheduled ->
-                            scheduled.interval?.let { interval ->
-                                day >= interval.start.toLocalDateTime(zone).date &&
-                                    day <= (interval.endExclusive - 1.nanoseconds).toLocalDateTime(zone).date
-                            } ?: (scheduled.date == day)
-                        }?.interval?.start
-                    }
-                    items(ordered, key = { "$day/${it.key.rootUuid}/${it.key.originalDate}" }) { work ->
-                        CalendarWorkRow(work, types[work.draft.typeCode], zone, now, onEdit, selectedDate = day, swipeState = swipes)
+                    items(calendarDayRows(works, busyByDate[day].orEmpty(), day, zone),
+                        key = { "$day/${it.key}" }) { row ->
+                        when (row) {
+                            is CalendarDayRow.Work -> CalendarWorkRow(row.work, types[row.work.draft.typeCode], zone,
+                                now, onEdit, selectedDate = day, swipeState = swipes)
+                            is CalendarDayRow.Busy -> ExternalBusyRow(row.busy, day, zone)
+                        }
                     }
                 }
             } else {
-                if (query.isBlank() && busyByDate[date].orEmpty().isNotEmpty()) item("calendar-external/$date") {
-                    ExternalBusyRows(busyByDate[date].orEmpty(), date, zone)
-                }
-                items(displayed, key = { "${it.key.rootUuid}/${it.key.originalDate}" }) { work ->
+                val busy = if (query.isBlank() && !fallbackNeeded) busyByDate[date].orEmpty() else emptyList()
+                if (busy.isNotEmpty()) {
+                    items(calendarDayRows(displayed, busy, date, zone), key = { it.key }) { row ->
+                        when (row) {
+                            is CalendarDayRow.Work -> CalendarWorkRow(row.work, types[row.work.draft.typeCode],
+                                zone, now, onEdit, selectedDate = date, swipeState = swipes)
+                            is CalendarDayRow.Busy -> ExternalBusyRow(row.busy, date, zone)
+                        }
+                    }
+                } else items(displayed, key = { "${it.key.rootUuid}/${it.key.originalDate}" }) { work ->
                     CalendarWorkRow(work, types[work.draft.typeCode], zone, now, onEdit,
                         selectedDate = date.takeIf { dayMode && !fallbackNeeded }, swipeState = swipes)
                 }
@@ -521,20 +522,49 @@ internal fun CalendarWorkRow(
 }
 }
 
-@Composable
-private fun ExternalBusyRows(intervals: List<ExternalBusyInterval>, day: LocalDate, zone: TimeZone) {
+private sealed interface CalendarDayRow {
+    val key: String
+    val start: Instant
+    data class Work(val work: CalendarWork, override val start: Instant) : CalendarDayRow {
+        override val key = "${work.key.rootUuid}/${work.key.originalDate}"
+    }
+    data class Busy(val busy: ExternalBusyInterval, override val start: Instant) : CalendarDayRow {
+        override val key = "external/${busy.interval.start}/${busy.interval.endExclusive}/${busy.allDay}"
+    }
+}
+
+private fun calendarDayRows(works: List<CalendarWork>, busy: List<ExternalBusyInterval>, day: LocalDate,
+    zone: TimeZone): List<CalendarDayRow> {
     val from = day.atStartOfDayIn(zone)
     val through = day.shift(1).atStartOfDayIn(zone)
-    Column(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 4.dp)) {
-        for (busy in intervals) {
-            val timing = if (busy.allDay) stringResource(Res.string.work_all_day) else {
-                val start = maxOf(busy.interval.start, from).toLocalDateTime(zone).time.shortTime()
-                val end = if (busy.interval.endExclusive >= through) "24:00"
-                    else busy.interval.endExclusive.toLocalDateTime(zone).time.shortTime()
-                "$start–$end"
-            }
-            Text(stringResource(Res.string.p7b_busy) + " · " + timing,
-                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    val workRows = works.map { work ->
+        val start = work.days.firstOrNull { scheduled ->
+            if (work.draft.schedule.mode != WorkTimeMode.TIMED) scheduled.date == day
+            else scheduled.interval?.let { it.start < through && it.endExclusive > from } == true
+        }?.interval?.start
+        CalendarDayRow.Work(work, maxOf(from, start ?: from))
+    }
+    return (workRows + busy.map { CalendarDayRow.Busy(it, maxOf(from, it.interval.start)) })
+        .sortedBy { it.start }
+}
+
+@Composable
+private fun ExternalBusyRow(busy: ExternalBusyInterval, day: LocalDate, zone: TimeZone) {
+    val from = day.atStartOfDayIn(zone)
+    val through = day.shift(1).atStartOfDayIn(zone)
+    val timing = if (busy.allDay) stringResource(Res.string.work_all_day) else {
+        val start = maxOf(busy.interval.start, from).toLocalDateTime(zone).time.shortTime()
+        val end = if (busy.interval.endExclusive >= through) "24:00"
+            else busy.interval.endExclusive.toLocalDateTime(zone).time.shortTime()
+        "$start–$end"
+    }
+    Surface(color = MaterialTheme.colorScheme.surfaceVariant, contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+        shape = MaterialTheme.shapes.medium) {
+        Row(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 9.dp),
+            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Icon(Icons.Default.Schedule, null, Modifier.size(19.dp))
+            Text(stringResource(Res.string.p7b_busy), Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+            Text(timing, style = MaterialTheme.typography.bodyMedium)
         }
     }
 }

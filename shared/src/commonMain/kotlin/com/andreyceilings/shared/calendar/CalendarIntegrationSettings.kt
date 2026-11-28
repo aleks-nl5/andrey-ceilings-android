@@ -8,6 +8,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -264,36 +266,136 @@ private fun IntegrationSwitch(label: StringResource, checked: Boolean, enabled: 
 @Composable
 internal fun WorkIntegrationControls(
     base: CalendarWorkIntegration, value: CalendarWorkIntegration, mode: WorkTimeMode, days: List<Int>,
-    setValidation: (Boolean) -> Unit, change: (CalendarWorkIntegration) -> Unit,
+    defaults: Set<ReminderRule>, setValidation: (Boolean) -> Unit, change: (CalendarWorkIntegration) -> Unit,
 ) {
-    var open by remember { mutableStateOf(false) }
-    OutlinedButton(onClick = { open = !open }, modifier = Modifier.fillMaxWidth()) {
-        Text(stringResource(Res.string.p7b_work_integrations))
-    }
-    if (!open) return
     val reminder = value.reminderMode ?: base.reminderMode ?: ReminderMode.INHERIT
+    val customRules = if (value.reminderMode != null) value.reminders else base.reminders
+    val effective = effectiveReminderRules(defaults, if (value.reminderMode != null) value else base)
+    val timed = mode == WorkTimeMode.TIMED
+    val multiple = days.size > 1
+    val applicable = effective.filterTo(mutableSetOf()) { rule ->
+        when (rule.day) {
+            ReminderDay.FIRST -> timed && 0 in days
+            ReminderDay.LATER -> timed && days.any { it != 0 }
+            ReminderDay.DATE -> !timed && days.isNotEmpty()
+            ReminderDay.DAY -> rule.offset in days
+        }
+    }
+    val dayKinds = buildList {
+        if (timed) {
+            add(ReminderDay.FIRST to -1)
+            if (multiple) add(ReminderDay.LATER to -1)
+        } else add(ReminderDay.DATE to -1)
+        if (multiple) days.forEach { add(ReminderDay.DAY to it) }
+    }
+    var selected by remember(mode, days) { mutableStateOf(dayKinds.first()) }
+    var custom by remember { mutableStateOf(false) }
+    fun replace(rules: Set<ReminderRule>) {
+        setValidation(true)
+        change(value.copy(reminderMode = if (rules.isEmpty()) ReminderMode.OFF else ReminderMode.REPLACE,
+            reminders = rules))
+    }
+    fun add(rule: ReminderRule) {
+        // Adding to inherited rules keeps inheritance live; a removal creates an explicit replacement.
+        if (rule in effective) return
+        setValidation(true)
+        if (reminder == ReminderMode.INHERIT || reminder == ReminderMode.ADD) {
+            change(value.copy(reminderMode = ReminderMode.ADD,
+                reminders = (if (reminder == ReminderMode.ADD) customRules else emptySet()) + rule))
+        } else replace(effective + rule)
+    }
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Icon(Icons.Default.Notifications, null, Modifier.size(19.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(stringResource(Res.string.p7b_reminders), style = MaterialTheme.typography.titleSmall)
+    }
+    for (rule in applicable.sortedWith(compareBy({ it.day }, { it.offset }, { -it.leadDays }, { -it.minute }))) {
+        Row(Modifier.fillMaxWidth().padding(start = 27.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(workReminderLabel(rule, timed, multiple), Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+            IconButton(onClick = { replace(effective - rule) }, modifier = Modifier.size(44.dp)) {
+                Icon(Icons.Default.Close, stringResource(Res.string.oc_delete), modifier = Modifier.size(20.dp))
+            }
+        }
+    }
+    if (applicable.isEmpty()) Text(stringResource(Res.string.p7b_off),
+        Modifier.padding(start = 27.dp, top = 4.dp), style = MaterialTheme.typography.bodyMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant)
+    if (multiple) CalendarMenu(reminderTargetLabel(selected), fillWidth = true) {
+        dayKinds.forEach { target ->
+            CalendarMenuItem(text = { Text(reminderTargetLabel(target)) }, onClick = { selected = target })
+        }
+    }
+    val presets = if (timed) listOf(0 to 5, 0 to 10, 0 to 15, 0 to 30, 0 to 60, 0 to 120, 1 to 0, 2 to 0)
+        else listOf(1 to 18 * 60, 1 to 8 * 60, 0 to 8 * 60, 0 to 9 * 60, 0 to 12 * 60)
+    CalendarMenu(stringResource(Res.string.p7b_add_reminder), fillWidth = true,
+        leading = { Icon(Icons.Default.Add, null, Modifier.size(18.dp)) }) {
+        for ((lead, minute) in presets) {
+            val rule = ReminderRule(selected.first, lead, minute, selected.second)
+            if (rule !in effective) CalendarMenuItem(text = { Text(workReminderLabel(rule, timed, false)) },
+                onClick = { add(rule) })
+        }
+        CalendarMenuItem(text = { Text(stringResource(Res.string.p7b_custom_reminder)) }, onClick = { custom = true })
+    }
+    if (reminder != ReminderMode.INHERIT) TextButton(onClick = {
+        setValidation(true)
+        change(value.copy(reminderMode = ReminderMode.INHERIT, reminders = emptySet()))
+    }) { Text(stringResource(Res.string.p7b_reset_reminders)) }
+    if (custom) {
+        var lead by remember { mutableStateOf("0") }
+        var minutes by remember { mutableStateOf("60") }
+        var time by remember { mutableStateOf("08:00") }
+        val rule = runCatching { ReminderRule(selected.first, lead.toInt(),
+            if (timed) minutes.toInt() else LocalTime.parse(time).toSecondOfDay() / 60, selected.second) }.getOrNull()
+        AlertDialog(onDismissRequest = { custom = false },
+            title = { Text(stringResource(Res.string.p7b_custom_reminder)) },
+            text = { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (multiple) Text(reminderTargetLabel(selected))
+                OutlinedTextField(lead, { lead = it.filter(Char::isDigit).take(3) },
+                    label = { Text(stringResource(Res.string.p7b_days_before)) }, singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
+                if (timed) OutlinedTextField(minutes, { minutes = it.filter(Char::isDigit).take(4) },
+                    label = { Text(stringResource(Res.string.p7b_minutes_before)) }, singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
+                else WorkTimeField(time, Res.string.p7b_reminder_time) { time = it }
+            } },
+            dismissButton = { TextButton(onClick = { custom = false }) { Text(stringResource(Res.string.p5d_cancel)) } },
+            confirmButton = { TextButton(enabled = rule != null && rule !in effective, onClick = {
+                rule?.let(::add)
+                custom = false
+            }) { Text(stringResource(Res.string.p7b_add_reminder)) } })
+    }
     val sync = value.syncMode ?: base.syncMode ?: CalendarSyncMode.INHERIT
-    Text(stringResource(Res.string.p7b_reminders), style = MaterialTheme.typography.labelMedium)
-    CalendarMenu(stringResource(reminder.label()), fillWidth = true) {
-        ReminderMode.entries.forEach { mode ->
-            CalendarMenuItem(text = { Text(stringResource(mode.label())) }, onClick = {
-                setValidation(true)
-                change(value.copy(reminderMode = mode, reminders = emptySet()))
-            })
-        }
-    }
-    if (reminder == ReminderMode.REPLACE || reminder == ReminderMode.ADD) {
-        ReminderRuleFields(if (value.reminderMode != null) value.reminders else base.reminders, days, mode,
-            onValid = setValidation) {
-            change(value.copy(reminderMode = reminder, reminders = it))
-        }
-    }
     Text(stringResource(Res.string.p7b_sync), style = MaterialTheme.typography.labelMedium)
     CalendarMenu(stringResource(sync.label()), fillWidth = true) {
-        CalendarSyncMode.entries.forEach { mode ->
-            CalendarMenuItem(text = { Text(stringResource(mode.label())) }, onClick = { change(value.copy(syncMode = mode)) })
+        CalendarSyncMode.entries.forEach { syncMode ->
+            CalendarMenuItem(text = { Text(stringResource(syncMode.label())) }, onClick = { change(value.copy(syncMode = syncMode)) })
         }
     }
+}
+
+@Composable
+private fun reminderTargetLabel(target: Pair<ReminderDay, Int>): String =
+    if (target.first == ReminderDay.DAY) stringResource(Res.string.p7b_day_number, target.second + 1)
+    else stringResource(target.first.label())
+
+@Composable
+private fun workReminderLabel(rule: ReminderRule, timed: Boolean, showDay: Boolean): String {
+    val time = if (timed) {
+        val parts = buildList {
+            if (rule.leadDays > 0) add(stringResource(Res.string.p7b_duration_days, rule.leadDays))
+            if (rule.minute >= 60) add(stringResource(Res.string.p7b_duration_hours, rule.minute / 60))
+            if (rule.minute % 60 != 0 || rule.leadDays == 0 && rule.minute == 0)
+                add(stringResource(Res.string.p7b_minutes_count, rule.minute % 60))
+        }
+        stringResource(Res.string.p7b_before, parts.joinToString(" "))
+    } else {
+        val clock = (rule.minute / 60).toString().padStart(2, '0') + ":" + (rule.minute % 60).toString().padStart(2, '0')
+        when (rule.leadDays) {
+            0 -> stringResource(Res.string.p7b_on_day_at, clock)
+            1 -> stringResource(Res.string.p7b_previous_day_at, clock)
+            else -> stringResource(Res.string.p7b_days_before_at, rule.leadDays, clock)
+        }
+    }
+    return if (showDay) reminderTargetLabel(rule.day to rule.offset) + " · " + time else time
 }
 
 @Composable

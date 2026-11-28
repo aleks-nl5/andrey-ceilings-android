@@ -6,8 +6,10 @@ internal fun exactReminderWakeups(triggerMillis: Iterable<Long>, limit: Int): Li
 // A small delivery grace covers ordinary exact-alarm dispatch jitter, not recovery of old alarms.
 internal const val EXACT_DELIVERY_GRACE_MS = 120_000L
 
-internal fun reminderIsDue(now: Long, trigger: Long, scheduled: Boolean, relevant: Boolean, workStarted: Boolean): Boolean =
-    trigger <= now && relevant && (!workStarted || scheduled && now - trigger <= EXACT_DELIVERY_GRACE_MS)
+internal fun reminderIsDue(now: Long, trigger: Long, scheduled: Boolean, relevant: Boolean,
+    workStarted: Boolean, sameBoot: Boolean = scheduled): Boolean =
+    scheduled && trigger <= now && relevant &&
+        (!workStarted || sameBoot && now - trigger <= EXACT_DELIVERY_GRACE_MS)
 
 internal fun <T> reminderOverflow(due: List<T>, alreadyVisible: Set<T>, available: Int): Pair<List<T>, List<T>> {
     var slots = available.coerceAtLeast(0)

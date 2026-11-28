@@ -85,7 +85,9 @@ internal object CalendarReminderRuntime {
                 val seen = plan.works.associate { it.work.key to it.work }
                 val delivered = state.delivered
                 val boot = bootCount(context)
-                val scheduled = state.alarmKeys.takeIf { boot >= 0 && state.scheduledBoot == boot }.orEmpty()
+                // An earlier boot still proves the alert was planned; it does not prove a timely dispatch.
+                val scheduled = state.alarmKeys
+                val sameBoot = boot >= 0 && state.scheduledBoot == boot
                 val desired = mutableMapOf<String, Long>()
                 val retained = mutableSetOf<String>()
                 val retainedSnoozes = mutableSetOf<String>()
@@ -99,7 +101,7 @@ internal object CalendarReminderRuntime {
                     if (alarm.whenAt > now) {
                         desired[id] = alarm.whenAt.toEpochMilliseconds()
                     } else if (reminderIsDue(now.toEpochMilliseconds(), alarm.whenAt.toEpochMilliseconds(),
-                            wasScheduled, relevant(alarm, work, now), reminderDayStarted(alarm, work, now))) {
+                            wasScheduled, relevant(alarm, work, now), reminderDayStarted(alarm, work, now), sameBoot)) {
                         val prior = due[work.key]
                         if (prior == null || decode(prior.first)!!.whenAt <= alarm.whenAt) due[work.key] = id to work
                         dueIds.getOrPut(work.key) { mutableSetOf() } += id
@@ -444,13 +446,19 @@ internal object CalendarReminderRuntime {
                 .firstOrNull { it.tag == GROUP_SUMMARY && it.id == 1 }?.notification
             val snapshot = snapshot()
             val now = Clock.System.now()
-            active?.extras?.getString(OVERFLOW_EXTRA) == token && snapshot.settings.remindersEnabled &&
+            val valid = active?.extras?.getString(OVERFLOW_EXTRA) == token && snapshot.settings.remindersEnabled &&
                 state.overflow.any { id ->
                     val alarm = decode(id)
                     val work = alarm?.let { exact(it.key) }
                     alarm != null && work != null && work.draft.status.active &&
                         relevant(alarm, work, now) && isAlertCurrent(id, work, snapshot)
                 }
+            if (valid) {
+                state.recordDelivery(state.visible, state.delivered + state.overflow, emptySet())
+                context.getSystemService(NotificationManager::class.java).cancel(GROUP_SUMMARY, 1)
+                updateSummary(context, state)
+            }
+            valid
         }
     }
 
@@ -463,10 +471,12 @@ internal object CalendarReminderRuntime {
             .setAuthenticationRequired(true).build()
 
     private fun activity(context: Context, id: String, generation: String, action: String): PendingIntent {
-        return PendingIntent.getActivity(context, 0, Intent(context, MainActivity::class.java)
+        val target = if (action == "open") MainActivity::class.java else CalendarReminderActionActivity::class.java
+        val flags = if (action == "open") Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
+            else Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_ANIMATION
+        return PendingIntent.getActivity(context, 0, Intent(context, target)
             .setAction("com.andreyceilings.app.calendar.OPEN").setData(payload(id, generation, action))
-            .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP),
-            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+            .addFlags(flags), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
     }
 
     private fun contentSignature(state: CalendarDeviceState, work: CalendarWork,
@@ -496,7 +506,10 @@ internal object CalendarReminderRuntime {
             val key = decode(id)?.key ?: return@withCalendarEffects null
             val work = exact(key) ?: return@withCalendarEffects null
             if (!canAct(context, state, id, work, snapshot(), types())) return@withCalendarEffects null
-            if (action == "open") return@withCalendarEffects key
+            if (action == "open") {
+                consumeAlert(context, state, id, key)
+                return@withCalendarEffects key
+            }
             if (context.getSystemService(KeyguardManager::class.java).isDeviceLocked) return@withCalendarEffects null
             val external = when (action) {
                 "navigate" -> work.contact.address?.let { Intent(Intent.ACTION_VIEW, Uri.parse("geo:0,0?q=${Uri.encode(it)}")) }
@@ -504,9 +517,20 @@ internal object CalendarReminderRuntime {
                 "message" -> work.contact.phone?.let { Intent(Intent.ACTION_SENDTO, Uri.fromParts("smsto", it, null)) }
                 else -> null
             }
-            if (external != null) runCatching { context.startActivity(external.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+            if (external != null && runCatching {
+                    context.startActivity(external)
+                }.isSuccess) consumeAlert(context, state, id, key)
             null
         }
+    }
+
+    private fun consumeAlert(context: Context, state: CalendarDeviceState, id: String, key: WorkOccurrenceKey) {
+        val manager = context.getSystemService(NotificationManager::class.java)
+        val tag = key.deviceKey()
+        // Record consumption before cancel so ordinary reconciliation cannot replay the alert.
+        state.recordDelivery(state.visible - id, state.delivered + id)
+        if (activeNotifications(manager)[tag]?.extras?.getString(ALERT_EXTRA) == id) manager.cancel(tag, 1)
+        updateSummary(context, state)
     }
 
     private suspend fun dismiss(context: Context, id: String, generation: String) = operations.withLock {

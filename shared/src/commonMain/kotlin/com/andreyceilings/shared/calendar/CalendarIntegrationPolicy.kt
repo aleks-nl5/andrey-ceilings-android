@@ -60,16 +60,8 @@ data class CalendarIntegrationSnapshot(
             ordered.firstNotNullOfOrNull { it.syncMode })
     }
 
-    fun rules(work: CalendarWork): Set<ReminderRule> {
-        val defaults = types[work.draft.typeCode]?.reminders ?: standardReminderRules
-        val override = overrides(work.key)
-        return when (override.reminderMode) {
-            ReminderMode.ADD -> defaults + override.reminders
-            ReminderMode.REPLACE -> override.reminders
-            ReminderMode.OFF -> emptySet()
-            ReminderMode.INHERIT, null -> defaults
-        }
-    }
+    fun rules(work: CalendarWork): Set<ReminderRule> =
+        effectiveReminderRules(types[work.draft.typeCode]?.reminders ?: standardReminderRules, overrides(work.key))
 
     fun syncRule(key: WorkOccurrenceKey): CalendarSyncRule? {
         occurrences[key]?.syncMode?.let { return CalendarSyncRule(key, false, it) }
@@ -100,6 +92,23 @@ data class CalendarIntegrationSnapshot(
             occurrences.values.asSequence().flatMap { it.reminders } +
             series.values.asSequence().flatMap { it.reminders })
             .maxOf { it.leadDays } + 1
+}
+
+internal fun effectiveReminderRules(defaults: Set<ReminderRule>, override: CalendarWorkIntegration): Set<ReminderRule> =
+    when (override.reminderMode) {
+        ReminderMode.ADD -> defaults + override.reminders
+        ReminderMode.REPLACE -> override.reminders
+        ReminderMode.OFF -> emptySet()
+        ReminderMode.INHERIT, null -> defaults
+    }
+
+internal fun shiftedWorkEnd(oldStart: String, oldEnd: String, newStart: String, defaultDurationMinutes: Int): String {
+    val duration = runCatching {
+        LocalTime.parse(oldEnd).toSecondOfDay() - LocalTime.parse(oldStart).toSecondOfDay()
+    }.getOrNull()?.takeIf { it > 0 } ?: defaultDurationMinutes * 60
+    return runCatching { LocalTime.parse(newStart).toSecondOfDay() + duration }
+        .getOrNull()?.takeIf { it in 0 until 86400 }
+        ?.let { LocalTime.fromSecondOfDay(it).toString().take(5) }.orEmpty()
 }
 
 val standardReminderRules = setOf(

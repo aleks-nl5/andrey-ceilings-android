@@ -29,6 +29,23 @@ class CalendarIntegrationPolicyTest {
         assertFalse(snapshot.managed(work.copy(key = latest)))
     }
 
+    @Test fun startChangePreservesDefaultAndManuallyAdjustedDuration() {
+        assertEquals("13:00", shiftedWorkEnd("09:00", "10:00", "12:00", 60))
+        assertEquals("15:30", shiftedWorkEnd("12:00", "13:30", "14:00", 60))
+        assertEquals("10:10", shiftedWorkEnd("", "", "09:10", 60))
+        assertEquals("", shiftedWorkEnd("09:00", "10:00", "23:30", 60))
+    }
+
+    @Test fun editorAndSchedulerShareInheritedAddedRemovedAndDisabledRules() {
+        val defaults = setOf(ReminderRule(ReminderDay.FIRST, 1, 0), ReminderRule(ReminderDay.FIRST, 0, 60))
+        val extra = ReminderRule(ReminderDay.FIRST, 0, 15)
+        assertEquals(defaults, effectiveReminderRules(defaults, CalendarWorkIntegration()))
+        assertEquals(defaults + extra, effectiveReminderRules(defaults, CalendarWorkIntegration(ReminderMode.ADD, setOf(extra))))
+        val remaining = defaults.filterTo(mutableSetOf()) { it.leadDays == 0 }
+        assertEquals(remaining, effectiveReminderRules(defaults, CalendarWorkIntegration(ReminderMode.REPLACE, remaining)))
+        assertTrue(effectiveReminderRules(defaults, CalendarWorkIntegration(ReminderMode.OFF)).isEmpty())
+    }
+
     @Test fun timedDaysHaveSeparateIntervalsAndRemindersAcrossDst() {
         val date = LocalDate(2026, 3, 29)
         val work = sample(WorkTimeMode.TIMED, date)

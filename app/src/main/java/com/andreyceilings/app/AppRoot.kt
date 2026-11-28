@@ -1032,6 +1032,11 @@ private fun CeilingsAppContent(
             }
             calendarEditor?.let { route ->
                 WorkEditor(calendarStore, route, onClose = { calendarEditor = null }, properties = calendarWindow,
+                    incomingWork = notificationWork,
+                    onIncomingWorkHandled = { accepted ->
+                        if (accepted) notificationWork?.let { calendarEditor = CalendarEditorRoute.Open(it) }
+                        onNotificationOpened()
+                    },
                     registry = database?.objectsClientsStore,
                     openExternalUri = { url ->
                         val action = if (url.startsWith("tel:")) android.content.Intent.ACTION_DIAL else android.content.Intent.ACTION_VIEW

@@ -153,12 +153,13 @@ internal class AndroidSystemCalendar(
     }
 
     suspend fun availability(range: WorkDateRange, zone: TimeZone): CalendarAvailability =
-        withContext(Dispatchers.IO) {
+        operations.withLock { withContext(Dispatchers.IO) {
             val selected = state.busyCalendars
             if (selected.isEmpty()) return@withContext CalendarAvailability.Disabled
             if (state.paused || !canRead) return@withContext CalendarAvailability.Unknown
             try {
-                val ids = calendars().filter { it.identity in selected }.map { it.id }
+                val selectedCalendars = calendars().filter { it.identity in selected }
+                val ids = selectedCalendars.map { it.id }
                 if (ids.size != selected.size) return@withContext CalendarAvailability.Unknown
                 val from = range.from.atStartOfDayIn(zone).toEpochMilliseconds()
                 val end = range.through.nextDay().atStartOfDayIn(zone).toEpochMilliseconds()
@@ -168,7 +169,9 @@ internal class AndroidSystemCalendar(
                 }.build()
                 val projection = arrayOf(Instances.BEGIN, Instances.END, Instances.ALL_DAY, Instances.EVENT_ID,
                     Instances.AVAILABILITY, Instances.STATUS, Instances.CALENDAR_ID)
-                val owned = mappings().filter { it.mode == "managed" && it.encoded !in state.leaving }
+                val identities = selectedCalendars.associate { it.id to it.identity }
+                val owned = mappings().filter { it.mode == "managed" && it.encoded !in state.leaving &&
+                    identities[it.calendarId] == it.identity }
                     .associateBy { it.eventId to it.calendarId }
                 val rows = checkNotNull(resolver.query(uri, projection,
                     "${Instances.CALENDAR_ID} IN (${ids.joinToString(",") { "?" }})",
@@ -200,7 +203,7 @@ internal class AndroidSystemCalendar(
             } catch (_: Exception) {
                 CalendarAvailability.Unknown
             }
-        }
+        } }
 
     suspend fun confirmRestore() = operations.withLock {
         withContext(Dispatchers.IO) {
@@ -384,6 +387,19 @@ internal class AndroidSystemCalendar(
                 }
                 state.save("remove_queue", state.values("remove_queue").intersect(state.exports))
                 val failures = mutableSetOf<WorkOccurrenceKey>()
+                // Deletions must not wait behind repairs/exports of unrelated works.
+                val terminal = known.filter { mapping ->
+                    mapping.encoded !in remove && (exact[mapping.key] == null ||
+                        exact[mapping.key]?.draft?.status == WorkStatus.CANCELLED)
+                }
+                for (mapping in terminal) {
+                    try {
+                        deleteOwned(mapping)
+                        forget(mapping)
+                    } catch (_: Exception) {
+                        failures += mapping.key
+                    }
+                }
                 for (work in eligible.values) {
                     try {
                         export(work, plan.snapshot.settings, plan.types, destination, "managed")
@@ -391,7 +407,7 @@ internal class AndroidSystemCalendar(
                         failures += work.key
                     }
                 }
-                for (mapping in known.filter { it.encoded !in remove && it.key !in failures }) {
+                for (mapping in known.filter { it.encoded !in remove && it !in terminal && it.key !in failures }) {
                     val work = exact[mapping.key]
                     when {
                         work?.draft?.status == WorkStatus.COMPLETED ||
@@ -557,7 +573,17 @@ internal class AndroidSystemCalendar(
         val existing = row(mapping.eventId) ?: return
         check(existing.calendarId == destination.id && existing.marker == mapping.marker)
         if (existing.deleted) return
-        check(resolver.delete(Events.CONTENT_URI, OWNED, ownership(mapping)) == 1)
+        val result = resolver.applyBatch(CalendarContract.AUTHORITY, arrayListOf(
+            ContentProviderOperation.newAssertQuery(Events.CONTENT_URI)
+                .withSelection(OWNED, ownership(mapping)).withExpectedCount(1).build(),
+            ContentProviderOperation.newDelete(ContentUris.withAppendedId(Events.CONTENT_URI, mapping.eventId))
+                .withSelection(OWNED, ownership(mapping)).build(),
+        ))
+        val deleted = checkNotNull(result[1].count)
+        val after = row(mapping.eventId)
+        // Some providers retain a tombstone. Verify the actual outcome, not only the count.
+        check(deleted in 0..1 && (after == null ||
+            after.deleted && matchesOwnedRow(after, destination.id, mapping.marker)))
     }
 
     private fun ownership(mapping: Mapping) =

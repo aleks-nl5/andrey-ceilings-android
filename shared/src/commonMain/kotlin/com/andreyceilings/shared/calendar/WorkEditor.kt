@@ -122,6 +122,8 @@ fun WorkEditor(
     registry: ObjectsClientsStore? = null,
     onRegistryTarget: ((GlobalRegistryTarget) -> Unit)? = null,
     openExternalUri: ((String) -> Unit)? = null,
+    incomingWork: WorkOccurrenceKey? = null,
+    onIncomingWorkHandled: (Boolean) -> Unit = {},
 ) = key(store, route) {
     var reload by remember { mutableIntStateOf(0) }
     var optionsRetry by remember { mutableIntStateOf(0) }
@@ -148,6 +150,7 @@ fun WorkEditor(
     var loadFailed by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
     var discarding by remember { mutableStateOf(false) }
+    var switchingWork by remember { mutableStateOf(false) }
     var deleting by remember { mutableStateOf(false) }
     var stale by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf(false) }
@@ -201,6 +204,17 @@ fun WorkEditor(
             loadFailed = false
         } catch (cancelled: CancellationException) { throw cancelled }
         catch (_: Exception) { loadFailed = true }
+    }
+
+    LaunchedEffect(incomingWork, busy, linkBusy, loadedRevision, reload, loadFailed) {
+        val target = incomingWork ?: return@LaunchedEffect
+        if (busy || linkBusy || loadedRevision != reload && !loadFailed) return@LaunchedEffect
+        if ((route as? CalendarEditorRoute.Open)?.key == target) {
+            onIncomingWorkHandled(false)
+        } else if (input != initial || integrationEdit != CalendarWorkIntegration()) {
+            switchingWork = true
+            discarding = true
+        } else onIncomingWorkHandled(true)
     }
 
     fun requestClose() {
@@ -511,7 +525,8 @@ fun WorkEditor(
                                 if (data.mode == WorkTimeMode.TIMED) {
                                     val badTime = runCatching { LocalTime.parse(day.start) >= LocalTime.parse(day.end) }.getOrDefault(true)
                                     WorkTimeField(day.start, Res.string.work_start, Modifier.weight(1f), badTime) { start ->
-                                        set(day.copy(start = start))
+                                        val duration = options.types.firstOrNull { it.code == data.type }?.durationMinutes ?: 60
+                                        set(day.copy(start = start, end = shiftedWorkEnd(day.start, day.end, start, duration)))
                                     }
                                     WorkTimeField(day.end, Res.string.work_end, Modifier.weight(1f), badTime) { set(day.copy(end = it)) }
                                 }
@@ -533,8 +548,13 @@ fun WorkEditor(
                         }
                         if (integrationPlatform != null && !move) item("work-integrations") {
                             val base = original?.key?.let { integrationSnapshot?.overrides(it) } ?: CalendarWorkIntegration()
-                            WorkIntegrationControls(base, integrationEdit, data.mode, data.days.mapNotNull { it.offset.toIntOrNull() },
-                                setValidation = { integrationValid = it }) { integrationEdit = it }
+                            if (integrationSnapshot == null) {
+                                LinearProgressIndicator(Modifier.fillMaxWidth())
+                            } else {
+                                val defaults = integrationSnapshot.types[data.type]?.reminders ?: standardReminderRules
+                                WorkIntegrationControls(base, integrationEdit, data.mode, data.days.mapNotNull { it.offset.toIntOrNull() },
+                                    defaults, setValidation = { integrationValid = it }) { integrationEdit = it }
+                            }
                         }
                         item("work-recurrence") {
                             if (original == null || recurring && scope == CalendarEditScope.THIS_AND_FOLLOWING)
@@ -694,10 +714,19 @@ fun WorkEditor(
         dismissButton = { TextButton(onClick = { confirmReload = false; reload++ }) {
             Text(stringResource(Res.string.work_discard), color = MaterialTheme.colorScheme.error)
         } }, confirmButton = { TextButton(onClick = { confirmReload = false }) { Text(stringResource(Res.string.p5d_cancel)) } })
-    if (discarding) AlertDialog(onDismissRequest = { discarding = false },
-        title = { Text(stringResource(Res.string.work_exit_title)) },
-        confirmButton = { TextButton(onClick = { discarding = false }) { Text(stringResource(Res.string.p5d_cancel)) } },
-        dismissButton = { TextButton(onClick = onClose) { Text(stringResource(Res.string.work_discard), color = MaterialTheme.colorScheme.error) } })
+    if (discarding) {
+        fun keepEditing() {
+            discarding = false
+            if (switchingWork) onIncomingWorkHandled(false)
+            switchingWork = false
+        }
+        AlertDialog(onDismissRequest = ::keepEditing,
+            title = { Text(stringResource(Res.string.work_exit_title)) },
+            confirmButton = { TextButton(onClick = ::keepEditing) { Text(stringResource(Res.string.p5d_cancel)) } },
+            dismissButton = { TextButton(onClick = {
+                if (switchingWork) onIncomingWorkHandled(true) else onClose()
+            }) { Text(stringResource(Res.string.work_discard), color = MaterialTheme.colorScheme.error) } })
+    }
     if (deleteOnly || deleting && original != null) {
         val deleteProblem = when {
             stale -> Res.string.work_stale

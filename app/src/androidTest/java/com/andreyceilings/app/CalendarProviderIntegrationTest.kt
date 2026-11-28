@@ -63,7 +63,7 @@ class CalendarProviderIntegrationTest {
                             cursor.getString(3), cursor.getString(4)))
                     }
                 }
-                val exported = events().single()
+                var exported = events().single()
                 assertNotEquals(work.title, exported[1])
                 assertNull(exported[2])
                 val thirdParty = checkNotNull(resolver.insert(Events.CONTENT_URI, ContentValues().apply {
@@ -84,6 +84,16 @@ class CalendarProviderIntegrationTest {
                 }, null, null))
                 system.reconcile()
                 assertEquals(exported[1], events().single { it[0] == exported[0] }[1])
+
+                // An external delete must be repaired without counting the replacement as third-party busy.
+                assertEquals(1, resolver.delete(eventUri, null, null))
+                system.reconcile()
+                val unrelatedId = ContentUris.parseId(thirdParty).toString()
+                val originalTitle = exported[1]
+                exported = events().single { it[0] != unrelatedId }
+                assertEquals(originalTitle, exported[1])
+                assertEquals(1, (system.availability(WorkDateRange(date, date), TimeZone.UTC)
+                    as CalendarAvailability.Available).busy.size)
 
                 fun interruptAfterProviderCommit(eventId: String) {
                     val mapping = device.exports.single { it.split('|')[1] == eventId }
